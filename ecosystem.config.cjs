@@ -1,0 +1,43 @@
+module.exports = {
+  apps: [
+    {
+      name: 'nextapp-backend',
+      cwd: '/var/www/nextapp/backend',
+      script: 'npm',
+      args: 'run dev',
+      interpreter: 'none',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3001,
+        CORS_ORIGIN: 'http://155.94.150.168',
+      },
+      error_file: '/var/www/nextapp/logs/backend-error.log',
+      out_file: '/var/www/nextapp/logs/backend-out.log',
+      log_file: '/var/www/nextapp/logs/backend-combined.log',
+      time: true,
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '1G',
+    },
+    {
+      name: 'nextapp-frontend',
+      cwd: '/var/www/nextapp',
+      script: 'npm',
+      args: 'run dev',
+      interpreter: 'none',
+      env: {
+        NODE_ENV: 'development',
+        PORT: 80,
+      },
+      error_file: '/var/www/nextapp/logs/frontend-error.log',
+      out_file: '/var/www/nextapp/logs/frontend-out.log',
+      log_file: '/var/www/nextapp/logs/frontend-combined.log',
+      time: true,
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '1G',
+    },
+  ],
+};

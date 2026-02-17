@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+
+# Backups
+*.backup.*
+.env.backup.*
+*.db.before-import-*

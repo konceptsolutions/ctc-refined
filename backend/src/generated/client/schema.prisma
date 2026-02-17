@@ -1,0 +1,1029 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id             String         @id
+  subgroupId     String
+  code           String         @unique
+  name           String
+  description    String?
+  accountType    String         @default("regular")
+  openingBalance Float          @default(0)
+  currentBalance Float          @default(0)
+  status         String         @default("Active")
+  canDelete      Boolean        @default(true)
+  supplierId     String?
+  customerId     String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime
+  Customer       Customer?      @relation(fields: [customerId], references: [id])
+  Subgroup       Subgroup       @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
+  Supplier       Supplier?      @relation(fields: [supplierId], references: [id])
+  JournalLine    JournalLine[]
+  SalesInvoice   SalesInvoice[]
+  VoucherEntry   VoucherEntry[]
+}
+
+model ActivityLog {
+  id          String   @id
+  timestamp   String
+  user        String
+  userRole    String
+  action      String
+  actionType  String
+  module      String
+  description String
+  ipAddress   String
+  status      String   @default("success")
+  details     String?
+  createdAt   DateTime @default(now())
+}
+
+model Adjustment {
+  id                                       String           @id
+  adjustmentNo                             Int              @unique @default(autoincrement())
+  date                                     DateTime
+  subject                                  String?
+  storeId                                  String?
+  addInventory                             Boolean          @default(true)
+  notes                                    String?
+  totalAmount                              Float            @default(0)
+  status                                   String           @default("pending")
+  voucherId                                String?
+  deletedAt                                DateTime?
+  createdAt                                DateTime         @default(now())
+  updatedAt                                DateTime
+  Store                                    Store?           @relation(fields: [storeId], references: [id])
+  Voucher_Adjustment_voucherIdToVoucher    Voucher?         @relation("Adjustment_voucherIdToVoucher", fields: [voucherId], references: [id])
+  AdjustmentItem                           AdjustmentItem[]
+  Voucher_Voucher_adjustmentIdToAdjustment Voucher[]        @relation("Voucher_adjustmentIdToAdjustment")
+  VoucherEntry                             VoucherEntry[]
+}
+
+model AdjustmentItem {
+  id           String     @id
+  adjustmentId String
+  partId       String
+  quantity     Int
+  cost         Float?
+  notes        String?
+  rackId       String?
+  shelfId      String?
+  createdAt    DateTime   @default(now())
+  priceA       Float?
+  priceB       Float?
+  priceM       Float?
+  updatedAt    DateTime
+  deletedAt    DateTime?
+  Adjustment   Adjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  Part         Part       @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Rack         Rack?      @relation(fields: [rackId], references: [id])
+  Shelf        Shelf?     @relation(fields: [shelfId], references: [id])
+}
+
+model Application {
+  id            String       @id
+  subcategoryId String?
+  masterPartId  String?
+  name          String
+  status        String       @default("active")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime
+  MasterPart    MasterPart?  @relation(fields: [masterPartId], references: [id], onDelete: Cascade)
+  Subcategory   Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+  Part          Part[]
+
+  @@unique([masterPartId, name])
+  @@index([masterPartId])
+  @@index([subcategoryId])
+}
+
+model ApprovalFlow {
+  id          String   @id
+  name        String
+  status      String   @default("active")
+  description String?
+  steps       String
+  module      String
+  trigger     String   @default("On Create")
+  condition   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+}
+
+model Backup {
+  id        String  @id
+  name      String
+  tables    String
+  type      String  @default("full")
+  size      String?
+  status    String  @default("in_progress")
+  createdAt String
+  createdBy String
+}
+
+model BackupSchedule {
+  id        String   @id
+  name      String
+  frequency String
+  tables    String
+  time      String
+  status    String   @default("active")
+  lastRun   String?
+  nextRun   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
+model Brand {
+  id        String   @id
+  name      String   @unique
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Part      Part[]
+}
+
+model Category {
+  id          String        @id
+  name        String        @unique
+  status      String        @default("active")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime
+  Part        Part[]
+  Subcategory Subcategory[]
+}
+
+model CompanyProfile {
+  id                   String   @id
+  companyInfo          String
+  systemSettings       String
+  invoiceSettings      String
+  notificationSettings String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime
+}
+
+model Customer {
+  id             String         @id
+  name           String
+  address        String?
+  email          String?
+  cnic           String?
+  contactNo      String?
+  openingBalance Float          @default(0)
+  date           DateTime?
+  creditLimit    Float          @default(0)
+  status         String         @default("active")
+  priceType      String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime
+  Account        Account[]
+  Receivable     Receivable[]
+  SalesInvoice   SalesInvoice[]
+  SalesReturn    SalesReturn[]
+  // StockMovement  StockMovement[]
+  VoucherEntry   VoucherEntry[]
+}
+
+model DeliveryLog {
+  id              String            @id
+  invoiceId       String
+  challanNo       String
+  deliveryDate    DateTime
+  deliveredBy     String?
+  createdAt       DateTime          @default(now())
+  SalesInvoice    SalesInvoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  DeliveryLogItem DeliveryLogItem[]
+}
+
+model DeliveryLogItem {
+  id               String           @id
+  deliveryLogId    String
+  invoiceItemId    String
+  quantity         Int
+  createdAt        DateTime         @default(now())
+  DeliveryLog      DeliveryLog      @relation(fields: [deliveryLogId], references: [id], onDelete: Cascade)
+  SalesInvoiceItem SalesInvoiceItem @relation(fields: [invoiceItemId], references: [id], onDelete: Cascade)
+}
+
+model DirectPurchaseOrder {
+  id                         String                       @id
+  dpoNumber                  String                       @unique
+  date                       DateTime
+  storeId                    String?
+  supplierId                 String?
+  account                    String?
+  description                String?
+  status                     String                       @default("Completed")
+  totalAmount                Float                        @default(0)
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime
+  Store                      Store?                       @relation(fields: [storeId], references: [id])
+  Supplier                   Supplier?                    @relation(fields: [supplierId], references: [id])
+  DirectPurchaseOrderExpense DirectPurchaseOrderExpense[]
+  DirectPurchaseOrderItem    DirectPurchaseOrderItem[]
+  DirectPurchaseOrderReturn  DirectPurchaseOrderReturn[]
+}
+
+model DirectPurchaseOrderExpense {
+  id                    String              @id
+  directPurchaseOrderId String
+  expenseType           String
+  payableAccount        String
+  description           String?
+  amount                Float
+  createdAt             DateTime            @default(now())
+  DirectPurchaseOrder   DirectPurchaseOrder @relation(fields: [directPurchaseOrderId], references: [id], onDelete: Cascade)
+}
+
+model DirectPurchaseOrderItem {
+  id                    String              @id
+  directPurchaseOrderId String
+  partId                String
+  quantity              Int
+  purchasePrice         Float
+  salePrice             Float
+  amount                Float
+  priceA                Float?
+  priceB                Float?
+  priceM                Float?
+  rackId                String?
+  shelfId               String?
+  createdAt             DateTime            @default(now())
+  DirectPurchaseOrder   DirectPurchaseOrder @relation(fields: [directPurchaseOrderId], references: [id], onDelete: Cascade)
+  Part                  Part                @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Rack                  Rack?               @relation(fields: [rackId], references: [id])
+  Shelf                 Shelf?              @relation(fields: [shelfId], references: [id])
+}
+
+model DirectPurchaseOrderReturn {
+  id                            String                          @id
+  returnNumber                  String                          @unique
+  directPurchaseOrderId         String
+  returnDate                    DateTime
+  reason                        String?
+  status                        String                          @default("pending")
+  totalAmount                   Float                           @default(0)
+  createdAt                     DateTime                        @default(now())
+  updatedAt                     DateTime
+  supplierId                    String?
+  DirectPurchaseOrder           DirectPurchaseOrder             @relation(fields: [directPurchaseOrderId], references: [id], onDelete: Cascade)
+  Supplier                      Supplier?                       @relation(fields: [supplierId], references: [id])
+  DirectPurchaseOrderReturnItem DirectPurchaseOrderReturnItem[]
+
+  @@index([directPurchaseOrderId])
+  @@index([status])
+}
+
+model DirectPurchaseOrderReturnItem {
+  id                        String                    @id
+  dpoReturnId               String
+  partId                    String
+  returnQuantity            Int
+  originalPurchasePrice     Float
+  amount                    Float
+  createdAt                 DateTime                  @default(now())
+  DirectPurchaseOrderReturn DirectPurchaseOrderReturn @relation(fields: [dpoReturnId], references: [id], onDelete: Cascade)
+  Part                      Part                      @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@index([dpoReturnId])
+  @@index([partId])
+}
+
+model ExpenseType {
+  id            String          @id
+  code          String          @unique
+  name          String
+  description   String?
+  category      String
+  budget        Float           @default(0)
+  spent         Float           @default(0)
+  status        String          @default("Active")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime
+  PostedExpense PostedExpense[]
+}
+
+model JournalEntry {
+  id          String        @id
+  entryNo     String        @unique
+  entryDate   DateTime
+  reference   String?
+  description String?
+  totalDebit  Float         @default(0)
+  totalCredit Float         @default(0)
+  status      String        @default("draft")
+  createdBy   String?
+  postedBy    String?
+  postedAt    DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime
+  JournalLine JournalLine[]
+}
+
+model JournalLine {
+  id             String       @id
+  journalEntryId String
+  accountId      String
+  description    String?
+  debit          Float        @default(0)
+  credit         Float        @default(0)
+  lineOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  Account        Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  JournalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+}
+
+model Kit {
+  id           String    @id
+  badge        String    @unique
+  name         String
+  description  String?
+  sellingPrice Float     @default(0)
+  totalCost    Float     @default(0)
+  itemsCount   Int       @default(0)
+  status       String    @default("Active")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime
+  KitItem      KitItem[]
+}
+
+model KitItem {
+  id          String   @id
+  kitId       String
+  partId      String
+  partNo      String
+  partName    String
+  quantity    Int      @default(1)
+  costPerUnit Float
+  createdAt   DateTime @default(now())
+  Kit         Kit      @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  Part        Part     @relation(fields: [partId], references: [id])
+}
+
+model LongCatSettings {
+  id        String   @id
+  apiKey    String?
+  model     String?  @default("LongCat-Flash-Chat")
+  baseUrl   String?  @default("https://api.longcat.chat")
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
+model MainGroup {
+  id           String     @id
+  code         String     @unique
+  name         String
+  type         String
+  displayOrder Int?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime
+  Subgroup     Subgroup[]
+}
+
+model MasterPart {
+  id           String        @id
+  masterPartNo String        @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime
+  Application  Application[]
+  Part         Part[]
+}
+
+model Model {
+  id        String   @id
+  partId    String
+  name      String
+  qtyUsed   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Part      Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@unique([partId, name])
+}
+
+model OperationalExpense {
+  id          String   @id
+  date        DateTime
+  voucherNo   String   @unique
+  expenseType String
+  description String?
+  paidTo      String
+  amount      Float
+  status      String   @default("Pending")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+}
+
+model Part {
+  id                            String                          @id
+  masterPartId                  String?
+  partNo                        String
+  brandId                       String?
+  description                   String?
+  categoryId                    String?
+  subcategoryId                 String?
+  applicationId                 String?
+  hsCode                        String?
+  weight                        Float?
+  reorderLevel                  Int                             @default(0)
+  uom                           String                          @default("pcs")
+  cost                          Float?
+  purchasePrice                 Float?
+  avgCost                       Float?
+  costSource                    String?
+  costSourceRef                 String?
+  costUpdatedAt                 DateTime?
+  priceA                        Float?
+  priceB                        Float?
+  priceM                        Float?
+  smc                           String?
+  size                          String?
+  origin                        String?
+  imageP1                       String?
+  imageP2                       String?
+  status                        String                          @default("active")
+  createdAt                     DateTime                        @default(now())
+  updatedAt                     DateTime
+  AdjustmentItem                AdjustmentItem[]
+  DirectPurchaseOrderItem       DirectPurchaseOrderItem[]
+  DirectPurchaseOrderReturnItem DirectPurchaseOrderReturnItem[]
+  KitItem                       KitItem[]
+  Model                         Model[]
+  Application                   Application?                    @relation(fields: [applicationId], references: [id])
+  Brand                         Brand?                          @relation(fields: [brandId], references: [id])
+  Category                      Category?                       @relation(fields: [categoryId], references: [id])
+  MasterPart                    MasterPart?                     @relation(fields: [masterPartId], references: [id])
+  Subcategory                   Subcategory?                    @relation(fields: [subcategoryId], references: [id])
+  PriceHistory                  PriceHistory[]
+  PurchaseOrderItem             PurchaseOrderItem[]
+  SalesInquiryItem              SalesInquiryItem[]
+  SalesInvoiceItem              SalesInvoiceItem[]
+  SalesQuotationItem            SalesQuotationItem[]
+  SalesReturnItem               SalesReturnItem[]
+  StockMovement                 StockMovement[]
+  StockReservation              StockReservation[]
+  StockVerificationItem         StockVerificationItem[]
+  TransferItem                  TransferItem[]
+  PartRackShelf                 PartRackShelf[]
+}
+
+model PostedExpense {
+  id              String      @id
+  date            DateTime
+  expenseTypeId   String
+  amount          Float
+  paidTo          String
+  paymentMode     String      @default("Cash")
+  referenceNumber String?
+  description     String?
+  createdAt       DateTime    @default(now())
+  ExpenseType     ExpenseType @relation(fields: [expenseTypeId], references: [id], onDelete: Cascade)
+}
+
+model PriceHistory {
+  id           String   @id
+  partId       String?
+  partNo       String
+  description  String?
+  priceField   String
+  updateType   String
+  oldValue     Float?
+  newValue     Float?
+  updateValue  Float?
+  itemsUpdated Int      @default(1)
+  reason       String
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  Part         Part?    @relation(fields: [partId], references: [id])
+}
+
+model PurchaseOrder {
+  id                String              @id
+  poNumber          String              @unique
+  date              DateTime
+  supplierId        String?
+  status            String              @default("Draft")
+  expectedDate      DateTime?
+  notes             String?
+  totalAmount       Float               @default(0)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  Supplier          Supplier?           @relation(fields: [supplierId], references: [id])
+  PurchaseOrderItem PurchaseOrderItem[]
+}
+
+model PurchaseOrderItem {
+  id              String        @id
+  purchaseOrderId String
+  partId          String
+  quantity        Int
+  unitCost        Float
+  totalCost       Float
+  receivedQty     Int           @default(0)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  Part            Part          @relation(fields: [partId], references: [id], onDelete: Cascade)
+  PurchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+}
+
+model Rack {
+  id                                         String                    @id
+  codeNo                                     String                    @unique
+  storeId                                    String?
+  description                                String?
+  status                                     String                    @default("Active")
+  createdAt                                  DateTime                  @default(now())
+  updatedAt                                  DateTime
+  AdjustmentItem                             AdjustmentItem[]
+  DirectPurchaseOrderItem                    DirectPurchaseOrderItem[]
+  Store                                      Store?                    @relation(fields: [storeId], references: [id])
+  Shelf                                      Shelf[]
+  StockMovement                              StockMovement[]
+  StockVerificationItem                      StockVerificationItem[]
+  TransferItem_TransferItem_fromRackIdToRack TransferItem[]            @relation("TransferItem_fromRackIdToRack")
+  TransferItem_TransferItem_toRackIdToRack   TransferItem[]            @relation("TransferItem_toRackIdToRack")
+  PartRackShelf                              PartRackShelf[]
+}
+
+model Receivable {
+  id           String       @id
+  invoiceId    String       @unique
+  customerId   String?
+  amount       Float
+  paidAmount   Float        @default(0)
+  dueAmount    Float
+  dueDate      DateTime?
+  status       String       @default("pending")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime
+  Customer     Customer?    @relation(fields: [customerId], references: [id])
+  SalesInvoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Role {
+  id          String   @id
+  name        String   @unique
+  type        String   @default("Custom")
+  description String?
+  permissions String
+  usersCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+}
+
+model SalesInquiry {
+  id               String             @id
+  inquiryNo        String             @unique
+  inquiryDate      DateTime
+  customerName     String
+  customerEmail    String?
+  customerPhone    String?
+  subject          String
+  description      String?
+  status           String             @default("New")
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  SalesInquiryItem SalesInquiryItem[]
+}
+
+model SalesInquiryItem {
+  id            String       @id
+  inquiryId     String
+  partId        String
+  quantity      Int
+  purchasePrice Float?
+  priceA        Float?
+  priceB        Float?
+  priceM        Float?
+  location      String?
+  stock         Int          @default(0)
+  reservedQty   Int          @default(0)
+  createdAt     DateTime     @default(now())
+  SalesInquiry  SalesInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  Part          Part         @relation(fields: [partId], references: [id], onDelete: Cascade)
+}
+
+model SalesInvoice {
+  id               String             @id
+  invoiceNo        String             @unique
+  invoiceDate      DateTime
+  customerId       String?
+  customerName     String
+  customerType     String
+  salesPerson      String?
+  subtotal         Float              @default(0)
+  overallDiscount  Float              @default(0)
+  tax              Float              @default(0)
+  grandTotal       Float              @default(0)
+  paidAmount       Float              @default(0)
+  status           String             @default("pending")
+  paymentStatus    String             @default("unpaid")
+  accountId        String?
+  deliveredTo      String?
+  remarks          String?
+  quotationId      String?
+  holdReason       String?
+  holdSince        DateTime?
+  // deletedAt        DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  DeliveryLog      DeliveryLog[]
+  Receivable       Receivable?
+  Account          Account?           @relation(fields: [accountId], references: [id])
+  Customer         Customer?          @relation(fields: [customerId], references: [id])
+  SalesInvoiceItem SalesInvoiceItem[]
+  SalesQuotation   SalesQuotation?
+  SalesReturn      SalesReturn[]
+  StockReservation StockReservation[]
+}
+
+model SalesInvoiceItem {
+  id              String            @id
+  invoiceId       String
+  partId          String
+  partNo          String
+  description     String?
+  orderedQty      Int
+  deliveredQty    Int               @default(0)
+  pendingQty      Int
+  unitPrice       Float
+  discount        Float             @default(0)
+  lineTotal       Float
+  grade           String?
+  brand           String?
+  createdAt       DateTime          @default(now())
+  DeliveryLogItem DeliveryLogItem[]
+  SalesInvoice    SalesInvoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  Part            Part              @relation(fields: [partId], references: [id], onDelete: Cascade)
+}
+
+model SalesQuotation {
+  id                 String               @id
+  quotationNo        String               @unique
+  quotationDate      DateTime
+  validUntil         DateTime
+  customerName       String
+  customerEmail      String?
+  customerPhone      String?
+  customerAddress    String?
+  status             String               @default("draft")
+  totalAmount        Float                @default(0)
+  notes              String?
+  invoiceId          String?              @unique
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime
+  SalesInvoice       SalesInvoice?        @relation(fields: [invoiceId], references: [id])
+  SalesQuotationItem SalesQuotationItem[]
+}
+
+model SalesQuotationItem {
+  id             String         @id
+  quotationId    String
+  partId         String
+  partNo         String
+  description    String?
+  quantity       Int
+  unitPrice      Float
+  total          Float
+  createdAt      DateTime       @default(now())
+  Part           Part           @relation(fields: [partId], references: [id], onDelete: Cascade)
+  SalesQuotation SalesQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+}
+
+model SalesReturn {
+  id              String            @id
+  returnNumber    String            @unique
+  salesInvoiceId  String
+  returnDate      DateTime
+  reason          String?
+  status          String            @default("pending")
+  totalAmount     Float             @default(0)
+  createdBy       String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  customerId      String?
+  Customer        Customer?         @relation(fields: [customerId], references: [id])
+  SalesInvoice    SalesInvoice      @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  SalesReturnItem SalesReturnItem[]
+
+  @@index([returnDate])
+  @@index([salesInvoiceId])
+  @@index([status])
+}
+
+model SalesReturnItem {
+  id                String      @id
+  salesReturnId     String
+  partId            String
+  returnQuantity    Int
+  originalSalePrice Float
+  amount            Float
+  createdAt         DateTime    @default(now())
+  Part              Part        @relation(fields: [partId], references: [id], onDelete: Cascade)
+  SalesReturn       SalesReturn @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
+
+  @@index([partId])
+  @@index([salesReturnId])
+}
+
+model Shelf {
+  id                                           String                    @id
+  shelfNo                                      String
+  rackId                                       String
+  description                                  String?
+  status                                       String                    @default("Active")
+  createdAt                                    DateTime                  @default(now())
+  updatedAt                                    DateTime
+  AdjustmentItem                               AdjustmentItem[]
+  DirectPurchaseOrderItem                      DirectPurchaseOrderItem[]
+  Rack                                         Rack                      @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  StockMovement                                StockMovement[]
+  StockVerificationItem                        StockVerificationItem[]
+  TransferItem_TransferItem_fromShelfIdToShelf TransferItem[]            @relation("TransferItem_fromShelfIdToShelf")
+  TransferItem_TransferItem_toShelfIdToShelf   TransferItem[]            @relation("TransferItem_toShelfIdToShelf")
+  PartRackShelf                                PartRackShelf[]
+
+  @@unique([rackId, shelfNo])
+}
+
+model StockMovement {
+  id            String   @id
+  partId        String
+  type          String
+  quantity      Int
+  storeId       String?
+  rackId        String?
+  shelfId       String?
+  referenceType String?
+  referenceId   String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  // supplierId    String?
+  // customerId    String?
+  // Customer      Customer? @relation(fields: [customerId], references: [id])
+  Part          Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Rack          Rack?    @relation(fields: [rackId], references: [id])
+  Shelf         Shelf?   @relation(fields: [shelfId], references: [id])
+  Store         Store?   @relation(fields: [storeId], references: [id])
+  // Supplier      Supplier? @relation(fields: [supplierId], references: [id])
+}
+
+model StockReservation {
+  id           String        @id
+  invoiceId    String?
+  partId       String
+  quantity     Int
+  reservedAt   DateTime      @default(now())
+  releasedAt   DateTime?
+  status       String        @default("reserved")
+  notes        String?
+  SalesInvoice SalesInvoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  Part         Part          @relation(fields: [partId], references: [id], onDelete: Cascade)
+}
+
+model StockVerification {
+  id                    String                  @id
+  name                  String
+  notes                 String?
+  status                String                  @default("Active")
+  startDate             DateTime                @default(now())
+  completedDate         DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime
+  StockVerificationItem StockVerificationItem[]
+}
+
+model StockVerificationItem {
+  id                String            @id
+  verificationId    String
+  partId            String
+  storeId           String?
+  rackId            String?
+  shelfId           String?
+  systemQty         Int
+  physicalQty       Int?
+  variance          Int?
+  status            String            @default("Pending")
+  remarks           String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime
+  Part              Part              @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Rack              Rack?             @relation(fields: [rackId], references: [id])
+  Shelf             Shelf?            @relation(fields: [shelfId], references: [id])
+  Store             Store?            @relation(fields: [storeId], references: [id])
+  StockVerification StockVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+}
+
+model Store {
+  id                                           String                  @id
+  code                                         String                  @unique
+  name                                         String
+  address                                      String?
+  phone                                        String?
+  manager                                      String?
+  status                                       String                  @default("active")
+  createdAt                                    DateTime                @default(now())
+  updatedAt                                    DateTime
+  Adjustment                                   Adjustment[]
+  DirectPurchaseOrder                          DirectPurchaseOrder[]
+  Rack                                         Rack[]
+  StockMovement                                StockMovement[]
+  StockVerificationItem                        StockVerificationItem[]
+  Transfer_Transfer_fromStoreIdToStore         Transfer[]              @relation("Transfer_fromStoreIdToStore")
+  Transfer_Transfer_toStoreIdToStore           Transfer[]              @relation("Transfer_toStoreIdToStore")
+  TransferItem_TransferItem_fromStoreIdToStore TransferItem[]          @relation("TransferItem_fromStoreIdToStore")
+  TransferItem_TransferItem_toStoreIdToStore   TransferItem[]          @relation("TransferItem_toStoreIdToStore")
+  Voucher                                      Voucher[]
+  PartRackShelf                                PartRackShelf[]
+}
+
+model Subcategory {
+  id          String        @id
+  categoryId  String
+  name        String
+  status      String        @default("active")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime
+  Application Application[]
+  Part        Part[]
+  Category    Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, name])
+}
+
+model Subgroup {
+  id          String    @id
+  mainGroupId String
+  code        String    @unique
+  name        String
+  isActive    Boolean   @default(true)
+  canDelete   Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime
+  Account     Account[]
+  MainGroup   MainGroup @relation(fields: [mainGroupId], references: [id], onDelete: Cascade)
+}
+
+model Supplier {
+  id                        String                      @id
+  code                      String                      @unique
+  name                      String?
+  companyName               String
+  address                   String?
+  city                      String?
+  state                     String?
+  country                   String?
+  zipCode                   String?
+  email                     String?
+  phone                     String?
+  cnic                      String?
+  contactPerson             String?
+  taxId                     String?
+  paymentTerms              String?
+  openingBalance            Float                       @default(0)
+  date                      DateTime?
+  status                    String                      @default("active")
+  notes                     String?
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime
+  Account                   Account[]
+  DirectPurchaseOrder       DirectPurchaseOrder[]
+  DirectPurchaseOrderReturn DirectPurchaseOrderReturn[]
+  PurchaseOrder             PurchaseOrder[]
+  // StockMovement             StockMovement[]
+  VoucherEntry              VoucherEntry[]
+}
+
+model Transfer {
+  id                                String         @id
+  transferNumber                    String         @unique
+  date                              DateTime
+  status                            String         @default("Draft")
+  notes                             String?
+  totalQty                          Int            @default(0)
+  fromStoreId                       String?
+  toStoreId                         String?
+  createdAt                         DateTime       @default(now())
+  updatedAt                         DateTime
+  Store_Transfer_fromStoreIdToStore Store?         @relation("Transfer_fromStoreIdToStore", fields: [fromStoreId], references: [id])
+  Store_Transfer_toStoreIdToStore   Store?         @relation("Transfer_toStoreIdToStore", fields: [toStoreId], references: [id])
+  TransferItem                      TransferItem[]
+}
+
+model TransferItem {
+  id                                    String   @id
+  transferId                            String
+  partId                                String
+  fromStoreId                           String?
+  fromRackId                            String?
+  fromShelfId                           String?
+  toStoreId                             String?
+  toRackId                              String?
+  toShelfId                             String?
+  quantity                              Int
+  createdAt                             DateTime @default(now())
+  Rack_TransferItem_fromRackIdToRack    Rack?    @relation("TransferItem_fromRackIdToRack", fields: [fromRackId], references: [id])
+  Shelf_TransferItem_fromShelfIdToShelf Shelf?   @relation("TransferItem_fromShelfIdToShelf", fields: [fromShelfId], references: [id])
+  Store_TransferItem_fromStoreIdToStore Store?   @relation("TransferItem_fromStoreIdToStore", fields: [fromStoreId], references: [id])
+  Part                                  Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Rack_TransferItem_toRackIdToRack      Rack?    @relation("TransferItem_toRackIdToRack", fields: [toRackId], references: [id])
+  Shelf_TransferItem_toShelfIdToShelf   Shelf?   @relation("TransferItem_toShelfIdToShelf", fields: [toShelfId], references: [id])
+  Store_TransferItem_toStoreIdToStore   Store?   @relation("TransferItem_toStoreIdToStore", fields: [toStoreId], references: [id])
+  Transfer                              Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id        String   @id
+  name      String
+  email     String   @unique
+  password  String?
+  role      String   @default("Staff")
+  status    String   @default("active")
+  lastLogin String?  @default("-")
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
+model Voucher {
+  id                                          String         @id
+  voucherNumber                               String         @unique
+  type                                        String
+  date                                        DateTime
+  narration                                   String?
+  cashBankAccount                             String?
+  chequeNumber                                String?
+  chequeDate                                  DateTime?
+  totalDebit                                  Float          @default(0)
+  totalCredit                                 Float          @default(0)
+  status                                      String         @default("draft")
+  createdBy                                   String?
+  approvedBy                                  String?
+  approvedAt                                  DateTime?
+  isSystemGenerated                           Boolean        @default(false)
+  createdAt                                   DateTime       @default(now())
+  updatedAt                                   DateTime
+  deletedAt                                   DateTime?
+  storeId                                     String?
+  adjustmentId                                String?
+  Adjustment_Adjustment_voucherIdToVoucher    Adjustment[]   @relation("Adjustment_voucherIdToVoucher")
+  Adjustment_Voucher_adjustmentIdToAdjustment Adjustment?    @relation("Voucher_adjustmentIdToAdjustment", fields: [adjustmentId], references: [id])
+  Store                                       Store?         @relation(fields: [storeId], references: [id])
+  VoucherEntry                                VoucherEntry[]
+}
+
+model VoucherEntry {
+  id           String      @id
+  voucherId    String
+  accountId    String?
+  accountName  String
+  description  String?
+  debit        Float       @default(0)
+  credit       Float       @default(0)
+  sortOrder    Int         @default(0)
+  supplierId   String?
+  customerId   String?
+  createdAt    DateTime    @default(now())
+  deletedAt    DateTime?
+  adjustmentId String?
+  Account      Account?    @relation(fields: [accountId], references: [id])
+  Adjustment   Adjustment? @relation(fields: [adjustmentId], references: [id])
+  Customer     Customer?   @relation(fields: [customerId], references: [id])
+  Supplier     Supplier?   @relation(fields: [supplierId], references: [id])
+  Voucher      Voucher     @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+}
+
+model WhatsAppSettings {
+  id                       String   @id
+  appKey                   String?
+  authKey                  String?
+  administratorPhoneNumber String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime
+}
+
+model PartRackShelf {
+  id        String   @id @default(uuid())
+  partId    String
+  storeId   String?
+  rackId    String?
+  shelfId   String?
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Part  Part   @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  Rack  Rack?  @relation(fields: [rackId], references: [id])
+  Shelf Shelf? @relation(fields: [shelfId], references: [id])
+}
