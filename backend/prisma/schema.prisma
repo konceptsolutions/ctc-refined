@@ -31,7 +31,7 @@ model Account {
 }
 
 model ActivityLog {
-  id String @id @default(uuid())
+  id          String   @id @default(uuid())
   timestamp   String
   user        String
   userRole    String
@@ -47,7 +47,6 @@ model ActivityLog {
 
 model Adjustment {
   id                                       String           @id @default(uuid())
-  adjustmentNo                             Int              @unique @default(autoincrement())
   date                                     DateTime
   subject                                  String?
   storeId                                  String?
@@ -59,6 +58,7 @@ model Adjustment {
   deletedAt                                DateTime?
   createdAt                                DateTime         @default(now())
   updatedAt                                DateTime         @updatedAt
+  adjustmentNo                             Int              @unique @default(autoincrement())
   Store                                    Store?           @relation(fields: [storeId], references: [id])
   Voucher_Adjustment_voucherIdToVoucher    Voucher?         @relation("Adjustment_voucherIdToVoucher", fields: [voucherId], references: [id])
   AdjustmentItem                           AdjustmentItem[]
@@ -79,8 +79,8 @@ model AdjustmentItem {
   priceA       Float?
   priceB       Float?
   priceM       Float?
-  updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
+  updatedAt    DateTime   @updatedAt
   Adjustment   Adjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
   Part         Part       @relation(fields: [partId], references: [id], onDelete: Cascade)
   Rack         Rack?      @relation(fields: [rackId], references: [id])
@@ -105,7 +105,7 @@ model Application {
 }
 
 model ApprovalFlow {
-  id String @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
   status      String   @default("active")
   description String?
@@ -114,11 +114,11 @@ model ApprovalFlow {
   trigger     String   @default("On Create")
   condition   String?
   createdAt   DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt   DateTime @updatedAt
 }
 
 model Backup {
-  id String @id @default(uuid())
+  id        String  @id @default(uuid())
   name      String
   tables    String
   type      String  @default("full")
@@ -129,7 +129,7 @@ model Backup {
 }
 
 model BackupSchedule {
-  id String @id @default(uuid())
+  id        String   @id @default(uuid())
   name      String
   frequency String
   tables    String
@@ -161,39 +161,38 @@ model Category {
 }
 
 model CompanyProfile {
-  id String @id @default(uuid())
+  id                   String   @id @default(uuid())
   companyInfo          String
   systemSettings       String
   invoiceSettings      String
   notificationSettings String
   createdAt            DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt            DateTime @updatedAt
 }
 
 model Customer {
-  id             String          @id @default(uuid())
+  id             String         @id @default(uuid())
   name           String
   address        String?
   email          String?
   cnic           String?
   contactNo      String?
-  openingBalance Float           @default(0)
+  openingBalance Float          @default(0)
   date           DateTime?
-  creditLimit    Float           @default(0)
-  status         String          @default("active")
+  creditLimit    Float          @default(0)
+  status         String         @default("active")
   priceType      String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   Account        Account[]
   Receivable     Receivable[]
   SalesInvoice   SalesInvoice[]
   SalesReturn    SalesReturn[]
-  // StockMovement  StockMovement[]
   VoucherEntry   VoucherEntry[]
 }
 
 model DeliveryLog {
-  id String @id @default(uuid())
+  id              String            @id @default(uuid())
   invoiceId       String
   challanNo       String
   deliveryDate    DateTime
@@ -204,7 +203,7 @@ model DeliveryLog {
 }
 
 model DeliveryLogItem {
-  id String @id @default(uuid())
+  id               String           @id @default(uuid())
   deliveryLogId    String
   invoiceItemId    String
   quantity         Int
@@ -264,15 +263,17 @@ model DirectPurchaseOrderItem {
 }
 
 model DirectPurchaseOrderReturn {
-  id String @id @default(uuid())
+  id                            String                          @id @default(uuid())
   returnNumber                  String                          @unique
   directPurchaseOrderId         String
   returnDate                    DateTime
   reason                        String?
   status                        String                          @default("pending")
   totalAmount                   Float                           @default(0)
+  deduction                     Float                           @default(0)
+  netAmount                     Float                           @default(0)
   createdAt                     DateTime                        @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt                     DateTime                        @updatedAt
   supplierId                    String?
   DirectPurchaseOrder           DirectPurchaseOrder             @relation(fields: [directPurchaseOrderId], references: [id], onDelete: Cascade)
   Supplier                      Supplier?                       @relation(fields: [supplierId], references: [id])
@@ -283,7 +284,7 @@ model DirectPurchaseOrderReturn {
 }
 
 model DirectPurchaseOrderReturnItem {
-  id String @id @default(uuid())
+  id                        String                    @id @default(uuid())
   dpoReturnId               String
   partId                    String
   returnQuantity            Int
@@ -298,7 +299,7 @@ model DirectPurchaseOrderReturnItem {
 }
 
 model ExpenseType {
-  id String @id @default(uuid())
+  id            String          @id @default(uuid())
   code          String          @unique
   name          String
   description   String?
@@ -307,7 +308,7 @@ model ExpenseType {
   spent         Float           @default(0)
   status        String          @default("Active")
   createdAt     DateTime        @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt     DateTime        @updatedAt
   PostedExpense PostedExpense[]
 }
 
@@ -342,7 +343,7 @@ model JournalLine {
 }
 
 model Kit {
-  id String @id @default(uuid())
+  id           String    @id @default(uuid())
   badge        String    @unique
   name         String
   description  String?
@@ -351,12 +352,12 @@ model Kit {
   itemsCount   Int       @default(0)
   status       String    @default("Active")
   createdAt    DateTime  @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt    DateTime  @updatedAt
   KitItem      KitItem[]
 }
 
 model KitItem {
-  id String @id @default(uuid())
+  id          String   @id @default(uuid())
   kitId       String
   partId      String
   partNo      String
@@ -369,7 +370,7 @@ model KitItem {
 }
 
 model LongCatSettings {
-  id String @id @default(uuid())
+  id        String   @id @default(uuid())
   apiKey    String?
   model     String?  @default("LongCat-Flash-Chat")
   baseUrl   String?  @default("https://api.longcat.chat")
@@ -378,27 +379,27 @@ model LongCatSettings {
 }
 
 model MainGroup {
-  id String @id @default(uuid())
+  id           String     @id @default(uuid())
   code         String     @unique
   name         String
   type         String
   displayOrder Int?
   createdAt    DateTime   @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt    DateTime   @updatedAt
   Subgroup     Subgroup[]
 }
 
 model MasterPart {
-  id String @id @default(uuid())
+  id           String        @id @default(uuid())
   masterPartNo String        @unique
   createdAt    DateTime      @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt    DateTime      @updatedAt
   Application  Application[]
   Part         Part[]
 }
 
 model Model {
-  id String @id @default(uuid())
+  id        String   @id @default(uuid())
   partId    String
   name      String
   qtyUsed   Int      @default(1)
@@ -410,7 +411,7 @@ model Model {
 }
 
 model OperationalExpense {
-  id String @id @default(uuid())
+  id          String   @id @default(uuid())
   date        DateTime
   voucherNo   String   @unique
   expenseType String
@@ -419,7 +420,7 @@ model OperationalExpense {
   amount      Float
   status      String   @default("Pending")
   createdAt   DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt   DateTime @updatedAt
 }
 
 model Part {
@@ -462,6 +463,7 @@ model Part {
   Category                      Category?                       @relation(fields: [categoryId], references: [id])
   MasterPart                    MasterPart?                     @relation(fields: [masterPartId], references: [id])
   Subcategory                   Subcategory?                    @relation(fields: [subcategoryId], references: [id])
+  PartRackShelf                 PartRackShelf[]
   PriceHistory                  PriceHistory[]
   PurchaseOrderItem             PurchaseOrderItem[]
   SalesInquiryItem              SalesInquiryItem[]
@@ -472,11 +474,10 @@ model Part {
   StockReservation              StockReservation[]
   StockVerificationItem         StockVerificationItem[]
   TransferItem                  TransferItem[]
-  PartRackShelf                 PartRackShelf[]
 }
 
 model PostedExpense {
-  id String @id @default(uuid())
+  id              String      @id @default(uuid())
   date            DateTime
   expenseTypeId   String
   amount          Float
@@ -489,7 +490,7 @@ model PostedExpense {
 }
 
 model PriceHistory {
-  id String @id @default(uuid())
+  id           String   @id @default(uuid())
   partId       String?
   partNo       String
   description  String?
@@ -535,26 +536,26 @@ model PurchaseOrderItem {
 }
 
 model Rack {
-  id String @id @default(uuid())
+  id                                         String                    @id @default(uuid())
   codeNo                                     String                    @unique
   storeId                                    String?
   description                                String?
   status                                     String                    @default("Active")
   createdAt                                  DateTime                  @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt                                  DateTime                  @updatedAt
   AdjustmentItem                             AdjustmentItem[]
   DirectPurchaseOrderItem                    DirectPurchaseOrderItem[]
+  PartRackShelf                              PartRackShelf[]
   Store                                      Store?                    @relation(fields: [storeId], references: [id])
   Shelf                                      Shelf[]
   StockMovement                              StockMovement[]
   StockVerificationItem                      StockVerificationItem[]
   TransferItem_TransferItem_fromRackIdToRack TransferItem[]            @relation("TransferItem_fromRackIdToRack")
   TransferItem_TransferItem_toRackIdToRack   TransferItem[]            @relation("TransferItem_toRackIdToRack")
-  PartRackShelf                              PartRackShelf[]
 }
 
 model Receivable {
-  id String @id @default(uuid())
+  id           String       @id @default(uuid())
   invoiceId    String       @unique
   customerId   String?
   amount       Float
@@ -563,24 +564,24 @@ model Receivable {
   dueDate      DateTime?
   status       String       @default("pending")
   createdAt    DateTime     @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt    DateTime     @updatedAt
   Customer     Customer?    @relation(fields: [customerId], references: [id])
   SalesInvoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
 model Role {
-  id String @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String   @unique
   type        String   @default("Custom")
   description String?
   permissions String
   usersCount  Int      @default(0)
   createdAt   DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt   DateTime @updatedAt
 }
 
 model SalesInquiry {
-  id String @id @default(uuid())
+  id               String             @id @default(uuid())
   inquiryNo        String             @unique
   inquiryDate      DateTime
   customerName     String
@@ -590,7 +591,7 @@ model SalesInquiry {
   description      String?
   status           String             @default("New")
   createdAt        DateTime           @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt        DateTime           @updatedAt
   SalesInquiryItem SalesInquiryItem[]
 }
 
@@ -612,7 +613,7 @@ model SalesInquiryItem {
 }
 
 model SalesInvoice {
-  id String @id @default(uuid())
+  id               String             @id @default(uuid())
   invoiceNo        String             @unique
   invoiceDate      DateTime
   customerId       String?
@@ -632,9 +633,8 @@ model SalesInvoice {
   quotationId      String?
   holdReason       String?
   holdSince        DateTime?
-  // deletedAt        DateTime?
   createdAt        DateTime           @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt        DateTime           @updatedAt
   DeliveryLog      DeliveryLog[]
   Receivable       Receivable?
   Account          Account?           @relation(fields: [accountId], references: [id])
@@ -666,7 +666,7 @@ model SalesInvoiceItem {
 }
 
 model SalesQuotation {
-  id String @id @default(uuid())
+  id                 String               @id @default(uuid())
   quotationNo        String               @unique
   quotationDate      DateTime
   validUntil         DateTime
@@ -679,7 +679,7 @@ model SalesQuotation {
   notes              String?
   invoiceId          String?              @unique
   createdAt          DateTime             @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt          DateTime             @updatedAt
   SalesInvoice       SalesInvoice?        @relation(fields: [invoiceId], references: [id])
   SalesQuotationItem SalesQuotationItem[]
 }
@@ -699,7 +699,7 @@ model SalesQuotationItem {
 }
 
 model SalesReturn {
-  id String @id @default(uuid())
+  id              String            @id @default(uuid())
   returnNumber    String            @unique
   salesInvoiceId  String
   returnDate      DateTime
@@ -710,7 +710,7 @@ model SalesReturn {
   approvedBy      String?
   approvedAt      DateTime?
   createdAt       DateTime          @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt       DateTime          @updatedAt
   customerId      String?
   Customer        Customer?         @relation(fields: [customerId], references: [id])
   SalesInvoice    SalesInvoice      @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
@@ -722,7 +722,7 @@ model SalesReturn {
 }
 
 model SalesReturnItem {
-  id String @id @default(uuid())
+  id                String      @id @default(uuid())
   salesReturnId     String
   partId            String
   returnQuantity    Int
@@ -737,49 +737,47 @@ model SalesReturnItem {
 }
 
 model Shelf {
-  id String @id @default(uuid())
+  id                                           String                    @id @default(uuid())
   shelfNo                                      String
   rackId                                       String
   description                                  String?
   status                                       String                    @default("Active")
   createdAt                                    DateTime                  @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt                                    DateTime                  @updatedAt
   AdjustmentItem                               AdjustmentItem[]
   DirectPurchaseOrderItem                      DirectPurchaseOrderItem[]
+  PartRackShelf                                PartRackShelf[]
   Rack                                         Rack                      @relation(fields: [rackId], references: [id], onDelete: Cascade)
   StockMovement                                StockMovement[]
   StockVerificationItem                        StockVerificationItem[]
   TransferItem_TransferItem_fromShelfIdToShelf TransferItem[]            @relation("TransferItem_fromShelfIdToShelf")
   TransferItem_TransferItem_toShelfIdToShelf   TransferItem[]            @relation("TransferItem_toShelfIdToShelf")
-  PartRackShelf                                PartRackShelf[]
 
   @@unique([rackId, shelfNo])
 }
 
 model StockMovement {
-  id String @id @default(uuid())
+  id            String    @id @default(uuid())
   partId        String
   type          String
   quantity      Int
   storeId       String?
   rackId        String?
   shelfId       String?
+  supplierId    String?
   referenceType String?
   referenceId   String?
   notes         String?
   createdAt     DateTime  @default(now())
-  // supplierId    String?
-  // customerId    String?
-  // Customer      Customer? @relation(fields: [customerId], references: [id])
   Part          Part      @relation(fields: [partId], references: [id], onDelete: Cascade)
   Rack          Rack?     @relation(fields: [rackId], references: [id])
   Shelf         Shelf?    @relation(fields: [shelfId], references: [id])
   Store         Store?    @relation(fields: [storeId], references: [id])
-  // Supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  Supplier      Supplier? @relation(fields: [supplierId], references: [id])
 }
 
 model StockReservation {
-  id String @id @default(uuid())
+  id           String        @id @default(uuid())
   invoiceId    String?
   partId       String
   quantity     Int
@@ -825,7 +823,7 @@ model StockVerificationItem {
 }
 
 model Store {
-  id String @id @default(uuid())
+  id                                           String                  @id @default(uuid())
   code                                         String                  @unique
   name                                         String
   address                                      String?
@@ -833,9 +831,10 @@ model Store {
   manager                                      String?
   status                                       String                  @default("active")
   createdAt                                    DateTime                @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt                                    DateTime                @updatedAt
   Adjustment                                   Adjustment[]
   DirectPurchaseOrder                          DirectPurchaseOrder[]
+  PartRackShelf                                PartRackShelf[]
   Rack                                         Rack[]
   StockMovement                                StockMovement[]
   StockVerificationItem                        StockVerificationItem[]
@@ -844,16 +843,15 @@ model Store {
   TransferItem_TransferItem_fromStoreIdToStore TransferItem[]          @relation("TransferItem_fromStoreIdToStore")
   TransferItem_TransferItem_toStoreIdToStore   TransferItem[]          @relation("TransferItem_toStoreIdToStore")
   Voucher                                      Voucher[]
-  PartRackShelf                                PartRackShelf[]
 }
 
 model Subcategory {
-  id String @id @default(uuid())
+  id          String        @id @default(uuid())
   categoryId  String
   name        String
   status      String        @default("active")
   createdAt   DateTime      @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt   DateTime      @updatedAt
   Application Application[]
   Part        Part[]
   Category    Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -862,20 +860,20 @@ model Subcategory {
 }
 
 model Subgroup {
-  id String @id @default(uuid())
+  id          String    @id @default(uuid())
   mainGroupId String
   code        String    @unique
   name        String
   isActive    Boolean   @default(true)
   canDelete   Boolean   @default(true)
   createdAt   DateTime  @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt   DateTime  @updatedAt
   Account     Account[]
   MainGroup   MainGroup @relation(fields: [mainGroupId], references: [id], onDelete: Cascade)
 }
 
 model Supplier {
-  id String @id @default(uuid())
+  id                        String                      @id @default(uuid())
   code                      String                      @unique
   name                      String?
   companyName               String
@@ -895,13 +893,13 @@ model Supplier {
   status                    String                      @default("active")
   notes                     String?
   createdAt                 DateTime                    @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt                 DateTime                    @updatedAt
   Account                   Account[]
   DirectPurchaseOrder       DirectPurchaseOrder[]
   DirectPurchaseOrderReturn DirectPurchaseOrderReturn[]
   PurchaseOrder             PurchaseOrder[]
-  // StockMovement             StockMovement[]
   VoucherEntry              VoucherEntry[]
+  StockMovement             StockMovement[]
 }
 
 model Transfer {
@@ -943,7 +941,7 @@ model TransferItem {
 }
 
 model User {
-  id String @id @default(uuid())
+  id        String   @id @default(uuid())
   name      String
   email     String   @unique
   password  String?
@@ -969,12 +967,12 @@ model Voucher {
   createdBy                                   String?
   approvedBy                                  String?
   approvedAt                                  DateTime?
-  isSystemGenerated                           Boolean        @default(false)
   createdAt                                   DateTime       @default(now())
   updatedAt                                   DateTime       @updatedAt
   deletedAt                                   DateTime?
-  storeId                                     String?
   adjustmentId                                String?
+  storeId                                     String?
+  isSystemGenerated                           Boolean        @default(false)
   Adjustment_Adjustment_voucherIdToVoucher    Adjustment[]   @relation("Adjustment_voucherIdToVoucher")
   Adjustment_Voucher_adjustmentIdToAdjustment Adjustment?    @relation("Voucher_adjustmentIdToAdjustment", fields: [adjustmentId], references: [id])
   Store                                       Store?         @relation(fields: [storeId], references: [id])
@@ -1003,12 +1001,12 @@ model VoucherEntry {
 }
 
 model WhatsAppSettings {
-  id String @id @default(uuid())
+  id                       String   @id @default(uuid())
   appKey                   String?
   authKey                  String?
   administratorPhoneNumber String?
   createdAt                DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt                DateTime @updatedAt
 }
 
 model PartRackShelf {
@@ -1020,9 +1018,10 @@ model PartRackShelf {
   quantity  Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  Part      Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Rack      Rack?    @relation(fields: [rackId], references: [id])
+  Shelf     Shelf?   @relation(fields: [shelfId], references: [id])
+  Store     Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-  Part  Part   @relation(fields: [partId], references: [id], onDelete: Cascade)
-  Store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  Rack  Rack?  @relation(fields: [rackId], references: [id])
-  Shelf Shelf? @relation(fields: [shelfId], references: [id])
+  @@unique([partId, storeId, rackId, shelfId])
 }
