@@ -1,3 +1,4 @@
+// DPO Voucher Logic: Vouchers (JV/PV) are ONLY created when store manager receives/approves the order
 import express, { Request, Response } from "express";
 import { query, getClient } from "../config/db";
 import { randomUUID } from "crypto";
@@ -7348,6 +7349,11 @@ router.get(
             },
           },
           DirectPurchaseOrderExpense: true,
+          DirectPurchaseOrderReturn: {
+            include: {
+              DirectPurchaseOrderReturnItem: true,
+            },
+          },
         },
       });
 
@@ -7356,6 +7362,15 @@ router.get(
           .status(404)
           .json({ error: "Direct purchase order not found" });
       }
+
+      // Calculate returned quantities map: partId -> totalReturned
+      const returnedQtyMap = new Map<string, number>();
+      order.DirectPurchaseOrderReturn.forEach((ret) => {
+        ret.DirectPurchaseOrderReturnItem.forEach((retItem) => {
+          const current = returnedQtyMap.get(retItem.partId) || 0;
+          returnedQtyMap.set(retItem.partId, current + retItem.returnQuantity);
+        });
+      });
 
       res.json({
         id: order.id,
@@ -7377,6 +7392,7 @@ router.get(
           category: item.Part.Category?.name || "",
           uom: item.Part.uom || "pcs",
           quantity: item.quantity,
+          returned_quantity: returnedQtyMap.get(item.partId) || 0,
           purchase_price: item.purchasePrice,
           sale_price: item.salePrice,
           amount: item.amount,
@@ -7645,10 +7661,11 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       }
     }
 
-    // Create journal entry to update account balances
-    // Check for both "Completed" and "Received" status (Received means the order was received/processed)
-    // ALWAYS create vouchers when DPO is created, regardless of status (as long as totalAmount > 0)
-    if (totalAmount > 0) {
+    // Create journal entry and vouchers ONLY when DPO is created with Received/Completed status
+    // Vouchers should NOT be created on initial DPO creation — only when the store manager receives/approves the order
+    const isBeingReceived = status === "Received" || status === "Completed";
+    console.log(`[DPO CREATE] status="${status}", isBeingReceived=${isBeingReceived}, totalAmount=${totalAmount} — vouchers will ${isBeingReceived ? "BE" : "NOT BE"} created`);
+    if (isBeingReceived && totalAmount > 0) {
       try {
         // Find Inventory Account (NOT from account field - that's for bank/cash payment)
         // Always find Inventory Account separately - it's always needed for JV voucher
@@ -8489,7 +8506,7 @@ router.put(
           ...(dpo_number && { dpoNumber: dpo_number }),
           ...(date && { date: new Date(date) }),
           ...(store_id !== undefined && {
-            store: store_id
+            Store: store_id
               ? { connect: { id: store_id } }
               : { disconnect: true },
           }),
@@ -9293,6 +9310,11 @@ router.put(
           }
         }
       }
+
+      // ─── AUTO PV VOUCHER: Disabled for pending DPOs ───
+      // PV vouchers are ONLY created when the store manager receives/approves the order
+      // (i.e., when status changes to "Received" or "Completed" in the block above)
+      // Do NOT auto-create PV when account is selected on a pending DPO
 
       // Update existing stock movements with rack/shelf when items are updated
       // This handles the case where locations are assigned after the DPO is already received

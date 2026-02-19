@@ -58,6 +58,12 @@ router.get('/', async (req: Request, res: Response) => {
               dpoNumber: true,
               supplierId: true,
               date: true,
+              Supplier: {
+                select: {
+                  name: true,
+                  companyName: true,
+                }
+              }
             },
           },
           DirectPurchaseOrderReturnItem: {
@@ -102,6 +108,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       include: {
         DirectPurchaseOrder: {
           include: {
+            Supplier: true,
             DirectPurchaseOrderItem: {
               include: {
                 Part: true,
@@ -140,7 +147,13 @@ router.post('/', async (req: Request, res: Response) => {
     const dpo = await prisma.directPurchaseOrder.findUnique({
       where: { id: dpo_id },
       include: {
-        DirectPurchaseOrderItem: true,
+        DirectPurchaseOrderItem: {
+          include: {
+            Part: {
+              include: { Brand: true }
+            }
+          },
+        },
       },
     });
 
@@ -201,10 +214,19 @@ router.post('/', async (req: Request, res: Response) => {
     }
     const returnNumber = `DPOR-${year}-${String(nextNum).padStart(3, '0')}`;
 
-    // Calculate total amount
+    // Calculate total amount & construct item details string
+    let itemDetailsStr = "";
     const totalAmount = items.reduce((sum: number, item: any) => {
       const dpoItem = dpo.DirectPurchaseOrderItem.find(i => i.partId === item.part_id);
-      return sum + (dpoItem!.purchasePrice * item.return_quantity);
+      const itemTotal = dpoItem!.purchasePrice * item.return_quantity;
+
+      const partNo = dpoItem?.Part?.partNo || "Unknown";
+      const brand = dpoItem?.Part?.Brand?.name || "No Brand";
+      const desc = dpoItem?.Part?.description || "";
+      const detail = `${partNo} - ${brand} - ${desc} (${item.return_quantity} x ${dpoItem!.purchasePrice})`;
+      itemDetailsStr += itemDetailsStr ? `, ${detail}` : detail;
+
+      return sum + itemTotal;
     }, 0);
 
     const accountsDeduction = deduction || 0;
@@ -291,9 +313,9 @@ router.post('/', async (req: Request, res: Response) => {
         });
       }
 
-      // 2. Create Voucher (JV)
+      // 2. Create Vouchers (JV and potentially RV)
       if (account_id) {
-        // Find Inventory Account (101001 as per image, or fallback)
+        // Find Inventory Account
         const inventoryAccount = await tx.account.findFirst({
           where: {
             OR: [
@@ -305,22 +327,70 @@ router.post('/', async (req: Request, res: Response) => {
           },
         });
 
+        // Find Supplier Account (Payable)
+        let supplierAccount = null;
+        if (dpo.supplierId) {
+          const supplier = await tx.supplier.findUnique({
+            where: { id: dpo.supplierId },
+            select: { companyName: true, name: true },
+          });
+          if (supplier) {
+            const payablesSubgroup = await tx.subgroup.findFirst({
+              where: { code: '301' },
+            });
+            if (payablesSubgroup) {
+              supplierAccount = await tx.account.findFirst({
+                where: {
+                  subgroupId: payablesSubgroup.id,
+                  OR: [
+                    { name: supplier.name || "" },
+                    { name: supplier.companyName || "" },
+                  ],
+                },
+                include: { Subgroup: true },
+              });
+            }
+          }
+        }
+
+        if (!supplierAccount) {
+          supplierAccount = await tx.account.findFirst({
+            where: { OR: [{ code: '301001' }, { name: 'Accounts Payable' }], status: 'Active' },
+            include: { Subgroup: true },
+          });
+        }
+
         const selectedAccount = await tx.account.findUnique({
           where: { id: account_id },
+          include: { Subgroup: true }
         });
 
-        if (inventoryAccount && selectedAccount) {
+        if (inventoryAccount && selectedAccount && supplierAccount) {
+          const isCashRefund = selectedAccount.Subgroup?.code === '101' || selectedAccount.Subgroup?.code === '102';
+
+          // A. Create JOURNAL VOUCHER (Inventory -> Supplier)
+          // For both credit and cash returns, we first reverse the inventory and liability
           const lastJV = await tx.voucher.findFirst({
             where: { type: 'journal', voucherNumber: { startsWith: 'JV' } },
-            orderBy: { voucherNumber: 'desc' },
+            orderBy: { voucherNumber: "desc" },
           });
 
           let jvNum = 1;
           if (lastJV) {
             const match = lastJV.voucherNumber.match(/^JV(\d+)$/);
             if (match) jvNum = parseInt(match[1]) + 1;
+            else {
+              const countJV = await tx.voucher.count({ where: { type: 'journal', voucherNumber: { startsWith: 'JV' } } });
+              jvNum = countJV + 1;
+            }
           }
-          const jvVoucherNumber = `JV${String(jvNum).padStart(4, '0')}`;
+          const jvVoucherNumber = `JV${String(jvNum).padStart(4, "0")}`;
+
+          // JV accounts depend on whether it's cash refund or credit
+          // If cash refund, JV goes to Supplier Payable. If credit, JV goes to Selected Account (which is the supplier anyway)
+          const jvDebitAccount = isCashRefund ? supplierAccount : selectedAccount;
+
+          const voucherDescription = `Return ${returnNumber}: ${itemDetailsStr}`;
 
           await tx.voucher.create({
             data: {
@@ -328,9 +398,9 @@ router.post('/', async (req: Request, res: Response) => {
               voucherNumber: jvVoucherNumber,
               type: 'journal',
               date: new Date(return_date),
-              narration: `Purchase Order Returned - ${returnNumber} (${selectedAccount.name})`,
-              totalDebit: netAmount,
-              totalCredit: netAmount,
+              narration: `DPO Return ${returnNumber} - Inventory Adjusted`,
+              totalDebit: totalAmount, // Use totalAmount for JV (before deduction) or netAmount? User image shows 237,380 which is likely total.
+              totalCredit: totalAmount,
               status: 'posted',
               createdBy: 'System',
               approvedBy: 'System',
@@ -340,10 +410,10 @@ router.post('/', async (req: Request, res: Response) => {
                 create: [
                   {
                     id: crypto.randomUUID(),
-                    accountId: selectedAccount.id,
-                    accountName: `${selectedAccount.code}-${selectedAccount.name}`,
-                    description: `DPO Return ${returnNumber} Supplier Liability/Cash adjusted`,
-                    debit: netAmount,
+                    accountId: jvDebitAccount.id,
+                    accountName: `${jvDebitAccount.code}-${jvDebitAccount.name}`,
+                    description: voucherDescription, // UPDATE: Included item details
+                    debit: totalAmount,
                     credit: 0,
                     sortOrder: 0,
                   },
@@ -351,9 +421,9 @@ router.post('/', async (req: Request, res: Response) => {
                     id: crypto.randomUUID(),
                     accountId: inventoryAccount.id,
                     accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-                    description: `DPO Return ${returnNumber} Inventory Adjusted`,
+                    description: voucherDescription, // UPDATE: Included item details
                     debit: 0,
-                    credit: netAmount,
+                    credit: totalAmount,
                     sortOrder: 1,
                   },
                 ],
@@ -361,16 +431,93 @@ router.post('/', async (req: Request, res: Response) => {
             } as any,
           });
 
-          // Update balances
-          await tx.account.update({
-            where: { id: selectedAccount.id },
-            data: { currentBalance: { increment: netAmount } }, // DR Asset decreases liability or increases cash
-          });
+          // B. Create RECEIPT VOUCHER (Supplier -> Cash/Bank) if cash refund
+          if (isCashRefund) {
+            const lastRV = await tx.voucher.findFirst({
+              where: { type: 'receipt', voucherNumber: { startsWith: 'RV' } },
+              orderBy: { voucherNumber: "desc" },
+            });
 
-          await tx.account.update({
-            where: { id: inventoryAccount.id },
-            data: { currentBalance: { decrement: netAmount } }, // CR Asset decreases inventory
-          });
+            let rvNum = 1;
+            if (lastRV) {
+              const match = lastRV.voucherNumber.match(/^RV(\d+)$/);
+              if (match) rvNum = parseInt(match[1]) + 1;
+              else {
+                const countRV = await tx.voucher.count({ where: { type: 'receipt', voucherNumber: { startsWith: 'RV' } } });
+                rvNum = countRV + 1;
+              }
+            }
+            const rvVoucherNumber = `RV${String(rvNum).padStart(4, "0")}`;
+
+            await tx.voucher.create({
+              data: {
+                id: crypto.randomUUID(),
+                voucherNumber: rvVoucherNumber,
+                type: 'receipt',
+                date: new Date(return_date),
+                narration: `DPO Return ${returnNumber} - Cash Refund Received`,
+                totalDebit: netAmount,
+                totalCredit: netAmount,
+                status: 'posted',
+                createdBy: 'System',
+                approvedBy: 'System',
+                approvedAt: new Date(),
+                updatedAt: new Date(),
+                VoucherEntry: {
+                  create: [
+                    {
+                      id: crypto.randomUUID(),
+                      accountId: selectedAccount.id,
+                      accountName: `${selectedAccount.code}-${selectedAccount.name}`,
+                      description: voucherDescription, // UPDATE: Included item details
+                      debit: netAmount,
+                      credit: 0,
+                      sortOrder: 0,
+                    },
+                    {
+                      id: crypto.randomUUID(),
+                      accountId: supplierAccount.id,
+                      accountName: `${supplierAccount.code}-${supplierAccount.name}`,
+                      description: voucherDescription, // UPDATE: Included item details
+                      debit: 0,
+                      credit: netAmount,
+                      sortOrder: 1,
+                    },
+                  ],
+                },
+              } as any,
+            });
+
+            // Update Balances for Cash Refund
+            // JV: DR Supplier. RV: CR Supplier. Net Supplier change = 0 (if totalAmount == netAmount). 
+            // If deduction exists, Supplier balance decreases by deduction.
+            // RV: DR Cash (increases). JV: CR Inventory (decreases).
+
+            await tx.account.update({
+              where: { id: selectedAccount.id },
+              data: { currentBalance: { increment: netAmount } } // Cash increases
+            });
+            await tx.account.update({
+              where: { id: inventoryAccount.id },
+              data: { currentBalance: { decrement: totalAmount } } // Inventory decreases
+            });
+            await tx.account.update({
+              where: { id: supplierAccount.id },
+              // Net change = totalAmount (Debit) - netAmount (Credit) = deduction
+              data: { currentBalance: { decrement: totalAmount - netAmount } }
+            });
+
+          } else {
+            // Update Balances for Credit Return (selectedAccount is Supplier)
+            await tx.account.update({
+              where: { id: selectedAccount.id },
+              data: { currentBalance: { decrement: netAmount } } // Liability decreases
+            });
+            await tx.account.update({
+              where: { id: inventoryAccount.id },
+              data: { currentBalance: { decrement: totalAmount } } // Inventory decreases
+            });
+          }
         }
       }
 

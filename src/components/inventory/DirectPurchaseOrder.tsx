@@ -69,6 +69,7 @@ interface DirectPurchaseOrderItem {
   brand: string;
   uom: string;
   quantity: number;
+  returnedQuantity: number;
   purchasePrice: number;
   amount: number;
 }
@@ -81,7 +82,7 @@ interface DirectPurchaseOrder {
   date: string; // Raw date for sorting
   description: string;
   grandTotal: number;
-  status: "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled";
+  status: "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled" | "Received";
   items: DirectPurchaseOrderItem[];
   account: string;
 }
@@ -696,6 +697,7 @@ export const DirectPurchaseOrder = () => {
           brand: item.brand || "",
           uom: item.uom || "pcs",
           quantity: item.quantity,
+          returnedQuantity: item.returned_quantity || 0,
           purchasePrice: item.purchase_price,
           amount: item.amount,
         })),
@@ -1184,40 +1186,12 @@ export const DirectPurchaseOrder = () => {
         return;
       }
 
-      // Extract vouchers from response (might be at root or in data property)
-      const voucherStatus = response.vouchers || response.data?.vouchers || null;
-
-      // Show voucher creation status
-      if (voucherStatus) {
-        const { jvCreated, pvCreated, jvNumber, pvNumber, errors } = voucherStatus;
-        let message = viewMode === "edit" ? "Direct Purchase Order updated successfully" : "Direct Purchase Order created successfully";
-
-        if (jvCreated && pvCreated) {
-          message += `. ✅ Vouchers auto-created: JV ${jvNumber}, PV ${pvNumber}`;
-          toast.success(message);
-        } else if (jvCreated) {
-          message += `. ✅ Journal Voucher ${jvNumber} auto-created.`;
-          if (!pvCreated) {
-            message += ` Payment Voucher will be created when payment is made.`;
-          }
-          if (errors && errors.length > 0) {
-            toast.error(`⚠️ Voucher Creation Warnings: ${errors.join('; ')}`);
-          }
-          toast.success(message);
-        } else {
-          // Vouchers were not created
-          if (errors && errors.length > 0) {
-            toast.error(`❌ Vouchers were NOT auto-created. Issues: ${errors.join('; ')}`);
-          } else {
-            toast.warning(`⚠️ Vouchers were not auto-created. Please check backend logs.`);
-          }
-          toast.success(message);
-        }
-      } else {
-        // No voucher status in response - this shouldn't happen
-        toast.success(viewMode === "edit" ? "Direct Purchase Order updated successfully" : "Direct Purchase Order created successfully");
-        toast.warning("⚠️ Unable to verify voucher creation status. Please check vouchers manually.");
-      }
+      // Show simple success message
+      // Vouchers (JV/PV) are only created when the store manager receives/approves the order
+      const successMessage = viewMode === "edit"
+        ? "Direct Purchase Order updated successfully"
+        : "Direct Purchase Order created successfully";
+      toast.success(successMessage);
 
       // Refresh history if a part was selected
       if (currentPartId) {
@@ -1518,6 +1492,7 @@ export const DirectPurchaseOrder = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "Completed":
+      case "Received":
         return <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">{status}</Badge>;
       case "Order Receivable Pending":
         return <Badge className="bg-orange-500/10 text-orange-500 hover:bg-orange-500/20">{status}</Badge>;
@@ -1572,6 +1547,7 @@ export const DirectPurchaseOrder = () => {
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="Order Receivable Pending">Order Receivable Pending</SelectItem>
                 <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Received">Received</SelectItem>
                 <SelectItem value="Draft">Draft</SelectItem>
                 <SelectItem value="Cancelled">Cancelled</SelectItem>
               </SelectContent>
@@ -1623,16 +1599,18 @@ export const DirectPurchaseOrder = () => {
                                 <Eye className="h-4 w-4" />
                               </Button>
                             </ActionButtonTooltip>
-                            <ActionButtonTooltip label="Return" variant="edit">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleReturnClick(order)}
-                                className="h-8 w-8 text-orange-500 hover:text-orange-600"
-                              >
-                                <Undo2 className="h-4 w-4" />
-                              </Button>
-                            </ActionButtonTooltip>
+                            {(order.status === "Completed" || order.status === "Received") && (
+                              <ActionButtonTooltip label="Return" variant="edit">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleReturnClick(order)}
+                                  className="h-8 w-8 text-orange-500 hover:text-orange-600"
+                                >
+                                  <Undo2 className="h-4 w-4" />
+                                </Button>
+                              </ActionButtonTooltip>
+                            )}
                             <ActionButtonTooltip label="Edit" variant="edit">
                               <Button
                                 variant="ghost"
@@ -1643,16 +1621,18 @@ export const DirectPurchaseOrder = () => {
                                 <Edit className="h-4 w-4" />
                               </Button>
                             </ActionButtonTooltip>
-                            <ActionButtonTooltip label="Delete" variant="delete">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDeleteClick(order)}
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </ActionButtonTooltip>
+                            {order.status !== "Completed" && order.status !== "Received" && (
+                              <ActionButtonTooltip label="Delete" variant="delete">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleDeleteClick(order)}
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </ActionButtonTooltip>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2187,89 +2167,108 @@ export const DirectPurchaseOrder = () => {
   // Render view dialog
   const renderViewDialog = () => (
     <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-      <DialogContent className="max-w-4xl max-h-[90vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+        <DialogHeader className="p-4 border-b bg-muted/30">
           <DialogTitle>Direct Purchase Order Details</DialogTitle>
           <DialogDescription>
             {selectedOrder?.dpoNo} - {selectedOrder?.requestDate}
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="max-h-[60vh]">
+
+        <div className="flex-1 overflow-hidden flex flex-col">
           {selectedOrder && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <Label className="text-muted-foreground">DPO No</Label>
-                  <p className="font-medium">{selectedOrder.dpoNo}</p>
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {/* Fixed Top Info */}
+              <div className="p-6 pb-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                  <div>
+                    <Label className="text-muted-foreground">DPO No</Label>
+                    <p className="font-medium">{selectedOrder.dpoNo}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Store</Label>
+                    <p className="font-medium">{selectedOrder.store}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Request Date</Label>
+                    <p className="font-medium">{selectedOrder.requestDate}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Status</Label>
+                    <div>{getStatusBadge(selectedOrder.status)}</div>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground">Store</Label>
-                  <p className="font-medium">{selectedOrder.store}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">Description</Label>
+                    <p className="font-medium">{selectedOrder.description || "-"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Account</Label>
+                    <p className="font-medium">{selectedOrder.account}</p>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground">Request Date</Label>
-                  <p className="font-medium">{selectedOrder.requestDate}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Status</Label>
-                  <div>{getStatusBadge(selectedOrder.status)}</div>
-                </div>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Description</Label>
-                <p className="font-medium">{selectedOrder.description || "-"}</p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Account</Label>
-                <p className="font-medium">{selectedOrder.account}</p>
               </div>
 
-              <div className="rounded-md border overflow-x-auto">
-                <div className="min-w-[700px] sm:min-w-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>#</TableHead>
-                        <TableHead className="min-w-[120px]">Part No</TableHead>
-                        <TableHead className="min-w-[150px]">Description</TableHead>
-                        <TableHead className="min-w-[80px]">Brand</TableHead>
-                        <TableHead className="min-w-[60px]">UoM</TableHead>
-                        <TableHead className="min-w-[60px]">Qty</TableHead>
-                        <TableHead className="min-w-[120px]">Purchase Price</TableHead>
-                        <TableHead className="text-right min-w-[100px]">Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedOrder.items.map((item, index) => (
-                        <TableRow key={item.id}>
-                          <TableCell>{index + 1}</TableCell>
-                          <TableCell className="font-medium">{item.partNo}</TableCell>
-                          <TableCell>{item.description}</TableCell>
-                          <TableCell>{item.brand}</TableCell>
-                          <TableCell>{item.uom}</TableCell>
-                          <TableCell>{item.quantity}</TableCell>
-                          <TableCell>{item.purchasePrice.toLocaleString("en-PK")}</TableCell>
-                          <TableCell className="text-right font-medium">
-                            {item.amount.toLocaleString("en-PK")}
-                          </TableCell>
+              {/* Scrollable Items Table */}
+              <div className="flex-1 overflow-hidden px-6 py-2">
+                <div className="h-full border rounded-md flex flex-col overflow-hidden bg-card">
+                  <ScrollArea className="flex-1">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm">
+                        <TableRow>
+                          <TableHead>#</TableHead>
+                          <TableHead className="min-w-[120px]">Part No</TableHead>
+                          <TableHead className="min-w-[150px]">Description</TableHead>
+                          <TableHead className="min-w-[80px]">Brand</TableHead>
+                          <TableHead className="min-w-[60px]">UoM</TableHead>
+                          <TableHead className="min-w-[60px]">Qty</TableHead>
+                          <TableHead className="min-w-[120px]">Purchase Price</TableHead>
+                          <TableHead className="text-right min-w-[100px]">Amount</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedOrder.items.map((item, index) => (
+                          <TableRow key={item.id} className="hover:bg-muted/30">
+                            <TableCell>{index + 1}</TableCell>
+                            <TableCell className="font-medium">
+                              {item.partNo}
+                              {item.returnedQuantity > 0 && (
+                                <Badge variant="destructive" className="ml-2 text-[10px] h-5 px-1.5">
+                                  Returned {item.returnedQuantity === item.quantity ? "(All)" : `(${item.returnedQuantity})`}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>{item.description}</TableCell>
+                            <TableCell>{item.brand}</TableCell>
+                            <TableCell>{item.uom}</TableCell>
+                            <TableCell>{item.quantity}</TableCell>
+                            <TableCell>{item.purchasePrice.toLocaleString("en-PK")}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {item.amount.toLocaleString("en-PK")}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
                 </div>
               </div>
 
-              <div className="flex justify-end">
-                <div className="text-right">
-                  <p className="text-muted-foreground">Grand Total</p>
-                  <p className="text-2xl font-bold">
-                    {selectedOrder.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
-                  </p>
+              {/* Fixed Grand Total at bottom */}
+              <div className="px-6 py-4 bg-muted/10 border-t">
+                <div className="flex justify-end">
+                  <div className="text-right">
+                    <p className="text-muted-foreground text-sm uppercase font-semibold">Grand Total</p>
+                    <p className="text-2xl font-bold text-primary">
+                      {selectedOrder.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
           )}
-        </ScrollArea>
+        </div>
         <DialogFooter>
           <div className="flex gap-2">
             {selectedOrder && (selectedOrder.status === "Order Receivable Pending" || selectedOrder.status === "Completed") && (
@@ -2298,15 +2297,15 @@ export const DirectPurchaseOrder = () => {
   // Render return dialog
   const renderReturnDialog = () => (
     <Dialog open={showReturnDialog} onOpenChange={setShowReturnDialog}>
-      <DialogContent className="max-w-5xl max-h-[95vh] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="p-4 border-b bg-muted/30">
+      <DialogContent className="max-w-6xl max-h-[95vh] h-[850px] overflow-hidden flex flex-col p-0">
+        <DialogHeader className="p-4 border-b bg-muted/30 shrink-0">
           <div className="flex items-center gap-2">
             <Edit className="w-5 h-5 text-primary" />
             <DialogTitle className="text-xl font-bold">Simple Purchase Return Order</DialogTitle>
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 max-h-[calc(95vh-120px)]">
+        <ScrollArea className="flex-1">
           <div className="p-6 space-y-6 pb-20">
             {/* Header Info */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg bg-card shadow-sm">
@@ -2355,7 +2354,7 @@ export const DirectPurchaseOrder = () => {
             </div>
 
             {/* Items Table */}
-            <div className="border rounded-lg overflow-hidden shadow-premium">
+            <div className="border rounded-lg overflow-hidden shadow-premium bg-card">
               <Table>
                 <TableHeader className="bg-muted/50 border-b">
                   <TableRow>
@@ -2461,7 +2460,7 @@ export const DirectPurchaseOrder = () => {
           </div>
         </ScrollArea>
 
-        <div className="p-4 border-t bg-muted/30 flex items-center justify-between">
+        <div className="p-4 border-t bg-muted/30 shrink-0 flex items-center justify-between">
           <div className="flex gap-2">
             <Button
               variant="outline"

@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import cors from "cors";
 import * as dotenv from "dotenv";
 import * as path from "path";
@@ -35,17 +35,20 @@ import vouchersRoutes from "./routes/vouchers";
 import salesRoutes from "./routes/sales";
 import dpoReturnsRoutes from "./routes/dpo-returns";
 import salesReturnsRoutes from "./routes/sales-returns";
+import stockDetailsRoutes from "./routes/stock-details";
 import advancedSearchRoutes from "./routes/advanced-search";
+import partsDropdownRoutes from "./routes/parts-dropdown";
 import authRoutes from "./routes/auth";
 import { authenticateJWT } from "./middleware/authMiddleware";
 
+// Trigger restart for environment variable update
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
 // Middleware - CORS configuration
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
-  : ["http://localhost:5173", "http://localhost:8080", "http://localhost:8081"];
+  : ["http://localhost:5173", "http://localhost:8080", "http://localhost:8081", "http://localhost:83"];
 
 app.use(
   cors({
@@ -346,8 +349,12 @@ app.use("/api/vouchers", authenticateJWT, vouchersRoutes);
 // Legacy/compat alias (some clients call this path directly)
 app.use("/api/getVouchers", authenticateJWT, vouchersRoutes);
 app.use("/api/sales", authenticateJWT, salesRoutes);
+app.use("/api/sales-returns", authenticateJWT, salesReturnsRoutes);
+app.use("/api/parts-dropdown", authenticateJWT, partsDropdownRoutes);
 app.use("/api/dpo-returns", authenticateJWT, dpoReturnsRoutes);
 app.use("/api/sales-returns", authenticateJWT, salesReturnsRoutes);
+app.use("/api/stock-details", authenticateJWT, stockDetailsRoutes);
+app.use("/api/advanced-search", authenticateJWT, advancedSearchRoutes);
 app.use("/api/advanced-search", authenticateJWT, advancedSearchRoutes);
 
 // Dev-Koncepts deployment: all API under /dev-koncepts/api when frontend is at /dev-koncepts/ (so requests hit this backend, not main app)
@@ -400,3 +407,5 @@ app.listen(PORT, () => {
     `Balance Sheet endpoint: http://localhost:${PORT}/api/accounting/balance-sheet`,
   );
 });
+
+

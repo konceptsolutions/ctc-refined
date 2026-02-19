@@ -367,107 +367,45 @@ export const AdjustItem = () => {
   };
 
   // Fetch parts and stock balances
+  // Fetch parts and stock balances - OPTIMIZED FOR DROPDOWN SPEED
   const fetchParts = async () => {
     try {
-      const partsResponse: any = await apiClient.getParts({
-        page: 1,
-        limit: 100000,
-      });
+      const response: any = await apiClient.getPartsDropdown();
 
-      if (partsResponse.error) {
-        toast.error(`Error fetching parts: ${partsResponse.error}`);
+      if (response.error) {
+        toast.error(`Error fetching parts: ${response.error}`);
         return;
       }
 
-      // Handle both response formats: { data: [...] } or direct array
-      const partsData = partsResponse.data || partsResponse;
+      const partsData = response.data || [];
 
-      if (!Array.isArray(partsData) || partsData.length === 0) {
-        setParts([]);
-        setStockBalances({});
-        return;
-      }
+      setStockBalances({});
 
-      // Fetch stock balances
-      // For Add Inventory, we show overall stock (no store filter)
-      // For Remove Inventory, we show available stock (filtered by store)
-      const balancesResponse: any = await apiClient.getStockBalances({
-        store_id: addInventory ? undefined : store || undefined,
-        limit: 100000,
-      });
-
-      if (balancesResponse.error) {
-        // Don't show error for balances, just continue without them
-      }
-
-      const balancesData = balancesResponse.data || balancesResponse || [];
-
-      // Create balance map
-      const balanceMap: Record<string, { qty: number; rate: number }> = {};
-      if (Array.isArray(balancesData)) {
-        balancesData.forEach((b: any) => {
-          const partId = b.part_id || b.partId;
-          if (partId) {
-            balanceMap[partId] = {
-              // Condition based on Add vs Remove
-              qty: addInventory
-                ? (b.current_stock ?? b.quantity ?? b.qty ?? 0)
-                : (b.available_stock ??
-                  b.available_quantity ??
-                  b.current_stock ??
-                  b.quantity ??
-                  b.qty ??
-                  0),
-              rate: b.cost ?? b.avg_cost ?? b.avgCost ?? b.rate ?? 0,
-            };
-          }
-        });
-      }
-
-      setStockBalances(balanceMap);
       setParts(
         partsData.map((p: any) => {
-          // Remove grade information from description
+          // Remove grade information from description if present
           const cleanDescription = (p.description || "")
             .replace(/\(Grade:\s*[^)]+\)/gi, "")
             .trim();
 
           return {
             id: p.id,
-            partNo:
-              p.master_part_no || p.masterPartNo || p.part_no || p.partNo || "",
-            brand: p.brand_name || p.brandName || "",
-            description:
-              cleanDescription ||
-              p.master_part_no ||
-              p.masterPartNo ||
-              p.part_no ||
-              p.partNo ||
-              "",
-            qtyInStock: balanceMap[p.id]?.qty || 0,
-            lastPurchaseRate: p.purchasePrice || 0,
-            purchasePrice: p.purchasePrice || 0,
-            avgCost: p.avgCost || 0,
-            priceA: p.priceA ?? p.price_a ?? 0,
-            priceB: p.priceB ?? p.price_b ?? 0,
-            priceM: p.priceM ?? p.price_m ?? 0,
-          };
-        }),
-      );
-
-      // CRITICAL: Update qtyInStock for existing adjustmentItems
-      setAdjustmentItems((prevItems) =>
-        prevItems.map((item) => {
-          if (!item.itemId) return item;
-          const balance = balanceMap[item.itemId];
-          return {
-            ...item,
-            qtyInStock: balance ? balance.qty : item.qtyInStock,
+            partNo: p.partNo || "",
+            brand: p.brand || "",
+            description: cleanDescription,
+            qtyInStock: 0,
+            lastPurchaseRate: 0,
+            purchasePrice: 0,
+            avgCost: 0,
+            priceA: 0,
+            priceB: 0,
+            priceM: 0,
           };
         }),
       );
     } catch (error: any) {
-      toast.error(`Error fetching parts: ${error.message || error}`);
+      console.error("Error fetching parts:", error);
+      toast.error("Failed to load parts list");
     }
   };
 
@@ -595,74 +533,43 @@ export const AdjustItem = () => {
             }
           }
 
-          // When item is selected, populate fields
-          if (field === "itemId") {
-            const selectedPart = parts.find((p) => p.id === value);
-            if (selectedPart) {
-              updated.itemName = selectedPart.description;
-              updated.qtyInStock = selectedPart.qtyInStock;
-              // "Cost Price" field (lastPurchaseRate) should show Average Cost (avgCost)
-              updated.lastPurchaseRate = parseFloat(
-                (selectedPart.avgCost || 0).toFixed(3),
-              );
-              // "Rate" field should show Purchase Price
-              updated.rate = parseFloat(
-                (selectedPart.purchasePrice || 0).toFixed(3),
-              );
-              updated.priceA = selectedPart.priceA || 0;
-              updated.priceB = selectedPart.priceB || 0;
-              updated.priceM = selectedPart.priceM || 0;
+          // When item is selected, populate fields using new optimized API
+          if (field === "itemId" && value) {
+            apiClient.getStockDetails(value as string, store || undefined)
+              .then((res: any) => {
+                if (res.error) {
+                  console.error("Error fetching stock details:", res.error);
+                  return;
+                }
 
-              // If Removing Inventory, default quantity to available stock
-              if (!addInventory) {
-                updated.quantity = updated.qtyInStock;
-              }
+                const part = res;
+                setAdjustmentItems((items) =>
+                  items.map((it) => {
+                    if (it.id === id) {
+                      const newRate = parseFloat(part.cost || 0);
+                      // If removing inventory, default to current stock. Else keep 0 or user input.
+                      const newQty = !addInventory ? part.current_stock : (it.quantity || 0);
 
-              updated.total = updated.quantity * updated.rate;
-
-              // Also fetch fresh balance for this specific part
-              apiClient
-                .getStockBalances({
-                  part_id: value as string,
-                  store_id: store || undefined,
-                })
-                .then((res: any) => {
-                  const balanceData = res.data || res || [];
-                  const b = Array.isArray(balanceData)
-                    ? balanceData[0]
-                    : balanceData;
-                  if (b) {
-                    // Use available_stock or available_quantity if present, otherwise fallback
-                    // If Add Inventory, show Total Stock (ignore reservations)
-                    // If Remove Inventory, show Available Stock (stock - reserved)
-                    const freshQty = addInventory
-                      ? (b.current_stock ?? b.quantity ?? b.qty ?? 0)
-                      : (b.available_stock ??
-                        b.available_quantity ??
-                        b.current_stock ??
-                        b.quantity ??
-                        b.qty ??
-                        0);
-                    setAdjustmentItems((items) =>
-                      items.map((it) => {
-                        if (it.id === id) {
-                          const newQty = !addInventory ? freshQty : it.quantity;
-                          return {
-                            ...it,
-                            qtyInStock: freshQty,
-                            quantity: newQty,
-                            total: newQty * it.rate,
-                          };
-                        }
-                        return it;
-                      }),
-                    );
-                  }
-                })
-                .catch((err) =>
-                  console.error("Error fetching part balance:", err),
+                      return {
+                        ...it,
+                        itemName: part.description || part.part_no,
+                        qtyInStock: part.current_stock,
+                        lastPurchaseRate: parseFloat((part.avg_cost || 0).toFixed(3)),
+                        rate: newRate,
+                        priceA: part.priceA || 0,
+                        priceB: part.priceB || 0,
+                        priceM: part.priceM || 0,
+                        quantity: newQty,
+                        total: newQty * newRate,
+                      };
+                    }
+                    return it;
+                  })
                 );
-            }
+              })
+              .catch((err) => {
+                console.error("Error connecting to stock-details API:", err);
+              });
           }
 
           return updated;
@@ -1942,7 +1849,7 @@ export const AdjustItem = () => {
                               parseFloat(e.target.value) || 0,
                             )
                           }
-                          className="h-8 text-xs"
+                          className="h-8 text-xs border-dashed border-muted-foreground/30 focus:border-solid focus:border-primary bg-primary/5"
                         />
                       </TableCell>
                       <TableCell>
@@ -1957,7 +1864,7 @@ export const AdjustItem = () => {
                               parseFloat(e.target.value) || 0,
                             )
                           }
-                          className="h-8 text-xs"
+                          className="h-8 text-xs border-dashed border-muted-foreground/30 focus:border-solid focus:border-primary bg-primary/5"
                         />
                       </TableCell>
                       <TableCell>
@@ -1972,7 +1879,7 @@ export const AdjustItem = () => {
                               parseFloat(e.target.value) || 0,
                             )
                           }
-                          className="h-8 text-xs"
+                          className="h-8 text-xs border-dashed border-muted-foreground/30 focus:border-solid focus:border-primary bg-primary/5"
                         />
                       </TableCell>
 
