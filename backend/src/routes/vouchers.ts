@@ -500,62 +500,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     }
 
-    // Delete related journal entries if they reference this voucher
-    const journalEntries = await prisma.journalEntry.findMany({
-      where: {
-        OR: [
-          { entryNo: voucher.voucherNumber },
-          { description: { contains: voucher.voucherNumber } },
-        ],
-      },
-    });
-
-    if (journalEntries.length > 0) {
-
-      for (const journalEntry of journalEntries) {
-        // Reverse journal entry account balances if posted
-        if (journalEntry.status === 'posted') {
-          const journalLines = await prisma.journalLine.findMany({
-            where: { journalEntryId: journalEntry.id },
-            include: {
-              Account: {
-                include: {
-                  Subgroup: {
-                    include: {
-                      MainGroup: true,
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-          for (const line of journalLines) {
-            const accountType = line.Account.Subgroup.MainGroup.type.toLowerCase();
-            const balanceChange = (accountType === 'asset' || accountType === 'expense' || accountType === 'cost')
-              ? (line.debit - line.credit)
-              : (line.credit - line.debit);
-
-            // Reverse the balance change
-            await prisma.account.update({
-              where: { id: line.accountId },
-              data: {
-                currentBalance: {
-                  decrement: balanceChange,
-                },
-              },
-            });
-          }
-        }
-
-        // Delete journal entry (lines cascade)
-        await prisma.journalEntry.delete({
-          where: { id: journalEntry.id },
-        });
-      }
-
-    }
-
     // Delete voucher entries (will cascade, but explicit for clarity)
     await prisma.voucherEntry.deleteMany({
       where: { voucherId: id },
@@ -569,7 +513,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
     res.json({
       message: 'Voucher deleted successfully',
       reversedAccounts: voucher.status === 'posted' ? voucher.VoucherEntry.length : 0,
-      deletedJournalEntries: journalEntries.length,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

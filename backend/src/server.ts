@@ -11,6 +11,33 @@ const envFile =
 const envPath = path.resolve(__dirname, `../${envFile}`);
 dotenv.config({ path: envPath, override: true });
 
+// ============================================================
+// DATABASE SAFETY GUARD — ALWAYS USE koncepts_dev
+// Never allow any other database to be used.
+// This guard overrides stale system/user environment variables.
+// ============================================================
+const REQUIRED_DB = 'koncepts_dev';
+const currentDbUrl = process.env.DATABASE_URL || '';
+
+if (!currentDbUrl.includes(REQUIRED_DB)) {
+  // Force-override: set it back to the correct DB from .env
+  const fs = require('fs');
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  const match = envContent.match(/DATABASE_URL=([^\r\n]+)/);
+  if (match && match[1].includes(REQUIRED_DB)) {
+    process.env.DATABASE_URL = match[1].trim();
+    console.warn(`[SERVER] ⚠️  DATABASE_URL was pointing to wrong DB. Overridden to: ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':****@')}`);
+  } else {
+    throw new Error(`[SERVER] FATAL: Could not find a valid koncepts_dev DATABASE_URL in ${envPath}. Refusing to start.`);
+  }
+}
+
+if (!process.env.DATABASE_URL?.includes(REQUIRED_DB)) {
+  throw new Error(`[SERVER] FATAL: DATABASE_URL must point to "${REQUIRED_DB}". Got: ${process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':****@')}. Refusing to start.`);
+}
+
+console.log('[SERVER] DATABASE_URL:', process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':****@'));
+
 // Set timezone to Pakistan (Asia/Karachi)
 process.env.TZ = "Asia/Karachi";
 import partsRoutes from "./routes/parts";

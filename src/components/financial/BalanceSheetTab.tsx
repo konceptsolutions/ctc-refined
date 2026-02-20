@@ -36,6 +36,16 @@ interface BalanceSheetData {
   revenue: number;
   expense: number;
   cost: number;
+  supplierAccounts?: SupplierAccount[];
+}
+
+interface SupplierAccount {
+  id: string;
+  code: string;
+  name: string;
+  supplierName: string;
+  subgroupName: string;
+  balance: { balance: number };
 }
 
 export const BalanceSheetTab = () => {
@@ -343,6 +353,46 @@ export const BalanceSheetTab = () => {
               </div>
             </div>
 
+            {/* Supplier Accounts Section */}
+            {balanceSheetData.supplierAccounts && balanceSheetData.supplierAccounts.length > 0 && (
+              <div className="mt-6">
+                <h2 className="text-lg font-bold mb-3">Supplier Accounts (Payables)</h2>
+                <div className="ml-4">
+                  {balanceSheetData.supplierAccounts.map((account) => {
+                    const bal = typeof account.balance === "number" ? account.balance : account.balance?.balance ?? 0;
+                    return (
+                      <div
+                        key={account.id}
+                        className="flex justify-between items-center py-0.5"
+                      >
+                        <span className="text-xs text-gray-600">
+                          {account.code} - {account.name}
+                          {account.supplierName && account.supplierName !== account.name && (
+                            <span className="text-gray-400 ml-1">({account.supplierName})</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-right">
+                          {formatBalance(bal, true)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between items-center">
+                    <span className="text-sm font-medium">Total Supplier Payables</span>
+                    <span className="text-sm font-medium text-right">
+                      {formatBalance(
+                        balanceSheetData.supplierAccounts.reduce((sum, a) => {
+                          const b = typeof a.balance === "number" ? a.balance : a.balance?.balance ?? 0;
+                          return sum + b;
+                        }, 0),
+                        true,
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mt-8">
               <h2 className="text-lg font-bold mb-4">Capital</h2>
 
@@ -362,19 +412,22 @@ export const BalanceSheetTab = () => {
                             {subgroup.code}-{subgroup.name}
                           </h4>
 
-                          {subgroup.coa_accounts?.map((account) => (
-                            <div
-                              key={account.id}
-                              className="flex justify-between items-center py-0.5 ml-4"
-                            >
-                              <span className="text-xs text-gray-600">
-                                {account.code}-{account.name}
-                              </span>
-                              <span className="text-xs text-right">
-                                {formatBalance(account.balance, true)}
-                              </span>
-                            </div>
-                          ))}
+                          {subgroup.coa_accounts?.map((account) => {
+                            const accountBalance = getAccountBalance(account);
+                            return (
+                              <div
+                                key={account.id}
+                                className="flex justify-between items-center py-0.5 ml-4"
+                              >
+                                <span className="text-xs text-gray-600">
+                                  {account.code}-{account.name}
+                                </span>
+                                <span className="text-xs text-right">
+                                  {formatBalance(accountBalance, true)}
+                                </span>
+                              </div>
+                            );
+                          })}
 
                           <div className="border-t border-gray-300 pt-1 mt-1 ml-4 flex justify-between items-center">
                             <span className="text-sm font-medium">

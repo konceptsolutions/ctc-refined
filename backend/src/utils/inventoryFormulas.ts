@@ -66,9 +66,9 @@ export function calculateAverageCostStandard(
 
 /**
  * Formula 1.2b: Weighted Average Cost (DPO Formula)
- * AvgCostNew = (OldQty * OldAvgCost - NewQty * NewUnitCost) / (OldQty + NewQty)
+ * AvgCostNew = (OldQty * OldAvgCost + NewQty * NewUnitCost) / (OldQty + NewQty)
  * 
- * WHEN: Specific user-requested DPO calculation
+ * WHEN: Standard purchase receive (DPO)
  * @param oldQty - Current stock quantity
  * @param oldAvgCost - Current average cost
  * @param newQty - Quantity being received
@@ -80,18 +80,15 @@ export function calculateAverageCostDPO(
   newQty: number,
   newUnitCost: number,
 ): number {
-  // If old quantity is 0, the numerator will be negative if we just use -newUnitCost.
-  // We'll handle it by using the new cost directly but marking it accordingly if needed.
-  // However, following the literal formula (stock * avg - qty * rate) / (stock + qty):
   if (oldQty <= 0) {
-    return -newUnitCost; // Literal interpretation: (0 - qty*rate)/qty = -rate
+    return newUnitCost;
   }
 
   const oldValue = oldQty * oldAvgCost;
   const newValue = newQty * newUnitCost;
   const totalQty = oldQty + newQty;
 
-  return (oldValue - newValue) / totalQty;
+  return (oldValue + newValue) / totalQty;
 }
 
 /**

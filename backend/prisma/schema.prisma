@@ -25,7 +25,6 @@ model Account {
   Customer       Customer?      @relation(fields: [customerId], references: [id])
   Subgroup       Subgroup       @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
   Supplier       Supplier?      @relation(fields: [supplierId], references: [id])
-  JournalLine    JournalLine[]
   SalesInvoice   SalesInvoice[]
   VoucherEntry   VoucherEntry[]
 }
@@ -310,36 +309,6 @@ model ExpenseType {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   PostedExpense PostedExpense[]
-}
-
-model JournalEntry {
-  id          String        @id @default(uuid())
-  entryNo     String        @unique
-  entryDate   DateTime
-  reference   String?
-  description String?
-  totalDebit  Float         @default(0)
-  totalCredit Float         @default(0)
-  status      String        @default("draft")
-  createdBy   String?
-  postedBy    String?
-  postedAt    DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  JournalLine JournalLine[]
-}
-
-model JournalLine {
-  id             String       @id @default(uuid())
-  journalEntryId String
-  accountId      String
-  description    String?
-  debit          Float        @default(0)
-  credit         Float        @default(0)
-  lineOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-  Account        Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  JournalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
 }
 
 model Kit {

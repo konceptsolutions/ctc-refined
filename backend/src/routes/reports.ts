@@ -1034,14 +1034,6 @@ router.get('/trial-balance', async (req: Request, res: Response) => {
       asOfDate.setHours(23, 59, 59, 999);
     }
 
-    // Build date filter for journal entries and vouchers
-    const journalDateFilter: any = {
-      status: 'posted',
-      entryDate: {
-        lte: asOfDate,
-      },
-    };
-
     const voucherDateFilter: any = {
       status: 'posted',
       date: {
@@ -1058,11 +1050,6 @@ router.get('/trial-balance', async (req: Request, res: Response) => {
         Subgroup: {
           include: {
             MainGroup: true,
-          },
-        },
-        JournalLine: {
-          where: {
-            JournalEntry: journalDateFilter,
           },
         },
         VoucherEntry: {
@@ -1107,14 +1094,9 @@ router.get('/trial-balance', async (req: Request, res: Response) => {
       const subGroupLabel = `${subgroupCode}-${subgroupName}`;
       const accountType = account.Subgroup.MainGroup.type;
 
-      // Calculate totals from journal lines and voucher entries
-      const journalDebit = account.JournalLine.reduce((sum, line) => sum + (line.debit || 0), 0);
-      const journalCredit = account.JournalLine.reduce((sum, line) => sum + (line.credit || 0), 0);
-      const voucherDebit = account.VoucherEntry?.reduce((sum, entry) => sum + (entry.debit || 0), 0) || 0;
-      const voucherCredit = account.VoucherEntry?.reduce((sum, entry) => sum + (entry.credit || 0), 0) || 0;
-
-      const totalDebitAmount = journalDebit + voucherDebit;
-      const totalCreditAmount = journalCredit + voucherCredit;
+      // Calculate totals from voucher entries
+      const totalDebitAmount = account.VoucherEntry?.reduce((sum, entry) => sum + (entry.debit || 0), 0) || 0;
+      const totalCreditAmount = account.VoucherEntry?.reduce((sum, entry) => sum + (entry.credit || 0), 0) || 0;
 
       // Calculate balance including opening balance using proper accounting logic
       const balance = calculateAccountBalance(
@@ -1195,15 +1177,6 @@ router.get('/income-statement', async (req: Request, res: Response) => {
     const toDate = new Date(to as string);
     toDate.setHours(23, 59, 59, 999);
 
-    // Build date filters for journal entries and vouchers
-    const journalDateFilter: any = {
-      status: 'posted',
-      entryDate: {
-        gte: fromDate,
-        lte: toDate,
-      },
-    };
-
     const voucherDateFilter: any = {
       status: 'posted',
       date: {
@@ -1223,11 +1196,6 @@ router.get('/income-statement', async (req: Request, res: Response) => {
         },
       },
       include: {
-        JournalLine: {
-          where: {
-            JournalEntry: journalDateFilter,
-          },
-        },
         VoucherEntry: {
           where: {
             Voucher: voucherDateFilter,
@@ -1250,11 +1218,6 @@ router.get('/income-statement', async (req: Request, res: Response) => {
         },
       },
       include: {
-        JournalLine: {
-          where: {
-            JournalEntry: journalDateFilter,
-          },
-        },
         VoucherEntry: {
           where: {
             Voucher: voucherDateFilter,
@@ -1277,11 +1240,6 @@ router.get('/income-statement', async (req: Request, res: Response) => {
         },
       },
       include: {
-        JournalLine: {
-          where: {
-            JournalEntry: journalDateFilter,
-          },
-        },
         VoucherEntry: {
           where: {
             Voucher: voucherDateFilter,
@@ -1295,13 +1253,8 @@ router.get('/income-statement', async (req: Request, res: Response) => {
 
     // Process Revenue accounts: amount = credit - debit
     const revenueData = revenueAccounts.map((account: any) => {
-      const journalDebit = account.JournalLine.reduce((sum, line) => sum + line.debit, 0);
-      const journalCredit = account.JournalLine.reduce((sum, line) => sum + line.credit, 0);
-      const voucherDebit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) || 0;
-      const voucherCredit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) || 0;
-
-      const totalDebit = journalDebit + voucherDebit;
-      const totalCredit = journalCredit + voucherCredit;
+      const totalDebit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) || 0;
+      const totalCredit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) || 0;
       const amount = totalCredit - totalDebit; // Revenue: credit - debit
 
       return {
@@ -1315,13 +1268,8 @@ router.get('/income-statement', async (req: Request, res: Response) => {
 
     // Process Cost accounts: amount = debit - credit
     const costData = costAccounts.map((account: any) => {
-      const journalDebit = account.JournalLine.reduce((sum, line) => sum + line.debit, 0);
-      const journalCredit = account.JournalLine.reduce((sum, line) => sum + line.credit, 0);
-      const voucherDebit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) || 0;
-      const voucherCredit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) || 0;
-
-      const totalDebit = journalDebit + voucherDebit;
-      const totalCredit = journalCredit + voucherCredit;
+      const totalDebit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) || 0;
+      const totalCredit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) || 0;
       const amount = totalDebit - totalCredit; // Cost: debit - credit
 
       return {
@@ -1335,17 +1283,12 @@ router.get('/income-statement', async (req: Request, res: Response) => {
 
     // Calculate Gross Profit/Loss
     const gross = totalRevenue - totalCost;
-    const grossLabel = gross >= 0 ? 'Gross Profit' : 'Gross Loss';
+    const grossLabel = gross >= 0 ? "Gross Profit" : "Gross Loss";
 
     // Process Expense accounts: amount = debit - credit
     const expenseData = expenseAccounts.map((account: any) => {
-      const journalDebit = account.JournalLine.reduce((sum, line) => sum + line.debit, 0);
-      const journalCredit = account.JournalLine.reduce((sum, line) => sum + line.credit, 0);
-      const voucherDebit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) || 0;
-      const voucherCredit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) || 0;
-
-      const totalDebit = journalDebit + voucherDebit;
-      const totalCredit = journalCredit + voucherCredit;
+      const totalDebit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) || 0;
+      const totalCredit = account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) || 0;
       const amount = totalDebit - totalCredit; // Expense: debit - credit
 
       return {

@@ -10,7 +10,7 @@ async function getNextNumberForPrefix(args: {
   const { prefix, voucherType } = args;
   const re = new RegExp(`^${prefix}(\\d+)$`);
 
-  const [lastVoucher, lastJournalEntry] = await Promise.all([
+  const [lastVoucher] = await Promise.all([
     prisma.voucher.findFirst({
       where: {
         ...(voucherType ? { type: voucherType } : {}),
@@ -19,15 +19,10 @@ async function getNextNumberForPrefix(args: {
       orderBy: { voucherNumber: "desc" },
       select: { voucherNumber: true },
     }),
-    prisma.journalEntry.findFirst({
-      where: { entryNo: { startsWith: prefix } },
-      orderBy: { entryNo: "desc" },
-      select: { entryNo: true },
-    }),
   ]);
 
   let max = 0;
-  for (const v of [lastVoucher?.voucherNumber, lastJournalEntry?.entryNo]) {
+  for (const v of [lastVoucher?.voucherNumber]) {
     if (!v) continue;
     const m = String(v).match(re);
     if (m) max = Math.max(max, parseInt(m[1], 10));
@@ -70,118 +65,7 @@ async function getReservedQuantity(partId: string): Promise<number> {
   }
 }
 
-// Helper function to create journal entry
-async function createJournalEntry(
-  entryDate: Date,
-  reference: string,
-  description: string,
-  lines: Array<{
-    accountId: string;
-    description?: string;
-    debit: number;
-    credit: number;
-  }>,
-  createdBy?: string,
-) {
-  const totalDebit = lines.reduce((sum, line) => sum + (line.debit || 0), 0);
-  const totalCredit = lines.reduce((sum, line) => sum + (line.credit || 0), 0);
 
-  if (totalDebit !== totalCredit) {
-    throw new Error("Total debits must equal total credits");
-  }
-
-  // Generate robust JV number (format: JV-YYYY-XXX)
-  const currentYear = new Date(entryDate || new Date()).getFullYear();
-  const lastEntry = await prisma.journalEntry.findFirst({
-    where: {
-      entryNo: {
-        startsWith: `JV-${currentYear}-`,
-      },
-    },
-    orderBy: {
-      entryNo: "desc",
-    },
-  });
-
-  let nextNo = 1;
-  if (lastEntry) {
-    const parts = lastEntry.entryNo.split("-");
-    const lastNo = parseInt(parts[2]);
-    if (!isNaN(lastNo)) {
-      nextNo = lastNo + 1;
-    }
-  }
-  const entryNo = `JV-${currentYear}-${String(nextNo).padStart(3, "0")}`;
-
-  const entry = await prisma.journalEntry.create({
-    data: {
-      id: crypto.randomUUID(),
-      entryNo,
-      entryDate,
-      reference,
-      description,
-      totalDebit,
-      totalCredit,
-      createdBy,
-      updatedAt: new Date(),
-      status: "posted", // Auto-post for sales
-      postedBy: createdBy,
-      postedAt: new Date(),
-      JournalLine: {
-        create: lines.map((line, index) => ({
-          id: crypto.randomUUID(),
-          accountId: line.accountId,
-          description: line.description,
-          debit: line.debit || 0,
-          credit: line.credit || 0,
-          lineOrder: index,
-        })),
-      },
-    },
-    include: {
-      JournalLine: {
-        include: {
-          Account: true,
-        },
-      },
-    },
-  });
-
-  // Update account balances
-  for (const line of lines) {
-    const account = await prisma.account.findUnique({
-      where: { id: line.accountId },
-      include: {
-        Subgroup: {
-          include: { MainGroup: true },
-        },
-      },
-    });
-
-    if (account) {
-      const accountType = account.Subgroup?.MainGroup?.type || "";
-      const isDebitNormal =
-        accountType.toLowerCase() === "asset" ||
-        accountType.toLowerCase() === "expense" ||
-        accountType.toLowerCase() === "cost";
-
-      const balanceChange = isDebitNormal
-        ? (line.debit || 0) - (line.credit || 0)
-        : (line.credit || 0) - (line.debit || 0);
-
-      await prisma.account.update({
-        where: { id: line.accountId },
-        data: {
-          currentBalance: {
-            increment: balanceChange,
-          },
-        },
-      });
-    }
-  }
-
-  return entry;
-}
 
 // Helper function to create voucher for sales invoice
 async function createVoucherForInvoice(
@@ -1128,25 +1012,13 @@ router.post(
         });
 
         if (accountsReceivableAccount && salesRevenueAccount) {
-          await createJournalEntry(
-            new Date(invoiceDate || new Date()),
+          await createVoucherForInvoice(
             invoiceNo,
-            `Sales Invoice ${invoiceNo} - Part Sell (Credit)`,
-            [
-              {
-                accountId: accountsReceivableAccount.id,
-                description: `Receivable - Invoice ${invoiceNo}`,
-                debit: grandTotal,
-                credit: 0,
-              },
-              {
-                accountId: salesRevenueAccount.id,
-                description: `Sales Revenue - Invoice ${invoiceNo}`,
-                debit: 0,
-                credit: grandTotal,
-              },
-            ],
-            salesPerson || "System",
+            new Date(invoiceDate || new Date()),
+            customerType,
+            null,
+            grandTotal,
+            salesPerson
           );
         }
 
@@ -1171,27 +1043,6 @@ router.post(
         });
 
         if (salesRevenueAccount) {
-          await createJournalEntry(
-            new Date(invoiceDate || new Date()),
-            invoiceNo,
-            `Sales Invoice ${invoiceNo} - Cash Sell`,
-            [
-              {
-                accountId,
-                description: `Cash sale - Invoice ${invoiceNo}`,
-                debit: grandTotal,
-                credit: 0,
-              },
-              {
-                accountId: salesRevenueAccount.id,
-                description: `Sales Revenue - Invoice ${invoiceNo}`,
-                debit: 0,
-                credit: grandTotal,
-              },
-            ],
-            salesPerson || "System",
-          );
-
           // Create voucher for cash sale
           try {
             await createVoucherForInvoice(
@@ -1906,63 +1757,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
           0,
         );
 
-        if (journalLines.length > 0 && totalDebit === totalCredit) {
-          const journalEntry = await prisma.journalEntry.create({
-            data: {
-              id: `je_${Date.now()}`,
-              entryNo: jvVoucherNumber,
-              entryDate: new Date(invoiceDate),
-              reference: `INV-${invoiceNo}`,
-              description: `Sales Invoice ${invoiceNo} - ${customerName}`,
-              totalDebit,
-              totalCredit,
-              status: "posted",
-              createdBy: salesPerson || "System",
-              postedBy: "System",
-              postedAt: new Date(),
-              updatedAt: new Date(),
-              JournalLine: {
-                create: journalLines,
-              },
-            },
-            include: {
-              JournalLine: {
-                include: {
-                  Account: {
-                    include: {
-                      Subgroup: {
-                        include: {
-                          MainGroup: true,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-          // Update account balances for JV
-          for (const line of (journalEntry as any).JournalLine) {
-            const accountType =
-              line.Account.Subgroup.MainGroup.type.toLowerCase();
-            const balanceChange =
-              accountType === "asset" ||
-                accountType === "expense" ||
-                accountType === "cost"
-                ? line.debit - line.credit
-                : line.credit - line.debit;
-
-            await prisma.account.update({
-              where: { id: line.accountId },
-              data: {
-                currentBalance: {
-                  increment: balanceChange,
-                },
-              },
-            });
-          }
-
+        if (jvVoucherEntries.length > 0 && totalDebit === totalCredit) {
           // Create JV Voucher
           const jvVoucher = await prisma.voucher.create({
             data: {
@@ -1976,11 +1771,34 @@ router.post("/invoices", async (req: Request, res: Response) => {
               createdBy: salesPerson || "System",
               approvedBy: "System",
               approvedAt: new Date(),
-              entries: {
+              VoucherEntry: {
                 create: jvVoucherEntries,
               },
             } as any,
           });
+
+          // Update account balances for JV
+          for (const entry of jvVoucherEntries) {
+            const acc = await prisma.account.findUnique({
+              where: { id: entry.accountId },
+              include: { Subgroup: { include: { MainGroup: true } } }
+            });
+            if (acc) {
+              const accountType = acc.Subgroup.MainGroup.type.toLowerCase();
+              const balanceChange = (accountType === "asset" || accountType === "expense" || accountType === "cost")
+                ? (entry.debit - entry.credit)
+                : (entry.credit - entry.debit);
+
+              await prisma.account.update({
+                where: { id: entry.accountId },
+                data: {
+                  currentBalance: {
+                    increment: balanceChange,
+                  },
+                },
+              });
+            }
+          }
 
           // ========== RV VOUCHER CREATION (if accounts with amounts are selected) ==========
           const accountsToProcess: Array<{
@@ -2103,7 +1921,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                   createdBy: salesPerson || "System",
                   approvedBy: "System",
                   approvedAt: new Date(),
-                  entries: {
+                  VoucherEntry: {
                     create: [
                       {
                         accountId: account.id,
@@ -2224,7 +2042,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                           createdBy: salesPerson || "System",
                           approvedBy: "System",
                           approvedAt: new Date(),
-                          entries: {
+                          VoucherEntry: {
                             create: [
                               {
                                 accountId: cashAccount.id,
@@ -2724,7 +2542,7 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
           }
 
           if (totalCost > 0) {
-            // Generate JV voucher/journal entry number (must be unique across both tables)
+            // Generate JV voucher number
             const costVoucherNumber = await getNextNumberForPrefix({
               prefix: "JV",
               voucherType: "journal",
@@ -2733,74 +2551,8 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
             const totalDebit = totalCost;
             const totalCredit = totalCost;
 
-            // Journal entry for ledger tracking
-            const journalEntry = await prisma.journalEntry.create({
-              data: {
-                id: `je_${Date.now()}`,
-                entryNo: costVoucherNumber,
-                entryDate: invoice.invoiceDate,
-                reference: `COGS-${invoice.invoiceNo}`,
-                description: `COGS for ${invoice.invoiceNo}`,
-                totalDebit,
-                totalCredit,
-                status: "posted",
-                createdBy: approvedBy || "System",
-                postedBy: "System",
-                postedAt: new Date(),
-                updatedAt: new Date(),
-                JournalLine: {
-                  create: [
-                    {
-                      id: `jl_${Date.now()}_1`,
-                      accountId: cogsAccount.id,
-                      description: costMarker,
-                      debit: totalCost,
-                      credit: 0,
-                      lineOrder: 0,
-                    },
-                    {
-                      id: `jl_${Date.now()}_2`,
-                      accountId: inventoryAccount.id,
-                      description: costMarker,
-                      debit: 0,
-                      credit: totalCost,
-                      lineOrder: 1,
-                    },
-                  ],
-                },
-              },
-              include: {
-                JournalLine: {
-                  include: {
-                    Account: {
-                      include: { Subgroup: { include: { MainGroup: true } } },
-                    },
-                  },
-                },
-              },
-            });
-
-            // Update account balances using proper accounting logic (same as other postings)
-            for (const line of (journalEntry as any).JournalLine) {
-              const accountType =
-                line.Account.Subgroup.MainGroup.type.toLowerCase();
-              const balanceChange =
-                accountType === "asset" ||
-                  accountType === "expense" ||
-                  accountType === "cost"
-                  ? line.debit - line.credit
-                  : line.credit - line.debit;
-
-              await prisma.account.update({
-                where: { id: line.accountId },
-                data: {
-                  currentBalance: { increment: balanceChange },
-                },
-              });
-            }
-
             // Voucher
-            await prisma.voucher.create({
+            const costVoucher = await prisma.voucher.create({
               data: {
                 voucherNumber: costVoucherNumber,
                 type: "journal",
@@ -2812,7 +2564,7 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
                 createdBy: approvedBy || "System",
                 approvedBy: "System",
                 approvedAt: new Date(),
-                entries: {
+                VoucherEntry: {
                   create: [
                     {
                       accountId: cogsAccount.id,
@@ -2834,6 +2586,16 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
                 },
               },
             } as any);
+
+            // Update account balances
+            await prisma.account.update({
+              where: { id: cogsAccount.id },
+              data: { currentBalance: { increment: totalCost } },
+            });
+            await prisma.account.update({
+              where: { id: inventoryAccount.id },
+              data: { currentBalance: { decrement: totalCost } },
+            });
           } else {
           }
         } else {
@@ -2980,7 +2742,7 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
               narration: `COGS Delivery - Invoice ${invoice.invoiceNo}`,
               totalDebit: deliveryCost, totalCredit: deliveryCost,
               status: "posted", createdBy: "System", approvedBy: "System", approvedAt: new Date(),
-              entries: {
+              VoucherEntry: {
                 create: [
                   { accountId: cogsAccount.id, accountName: cogsAccount.name, description: `Cost of Delivery - ${invoice.invoiceNo}`, debit: deliveryCost, credit: 0, sortOrder: 0 },
                   { accountId: inventoryAccount.id, accountName: inventoryAccount.name, description: `Inventory Reduction - ${invoice.invoiceNo}`, debit: 0, credit: deliveryCost, sortOrder: 1 }
@@ -3070,26 +2832,51 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
         });
 
         if (accountsReceivableAccount) {
-          await createJournalEntry(
-            new Date(paymentDate || new Date()),
-            invoice.invoiceNo,
-            `Payment received - Invoice ${invoice.invoiceNo}`,
-            [
-              {
-                accountId,
-                description: `Payment - Invoice ${invoice.invoiceNo}`,
-                debit: amount,
-                credit: 0,
+          const vNum = await getNextNumberForPrefix({ prefix: "RV", voucherType: "receipt" });
+          await prisma.voucher.create({
+            data: {
+              voucherNumber: vNum,
+              type: "receipt",
+              date: new Date(paymentDate || new Date()),
+              narration: `Payment received - Invoice ${invoice.invoiceNo}`,
+              totalDebit: amount,
+              totalCredit: amount,
+              status: "posted",
+              createdBy: "System",
+              approvedBy: "System",
+              approvedAt: new Date(),
+              VoucherEntry: {
+                create: [
+                  {
+                    accountId,
+                    accountName: "Cash/Bank Account",
+                    description: `Payment - Invoice ${invoice.invoiceNo}`,
+                    debit: amount,
+                    credit: 0,
+                    sortOrder: 0,
+                  },
+                  {
+                    accountId: accountsReceivableAccount.id,
+                    accountName: accountsReceivableAccount.name,
+                    description: `Receivable payment - Invoice ${invoice.invoiceNo}`,
+                    debit: 0,
+                    credit: amount,
+                    sortOrder: 1,
+                  },
+                ],
               },
-              {
-                accountId: accountsReceivableAccount.id,
-                description: `Receivable payment - Invoice ${invoice.invoiceNo}`,
-                debit: 0,
-                credit: amount,
-              },
-            ],
-            "System",
-          );
+            } as any,
+          });
+
+          // Update account balances
+          await prisma.account.update({
+            where: { id: accountId },
+            data: { currentBalance: { increment: amount } },
+          });
+          await prisma.account.update({
+            where: { id: accountsReceivableAccount.id },
+            data: { currentBalance: { decrement: amount } },
+          });
         }
       }
 

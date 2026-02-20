@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import * as crypto from "crypto";
 import prisma from "../config/database";
 import { Prisma } from "@prisma/client";
-import { processPurchaseReceive } from "../utils/inventoryFormulas";
+import { processPurchaseReceive, calculateAverageCostDPO } from "../utils/inventoryFormulas";
 import { getCanonicalPartId } from "../services/partCanonical";
 
 const router = express.Router();
@@ -3741,7 +3741,7 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
               totalDebit: totalAmount,
               totalCredit: totalAmount,
               status: voucherStatus,
-              createdBy: "System (Edit)",
+              createdBy: "System",
               isSystemGenerated: true,
               adjustmentId: id,
               VoucherEntry: {
@@ -5321,6 +5321,50 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
                   notes: `Purchase Order ${order.poNumber} - Received`,
                 } as any,
               });
+
+              // Update Part costs (Avg Cost and Purchase Price)
+              const partId = item.partId;
+              const qty = item.receivedQty;
+              const rate = item.unitCost;
+
+              if (partId && rate > 0 && qty > 0) {
+                await prisma.part.update({
+                  where: { id: partId },
+                  data: { purchasePrice: rate },
+                });
+
+                const part = await prisma.part.findUnique({
+                  where: { id: partId },
+                });
+
+                if (part) {
+                  // Get stock including the just-added movement
+                  const stockIn = await prisma.stockMovement.aggregate({
+                    _sum: { quantity: true },
+                    where: { partId, type: "in" },
+                  });
+                  const stockOut = await prisma.stockMovement.aggregate({
+                    _sum: { quantity: true },
+                    where: { partId, type: "out" },
+                  });
+
+                  const currentTotalStock =
+                    (stockIn._sum.quantity || 0) -
+                    (stockOut._sum.quantity || 0);
+                  const oldQty = currentTotalStock - qty;
+                  const currentAvg = part.avgCost || part.cost || 0;
+
+                  // Formula: (OldQty * OldAvg + NewQty * Rate) / (TotalQty)
+                  const newAvg = (oldQty + qty) > 0
+                    ? (oldQty * currentAvg + qty * rate) / (oldQty + qty)
+                    : rate;
+
+                  await prisma.part.update({
+                    where: { id: partId },
+                    data: { avgCost: newAvg, cost: newAvg },
+                  });
+                }
+              }
             }
           }
         }
@@ -5353,14 +5397,7 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
       updatedGrandTotal > 0
     ) {
       try {
-        // Check if journal entry already exists for this PO
-        const existingJournal = await prisma.journalEntry.findFirst({
-          where: {
-            reference: `PO-${order.poNumber}`,
-          },
-        });
-
-        if (!existingJournal) {
+        if (true) {
           // Get supplier name and account
           let supplierName = "Supplier";
           let supplierAccount = null;
@@ -5448,20 +5485,6 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
           }
 
           if (inventoryAccount && supplierAccount) {
-            // Generate journal entry number (format: JV4705)
-            const lastEntry = await prisma.journalEntry.findFirst({
-              where: { entryNo: { startsWith: "JV" } },
-              orderBy: { entryNo: "desc" },
-            });
-            let nextNum = 1;
-            if (lastEntry) {
-              const match = lastEntry.entryNo.match(/JV(\d+)/);
-              if (match) {
-                nextNum = parseInt(match[1], 10) + 1;
-              }
-            }
-            const entryNo = `JV${String(nextNum).padStart(4, "0")}`;
-
             // Create journal entry lines
             const journalLines: any[] = [];
 
@@ -5535,29 +5558,6 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
               debit: 0,
               credit: updatedGrandTotal,
               lineOrder: journalLines.length,
-            });
-
-            // Create journal entry
-            const journalEntry = await prisma.journalEntry.create({
-              data: {
-                id: crypto.randomUUID(),
-                entryNo,
-                entryDate: order.date,
-                reference: `PO-${order.poNumber}`,
-                description: `Purchase Order ${order.poNumber} received from ${supplierName}`,
-                totalDebit: updatedGrandTotal,
-                totalCredit: updatedGrandTotal,
-                status: "posted", // Auto-post the entry
-                createdBy: "System",
-                postedBy: "System",
-                updatedAt: new Date(),
-                JournalLine: {
-                  create: journalLines.map((line: any) => ({
-                    id: crypto.randomUUID(),
-                    ...line,
-                  })),
-                },
-              } as any,
             });
 
             // Create Voucher automatically when PO is received
@@ -5713,7 +5713,7 @@ router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Find the purchase order with all related data
+    // Find the purchase order
     const order = await prisma.purchaseOrder.findUnique({
       where: { id },
       include: {
@@ -5725,35 +5725,7 @@ router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Purchase order not found" });
     }
 
-    // Step 1: Delete stock movements related to this PO
-    // Check multiple ways to find related stock movements:
-    // 1. By referenceType='purchase' and referenceId=PO id
-    // 2. By PO number in notes field
-    // 3. Case-insensitive matching for referenceType
-    const stockMovementsToDelete = await prisma.stockMovement.findMany({
-      where: {
-        OR: [
-          {
-            AND: [
-              { referenceType: { in: ["purchase", "Purchase", "PURCHASE"] } },
-              { referenceId: id },
-            ],
-          },
-          {
-            notes: {
-              contains: order.poNumber,
-            },
-          },
-          {
-            notes: {
-              contains: `PO-${order.poNumber}`,
-            },
-          },
-        ],
-      },
-    });
-
-    // Delete the stock movements - use the same comprehensive query
+    // Step 1: Delete stock movements
     const deletedStockMovements = await prisma.stockMovement.deleteMany({
       where: {
         OR: [
@@ -5768,216 +5740,57 @@ router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
               contains: order.poNumber,
             },
           },
-          {
-            notes: {
-              contains: `PO-${order.poNumber}`,
-            },
-          },
         ],
       },
     });
 
-    // If we found movements but didn't delete them, log a warning
-    if (
-      stockMovementsToDelete.length > 0 &&
-      deletedStockMovements.count === 0
-    ) {
-    }
-
-    // Step 2: Find and reverse journal entries related to this PO
-    // Search by multiple criteria to catch all related entries:
-    // Handle variations: "PO-{poNumber}", "PO-PO-{poNumber}", or just "{poNumber}" in reference/description
+    // Step 2: Delete related Vouchers and reverse balances
     const poNumberVariations = [
-      order.poNumber, // "PO-API-TEST-001"
-      `PO-${order.poNumber}`, // "PO-PO-API-TEST-001"
-      `PO-PO-${order.poNumber}`, // "PO-PO-PO-API-TEST-001" (if any)
+      order.poNumber,
+      `PO-${order.poNumber}`,
     ];
 
-    // Also extract just the number part for matching
-    const poNumberMatch1 = order.poNumber.match(/(\d+)$/);
-    if (poNumberMatch1) {
-      poNumberVariations.push(poNumberMatch1[1]); // "001" or "API-TEST-001" part
-    }
-
-    const journalEntries = await prisma.journalEntry.findMany({
+    const vouchers = await prisma.voucher.findMany({
       where: {
-        OR: [
-          // Match by reference field
-          ...poNumberVariations.map((poVar) => ({
-            reference: { contains: poVar },
-          })),
-          // Match by description field
-          ...poNumberVariations.map((poVar) => ({
-            description: { contains: poVar },
-          })),
-          // Also check journal lines descriptions
-          {
-            JournalLine: {
-              some: {
-                OR: poNumberVariations.map((poVar) => ({
-                  description: { contains: poVar },
-                })),
-              },
-            },
-          },
-        ],
+        status: "posted",
+        OR: poNumberVariations.map((poVar) => ({
+          narration: { contains: poVar },
+        })),
       },
       include: {
-        JournalLine: {
+        VoucherEntry: {
           include: {
             Account: {
-              include: {
-                Subgroup: {
-                  include: {
-                    MainGroup: true,
-                  },
-                },
-              },
+              include: { Subgroup: { include: { MainGroup: true } } },
             },
           },
         },
       },
     });
 
-    if (journalEntries.length > 0) {
-    }
+    for (const v of vouchers) {
+      for (const edge of v.VoucherEntry) {
+        const accType = edge.Account.Subgroup.MainGroup.type.toLowerCase();
+        const reverseBalance = (accType === "asset" || accType === "expense" || accType === "cost")
+          ? edge.credit - edge.debit
+          : edge.debit - edge.credit;
 
-    // Reverse account balances for each journal entry
-    for (const entry of journalEntries) {
-      if (entry.status === "posted") {
-        // Reverse the account balances
-        for (const line of entry.JournalLine) {
-          const accountType =
-            line.Account.Subgroup.MainGroup.type.toLowerCase();
-          // Calculate reverse balance change (opposite of what was done)
-          const balanceChange =
-            accountType === "asset" ||
-              accountType === "expense" ||
-              accountType === "cost"
-              ? line.credit - line.debit // Reverse: credit - debit (opposite of debit - credit)
-              : line.debit - line.credit; // Reverse: debit - credit (opposite of credit - debit)
-
-          await prisma.account.update({
-            where: { id: line.accountId },
-            data: {
-              currentBalance: {
-                increment: balanceChange,
-              },
-            },
-          });
-        }
+        await prisma.account.update({
+          where: { id: edge.accountId },
+          data: { currentBalance: { increment: reverseBalance } },
+        });
       }
+      await prisma.voucher.delete({ where: { id: v.id } });
     }
 
-    // Delete journal entries (lines will cascade)
-    // Use the same comprehensive search criteria with all PO number variations
-    const deletedJournalEntries = await prisma.journalEntry.deleteMany({
-      where: {
-        OR: [
-          // Match by reference field
-          ...poNumberVariations.map((poVar) => ({
-            reference: { contains: poVar },
-          })),
-          // Match by description field
-          ...poNumberVariations.map((poVar) => ({
-            description: { contains: poVar },
-          })),
-          // Also check journal lines descriptions
-          {
-            JournalLine: {
-              some: {
-                OR: poNumberVariations.map((poVar) => ({
-                  description: { contains: poVar },
-                })),
-              },
-            },
-          },
-        ],
-      },
-    });
-
-    // Verify deletion
-    if (journalEntries.length > 0 && deletedJournalEntries.count === 0) {
-    } else if (journalEntries.length !== deletedJournalEntries.count) {
-    }
-
-    // Step 3: Find and delete vouchers related to this PO
-    // Search vouchers by narration containing PO number
-    // Also check voucher entries' descriptions for PO references
-    let poNumberForMatch = order.poNumber;
-    const poNumberMatch2 = order.poNumber.match(/PO-.*?(\d+)$/);
-    if (poNumberMatch2) {
-      poNumberForMatch = poNumberMatch2[1];
-    } else {
-      poNumberForMatch = order.poNumber
-        .replace(/^PO-?/i, "")
-        .replace(/^DEMO-?/i, "");
-    }
-
-    // Find vouchers by narration
-    const vouchersByNarration = await prisma.voucher.findMany({
-      where: {
-        OR: [
-          { narration: { contains: order.poNumber } },
-          { narration: { contains: `PO-${order.poNumber}` } },
-          { narration: { contains: poNumberForMatch } },
-        ],
-      },
-    });
-
-    // Also find vouchers by checking entries' descriptions
-    const voucherEntriesWithPO = await prisma.voucherEntry.findMany({
-      where: {
-        OR: [
-          { description: { contains: order.poNumber } },
-          { description: { contains: `PO-${order.poNumber}` } },
-        ],
-      },
-      select: { voucherId: true },
-      distinct: ["voucherId"],
-    });
-
-    const voucherIdsFromEntries = voucherEntriesWithPO.map((e) => e.voucherId);
-    const allVoucherIds = [
-      ...vouchersByNarration.map((v) => v.id),
-      ...voucherIdsFromEntries,
-    ];
-    const uniqueVoucherIds = [...new Set(allVoucherIds)];
-
-    // Delete vouchers (entries will cascade)
-    const deletedVouchers = await prisma.voucher.deleteMany({
-      where: {
-        OR: [
-          { narration: { contains: order.poNumber } },
-          { narration: { contains: `PO-${order.poNumber}` } },
-          { narration: { contains: poNumberForMatch } },
-          ...(uniqueVoucherIds.length > 0
-            ? [{ id: { in: uniqueVoucherIds } }]
-            : []),
-        ],
-      },
-    });
-
-    // Step 4: Check if any sales invoices reference this PO
-    // Note: Sales invoices don't have a notes field, so we skip this check
-    // Sales invoices are linked through stock movements with reference_type='purchase' and reference_id=PO.id
-    const salesInvoicesWithPO: any[] = [];
-
-    if (salesInvoicesWithPO.length > 0) {
-      salesInvoicesWithPO.forEach((inv) => { });
-      // Note: We don't delete sales invoices, just log a warning
-    }
-
-    // Step 5: Delete the purchase order (items will cascade delete)
+    // Step 3: Delete the purchase order
     await prisma.purchaseOrder.delete({ where: { id } });
 
     res.json({
       message: "Purchase order deleted successfully",
       details: {
         stockMovementsDeleted: deletedStockMovements.count,
-        journalEntriesDeleted: deletedJournalEntries.count,
-        vouchersDeleted: deletedVouchers.count,
-        salesInvoicesReferenced: salesInvoicesWithPO.length,
+        vouchersDeleted: vouchers.length,
       },
     });
   } catch (error: any) {
@@ -7429,11 +7242,9 @@ router.get(
 );
 
 // Create direct purchase order
+// Create direct purchase order
 router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
-  console.log("!!! HELLO FROM DPO POST ROUTE !!!");
   try {
-    // Debug: Log raw request info
-
     let {
       dpo_number,
       date,
@@ -7446,917 +7257,252 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       expenses,
     } = req.body || {};
 
-    // Debug logging
-
     if (!date || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "date and items are required" });
     }
 
-    // Validate supplier is required
     if (!supplier_id) {
       return res.status(400).json({ error: "Supplier is required" });
     }
 
-    // Generate DPO number if not provided or if it already exists
-    if (!dpo_number) {
-      // Generate new DPO number
-      const year = new Date(date).getFullYear();
-      const lastDPO = await prisma.directPurchaseOrder.findFirst({
-        where: {
-          dpoNumber: {
-            startsWith: `DPO-${year}-`,
-          },
-        },
-        orderBy: {
-          dpoNumber: "desc",
-        },
-      });
-
-      let nextNum = 1;
-      if (lastDPO) {
-        const match = lastDPO.dpoNumber.match(
-          new RegExp(`^DPO-${year}-(\\d+)$`),
-        );
-        if (match) {
-          nextNum = parseInt(match[1]) + 1;
-        }
-      }
-      dpo_number = `DPO-${year}-${String(nextNum).padStart(3, "0")}`;
-    } else {
-      // Check if DPO number already exists
-      const existingDPO = await prisma.directPurchaseOrder.findUnique({
-        where: { dpoNumber: dpo_number },
-      });
-
-      if (existingDPO) {
-        // Generate a new unique number if the provided one exists
+    const { order, voucherStatus } = await prisma.$transaction(async (tx) => {
+      // Generate DPO number
+      if (!dpo_number) {
         const year = new Date(date).getFullYear();
-        const lastDPO = await prisma.directPurchaseOrder.findFirst({
-          where: {
-            dpoNumber: {
-              startsWith: `DPO-${year}-`,
-            },
-          },
-          orderBy: {
-            dpoNumber: "desc",
-          },
+        const lastDPO = await tx.directPurchaseOrder.findFirst({
+          where: { dpoNumber: { startsWith: `DPO-${year}-` } },
+          orderBy: { dpoNumber: "desc" },
         });
 
         let nextNum = 1;
         if (lastDPO) {
-          const match = lastDPO.dpoNumber.match(
-            new RegExp(`^DPO-${year}-(\\d+)$`),
-          );
-          if (match) {
-            nextNum = parseInt(match[1]) + 1;
-          }
+          const match = lastDPO.dpoNumber.match(new RegExp(`^DPO-${year}-(\\d+)$`));
+          if (match) nextNum = parseInt(match[1]) + 1;
         }
         dpo_number = `DPO-${year}-${String(nextNum).padStart(3, "0")}`;
       }
-    }
 
-    // Calculate total amount from items
-    const itemsTotal = items.reduce((sum: number, item: any) => {
-      return sum + (item.amount || item.purchase_price * item.quantity);
-    }, 0);
+      // Calculate totals
+      const itemsTotal = items.reduce((sum: number, item: any) => {
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
+        return sum + (Number(item.amount) || (qty * rate));
+      }, 0);
 
-    // Calculate total expenses
-    const expensesTotal =
-      expenses && Array.isArray(expenses) && expenses.length > 0
-        ? expenses.reduce(
-          (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
-          0,
-        )
-        : 0;
+      const expensesTotal = (expenses || []).reduce((sum: number, exp: any) => sum + (Number(exp.amount) || 0), 0);
+      const totalAmount = itemsTotal + expensesTotal;
 
-    const totalAmount = itemsTotal + expensesTotal;
-
-    // Initialize voucher creation status tracking
-    const voucherCreationStatus = {
-      jvCreated: false,
-      pvCreated: false,
-      jvNumber: null as string | null,
-      pvNumber: null as string | null,
-      errors: [] as string[],
-    };
-
-    // Debug logging
-
-    const dpoId = crypto.randomUUID();
-    const createData: any = {
-      id: dpoId,
-      dpoNumber: dpo_number,
-      date: new Date(date),
-      storeId: store_id || null,
-      supplierId: supplier_id || null,
-      account: account || null,
-      description: description || null,
-      status: status || "Completed",
-      totalAmount: totalAmount,
-      updatedAt: new Date(),
-      DirectPurchaseOrderItem: {
-        create: items.map((item: any) => ({
-          id: crypto.randomUUID(),
-          partId: item.part_id,
-          quantity: item.quantity || 0,
-          purchasePrice:
-            item.purchase_price !== undefined && item.purchase_price !== null
-              ? Number(item.purchase_price)
-              : 0,
-          salePrice: 0, // sale_price is not used, default to 0
-          amount:
-            item.amount || (item.purchase_price || 0) * (item.quantity || 0),
-          priceA:
-            item.price_a !== undefined && item.price_a !== null
-              ? Number(item.price_a)
-              : null,
-          priceB:
-            item.price_b !== undefined && item.price_b !== null
-              ? Number(item.price_b)
-              : null,
-          priceM:
-            item.price_m !== undefined && item.price_m !== null
-              ? Number(item.price_m)
-              : null,
-          rackId: item.rack_id || null,
-          shelfId: item.shelf_id || null,
-        })) as any,
-      },
-    };
-
-    // Only add expenses if they exist
-    if (expenses && expenses.length > 0) {
-      createData.DirectPurchaseOrderExpense = {
-        create: expenses.map((exp: any) => ({
-          id: crypto.randomUUID(),
-          expenseType: exp.expense_type,
-          payableAccount: exp.payable_account,
-          description: exp.description || null,
-          amount: exp.amount,
-        })),
-      };
-    }
-
-    console.log(`Creating DPO ${dpo_number} with ID ${dpoId}`);
-
-    const order = await prisma.directPurchaseOrder.create({
-      data: createData,
-      include: {
-        DirectPurchaseOrderItem: {
-          include: {
-            Part: true,
+      const dpoId = crypto.randomUUID();
+      const newOrder = await tx.directPurchaseOrder.create({
+        data: {
+          id: dpoId,
+          dpoNumber: dpo_number,
+          date: new Date(date),
+          storeId: store_id || null,
+          supplierId: supplier_id || null,
+          account: account || null,
+          description: description || null,
+          status: status || "Completed",
+          totalAmount: totalAmount,
+          DirectPurchaseOrderItem: {
+            create: items.map((item: any) => ({
+              id: crypto.randomUUID(),
+              partId: item.part_id,
+              quantity: Number(item.quantity) || 0,
+              purchasePrice: Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0),
+              salePrice: Number(item.sale_price || item.salePrice || 0),
+              amount: Number(item.amount) || (Number(item.quantity) * Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0)),
+              priceA: item.price_a != null ? Number(item.price_a) : null,
+              priceB: item.price_b != null ? Number(item.price_b) : null,
+              priceM: item.price_m != null ? Number(item.price_m) : null,
+              rackId: item.rack_id || null,
+              shelfId: item.shelf_id || null,
+            })),
+          },
+          DirectPurchaseOrderExpense: {
+            create: (expenses || []).map((exp: any) => ({
+              id: crypto.randomUUID(),
+              expenseType: exp.expense_type,
+              payableAccount: exp.payable_account,
+              description: exp.description || null,
+              amount: Number(exp.amount) || 0,
+            })),
           },
         },
-        DirectPurchaseOrderExpense: true,
-      },
-    });
+        include: {
+          DirectPurchaseOrderItem: { include: { Part: true } },
+          DirectPurchaseOrderExpense: true,
+        },
+      });
 
-    // Update cost prices when DPO is created (regardless of status)
-    // This ensures the cost is updated immediately when DPO is created
-    // Calculate total expenses
-    const totalExpenses =
-      expenses && Array.isArray(expenses) && expenses.length > 0
-        ? expenses.reduce(
-          (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
-          0,
-        )
-        : 0;
+      // Update Parts and Stock
+      const isApprovedStatus = (s: string) => ["completed", "received", "approved"].includes(s.toLowerCase());
+      const currentStatus = status || "Completed";
 
-    // Update cost prices using inventory formulas
-    if (items && items.length > 0) {
-      try {
-        const receiveResult = await processPurchaseReceive(
-          items.map((item: any) => ({
-            partId: item.part_id,
-            quantity: item.quantity || 0,
-            purchasePrice: item.purchase_price || 0,
-          })),
-          totalExpenses,
-          "value", // distribute expenses by item value (proportional)
-          "dpo", // Use the user-requested DPO formula
-        );
-      } catch (error: any) {
-        // Continue with stock movements even if cost update fails
-      }
-    }
-
-    // Create stock movements only when status is "Completed"
-    if (status === "Completed") {
+      // 1. Unconditionally update purchase prices for all items
       for (const item of items) {
-        await prisma.stockMovement.create({
-          data: {
-            id: crypto.randomUUID(),
-            partId: item.part_id,
-            type: "in",
-            quantity: item.quantity,
-            storeId: store_id || null,
-            rackId: item.rack_id || null,
-            shelfId: item.shelf_id || null,
-            referenceType: "direct_purchase",
-            referenceId: order.id,
-            supplierId: order.supplierId,
-            notes: `Direct Purchase Order: ${dpo_number}`,
-          } as any,
-        });
+        const partId = item.part_id;
+        const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
+        if (partId && rate > 0) {
+          await tx.part.update({
+            where: { id: partId },
+            data: { purchasePrice: rate },
+          });
+        }
       }
-    }
 
-    // Create journal entry and vouchers ONLY when DPO is created with Received/Completed status
-    // Vouchers should NOT be created on initial DPO creation — only when the store manager receives/approves the order
-    const isBeingReceived = status === "Received" || status === "Completed";
-    console.log(`[DPO CREATE] status="${status}", isBeingReceived=${isBeingReceived}, totalAmount=${totalAmount} — vouchers will ${isBeingReceived ? "BE" : "NOT BE"} created`);
-    if (isBeingReceived && totalAmount > 0) {
-      try {
-        // Find Inventory Account (NOT from account field - that's for bank/cash payment)
-        // Always find Inventory Account separately - it's always needed for JV voucher
-        let inventoryAccount = null;
+      // 2. Only calculate average cost and create stock movements if Approved
+      if (isApprovedStatus(currentStatus)) {
+        for (const item of items) {
+          const partId = item.part_id;
+          const qty = Number(item.quantity) || 0;
+          const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
 
-        // First try Subgroup 104 (Inventory)
-        inventoryAccount = await prisma.account.findFirst({
-          where: {
-            Subgroup: {
-              code: "104",
-            },
-            status: "Active",
-          },
-          include: {
-            Subgroup: {
-              include: {
-                MainGroup: true,
-              },
-            },
-          },
-        });
+          if (partId && rate > 0) {
+            // Removed auto-update of avgCost and cost per user request
 
-        // Fallback: Find by name containing "Inventory" (case-insensitive search)
-        if (!inventoryAccount) {
-          const allAccounts = await prisma.account.findMany({
-            where: {
-              status: "Active",
-            },
-            include: {
-              Subgroup: {
-                include: {
-                  MainGroup: true,
-                },
-              },
-            },
-          });
-
-          // Manual case-insensitive search
-          for (const acc of allAccounts) {
-            if (acc.name && acc.name.toLowerCase().includes("inventory")) {
-              inventoryAccount = acc;
-              break;
-            }
-          }
-        }
-
-        if (!inventoryAccount) {
-        } else {
-        }
-
-        // Find the main payable account (for supplier payable - we need a liability account)
-        let mainPayableAccount = null;
-
-        // Try to find or create supplier account
-        let supplierAccountName = "Supplier";
-        if (!mainPayableAccount && supplier_id) {
-          const supplier = await prisma.supplier.findUnique({
-            where: { id: supplier_id },
-          });
-
-          if (supplier) {
-            supplierAccountName =
-              supplier.companyName || supplier.name || "Supplier";
-            const payablesSubgroup = await prisma.subgroup.findFirst({
-              where: { code: "301" },
-            });
-
-            if (payablesSubgroup) {
-              // Find existing supplier account (should already exist if supplier was created properly)
-              mainPayableAccount = await prisma.account.findFirst({
-                where: {
-                  subgroupId: payablesSubgroup.id,
-                  OR: [
-                    { name: supplier.name || "" },
-                    { name: supplier.companyName || "" },
-                  ],
-                },
-                include: {
-                  Subgroup: {
-                    include: {
-                      MainGroup: true,
-                    },
-                  },
-                },
-              });
-
-              // Only create supplier account if it doesn't exist (should rarely happen)
-              // This ensures we use the existing account with opening balance
-              if (!mainPayableAccount) {
-                const existingAccounts = await prisma.account.findMany({
-                  where: { code: { startsWith: "301" } },
-                  orderBy: { code: "desc" },
-                });
-
-                let accountCode = "301001";
-                if (existingAccounts.length > 0) {
-                  const lastCode = existingAccounts[0].code;
-                  const match = lastCode.match(/^301(\d+)$/);
-                  if (match) {
-                    const lastNum = parseInt(match[1], 10);
-                    const nextNum = lastNum + 1;
-                    accountCode = `301${String(nextNum).padStart(3, "0")}`;
-                  }
-                }
-
-                mainPayableAccount = await prisma.account.create({
-                  data: {
-                    id: crypto.randomUUID(),
-                    subgroupId: payablesSubgroup.id,
-                    code: accountCode,
-                    name: supplier.companyName || supplier.name || account,
-                    description: `Supplier Account: ${supplier.companyName || supplier.name}`,
-                    openingBalance: supplier.openingBalance || 0, // Use supplier's opening balance
-                    currentBalance: supplier.openingBalance || 0, // Initialize with opening balance
-                    status: "Active",
-                    canDelete: false,
-                    updatedAt: new Date(),
-                    ...(supplier.id && { supplierId: supplier.id }),
-                  } as any,
-                  include: {
-                    Subgroup: {
-                      include: {
-                        MainGroup: true,
-                      },
-                    },
-                  },
-                });
-              } else {
-              }
-            }
-          }
-        }
-
-        // Last fallback: find any account with the name
-        if (!mainPayableAccount && account) {
-          const accountByName = await prisma.account.findFirst({
-            where: {
-              name: { contains: account },
-              status: "Active",
-            },
-            include: {
-              Subgroup: {
-                include: {
-                  MainGroup: true,
-                },
-              },
-            },
-          });
-          // Only use it if it's a liability account
-          if (
-            accountByName &&
-            accountByName.Subgroup.MainGroup.type.toLowerCase() === "liability"
-          ) {
-            mainPayableAccount = accountByName;
-          }
-        }
-
-        // Fallback to generic Accounts Payable - try multiple variations
-        if (!mainPayableAccount) {
-          // Try different account codes and names
-          mainPayableAccount = await prisma.account.findFirst({
-            where: {
-              OR: [
-                { code: "301001" },
-                { code: "3010001" },
-                { name: "Accounts Payable" },
-              ],
-              status: "Active",
-            },
-            include: {
-              Subgroup: {
-                include: {
-                  MainGroup: true,
-                },
-              },
-            },
-          });
-
-          // If still not found, try to find any account in subgroup 301
-          if (!mainPayableAccount) {
-            const payablesSubgroup = await prisma.subgroup.findFirst({
-              where: { code: "301" },
-            });
-
-            if (payablesSubgroup) {
-              mainPayableAccount = await prisma.account.findFirst({
-                where: {
-                  subgroupId: payablesSubgroup.id,
-                  status: "Active",
-                },
-                include: {
-                  Subgroup: {
-                    include: {
-                      MainGroup: true,
-                    },
-                  },
-                },
-              });
-            }
-          }
-        }
-
-        if (inventoryAccount && mainPayableAccount) {
-          // Generate voucher number first (format: JV4800 - 4 digits, no year prefix)
-          const lastVoucher = await prisma.voucher.findFirst({
-            where: {
-              type: "journal",
-              voucherNumber: {
-                startsWith: "JV",
-              },
-            },
-            orderBy: {
-              voucherNumber: "desc",
-            },
-          });
-
-          let jvNumber = 1;
-          if (lastVoucher) {
-            const match = lastVoucher.voucherNumber.match(/^JV(\d+)$/);
-            if (match) {
-              jvNumber = parseInt(match[1]) + 1;
-            } else {
-              // Fallback: count all journal vouchers
-              const voucherCount = await prisma.voucher.count({
-                where: { type: "journal" },
-              });
-              jvNumber = voucherCount + 1;
-            }
-          }
-          const voucherNumber = `JV${String(jvNumber).padStart(4, "0")}`;
-
-          // Generate unique entryNo - check existing journal entries to avoid conflicts
-          let entryNo = voucherNumber;
-          let entryNoExists = await prisma.journalEntry.findUnique({
-            where: { entryNo: entryNo },
-          });
-
-          // If entryNo exists, find the next available number
-          if (entryNoExists) {
-            const lastEntry = await prisma.journalEntry.findFirst({
-              where: {
-                entryNo: {
-                  startsWith: "JV",
-                },
-              },
-              orderBy: {
-                entryNo: "desc",
-              },
-            });
-
-            if (lastEntry) {
-              const match = lastEntry.entryNo.match(/^JV(\d+)$/);
-              if (match) {
-                const nextNum = parseInt(match[1]) + 1;
-                entryNo = `JV${String(nextNum).padStart(4, "0")}`;
-              } else {
-                // Fallback: use timestamp-based unique number
-                entryNo = `JV${Date.now().toString().slice(-6)}`;
-              }
-            }
-          }
-
-          // Build journal lines with proper descriptions matching screenshot format
-          const journalLines: Array<{
-            accountId: string;
-            description: string;
-            debit: number;
-            credit: number;
-            lineOrder: number;
-          }> = [];
-
-          // Entry 1: Debit Inventory Account (for items total) - with detailed item description
-          if (itemsTotal > 0) {
-            // Build detailed description with item information matching screenshot format
-            // Format: "DPO: 15 Inventory Added, partNo/brand/description/, Qty 22, Rate 15000, Cost: 1000"
-            // Use order.items which already includes part information
-            const itemDetails = (order as any).DirectPurchaseOrderItem
-              .map((orderItem: any) => {
-                const part = orderItem.Part;
-                const partNo = part?.partNo || "N/A";
-                const description = part?.description || "Item";
-                const brand = part?.Brand?.name || "";
-                const qty = orderItem.quantity;
-                const rate = orderItem.purchasePrice;
-                const cost = orderItem.amount;
-
-                return `${partNo}${brand ? "/" + brand : ""}/${description}/, Qty ${qty}, Rate ${rate}, Cost: ${cost}`;
-              })
-              .join(", ");
-
-            journalLines.push({
-              accountId: inventoryAccount.id,
-              description: `DPO: ${dpo_number} Inventory Added, ${itemDetails}`,
-              debit: itemsTotal,
-              credit: 0,
-              lineOrder: 0,
-            });
-          }
-
-          // Lines for expenses: Debit Inventory (add expenses to inventory cost), Credit Expense Payable Accounts
-          if (expenses && expenses.length > 0) {
-            for (let i = 0; i < expenses.length; i++) {
-              const exp = expenses[i];
-              if (exp.amount > 0 && exp.payable_account) {
-                // Find expense payable account
-                const expensePayableAccount = await prisma.account.findFirst({
-                  where: {
-                    name: exp.payable_account,
-                    status: "Active",
-                  },
-                  include: {
-                    Subgroup: {
-                      include: {
-                        MainGroup: true,
-                      },
-                    },
-                  },
-                });
-
-                if (expensePayableAccount) {
-                  // Add expense to inventory cost - Debit Inventory, Credit Expense Payable
-                  journalLines.push({
-                    accountId: inventoryAccount.id,
-                    description: `DPO: ${dpo_number} - ${exp.expense_type || "Expense"}: ${exp.description || ""}`,
-                    debit: exp.amount,
-                    credit: 0,
-                    lineOrder: journalLines.length,
-                  });
-
-                  journalLines.push({
-                    accountId: expensePayableAccount.id,
-                    description: `DPO: ${dpo_number} - ${exp.expense_type || "Expense"} Payable`,
-                    debit: 0,
-                    credit: exp.amount,
-                    lineOrder: journalLines.length,
-                  });
-                }
-              }
-            }
-          }
-
-          // Entry 2: Credit Supplier Payable Account (Main entry - supplier liability)
-          // Format: "DPO: 15 Abdullah Rehman Liability Created"
-          if (itemsTotal > 0) {
-            journalLines.push({
-              accountId: mainPayableAccount.id,
-              description: `DPO: ${dpo_number} ${supplierAccountName} Liability Created`,
-              debit: 0,
-              credit: itemsTotal,
-              lineOrder: journalLines.length,
-            });
-          }
-
-          // Calculate totals
-          const totalDebit = journalLines.reduce(
-            (sum, line) => sum + line.debit,
-            0,
-          );
-          const totalCredit = journalLines.reduce(
-            (sum, line) => sum + line.credit,
-            0,
-          );
-
-          // Create journal entry
-          if (journalLines.length > 0 && totalDebit === totalCredit) {
-            // Double-check entryNo is unique before creating
-            let finalEntryNo = entryNo;
-            let attempts = 0;
-            while (attempts < 10) {
-              const exists = await prisma.journalEntry.findUnique({
-                where: { entryNo: finalEntryNo },
-              });
-              if (!exists) {
-                break; // Found unique number
-              }
-              // Generate new number
-              const match = finalEntryNo.match(/^JV(\d+)$/);
-              if (match) {
-                const nextNum = parseInt(match[1]) + 1;
-                finalEntryNo = `JV${String(nextNum).padStart(4, "0")}`;
-              } else {
-                finalEntryNo = `JV${String(Date.now()).slice(-6)}`;
-              }
-              attempts++;
-            }
-
-            const journalEntry = await prisma.journalEntry.create({
+            await tx.stockMovement.create({
               data: {
                 id: crypto.randomUUID(),
-                entryNo: finalEntryNo,
-                entryDate: new Date(date),
-                reference: `DPO-${dpo_number}`,
-                description: `Direct Purchase Order ${dpo_number}${description ? `: ${description}` : ""}`,
-                totalDebit,
-                totalCredit,
-                status: "posted",
-                createdBy: "System",
-                postedBy: "System",
-                postedAt: new Date(),
-                updatedAt: new Date(),
-                JournalLine: {
-                  create: journalLines.map((line: any) => ({
-                    id: crypto.randomUUID(),
-                    ...line,
-                  })),
-                },
+                partId,
+                type: "in",
+                quantity: qty,
+                storeId: store_id || null,
+                rackId: item.rack_id || null,
+                shelfId: item.shelf_id || null,
+                referenceType: "direct_purchase",
+                referenceId: dpoId,
+                supplierId: supplier_id,
+                notes: `Direct Purchase Order: ${dpo_number}`,
               } as any,
-              include: {
-                JournalLine: {
-                  include: {
-                    Account: {
-                      include: {
-                        Subgroup: {
-                          include: {
-                            MainGroup: true,
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
             });
+          }
+        }
+      }
 
-            // Update account balances
-            for (const line of journalEntry.JournalLine) {
-              const accountType =
-                line.Account.Subgroup.MainGroup.type.toLowerCase();
-              // Assets and Expenses: increase with debit, decrease with credit
-              // Liabilities, Equity, Revenue: increase with credit, decrease with debit
-              const balanceChange =
-                accountType === "asset" ||
-                  accountType === "expense" ||
-                  accountType === "cost"
-                  ? line.debit - line.credit
-                  : line.credit - line.debit;
+      // Accounting
+      const voucherCreationStatus = { jvCreated: false, pvCreated: false, jvNumber: null as string | null, pvNumber: null as string | null, errors: [] as string[] };
+      if (isApprovedStatus(currentStatus) && totalAmount > 0) {
+        try {
+          let inventoryAccount = await tx.account.findFirst({
+            where: { OR: [{ Subgroup: { code: "104" } }, { code: "101001" }, { code: "104005" }, { name: { contains: "Inventory - General" } }], status: "Active" },
+            include: { Subgroup: { include: { MainGroup: true } } }
+          });
+          if (!inventoryAccount) {
+            inventoryAccount = await tx.account.findFirst({
+              where: { OR: [{ Subgroup: { code: "104" } }, { name: { contains: "Inventory" } }], status: "Active" },
+              include: { Subgroup: { include: { MainGroup: true } } }
+            });
+          }
 
-              await prisma.account.update({
-                where: { id: line.accountId },
-                data: {
-                  currentBalance: {
-                    increment: balanceChange,
-                  },
-                },
-              });
+          const supplier = await tx.supplier.findUnique({ where: { id: supplier_id } });
+          let mainPayableAccount = await tx.account.findFirst({
+            where: { Subgroup: { code: "301" }, OR: [{ name: supplier?.name || "" }, { name: supplier?.companyName || "" }, { name: { contains: supplier?.name || "Supplier" } }] },
+            include: { Subgroup: { include: { MainGroup: true } } }
+          });
+          if (!mainPayableAccount) {
+            mainPayableAccount = await tx.account.findFirst({
+              where: { Subgroup: { code: "301" } },
+              include: { Subgroup: { include: { MainGroup: true } } }
+            });
+          }
+
+          if (inventoryAccount && mainPayableAccount) {
+            const lastVoucher = await tx.voucher.findFirst({ where: { type: "journal", voucherNumber: { startsWith: "JV" } }, orderBy: { voucherNumber: "desc" } });
+            const jvNum = lastVoucher ? (parseInt(lastVoucher.voucherNumber.match(/\d+/)![0]) + 1) : 1;
+            const jvNumber = `JV${String(jvNum).padStart(4, "0")}`;
+
+            const voucherEntries = [
+              { id: crypto.randomUUID(), accountId: inventoryAccount.id, accountName: `${inventoryAccount.code}-${inventoryAccount.name}`, description: `DPO: ${dpo_number} Inventory Added`, debit: itemsTotal, credit: 0, sortOrder: 0 },
+              { id: crypto.randomUUID(), accountId: mainPayableAccount.id, accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`, description: `DPO: ${dpo_number} Liability Created`, debit: 0, credit: itemsTotal, sortOrder: 1 }
+            ];
+
+            if (expenses && expenses.length > 0) {
+              for (const exp of expenses) {
+                const epAccount = await tx.account.findFirst({ where: { name: exp.payable_account, status: "Active" } });
+                if (epAccount) {
+                  voucherEntries.push({ id: crypto.randomUUID(), accountId: inventoryAccount.id, accountName: `${inventoryAccount.code}-${inventoryAccount.name}`, description: `DPO: ${dpo_number} - ${exp.expense_type}`, debit: exp.amount, credit: 0, sortOrder: voucherEntries.length });
+                  voucherEntries.push({ id: crypto.randomUUID(), accountId: epAccount.id, accountName: `${epAccount.code}-${epAccount.name}`, description: `DPO: ${dpo_number} - ${exp.expense_type} Payable`, debit: 0, credit: exp.amount, sortOrder: voucherEntries.length });
+                }
+              }
             }
 
-            // Create Voucher automatically when DPO is created
-            try {
-              // Use supplier name already captured (or 'Supplier' if no supplier)
-              const supplierName = supplierAccountName;
-
-              // Get account details for voucher entries from journal lines
-              const voucherEntries = [];
-              for (const line of journalLines) {
-                const account = await prisma.account.findUnique({
-                  where: { id: line.accountId },
-                  select: { code: true, name: true },
-                });
-
-                voucherEntries.push({
-                  id: crypto.randomUUID(),
-                  accountId: line.accountId,
-                  accountName: account
-                    ? `${account.code}-${account.name}`
-                    : "Account",
-                  description:
-                    line.description || `Direct Purchase Order ${dpo_number}`,
-                  debit: line.debit,
-                  credit: line.credit,
-                  sortOrder: line.lineOrder,
-                });
+            await tx.voucher.create({
+              data: {
+                id: crypto.randomUUID(),
+                voucherNumber: jvNumber,
+                type: "journal",
+                date: new Date(date),
+                narration: supplier?.companyName || supplier?.name || "Supplier",
+                totalDebit: totalAmount,
+                totalCredit: totalAmount,
+                status: "posted",
+                createdBy: "System",
+                approvedBy: "System",
+                approvedAt: new Date(),
+                VoucherEntry: { create: voucherEntries }
               }
+            });
 
-              // Create voucher with supplier name in narration (exactly as shown in screenshot - just supplier name)
-              const voucher = await prisma.voucher.create({
+            for (const entry of voucherEntries) {
+              const acc = await tx.account.findUnique({ where: { id: entry.accountId }, include: { Subgroup: { include: { MainGroup: true } } } });
+              if (acc) {
+                const type = acc.Subgroup.MainGroup.type.toLowerCase();
+                const change = (type === "asset" || type === "expense" || type === "cost") ? (entry.debit - entry.credit) : (entry.credit - entry.debit);
+                await tx.account.update({ where: { id: entry.accountId }, data: { currentBalance: { increment: change } } });
+              }
+            }
+            voucherCreationStatus.jvCreated = true;
+            voucherCreationStatus.jvNumber = jvNumber;
+          }
+
+          if (account && itemsTotal > 0 && mainPayableAccount) {
+            const cashBankAccount = await tx.account.findUnique({ where: { id: account } });
+            if (cashBankAccount) {
+              const lastPV = await tx.voucher.findFirst({ where: { type: "payment", voucherNumber: { startsWith: "PV" } }, orderBy: { voucherNumber: "desc" } });
+              const pvNum = lastPV ? (parseInt(lastPV.voucherNumber.match(/\d+/)![0]) + 1) : 1;
+              const pvNumber = `PV${String(pvNum).padStart(4, "0")}`;
+
+              await tx.voucher.create({
                 data: {
                   id: crypto.randomUUID(),
-                  voucherNumber, // e.g., JV4800
-                  type: "journal",
+                  voucherNumber: pvNumber,
+                  type: "payment",
                   date: new Date(date),
-                  narration: supplierName, // Just supplier name: "Abdullah Rehman" (not "Abdullah Rehman - DPO 15")
-                  totalDebit: totalDebit,
-                  totalCredit: totalCredit,
-                  status: "posted", // Auto-approve the voucher
+                  narration: supplier?.companyName || supplier?.name || "Supplier",
+                  cashBankAccount: cashBankAccount.name,
+                  totalDebit: itemsTotal,
+                  totalCredit: itemsTotal,
+                  status: "posted",
                   createdBy: "System",
                   approvedBy: "System",
                   approvedAt: new Date(),
-                  updatedAt: new Date(),
                   VoucherEntry: {
-                    create: voucherEntries.map((e: any) => ({
-                      id: crypto.randomUUID(),
-                      ...e,
-                    })),
-                  },
-                },
+                    create: [
+                      { id: crypto.randomUUID(), accountId: mainPayableAccount.id, accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`, description: `Payment for DPO ${dpo_number}`, debit: itemsTotal, credit: 0, sortOrder: 0 },
+                      { id: crypto.randomUUID(), accountId: cashBankAccount.id, accountName: `${cashBankAccount.code}-${cashBankAccount.name}`, description: `Payment via ${cashBankAccount.name}`, debit: 0, credit: itemsTotal, sortOrder: 1 }
+                    ]
+                  }
+                }
               });
 
-              voucherCreationStatus.jvCreated = true;
-              voucherCreationStatus.jvNumber = voucherNumber;
-
-              // If account (bank/cash) is selected, automatically create PV voucher for payment
-              // This means user is paying the supplier immediately
-              // NOTE: PV voucher should only include items total (NOT expenses)
-              if (account && itemsTotal > 0 && mainPayableAccount) {
-                // Get the cash/bank account that was selected
-                const cashBankAccount = await prisma.account.findUnique({
-                  where: { id: account },
-                  include: {
-                    Subgroup: {
-                      include: {
-                        MainGroup: true,
-                      },
-                    },
-                  },
-                });
-
-                if (!cashBankAccount) {
-                  voucherCreationStatus.errors.push(
-                    `Cash/Bank account ${account} not found`,
-                  );
-                } else {
-                  // Verify it's a Cash (101) or Bank (102) account
-                  const subgroupCode = cashBankAccount.Subgroup?.code || "";
-                  const isCashOrBank =
-                    subgroupCode === "101" || subgroupCode === "102";
-
-                  if (!isCashOrBank) {
-                    const accountType =
-                      cashBankAccount.Subgroup?.MainGroup?.type?.toLowerCase() ||
-                      "";
-                    if (accountType !== "asset") {
-                      voucherCreationStatus.errors.push(
-                        `Account ${cashBankAccount.name} is not a Cash/Bank account`,
-                      );
-                    } else {
-                      // Allow if it's an asset account even if not 101/102
-                    }
-                  }
-
-                  // Only proceed if we haven't encountered an error
-                  if (
-                    cashBankAccount &&
-                    (!isCashOrBank
-                      ? cashBankAccount.Subgroup?.MainGroup?.type?.toLowerCase() ===
-                      "asset"
-                      : true)
-                  ) {
-                    // Generate PV number (format: PV####)
-                    const lastPV = await prisma.voucher.findFirst({
-                      where: {
-                        type: "payment",
-                        voucherNumber: {
-                          startsWith: "PV",
-                        },
-                      },
-                      orderBy: {
-                        voucherNumber: "desc",
-                      },
-                    });
-
-                    let pvNumber = 1;
-                    if (lastPV) {
-                      const match = lastPV.voucherNumber.match(/^PV(\d+)$/);
-                      if (match) {
-                        pvNumber = parseInt(match[1]) + 1;
-                      } else {
-                        const voucherCount = await prisma.voucher.count({
-                          where: { type: "payment" },
-                        });
-                        pvNumber = voucherCount + 1;
-                      }
-                    }
-                    const pvVoucherNumber = `PV${String(pvNumber).padStart(4, "0")}`;
-
-                    // Create Payment Voucher (using itemsTotal only, NOT expenses)
-                    // Debit Supplier Payable (decreases liability) and Credit Cash/Bank (decreases asset)
-                    const paymentVoucher = await prisma.voucher.create({
-                      data: {
-                        id: crypto.randomUUID(),
-                        voucherNumber: pvVoucherNumber,
-                        type: "payment",
-                        date: new Date(date),
-                        narration: supplierName,
-                        cashBankAccount: cashBankAccount.name,
-                        totalDebit: itemsTotal, // Only items total, no expenses
-                        totalCredit: itemsTotal, // Only items total, no expenses
-                        status: "posted",
-                        createdBy: "System",
-                        approvedBy: "System",
-                        approvedAt: new Date(),
-                        updatedAt: new Date(),
-                        VoucherEntry: {
-                          create: [
-                            {
-                              id: `ve_${Date.now()}_0_${Math.random().toString(36).substr(2, 9)}`,
-                              accountId: mainPayableAccount.id,
-                              accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
-                              description: `Payment for DPO ${dpo_number}`,
-                              debit: itemsTotal, // Only items total
-                              credit: 0,
-                              sortOrder: 0,
-                            },
-                            {
-                              id: `ve_${Date.now()}_1_${Math.random().toString(36).substr(2, 9)}`,
-                              accountId: cashBankAccount.id,
-                              accountName: `${cashBankAccount.code}-${cashBankAccount.name}`,
-                              description: `Payment made for DPO ${dpo_number}`,
-                              debit: 0,
-                              credit: itemsTotal, // Only items total
-                              sortOrder: 1,
-                            },
-                          ],
-                        },
-                      },
-                    });
-
-                    // Update account balances for PV voucher (using itemsTotal only)
-                    // Debit Supplier Payable (decreases liability)
-                    await prisma.account.update({
-                      where: { id: mainPayableAccount.id },
-                      data: {
-                        currentBalance: {
-                          decrement: itemsTotal, // Only items total
-                        },
-                      },
-                    });
-
-                    // Credit Cash/Bank (decreases asset)
-                    await prisma.account.update({
-                      where: { id: cashBankAccount.id },
-                      data: {
-                        currentBalance: {
-                          decrement: itemsTotal, // Only items total
-                        },
-                      },
-                    });
-
-                    voucherCreationStatus.pvCreated = true;
-                    voucherCreationStatus.pvNumber = pvVoucherNumber;
-                  }
-                } // end if account selected
-              } else if (!account) {
-              }
-            } catch (voucherError: any) {
-              voucherCreationStatus.errors.push(
-                `VOUCHER LOGIC ERROR (JV): ${voucherError.message}`,
-              );
-              // Don't fail the DPO creation if voucher creation fails
-            }
-          } else {
-            voucherCreationStatus.errors.push(
-              `Journal entry validation failed: Debits ${totalDebit} ≠ Credits ${totalCredit}`,
-            );
-          }
-        } else {
-          // Try to help diagnose the issue
-          if (!inventoryAccount) {
-            voucherCreationStatus.errors.push(
-              "Inventory Account (subgroup 104) not found",
-            );
-          }
-          if (!mainPayableAccount) {
-            voucherCreationStatus.errors.push(
-              "Supplier Payable Account not found",
-            );
-            if (supplier_id) {
-              const supplier = await prisma.supplier.findUnique({
-                where: { id: supplier_id },
-              });
+              await tx.account.update({ where: { id: mainPayableAccount.id }, data: { currentBalance: { decrement: itemsTotal } } });
+              await tx.account.update({ where: { id: cashBankAccount.id }, data: { currentBalance: { decrement: itemsTotal } } });
+              voucherCreationStatus.pvCreated = true;
+              voucherCreationStatus.pvNumber = pvNumber;
             }
           }
+        } catch (accError: any) {
+          voucherCreationStatus.errors.push(accError.message);
         }
-      } catch (journalError: any) {
-        voucherCreationStatus.errors.push(
-          `ACCOUNT LOGIC ERROR (OUTER): ${journalError.message}`,
-        );
-        // Don't fail the DPO creation if journal entry creation fails
       }
-    }
 
-    res.status(201).json({
-      id: order.id,
-      dpo_no: order.dpoNumber,
-      date: order.date,
-      status: order.status,
-      total_amount: order.totalAmount,
-      items_count: items.length,
-      vouchers: voucherCreationStatus,
+      return { order: newOrder, voucherStatus: voucherCreationStatus };
     });
+
+    res.status(201).json({ ...order, vouchers: voucherStatus });
   } catch (error: any) {
+    console.error("DPO POST Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -8365,20 +7511,6 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
 router.put(
   "/direct-purchase-orders/:id",
   async (req: Request, res: Response) => {
-    // 🔍 ENTRY MARKER
-    const entryMarker = `ENTRY:DPO_RECEIVE:${req.params.id}`;
-
-    // Track updated parts for response
-    const updatedParts: Array<{
-      partNo: string;
-      oldCost: number;
-      newCost: number;
-      partIdUpdated: string;
-    }> = [];
-
-    // Declare receiveResult in outer scope for final cost update
-    let receiveResult: any = null;
-
     try {
       const { id } = req.params;
       const {
@@ -8391,1125 +7523,257 @@ router.put(
         status,
         items,
         expenses,
-      } = req.body;
-
-      // Check for transaction wrapper
-      const hasTransaction = typeof (prisma as any).$transaction === "function";
-      const dbUrl = process.env.DATABASE_URL || "not set";
-      const maskedDbUrl = dbUrl.includes("file:")
-        ? `file:${dbUrl.split("/").pop()}`
-        : dbUrl.replace(/:[^:@]+@/, ":****@");
-
-      // 🔍 LOG: Database connection info
-
-      // Get actual database file path for verification
-      const actualDbPath = dbUrl.includes("file:")
-        ? dbUrl.replace("file:", "")
-        : "unknown";
-      const fs = require("fs");
-      const dbFileExists = fs.existsSync(actualDbPath);
-      const dbFileStats = dbFileExists ? fs.statSync(actualDbPath) : null;
-
-      if (dbFileStats) {
-      }
+      } = req.body || {};
 
       const existingOrder = await prisma.directPurchaseOrder.findUnique({
         where: { id },
-        include: { DirectPurchaseOrderItem: true },
+        include: { DirectPurchaseOrderItem: true, DirectPurchaseOrderExpense: true },
       });
+
       if (!existingOrder) {
-        return res
-          .status(404)
-          .json({ error: "Direct purchase order not found" });
-      }
-
-      // Validate supplier is required
-      // Use supplier_id from request if provided, otherwise use existing supplier_id
-      const finalSupplierId =
-        supplier_id !== undefined ? supplier_id : existingOrder.supplierId;
-      if (!finalSupplierId) {
-        return res.status(400).json({ error: "Supplier is required" });
-      }
-
-      // Delete existing stock movements if items are being updated OR if status is changing to Received/Completed
-      // This ensures we can recreate movements with correct data
-      if (
-        (items && items.length > 0) ||
-        (status &&
-          (status === "Received" || status === "Completed") &&
-          existingOrder.status !== "Received" &&
-          existingOrder.status !== "Completed")
-      ) {
-        await prisma.stockMovement.deleteMany({
-          where: {
-            referenceType: "direct_purchase",
-            referenceId: id,
-          },
-        });
+        return res.status(404).json({ error: "Direct Purchase Order not found" });
       }
 
       // Calculate totals
-      // If items are provided, calculate from items. Otherwise, calculate from existing items
-      let itemsTotal: number;
-      if (items && items.length > 0) {
-        itemsTotal = items.reduce((sum: number, item: any) => {
-          const itemAmount =
-            item.amount !== undefined && item.amount !== null
-              ? Number(item.amount)
-              : item.purchase_price !== undefined &&
-                item.purchase_price !== null &&
-                item.quantity
-                ? Number(item.purchase_price) * Number(item.quantity)
-                : 0;
-          return sum + (isNaN(itemAmount) ? 0 : itemAmount);
-        }, 0);
-      } else {
-        // Calculate from existing items (not from totalAmount which includes expenses)
-        const existingItems = await prisma.directPurchaseOrderItem.findMany({
-          where: { directPurchaseOrderId: id },
-        });
-        itemsTotal = existingItems.reduce(
-          (sum, item) => sum + (item.amount || 0),
-          0,
-        );
-      }
+      const itemsTotal = items ? items.reduce((sum: number, item: any) => {
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
+        return sum + (Number(item.amount) || (qty * rate));
+      }, 0) : existingOrder.totalAmount;
 
-      // Calculate expenses total
-      let expensesTotal = 0;
-      if (expenses && Array.isArray(expenses) && expenses.length > 0) {
-        expensesTotal = expenses.reduce(
-          (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
-          0,
-        );
-      } else if (expenses === undefined) {
-        // If expenses not provided in update, calculate from existing expenses
-        const existingExpenses =
-          await prisma.directPurchaseOrderExpense.findMany({
-            where: { directPurchaseOrderId: id },
-          });
-        expensesTotal = existingExpenses.reduce(
-          (sum, exp) => sum + exp.amount,
-          0,
-        );
-      }
+      const expensesTotal = expenses ? expenses.reduce((sum: number, exp: any) => sum + (Number(exp.amount) || 0), 0) : 0;
+      const totalAmount = itemsTotal + expensesTotal;
 
-      // Ensure totals are valid numbers (not NaN)
-      const validItemsTotal = isNaN(itemsTotal) ? 0 : itemsTotal;
-      const validExpensesTotal = isNaN(expensesTotal) ? 0 : expensesTotal;
-      const totalAmount = validItemsTotal + validExpensesTotal;
-
-      // Debug logging
-
-      const order = await prisma.directPurchaseOrder.update({
-        where: { id },
-        data: {
-          ...(dpo_number && { dpoNumber: dpo_number }),
-          ...(date && { date: new Date(date) }),
-          ...(store_id !== undefined && {
-            Store: store_id
-              ? { connect: { id: store_id } }
-              : { disconnect: true },
-          }),
-          Supplier: { connect: { id: finalSupplierId as string } }, // Always set supplier (required field)
-          ...(account !== undefined && { account: account || null }),
-          ...(description !== undefined && {
-            description: description || null,
-          }),
-          ...(status && { status }),
-          totalAmount: totalAmount, // Always update totalAmount with recalculated value
-          ...(items && {
-            DirectPurchaseOrderItem: {
-              deleteMany: {},
-              create: items.map((item: any) => {
-                const purchasePrice =
-                  item.purchase_price !== undefined &&
-                    item.purchase_price !== null
-                    ? Number(item.purchase_price)
-                    : 0; // Default to 0 instead of null (required field)
-                const quantity = Number(item.quantity) || 0;
-                const itemAmount =
-                  item.amount !== undefined && item.amount !== null
-                    ? Number(item.amount)
-                    : !isNaN(purchasePrice)
-                      ? purchasePrice * quantity
-                      : 0;
-
-                return {
-                  id: crypto.randomUUID(),
-                  partId: item.part_id,
-                  quantity: quantity,
-                  purchasePrice: purchasePrice,
-                  salePrice: 0, // sale_price is not used, default to 0
-                  amount: itemAmount,
-                  priceA:
-                    item.price_a !== undefined && item.price_a !== null
-                      ? Number(item.price_a)
-                      : null,
-                  priceB:
-                    item.price_b !== undefined && item.price_b !== null
-                      ? Number(item.price_b)
-                      : null,
-                  priceM:
-                    item.price_m !== undefined && item.price_m !== null
-                      ? Number(item.price_m)
-                      : null,
-                  rackId: item.rack_id || null,
-                  shelfId: item.shelf_id || null,
-                };
-              }),
-            },
-          }),
-          ...(expenses && {
-            DirectPurchaseOrderExpense: {
-              deleteMany: {},
-              create: expenses.map((exp: any) => ({
-                id: crypto.randomUUID(),
-                expenseType: exp.expense_type,
-                payableAccount: exp.payable_account,
-                description: exp.description || null,
-                amount: exp.amount,
-              })),
-            },
-          }),
-        },
-        include: {
-          DirectPurchaseOrderItem: true,
-          DirectPurchaseOrderExpense: true,
-        },
-      });
-
-      // Update cost prices and create stock movements when status changes to "Received" or "Completed"
-      // This happens when stock is received from store panel, NOT when DPO is created
-      if (
-        (status === "Received" || status === "Completed") &&
-        existingOrder.status !== "Received" &&
-        existingOrder.status !== "Completed"
-      ) {
-        // Use items from request or fetch from order (DirectPurchaseOrderItem will have updated items after order update)
-        const itemsToProcess = items || (order as any).DirectPurchaseOrderItem;
-
-        // Get expenses from request, or fetch from order if not provided
-        let expensesToProcess = expenses;
-        if (
-          !expensesToProcess ||
-          (Array.isArray(expensesToProcess) && expensesToProcess.length === 0)
-        ) {
-          // Fetch expenses from the order if not provided in the update request
-          const orderWithExpenses = await prisma.directPurchaseOrder.findUnique(
-            {
-              where: { id: order.id },
-              include: { DirectPurchaseOrderExpense: true },
-            },
-          );
-          expensesToProcess = orderWithExpenses?.DirectPurchaseOrderExpense || [];
-        }
-
-        // Calculate total expenses
-        const totalExpenses = Array.isArray(expensesToProcess)
-          ? expensesToProcess.reduce((sum: number, exp: any) => {
-            return sum + (Number(exp.amount) || 0);
-          }, 0)
-          : 0;
-
-        // Update cost prices using inventory formulas (only when stock is received)
-        if (itemsToProcess && itemsToProcess.length > 0) {
-          try {
-            // Validate all items have valid partId before processing
-            const validatedItems: Array<{
-              partId: string;
-              quantity: number;
-              purchasePrice: number;
-              partNo?: string;
-            }> = [];
-
-            for (const item of itemsToProcess) {
-              const partId = item.part_id || item.partId;
-              if (!partId) {
-                continue;
-              }
-
-              // Verify partId exists in database
-              const part = await prisma.part.findUnique({
-                where: { id: partId },
-                select: { id: true, partNo: true },
-              });
-
-              if (!part) {
-                // Fallback: Try to find canonical part by partNo if available
-                const partNoFromItem = item.part_no || item.partNo;
-                if (partNoFromItem) {
-                  const canonicalPartId = await getCanonicalPartId(
-                    prisma,
-                    partNoFromItem,
-                  );
-                  if (canonicalPartId) {
-                    const canonicalPart = await prisma.part.findUnique({
-                      where: { id: canonicalPartId },
-                      select: { id: true, partNo: true },
-                    });
-                    if (canonicalPart) {
-                      validatedItems.push({
-                        partId: canonicalPartId,
-                        quantity: item.quantity || 0,
-                        purchasePrice:
-                          item.purchase_price || item.purchasePrice || 0,
-                        partNo: canonicalPart.partNo,
-                      });
-                      continue;
-                    }
-                  }
-                }
-
-                continue;
-              }
-
-              validatedItems.push({
-                partId,
-                quantity: item.quantity || 0,
-                purchasePrice: item.purchase_price || item.purchasePrice || 0,
-                partNo: part.partNo,
-              });
-            }
-
-            if (validatedItems.length === 0) {
-              throw new Error("No valid items with partId found in DPO items");
-            }
-
-            receiveResult = await processPurchaseReceive(
-              validatedItems.map((item) => ({
-                partId: item.partId,
-                quantity: item.quantity,
-                purchasePrice: item.purchasePrice,
-              })),
-              totalExpenses,
-              "value", // distribute expenses by item value (proportional)
-              "dpo", // Use the user-requested DPO formula
-            );
-
-            // ⭐ COST UPDATE WILL HAPPEN AT THE END (after all operations complete)
-            // Store receiveResult for later cost update
-          } catch (error: any) {
-            // Continue with stock movements even if cost update fails
-          }
-        }
-
-        // Check if stock movements already exist (should be 0 if we deleted them above)
-        const existingMovements = await prisma.stockMovement.findMany({
-          where: {
-            referenceType: "direct_purchase",
-            referenceId: order.id,
+      const order = await prisma.$transaction(async (tx) => {
+        // 1. Update DPO Header
+        const updated = await tx.directPurchaseOrder.update({
+          where: { id },
+          data: {
+            dpoNumber: dpo_number || existingOrder.dpoNumber,
+            date: date ? new Date(date) : existingOrder.date,
+            storeId: store_id !== undefined ? store_id : existingOrder.storeId,
+            supplierId: supplier_id !== undefined ? supplier_id : existingOrder.supplierId,
+            account: account !== undefined ? account : existingOrder.account,
+            description: description !== undefined ? description : existingOrder.description,
+            status: status || existingOrder.status,
+            totalAmount,
+            updatedAt: new Date(),
           },
         });
 
-        // Only create if movements don't exist
-        if (existingMovements.length === 0) {
-          if (itemsToProcess && itemsToProcess.length > 0) {
-            for (const item of itemsToProcess) {
-              const partId = item.part_id || item.partId;
-              const quantity = item.quantity;
-              const finalStoreId = store_id || order.storeId || null;
+        // 2. Update Items and Stock Movements if provided
+        if (items) {
+          await tx.directPurchaseOrderItem.deleteMany({ where: { directPurchaseOrderId: id } });
+          await tx.directPurchaseOrderItem.createMany({
+            data: items.map((item: any) => ({
+              id: crypto.randomUUID(),
+              directPurchaseOrderId: id,
+              partId: item.part_id,
+              quantity: Number(item.quantity) || 0,
+              purchasePrice: Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0),
+              salePrice: Number(item.sale_price || item.salePrice || 0),
+              amount: Number(item.amount) || (Number(item.quantity) * Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0)),
+              priceA: item.price_a != null ? Number(item.price_a) : null,
+              priceB: item.price_b != null ? Number(item.price_b) : null,
+              priceM: item.price_m != null ? Number(item.price_m) : null,
+              rackId: item.rack_id || null,
+              shelfId: item.shelf_id || null,
+            })),
+          });
 
-              if (!partId) {
-                continue;
+          // Unconditionally update purchase prices for all items matching the new data
+          const itemsByPart = new Map<string, { qty: number, rate: number, rackId: string, shelfId: string }>();
+          for (const item of items) {
+            const partId = item.part_id;
+            const qty = Number(item.quantity) || 0;
+            const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
+            if (partId && (qty > 0 || rate > 0)) {
+              if (itemsByPart.has(partId)) {
+                const existing = itemsByPart.get(partId)!;
+                existing.qty += qty;
+                // Use last provided positive rate
+                if (rate > 0) existing.rate = rate;
+              } else {
+                itemsByPart.set(partId, { qty, rate, rackId: item.rack_id, shelfId: item.shelf_id });
+              }
+            }
+          }
+
+          // Apply unconditionally updated purchase prices
+          for (const [partId, data] of itemsByPart.entries()) {
+            if (data.rate > 0) {
+              await tx.part.update({
+                where: { id: partId },
+                data: { purchasePrice: data.rate },
+              });
+            }
+          }
+
+          // Stock Movements and Avg Cost (Only handle if Completed/Received/Approved)
+          const isApprovedStatus = (s: string) => ["completed", "received", "approved"].includes(s.toLowerCase());
+          const newStatus = status || existingOrder.status;
+
+          if (isApprovedStatus(newStatus)) {
+            // Re-create stock movements. Delete existing movements first to avoid duplication
+            await tx.stockMovement.deleteMany({ where: { referenceType: "direct_purchase", referenceId: id } });
+
+            for (const [partId, data] of itemsByPart.entries()) {
+              const { qty, rate } = data;
+
+              if (rate > 0) {
+                // Removed auto-update of avgCost and cost per user request
               }
 
-              await prisma.stockMovement.create({
+              // Create stock movement (one per part)
+              await tx.stockMovement.create({
                 data: {
                   id: crypto.randomUUID(),
-                  partId: String(partId),
+                  partId,
                   type: "in",
-                  quantity: quantity,
-                  storeId: finalStoreId,
-                  rackId: item.rack_id || item.rackId || null,
-                  shelfId: item.shelf_id || item.shelfId || null,
+                  quantity: qty,
+                  storeId: store_id || existingOrder.storeId,
+                  rackId: data.rackId || null,
+                  shelfId: data.shelfId || null,
                   referenceType: "direct_purchase",
-                  referenceId: order.id,
-                  notes: `Direct Purchase Order: ${order.dpoNumber} - ${status}`,
+                  referenceId: id,
+                  supplierId: supplier_id || existingOrder.supplierId,
+                  notes: `Updated DPO: ${dpo_number || existingOrder.dpoNumber}`,
                 } as any,
               });
             }
-
-            // Clear reserved stock when DPO is received
-            // Delete stockReservation records for all parts in this DPO
-            try {
-              const partIds = itemsToProcess
-                .map((item: any) => item.part_id || item.partId)
-                .filter((id: string) => id !== undefined);
-
-              if (partIds.length > 0) {
-                const deletedReservations =
-                  await prisma.stockReservation.deleteMany({
-                    where: {
-                      partId: {
-                        in: partIds,
-                      },
-                      status: "reserved",
-                    },
-                  });
-                if (deletedReservations.count > 0) {
-                }
-              }
-            } catch (reservationError: any) {
-              // Don't fail the DPO update if reservation clearing fails
-            }
-          } else {
-          }
-        } else {
-        }
-
-        // 🔍 FINAL VERIFICATION: Check that cost updates persisted after all operations
-        if (itemsToProcess && itemsToProcess.length > 0 && receiveResult) {
-          // Re-fetch DB info for verification
-          const verifyDbUrl = process.env.DATABASE_URL || "not set";
-          const verifyMaskedDbUrl = verifyDbUrl.includes("file:")
-            ? `file:${verifyDbUrl.split("/").pop()}`
-            : verifyDbUrl.replace(/:[^:@]+@/, ":****@");
-          const verifyDbPath = verifyDbUrl.includes("file:")
-            ? verifyDbUrl.replace("file:", "")
-            : "unknown";
-          const verifyDbFileExists = fs.existsSync(verifyDbPath);
-
-          for (const resultItem of receiveResult.items) {
-            try {
-              // Query by ID first
-              const finalPartById = await prisma.part.findUnique({
-                where: { id: resultItem.partId },
-                select: {
-                  partNo: true,
-                  cost: true,
-                  costSource: true,
-                  costSourceRef: true,
-                  costUpdatedAt: true,
-                },
-              });
-
-              if (finalPartById) {
-                const costMatches =
-                  Math.abs((finalPartById.cost || 0) - resultItem.landedCost) <
-                  0.01;
-
-                // Also query by partNo to see which part API would return
-                const partsByPartNo = await prisma.part.findMany({
-                  where: { partNo: finalPartById.partNo },
-                  select: {
-                    id: true,
-                    partNo: true,
-                    cost: true,
-                    costSource: true,
-                    costUpdatedAt: true,
-                  },
-                  orderBy: [{ costUpdatedAt: "desc" }, { updatedAt: "desc" }],
-                });
-
-                if (partsByPartNo.length > 0) {
-                  const apiWillReturn = partsByPartNo[0];
-                  if (apiWillReturn.id !== resultItem.partId) {
-                  }
-                  if (
-                    Math.abs(
-                      (apiWillReturn.cost || 0) - resultItem.landedCost,
-                    ) > 0.01
-                  ) {
-                  }
-                }
-              } else {
-              }
-            } catch (err: any) { }
           }
         }
-      }
 
-      // Create journal entry and voucher when status changes to Received/Completed
-      // BUT only if vouchers don't already exist (prevent duplicates)
-      if (
-        (status === "Received" || status === "Completed") &&
-        existingOrder.status !== "Received" &&
-        existingOrder.status !== "Completed" &&
-        totalAmount > 0
-      ) {
-        const checkReference = existingOrder.dpoNumber.startsWith("DPO-") ? existingOrder.dpoNumber : `DPO-${existingOrder.dpoNumber}`;
-        const existingJournalEntry = await prisma.journalEntry.findFirst({
-          where: {
-            reference: checkReference,
-          },
-        });
+        // 3. Update Expenses if provided
+        if (expenses) {
+          await tx.directPurchaseOrderExpense.deleteMany({ where: { directPurchaseOrderId: id } });
+          await tx.directPurchaseOrderExpense.createMany({
+            data: expenses.map((exp: any) => ({
+              id: crypto.randomUUID(),
+              directPurchaseOrderId: id,
+              expenseType: exp.expense_type,
+              payableAccount: exp.payable_account,
+              description: exp.description || null,
+              amount: Number(exp.amount) || 0,
+            })),
+          });
+        }
 
-        if (existingJournalEntry) {
-        } else {
-          try {
-            // ⭐ Use a transaction for all accounting operations to ensure atomicity
-            await prisma.$transaction(async (tx) => {
-              // Find Inventory Account
-              let inventoryAccount = null;
-              if (account) {
-                const accountById = await tx.account.findUnique({
-                  where: { id: account },
-                  include: {
-                    Subgroup: {
-                      include: {
-                        MainGroup: true,
-                      },
-                    },
-                  },
-                });
-
-                if (accountById && accountById.Subgroup.code === "104") {
-                  inventoryAccount = accountById;
-                }
-              }
-
-              if (!inventoryAccount) {
-                inventoryAccount = await tx.account.findFirst({
-                  where: {
-                    Subgroup: {
-                      code: "104",
-                    },
-                    status: "Active",
-                  },
-                  include: {
-                    Subgroup: {
-                      include: {
-                        MainGroup: true,
-                      },
-                    },
-                  },
-                });
-              }
-
-              if (!inventoryAccount) {
-                console.error("[DPO Accounting] Inventory Account (Subgroup 104) not found");
-                return;
-              }
-
-              // Find the main payable account
-              let mainPayableAccount = null;
-              const finalAccount = account || order.account;
-              // Use the validated finalSupplierId from top-level scope
-
-              if (finalAccount) {
-                mainPayableAccount = await tx.account.findUnique({
-                  where: { id: finalAccount },
-                  include: {
-                    Subgroup: {
-                      include: {
-                        MainGroup: true,
-                      },
-                    },
-                  },
-                });
-                if (
-                  mainPayableAccount &&
-                  mainPayableAccount.Subgroup.MainGroup.type.toLowerCase() !== "liability"
-                ) {
-                  mainPayableAccount = null;
-                }
-              }
-
-              // Get supplier name for narration
-              let supplierAccountName = "Supplier";
-              if (finalSupplierId) {
-                const supplier = await tx.supplier.findUnique({
-                  where: { id: finalSupplierId },
-                  select: { companyName: true, name: true },
-                });
-                if (supplier) {
-                  supplierAccountName = supplier.companyName || supplier.name || "Supplier";
-                }
-              }
-
-              if (!mainPayableAccount && finalSupplierId) {
-                const supplier = await tx.supplier.findUnique({
-                  where: { id: finalSupplierId },
-                });
-
-                if (supplier) {
-                  const payablesSubgroup = await tx.subgroup.findFirst({
-                    where: { code: "301" },
-                  });
-
-                  if (payablesSubgroup) {
-                    mainPayableAccount = await tx.account.findFirst({
-                      where: {
-                        subgroupId: payablesSubgroup.id,
-                        OR: [
-                          { name: supplier.name || "" },
-                          { name: supplier.companyName || "" },
-                        ],
-                      },
-                      include: {
-                        Subgroup: {
-                          include: {
-                            MainGroup: true,
-                          },
-                        },
-                      },
-                    });
-                  }
-                }
-              }
-
-              if (!mainPayableAccount) {
-                mainPayableAccount = await tx.account.findFirst({
-                  where: {
-                    OR: [{ code: "301001" }, { name: "Accounts Payable" }],
-                    status: "Active",
-                  },
-                  include: {
-                    Subgroup: {
-                      include: {
-                        MainGroup: true,
-                      },
-                    },
-                  },
-                });
-              }
-
-              if (!mainPayableAccount) {
-                console.error("[DPO Accounting] Main Payable Account not found");
-                return;
-              }
-
-              if (inventoryAccount && mainPayableAccount) {
-                // Generate JV number for Journal Entry (format: JV####)
-                const lastJournalEntry = await tx.journalEntry.findFirst({
-                  where: { entryNo: { startsWith: "JV" } },
-                  orderBy: { entryNo: "desc" },
-                });
-
-                let jvNumberJE = 1;
-                if (lastJournalEntry) {
-                  const match = lastJournalEntry.entryNo.match(/^JV(\d+)$/);
-                  if (match) {
-                    jvNumberJE = parseInt(match[1]) + 1;
-                  } else {
-                    const countJE = await tx.journalEntry.count({
-                      where: { entryNo: { startsWith: "JV" } }
-                    });
-                    jvNumberJE = countJE + 1;
-                  }
-                }
-                const entryNo = `JV${String(jvNumberJE).padStart(4, "0")}`;
-
-                // Generate voucher number for Voucher (format: JV####)
-                const lastVoucher = await tx.voucher.findFirst({
-                  where: {
-                    type: "journal",
-                    voucherNumber: { startsWith: "JV" },
-                  },
-                  orderBy: { voucherNumber: "desc" },
-                });
-
-                let jvNumberV = 1;
-                if (lastVoucher) {
-                  const match = lastVoucher.voucherNumber.match(/^JV(\d+)$/);
-                  if (match) {
-                    jvNumberV = parseInt(match[1]) + 1;
-                  } else {
-                    const countV = await tx.voucher.count({
-                      where: { type: "journal", voucherNumber: { startsWith: "JV" } }
-                    });
-                    jvNumberV = countV + 1;
-                  }
-                }
-                const voucherNumber = `JV${String(jvNumberV).padStart(4, "0")}`;
-
-                // Build journal lines
-                const journalLines: any[] = [];
-
-                // Entry 1: Debit Inventory Account
-                if (itemsTotal > 0) {
-                  const updatedOrder = await tx.directPurchaseOrder.findUnique({
-                    where: { id: order.id },
-                    include: {
-                      DirectPurchaseOrderItem: {
-                        include: {
-                          Part: {
-                            include: {
-                              Brand: true,
-                            },
-                          },
-                        },
-                      },
-                    },
-                  });
-
-                  const itemDetails = updatedOrder?.DirectPurchaseOrderItem
-                    .map((itemValue: any) => {
-                      const partValue = itemValue.Part;
-                      const partNoValue = partValue?.partNo || "N/A";
-                      const descValue = partValue?.description || "Item";
-                      const brandValue = partValue?.Brand?.name || "";
-                      const qtyValue = itemValue.quantity;
-                      const rateValue = itemValue.purchasePrice;
-                      const costValue = itemValue.amount;
-
-                      return `${partNoValue}${brandValue ? "/" + brandValue : ""}/${descValue}/, Qty ${qtyValue}, Rate ${rateValue}, Cost: ${costValue}`;
-                    })
-                    .join(", ") || `DPO: ${order.dpoNumber} Inventory purchased`;
-
-                  journalLines.push({
-                    id: crypto.randomUUID(),
-                    accountId: inventoryAccount.id,
-                    description: `DPO: ${order.dpoNumber} Inventory Added, ${itemDetails}`,
-                    debit: itemsTotal,
-                    credit: 0,
-                    lineOrder: 0,
-                  });
-                }
-
-                // Lines for expenses
-                const finalExpenses = expenses || (order as any).DirectPurchaseOrderExpense || [];
-                if (finalExpenses.length > 0) {
-                  for (let i = 0; i < finalExpenses.length; i++) {
-                    const exp = finalExpenses[i];
-                    const expAmount = exp.amount || 0;
-                    if (expAmount > 0 && exp.payable_account) {
-                      const expensePayableAccount = await tx.account.findFirst({
-                        where: {
-                          name: exp.payable_account,
-                          status: "Active",
-                        },
-                      });
-
-                      if (expensePayableAccount) {
-                        journalLines.push({
-                          id: crypto.randomUUID(),
-                          accountId: inventoryAccount.id,
-                          description: `DPO: ${order.dpoNumber} - ${exp.expense_type || exp.expenseType || "Expense"}`,
-                          debit: expAmount,
-                          credit: 0,
-                          lineOrder: journalLines.length,
-                        });
-
-                        journalLines.push({
-                          id: crypto.randomUUID(),
-                          accountId: expensePayableAccount.id,
-                          description: `DPO: ${order.dpoNumber} - ${exp.expense_type || exp.expenseType || "Expense"} Payable`,
-                          debit: 0,
-                          credit: expAmount,
-                          lineOrder: journalLines.length,
-                        });
-                      }
-                    }
-                  }
-                }
-
-                // Entry 2: Credit Supplier Payable Account
-                if (itemsTotal > 0) {
-                  journalLines.push({
-                    id: crypto.randomUUID(),
-                    accountId: mainPayableAccount.id,
-                    description: `DPO: ${order.dpoNumber} ${supplierAccountName} Liability Created`,
-                    debit: 0,
-                    credit: itemsTotal,
-                    lineOrder: journalLines.length,
-                  });
-                }
-
-                const totalDebit = journalLines.reduce((sum, line) => sum + line.debit, 0);
-                const totalCredit = journalLines.reduce((sum, line) => sum + line.credit, 0);
-
-                if (journalLines.length > 0 && Math.abs(totalDebit - totalCredit) < 0.01) {
-                  // Ensure unique reference (handle cases where dpoNumber might already have DPO- prefix)
-                  const finalReference = order.dpoNumber.startsWith("DPO-") ? order.dpoNumber : `DPO-${order.dpoNumber}`;
-
-                  // Create journal entry
-                  const journalEntry = await tx.journalEntry.create({
-                    data: {
-                      id: crypto.randomUUID(),
-                      entryNo,
-                      entryDate: new Date(date || order.date),
-                      reference: finalReference,
-                      description: `Direct Purchase Order ${order.dpoNumber}${description || order.description ? `: ${description || order.description}` : ""}`,
-                      totalDebit,
-                      totalCredit,
-                      status: "posted",
-                      createdBy: "System",
-                      postedBy: "System",
-                      postedAt: new Date(),
-                      updatedAt: new Date(),
-                      JournalLine: {
-                        create: journalLines,
-                      },
-                    },
-                    include: {
-                      JournalLine: {
-                        include: {
-                          Account: {
-                            include: {
-                              Subgroup: {
-                                include: {
-                                  MainGroup: true,
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  });
-
-                  // Update account balances
-                  for (const line of journalEntry.JournalLine) {
-                    const accountType = (line.Account as any)?.Subgroup?.MainGroup?.type?.toLowerCase() || "expense";
-                    const balanceChange =
-                      accountType === "asset" || accountType === "expense" || accountType === "cost"
-                        ? line.debit - line.credit
-                        : line.credit - line.debit;
-
-                    await tx.account.update({
-                      where: { id: line.accountId },
-                      data: {
-                        currentBalance: {
-                          increment: balanceChange,
-                        },
-                      },
-                    });
-                  }
-
-                  // Create Voucher
-                  const voucherEntries = journalLines.map((lineValue, idx) => ({
-                    id: crypto.randomUUID(),
-                    accountId: lineValue.accountId,
-                    accountName: `Account_${idx}`, // Will be updated if possible
-                    description: lineValue.description,
-                    debit: lineValue.debit,
-                    credit: lineValue.credit,
-                    sortOrder: lineValue.lineOrder,
-                  }));
-
-                  // Update account names in voucher entries
-                  for (const ve of voucherEntries) {
-                    const acc = await tx.account.findUnique({
-                      where: { id: ve.accountId },
-                      select: { code: true, name: true },
-                    });
-                    if (acc) {
-                      ve.accountName = `${acc.code}-${acc.name}`;
-                    }
-                  }
-
-                  await tx.voucher.create({
-                    data: {
-                      id: crypto.randomUUID(),
-                      voucherNumber,
-                      type: "journal",
-                      date: new Date(date || order.date),
-                      narration: `${supplierAccountName} - ${order.dpoNumber}`,
-                      totalDebit,
-                      totalCredit,
-                      status: "posted",
-                      createdBy: "System",
-                      approvedBy: "System",
-                      approvedAt: new Date(),
-                      updatedAt: new Date(),
-                      VoucherEntry: {
-                        create: voucherEntries,
-                      },
-                    },
-                  });
-
-                  try {
-                    // PAYMENT VOUCHER LOGIC
-                    const paymentAccount = account || order.account;
-                    if (paymentAccount && itemsTotal > 0 && finalSupplierId && mainPayableAccount) {
-                      const cashBankAccount = await tx.account.findUnique({
-                        where: { id: paymentAccount },
-                        include: {
-                          Subgroup: { include: { MainGroup: true } },
-                        },
-                      });
-
-                      if (cashBankAccount) {
-                        const subgroupCode = cashBankAccount.Subgroup?.code || "";
-                        const isCashOrBank = subgroupCode === "101" || subgroupCode === "102";
-                        const accountType = cashBankAccount.Subgroup?.MainGroup?.type?.toLowerCase() || "";
-
-                        if (isCashOrBank || accountType === "asset") {
-                          const lastPV = await tx.voucher.findFirst({
-                            where: {
-                              type: "payment",
-                              voucherNumber: { startsWith: "PV" },
-                            },
-                            orderBy: { voucherNumber: "desc" },
-                          });
-
-                          let pvNumber = 1;
-                          if (lastPV) {
-                            const match = lastPV.voucherNumber.match(/^PV(\d+)$/);
-                            if (match) {
-                              pvNumber = parseInt(match[1]) + 1;
-                            } else {
-                              const voucherCount = await tx.voucher.count({ where: { type: "payment" } });
-                              pvNumber = voucherCount + 1;
-                            }
-                          }
-                          const pvVoucherNumber = `PV${String(pvNumber).padStart(4, "0")}`;
-
-                          await tx.voucher.create({
-                            data: {
-                              id: crypto.randomUUID(),
-                              voucherNumber: pvVoucherNumber,
-                              type: "payment",
-                              date: new Date(date || order.date),
-                              narration: `${supplierAccountName} - Payment for ${order.dpoNumber}`,
-                              cashBankAccount: cashBankAccount.name,
-                              totalDebit: itemsTotal,
-                              totalCredit: itemsTotal,
-                              status: "posted",
-                              createdBy: "System",
-                              approvedBy: "System",
-                              approvedAt: new Date(),
-                              updatedAt: new Date(),
-                              VoucherEntry: {
-                                create: [
-                                  {
-                                    id: crypto.randomUUID(),
-                                    accountId: mainPayableAccount.id,
-                                    accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
-                                    description: `Payment for DPO ${order.dpoNumber}`,
-                                    debit: itemsTotal,
-                                    credit: 0,
-                                    sortOrder: 0,
-                                  },
-                                  {
-                                    id: crypto.randomUUID(),
-                                    accountId: cashBankAccount.id,
-                                    accountName: `${cashBankAccount.code}-${cashBankAccount.name}`,
-                                    description: `Payment made for DPO ${order.dpoNumber}`,
-                                    debit: 0,
-                                    credit: itemsTotal,
-                                    sortOrder: 1,
-                                  },
-                                ],
-                              },
-                            },
-                          });
-
-                          // Update balances for PV
-                          await tx.account.update({
-                            where: { id: mainPayableAccount.id },
-                            data: { currentBalance: { decrement: itemsTotal } },
-                          });
-
-                          await tx.account.update({
-                            where: { id: cashBankAccount.id },
-                            data: { currentBalance: { decrement: itemsTotal } },
-                          });
-                        }
-                      }
-                    }
-                  } catch (pvError: any) {
-                    console.error("[DPO Accounting] PV creation error:", pvError);
-                  }
-                }
-              }
+        // 4. Accounting (Triggers if status becomes Approved/Received/Completed from another status)
+        const isApprovedStatus = (s: string) => ["completed", "received", "approved"].includes(s.toLowerCase());
+        const isNowApproved = status && isApprovedStatus(status) && !isApprovedStatus(existingOrder.status);
+        if (isNowApproved && totalAmount > 0) {
+          let inventoryAccount = await tx.account.findFirst({
+            where: { OR: [{ Subgroup: { code: "104" } }, { code: "101001" }, { code: "104005" }, { name: { contains: "Inventory - General" } }], status: "Active" },
+            include: { Subgroup: { include: { MainGroup: true } } }
+          });
+          if (!inventoryAccount) {
+            inventoryAccount = await tx.account.findFirst({
+              where: { OR: [{ Subgroup: { code: "104" } }, { name: { contains: "Inventory" } }], status: "Active" },
+              include: { Subgroup: { include: { MainGroup: true } } }
             });
-          } catch (error: any) {
-            console.error("[DPO Accounting ERROR]:", error);
           }
-        }
-      }
 
-      // ─── AUTO PV VOUCHER: Disabled for pending DPOs ───
-      // PV vouchers are ONLY created when the store manager receives/approves the order
-      // (i.e., when status changes to "Received" or "Completed" in the block above)
-      // Do NOT auto-create PV when account is selected on a pending DPO
+          const supplier = await tx.supplier.findUnique({ where: { id: supplier_id || existingOrder.supplierId || "" } });
+          let mainPayableAccount = await tx.account.findFirst({
+            where: { Subgroup: { code: "301" }, OR: [{ name: supplier?.name || "" }, { name: supplier?.companyName || "" }, { name: { contains: supplier?.name || "Supplier" } }] },
+            include: { Subgroup: { include: { MainGroup: true } } }
+          });
+          if (!mainPayableAccount) {
+            mainPayableAccount = await tx.account.findFirst({
+              where: { Subgroup: { code: "301" } },
+              include: { Subgroup: { include: { MainGroup: true } } }
+            });
+          }
 
-      // Update existing stock movements with rack/shelf when items are updated
-      // This handles the case where locations are assigned after the DPO is already received
-      if (
-        items &&
-        items.length > 0 &&
-        (existingOrder.status === "Received" ||
-          existingOrder.status === "Completed")
-      ) {
-        // Get current stock movements for this DPO
-        const currentMovements = await prisma.stockMovement.findMany({
-          where: {
-            referenceType: "direct_purchase",
-            referenceId: order.id,
-            type: "in",
-          },
-        });
+          if (inventoryAccount && mainPayableAccount) {
+            const lastVoucher = await tx.voucher.findFirst({ where: { type: "journal", voucherNumber: { startsWith: "JV" } }, orderBy: { voucherNumber: "desc" } });
+            const jvNum = lastVoucher ? (parseInt(lastVoucher.voucherNumber.match(/\d+/)![0]) + 1) : 1;
+            const voucherNumber = `JV${String(jvNum).padStart(4, "0")}`;
 
-        if (currentMovements.length > 0) {
-          // Update each movement with the new rack/shelf from the corresponding item
-          for (const item of items) {
-            const partId = item.part_id || item.partId;
-            const rackId = item.rack_id || item.rackId || null;
-            const shelfId = item.shelf_id || item.shelfId || null;
+            const voucherEntries = [
+              { id: crypto.randomUUID(), accountId: inventoryAccount.id, accountName: `${inventoryAccount.code}-${inventoryAccount.name}`, description: `DPO: ${updated.dpoNumber} Inventory Added`, debit: itemsTotal, credit: 0, sortOrder: 0 },
+              { id: crypto.randomUUID(), accountId: mainPayableAccount.id, accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`, description: `DPO: ${updated.dpoNumber} Liability Created`, debit: 0, credit: itemsTotal, sortOrder: 1 },
+            ];
 
-            if (partId && (rackId || shelfId)) {
-              // Find matching movement(s) for this part
-              const matchingMovements = currentMovements.filter(
-                (m) => m.partId === partId,
-              );
-
-              for (const movement of matchingMovements) {
-                // Only update if location has changed
-                if (
-                  movement.rackId !== rackId ||
-                  movement.shelfId !== shelfId
-                ) {
-                  await prisma.stockMovement.update({
-                    where: { id: movement.id },
-                    data: {
-                      rackId: rackId,
-                      shelfId: shelfId,
-                    },
-                  });
+            if (expenses) {
+              for (const exp of expenses) {
+                const epAccount = await tx.account.findFirst({ where: { name: exp.payable_account } });
+                if (epAccount) {
+                  voucherEntries.push({ id: crypto.randomUUID(), accountId: inventoryAccount.id, accountName: `${inventoryAccount.code}-${inventoryAccount.name}`, description: `DPO: ${updated.dpoNumber} ${exp.expense_type}`, debit: exp.amount, credit: 0, sortOrder: voucherEntries.length });
+                  voucherEntries.push({ id: crypto.randomUUID(), accountId: epAccount.id, accountName: `${epAccount.code}-${epAccount.name}`, description: `DPO: ${updated.dpoNumber} ${exp.expense_type} Payable`, debit: 0, credit: exp.amount, sortOrder: voucherEntries.length });
                 }
               }
             }
-          }
-        }
-      }
 
-      // ⭐ FINAL STEP: UPDATE PART MASTER COST TO LANDED COST (AFTER ALL OPERATIONS)
-      // This ensures Part.cost matches the "Cost Price (includes distributed expenses)" shown in Purchase History
-      // This MUST happen at the very end to prevent any later code from overwriting it
-      if (
-        receiveResult &&
-        receiveResult.items &&
-        receiveResult.items.length > 0
-      ) {
-        for (const resultItem of receiveResult.items) {
-          try {
-            // Verify partId exists (from DPO item foreign key, not lookup by partNo)
-            if (!resultItem.partId) {
-              continue;
-            }
-
-            // Get part info before update for logging
-            const partBefore = await prisma.part.findUnique({
-              where: { id: resultItem.partId },
-              select: {
-                partNo: true,
-                cost: true,
-                costSource: true,
-                costSourceRef: true,
-              },
-            });
-
-            if (!partBefore) {
-              continue;
-            }
-
-            const oldCost = partBefore.cost || 0;
-            const partNo = partBefore.partNo || "unknown";
-
-            // Update to landed cost
-
-            const updateStartTime = Date.now();
-            const updatedPart = await prisma.part.update({
-              where: { id: resultItem.partId },
+            await tx.voucher.create({
               data: {
-                cost: resultItem.landedCost, // Use landed cost, not weighted average
-                purchasePrice: resultItem.purchasePrice,
-                avgCost: resultItem.landedCost,
-                costSource: "PURCHASE_RECEIVE_DPO",
-                costSourceRef: resultItem.purchasePrice
-                  ? `DPO: ${order.dpoNumber}`
-                  : `DPO-LC: ${order.dpoNumber}`,
-                costUpdatedAt: new Date(),
-              } as Prisma.PartUpdateInput,
-              select: {
-                partNo: true,
-                cost: true,
-                costSource: true,
-                costSourceRef: true,
-                costUpdatedAt: true,
-              },
-            });
-            const updateEndTime = Date.now();
-
-            // Track for response
-            updatedParts.push({
-              partNo: updatedPart.partNo,
-              oldCost: oldCost,
-              newCost: updatedPart.cost || 0,
-              partIdUpdated: resultItem.partId,
-            });
-
-            // 🔍 HARD VERIFICATION 1: Read back by partId
-            const verifyPartById = await prisma.part.findUnique({
-              where: { id: resultItem.partId },
-              select: {
-                partNo: true,
-                cost: true,
-                costSource: true,
-                costSourceRef: true,
-                costUpdatedAt: true,
+                id: crypto.randomUUID(),
+                voucherNumber,
+                type: "journal",
+                date: new Date(date || updated.date),
+                narration: supplier?.companyName || supplier?.name || "Supplier",
+                totalDebit: totalAmount,
+                totalCredit: totalAmount,
+                status: "posted",
+                createdBy: "System",
+                approvedBy: "System",
+                approvedAt: new Date(),
+                VoucherEntry: { create: voucherEntries },
               },
             });
 
-            const costMatchesById =
-              verifyPartById &&
-              Math.abs((verifyPartById.cost || 0) - resultItem.landedCost) <
-              0.01;
-            if (costMatchesById) {
-            } else {
+            for (const entry of voucherEntries) {
+              const acc = await tx.account.findUnique({ where: { id: entry.accountId }, include: { Subgroup: { include: { MainGroup: true } } } });
+              if (acc) {
+                const type = acc.Subgroup.MainGroup.type.toLowerCase();
+                const change = (type === "asset" || type === "expense" || type === "cost") ? (entry.debit - entry.credit) : (entry.credit - entry.debit);
+                await tx.account.update({ where: { id: entry.accountId }, data: { currentBalance: { increment: change } } });
+              }
             }
 
-            // 🔍 HARD VERIFICATION 2: Read back by partNo with API ordering (same as /api/parts)
-            const partsByPartNo = await prisma.part.findMany({
-              where: { partNo: partNo },
-              select: {
-                id: true,
-                partNo: true,
-                cost: true,
-                costSource: true,
-                costSourceRef: true,
-                costUpdatedAt: true,
-                updatedAt: true,
-              },
-              orderBy: [
-                { costUpdatedAt: "desc" }, // Same ordering as /api/parts
-                { updatedAt: "desc" },
-                { createdAt: "desc" },
-              ],
-            });
+            const paymentAccountId = account || updated.account;
+            if (paymentAccountId && itemsTotal > 0) {
+              const cashBankAccount = await tx.account.findUnique({ where: { id: paymentAccountId } });
+              if (cashBankAccount) {
+                const lastPV = await tx.voucher.findFirst({ where: { type: "payment", voucherNumber: { startsWith: "PV" } }, orderBy: { voucherNumber: "desc" } });
+                const pvNum = lastPV ? (parseInt(lastPV.voucherNumber.match(/\d+/)![0]) + 1) : 1;
+                const pvVoucherNumber = `PV${String(pvNum).padStart(4, "0")}`;
 
-            if (partsByPartNo.length > 0) {
-              const apiWillReturn = partsByPartNo[0];
+                await tx.voucher.create({
+                  data: {
+                    id: crypto.randomUUID(),
+                    voucherNumber: pvVoucherNumber,
+                    type: "payment",
+                    date: new Date(date || updated.date),
+                    narration: supplier?.companyName || supplier?.name || "Supplier",
+                    cashBankAccount: cashBankAccount.name,
+                    totalDebit: itemsTotal,
+                    totalCredit: itemsTotal,
+                    status: "posted",
+                    createdBy: "System",
+                    approvedBy: "System",
+                    approvedAt: new Date(),
+                    VoucherEntry: {
+                      create: [
+                        { id: crypto.randomUUID(), accountId: mainPayableAccount.id, accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`, description: `Payment for DPO ${updated.dpoNumber}`, debit: itemsTotal, credit: 0, sortOrder: 0 },
+                        { id: crypto.randomUUID(), accountId: cashBankAccount.id, accountName: `${cashBankAccount.code}-${cashBankAccount.name}`, description: `Payment for DPO ${updated.dpoNumber}`, debit: 0, credit: itemsTotal, sortOrder: 1 },
+                      ]
+                    }
+                  },
+                });
 
-              if (apiWillReturn.id !== resultItem.partId) {
+                await tx.account.update({ where: { id: mainPayableAccount.id }, data: { currentBalance: { decrement: itemsTotal } } });
+                await tx.account.update({ where: { id: cashBankAccount.id }, data: { currentBalance: { decrement: itemsTotal } } });
               }
-
-              const costMatchesApi =
-                Math.abs((apiWillReturn.cost || 0) - resultItem.landedCost) <
-                0.01;
-              if (costMatchesApi) {
-              } else {
-              }
-            } else {
             }
-          } catch (partUpdateError: any) {
-            // Don't fail the entire request if cost update fails
           }
         }
-      }
 
-      // 🔍 EXIT MARKER
-      const exitMarker = `EXIT:DPO_RECEIVE:${id}`;
+        return updated;
+      });
 
-      // Build response with debugging info (only in dev)
-      const response: any = {
-        id: order.id,
-        dpo_no: order.dpoNumber,
-        date: order.date,
-        status: order.status,
-        total_amount: order.totalAmount,
-        items_count: (order as any).DirectPurchaseOrderItem?.length || 0,
-      };
-
-      // Add debugging info in development
-      if (process.env.NODE_ENV !== "production") {
-        response.updatedParts = updatedParts;
-      }
-
-      res.json(response);
+      res.json(order);
     } catch (error: any) {
       console.error("Error updating DPO:", error);
       res.status(500).json({ error: error.message });

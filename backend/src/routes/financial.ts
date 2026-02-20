@@ -8,7 +8,7 @@ const formatDate = (date: Date): string => {
   return date.toISOString().split("T")[0];
 };
 
-// Get General Journal Entries
+// Get General Journal Entries (From Vouchers)
 router.get("/general-journal", async (req: Request, res: Response) => {
   try {
     const {
@@ -20,24 +20,36 @@ router.get("/general-journal", async (req: Request, res: Response) => {
       limit = "10",
     } = req.query;
 
-    // Query journal entries from database
-    const where: any = {};
+    // Filter for Voucher Entries
+    const where: any = {
+      Voucher: {
+        status: "posted",
+      },
+    };
 
     // Date filter
+    const dateFilter: any = {};
+    if (from_date) {
+      dateFilter.gte = new Date(from_date as string);
+    }
+    if (to_date) {
+      const toDateObj = new Date(to_date as string);
+      toDateObj.setHours(23, 59, 59, 999);
+      dateFilter.lte = toDateObj;
+    }
     if (from_date || to_date) {
-      where.JournalEntry = {
-        ...(from_date && { entryDate: { gte: new Date(from_date as string) } }),
-        ...(to_date && { entryDate: { lte: new Date(to_date as string) } }),
-      };
+      if (!where.Voucher) where.Voucher = {};
+      where.Voucher.date = dateFilter;
     }
 
     // Search filter
     if (search && search_by) {
       const searchValue = search as string;
       if (search_by === "voucher") {
-        where.JournalEntry = {
-          ...where.JournalEntry,
-          entryNo: { contains: searchValue, mode: "insensitive" },
+        if (!where.Voucher) where.Voucher = {};
+        where.Voucher.voucherNumber = {
+          contains: searchValue,
+          mode: "insensitive",
         };
       } else if (search_by === "account") {
         where.Account = {
@@ -47,70 +59,24 @@ router.get("/general-journal", async (req: Request, res: Response) => {
           ],
         };
       } else if (search_by === "description") {
+        if (!where.Voucher) where.Voucher = {};
         where.OR = [
           { description: { contains: searchValue, mode: "insensitive" } },
           {
-            JournalEntry: {
-              description: { contains: searchValue, mode: "insensitive" },
+            Voucher: {
+              ...(where.Voucher || {}), // Keep existing voucher filters
+              narration: { contains: searchValue, mode: "insensitive" },
             },
           },
         ];
       }
     }
 
-    // Build proper where clause - ensure we only get posted entries
-    const lineWhere: any = {
-      JournalEntry: {
-        status: "posted",
-        ...(from_date || to_date
-          ? {
-            entryDate: {
-              ...(from_date && { gte: new Date(from_date as string) }),
-              ...(to_date && {
-                lte: (() => {
-                  const toDate = new Date(to_date as string);
-                  toDate.setHours(23, 59, 59, 999);
-                  return toDate;
-                })(),
-              }),
-            },
-          }
-          : {}),
-        ...(search && search_by === "voucher"
-          ? {
-            entryNo: { contains: search as string, mode: "insensitive" },
-          }
-          : {}),
-      },
-    };
-
-    // Add account search if needed
-    if (search && search_by === "account") {
-      lineWhere.Account = {
-        OR: [
-          { code: { contains: search as string, mode: "insensitive" } },
-          { name: { contains: search as string, mode: "insensitive" } },
-        ],
-      };
-    }
-
-    // Add description search if needed
-    if (search && search_by === "description") {
-      lineWhere.OR = [
-        { description: { contains: search as string, mode: "insensitive" } },
-        {
-          JournalEntry: {
-            description: { contains: search as string, mode: "insensitive" },
-          },
-        },
-      ];
-    }
-
-    // Get journal lines with related data
-    const journalLines = await prisma.journalLine.findMany({
-      where: lineWhere,
+    // Get Voucher Entries with related data
+    const voucherEntries = await prisma.voucherEntry.findMany({
+      where,
       include: {
-        JournalEntry: true,
+        Voucher: true,
         Account: {
           include: {
             Subgroup: {
@@ -121,46 +87,41 @@ router.get("/general-journal", async (req: Request, res: Response) => {
           },
         },
       },
-      orderBy: [{ JournalEntry: { entryDate: "desc" } }, { lineOrder: "asc" }],
+      orderBy: [{ Voucher: { date: "desc" } }, { sortOrder: "asc" }],
     });
 
     // Transform to match frontend format
-    const entries = journalLines.map((line: any, index: number) => {
-      // Generate a unique tId from the line ID or use index
+    const entries = voucherEntries.map((entry: any, index: number) => {
+      // Generate a unique tId
       let tId = index + 1;
-      if (line.id) {
-        // Try to extract a number from the UUID or use a hash
-        const idStr = line.id.replace(/-/g, "");
+      if (entry.id) {
+        // Try to extract a number from hash
+        const idStr = entry.id.replace(/-/g, "");
         const numPart = parseInt(idStr.slice(0, 8), 16);
-        tId = numPart % 100000; // Keep it reasonable
+        tId = numPart % 100000;
       }
 
       return {
-        id: line.id || `line-${index}`,
+        id: entry.id || `entry-${index}`,
         tId: tId,
-        voucherNo: line.JournalEntry?.entryNo || "N/A",
-        date: line.JournalEntry ? formatDate(line.JournalEntry.entryDate) : "",
-        account: line.Account
-          ? `${line.Account.code}-${line.Account.name}`
+        voucherNo: entry.Voucher?.voucherNumber || "N/A",
+        date: entry.Voucher ? formatDate(entry.Voucher.date) : "",
+        account: entry.Account
+          ? `${entry.Account.code}-${entry.Account.name}`
           : "N/A",
-        description: line.description || line.JournalEntry?.description || "",
-        debit: line.debit || 0,
-        credit: line.credit || 0,
+        description: entry.description || entry.Voucher?.narration || "",
+        debit: entry.debit || 0,
+        credit: entry.credit || 0,
       };
     });
 
-    // Apply client-side filters (for search that wasn't handled in query)
+    // Apply client-side filters if needed (e.g. description search sometimes needs more fuzzy match?)
     let filteredEntries = entries;
-    if (search && search_by === "description") {
-      const searchLower = (search as string).toLowerCase();
-      filteredEntries = filteredEntries.filter((e: any) =>
-        e.description.toLowerCase().includes(searchLower),
-      );
-    }
+    // (Search logic already handled in query 'where' clause, no client-side filter needed unless complicated)
 
     // Pagination
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const pageNum = parseInt(page as string) || 1;
+    const limitNum = parseInt(limit as string) || 10;
     const startIndex = (pageNum - 1) * limitNum;
     const endIndex = startIndex + limitNum;
     const paginatedEntries = filteredEntries.slice(startIndex, endIndex);
@@ -175,7 +136,12 @@ router.get("/general-journal", async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message || "Failed to fetch general journal entries" });
+    console.error("General Journal Error:", error);
+    res
+      .status(500)
+      .json({
+        error: error.message || "Failed to fetch general journal entries",
+      });
   }
 });
 
@@ -222,20 +188,7 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
   try {
     const { from_date, to_date } = req.query;
 
-    // Get all posted voucher numbers to avoid double counting
-    const postedVouchers = await prisma.voucher.findMany({
-      where: {
-        status: "posted",
-        ...(from_date && { date: { gte: new Date(from_date as string) } }),
-        ...(to_date && { date: { lte: new Date(to_date as string) } }),
-      },
-      select: {
-        voucherNumber: true,
-      },
-    });
-    const voucherNumbers = postedVouchers.map((v) => v.voucherNumber);
-    const journalExcludeVouchers =
-      voucherNumbers.length > 0 ? { entryNo: { notIn: voucherNumbers } } : {};
+    // (Code removed: removed postedVouchers exclusion logic as we now ignore JournalLine completely)
 
     // Build date filter if provided
     let dateFilter: any = {};
@@ -257,23 +210,18 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
             MainGroup: true,
           },
         },
-        JournalLine: {
-          where: {
-            JournalEntry: {
-              status: "posted",
-              ...journalExcludeVouchers,
-              ...dateFilter,
-            },
-          },
-        },
         VoucherEntry: {
           where: {
             Voucher: {
               status: "posted",
-              ...(from_date && {
-                date: { gte: new Date(from_date as string) },
-              }),
-              ...(to_date && { date: { lte: new Date(to_date as string) } }),
+              ...(from_date || to_date
+                ? {
+                  date: {
+                    ...(from_date && { gte: new Date(from_date as string) }),
+                    ...(to_date && { lte: new Date(to_date as string) }),
+                  },
+                }
+                : {}),
             },
           },
         },
@@ -299,28 +247,18 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
       const subgroup = account.Subgroup;
       const accountType = mainGroup.type;
 
-      // Calculate totals from journal lines and voucher entries
-      const journalDebit = account.JournalLine.reduce(
-        (sum: number, line: any) => sum + (line.debit || 0),
-        0,
-      );
-      const journalCredit = account.JournalLine.reduce(
-        (sum: number, line: any) => sum + (line.credit || 0),
-        0,
-      );
-      const voucherDebit =
+      // Calculate totals from voucher entries ONLY
+
+      const totalDebit =
         account.VoucherEntry?.reduce(
           (sum: number, entry: any) => sum + (entry.debit || 0),
           0,
         ) || 0;
-      const voucherCredit =
+      const totalCredit =
         account.VoucherEntry?.reduce(
           (sum: number, entry: any) => sum + (entry.credit || 0),
           0,
         ) || 0;
-
-      const totalDebit = journalDebit + voucherDebit;
-      const totalCredit = journalCredit + voucherCredit;
 
       // Calculate balance using proper accounting logic (INCLUDING opening balance)
       const balance = calculateAccountBalance(
@@ -454,30 +392,9 @@ router.get("/income-statement", async (req: Request, res: Response) => {
     if (fromDateObj) dateFilter.gte = fromDateObj;
     if (toDateObj) dateFilter.lte = toDateObj;
 
-    // Get all posted voucher numbers to avoid double counting
-    const postedVouchers = await prisma.voucher.findMany({
-      where: {
-        status: "posted",
-        ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
-      },
-      select: {
-        voucherNumber: true,
-      },
-    });
-    const voucherNumbers = postedVouchers.map((v) => v.voucherNumber);
-    const journalExcludeVouchers =
-      voucherNumbers.length > 0 ? { entryNo: { notIn: voucherNumbers } } : {};
-
+    // (Removed postedVouchers fetching logic)
+    // Define common include for accounts (VoucherEntry only)
     const commonInclude = {
-      JournalLine: {
-        where: {
-          JournalEntry: {
-            status: "posted",
-            ...journalExcludeVouchers,
-            ...(fromDateObj || toDateObj ? { entryDate: dateFilter } : {}),
-          },
-        },
-      },
       VoucherEntry: {
         where: {
           Voucher: {
@@ -486,6 +403,7 @@ router.get("/income-statement", async (req: Request, res: Response) => {
           },
         },
       },
+      // Removed JournalLine
     };
 
     // Query revenue accounts
@@ -526,26 +444,14 @@ router.get("/income-statement", async (req: Request, res: Response) => {
 
     // Helper to calculate period movement (Income statement is period-based)
     const calculatePeriodAmount = (acc: any, type: "revenue" | "expense") => {
-      const journalDebit = acc.JournalLine.reduce(
-        (sum: number, line: any) => sum + (line.debit || 0),
-        0,
-      );
-      const journalCredit = acc.JournalLine.reduce(
-        (sum: number, line: any) => sum + (line.credit || 0),
-        0,
-      );
-
-      const voucherDebit = acc.VoucherEntry.reduce(
+      const totalDebit = acc.VoucherEntry.reduce(
         (sum: number, entry: any) => sum + (entry.debit || 0),
         0,
       );
-      const voucherCredit = acc.VoucherEntry.reduce(
+      const totalCredit = acc.VoucherEntry.reduce(
         (sum: number, entry: any) => sum + (entry.credit || 0),
         0,
       );
-
-      const totalDebit = journalDebit + voucherDebit;
-      const totalCredit = journalCredit + voucherCredit;
 
       if (type === "revenue") {
         return totalCredit - totalDebit;
@@ -648,13 +554,6 @@ router.get("/ledgers", async (req: Request, res: Response) => {
       accountWhere.id = account as string;
     }
 
-    // Get all posted voucher numbers to filter out journal entries that have corresponding vouchers
-    const postedVouchers = await prisma.voucher.findMany({
-      where: { status: "posted" },
-      select: { voucherNumber: true },
-    });
-    const voucherNumbers = new Set(postedVouchers.map((v) => v.voucherNumber));
-
     // Get accounts first
     const accounts = await prisma.account.findMany({
       where: accountWhere,
@@ -701,18 +600,7 @@ router.get("/ledgers", async (req: Request, res: Response) => {
       let runningBalance = acc.openingBalance || 0;
 
       if (fromDateObj) {
-        // Fetch transactions BEFORE from_date
-        const priorJournalLines = await prisma.journalLine.findMany({
-          where: {
-            accountId: acc.id,
-            JournalEntry: {
-              status: "posted",
-              entryNo: { notIn: Array.from(voucherNumbers) },
-              entryDate: { lt: fromDateObj },
-            },
-          },
-        });
-
+        // Fetch transactions BEFORE from_date (Voucher Only)
         const priorVoucherEntries = await prisma.voucherEntry.findMany({
           where: {
             accountId: acc.id,
@@ -723,13 +611,15 @@ router.get("/ledgers", async (req: Request, res: Response) => {
           },
         });
 
-        const priorDebit =
-          priorJournalLines.reduce((sum, l) => sum + (l.debit || 0), 0) +
-          priorVoucherEntries.reduce((sum, e) => sum + (e.debit || 0), 0);
+        const priorDebit = priorVoucherEntries.reduce(
+          (sum, e) => sum + (e.debit || 0),
+          0,
+        );
 
-        const priorCredit =
-          priorJournalLines.reduce((sum, l) => sum + (l.credit || 0), 0) +
-          priorVoucherEntries.reduce((sum, e) => sum + (e.credit || 0), 0);
+        const priorCredit = priorVoucherEntries.reduce(
+          (sum, e) => sum + (e.credit || 0),
+          0,
+        );
 
         runningBalance += calculateBalanceChange(
           priorDebit,
@@ -754,23 +644,10 @@ router.get("/ledgers", async (req: Request, res: Response) => {
         });
       }
 
-      // 2. Fetch Transactions WITHIN Date Range
+      // 2. Fetch Transactions WITHIN Date Range (Voucher Only)
       const dateFilter: any = {};
       if (fromDateObj) dateFilter.gte = fromDateObj;
       if (toDateObj) dateFilter.lte = toDateObj;
-
-      // Journal Lines within range
-      const journalLines = await prisma.journalLine.findMany({
-        where: {
-          accountId: acc.id,
-          JournalEntry: {
-            status: "posted",
-            entryNo: { notIn: Array.from(voucherNumbers) },
-            ...(fromDateObj || toDateObj ? { entryDate: dateFilter } : {}),
-          },
-        },
-        include: { JournalEntry: true },
-      });
 
       // Voucher Entries within range
       const voucherEntries = await prisma.voucherEntry.findMany({
@@ -782,54 +659,45 @@ router.get("/ledgers", async (req: Request, res: Response) => {
           },
         },
         include: { Voucher: true },
+        orderBy: { Voucher: { date: "asc" } },
       });
 
-      // Combine and Sort
-      const allEntries = [
-        ...journalLines.map((line: any) => ({
-          type: "journal",
-          entryDate: line.JournalEntry.entryDate,
-          entryNo: line.JournalEntry.entryNo,
-          description: line.description || line.JournalEntry.description || "",
-          debit: line.debit,
-          credit: line.credit,
-          id: line.id,
-        })),
-        ...voucherEntries.map((entry: any) => ({
-          type: "voucher",
-          entryDate: entry.Voucher.date,
-          entryNo: entry.Voucher.voucherNumber,
-          description: entry.description || entry.Voucher.narration || "",
-          debit: entry.debit,
-          credit: entry.credit,
-          id: entry.id,
-        })),
-      ].sort((a, b) => {
-        const dateDiff =
-          new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime();
-        return dateDiff !== 0 ? dateDiff : a.entryNo.localeCompare(b.entryNo);
+      // Combine and Sort (Just voucher entries now)
+      const allEntries = voucherEntries.map((entry: any) => ({
+        type: "voucher",
+        entryDate: entry.Voucher.date,
+        entryNo: entry.Voucher.voucherNumber,
+        description: entry.description || entry.Voucher.narration || "",
+        debit: entry.debit,
+        credit: entry.credit,
+        id: entry.id,
+      }));
+
+      // Sort by date then type (Using date directly as they are Date objects)
+      allEntries.sort((a, b) => {
+        const timeA = new Date(a.entryDate).getTime();
+        const timeB = new Date(b.entryDate).getTime();
+        return timeA - timeB;
       });
 
-      // 3. Generate Ledger Rows
-      allEntries.forEach((entry) => {
-        const balanceChange = calculateBalanceChange(
-          entry.debit,
-          entry.credit,
-          accountType,
-        );
-        runningBalance += balanceChange;
+      // 3. Process entries and calculate running balance
+      for (const entry of allEntries) {
+        const debit = entry.debit || 0;
+        const credit = entry.credit || 0;
+
+        runningBalance += calculateBalanceChange(debit, credit, accountType);
 
         ledgerEntries.push({
-          id: `entry-${entry.type}-${entry.id}`,
+          id: entry.id,
           tId: tIdCounter++,
           voucherNo: entry.entryNo,
           timeStamp: formatDate(new Date(entry.entryDate)),
           description: entry.description,
-          debit: entry.debit > 0 ? entry.debit : null,
-          credit: entry.credit > 0 ? entry.credit : null,
+          debit: debit > 0 ? debit : null,
+          credit: credit > 0 ? credit : null,
           balance: runningBalance,
         });
-      });
+      }
     }
 
     // Pagination
@@ -837,10 +705,10 @@ router.get("/ledgers", async (req: Request, res: Response) => {
     const limitNum = parseInt(limit as string);
     const startIndex = (pageNum - 1) * limitNum;
     const endIndex = startIndex + limitNum;
-    const paginatedEntries = ledgerEntries.slice(startIndex, endIndex);
+    const paginatedLedger = ledgerEntries.slice(startIndex, endIndex);
 
     res.json({
-      data: paginatedEntries,
+      data: paginatedLedger,
       pagination: {
         page: pageNum,
         limit: limitNum,

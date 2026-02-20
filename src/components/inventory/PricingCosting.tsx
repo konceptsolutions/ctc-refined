@@ -3192,10 +3192,10 @@ export const PricingCosting = () => {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">
-                      Current Cost
+                      Last Purchase Price
                     </p>
                     <p className="font-medium">
-                      {formatCurrency(selectedItemForHistory.cost)}
+                      {formatCurrency(selectedItemForHistory.lastPurchasePrice)}
                     </p>
                   </div>
                   <div>

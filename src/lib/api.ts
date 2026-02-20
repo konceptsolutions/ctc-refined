@@ -17,7 +17,7 @@ export function getApiBaseUrl(): string {
     return `${origin}/api`;
   }
 
-  return "http://localhost:3002/api";
+  return "http://localhost:3001/api";
 }
 
 const API_BASE_URL = getApiBaseUrl();
@@ -220,12 +220,12 @@ class ApiClient {
         if (msg.includes("404")) {
           return {
             error:
-              "Request returned 404. Ensure the backend server is running on port 3002 and the proxy configuration is correct.",
+              "Request returned 404. Ensure the backend server is running on port 3001 and the proxy configuration is correct.",
           };
         }
         return {
           error:
-            "Backend API is not responding. Please ensure the backend server is running on port 3002.",
+            "Backend API is not responding. Please ensure the backend server is running on port 3001.",
         };
       }
       return { error: msg || "Network error occurred" };
@@ -293,6 +293,11 @@ class ApiClient {
     return this.request(
       `/parts/part-entry-list${queryString ? `?${queryString}` : ""}`,
     );
+  }
+
+  async getPartsDropdown(search?: string) {
+    const query = search ? `?search=${search}` : "";
+    return this.request(`/parts-dropdown/dropdown${query}`);
   }
 
   async getParts(params?: {
@@ -1015,6 +1020,11 @@ class ApiClient {
     return this.request(
       `/inventory/adjustments${queryString ? `?${queryString}` : ""}`,
     );
+  }
+
+  async getStockDetails(partId: string, storeId?: string) {
+    const query = storeId ? `?store_id=${storeId}` : "";
+    return this.request(`/stock-details/${partId}${query}`);
   }
 
   async createAdjustment(data: {
