@@ -15,6 +15,7 @@ interface SalesInvoiceItem {
   orderedQty: number;
   deliveredQty: number;
   unitPrice: number;
+  avgCost?: number;
   lineTotal: number;
 }
 
@@ -36,15 +37,15 @@ interface StoreSalesInvoiceReceiptProps {
   onDeliveryConfirmed?: () => void;
 }
 
-export const StoreSalesInvoiceReceipt = ({ 
-  invoice, 
-  open, 
+export const StoreSalesInvoiceReceipt = ({
+  invoice,
+  open,
   onOpenChange,
-  onDeliveryConfirmed 
+  onDeliveryConfirmed
 }: StoreSalesInvoiceReceiptProps) => {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [isConfirming, setIsConfirming] = useState(false);
-  
+
   // Track delivery quantities for each item
   const [deliveryQuantities, setDeliveryQuantities] = useState<{ [itemId: string]: number }>({});
 
@@ -161,7 +162,7 @@ export const StoreSalesInvoiceReceipt = ({
     setTimeout(() => {
       printWindow.print();
       printWindow.close();
-      
+
       // After printing, confirm delivery and reduce stock
       confirmDelivery();
     }, 250);
@@ -170,7 +171,7 @@ export const StoreSalesInvoiceReceipt = ({
   const confirmDelivery = async () => {
     try {
       setIsConfirming(true);
-      
+
       // Prepare delivery items - only deliver items with quantity > 0
       const deliveryItems = (invoice.items || [])
         .filter((item) => {
@@ -211,12 +212,12 @@ export const StoreSalesInvoiceReceipt = ({
       } else {
         toast.success(`Full delivery confirmed for Invoice ${invoice.invoiceNo}. Stock has been reduced.`);
       }
-      
+
       // Refresh invoices list
       if (onDeliveryConfirmed) {
         onDeliveryConfirmed();
       }
-      
+
       onOpenChange(false);
     } catch (error: any) {
       toast.error(error.message || "Failed to confirm delivery");
@@ -341,7 +342,7 @@ export const StoreSalesInvoiceReceipt = ({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handlePrintAndConfirmDelivery}
               disabled={isConfirming || !hasAnyDelivery()}
             >

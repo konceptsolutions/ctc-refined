@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
-  AlertDialogAction, 
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -63,6 +63,7 @@ interface ReturnItem {
   model: string;
   uom: string;
   returnQty: number;
+  avgCost?: number;
   price: number;
   total: number;
 }
@@ -116,7 +117,7 @@ export const SalesReturns = () => {
         // if (response.data) {
         //   setReturns(response.data);
         // }
-        
+
         // For now, use localStorage
         const storedReturns = localStorage.getItem('salesReturns');
         if (storedReturns) {
@@ -140,10 +141,10 @@ export const SalesReturns = () => {
   useEffect(() => {
     const fetchItems = async () => {
       try {
-        const response = await apiClient.getParts({ 
+        const response = await apiClient.getParts({
           status: 'active',
           limit: 1000,
-          page: 1 
+          page: 1
         });
 
         if (response.error) {
@@ -156,7 +157,7 @@ export const SalesReturns = () => {
         } else if (response.data && Array.isArray(response.data)) {
           partsDataArray = response.data;
         } else if (response.pagination && response.data) {
-          partsDataArray = response.data;
+          partsDataArray = response.data as any[];
         }
 
         const transformedItems = partsDataArray
@@ -196,7 +197,7 @@ export const SalesReturns = () => {
 
   const filteredReturns = returns.filter((item) => {
     const matchesItemType = !filterItemType || filterItemType === "all";
-    const matchesItem = !filterItem || filterItem === "all" || 
+    const matchesItem = !filterItem || filterItem === "all" ||
       item.items.some(i => i.partNo === filterItem || i.itemName.toLowerCase().includes(filterItem.toLowerCase()));
     const matchesCustomer = !filterCustomer || filterCustomer === "all" || item.customerName === filterCustomer;
     const matchesCustomerName = !customerNameSearch || item.customerName.toLowerCase().includes(customerNameSearch.toLowerCase());
@@ -742,6 +743,7 @@ export const SalesReturns = () => {
                       <TableHead className="text-xs font-semibold">Model</TableHead>
                       <TableHead className="text-xs font-semibold">Uom</TableHead>
                       <TableHead className="text-xs font-semibold text-right">Return Qty</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">Avg Cost</TableHead>
                       <TableHead className="text-xs font-semibold text-right">Price</TableHead>
                       <TableHead className="text-xs font-semibold text-right">Total</TableHead>
                     </TableRow>
@@ -756,6 +758,7 @@ export const SalesReturns = () => {
                         <TableCell className="text-xs">{item.model || "-"}</TableCell>
                         <TableCell className="text-xs">{item.uom}</TableCell>
                         <TableCell className="text-xs text-right">{item.returnQty}</TableCell>
+                        <TableCell className="text-xs text-right">{item.avgCost?.toLocaleString() || "0"}</TableCell>
                         <TableCell className="text-xs text-right">{item.price.toLocaleString()}</TableCell>
                         <TableCell className="text-xs text-right">{item.total.toLocaleString()}</TableCell>
                       </TableRow>

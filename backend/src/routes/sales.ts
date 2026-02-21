@@ -927,6 +927,7 @@ router.post(
               deliveredQty: 0,
               pendingQty: item.quantity,
               unitPrice: item.unitPrice,
+              avgCost: item.Part?.avgCost || item.Part?.cost || 0,
               discount: 0,
               lineTotal: item.total,
               grade: "A",
@@ -1371,18 +1372,25 @@ router.post("/invoices", async (req: Request, res: Response) => {
         remarks,
         updatedAt: new Date(),
         SalesInvoiceItem: {
-          create: items.map((item: any) => ({
-            partId: item.partId,
-            partNo: item.partNo,
-            description: item.description || "",
-            orderedQty: item.orderedQty,
-            deliveredQty: 0,
-            pendingQty: item.orderedQty,
-            unitPrice: item.unitPrice,
-            discount: item.discount || 0,
-            lineTotal: item.lineTotal,
-            grade: item.grade || "A",
-            brand: item.brand || "",
+          create: await Promise.all(items.map(async (item: any) => {
+            const part = await prisma.part.findUnique({
+              where: { id: item.partId },
+              select: { avgCost: true, cost: true }
+            });
+            return {
+              partId: item.partId,
+              partNo: item.partNo,
+              description: item.description || "",
+              orderedQty: item.orderedQty,
+              deliveredQty: 0,
+              pendingQty: item.orderedQty,
+              unitPrice: item.unitPrice,
+              avgCost: part?.avgCost || part?.cost || 0,
+              discount: item.discount || 0,
+              lineTotal: item.lineTotal,
+              grade: item.grade || "A",
+              brand: item.brand || "",
+            };
           })),
         },
       },
@@ -2236,6 +2244,11 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
         const lineTotal = item.orderedQty * item.unitPrice;
         subtotal += lineTotal;
 
+        const part = await prisma.part.findUnique({
+          where: { id: item.partId },
+          select: { avgCost: true, cost: true }
+        });
+
         await prisma.salesInvoiceItem.create({
           data: {
             invoiceId: id,
@@ -2246,6 +2259,7 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
             deliveredQty: 0,
             pendingQty: item.orderedQty,
             unitPrice: item.unitPrice,
+            avgCost: part?.avgCost || part?.cost || 0,
             discount: item.discount || 0,
             lineTotal: lineTotal,
             grade: item.grade || "A",
@@ -2394,7 +2408,7 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
     await prisma.salesInvoice.update({
       where: { id },
       data: {
-        status: "fully_delivered", // Cash sales don't need delivery, mark as delivered
+        status: "approved", // Mark as approved
       },
     });
 
@@ -2729,8 +2743,7 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
         for (const reqItem of items) {
           const invItem = invoice.SalesInvoiceItem?.find((i: any) => i.id === reqItem.invoiceItemId);
           if (invItem) {
-            const part = await tx.part.findUnique({ where: { id: invItem.partId } });
-            deliveryCost += (part?.cost || 0) * Number(reqItem.quantity);
+            deliveryCost += (invItem.avgCost || 0) * Number(reqItem.quantity);
           }
         }
 
@@ -2978,6 +2991,8 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
     // Validate status
     const validStatuses = [
       "pending",
+      "on_hold",
+      "approved",
       "partially_delivered",
       "fully_delivered",
       "cancelled",

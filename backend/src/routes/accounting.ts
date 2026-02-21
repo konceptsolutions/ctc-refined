@@ -501,24 +501,23 @@ router.delete("/accounts/:id", async (req: Request, res: Response) => {
   }
 });
 
-// ========== Journal Entries ==========
+// ========== Journal Entries (now Vouchers with type 'journal') ==========
 router.get("/journal-entries", async (req: Request, res: Response) => {
   try {
     const { status, search } = req.query;
-    const where: any = {};
+    const where: any = { type: "journal" };
     if (status && status !== "all") where.status = status;
     if (search) {
       where.OR = [
-        { entryNo: { contains: search as string, mode: "insensitive" } },
-        { reference: { contains: search as string, mode: "insensitive" } },
-        { description: { contains: search as string, mode: "insensitive" } },
+        { voucherNumber: { contains: search as string, mode: "insensitive" } },
+        { narration: { contains: search as string, mode: "insensitive" } },
       ];
     }
 
-    const entries = await prisma.journalEntry.findMany({
+    const entries = await prisma.voucher.findMany({
       where,
       include: {
-        JournalLine: {
+        VoucherEntry: {
           include: {
             Account: {
               include: {
@@ -528,10 +527,10 @@ router.get("/journal-entries", async (req: Request, res: Response) => {
               },
             },
           },
-          orderBy: { lineOrder: "asc" },
+          orderBy: { sortOrder: "asc" },
         },
       },
-      orderBy: { entryDate: "desc" },
+      orderBy: { date: "desc" },
     });
     res.json({ data: entries });
   } catch (error: any) {
@@ -558,31 +557,42 @@ router.post("/journal-entries", async (req: Request, res: Response) => {
         .json({ error: "Total debits must equal total credits" });
     }
 
-    // Generate entry number
-    const count = await prisma.journalEntry.count();
-    const entryNo = `JV-${new Date().getFullYear()}-${String(count + 1).padStart(3, "0")}`;
+    // Generate voucher number
+    const count = await prisma.voucher.count({ where: { type: "journal" } });
+    const voucherNumber = `JV-${new Date().getFullYear()}-${String(count + 1).padStart(3, "0")}`;
 
-    const entry = await prisma.journalEntry.create({
+    // Fetch account names for the voucher entries
+    const linesWithNames = await Promise.all(lines.map(async (line: any) => {
+      const account = await prisma.account.findUnique({ where: { id: line.accountId } });
+      return {
+        ...line,
+        accountName: account ? account.name : "Unknown Account"
+      };
+    }));
+
+    const entry = await prisma.voucher.create({
       data: {
-        entryNo,
-        entryDate: new Date(entryDate),
-        reference,
-        description,
+        voucherNumber,
+        type: "journal",
+        date: new Date(entryDate),
+        chequeNumber: reference,
+        narration: description,
         totalDebit,
         totalCredit,
         createdBy,
-        JournalLine: {
-          create: lines.map((line: any, index: number) => ({
+        VoucherEntry: {
+          create: linesWithNames.map((line: any, index: number) => ({
             accountId: line.accountId,
+            accountName: line.accountName,
             description: line.description,
             debit: line.debit || 0,
             credit: line.credit || 0,
-            lineOrder: index,
+            sortOrder: index,
           })),
         },
       } as any,
       include: {
-        JournalLine: {
+        VoucherEntry: {
           include: {
             Account: {
               include: {
@@ -609,10 +619,10 @@ router.post(
       const { id } = req.params;
       const { postedBy } = req.body;
 
-      const entry = await prisma.journalEntry.findUnique({
+      const entry = await prisma.voucher.findUnique({
         where: { id },
         include: {
-          JournalLine: {
+          VoucherEntry: {
             include: {
               Account: {
                 include: {
@@ -629,23 +639,23 @@ router.post(
       });
 
       if (!entry) {
-        return res.status(404).json({ error: "Journal entry not found" });
+        return res.status(404).json({ error: "Voucher not found" });
       }
 
       if (entry.status === "posted") {
-        return res.status(400).json({ error: "Entry already posted" });
+        return res.status(400).json({ error: "Voucher already posted" });
       }
 
-      // Update entry status
-      const updatedEntry = await prisma.journalEntry.update({
+      // Update voucher status
+      const updatedEntry = await prisma.voucher.update({
         where: { id },
         data: {
           status: "posted",
-          postedBy,
-          postedAt: new Date(),
+          approvedBy: postedBy,
+          approvedAt: new Date(),
         },
         include: {
-          JournalLine: {
+          VoucherEntry: {
             include: {
               Account: {
                 include: {
@@ -662,7 +672,8 @@ router.post(
       });
 
       // Update account balances using proper accounting logic
-      for (const line of entry.JournalLine) {
+      for (const line of entry.VoucherEntry) {
+        if (!line.Account) continue;
         const accountType = line.Account.Subgroup.MainGroup.type;
         const balanceChange = calculateBalanceChange(
           line.debit,
@@ -670,14 +681,16 @@ router.post(
           accountType,
         );
 
-        await prisma.account.update({
-          where: { id: line.accountId },
-          data: {
-            currentBalance: {
-              increment: balanceChange,
+        if (line.accountId) {
+          await prisma.account.update({
+            where: { id: line.accountId },
+            data: {
+              currentBalance: {
+                increment: balanceChange,
+              },
             },
-          },
-        });
+          });
+        }
       }
 
       res.json({ data: updatedEntry });
@@ -699,61 +712,31 @@ router.get("/general-journal", async (req: Request, res: Response) => {
       limit = "10",
     } = req.query;
 
-    // Build where clause for journal entries
-    const journalWhere: any = {
-      status: "posted", // Only show posted entries
-    };
-
     // Build where clause for Vouchers
     const VoucherWhere: any = {
       status: "posted", // Only show posted Vouchers
     };
 
-    // Date range filter for both
+    // Date range filter
     if (from_date || to_date) {
-      journalWhere.entryDate = {};
       VoucherWhere.date = {};
       if (from_date) {
-        journalWhere.entryDate.gte = new Date(from_date as string);
         VoucherWhere.date.gte = new Date(from_date as string);
       }
       if (to_date) {
-        journalWhere.entryDate.lte = new Date(to_date as string);
         VoucherWhere.date.lte = new Date(to_date as string);
       }
     }
 
-    // Search filter (SQLite doesn't support case-insensitive mode, so we'll filter in memory)
+    // Search filter
     let searchFilter: any = null;
     if (search) {
       const searchStr = (search as string).toLowerCase();
       searchFilter = { searchStr, search_by };
     }
 
-    // Get all journal entries with lines
-    const entries = await prisma.journalEntry.findMany({
-      where: journalWhere,
-      include: {
-        JournalLine: {
-          include: {
-            Account: {
-              include: {
-                Subgroup: {
-                  include: {
-                    MainGroup: true,
-                  },
-                },
-              },
-            },
-          },
-          orderBy: { lineOrder: "asc" },
-        },
-      },
-      orderBy: [{ entryDate: "desc" }, { entryNo: "desc" }],
-    });
-
     // Get all Vouchers with entries
-    const Vouchers = await prisma.voucher.findMany({
+    const VouchersList = await prisma.voucher.findMany({
       where: VoucherWhere,
       include: {
         VoucherEntry: {
@@ -775,98 +758,32 @@ router.get("/general-journal", async (req: Request, res: Response) => {
     });
 
     // Flatten entries into individual lines for general journal view
-    let JournalLine: any[] = [];
+    let JournalLines: any[] = [];
     let tId = 1;
 
-    // Process JournalEntry records
-    entries.forEach((entry) => {
-      entry.JournalLine.forEach((line) => {
-        const accountName = line.Account
-          ? `${line.Account.code}-${line.Account.name}`
-          : "Unknown";
-        const description = line.description || entry.description || "";
-
-        // Apply search filter if provided
-        if (searchFilter) {
-          const { searchStr, search_by } = searchFilter;
-          if (search_by === "Voucher") {
-            if (!entry.entryNo.toLowerCase().includes(searchStr)) return;
-          } else if (search_by === "account") {
-            if (
-              line.Account &&
-              !line.Account.code.toLowerCase().includes(searchStr) &&
-              !line.Account.name.toLowerCase().includes(searchStr)
-            )
-              return;
-          } else if (search_by === "description") {
-            if (
-              !description.toLowerCase().includes(searchStr) &&
-              !entry.description?.toLowerCase().includes(searchStr)
-            )
-              return;
-          } else {
-            // General search
-            if (
-              !entry.entryNo.toLowerCase().includes(searchStr) &&
-              !entry.reference?.toLowerCase().includes(searchStr) &&
-              !description.toLowerCase().includes(searchStr) &&
-              !accountName.toLowerCase().includes(searchStr)
-            )
-              return;
-          }
-        }
-
-        JournalLine.push({
-          id: `je-${entry.id}-${line.id}`,
-          tId: tId++,
-          VoucherNo: entry.entryNo,
-          date: entry.entryDate.toISOString().split("T")[0],
-          account: accountName,
-          description: description,
-          debit: line.debit,
-          credit: line.credit,
-          entryId: entry.id,
-          lineId: line.id,
-        });
-      });
-    });
-
     // Process Voucher records
-    Vouchers.forEach((Voucher) => {
-      Voucher.VoucherEntry.forEach((entry) => {
-        // Ensure consistent account format: code-name
-        let accountName = entry.accountName || "Unknown";
-        if (entry.Account) {
-          accountName = `${entry.Account.code}-${entry.Account.name}`;
-        } else if (entry.accountName && !entry.accountName.includes("-")) {
-          // If accountName doesn't have code prefix, try to find the account
-          accountName = entry.accountName;
-        }
-        const description = entry.description || Voucher.narration || "";
+    VouchersList.forEach((voucher) => {
+      voucher.VoucherEntry.forEach((entry) => {
+        const accountName = entry.Account
+          ? `${entry.Account.code}-${entry.Account.name}`
+          : entry.accountName || "Unknown";
+        const description = entry.description || voucher.narration || "";
 
         // Apply search filter if provided
         if (searchFilter) {
           const { searchStr, search_by } = searchFilter;
           if (search_by === "Voucher") {
-            if (!Voucher.voucherNumber.toLowerCase().includes(searchStr))
+            if (!voucher.voucherNumber.toLowerCase().includes(searchStr))
               return;
           } else if (search_by === "account") {
-            if (
-              entry.Account &&
-              !entry.Account.code.toLowerCase().includes(searchStr) &&
-              !entry.Account.name.toLowerCase().includes(searchStr)
-            )
+            if (!accountName.toLowerCase().includes(searchStr))
               return;
           } else if (search_by === "description") {
-            if (
-              !description.toLowerCase().includes(searchStr) &&
-              !Voucher.narration?.toLowerCase().includes(searchStr)
-            )
-              return;
+            if (!description.toLowerCase().includes(searchStr)) return;
           } else {
             // General search
             if (
-              !Voucher.voucherNumber.toLowerCase().includes(searchStr) &&
+              !voucher.voucherNumber.toLowerCase().includes(searchStr) &&
               !description.toLowerCase().includes(searchStr) &&
               !accountName.toLowerCase().includes(searchStr)
             )
@@ -874,48 +791,40 @@ router.get("/general-journal", async (req: Request, res: Response) => {
           }
         }
 
-        JournalLine.push({
-          id: `v-${Voucher.id}-${entry.id}`,
+        JournalLines.push({
+          id: `v-${voucher.id}-${entry.id}`,
           tId: tId++,
-          VoucherNo: Voucher.voucherNumber,
-          date: Voucher.date.toISOString().split("T")[0],
+          VoucherNo: voucher.voucherNumber,
+          date: voucher.date.toISOString().split("T")[0],
+          type: voucher.type,
           account: accountName,
           description: description,
           debit: entry.debit,
           credit: entry.credit,
-          VoucherId: Voucher.id,
+          VoucherId: voucher.id,
           entryId: entry.id,
+          status: voucher.status,
         });
       });
-    });
-
-    // Sort combined results by date descending
-    JournalLine.sort((a, b) => {
-      const dateCompare =
-        new Date(b.date).getTime() - new Date(a.date).getTime();
-      if (dateCompare !== 0) return dateCompare;
-      return b.VoucherNo.localeCompare(a.VoucherNo);
-    });
-
-    // Reassign tId after sorting
-    JournalLine.forEach((line, index) => {
-      line.tId = index + 1;
     });
 
     // Pagination
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
-    const startIndex = (pageNum - 1) * limitNum;
-    const endIndex = startIndex + limitNum;
-    const paginatedLines = JournalLine.slice(startIndex, endIndex);
+    const totalLines = JournalLines.length;
+    const totalPages = Math.ceil(totalLines / limitNum);
+    const paginatedLines = JournalLines.slice(
+      (pageNum - 1) * limitNum,
+      pageNum * limitNum,
+    );
 
     res.json({
       data: paginatedLines,
       pagination: {
-        page: pageNum,
+        total: totalLines,
+        totalPages,
+        currentPage: pageNum,
         limit: limitNum,
-        total: JournalLine.length,
-        totalPages: Math.ceil(JournalLine.length / limitNum),
       },
     });
   } catch (error: any) {
@@ -951,23 +860,6 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
         Subgroup: {
           include: { MainGroup: true },
         },
-        JournalLine: {
-          where: {
-            JournalEntry: {
-              status: "posted",
-              ...(dateFrom && {
-                entryDate: { gte: new Date(dateFrom as string) },
-              }),
-              ...(dateTo && { entryDate: { lte: new Date(dateTo as string) } }),
-            },
-          },
-          include: {
-            JournalEntry: true,
-          },
-          orderBy: {
-            JournalEntry: { entryDate: "asc" },
-          },
-        },
         VoucherEntry: {
           where: {
             Voucher: {
@@ -993,38 +885,24 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
       const normalizedType = accountType.toLowerCase();
       let runningBalance = account.openingBalance;
 
-      // Combine JournalLines and VoucherEntries
+      // Combine transactions (now only using VoucherEntries)
       const allTransactions: any[] = [];
 
-      // Add JournalEntry transactions
-      (account.JournalLine || []).forEach((line: any) => {
-        allTransactions.push({
-          id: `jl-${line.id}`,
-          date: line.JournalEntry.entryDate,
-          dateStr: line.JournalEntry.entryDate.toISOString().split("T")[0],
-          journalNo: line.JournalEntry.entryNo,
-          reference: line.JournalEntry.reference || "",
-          description: line.description || line.JournalEntry.description || "",
-          debit: line.debit,
-          credit: line.credit,
-        });
-      });
-
-      // Add Voucher transactions
+      // Add Voucher transactions (includes what used to be Journal Entries)
       (account.VoucherEntry || []).forEach((entry: any) => {
         allTransactions.push({
           id: `ve-${entry.id}`,
           date: entry.Voucher.date,
           dateStr: entry.Voucher.date.toISOString().split("T")[0],
           journalNo: entry.Voucher.voucherNumber,
-          reference: entry.Voucher.narration || "",
+          reference: entry.Voucher.chequeNumber || entry.Voucher.narration || "",
           description: entry.description || entry.Voucher.narration || "",
           debit: entry.debit,
           credit: entry.credit,
         });
       });
 
-      // Sort combined transactions by date
+      // Sort transactions by date
       allTransactions.sort((a, b) => a.date.getTime() - b.date.getTime());
 
       // Calculate running balance
@@ -1067,19 +945,7 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
 // ========== Trial Balance ==========
 router.get("/trial-balance", async (req: Request, res: Response) => {
   try {
-    const { period, type, from_date, to_date } = req.query;
-
-    // Build date filter if provided
-    let dateFilter: any = {};
-    if (from_date || to_date) {
-      dateFilter.entryDate = {};
-      if (from_date) {
-        dateFilter.entryDate.gte = new Date(from_date as string);
-      }
-      if (to_date) {
-        dateFilter.entryDate.lte = new Date(to_date as string);
-      }
-    }
+    const { from_date, to_date, type } = req.query;
 
     // Build date filter for Vouchers
     let VoucherDateFilter: any = {};
@@ -1093,34 +959,10 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
       }
     }
 
-    // Get all posted Voucher numbers to avoid double counting
-    const postedVouchers = await prisma.voucher.findMany({
-      where: {
-        status: "posted",
-        ...(from_date && { date: { gte: new Date(from_date as string) } }),
-        ...(to_date && { date: { lte: new Date(to_date as string) } }),
-      },
-      select: {
-        voucherNumber: true,
-      },
-    });
-    const voucherNumbers = postedVouchers.map((v) => v.voucherNumber);
-    const journalExcludeVouchers =
-      voucherNumbers.length > 0 ? { entryNo: { notIn: voucherNumbers } } : {};
-
-    const Account = await prisma.account.findMany({
+    const AccountList = await prisma.account.findMany({
       include: {
         Subgroup: {
           include: { MainGroup: true },
-        },
-        JournalLine: {
-          where: {
-            JournalEntry: {
-              status: "posted",
-              ...journalExcludeVouchers,
-              ...dateFilter,
-            },
-          },
         },
         VoucherEntry: {
           where: {
@@ -1150,26 +992,15 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
     let currentMainGroup: any = null;
     let currentSubgroup: any = null;
 
-    Account.forEach((account) => {
+    AccountList.forEach((account) => {
       const accountType = account.Subgroup.MainGroup.type;
-      // Combine debits/credits from both JournalLines and VoucherEntries
-      const journalDebit = account.JournalLine.reduce(
-        (sum, line) => sum + line.debit,
-        0,
-      );
-      const journalCredit = account.JournalLine.reduce(
-        (sum, line) => sum + line.credit,
-        0,
-      );
-      const VoucherDebit =
+
+      const totalDebit =
         account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) ||
         0;
-      const VoucherCredit =
+      const totalCredit =
         account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) ||
         0;
-
-      const totalDebit = journalDebit + VoucherDebit;
-      const totalCredit = journalCredit + VoucherCredit;
 
       // Calculate balance using proper accounting logic
       const balance = calculateAccountBalance(
@@ -1218,7 +1049,7 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
         });
       }
 
-      // Add account (include all Account, even with zero balances)
+      // Add account
       groupedData.push({
         type: "account",
         accountCode: account.code,
@@ -1229,40 +1060,13 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
       });
     });
 
-    // Calculate totals for validation
-    const calculatedTotalDebit = groupedData
-      .filter((item: any) => item.type === "account")
-      .reduce((sum: number, item: any) => sum + (item.debit || 0), 0);
-    const calculatedTotalCredit = groupedData
-      .filter((item: any) => item.type === "account")
-      .reduce((sum: number, item: any) => sum + (item.credit || 0), 0);
-
-    // Validate that all journal entries and Vouchers are balanced
+    // Validate that all Vouchers are balanced
     const dateFilterForValidation: any = {};
     if (to_date) {
       dateFilterForValidation.lte = new Date(to_date as string);
     }
 
-    const allJournalEntries = await prisma.journalEntry.findMany({
-      where: {
-        status: "posted",
-        ...(Object.keys(dateFilterForValidation).length > 0 && {
-          entryDate: dateFilterForValidation,
-        }),
-      },
-      select: {
-        totalDebit: true,
-        totalCredit: true,
-        entryNo: true,
-        entryDate: true,
-      },
-    });
-
-    const unbalancedJournalEntries = allJournalEntries.filter(
-      (entry) => Math.abs(entry.totalDebit - entry.totalCredit) > 0.01,
-    );
-
-    const allVouchers = await prisma.voucher.findMany({
+    const allVouchersList = await prisma.voucher.findMany({
       where: {
         status: "posted",
         ...(Object.keys(dateFilterForValidation).length > 0 && {
@@ -1277,36 +1081,12 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
       },
     });
 
-    const unbalancedVouchers = allVouchers.filter(
-      (Voucher) => Math.abs(Voucher.totalDebit - Voucher.totalCredit) > 0.01,
+    const unbalancedVouchers = allVouchersList.filter(
+      (voucher) => Math.abs(voucher.totalDebit - voucher.totalCredit) > 0.01,
     );
 
-    // Check opening balances
-    const totalOpeningDebit = Account.reduce((sum, acc) => {
-      const accountType = acc.Subgroup.MainGroup.type.toLowerCase();
-      if (isDebitNormal(accountType)) {
-        return sum + (acc.openingBalance || 0);
-      }
-      return sum;
-    }, 0);
-
-    const totalOpeningCredit = Account.reduce((sum, acc) => {
-      const accountType = acc.Subgroup.MainGroup.type.toLowerCase();
-      if (!isDebitNormal(accountType)) {
-        return sum + (acc.openingBalance || 0);
-      }
-      return sum;
-    }, 0);
-
-    const openingBalanceDifference = Math.abs(
-      totalOpeningDebit - totalOpeningCredit,
-    );
-
-    if (unbalancedJournalEntries.length > 0 || unbalancedVouchers.length > 0) {
-      if (unbalancedJournalEntries.length > 0) {
-      }
-      if (unbalancedVouchers.length > 0) {
-      }
+    if (unbalancedVouchers.length > 0) {
+      // Logic for logging unbalanced vouchers can be added here if needed
     }
 
     res.json({ data: groupedData });
@@ -1318,7 +1098,7 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
 // ========== Financial Statements ==========
 router.get("/income-statement", async (req: Request, res: Response) => {
   try {
-    const { period, from_date, to_date } = req.query;
+    const { from_date, to_date } = req.query;
 
     // Prepare Date Objects with end-of-day fix
     let fromDateObj: Date | undefined;
@@ -1336,30 +1116,9 @@ router.get("/income-statement", async (req: Request, res: Response) => {
     if (fromDateObj) dateFilter.gte = fromDateObj;
     if (toDateObj) dateFilter.lte = toDateObj;
 
-    // Get all posted Voucher numbers to avoid double counting
-    const postedVouchers = await prisma.voucher.findMany({
-      where: {
-        status: "posted",
-        ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
-      },
-      select: { voucherNumber: true },
-    });
-    const voucherNumbers = postedVouchers.map((v) => v.voucherNumber);
-    const journalExcludeVouchers =
-      voucherNumbers.length > 0 ? { entryNo: { notIn: voucherNumbers } } : {};
-
     const commonInclude = {
       Subgroup: {
         include: { MainGroup: true },
-      },
-      JournalLine: {
-        where: {
-          JournalEntry: {
-            status: "posted",
-            ...journalExcludeVouchers,
-            ...(fromDateObj || toDateObj ? { entryDate: dateFilter } : {}),
-          },
-        },
       },
       VoucherEntry: {
         where: {
@@ -1389,7 +1148,7 @@ router.get("/income-statement", async (req: Request, res: Response) => {
       where: {
         Subgroup: {
           MainGroup: {
-            name: "Cost", // Filter by main group name since type is "Expense"
+            name: "Cost",
           },
         },
       },
@@ -1399,13 +1158,13 @@ router.get("/income-statement", async (req: Request, res: Response) => {
       },
     });
 
-    // Expense Account: type is "Expense" but exclude "Cost" main group (it's handled separately)
+    // Expense Account: type is "Expense" but exclude "Cost" main group
     const expenseAccounts = await prisma.account.findMany({
       where: {
         Subgroup: {
           MainGroup: {
             type: { in: ["Expense", "expense", "EXPENSE"] },
-            name: { not: "Cost" }, // Exclude Cost main group
+            name: { not: "Cost" },
           },
         },
       },
@@ -1415,18 +1174,8 @@ router.get("/income-statement", async (req: Request, res: Response) => {
       },
     });
 
-    // Group by Subgroup
-    // Helper to calculate period movement (Income statement is period-based)
+    // Helper to calculate period movement
     const calculatePeriodAmount = (acc: any, type: "revenue" | "expense") => {
-      const journalDebit = acc.JournalLine.reduce(
-        (sum: number, line: any) => sum + (line.debit || 0),
-        0,
-      );
-      const journalCredit = acc.JournalLine.reduce(
-        (sum: number, line: any) => sum + (line.credit || 0),
-        0,
-      );
-
       const VoucherDebit =
         acc.VoucherEntry?.reduce(
           (sum: number, entry: any) => sum + (entry.debit || 0),
@@ -1438,8 +1187,8 @@ router.get("/income-statement", async (req: Request, res: Response) => {
           0,
         ) || 0;
 
-      const totalDebit = journalDebit + VoucherDebit;
-      const totalCredit = journalCredit + VoucherCredit;
+      const totalDebit = VoucherDebit;
+      const totalCredit = VoucherCredit;
 
       if (type === "revenue") {
         return totalCredit - totalDebit;
@@ -1490,16 +1239,16 @@ router.get("/income-statement", async (req: Request, res: Response) => {
 // ========== Recalculate All Account Balances ==========
 router.post("/recalculate-balances", async (req: Request, res: Response) => {
   try {
-    const Account = await prisma.account.findMany({
+    const AccountList = await prisma.account.findMany({
       include: {
         Subgroup: {
           include: {
             MainGroup: true,
           },
         },
-        JournalLine: {
+        VoucherEntry: {
           where: {
-            JournalEntry: {
+            Voucher: {
               status: "posted",
             },
           },
@@ -1508,14 +1257,14 @@ router.post("/recalculate-balances", async (req: Request, res: Response) => {
     });
 
     // Recalculate all account balances from scratch
-    for (const account of Account) {
+    for (const account of AccountList) {
       const accountType = account.Subgroup.MainGroup.type;
-      const totalDebit = account.JournalLine.reduce(
-        (sum, line) => sum + line.debit,
+      const totalDebit = account.VoucherEntry.reduce(
+        (sum, entry) => sum + entry.debit,
         0,
       );
-      const totalCredit = account.JournalLine.reduce(
-        (sum, line) => sum + line.credit,
+      const totalCredit = account.VoucherEntry.reduce(
+        (sum, entry) => sum + entry.credit,
         0,
       );
 
@@ -1536,7 +1285,7 @@ router.post("/recalculate-balances", async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: `Recalculated balances for ${Account.length} Account`,
+      message: `Recalculated balances for ${AccountList.length} Account`,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1545,73 +1294,38 @@ router.post("/recalculate-balances", async (req: Request, res: Response) => {
 
 // Get Balance Sheet
 router.get("/balance-sheet", async (req: Request, res: Response) => {
-  console.log("=== BALANCE SHEET ENDPOINT CALLED ===");
-  console.log("Query params:", req.query);
   try {
-    // Accept both 'date' and 'as_of_date' parameters for compatibility
     const dateParam = (req.query.date || req.query.as_of_date) as string;
 
     if (!dateParam) {
-      console.log("ERROR: No date parameter");
       return res.status(400).json({
         error: 'Date parameter is required (use "date" or "as_of_date")',
       });
     }
 
-    // Parse date (format: DD/MM/YY or YYYY-MM-DD)
+    // Parse date
     let asOfDate: Date;
-    if (typeof dateParam === "string") {
-      // Try DD/MM/YY format first (autohub format)
-      if (dateParam.includes("/")) {
-        const parts = dateParam.split("/");
-        if (parts.length === 3) {
-          const day = parseInt(parts[0], 10);
-          const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed
-          const year = parseInt(parts[2], 10);
-          // Handle 2-digit year
-          const fullYear = year < 100 ? 2000 + year : year;
-          asOfDate = new Date(Date.UTC(fullYear, month, day, 23, 59, 59, 999));
-        } else {
-          asOfDate = new Date(dateParam);
-          asOfDate.setHours(23, 59, 59, 999);
-        }
-      } else {
-        // YYYY-MM-DD format
-        const dateParts = dateParam.split("-");
-        if (dateParts.length === 3) {
-          const year = parseInt(dateParts[0], 10);
-          const month = parseInt(dateParts[1], 10) - 1;
-          const day = parseInt(dateParts[2], 10);
-          asOfDate = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-        } else {
-          // Try parsing as-is
-          asOfDate = new Date(dateParam);
-          asOfDate.setHours(23, 59, 59, 999);
-        }
-      }
+    if (dateParam.includes("/")) {
+      const parts = dateParam.split("/");
+      const fullYear = parseInt(parts[2], 10) < 100 ? 2000 + parseInt(parts[2], 10) : parseInt(parts[2], 10);
+      asOfDate = new Date(Date.UTC(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10), 23, 59, 59, 999));
     } else {
-      asOfDate = new Date();
-      asOfDate.setHours(23, 59, 59, 999);
+      const parts = dateParam.split("-");
+      asOfDate = new Date(Date.UTC(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 23, 59, 59, 999));
     }
 
-    console.log("Parsed date:", dateParam, "->", asOfDate.toISOString());
-
-    // Get all posted Voucher numbers to avoid double counting
-    const postedVouchers = await prisma.voucher.findMany({
-      where: {
-        status: "posted",
-        date: { lte: asOfDate },
+    const commonInclude = {
+      VoucherEntry: {
+        where: {
+          Voucher: {
+            status: "posted",
+            date: { lte: asOfDate },
+          },
+        },
       },
-      select: {
-        voucherNumber: true,
-      },
-    });
-    const voucherNumbers = postedVouchers.map((v) => v.voucherNumber);
-    const journalExcludeVouchers =
-      voucherNumbers.length > 0 ? { entryNo: { notIn: voucherNumbers } } : {};
+    };
 
-    // Get Assets (MainGroup type = 'Asset')
-    // First get all Account, then fetch their transactions separately to avoid filtering issues
+    // Get Assets
     const assetMainGroups = await prisma.mainGroup.findMany({
       where: { type: "Asset" },
       include: {
@@ -1619,25 +1333,7 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
           where: { isActive: true },
           include: {
             Account: {
-              include: {
-                JournalLine: {
-                  where: {
-                    JournalEntry: {
-                      status: "posted",
-                      entryNo: { notIn: voucherNumbers },
-                      entryDate: { lte: asOfDate },
-                    },
-                  },
-                },
-                VoucherEntry: {
-                  where: {
-                    Voucher: {
-                      status: "posted",
-                      date: { lte: asOfDate },
-                    },
-                  },
-                },
-              },
+              include: commonInclude,
             },
           },
           orderBy: { code: "asc" },
@@ -1646,127 +1342,38 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       orderBy: { code: "asc" },
     });
 
-    console.log("=== BALANCE SHEET DEBUG ===");
-    console.log("Asset MainGroups found:", assetMainGroups.length);
-    if (assetMainGroups.length > 0) {
-      console.log(
-        "First MainGroup:",
-        assetMainGroups[0].code,
-        assetMainGroups[0].name,
-      );
-      console.log("Subgroup:", assetMainGroups[0].Subgroup.length);
-      if (assetMainGroups[0].Subgroup.length > 0) {
-        console.log(
-          "First Subgroup Account:",
-          assetMainGroups[0].Subgroup[0].Account.length,
-        );
-      }
-    }
-
-    console.log(
-      "Balance Sheet Debug - Asset MainGroups:",
-      assetMainGroups.length,
-    );
-    assetMainGroups.forEach((mg, idx) => {
-      console.log(
-        `MainGroup ${idx}:`,
-        mg.code,
-        mg.name,
-        "Subgroup:",
-        mg.Subgroup.length,
-      );
-      mg.Subgroup.forEach((sg, sgIdx) => {
-        console.log(
-          `  Subgroup ${sgIdx}:`,
-          sg.code,
-          sg.name,
-          "Accounts:",
-          sg.Account.length,
-        );
-        if (sg.Account.length > 0) {
-          const acc = sg.Account[0];
-          console.log(
-            `    First Account:`,
-            acc.code,
-            acc.name,
-            "VoucherEntries:",
-            acc.VoucherEntry?.length || 0,
-            "JournalLines:",
-            acc.JournalLine?.length || 0,
-          );
-        }
-      });
-    });
-
-    // Process Assets: Calculate balances for each account
-    const assets = assetMainGroups.map((MainGroup) => {
-      const Subgroup = MainGroup.Subgroup.map((Subgroup) => {
-        // Ensure we process all Account, even if they have no transactions
-        const Account = (Subgroup.Account || []).map((account) => {
-          const accountType = MainGroup.type.toLowerCase();
-          const normalizedType = accountType;
-
-          // Calculate balance from transactions (matching autohub: SUM(debit) - SUM(credit))
-          const journalDebit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.debit || 0),
-              0,
-            ) || 0;
-          const journalCredit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.credit || 0),
-              0,
-            ) || 0;
-          const VoucherDebit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.debit || 0),
-              0,
-            ) || 0;
-          const VoucherCredit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.credit || 0),
-              0,
-            ) || 0;
-
-          const totalDebit = journalDebit + VoucherDebit;
-          const totalCredit = journalCredit + VoucherCredit;
-
-          // Calculate balance using proper accounting logic
-          const balance = calculateAccountBalance(
-            account.openingBalance || 0,
-            totalDebit,
-            totalCredit,
-            MainGroup.type,
-          );
+    const assets = assetMainGroups.map((mg) => {
+      const subgroups = mg.Subgroup.map((sg) => {
+        const accounts = sg.Account.map((acc) => {
+          const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+          const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+          const balance = calculateAccountBalance(acc.openingBalance, debit, credit, "Asset");
 
           return {
-            id: account.id,
-            code: account.code,
-            name: account.name,
-            balance: {
-              balance: balance,
-            },
+            id: acc.id,
+            code: acc.code,
+            name: acc.name,
+            balance: { balance },
           };
-        }); // Include all Account, even with zero balance (frontend will filter)
+        });
 
         return {
-          id: Subgroup.id,
-          code: Subgroup.code,
-          name: Subgroup.name,
-          coa_accounts: Account,
+          id: sg.id,
+          code: sg.code,
+          name: sg.name,
+          coa_accounts: accounts,
         };
       });
 
-      // Always return MainGroup, even if empty
       return {
-        id: MainGroup.id,
-        code: MainGroup.code,
-        name: MainGroup.name,
-        non_depreciation_sub_groups: Subgroup,
+        id: mg.id,
+        code: mg.code,
+        name: mg.name,
+        non_depreciation_sub_groups: subgroups,
       };
     });
 
-    // Get Liabilities (MainGroup type = 'Liability')
+    // Get Liabilities
     const liabilityMainGroups = await prisma.mainGroup.findMany({
       where: { type: "Liability" },
       include: {
@@ -1774,25 +1381,7 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
           where: { isActive: true },
           include: {
             Account: {
-              include: {
-                JournalLine: {
-                  where: {
-                    JournalEntry: {
-                      status: "posted",
-                      ...journalExcludeVouchers,
-                      entryDate: { lte: asOfDate },
-                    },
-                  },
-                },
-                VoucherEntry: {
-                  where: {
-                    Voucher: {
-                      status: "posted",
-                      date: { lte: asOfDate },
-                    },
-                  },
-                },
-              },
+              include: commonInclude,
             },
           },
           orderBy: { code: "asc" },
@@ -1801,72 +1390,38 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       orderBy: { code: "asc" },
     });
 
-    // Process Liabilities
-    const liabilities = liabilityMainGroups.map((MainGroup) => {
-      const Subgroup = MainGroup.Subgroup.map((Subgroup) => {
-        const Account = Subgroup.Account.map((account) => {
-          const accountType = MainGroup.type.toLowerCase();
-          const normalizedType = accountType;
-
-          const journalDebit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.debit || 0),
-              0,
-            ) || 0;
-          const journalCredit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.credit || 0),
-              0,
-            ) || 0;
-          const VoucherDebit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.debit || 0),
-              0,
-            ) || 0;
-          const VoucherCredit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.credit || 0),
-              0,
-            ) || 0;
-
-          const totalDebit = journalDebit + VoucherDebit;
-          const totalCredit = journalCredit + VoucherCredit;
-
-          // Calculate balance using proper accounting logic
-          const balance = calculateAccountBalance(
-            account.openingBalance || 0,
-            totalDebit,
-            totalCredit,
-            MainGroup.type,
-          );
+    const liabilities = liabilityMainGroups.map((mg) => {
+      const subgroups = mg.Subgroup.map((sg) => {
+        const accounts = sg.Account.map((acc) => {
+          const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+          const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+          const balance = calculateAccountBalance(acc.openingBalance, debit, credit, "Liability");
 
           return {
-            id: account.id,
-            code: account.code,
-            name: account.name,
-            balance: {
-              balance: balance,
-            },
+            id: acc.id,
+            code: acc.code,
+            name: acc.name,
+            balance: { balance },
           };
-        }); // Include all Account, even with zero balance
+        });
 
         return {
-          id: Subgroup.id,
-          code: Subgroup.code,
-          name: Subgroup.name,
-          coa_accounts: Account,
+          id: sg.id,
+          code: sg.code,
+          name: sg.name,
+          coa_accounts: accounts,
         };
       });
 
       return {
-        id: MainGroup.id,
-        code: MainGroup.code,
-        name: MainGroup.name,
-        coa_sub_groups: Subgroup,
+        id: mg.id,
+        code: mg.code,
+        name: mg.name,
+        coa_sub_groups: subgroups,
       };
     });
 
-    // Get Capital (MainGroup type = 'Equity')
+    // Get Capital
     const capitalMainGroups = await prisma.mainGroup.findMany({
       where: { type: "Equity" },
       include: {
@@ -1874,25 +1429,7 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
           where: { isActive: true },
           include: {
             Account: {
-              include: {
-                JournalLine: {
-                  where: {
-                    JournalEntry: {
-                      status: "posted",
-                      entryNo: { notIn: voucherNumbers },
-                      entryDate: { lte: asOfDate },
-                    },
-                  },
-                },
-                VoucherEntry: {
-                  where: {
-                    Voucher: {
-                      status: "posted",
-                      date: { lte: asOfDate },
-                    },
-                  },
-                },
-              },
+              include: commonInclude,
             },
           },
           orderBy: { code: "asc" },
@@ -1901,348 +1438,82 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       orderBy: { code: "asc" },
     });
 
-    // Process Capital
-    const capital = capitalMainGroups.map((MainGroup) => {
-      const Subgroup = MainGroup.Subgroup.map((Subgroup) => {
-        const Account = Subgroup.Account.map((account) => {
-          const accountType = MainGroup.type.toLowerCase();
-          const normalizedType = accountType;
-
-          const journalDebit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.debit || 0),
-              0,
-            ) || 0;
-          const journalCredit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.credit || 0),
-              0,
-            ) || 0;
-          const VoucherDebit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.debit || 0),
-              0,
-            ) || 0;
-          const VoucherCredit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.credit || 0),
-              0,
-            ) || 0;
-
-          const totalDebit = journalDebit + VoucherDebit;
-          const totalCredit = journalCredit + VoucherCredit;
-
-          // Calculate balance using proper accounting logic
-          const balance = calculateAccountBalance(
-            account.openingBalance || 0,
-            totalDebit,
-            totalCredit,
-            MainGroup.type,
-          );
+    const capital = capitalMainGroups.map((mg) => {
+      const subgroups = mg.Subgroup.map((sg) => {
+        const accounts = sg.Account.map((acc) => {
+          const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+          const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+          const balance = calculateAccountBalance(acc.openingBalance, debit, credit, "Equity");
 
           return {
-            id: account.id,
-            code: account.code,
-            name: account.name,
-            balance: {
-              balance: balance,
-            },
+            id: acc.id,
+            code: acc.code,
+            name: acc.name,
+            balance: { balance },
           };
-        }); // Include all Account, even with zero balance
+        });
 
         return {
-          id: Subgroup.id,
-          code: Subgroup.code,
-          name: Subgroup.name,
-          coa_accounts: Account,
+          id: sg.id,
+          code: sg.code,
+          name: sg.name,
+          coa_accounts: accounts,
         };
       });
 
       return {
-        id: MainGroup.id,
-        code: MainGroup.code,
-        name: MainGroup.name,
-        coa_sub_groups: Subgroup,
+        id: mg.id,
+        code: mg.code,
+        name: mg.name,
+        coa_sub_groups: subgroups,
       };
     });
 
-    // Calculate Net Income from Revenue, Expense, and Cost
-    // Get Revenue Account
-    const revenueMainGroups = await prisma.mainGroup.findMany({
-      where: { type: "Revenue" },
-      include: {
+    // Calculate Net Income (Revenue - Expense - Cost)
+    const incomeStatementAccounts = await prisma.account.findMany({
+      where: {
         Subgroup: {
-          where: { isActive: true },
-          include: {
-            Account: {
-              include: {
-                JournalLine: {
-                  where: {
-                    JournalEntry: {
-                      status: "posted",
-                      ...journalExcludeVouchers,
-                      entryDate: { lte: asOfDate },
-                    },
-                  },
-                },
-                VoucherEntry: {
-                  where: {
-                    Voucher: {
-                      status: "posted",
-                      date: { lte: asOfDate },
-                    },
-                  },
-                },
-              },
-            },
+          MainGroup: {
+            type: { in: ["Revenue", "Expense", "Cost"] },
           },
         },
       },
+      include: commonInclude,
     });
 
     let revenueSum = 0;
-    revenueMainGroups.forEach((MainGroup) => {
-      MainGroup.Subgroup.forEach((Subgroup) => {
-        Subgroup.Account.forEach((account) => {
-          const accountType = "revenue";
-          const journalDebit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.debit || 0),
-              0,
-            ) || 0;
-          const journalCredit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.credit || 0),
-              0,
-            ) || 0;
-          const VoucherDebit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.debit || 0),
-              0,
-            ) || 0;
-          const VoucherCredit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.credit || 0),
-              0,
-            ) || 0;
+    let expenseSum = 0;
+    let costSum = 0;
 
-          const totalDebit = journalDebit + VoucherDebit;
-          const totalCredit = journalCredit + VoucherCredit;
-
-          const balance = calculateAccountBalance(
-            account.openingBalance || 0,
-            totalDebit,
-            totalCredit,
-            "revenue",
-          );
-
-          // For revenue, positive balance means credit (increase), negative means debit (decrease/refund)
-          revenueSum += balance;
-        });
-      });
-    });
-
-    // Get Expense Account
-    const expenseMainGroups = await prisma.mainGroup.findMany({
-      where: { type: "Expense" },
-      include: {
-        Subgroup: {
-          where: { isActive: true },
-          include: {
-            Account: {
-              include: {
-                JournalLine: {
-                  where: {
-                    JournalEntry: {
-                      status: "posted",
-                      ...journalExcludeVouchers,
-                      entryDate: { lte: asOfDate },
-                    },
-                  },
-                },
-                VoucherEntry: {
-                  where: {
-                    Voucher: {
-                      status: "posted",
-                      date: { lte: asOfDate },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    let expenseTotalSum = 0;
-    expenseMainGroups.forEach((expenseMainGroup) => {
-      expenseMainGroup.Subgroup.forEach((subgroup) => {
-        subgroup.Account.forEach((account) => {
-          const journalDebit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.debit || 0),
-              0,
-            ) || 0;
-          const journalCredit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.credit || 0),
-              0,
-            ) || 0;
-          const voucherDebit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.debit || 0),
-              0,
-            ) || 0;
-          const voucherCredit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.credit || 0),
-              0,
-            ) || 0;
-          const totalDebit = journalDebit + voucherDebit;
-          const totalCredit = journalCredit + voucherCredit;
-
-          // Expense balance: openingBalance + (debit - credit)
-          const balance = calculateAccountBalance(
-            account.openingBalance || 0,
-            totalDebit,
-            totalCredit,
-            "expense",
-          );
-          expenseTotalSum += balance;
-        });
-      });
-    });
-
-    // Get Cost Account
-    const costMainGroups = await prisma.mainGroup.findMany({
-      where: { type: "Cost" },
-      include: {
-        Subgroup: {
-          where: { isActive: true },
-          include: {
-            Account: {
-              include: {
-                JournalLine: {
-                  where: {
-                    JournalEntry: {
-                      status: "posted",
-                      ...journalExcludeVouchers,
-                      entryDate: { lte: asOfDate },
-                    },
-                  },
-                },
-                VoucherEntry: {
-                  where: {
-                    Voucher: {
-                      status: "posted",
-                      date: { lte: asOfDate },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    let costTotalSum = 0;
-    costMainGroups.forEach((costMainGroup) => {
-      costMainGroup.Subgroup.forEach((subgroup) => {
-        subgroup.Account.forEach((account) => {
-          const journalDebit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.debit || 0),
-              0,
-            ) || 0;
-          const journalCredit =
-            account.JournalLine?.reduce(
-              (sum: number, line: any) => sum + (line.credit || 0),
-              0,
-            ) || 0;
-          const voucherDebit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.debit || 0),
-              0,
-            ) || 0;
-          const voucherCredit =
-            account.VoucherEntry?.reduce(
-              (sum: number, entry: any) => sum + (entry.credit || 0),
-              0,
-            ) || 0;
-          const totalDebit = journalDebit + voucherDebit;
-          const totalCredit = journalCredit + voucherCredit;
-
-          // Cost balance: openingBalance + (debit - credit)
-          const balance = calculateAccountBalance(
-            account.openingBalance || 0,
-            totalDebit,
-            totalCredit,
-            "cost",
-          );
-          costTotalSum += balance;
-        });
-      });
-    });
-
-    // Calculate Net Income: Revenue - Expense - Cost
-    const netIncome = revenueSum - expenseTotalSum - costTotalSum;
-
-    console.log(
-      "Balance Sheet Response - Assets:",
-      assets.length,
-      "Liabilities:",
-      liabilities.length,
-      "Capital:",
-      capital.length,
-    );
-
-    // Debug first asset main group in detail
-    if (assets.length > 0) {
-      const firstAsset = assets[0];
-      console.log("First Asset MainGroup:", {
-        id: firstAsset.id,
-        code: firstAsset.code,
-        name: firstAsset.name,
-        subgroupsCount: firstAsset.non_depreciation_sub_groups?.length || 0,
-        subgroups: firstAsset.non_depreciation_sub_groups
-      });
-
-      if (firstAsset.non_depreciation_sub_groups && firstAsset.non_depreciation_sub_groups.length > 0) {
-        const firstSubgroup = firstAsset.non_depreciation_sub_groups[0];
-        console.log("First Asset Subgroup:", {
-          id: firstSubgroup.id,
-          code: firstSubgroup.code,
-          name: firstSubgroup.name,
-          accountsCount: firstSubgroup.coa_accounts?.length || 0,
-          accounts: firstSubgroup.coa_accounts
-        });
+    incomeStatementAccounts.forEach((acc) => {
+      const type = acc.Subgroup.MainGroup.type.toLowerCase();
+      const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+      const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+      
+      if (type === "revenue") {
+        revenueSum += calculateAccountBalance(acc.openingBalance, debit, credit, "Revenue");
+      } else if (type === "expense") {
+        expenseSum += calculateAccountBalance(acc.openingBalance, debit, credit, "Expense");
+      } else if (type === "cost") {
+        costSum += calculateAccountBalance(acc.openingBalance, debit, credit, "Cost");
       }
-    }
+    });
 
-    // Serialize the response properly to handle Prisma objects
-    const responseData = {
-      assets: JSON.parse(JSON.stringify(assets)),
-      liabilities: JSON.parse(JSON.stringify(liabilities)),
-      capital: JSON.parse(JSON.stringify(capital)),
-      revExp: netIncome,
-      revenue: revenueSum,
-      expense: expenseTotalSum,
-      cost: costTotalSum,
-    };
-
-    console.log("Final Response Data:", JSON.stringify(responseData, null, 2));
+    const netIncome = revenueSum - expenseSum - costSum;
 
     res.json({
-      data: responseData,
+      data: {
+        assets: JSON.parse(JSON.stringify(assets)),
+        liabilities: JSON.parse(JSON.stringify(liabilities)),
+        capital: JSON.parse(JSON.stringify(capital)),
+        revExp: netIncome,
+        revenue: revenueSum,
+        expense: expenseSum,
+        cost: costSum,
+      },
     });
   } catch (error: any) {
-    res.status(500).json({
-      error: "Failed to fetch balance sheet",
-      message: error.message || "Unknown error",
-      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 

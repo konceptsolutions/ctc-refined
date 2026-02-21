@@ -474,6 +474,7 @@ export const SalesInvoice = () => {
             deliveredQty: item.deliveredQty,
             pendingQty: item.pendingQty,
             unitPrice: item.unitPrice,
+            avgCost: item.avgCost || 0,
             discount: item.discount || 0,
             discountType: 'percent' as const,
             lineTotal: item.lineTotal,
@@ -1719,6 +1720,7 @@ export const SalesInvoice = () => {
       partially_delivered: "Partially Delivered",
       fully_delivered: "Fully Delivered",
       on_hold: "On Hold",
+      approved: "Approved",
       cancelled: "Cancelled",
     };
     return labels[status];
@@ -1732,6 +1734,7 @@ export const SalesInvoice = () => {
       partially_delivered: "bg-orange-500/10 text-orange-600 border-orange-500/20",
       fully_delivered: "bg-green-500/10 text-green-600 border-green-500/20",
       on_hold: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+      approved: "bg-blue-600/10 text-blue-700 border-blue-600/20",
       cancelled: "bg-destructive/10 text-destructive border-destructive/20",
     };
     const labels: Record<InvoiceStatus, string> = {
@@ -1741,6 +1744,7 @@ export const SalesInvoice = () => {
       partially_delivered: "Partial",
       fully_delivered: "Delivered",
       on_hold: "On Hold",
+      approved: "Approved",
       cancelled: "Cancelled",
     };
     return (
@@ -1894,6 +1898,7 @@ export const SalesInvoice = () => {
                 <SelectItem value="pending_approval">Pending Approval</SelectItem>
                 <SelectItem value="partially_delivered">Partial Delivery</SelectItem>
                 <SelectItem value="fully_delivered">Fully Delivered</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="on_hold">On Hold</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
@@ -2970,6 +2975,7 @@ export const SalesInvoice = () => {
                       <TableHead className="text-center">Ordered</TableHead>
                       <TableHead className="text-center">Delivered</TableHead>
                       <TableHead className="text-center">Pending</TableHead>
+                      <TableHead className="text-center">Avg Cost</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -2986,6 +2992,9 @@ export const SalesInvoice = () => {
                         </TableCell>
                         <TableCell className="text-center text-orange-600">
                           {item.pendingQty}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {item.avgCost ? item.avgCost.toFixed(2) : "0.00"}
                         </TableCell>
                         <TableCell className="text-right">
                           Rs {item.lineTotal.toFixed(2)}

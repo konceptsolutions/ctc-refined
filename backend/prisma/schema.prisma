@@ -594,7 +594,7 @@ model SalesInvoice {
   tax              Float              @default(0)
   grandTotal       Float              @default(0)
   paidAmount       Float              @default(0)
-  status           String             @default("pending")
+  status           String             @default("pending") // pending, on_hold, approved, partially_delivered, fully_delivered, cancelled
   paymentStatus    String             @default("unpaid")
   accountId        String?
   deliveredTo      String?
@@ -624,6 +624,7 @@ model SalesInvoiceItem {
   deliveredQty    Int               @default(0)
   pendingQty      Int
   unitPrice       Float
+  avgCost         Float             @default(0)
   discount        Float             @default(0)
   lineTotal       Float
   grade           String?
@@ -696,6 +697,7 @@ model SalesReturnItem {
   partId            String
   returnQuantity    Int
   originalSalePrice Float
+  avgCost           Float       @default(0)
   amount            Float
   createdAt         DateTime    @default(now())
   Part              Part        @relation(fields: [partId], references: [id], onDelete: Cascade)

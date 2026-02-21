@@ -25,6 +25,7 @@ interface SalesInvoiceItem {
   deliveredQty: number;
   pendingQty: number;
   unitPrice: number;
+  avgCost?: number;
   discount: number;
   lineTotal: number;
   grade?: string;
@@ -91,7 +92,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
   const [formRemarks, setFormRemarks] = useState("");
   const [formDiscount, setFormDiscount] = useState("0");
   const [formItems, setFormItems] = useState<OrderItemForm[]>([]);
-  
+
   // Dropdown data
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [parts, setParts] = useState<PartOption[]>([]);
@@ -106,7 +107,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
     if (open && invoice) {
       loadInvoiceData();
     }
-    
+
     if (open) {
       fetchDropdownData();
     }
@@ -140,7 +141,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
       // Fetch full invoice details
       const response = await apiClient.getSalesInvoice(invoice.id);
       const invoiceData: any = response.data || response;
-      
+
       if (invoiceData) {
         // Load invoice data
         setFormDate(new Date(invoiceData.invoiceDate || invoice.invoiceDate));
@@ -149,7 +150,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
         setFormDeliveredTo(invoiceData.deliveredTo || invoice.deliveredTo || "");
         setFormRemarks(invoiceData.remarks || invoice.remarks || "");
         setFormDiscount(String(invoiceData.overallDiscount || invoice.overallDiscount || 0));
-        
+
         // Load items
         if (invoiceData.items && invoiceData.items.length > 0) {
           setFormItems(invoiceData.items.map((item: any, idx: number) => ({
@@ -176,13 +177,13 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
             grade: item.grade || "A",
           })));
         } else {
-          setFormItems([{ 
-            id: "1", 
-            partId: "", 
-            partNo: "", 
+          setFormItems([{
+            id: "1",
+            partId: "",
+            partNo: "",
             description: "",
             brand: "",
-            orderedQty: "", 
+            orderedQty: "",
             unitPrice: "",
             discount: "0",
             grade: "A"
@@ -200,9 +201,9 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
       const customersResponse = await apiClient.getCustomers();
       const customersData = customersResponse.data || customersResponse;
       if (Array.isArray(customersData)) {
-        setCustomers(customersData.map((c: any) => ({ 
-          id: c.id, 
-          name: c.name 
+        setCustomers(customersData.map((c: any) => ({
+          id: c.id,
+          name: c.name
         })));
       }
 
@@ -228,7 +229,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
 
       const response = await apiClient.getParts(params);
       const partsData = response.data || response;
-      
+
       if (Array.isArray(partsData)) {
         setParts(partsData
           .map((p: any) => {
@@ -258,13 +259,13 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
   };
 
   const handleAddItem = () => {
-    setFormItems([...formItems, { 
-      id: String(Date.now()), 
-      partId: "", 
+    setFormItems([...formItems, {
+      id: String(Date.now()),
+      partId: "",
       partNo: "",
       description: "",
       brand: "",
-      orderedQty: "", 
+      orderedQty: "",
       unitPrice: "",
       discount: "0",
       grade: "A"
@@ -307,7 +308,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
   const getFilteredParts = (itemId: string) => {
     const searchTerm = (partSearchTerms[itemId] || "").toLowerCase().trim();
     if (!searchTerm) return parts.slice(0, 50);
-    
+
     return parts.filter((part) =>
       part.partNo.toLowerCase().includes(searchTerm) ||
       part.description.toLowerCase().includes(searchTerm) ||
@@ -406,7 +407,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
               This invoice has partial deliveries. You cannot modify items but can update other details.
             </div>
           ) : null}
-          
+
           <div className="space-y-4">
             {/* Basic Information */}
             <div className="grid grid-cols-2 gap-4">
@@ -438,8 +439,8 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
 
               <div className="space-y-2">
                 <Label>Customer *</Label>
-                <Select 
-                  value={formCustomerId || undefined} 
+                <Select
+                  value={formCustomerId || undefined}
                   onValueChange={(value) => {
                     setFormCustomerId(value);
                     const customer = customers.find(c => c.id === value);
@@ -524,12 +525,12 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
                     {formItems.map((item) => {
                       const lineTotal = calculateLineTotal(item);
                       const filteredParts = getFilteredParts(item.id);
-                      
+
                       return (
                         <TableRow key={item.id}>
                           <TableCell>
                             {canEdit && !hasDeliveredItems ? (
-                              <div 
+                              <div
                                 className="relative"
                                 ref={(el) => (partDropdownRefs.current[item.id] = el)}
                               >
@@ -657,7 +658,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
                   </TableBody>
                 </Table>
               </div>
-              
+
               {/* Totals */}
               <div className="flex justify-end">
                 <div className="w-64 space-y-2">

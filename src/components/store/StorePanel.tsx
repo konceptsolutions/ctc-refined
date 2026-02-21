@@ -33,7 +33,7 @@ import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
-  AlertDialogContent, 
+  AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
@@ -144,17 +144,18 @@ interface SalesInvoice {
   customerType?: string;
   items?: Array<{
     id: string;
-    partId?: string;
+    partId: string;
     partNo: string;
     description: string;
     brand?: string;
     orderedQty: number;
     deliveredQty: number;
-    pendingQty?: number;
+    pendingQty: number;
     unitPrice: number;
-    discount?: number;
+    discount: number;
+    discountType: "percent" | "fixed";
     lineTotal: number;
-    grade?: string;
+    grade: string;
   }>;
 }
 
@@ -177,7 +178,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [typeFilter, setTypeFilter] = useState<"all" | "receiving" | "delivering" | "adjusted">("all");
   const [receivingFilter, setReceivingFilter] = useState<"all" | "po" | "dpo">("all");
   const [loading, setLoading] = useState(false);
-  
+
   // Dialog states
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewPODialogOpen, setViewPODialogOpen] = useState(false);
@@ -253,7 +254,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   // Poll for new orders every 30 seconds
   useEffect(() => {
     if (!selectedStoreId) return;
-    
+
     const interval = setInterval(() => {
       // Keep the currently selected view up-to-date, with newest orders on top.
       if (typeFilter === "delivering") {
@@ -297,14 +298,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
   const fetchOrders = async (silent = false) => {
     if (!selectedStoreId) return;
-    
+
     try {
       if (!silent) setLoading(true);
       const response = await apiClient.getDirectPurchaseOrders({
         store_id: selectedStoreId === "all" ? undefined : selectedStoreId,
         status: statusFilter !== "all" ? statusFilter : undefined,
       });
-      
+
       const ordersData = response.data || response;
       if (Array.isArray(ordersData)) {
         const formattedOrders = ordersData.map((order: any) => ({
@@ -323,14 +324,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           expenses_count: order.expenses_count || order.expenses?.length || 0,
           created_at: order.created_at || order.createdAt,
         }));
-        
+
         // Check for new orders and show notifications
         if (!silent && orders.length > 0) {
           const newOrders = formattedOrders.filter(
             (newOrder: DirectPurchaseOrder) =>
               !orders.find((oldOrder) => oldOrder.id === newOrder.id)
           );
-          
+
           newOrders.forEach((order: DirectPurchaseOrder) => {
             addNotification({
               title: "New Direct Purchase Order",
@@ -344,7 +345,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             });
           });
         }
-        
+
         setOrders(formattedOrders);
       }
     } catch (error: any) {
@@ -360,7 +361,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     try {
       const response = await apiClient.getDirectPurchaseOrder(orderId);
       const orderData: any = response.data || response;
-      
+
       if (orderData && typeof orderData === 'object') {
         const formattedOrder: DirectPurchaseOrder = {
           id: orderData.id || '',
@@ -376,23 +377,23 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           items_count: Array.isArray(orderData.items) ? orderData.items.length : 0,
           expenses_count: Array.isArray(orderData.expenses) ? orderData.expenses.length : 0,
           created_at: orderData.created_at || orderData.createdAt || new Date().toISOString(),
-          items: Array.isArray(orderData.items) 
+          items: Array.isArray(orderData.items)
             ? orderData.items.map((item: any) => ({
-                id: item.id || '',
-                partId: item.part_id || item.partId || '',
-                partNo: item.part_no || (item.part?.partNo) || "N/A",
-                description: item.part_description || (item.part?.description) || item.description || "",
-                brand: item.brand || (item.part?.brand?.name) || "N/A",
-                quantity: item.quantity || 0,
-                uom: item.uom || item.part?.uom || "pcs",
-                purchasePrice: item.purchase_price || item.purchasePrice || 0,
-                salePrice: item.sale_price || item.salePrice || 0,
-                amount: item.amount || ((item.purchase_price || item.purchasePrice || 0) * (item.quantity || 0)),
-                rackId: item.rack_id || item.rackId || null,
-                shelfId: item.shelf_id || item.shelfId || null,
-                rackCode: item.rack_name || (item.rack?.codeNo) || null,
-                shelfNo: item.shelf_name || (item.shelf?.shelfNo) || null,
-              }))
+              id: item.id || '',
+              partId: item.part_id || item.partId || '',
+              partNo: item.part_no || (item.part?.partNo) || "N/A",
+              description: item.part_description || (item.part?.description) || item.description || "",
+              brand: item.brand || (item.part?.brand?.name) || "N/A",
+              quantity: item.quantity || 0,
+              uom: item.uom || item.part?.uom || "pcs",
+              purchasePrice: item.purchase_price || item.purchasePrice || 0,
+              salePrice: item.sale_price || item.salePrice || 0,
+              amount: item.amount || ((item.purchase_price || item.purchasePrice || 0) * (item.quantity || 0)),
+              rackId: item.rack_id || item.rackId || null,
+              shelfId: item.shelf_id || item.shelfId || null,
+              rackCode: item.rack_name || (item.rack?.codeNo) || null,
+              shelfNo: item.shelf_name || (item.shelf?.shelfNo) || null,
+            }))
             : [],
         };
         return formattedOrder;
@@ -411,23 +412,23 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         page: 1,
         limit: 100,
       });
-      
+
       const responseData: any = response.data || response;
       let ordersArray: any[] = [];
-      
+
       if (Array.isArray(responseData)) {
         ordersArray = responseData;
       } else if (responseData && Array.isArray(responseData.data)) {
         ordersArray = responseData.data;
       }
-      
+
       if (ordersArray.length > 0) {
         const formattedOrders = ordersArray.map((order: any) => {
           // Calculate total quantity from items if available
           const total_quantity = order.items && order.items.length > 0
             ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
             : 0;
-          
+
           return {
             id: order.id,
             po_number: order.po_number || order.poNumber,
@@ -454,14 +455,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
   const fetchAdjustments = async (silent = false) => {
     if (!selectedStoreId || selectedStoreId === "all") return;
-    
+
     try {
       if (!silent) setLoading(true);
       const response = await apiClient.getAdjustmentsByStore({
         store_id: selectedStoreId,
         status: "all", // Show all adjustments (pending + approved)
       });
-      
+
       const adjustmentsData = response.data || [];
       if (Array.isArray(adjustmentsData)) {
         setAdjustments(adjustmentsData);
@@ -480,13 +481,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       if (!silent) setLoading(true);
       const response = await apiClient.getSalesInvoices({
         status: statusFilter !== "all" ? statusFilter : undefined,
-              customerType: 'walking', // Only fetch Party Sale invoices for delivery
+        customerType: 'walking', // Only fetch Party Sale invoices for delivery
       });
-      
+
       const invoicesData = Array.isArray(response) ? response : (response.data || []);
       if (Array.isArray(invoicesData)) {
         const formattedInvoices = invoicesData
-                .filter((invoice: any) => invoice.customerType === 'walking') // Double-check: only Party Sale
+          .filter((invoice: any) => invoice.customerType === 'walking') // Double-check: only Party Sale
           .map((invoice: any) => ({
             id: invoice.id,
             invoiceNo: invoice.invoiceNo,
@@ -537,7 +538,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       // Fetch full invoice details
       const response = await apiClient.getSalesInvoice(invoice.id);
       const invoiceData: any = response.data || response;
-      
+
       if (invoiceData) {
         const invoiceWithItems = {
           ...invoice,
@@ -622,7 +623,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       // Fetch full invoice details
       const response = await apiClient.getSalesInvoice(invoice.id);
       const invoiceData: any = response.data || response;
-      
+
       if (invoiceData) {
         const invoiceWithItems: SalesInvoice = {
           ...invoice,
@@ -670,7 +671,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const confirmDelete = async () => {
     try {
       setLoading(true);
-      
+
       if (deleteOrderType === "dpo" && selectedOrder) {
         await apiClient.deleteDirectPurchaseOrder(selectedOrder.id);
         toast.success(`Direct Purchase Order ${selectedOrder.dpo_no} deleted successfully`);
@@ -696,7 +697,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     try {
       const response = await apiClient.getPurchaseOrder(order.id);
       const poData: any = response.data || response;
-      
+
       if (poData) {
         const printWindow = window.open("", "_blank");
         if (printWindow) {
@@ -787,12 +788,12 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       toast.error("Please select a store first");
       return;
     }
-    
+
     try {
       setLoading(true);
       // IMPORTANT: "all" is a UI-only value; never send it to backend as store_id
       const resolvedStoreId = selectedStoreId === "all" ? undefined : selectedStoreId;
-      
+
       if (receivingOrderType === "dpo" && selectedOrder) {
         // Receive Direct Purchase Order
         // Fetch full order details first to get items
@@ -826,7 +827,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         // First, fetch the full PO details to get items
         const poResponse = await apiClient.getPurchaseOrder(selectedPurchaseOrder.id);
         const poData: any = poResponse.data || poResponse;
-        
+
         if (!poData || !poData.items || poData.items.length === 0) {
           toast.error("Failed to load purchase order details");
           return;
@@ -855,7 +856,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       setSelectedOrder(null);
       setSelectedPurchaseOrder(null);
       setReceivingOrderType(null);
-      
+
       // Refresh orders
       if (typeFilter === "receiving") {
         await fetchOrders();
@@ -891,33 +892,33 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   };
 
   // Filter Purchase Orders (for Receiving)
-  const filteredPurchaseOrders = Array.isArray(purchaseOrders) 
+  const filteredPurchaseOrders = Array.isArray(purchaseOrders)
     ? purchaseOrders.filter((order) => {
-        const inDateRange = isWithinDateRange(order.date);
-        const matchesSearch =
-          order.po_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          order.supplier_name?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
-        return inDateRange && matchesSearch;
-      })
+      const inDateRange = isWithinDateRange(order.date);
+      const matchesSearch =
+        order.po_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.supplier_name?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
+      return inDateRange && matchesSearch;
+    })
     : [];
 
   // Filter Direct Purchase Orders (for Receiving - DPOs are receivable)
   const filteredDPOs = Array.isArray(orders)
     ? orders.filter((order) => {
-        const inDateRange = isWithinDateRange(order.date);
-        const matchesSearch =
-          order.dpo_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          order.store_name.toLowerCase().includes(searchTerm.toLowerCase());
-        return inDateRange && matchesSearch;
-      })
+      const inDateRange = isWithinDateRange(order.date);
+      const matchesSearch =
+        order.dpo_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.store_name.toLowerCase().includes(searchTerm.toLowerCase());
+      return inDateRange && matchesSearch;
+    })
     : [];
 
   // Apply receiving filter (PO vs DPO) when in receiving mode
-  const displayPurchaseOrders = typeFilter === "receiving" && receivingFilter !== "dpo" 
-    ? filteredPurchaseOrders 
+  const displayPurchaseOrders = typeFilter === "receiving" && receivingFilter !== "dpo"
+    ? filteredPurchaseOrders
     : [];
-  const displayDPOs = typeFilter === "receiving" && receivingFilter !== "po" 
-    ? filteredDPOs 
+  const displayDPOs = typeFilter === "receiving" && receivingFilter !== "po"
+    ? filteredDPOs
     : [];
 
   // Filter Sales Invoices (for Delivering)
@@ -1225,13 +1226,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         <Card>
           <CardHeader>
             <CardTitle>
-              {typeFilter === "receiving" 
-                ? "Receiving Items" 
-                : typeFilter === "delivering" 
-                ? "Delivering Items"
-                : typeFilter === "adjusted"
-                ? "Adjusted Items"
-                : "All Orders"}
+              {typeFilter === "receiving"
+                ? "Receiving Items"
+                : typeFilter === "delivering"
+                  ? "Delivering Items"
+                  : typeFilter === "adjusted"
+                    ? "Adjusted Items"
+                    : "All Orders"}
               {selectedStore && ` - ${selectedStore.name}`}
             </CardTitle>
           </CardHeader>
@@ -1285,14 +1286,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                 {row.type === "invoice" ? (
                                   <Badge
                                     variant={
-                                      row.status === "fully_delivered"
+                                      row.status === "fully_delivered" || row.status === "approved"
                                         ? "default"
                                         : row.status === "pending"
-                                        ? "secondary"
-                                        : "outline"
+                                          ? "secondary"
+                                          : row.status === "on_hold"
+                                            ? "destructive"
+                                            : "outline"
                                     }
                                   >
-                                    {row.status}
+                                    {row.status.replace('_', ' ')}
                                   </Badge>
                                 ) : row.type === "po" ? (
                                   <Badge
@@ -1300,8 +1303,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       row.status === "Received"
                                         ? "default"
                                         : row.status === "Draft"
-                                        ? "secondary"
-                                        : "outline"
+                                          ? "secondary"
+                                          : "outline"
                                     }
                                   >
                                     {row.status}
@@ -1312,8 +1315,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       row.status === "Completed"
                                         ? "default"
                                         : row.status === "Draft"
-                                        ? "secondary"
-                                        : "destructive"
+                                          ? "secondary"
+                                          : "destructive"
                                     }
                                   >
                                     {row.status}
@@ -1503,8 +1506,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     order.status === "Received"
                                       ? "default"
                                       : order.status === "Draft"
-                                      ? "secondary"
-                                      : "outline"
+                                        ? "secondary"
+                                        : "outline"
                                   }
                                 >
                                   {order.status}
@@ -1587,8 +1590,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     order.status === "Completed"
                                       ? "default"
                                       : order.status === "Draft"
-                                      ? "secondary"
-                                      : "destructive"
+                                        ? "secondary"
+                                        : "destructive"
                                   }
                                 >
                                   {order.status}
@@ -1703,8 +1706,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     invoice.status === "fully_delivered"
                                       ? "default"
                                       : invoice.status === "pending"
-                                      ? "secondary"
-                                      : "outline"
+                                        ? "secondary"
+                                        : "outline"
                                   }
                                 >
                                   {invoice.status}
@@ -1779,8 +1782,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     adjustment.status === "approved"
                                       ? "default"
                                       : adjustment.status === "pending"
-                                      ? "secondary"
-                                      : "outline"
+                                        ? "secondary"
+                                        : "outline"
                                   }
                                 >
                                   {adjustment.status}
@@ -1946,7 +1949,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       {/* Edit Sales Invoice Dialog */}
       {selectedSalesInvoice && (
         <StoreEditSalesInvoice
-          invoice={selectedSalesInvoice}
+          invoice={selectedSalesInvoice as any}
           open={editSalesInvoiceDialogOpen}
           onOpenChange={setEditSalesInvoiceDialogOpen}
           onSuccess={async () => {
@@ -1981,8 +1984,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             <AlertDialogDescription>
               Are you sure you want to mark order{" "}
               <strong>
-                {receivingOrderType === "dpo" 
-                  ? selectedOrder?.dpo_no 
+                {receivingOrderType === "dpo"
+                  ? selectedOrder?.dpo_no
                   : selectedPurchaseOrder?.po_number}
               </strong> as received?
               <br />
@@ -1992,7 +1995,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel 
+            <AlertDialogCancel
               onClick={() => {
                 setSelectedOrder(null);
                 setSelectedPurchaseOrder(null);
@@ -2016,8 +2019,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             <AlertDialogDescription>
               Are you sure you want to delete order{" "}
               <strong>
-                {deleteOrderType === "dpo" 
-                  ? selectedOrder?.dpo_no 
+                {deleteOrderType === "dpo"
+                  ? selectedOrder?.dpo_no
                   : selectedPurchaseOrder?.po_number}
               </strong>?
               <br />
@@ -2027,7 +2030,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel 
+            <AlertDialogCancel
               onClick={() => {
                 setSelectedOrder(null);
                 setSelectedPurchaseOrder(null);
@@ -2036,7 +2039,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             >
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={confirmDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >

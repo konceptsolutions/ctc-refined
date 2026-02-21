@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Select, 
+  Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -51,6 +51,7 @@ interface QuotationItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  avgCost?: number;
   total: number;
 }
 
@@ -81,7 +82,7 @@ export const SalesQuotation = () => {
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
   const [printQuotation, setPrintQuotation] = useState<Quotation | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
-  
+
   // Parts data from database
   const [availableParts, setAvailableParts] = useState<{ id: string; partNo: string; description: string; price: number; stock: number }[]>([]);
   const [loadingParts, setLoadingParts] = useState(false);
@@ -121,7 +122,7 @@ export const SalesQuotation = () => {
           return;
         }
         const quotationsData = Array.isArray(response) ? response : (response.data || []);
-        setQuotations(quotationsData);
+        setQuotations(quotationsData as Quotation[]);
       } catch (error: any) {
         toast({
           title: "Error",
@@ -153,11 +154,11 @@ export const SalesQuotation = () => {
       try {
         // Use search parameter to find matching parts, then filter to only show part_no matches
         // The API search searches partNo field, so it should find parts where part_no matches
-        const partsResponse = await apiClient.getParts({ 
+        const partsResponse = await apiClient.getParts({
           status: 'active',
           search: itemSearchTerm.trim(), // Search for the term (searches partNo field)
           limit: 10000, // Get many results to filter from
-          page: 1 
+          page: 1
         });
 
         if (partsResponse.error) {
@@ -172,17 +173,17 @@ export const SalesQuotation = () => {
         } else if (partsResponse.data && Array.isArray(partsResponse.data)) {
           partsData = partsResponse.data;
         } else if (partsResponse.pagination && partsResponse.data) {
-          partsData = partsResponse.data;
+          partsData = partsResponse.data as any[];
         }
 
         // Fetch stock balances - optional, don't block if it fails
         const partIds = partsData.map((p: any) => p.id).filter(Boolean);
         let balanceMap: Record<string, number> = {};
-        
+
         if (partIds.length > 0) {
           try {
             // Fetch stock balances with reasonable limit
-            const balancesResponse = await apiClient.getStockBalances({ 
+            const balancesResponse = await apiClient.getStockBalances({
               limit: 500
             }).catch(() => null);
 
@@ -223,7 +224,7 @@ export const SalesQuotation = () => {
             const description = String(p.description || '').trim();
             const price = parseFloat(p.price_a || p.priceA || p.price || p.cost || 0);
             const stock = balanceMap[p.id] || 0;
-            
+
             return {
               id: String(p.id),
               partNo: partNo, // Blue Block - Part No (from master_part_no in DB)
@@ -235,46 +236,46 @@ export const SalesQuotation = () => {
           })
           .filter((p: any) => {
             // ULTRA-STRICT: ONLY show Blue Block (Part No), NEVER Red Block (Master Part No)
-            
+
             // 1. MUST have a valid part_no (Blue Block) - not empty, not null, not undefined
             const partNo = p.partNo ? String(p.partNo).trim() : '';
             if (!partNo || partNo === '' || partNo === 'null' || partNo === 'undefined') {
               return false; // No Blue Block = exclude
             }
-            
+
             // 2. Get master part number (Red Block) for comparison
             const masterPartNo = p.masterPartNo ? String(p.masterPartNo).trim() : '';
-            
+
             // 3. Allow parts where part_no equals master_part_no (some parts have same value)
             // We'll still filter by part_no match, so this is OK
-            
+
             // 4. If no search term, don't show anything (user must search)
             if (searchTermLower.length === 0) {
               return false;
             }
-            
+
             // 5. Check if Blue Block (part_no) or Red Block (master_part_no) matches
             const partNoLower = partNo.toLowerCase(); // Blue Block - Part No (what we want)
             const masterPartNoLower = masterPartNo.toLowerCase(); // Red Block - Master Part No (what we DON'T want)
-            
+
             // 6. CRITICAL: EXCLUDE if ONLY Red Block (master_part_no) matches
             // If Red Block matches but Blue Block doesn't, exclude it
             // But if Blue Block also matches, include it (even if Red Block matches too)
             if (masterPartNoLower.includes(searchTermLower) && !partNoLower.includes(searchTermLower)) {
               return false; // NEVER show if ONLY Red Block (Master Part No) matches
             }
-            
+
             // 7. ONLY include if Blue Block (part_no) matches the search term
             // This is the key - we ONLY want parts where part_no (Blue Block) matches
             if (!partNoLower.includes(searchTermLower)) {
               return false; // Exclude if Blue Block (Part No) doesn't match
             }
-            
+
             return true; // Include - Blue Block (Part No) matches the search
           });
-        
+
         // Debug: Log what we found
-        
+
         setAvailableParts(transformedParts);
       } catch (error: any) {
         setAvailableParts([]);
@@ -331,13 +332,14 @@ export const SalesQuotation = () => {
       if (existingItem) {
         return; // Silently return if already selected
       }
-      
+
       const newItem: QuotationItem = {
         id: part.id,
         partNo: part.partNo,
         description: part.description,
         quantity: 1,
         unitPrice: part.price,
+        avgCost: (part as any).avgCost || (part as any).cost || 0,
         total: part.price,
       };
       setSelectedItems([...selectedItems, newItem]);
@@ -381,7 +383,7 @@ export const SalesQuotation = () => {
     const today = new Date();
     const validUntilDate = new Date(today);
     validUntilDate.setDate(today.getDate() + 30);
-    
+
     setFormData({
       quotationNo: generateQuotationNo(),
       quotationDate: today.toISOString().split("T")[0],
@@ -428,7 +430,7 @@ export const SalesQuotation = () => {
 
     try {
       const response = await apiClient.deleteSalesQuotation(selectedQuotation.id);
-      
+
       if (response.error) {
         toast({
           title: "Error",
@@ -446,7 +448,7 @@ export const SalesQuotation = () => {
       // Refresh quotations
       const quotationsResponse = await apiClient.getSalesQuotations();
       const quotationsData = Array.isArray(quotationsResponse) ? quotationsResponse : (quotationsResponse.data || []);
-      setQuotations(quotationsData);
+      setQuotations(quotationsData as Quotation[]);
 
       setDeleteDialogOpen(false);
       setSelectedQuotation(null);
@@ -492,7 +494,7 @@ export const SalesQuotation = () => {
       // Refresh quotations
       const quotationsResponse = await apiClient.getSalesQuotations();
       const quotationsData = Array.isArray(quotationsResponse) ? quotationsResponse : (quotationsResponse.data || []);
-      setQuotations(quotationsData);
+      setQuotations(quotationsData as Quotation[]);
 
       setConvertDialogOpen(false);
       setSelectedQuotation(null);
@@ -586,7 +588,7 @@ export const SalesQuotation = () => {
         // Refresh quotations
         const quotationsResponse = await apiClient.getSalesQuotations();
         const quotationsData = Array.isArray(quotationsResponse) ? quotationsResponse : (quotationsResponse.data || []);
-        setQuotations(quotationsData);
+        setQuotations(quotationsData as Quotation[]);
 
         setIsFormOpen(false);
         setEditingQuotationId(null);
@@ -628,7 +630,7 @@ export const SalesQuotation = () => {
         // Refresh quotations
         const quotationsResponse = await apiClient.getSalesQuotations();
         const quotationsData = Array.isArray(quotationsResponse) ? quotationsResponse : (quotationsResponse.data || []);
-        setQuotations(quotationsData);
+        setQuotations(quotationsData as Quotation[]);
 
         setIsFormOpen(false);
         setSelectedItems([]);
@@ -831,9 +833,8 @@ export const SalesQuotation = () => {
                       return (
                         <div
                           key={part.id}
-                          className={`flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors ${
-                            isSelected ? "bg-primary/10 border border-primary/20" : ""
-                          }`}
+                          className={`flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors ${isSelected ? "bg-primary/10 border border-primary/20" : ""
+                            }`}
                           onClick={(e) => {
                             e.preventDefault();
                             handleToggleItem(part, !isSelected);
@@ -873,6 +874,7 @@ export const SalesQuotation = () => {
                       <TableRow>
                         <TableHead>Part No</TableHead>
                         <TableHead>Description</TableHead>
+                        <TableHead className="w-24">Avg Cost</TableHead>
                         <TableHead className="w-24">Qty</TableHead>
                         <TableHead className="text-right">Unit Price</TableHead>
                         <TableHead className="text-right">Total</TableHead>
@@ -884,6 +886,7 @@ export const SalesQuotation = () => {
                         <TableRow key={item.id}>
                           <TableCell className="font-medium">{item.partNo}</TableCell>
                           <TableCell>{item.description}</TableCell>
+                          <TableCell className="text-center font-mono text-xs">{(item.avgCost || 0).toFixed(2)}</TableCell>
                           <TableCell>
                             <Input
                               type="number"
@@ -982,7 +985,7 @@ export const SalesQuotation = () => {
 
             {/* Action Buttons */}
             <div className="flex gap-3">
-              <Button 
+              <Button
                 onClick={handleSubmit}
                 disabled={selectedItems.length === 0 || !formData.customerName.trim()}
                 className="bg-primary hover:bg-primary/90"
@@ -1097,7 +1100,7 @@ export const SalesQuotation = () => {
                               Print / Export PDF
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => openDeleteDialog(item)}
                               className="text-destructive focus:text-destructive"
                             >
@@ -1122,7 +1125,7 @@ export const SalesQuotation = () => {
             <AlertDialogTitle>Delete Quotation</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete quotation{" "}
-              <span className="font-semibold">{selectedQuotation?.quotationNo}</span>? 
+              <span className="font-semibold">{selectedQuotation?.quotationNo}</span>?
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

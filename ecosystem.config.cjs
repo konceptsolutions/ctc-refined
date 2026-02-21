@@ -28,7 +28,7 @@ module.exports = {
       interpreter: 'none',
       env: {
         NODE_ENV: 'development',
-        PORT: 80,
+        PORT: 83,
       },
       error_file: '/var/www/nextapp/logs/frontend-error.log',
       out_file: '/var/www/nextapp/logs/frontend-out.log',

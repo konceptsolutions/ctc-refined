@@ -197,6 +197,7 @@ router.post('/', async (req: Request, res: Response) => {
         partId: part_id,
         returnQuantity: return_quantity,
         originalSalePrice: invoiceItem.unitPrice,
+        avgCost: invoiceItem.avgCost || 0,
         amount: itemAmount,
       });
     }
@@ -449,8 +450,8 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
     let totalCOGS = 0;
 
     for (const item of salesReturn.SalesReturnItem) {
-      // Use the part's current cost or average cost
-      const itemCOGS = item.returnQuantity * (item.Part.cost || 0);
+      // Use the recorded average cost from the time of sale
+      const itemCOGS = item.returnQuantity * (item.avgCost || 0);
       totalCOGS += itemCOGS;
     }
 
