@@ -66,7 +66,8 @@ type StockStatusFilter = "all" | "in_stock" | "out_of_stock" | "low_stock";
 export const CurrentStock = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [stockStatusFilter, setStockStatusFilter] = useState<StockStatusFilter>("all");
+  const [stockStatusFilter, setStockStatusFilter] =
+    useState<StockStatusFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [loading, setLoading] = useState(false);
@@ -103,31 +104,35 @@ export const CurrentStock = () => {
   const [viewingItem, setViewingItem] = useState<StockItem | null>(null);
 
   // Bulk Entry state
-  const [bulkRows, setBulkRows] = useState<Array<{
-    partId: string;
-    type: "in" | "out";
-    quantity: string;
-    storeId: string;
-    rackId: string;
-    shelfId: string;
-    notes: string;
-    currentStock: number;
-    unassignedStock: number;
-    availableRacks: any[];
-    availableShelves: any[];
-  }>>([{
-    partId: "",
-    type: "in",
-    quantity: "",
-    storeId: "",
-    rackId: "",
-    shelfId: "",
-    notes: "",
-    currentStock: 0,
-    unassignedStock: 0,
-    availableRacks: [],
-    availableShelves: []
-  }]);
+  const [bulkRows, setBulkRows] = useState<
+    Array<{
+      partId: string;
+      type: "in" | "out";
+      quantity: string;
+      storeId: string;
+      rackId: string;
+      shelfId: string;
+      notes: string;
+      currentStock: number;
+      unassignedStock: number;
+      availableRacks: any[];
+      availableShelves: any[];
+    }>
+  >([
+    {
+      partId: "",
+      type: "in",
+      quantity: "",
+      storeId: "",
+      rackId: "",
+      shelfId: "",
+      notes: "",
+      currentStock: 0,
+      unassignedStock: 0,
+      availableRacks: [],
+      availableShelves: [],
+    },
+  ]);
 
   // Fetch initial data
   useEffect(() => {
@@ -154,14 +159,16 @@ export const CurrentStock = () => {
   const fetchCategories = async () => {
     try {
       const response = await apiClient.getCategories();
-      const data = Array.isArray(response) ? response : (response as any).data || [];
+      const data = Array.isArray(response)
+        ? response
+        : (response as any).data || [];
       const categoryNames = data
         .map((cat: any) => cat.name || cat.category_name)
-        .filter((name: string) => name && name.trim() !== '');
-      setCategories(['all', ...categoryNames]);
+        .filter((name: string) => name && name.trim() !== "");
+      setCategories(["all", ...categoryNames]);
     } catch (error) {
-      console.error('Failed to fetch categories:', error);
-      setCategories(['all']);
+      console.error("Failed to fetch categories:", error);
+      setCategories(["all"]);
     }
   };
 
@@ -176,9 +183,11 @@ export const CurrentStock = () => {
       if (selectedCategory !== "all") {
         // Find category by name
         const response = await apiClient.getCategories();
-        const data = Array.isArray(response) ? response : (response as any).data || [];
-        const category = data.find((cat: any) =>
-          (cat.name || cat.category_name) === selectedCategory
+        const data = Array.isArray(response)
+          ? response
+          : (response as any).data || [];
+        const category = data.find(
+          (cat: any) => (cat.name || cat.category_name) === selectedCategory,
         );
         if (category) {
           params.category_id = category.id;
@@ -223,7 +232,7 @@ export const CurrentStock = () => {
     try {
       const response = await apiClient.getStores();
       setStores((response as any).data || response || []);
-    } catch (error) { }
+    } catch (error) {}
   };
 
   const fetchParts = async () => {
@@ -231,26 +240,28 @@ export const CurrentStock = () => {
       const response = await apiClient.getParts({ page: 1, limit: 1000 });
       const partsData = (response as any).data || response;
       if (Array.isArray(partsData)) {
-        setParts(partsData.map((part: any) => ({
-          value: part.id,
-          label: `${part.partNo} - ${part.description || ""}`
-        })));
+        setParts(
+          partsData.map((part: any) => ({
+            value: part.id,
+            label: `${part.partNo} - ${part.description || ""}`,
+          })),
+        );
       }
-    } catch (error) { }
+    } catch (error) {}
   };
 
   const fetchRacks = async (storeId: string) => {
     try {
       const response = await apiClient.getRacks(storeId);
       setRacks((response as any).data || response || []);
-    } catch (error) { }
+    } catch (error) {}
   };
 
   const fetchShelves = async (rackId: string) => {
     try {
       const response = await apiClient.getShelves(rackId);
       setShelves((response as any).data || response || []);
-    } catch (error) { }
+    } catch (error) {}
   };
 
   const processLocationData = (rawData: any[]) => {
@@ -259,12 +270,15 @@ export const CurrentStock = () => {
 
     // 2. Filter out zero quantities ONLY if they have no rack/shelf assignments
     const unassignedData = locationData.filter((l: any) => {
-      const hasNoLocation = !l.rack && !l.shelf && (!l.store || l.store === "Unallocated");
+      const hasNoLocation =
+        !l.rack && !l.shelf && (!l.store || l.store === "Unallocated");
       const hasZeroQuantity = l.quantity === 0;
       return hasNoLocation && hasZeroQuantity;
     });
 
-    const allocatedData = locationData.filter((l: any) => !unassignedData.includes(l));
+    const allocatedData = locationData.filter(
+      (l: any) => !unassignedData.includes(l),
+    );
 
     // 3. Aggregate Allocated Rows
     const allocatedMap = new Map();
@@ -280,7 +294,10 @@ export const CurrentStock = () => {
     const aggregatedAllocated = Array.from(allocatedMap.values());
 
     // 4. Calculate Net Unallocated (Sum of all unallocated, including negatives)
-    const netUnallocated = unassignedData.reduce((sum: number, l: any) => sum + l.quantity, 0);
+    const netUnallocated = unassignedData.reduce(
+      (sum: number, l: any) => sum + l.quantity,
+      0,
+    );
 
     // 5. Find "Primary" Store for unallocated (largest positive holder)
     const primaryUnallocatedEntry = unassignedData
@@ -292,11 +309,13 @@ export const CurrentStock = () => {
     // ONLY add the unallocated row IF there is actually unallocated stock
     if (netUnallocated !== 0) {
       displayRows.push({
-        store: primaryUnallocatedEntry ? primaryUnallocatedEntry.store : "Unallocated",
+        store: primaryUnallocatedEntry
+          ? primaryUnallocatedEntry.store
+          : "Unallocated",
         rack: "No Rack",
         shelf: "No Shelf",
         quantity: netUnallocated,
-        isUnlocated: true
+        isUnlocated: true,
       });
     }
 
@@ -377,7 +396,6 @@ export const CurrentStock = () => {
       setUnallocatedDerived(netUnallocated);
       // Pre-fill quantity with unallocated amount if positive
       setEditQuantity(netUnallocated > 0 ? netUnallocated.toString() : "");
-
     } catch (error) {
       console.error("Failed to load locations for edit:", error);
     }
@@ -393,7 +411,10 @@ export const CurrentStock = () => {
     // Pre-fill Target Fields with CURRENT location values
     // This allows user to easily "edit" by changing just one field
     // First, resolve IDs
-    const storeId = location.storeId || stores.find(s => s.name === location.store)?.id || "";
+    const storeId =
+      location.storeId ||
+      stores.find((s) => s.name === location.store)?.id ||
+      "";
     const rackId = location.rackId || "";
     const shelfId = location.shelfId || "";
 
@@ -405,10 +426,10 @@ export const CurrentStock = () => {
     if (storeId) {
       await fetchRacks(storeId);
       // If we have a rack, set it and fetch shelves
-      // Note: fetchRacks is async, but state update might be batched. 
+      // Note: fetchRacks is async, but state update might be batched.
       // Ideally we should wait or chain, but since fetchRacks sets state, we can just call it.
-      // However, to be safe, we set the ID. 
-      // Check if rackId is valid in the fetched list? 
+      // However, to be safe, we set the ID.
+      // Check if rackId is valid in the fetched list?
       // We can just set it. If it's not in the list (yet), select value might be hidden until list loads.
       setEditRackId(rackId || "none");
 
@@ -441,9 +462,14 @@ export const CurrentStock = () => {
       const qty = parseInt(editQuantity);
 
       // Validation: Cannot assign/transfer more than available
-      const available = editMode === "assign" ? unallocatedDerived : (editSourceLocation?.quantity || 0);
+      const available =
+        editMode === "assign"
+          ? unallocatedDerived
+          : editSourceLocation?.quantity || 0;
       if (qty > available) {
-        toast.error(`Cannot ${editMode === "assign" ? "assign" : "transfer"} more than available quantity (${available})`);
+        toast.error(
+          `Cannot ${editMode === "assign" ? "assign" : "transfer"} more than available quantity (${available})`,
+        );
         setIsUpdating(false);
         return;
       }
@@ -456,8 +482,9 @@ export const CurrentStock = () => {
             type: "in",
             quantity: qty,
             store_id: editStoreId,
-            rack_id: (!editRackId || editRackId === "none") ? null : editRackId,
-            shelf_id: (!editShelfId || editShelfId === "none") ? null : editShelfId,
+            rack_id: !editRackId || editRackId === "none" ? null : editRackId,
+            shelf_id:
+              !editShelfId || editShelfId === "none" ? null : editShelfId,
           });
           toast.success("Stock assigned to location successfully");
         } else {
@@ -477,15 +504,28 @@ export const CurrentStock = () => {
         // Construct Source Object from location data
         // Prioritize explicit IDs if available (even if null)
         const sourceData = {
-          store_id: editSourceLocation.storeId !== undefined ? editSourceLocation.storeId : (stores.find(s => s.name === editSourceLocation.store)?.id || null),
-          rack_id: editSourceLocation.rackId !== undefined ? editSourceLocation.rackId : (racks.find(r => r.codeNo === editSourceLocation.rack)?.id || null),
-          shelf_id: editSourceLocation.shelfId !== undefined ? editSourceLocation.shelfId : (shelves.find(s => s.shelfNo === editSourceLocation.shelf)?.id || null),
+          store_id:
+            editSourceLocation.storeId !== undefined
+              ? editSourceLocation.storeId
+              : stores.find((s) => s.name === editSourceLocation.store)?.id ||
+                null,
+          rack_id:
+            editSourceLocation.rackId !== undefined
+              ? editSourceLocation.rackId
+              : racks.find((r) => r.codeNo === editSourceLocation.rack)?.id ||
+                null,
+          shelf_id:
+            editSourceLocation.shelfId !== undefined
+              ? editSourceLocation.shelfId
+              : shelves.find((s) => s.shelfNo === editSourceLocation.shelf)
+                  ?.id || null,
         };
 
         // Handle "Unallocated" source row special case
         if (editSourceLocation.isUnlocated) {
           // If implicit unallocated, explicitly set ids to null if they are missing
-          if (editSourceLocation.store === "Unallocated") sourceData.store_id = null;
+          if (editSourceLocation.store === "Unallocated")
+            sourceData.store_id = null;
         }
 
         await apiClient.transferStockLocation({
@@ -494,9 +534,10 @@ export const CurrentStock = () => {
           source: sourceData,
           target: {
             store_id: editStoreId,
-            rack_id: (!editRackId || editRackId === "none") ? null : editRackId,
-            shelf_id: (!editShelfId || editShelfId === "none") ? null : editShelfId,
-          }
+            rack_id: !editRackId || editRackId === "none" ? null : editRackId,
+            shelf_id:
+              !editShelfId || editShelfId === "none" ? null : editShelfId,
+          },
         });
         toast.success("Stock transferred successfully");
 
@@ -511,7 +552,9 @@ export const CurrentStock = () => {
       // Refresh Dialog Data
       const response = await apiClient.getPartLocations(editingItem.part_id);
       let data = (response as any).data;
-      if (!Array.isArray(data)) { data = Array.isArray(response) ? response : []; }
+      if (!Array.isArray(data)) {
+        data = Array.isArray(response) ? response : [];
+      }
       const { displayRows, netUnallocated } = processLocationData(data);
       setSelectedPartLocations(displayRows);
       setUnallocatedDerived(netUnallocated);
@@ -521,7 +564,6 @@ export const CurrentStock = () => {
       setEditStoreId("");
       setEditRackId("none");
       setEditShelfId("none");
-
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "Failed to update location");
@@ -532,14 +574,27 @@ export const CurrentStock = () => {
 
   // Logic for Bulk Entry (copied from StockInOut)
   const handleAddBulkRow = () => {
-    setBulkRows(prev => [...prev, {
-      partId: "", type: "in", quantity: "", storeId: "", rackId: "", shelfId: "", notes: "",
-      currentStock: 0, unassignedStock: 0, availableRacks: [], availableShelves: []
-    }]);
+    setBulkRows((prev) => [
+      ...prev,
+      {
+        partId: "",
+        type: "in",
+        quantity: "",
+        storeId: "",
+        rackId: "",
+        shelfId: "",
+        notes: "",
+        currentStock: 0,
+        unassignedStock: 0,
+        availableRacks: [],
+        availableShelves: [],
+      },
+    ]);
   };
 
   const handleRemoveBulkRow = (index: number) => {
-    if (bulkRows.length > 1) setBulkRows(prev => prev.filter((_, i) => i !== index));
+    if (bulkRows.length > 1)
+      setBulkRows((prev) => prev.filter((_, i) => i !== index));
   };
 
   const fetchLatestLocation = async (partId: string, rowIndex: number) => {
@@ -551,8 +606,14 @@ export const CurrentStock = () => {
       const unassignedStock = balanceData?.unassigned_stock ?? 0;
 
       // Also get latest movement for default location
-      const movementsRes: any = await apiClient.getStockMovements({ part_id: partId, limit: 1 });
-      const movement = (movementsRes.data && Array.isArray(movementsRes.data)) ? movementsRes.data[0] : null;
+      const movementsRes: any = await apiClient.getStockMovements({
+        part_id: partId,
+        limit: 1,
+      });
+      const movement =
+        movementsRes.data && Array.isArray(movementsRes.data)
+          ? movementsRes.data[0]
+          : null;
 
       let storeId = "";
       let rackId = "";
@@ -574,29 +635,45 @@ export const CurrentStock = () => {
         }
       }
 
-      setBulkRows(prev => {
+      setBulkRows((prev) => {
         const updated = [...prev];
         if (updated[rowIndex]) {
           updated[rowIndex] = {
             ...updated[rowIndex],
-            storeId, rackId, shelfId, currentStock, unassignedStock,
-            availableRacks: racksForStore, availableShelves: shelvesForRack
+            storeId,
+            rackId,
+            shelfId,
+            currentStock,
+            unassignedStock,
+            availableRacks: racksForStore,
+            availableShelves: shelvesForRack,
           };
         }
         return updated;
       });
-    } catch (error) { }
+    } catch (error) {}
   };
 
-  const handleUpdateBulkRow = async (index: number, field: string, value: any) => {
+  const handleUpdateBulkRow = async (
+    index: number,
+    field: string,
+    value: any,
+  ) => {
     if (field === "partId" && value) fetchLatestLocation(value, index);
 
     if (field === "storeId" && value) {
       const r = await apiClient.getRacks(value);
       const newRacks = (r as any).data || r || [];
-      setBulkRows(prev => {
+      setBulkRows((prev) => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], storeId: value, rackId: "", shelfId: "", availableRacks: newRacks, availableShelves: [] };
+        updated[index] = {
+          ...updated[index],
+          storeId: value,
+          rackId: "",
+          shelfId: "",
+          availableRacks: newRacks,
+          availableShelves: [],
+        };
         return updated;
       });
       return;
@@ -605,15 +682,20 @@ export const CurrentStock = () => {
     if (field === "rackId" && value) {
       const s = await apiClient.getShelves(value);
       const newShelves = (s as any).data || s || [];
-      setBulkRows(prev => {
+      setBulkRows((prev) => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], rackId: value, shelfId: "", availableShelves: newShelves };
+        updated[index] = {
+          ...updated[index],
+          rackId: value,
+          shelfId: "",
+          availableShelves: newShelves,
+        };
         return updated;
       });
       return;
     }
 
-    setBulkRows(prev => {
+    setBulkRows((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
       return updated;
@@ -621,8 +703,13 @@ export const CurrentStock = () => {
   };
 
   const handleSaveBulk = async () => {
-    const validRows = bulkRows.filter(r => r.partId && r.quantity && !isNaN(parseFloat(r.quantity)));
-    if (validRows.length === 0) { toast.error("Please add valid data"); return; }
+    const validRows = bulkRows.filter(
+      (r) => r.partId && r.quantity && !isNaN(parseFloat(r.quantity)),
+    );
+    if (validRows.length === 0) {
+      toast.error("Please add valid data");
+      return;
+    }
 
     try {
       setLoading(true);
@@ -631,21 +718,42 @@ export const CurrentStock = () => {
         if (row.type === "out") {
           const qty = parseInt(row.quantity);
           if (qty > row.currentStock) {
-            const partLabel = parts.find(p => p.value === row.partId)?.label || "Item";
-            toast.error(`Cannot remove ${qty} units of ${partLabel}. Only ${row.currentStock} units in total stock.`);
+            const partLabel =
+              parts.find((p) => p.value === row.partId)?.label || "Item";
+            toast.error(
+              `Cannot remove ${qty} units of ${partLabel}. Only ${row.currentStock} units in total stock.`,
+            );
             setLoading(false);
             return;
           }
         }
         await apiClient.createStockMovement({
-          part_id: row.partId, type: row.type, quantity: parseInt(row.quantity),
-          store_id: row.storeId || null, rack_id: row.rackId === "none" ? null : row.rackId || null,
-          shelf_id: row.shelfId === "none" ? null : row.shelfId || null, notes: row.notes || null,
+          part_id: row.partId,
+          type: row.type,
+          quantity: parseInt(row.quantity),
+          store_id: row.storeId || null,
+          rack_id: row.rackId === "none" ? null : row.rackId || null,
+          shelf_id: row.shelfId === "none" ? null : row.shelfId || null,
+          notes: row.notes || null,
         });
       }
       toast.success("Stock updated successfully");
       setBulkDialogOpen(false);
-      setBulkRows([{ partId: "", type: "in", quantity: "", storeId: "", rackId: "", shelfId: "", notes: "", currentStock: 0, unassignedStock: 0, availableRacks: [], availableShelves: [] }]);
+      setBulkRows([
+        {
+          partId: "",
+          type: "in",
+          quantity: "",
+          storeId: "",
+          rackId: "",
+          shelfId: "",
+          notes: "",
+          currentStock: 0,
+          unassignedStock: 0,
+          availableRacks: [],
+          availableShelves: [],
+        },
+      ]);
       fetchStockData();
     } catch (error: any) {
       toast.error(error.message || "Failed to save some items");
@@ -657,21 +765,32 @@ export const CurrentStock = () => {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 'z' || e.key === 'Z') && bulkDialogOpen) { e.preventDefault(); handleAddBulkRow(); }
-      if (e.altKey && (e.key === 's' || e.key === 'S') && bulkDialogOpen && !loading) { e.preventDefault(); handleSaveBulk(); }
+      if (e.altKey && (e.key === "z" || e.key === "Z") && bulkDialogOpen) {
+        e.preventDefault();
+        handleAddBulkRow();
+      }
+      if (
+        e.altKey &&
+        (e.key === "s" || e.key === "S") &&
+        bulkDialogOpen &&
+        !loading
+      ) {
+        e.preventDefault();
+        handleSaveBulk();
+      }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [bulkDialogOpen, loading, bulkRows]);
 
   const formatCurrency = (value: number | null | undefined) => {
     if (value === null || value === undefined) return "-";
-    return `Rs ${value.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `Rs ${value.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const formatNumber = (value: number | null | undefined) => {
     if (value === null || value === undefined) return "-";
-    return value.toLocaleString('en-PK');
+    return value.toLocaleString("en-PK");
   };
 
   const handleExport = () => {
@@ -685,22 +804,24 @@ export const CurrentStock = () => {
       "Store",
       "Rack",
       "Shelf",
-      "Stock"
+      "Stock",
     ];
 
     const csvRows = [
       headers.join(","),
-      ...stockData.map(item => [
-        `"${item.part_no || ''}"`,
-        `"${item.master_part_no || ''}"`,
-        `"${item.brand || ''}"`,
-        `"${item.category || ''}"`,
-        `"${item.description || ''}"`,
-        `"${item.store || ''}"`,
-        `"${item.rack || ''}"`,
-        `"${item.shelf || ''}"`,
-        item.current_stock || 0,
-      ].join(","))
+      ...stockData.map((item) =>
+        [
+          `"${item.part_no || ""}"`,
+          `"${item.master_part_no || ""}"`,
+          `"${item.brand || ""}"`,
+          `"${item.category || ""}"`,
+          `"${item.description || ""}"`,
+          `"${item.store || ""}"`,
+          `"${item.rack || ""}"`,
+          `"${item.shelf || ""}"`,
+          item.current_stock || 0,
+        ].join(","),
+      ),
     ];
 
     const csvContent = csvRows.join("\n");
@@ -708,7 +829,7 @@ export const CurrentStock = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `current-stock-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `current-stock-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
 
@@ -753,14 +874,20 @@ export const CurrentStock = () => {
           <div className="relative flex-1 min-w-[200px] max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search by part no, description, or brand..."
+              placeholder="Search by part no, master part, description, or brand..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
             />
           </div>
 
-          <Select value={selectedCategory} onValueChange={(v) => { setSelectedCategory(v); setCurrentPage(1); }}>
+          <Select
+            value={selectedCategory}
+            onValueChange={(v) => {
+              setSelectedCategory(v);
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="All Categories" />
             </SelectTrigger>
@@ -775,7 +902,10 @@ export const CurrentStock = () => {
 
           <Select
             value={stockStatusFilter}
-            onValueChange={(v) => { setStockStatusFilter(v as StockStatusFilter); setCurrentPage(1); }}
+            onValueChange={(v) => {
+              setStockStatusFilter(v as StockStatusFilter);
+              setCurrentPage(1);
+            }}
           >
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Stock status" />
@@ -788,9 +918,9 @@ export const CurrentStock = () => {
             </SelectContent>
           </Select>
 
-
-
-          {(searchQuery || selectedCategory !== "all" || stockStatusFilter !== "all") && (
+          {(searchQuery ||
+            selectedCategory !== "all" ||
+            stockStatusFilter !== "all") && (
             <Button
               variant="ghost"
               size="sm"
@@ -839,14 +969,19 @@ export const CurrentStock = () => {
                 </TableRow>
               ) : stockData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                  <TableCell
+                    colSpan={10}
+                    className="text-center py-8 text-muted-foreground"
+                  >
                     No stock data found
                   </TableCell>
                 </TableRow>
               ) : (
                 stockData.map((item) => (
                   <TableRow key={item.part_id}>
-                    <TableCell className="font-medium">{item.part_no || "-"}</TableCell>
+                    <TableCell className="font-medium">
+                      {item.part_no || "-"}
+                    </TableCell>
                     <TableCell>{item.master_part_no || "-"}</TableCell>
                     <TableCell>{item.brand || "-"}</TableCell>
                     <TableCell>{item.category || "-"}</TableCell>
@@ -890,12 +1025,17 @@ export const CurrentStock = () => {
       </div>
 
       {/* View Location Dialog */}
-      <Dialog open={viewLocationDialogOpen} onOpenChange={setViewLocationDialogOpen}>
+      <Dialog
+        open={viewLocationDialogOpen}
+        onOpenChange={setViewLocationDialogOpen}
+      >
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Stock Location Breakdown</DialogTitle>
             <DialogDescription>
-              Detailed location of {viewingItem?.part_no} - {viewingItem?.description}
+              Detailed location of{" "}
+              {viewingItem?.brand ? `${viewingItem.brand} - ` : ""}
+              {viewingItem?.part_no} - {viewingItem?.description}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -911,18 +1051,31 @@ export const CurrentStock = () => {
               <TableBody>
                 {selectedPartLocations.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground py-4">
-                      {viewingItem ? "Loading or No specific location data..." : "No data"}
+                    <TableCell
+                      colSpan={4}
+                      className="text-center text-muted-foreground py-4"
+                    >
+                      {viewingItem
+                        ? "Loading or No specific location data..."
+                        : "No data"}
                     </TableCell>
                   </TableRow>
                 ) : (
                   selectedPartLocations.map((loc, index) => (
-                    <TableRow key={index} className={loc.isUnlocated ? "bg-orange-50/50" : ""}>
+                    <TableRow
+                      key={index}
+                      className={loc.isUnlocated ? "bg-orange-50/50" : ""}
+                    >
                       <TableCell className="font-medium">{loc.store}</TableCell>
                       <TableCell>{loc.rack}</TableCell>
                       <TableCell>{loc.shelf}</TableCell>
                       <TableCell className="text-right font-bold">
-                        {loc.quantity} {loc.isUnlocated && <span className="text-xs text-orange-600 font-normal ml-1">(Unlocated)</span>}
+                        {loc.quantity}{" "}
+                        {loc.isUnlocated && (
+                          <span className="text-xs text-orange-600 font-normal ml-1">
+                            (Unlocated)
+                          </span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -930,9 +1083,14 @@ export const CurrentStock = () => {
                 {/* Total Row */}
                 {selectedPartLocations.length > 0 && (
                   <TableRow className="bg-muted font-bold">
-                    <TableCell colSpan={3} className="text-right">Total Checked:</TableCell>
+                    <TableCell colSpan={3} className="text-right">
+                      Total Checked:
+                    </TableCell>
                     <TableCell className="text-right">
-                      {selectedPartLocations.reduce((sum, loc) => sum + loc.quantity, 0)}
+                      {selectedPartLocations.reduce(
+                        (sum, loc) => sum + loc.quantity,
+                        0,
+                      )}
                     </TableCell>
                   </TableRow>
                 )}
@@ -940,7 +1098,9 @@ export const CurrentStock = () => {
             </Table>
           </div>
           <DialogFooter>
-            <Button onClick={() => setViewLocationDialogOpen(false)}>Close</Button>
+            <Button onClick={() => setViewLocationDialogOpen(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -951,17 +1111,20 @@ export const CurrentStock = () => {
           <DialogHeader>
             <DialogTitle>Manage Stock Locations</DialogTitle>
             <DialogDescription>
-              Assign locations for {editingItem?.part_no} - {editingItem?.description}
+              Assign locations for{" "}
+              {editingItem?.brand ? `${editingItem.brand} - ` : ""}
+              {editingItem?.part_no} - {editingItem?.description}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-4">
-
             {/* Current Allocations List */}
             <div className="space-y-2">
               <h4 className="text-sm font-semibold flex items-center justify-between">
                 <span>Current Stock Distribution</span>
-                <Badge variant={unallocatedDerived > 0 ? "destructive" : "secondary"}>
+                <Badge
+                  variant={unallocatedDerived > 0 ? "destructive" : "secondary"}
+                >
                   Unallocated: {unallocatedDerived}
                 </Badge>
               </h4>
@@ -972,22 +1135,33 @@ export const CurrentStock = () => {
                       <TableHead className="h-8 text-xs">Store</TableHead>
                       <TableHead className="h-8 text-xs">Rack</TableHead>
                       <TableHead className="h-8 text-xs">Shelf</TableHead>
-                      <TableHead className="h-8 text-xs text-right">Qty</TableHead>
+                      <TableHead className="h-8 text-xs text-right">
+                        Qty
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {selectedPartLocations.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-xs py-2 text-muted-foreground">
+                        <TableCell
+                          colSpan={4}
+                          className="text-center text-xs py-2 text-muted-foreground"
+                        >
                           No active locations found.
                         </TableCell>
                       </TableRow>
                     ) : (
                       selectedPartLocations.map((loc, i) => (
                         <TableRow key={i} className="h-8">
-                          <TableCell className="py-1 text-xs">{loc.store}</TableCell>
-                          <TableCell className="py-1 text-xs">{loc.rack}</TableCell>
-                          <TableCell className="py-1 text-xs">{loc.shelf}</TableCell>
+                          <TableCell className="py-1 text-xs">
+                            {loc.store}
+                          </TableCell>
+                          <TableCell className="py-1 text-xs">
+                            {loc.rack}
+                          </TableCell>
+                          <TableCell className="py-1 text-xs">
+                            {loc.shelf}
+                          </TableCell>
                           <TableCell className="py-1 text-xs text-right font-medium">
                             {loc.quantity} {loc.isUnlocated && "(Un)"}
                           </TableCell>
@@ -1011,19 +1185,22 @@ export const CurrentStock = () => {
             </div>
 
             <div className="border-t pt-4 space-y-4">
-              {editMode === 'transfer' && (
+              {editMode === "transfer" && (
                 <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
                   <Edit className="w-4 h-4" />
                   Transfer Stock Location
                 </h4>
               )}
 
-              {editMode === 'transfer' && editSourceLocation && (
+              {editMode === "transfer" && editSourceLocation && (
                 <div className="bg-muted/50 p-2 rounded text-xs mb-2 border flex justify-between items-center">
                   <span>
-                    Transferring from: <strong>{editSourceLocation.store}</strong>
-                    {editSourceLocation.rack !== 'No Rack' && ` / ${editSourceLocation.rack}`}
-                    {editSourceLocation.shelf !== 'No Shelf' && ` / ${editSourceLocation.shelf}`}
+                    Transferring from:{" "}
+                    <strong>{editSourceLocation.store}</strong>
+                    {editSourceLocation.rack !== "No Rack" &&
+                      ` / ${editSourceLocation.rack}`}
+                    {editSourceLocation.shelf !== "No Shelf" &&
+                      ` / ${editSourceLocation.shelf}`}
                   </span>
                   <Button
                     variant="ghost"
@@ -1031,7 +1208,11 @@ export const CurrentStock = () => {
                     onClick={() => {
                       setEditMode("assign");
                       setEditSourceLocation(null);
-                      setEditQuantity(unallocatedDerived > 0 ? unallocatedDerived.toString() : "");
+                      setEditQuantity(
+                        unallocatedDerived > 0
+                          ? unallocatedDerived.toString()
+                          : "",
+                      );
                       setEditStoreId("");
                     }}
                     className="h-5 text-[10px]"
@@ -1043,7 +1224,9 @@ export const CurrentStock = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>{editMode === 'transfer' ? 'To Store' : 'Store'}</Label>
+                  <Label>
+                    {editMode === "transfer" ? "To Store" : "Store"}
+                  </Label>
                   <Select value={editStoreId} onValueChange={setEditStoreId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select Store" />
@@ -1058,22 +1241,32 @@ export const CurrentStock = () => {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Quantity to {editMode === 'transfer' ? 'Transfer' : 'Assign'}</Label>
+                  <Label>
+                    Quantity to{" "}
+                    {editMode === "transfer" ? "Transfer" : "Assign"}
+                  </Label>
                   <Input
                     type="number"
                     value={editQuantity}
                     onChange={(e) => setEditQuantity(e.target.value)}
-                    placeholder={editMode === 'assign' ? `Max: ${unallocatedDerived}` : `Max: ${editSourceLocation?.quantity || 0}`}
+                    placeholder={
+                      editMode === "assign"
+                        ? `Max: ${unallocatedDerived}`
+                        : `Max: ${editSourceLocation?.quantity || 0}`
+                    }
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    Available: {editMode === 'assign' ? unallocatedDerived : (editSourceLocation?.quantity || 0)}
+                    Available:{" "}
+                    {editMode === "assign"
+                      ? unallocatedDerived
+                      : editSourceLocation?.quantity || 0}
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>{editMode === 'transfer' ? 'To Rack' : 'Rack'}</Label>
+                  <Label>{editMode === "transfer" ? "To Rack" : "Rack"}</Label>
                   <Select
                     value={editRackId}
                     onValueChange={setEditRackId}
@@ -1094,7 +1287,9 @@ export const CurrentStock = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>{editMode === 'transfer' ? 'To Shelf' : 'Shelf'}</Label>
+                  <Label>
+                    {editMode === "transfer" ? "To Shelf" : "Shelf"}
+                  </Label>
                   <Select
                     value={editShelfId}
                     onValueChange={setEditShelfId}
@@ -1121,9 +1316,16 @@ export const CurrentStock = () => {
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleUpdate} disabled={isUpdating || !editStoreId || !editQuantity}>
-              {isUpdating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {editMode === 'assign' ? 'Confirm Assignment' : 'Confirm Transfer'}
+            <Button
+              onClick={handleUpdate}
+              disabled={isUpdating || !editStoreId || !editQuantity}
+            >
+              {isUpdating ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {editMode === "assign"
+                ? "Confirm Assignment"
+                : "Confirm Transfer"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1137,8 +1339,17 @@ export const CurrentStock = () => {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">Add multiple stock movements at once. Current locations are auto-filled.</p>
-              <Button type="button" variant="outline" size="sm" onClick={handleAddBulkRow} className="h-8 text-xs">
+              <p className="text-sm text-muted-foreground">
+                Add multiple stock movements at once. Current locations are
+                auto-filled.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddBulkRow}
+                className="h-8 text-xs"
+              >
                 <Plus className="w-3 h-3 mr-1" /> Add Row (Alt + Z)
               </Button>
             </div>
@@ -1148,7 +1359,9 @@ export const CurrentStock = () => {
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted font-bold">
                     <TableHead className="w-[300px] text-xs">Item *</TableHead>
-                    <TableHead className="w-[120px] text-xs text-center">Stock (Tot / Un)</TableHead>
+                    <TableHead className="w-[120px] text-xs text-center">
+                      Stock (Tot / Un)
+                    </TableHead>
                     <TableHead className="w-[100px] text-xs">Type *</TableHead>
                     <TableHead className="w-[100px] text-xs">Qty *</TableHead>
                     <TableHead className="w-[180px] text-xs">Store</TableHead>
@@ -1165,22 +1378,39 @@ export const CurrentStock = () => {
                         <SearchableSelect
                           options={parts}
                           value={row.partId}
-                          onValueChange={(val) => handleUpdateBulkRow(index, "partId", val)}
+                          onValueChange={(val) =>
+                            handleUpdateBulkRow(index, "partId", val)
+                          }
                           placeholder="Select Part..."
                         />
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1 items-center">
-                          <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded w-full text-center" title="Total Stock">
+                          <div
+                            className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded w-full text-center"
+                            title="Total Stock"
+                          >
                             Tot: {row.currentStock}
                           </div>
-                          <div className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded w-full text-center" title="Unassigned Stock (No Rack/Shelf)">
+                          <div
+                            className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded w-full text-center"
+                            title="Unassigned Stock (No Rack/Shelf)"
+                          >
                             Un: {row.unassignedStock}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Select value={row.type} onValueChange={(val) => handleUpdateBulkRow(index, "type", val as "in" | "out")}>
+                        <Select
+                          value={row.type}
+                          onValueChange={(val) =>
+                            handleUpdateBulkRow(
+                              index,
+                              "type",
+                              val as "in" | "out",
+                            )
+                          }
+                        >
                           <SelectTrigger className="h-9">
                             <SelectValue />
                           </SelectTrigger>
@@ -1194,47 +1424,82 @@ export const CurrentStock = () => {
                         <Input
                           type="number"
                           value={row.quantity}
-                          onChange={(e) => handleUpdateBulkRow(index, "quantity", e.target.value)}
+                          onChange={(e) =>
+                            handleUpdateBulkRow(
+                              index,
+                              "quantity",
+                              e.target.value,
+                            )
+                          }
                           className="h-9 text-xs"
                           placeholder="0"
                         />
                       </TableCell>
                       <TableCell>
-                        <Select value={row.storeId} onValueChange={(val) => handleUpdateBulkRow(index, "storeId", val)}>
+                        <Select
+                          value={row.storeId}
+                          onValueChange={(val) =>
+                            handleUpdateBulkRow(index, "storeId", val)
+                          }
+                        >
                           <SelectTrigger className="h-9 text-xs">
                             <SelectValue placeholder="Store" />
                           </SelectTrigger>
                           <SelectContent>
-                            {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                            {stores.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Select value={row.rackId} onValueChange={(val) => handleUpdateBulkRow(index, "rackId", val)}>
+                        <Select
+                          value={row.rackId}
+                          onValueChange={(val) =>
+                            handleUpdateBulkRow(index, "rackId", val)
+                          }
+                        >
                           <SelectTrigger className="h-9 text-xs">
                             <SelectValue placeholder="Rack" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">None</SelectItem>
-                            {row.availableRacks.map(r => <SelectItem key={r.id} value={r.id}>{r.codeNo}</SelectItem>)}
+                            {row.availableRacks.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                {r.codeNo}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Select value={row.shelfId} onValueChange={(val) => handleUpdateBulkRow(index, "shelfId", val)}>
+                        <Select
+                          value={row.shelfId}
+                          onValueChange={(val) =>
+                            handleUpdateBulkRow(index, "shelfId", val)
+                          }
+                        >
                           <SelectTrigger className="h-9 text-xs">
                             <SelectValue placeholder="Shelf" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">None</SelectItem>
-                            {row.availableShelves.map(s => <SelectItem key={s.id} value={s.id}>{s.shelfNo}</SelectItem>)}
+                            {row.availableShelves.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.shelfNo}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </TableCell>
                       <TableCell>
                         <Input
                           value={row.notes}
-                          onChange={(e) => handleUpdateBulkRow(index, "notes", e.target.value)}
+                          onChange={(e) =>
+                            handleUpdateBulkRow(index, "notes", e.target.value)
+                          }
                           className="h-9 text-xs"
                           placeholder="Ref/Note"
                         />
@@ -1257,7 +1522,9 @@ export const CurrentStock = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={handleSaveBulk}
@@ -1274,14 +1541,18 @@ export const CurrentStock = () => {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mb-8">
         <div className="text-sm text-muted-foreground order-2 sm:order-1">
           Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
-          {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} items
+          {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems}{" "}
+          items
         </div>
 
         <div className="flex items-center gap-2 order-1 sm:order-2">
-          <Select value={String(itemsPerPage)} onValueChange={(v) => {
-            setItemsPerPage(Number(v));
-            setCurrentPage(1);
-          }}>
+          <Select
+            value={String(itemsPerPage)}
+            onValueChange={(v) => {
+              setItemsPerPage(Number(v));
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger className="w-[130px] h-8 text-sm">
               <SelectValue />
             </SelectTrigger>

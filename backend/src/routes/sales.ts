@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import prisma from "../config/database";
+import { getCanonicalPartId } from "../services/partCanonical";
 
 const router = express.Router();
 
@@ -35,7 +36,7 @@ async function getNextNumberForPrefix(args: {
 async function getStockBalance(partId: string): Promise<number> {
   const movements = await prisma.stockMovement.findMany({
     where: { partId },
-    select: { type: true, quantity: true }
+    select: { type: true, quantity: true },
   });
 
   const stockIn = movements
@@ -65,8 +66,6 @@ async function getReservedQuantity(partId: string): Promise<number> {
   }
 }
 
-
-
 // Helper function to create voucher for sales invoice
 async function createVoucherForInvoice(
   invoiceNo: string,
@@ -74,6 +73,7 @@ async function createVoucherForInvoice(
   customerType: string,
   accountId: string | null | undefined,
   grandTotal: number,
+  invoiceId: string,
   salesPerson?: string,
 ) {
   try {
@@ -108,14 +108,14 @@ async function createVoucherForInvoice(
     const accountsReceivableAccount =
       customerType === "registered"
         ? await prisma.account.findFirst({
-          where: {
-            OR: [
-              { name: { contains: "Accounts Receivable" } },
-              { name: { contains: "Receivable" } },
-            ],
-            status: "Active",
-          },
-        })
+            where: {
+              OR: [
+                { name: { contains: "Accounts Receivable" } },
+                { name: { contains: "Receivable" } },
+              ],
+              status: "Active",
+            },
+          })
         : null;
 
     const salesRevenueAccount = await prisma.account.findFirst({
@@ -207,8 +207,12 @@ async function createVoucherForInvoice(
         approvedBy: "System",
         approvedAt: new Date(),
         updatedAt: new Date(),
+        salesInvoiceId: invoiceId,
         VoucherEntry: {
-          create: voucherEntries,
+          create: voucherEntries.map((e) => ({
+            ...e,
+            salesInvoiceId: invoiceId,
+          })),
         },
       },
     });
@@ -700,7 +704,7 @@ router.post("/quotations", async (req: Request, res: Response) => {
 
     // Calculate total
     const totalAmount = items.reduce(
-      (sum, item) => sum + (item.quantity * item.unitPrice),
+      (sum, item) => sum + item.quantity * item.unitPrice,
       0,
     );
     const updatedQuotation = await prisma.salesQuotation.update({
@@ -957,12 +961,8 @@ router.post(
         });
       }
 
-      // Determine initial status based on customer type
+      // Determine initial status - default to pending
       let initialStatus = "pending";
-      if (customerType === "registered" && paidAmount >= grandTotal) {
-        // Cash sale with full payment - ready for approval
-        initialStatus = "pending_approval";
-      }
 
       // Update invoice status
       await prisma.salesInvoice.update({
@@ -1019,7 +1019,8 @@ router.post(
             customerType,
             null,
             grandTotal,
-            salesPerson
+            invoice.id,
+            salesPerson,
           );
         }
 
@@ -1052,9 +1053,10 @@ router.post(
               customerType,
               accountId,
               grandTotal,
+              invoice.id,
               salesPerson,
             );
-          } catch (voucherError: any) { }
+          } catch (voucherError: any) {}
         }
       }
 
@@ -1136,10 +1138,23 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
       include: {
         SalesInvoiceItem: {
           include: {
+            InvoiceRackShelf: {
+              include: {
+                Store: true,
+                Rack: true,
+                Shelf: true,
+              },
+            },
             Part: {
               include: {
                 Brand: true,
                 Category: true,
+                PartRackShelf: {
+                  include: {
+                    Rack: true,
+                    Shelf: true,
+                  },
+                },
               },
             },
           },
@@ -1229,7 +1244,9 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
     // Format response with invoice details and the specific item for this part
     const result = invoices
       .map((inv) => {
-        const itemForPart = inv.SalesInvoiceItem?.find((item) => item.partId === partId);
+        const itemForPart = inv.SalesInvoiceItem?.find(
+          (item) => item.partId === partId,
+        );
         return {
           id: inv.id,
           invoice_no: inv.invoiceNo,
@@ -1247,19 +1264,19 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
           sales_person: inv.salesPerson,
           item: itemForPart
             ? {
-              id: itemForPart.id,
-              part_id: itemForPart.partId,
-              part_no: itemForPart.partNo,
-              part_description: itemForPart.description,
-              brand: itemForPart.brand || itemForPart.Part?.Brand?.name || "",
-              ordered_qty: itemForPart.orderedQty,
-              delivered_qty: itemForPart.deliveredQty,
-              pending_qty: itemForPart.pendingQty,
-              unit_price: itemForPart.unitPrice,
-              discount: itemForPart.discount,
-              line_total: itemForPart.lineTotal,
-              grade: itemForPart.grade,
-            }
+                id: itemForPart.id,
+                part_id: itemForPart.partId,
+                part_no: itemForPart.partNo,
+                part_description: itemForPart.description,
+                brand: itemForPart.brand || itemForPart.Part?.Brand?.name || "",
+                ordered_qty: itemForPart.orderedQty,
+                delivered_qty: itemForPart.deliveredQty,
+                pending_qty: itemForPart.pendingQty,
+                unit_price: itemForPart.unitPrice,
+                discount: itemForPart.discount,
+                line_total: itemForPart.lineTotal,
+                grade: itemForPart.grade,
+              }
             : null,
           created_at: inv.createdAt,
         };
@@ -1353,9 +1370,11 @@ router.post("/invoices", async (req: Request, res: Response) => {
         id: `inv_${Date.now()}`,
         invoiceNo,
         invoiceDate: new Date(invoiceDate),
+        customerId: customerId || null,
         customerName,
         customerType: customerType || "registered",
         salesPerson: salesPerson || "Admin",
+        accountId: finalAccountId || null,
         subtotal: subtotal || 0,
         overallDiscount: overallDiscount || 0,
         tax: tax || 0,
@@ -1372,60 +1391,130 @@ router.post("/invoices", async (req: Request, res: Response) => {
         remarks,
         updatedAt: new Date(),
         SalesInvoiceItem: {
-          create: await Promise.all(items.map(async (item: any) => {
-            const part = await prisma.part.findUnique({
-              where: { id: item.partId },
-              select: { avgCost: true, cost: true }
-            });
-            return {
-              partId: item.partId,
-              partNo: item.partNo,
-              description: item.description || "",
-              orderedQty: item.orderedQty,
-              deliveredQty: 0,
-              pendingQty: item.orderedQty,
-              unitPrice: item.unitPrice,
-              avgCost: part?.avgCost || part?.cost || 0,
-              discount: item.discount || 0,
-              lineTotal: item.lineTotal,
-              grade: item.grade || "A",
-              brand: item.brand || "",
-            };
-          })),
+          create: await Promise.all(
+            items.map(async (item: any) => {
+              // Only fetch and save avgCost when invoice is not pending
+              const isPending = true; // new invoices always start as pending
+              let resolvedAvgCost = 0;
+              if (!isPending) {
+                const part = await prisma.part.findUnique({
+                  where: { id: item.partId },
+                  select: { avgCost: true, cost: true },
+                });
+                resolvedAvgCost = part?.avgCost || part?.cost || 0;
+              }
+
+              // Resolve location details if selectedLocationId is provided
+              let storeId = null;
+              let rackId = null;
+              let shelfId = null;
+
+              const itemData: any = {
+                partId: item.partId,
+                partNo: item.partNo,
+                description: item.description || "",
+                orderedQty: item.orderedQty,
+                deliveredQty: 0,
+                pendingQty: item.orderedQty,
+                unitPrice: item.unitPrice,
+                avgCost: resolvedAvgCost,
+                discount: item.discount || 0,
+                lineTotal: item.lineTotal,
+                grade: item.grade || "A",
+                brand: item.brand || "",
+                useUnlocatedStock: !!item.useUnlocatedStock,
+              };
+
+              const locationIds =
+                item.selectedLocationIds ||
+                (item.selectedLocationId ? [item.selectedLocationId] : []);
+
+              if (locationIds.length > 0 && !item.useUnlocatedStock) {
+                const prsList = await prisma.partRackShelf.findMany({
+                  where: { id: { in: locationIds } },
+                });
+
+                if (prsList.length > 0) {
+                  let remainingQty = item.orderedQty;
+                  const invoiceRackShelves = [];
+
+                  for (let i = 0; i < prsList.length; i++) {
+                    const prs = prsList[i];
+                    if (remainingQty <= 0 && i > 0) break;
+
+                    let qtyToTake = Math.min(remainingQty, prs.quantity);
+                    // For the last one, or if only one, take whatever is left even if negative stock results
+                    if (i === prsList.length - 1) {
+                      qtyToTake = remainingQty;
+                    }
+
+                    if (qtyToTake > 0 || prsList.length === 1) {
+                      invoiceRackShelves.push({
+                        storeId: prs.storeId,
+                        rackId: prs.rackId,
+                        shelfId: prs.shelfId,
+                        quantity: qtyToTake,
+                      });
+                      remainingQty -= qtyToTake;
+                    }
+                  }
+
+                  itemData.InvoiceRackShelf = {
+                    create: invoiceRackShelves,
+                  };
+                }
+              }
+
+              return itemData;
+            }),
+          ),
         },
       },
       include: {
-        SalesInvoiceItem: true,
-        SalesQuotation: {
+        SalesInvoiceItem: {
           include: {
-            SalesQuotationItem: {
-              include: {
-                Part: true,
-              },
-            },
+            InvoiceRackShelf: true,
           },
         },
       },
     });
 
     // Create stock reservations for ALL invoices (stock is reserved but not reduced yet)
+    // Pass location info if available
     for (const item of (invoice as any).SalesInvoiceItem) {
-      await prisma.stockReservation.create({
-        data: {
-          invoiceId: invoice.id,
-          partId: item.partId,
-          quantity: item.orderedQty,
-          status: "reserved",
-        } as any,
-      });
+      if (item.InvoiceRackShelf && item.InvoiceRackShelf.length > 0) {
+        for (const loc of item.InvoiceRackShelf) {
+          await prisma.stockReservation.create({
+            data: {
+              invoiceId: invoice.id,
+              partId: item.partId,
+              quantity: loc.quantity,
+              status: "reserved",
+              storeId: loc.storeId,
+              rackId: loc.rackId,
+              shelfId: loc.shelfId,
+              useUnlocatedStock: false,
+            } as any,
+          });
+        }
+      } else {
+        await prisma.stockReservation.create({
+          data: {
+            invoiceId: invoice.id,
+            partId: item.partId,
+            quantity: item.orderedQty,
+            status: "reserved",
+            storeId: null,
+            rackId: null,
+            shelfId: null,
+            useUnlocatedStock: !!item.useUnlocatedStock,
+          } as any,
+        });
+      }
     }
 
-    // Determine initial status based on customer type
+    // Determine initial status - default to pending
     let initialStatus = "pending";
-    if (customerType === "registered" && paidAmount >= grandTotal) {
-      // Cash sale with full payment - ready for approval
-      initialStatus = "pending_approval";
-    }
 
     // Update invoice status
     await prisma.salesInvoice.update({
@@ -1442,7 +1531,16 @@ router.post("/invoices", async (req: Request, res: Response) => {
         where: {
           Subgroup: {
             MainGroup: {
-              type: { in: ["Revenue", "revenue", "REVENUE", "Income", "income", "INCOME"] },
+              type: {
+                in: [
+                  "Revenue",
+                  "revenue",
+                  "REVENUE",
+                  "Income",
+                  "income",
+                  "INCOME",
+                ],
+              },
             },
           },
           status: "Active",
@@ -1591,7 +1689,9 @@ router.post("/invoices", async (req: Request, res: Response) => {
       }
 
       if (!salesRevenueAccount) {
-        console.error("CRITICAL: Failed to find or create Sales Revenue Account. Voucher skipped.");
+        console.error(
+          "CRITICAL: Failed to find or create Sales Revenue Account. Voucher skipped.",
+        );
       } else {
         // Generate JV voucher/journal entry number (must be unique across both tables)
         const jvVoucherNumber = await getNextNumberForPrefix({
@@ -1765,7 +1865,14 @@ router.post("/invoices", async (req: Request, res: Response) => {
           0,
         );
 
-        if (jvVoucherEntries.length > 0 && totalDebit === totalCredit) {
+        // For WALKING customers: skip creation-time JV.
+        // Their vouchers (JV for COGS + RV for revenue/payment) are created at approval time.
+        // For REGISTERED customers: create JV now (AR DR + Revenue CR) to track the receivable.
+        if (
+          jvVoucherEntries.length > 0 &&
+          totalDebit === totalCredit &&
+          customerType !== "walking"
+        ) {
           // Create JV Voucher
           const jvVoucher = await prisma.voucher.create({
             data: {
@@ -1779,8 +1886,12 @@ router.post("/invoices", async (req: Request, res: Response) => {
               createdBy: salesPerson || "System",
               approvedBy: "System",
               approvedAt: new Date(),
+              salesInvoiceId: invoice.id,
               VoucherEntry: {
-                create: jvVoucherEntries,
+                create: jvVoucherEntries.map((e) => ({
+                  ...e,
+                  salesInvoiceId: invoice.id,
+                })),
               },
             } as any,
           });
@@ -1789,13 +1900,16 @@ router.post("/invoices", async (req: Request, res: Response) => {
           for (const entry of jvVoucherEntries) {
             const acc = await prisma.account.findUnique({
               where: { id: entry.accountId },
-              include: { Subgroup: { include: { MainGroup: true } } }
+              include: { Subgroup: { include: { MainGroup: true } } },
             });
             if (acc) {
               const accountType = acc.Subgroup.MainGroup.type.toLowerCase();
-              const balanceChange = (accountType === "asset" || accountType === "expense" || accountType === "cost")
-                ? (entry.debit - entry.credit)
-                : (entry.credit - entry.debit);
+              const balanceChange =
+                accountType === "asset" ||
+                accountType === "expense" ||
+                accountType === "cost"
+                  ? entry.debit - entry.credit
+                  : entry.credit - entry.debit;
 
               await prisma.account.update({
                 where: { id: entry.accountId },
@@ -1929,6 +2043,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                   createdBy: salesPerson || "System",
                   approvedBy: "System",
                   approvedAt: new Date(),
+                  salesInvoiceId: invoice.id,
                   VoucherEntry: {
                     create: [
                       {
@@ -1938,6 +2053,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                         debit: accountInfo.amount,
                         credit: 0,
                         sortOrder: 0,
+                        salesInvoiceId: invoice.id,
                       },
                       {
                         accountId: receivableAccount!.id,
@@ -1946,6 +2062,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                         debit: 0,
                         credit: accountInfo.amount,
                         sortOrder: 1,
+                        salesInvoiceId: invoice.id,
                       },
                     ],
                   },
@@ -1972,13 +2089,15 @@ router.post("/invoices", async (req: Request, res: Response) => {
                   },
                 },
               });
-            } catch (rvError: any) { }
+            } catch (rvError: any) {}
           }
 
           if (accountsToProcess.length === 0) {
             // ========== CASH SALE RV VOUCHER CREATION ==========
-            // For CASH sales (walking customer with accountId and paidAmount > 0), create RV voucher
+            // NOTE: For walking customers, RV is created at APPROVAL time (not here).
+            // This avoids duplicate vouchers. Skip walking customer RV on invoice creation.
             if (
+              false && // Disabled: walking customer RV created at approval time
               customerType === "walking" &&
               finalAccountId &&
               paidAmount > 0
@@ -2050,6 +2169,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                           createdBy: salesPerson || "System",
                           approvedBy: "System",
                           approvedAt: new Date(),
+                          salesInvoiceId: invoice.id,
                           VoucherEntry: {
                             create: [
                               {
@@ -2059,6 +2179,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                                 debit: paidAmount,
                                 credit: 0,
                                 sortOrder: 0,
+                                salesInvoiceId: invoice.id,
                               },
                               {
                                 accountId: salesRevenueAccount.id,
@@ -2067,6 +2188,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                                 debit: 0,
                                 credit: paidAmount,
                                 sortOrder: 1,
+                                salesInvoiceId: invoice.id,
                               },
                             ],
                           },
@@ -2086,7 +2208,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                     }
                   }
                 }
-              } catch (rvError: any) { }
+              } catch (rvError: any) {}
             } else {
             }
           }
@@ -2157,6 +2279,14 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
       remarks,
       items,
       overallDiscount,
+      subtotal,
+      grandTotal,
+      accountId,
+      bankAccountId,
+      cashAccountId,
+      bankAmount,
+      cashAmount,
+      paidAmount,
     } = req.body;
 
     // Find existing invoice
@@ -2217,6 +2347,41 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
     if (overallDiscount !== undefined) {
       updateData.overallDiscount = overallDiscount;
     }
+    if (subtotal !== undefined) {
+      updateData.subtotal = subtotal;
+    }
+    if (grandTotal !== undefined) {
+      updateData.grandTotal = grandTotal;
+    }
+
+    // Determine which account ID to store
+    if (
+      bankAccountId !== undefined ||
+      cashAccountId !== undefined ||
+      accountId !== undefined
+    ) {
+      updateData.accountId =
+        bankAccountId || cashAccountId || accountId || null;
+    }
+
+    if (paidAmount !== undefined) {
+      updateData.paidAmount = paidAmount;
+    }
+
+    // Recalculate payment status if relevant fields changed
+    const currentPaid =
+      paidAmount !== undefined ? paidAmount : existingInvoice.paidAmount;
+    const currentGrand =
+      grandTotal !== undefined ? grandTotal : existingInvoice.grandTotal;
+
+    if (paidAmount !== undefined || grandTotal !== undefined) {
+      updateData.paymentStatus =
+        currentPaid >= currentGrand
+          ? "paid"
+          : currentPaid > 0
+            ? "partial"
+            : "unpaid";
+    }
 
     // If items are being updated, handle them
     if (items && Array.isArray(items) && items.length > 0) {
@@ -2246,36 +2411,98 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
 
         const part = await prisma.part.findUnique({
           where: { id: item.partId },
-          select: { avgCost: true, cost: true }
+          select: { avgCost: true, cost: true },
         });
+
+        const itemData: any = {
+          invoiceId: id,
+          partId: item.partId,
+          partNo: item.partNo || "",
+          description: item.description || "",
+          orderedQty: item.orderedQty,
+          deliveredQty: 0,
+          pendingQty: item.orderedQty,
+          unitPrice: item.unitPrice,
+          avgCost: part?.avgCost || part?.cost || 0,
+          discount: item.discount || 0,
+          lineTotal: lineTotal,
+          grade: item.grade || "A",
+          brand: item.brand || "",
+          useUnlocatedStock: !!item.useUnlocatedStock,
+        };
+
+        const locationIds =
+          item.selectedLocationIds ||
+          (item.selectedLocationId ? [item.selectedLocationId] : []);
+        const invoiceRackShelves = [];
+
+        if (locationIds.length > 0 && !item.useUnlocatedStock) {
+          const prsList = await prisma.partRackShelf.findMany({
+            where: { id: { in: locationIds } },
+          });
+
+          if (prsList.length > 0) {
+            let remainingQty = item.orderedQty;
+            for (let i = 0; i < prsList.length; i++) {
+              const prs = prsList[i];
+              if (remainingQty <= 0 && i > 0) break;
+
+              let qtyToTake = Math.min(remainingQty, prs.quantity);
+              if (i === prsList.length - 1) {
+                qtyToTake = remainingQty;
+              }
+
+              if (qtyToTake > 0 || prsList.length === 1) {
+                invoiceRackShelves.push({
+                  storeId: prs.storeId,
+                  rackId: prs.rackId,
+                  shelfId: prs.shelfId,
+                  quantity: qtyToTake,
+                });
+                remainingQty -= qtyToTake;
+              }
+            }
+
+            itemData.InvoiceRackShelf = {
+              create: invoiceRackShelves,
+            };
+          }
+        }
 
         await prisma.salesInvoiceItem.create({
-          data: {
-            invoiceId: id,
-            partId: item.partId,
-            partNo: item.partNo || "",
-            description: item.description || "",
-            orderedQty: item.orderedQty,
-            deliveredQty: 0,
-            pendingQty: item.orderedQty,
-            unitPrice: item.unitPrice,
-            avgCost: part?.avgCost || part?.cost || 0,
-            discount: item.discount || 0,
-            lineTotal: lineTotal,
-            grade: item.grade || "A",
-            brand: item.brand || "",
-          } as any,
+          data: itemData,
         });
 
-        // Create new stock reservation
-        await prisma.stockReservation.create({
-          data: {
-            invoiceId: id,
-            partId: item.partId,
-            quantity: item.orderedQty,
-            status: "reserved",
-          } as any,
-        });
+        // Create new stock reservations
+        if (invoiceRackShelves.length > 0) {
+          for (const loc of invoiceRackShelves) {
+            await prisma.stockReservation.create({
+              data: {
+                invoiceId: id,
+                partId: item.partId,
+                quantity: loc.quantity,
+                status: "reserved",
+                storeId: loc.storeId,
+                rackId: loc.rackId,
+                shelfId: loc.shelfId,
+                useUnlocatedStock: false,
+              } as any,
+            });
+          }
+        } else {
+          await prisma.stockReservation.create({
+            data: {
+              invoiceId: id,
+              partId: item.partId,
+              quantity: item.orderedQty,
+              status: "reserved",
+              storeId: null,
+              rackId: null,
+              shelfId: null,
+              useUnlocatedStock: !!item.useUnlocatedStock,
+            } as any,
+          });
+        }
       }
 
       // Calculate new totals
@@ -2343,7 +2570,14 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
 
     const invoice = await prisma.salesInvoice.findUnique({
       where: { id },
-      include: { SalesInvoiceItem: true, StockReservation: true },
+      include: {
+        SalesInvoiceItem: {
+          include: {
+            InvoiceRackShelf: true,
+          },
+        },
+        StockReservation: true,
+      },
     });
 
     if (!invoice) {
@@ -2371,36 +2605,121 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Invoice already approved" });
     }
 
-    // Reduce stock immediately for cash sale
-    for (const item of invoice.SalesInvoiceItem) {
-      // Update stock reservation status to "out"
-      const reservations = await prisma.stockReservation.findMany({
-        where: {
-          invoiceId: id,
-          partId: item.partId,
-          status: "reserved",
-        },
-        orderBy: { reservedAt: "asc" },
-      });
-
-      for (const reservation of reservations) {
-        await prisma.stockReservation.update({
-          where: { id: reservation.id },
+    // Reduce stock only if it hasn't been reduced already (e.g., from 'on_hold' transition)
+    if (invoice.status !== "on_hold") {
+      // Reduce stock immediately for cash sale (coming from pending)
+      for (const item of invoice.SalesInvoiceItem) {
+        // Update stock reservation status to "out"
+        await prisma.stockReservation.updateMany({
+          where: { invoiceId: id, partId: item.partId, status: "reserved" },
           data: { status: "out" },
         });
-      }
 
-      // Create stock movement - stock out
-      await prisma.stockMovement.create({
-        data: {
-          partId: item.partId,
-          type: "out",
-          quantity: item.orderedQty,
+        // Identify where stock should come from (Locations)
+        let locations: {
+          storeId: string | null;
+          rackId: string | null;
+          shelfId: string | null;
+          quantity: number;
+        }[] = [];
+
+        const itemAny = item as any;
+        if (itemAny.InvoiceRackShelf && itemAny.InvoiceRackShelf.length > 0) {
+          locations = itemAny.InvoiceRackShelf.map((irs: any) => ({
+            storeId: irs.storeId || null,
+            rackId: irs.rackId || null,
+            shelfId: irs.shelfId || null,
+            quantity: irs.quantity || item.orderedQty,
+          }));
+        } else {
+          // Check reservations
+          const reservations = await prisma.stockReservation.findMany({
+            where: { invoiceId: id, partId: item.partId },
+          });
+          if (reservations.length > 0) {
+            locations = reservations.map((r) => ({
+              storeId: r.storeId || null,
+              rackId: r.rackId || null,
+              shelfId: r.shelfId || null,
+              quantity: r.quantity,
+            }));
+          } else {
+            locations = [
+              {
+                storeId: null,
+                rackId: null,
+                shelfId: null,
+                quantity: item.orderedQty,
+              },
+            ];
+          }
+        }
+
+        for (const loc of locations) {
+          if (loc.quantity <= 0) continue;
+
+          const targetPartId = item.partId;
+
+          const prs = await prisma.partRackShelf.findFirst({
+            where: {
+              partId: targetPartId,
+              storeId: loc.storeId,
+              rackId: loc.rackId,
+              shelfId: loc.shelfId,
+            },
+          });
+
+          if (prs) {
+            await prisma.partRackShelf.update({
+              where: { id: prs.id },
+              data: { quantity: { decrement: loc.quantity } },
+            });
+          } else {
+            await prisma.partRackShelf.create({
+              data: {
+                partId: targetPartId,
+                storeId: loc.storeId,
+                rackId: loc.rackId,
+                shelfId: loc.shelfId,
+                quantity: -loc.quantity,
+              },
+            });
+          }
+
+          // Create stock movement with location info
+          await prisma.stockMovement.create({
+            data: {
+              partId: item.partId,
+              storeId: loc.storeId,
+              rackId: loc.rackId,
+              shelfId: loc.shelfId,
+              type: "out",
+              quantity: loc.quantity,
+              referenceType: "sales_invoice",
+              referenceId: id,
+              customerId: invoice.customerId,
+              notes: `Sales Invoice ${invoice.invoiceNo} - Approved by ${approvedBy || "Store Manager"}`,
+            } as any,
+          });
+        }
+      }
+    } else {
+      // Coming from on_hold — stock is already reduced.
+      // Just update existing 'out' movement notes to reflect approval
+      await prisma.stockMovement.updateMany({
+        where: {
           referenceType: "sales_invoice",
           referenceId: id,
-          customerId: invoice.customerId,
-          notes: `Sales Invoice ${invoice.invoiceNo} - Approved by ${approvedBy || "Store Manager"}`,
+          type: "out",
         } as any,
+        data: {
+          notes: `Sales Invoice ${invoice.invoiceNo} - Approved from Hold by ${approvedBy || "Store Manager"}`,
+        },
+      });
+      // Mark reservations as out (they might still be 'reserved' or already 'out' depending on hold implementation)
+      await prisma.stockReservation.updateMany({
+        where: { invoiceId: id, status: "reserved" },
+        data: { status: "out" },
       });
     }
 
@@ -2578,6 +2897,7 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
                 createdBy: approvedBy || "System",
                 approvedBy: "System",
                 approvedAt: new Date(),
+                salesInvoiceId: id,
                 VoucherEntry: {
                   create: [
                     {
@@ -2587,6 +2907,7 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
                       debit: totalCost,
                       credit: 0,
                       sortOrder: 0,
+                      salesInvoiceId: id,
                     },
                     {
                       accountId: inventoryAccount.id,
@@ -2595,6 +2916,7 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
                       debit: 0,
                       credit: totalCost,
                       sortOrder: 1,
+                      salesInvoiceId: id,
                     },
                   ],
                 },
@@ -2646,19 +2968,30 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
     const { id } = req.params;
     const { challanNo, deliveryDate, deliveredBy, items } = req.body;
 
-    const invoice = await prisma.salesInvoice.findUnique({ where: { id }, include: { SalesInvoiceItem: true } });
+    const invoice = await prisma.salesInvoice.findUnique({
+      where: { id },
+      include: { SalesInvoiceItem: true },
+    });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    if (invoice.customerType !== "walking") return res.status(400).json({ error: "Delivery can only be recorded for Part sell invoices." });
+    if (invoice.customerType !== "walking")
+      return res.status(400).json({
+        error: "Delivery can only be recorded for Part sell invoices.",
+      });
 
     // Validate request items
     for (const item of items) {
-      if (Number(item.quantity) <= 0) return res.status(400).json({ error: "Quantity must be > 0" });
-      const invItem = invoice.SalesInvoiceItem?.find((i: any) => i.id === item.invoiceItemId);
-      if (!invItem) return res.status(400).json({ error: `Invalid item ID: ${item.invoiceItemId}` });
+      if (Number(item.quantity) <= 0)
+        return res.status(400).json({ error: "Quantity must be > 0" });
+      const invItem = invoice.SalesInvoiceItem?.find(
+        (i: any) => i.id === item.invoiceItemId,
+      );
+      if (!invItem)
+        return res
+          .status(400)
+          .json({ error: `Invalid item ID: ${item.invoiceItemId}` });
     }
 
     await prisma.$transaction(async (tx) => {
-
       // Create delivery log
       const deliveryLog = await tx.deliveryLog.create({
         data: {
@@ -2683,23 +3016,33 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
           where: { id: item.invoiceItemId },
         });
 
-        if (!invoiceItem) throw new Error(`Item ${item.invoiceItemId} not found`);
+        if (!invoiceItem)
+          throw new Error(`Item ${item.invoiceItemId} not found`);
 
         const qtyToDeliver = Number(item.quantity);
         const newDeliveredQty = invoiceItem.deliveredQty + qtyToDeliver;
 
         // Strict Validation: Cannot over-deliver
         if (newDeliveredQty > invoiceItem.orderedQty) {
-          throw new Error(`Cannot deliver ${qtyToDeliver}. Only ${invoiceItem.orderedQty - invoiceItem.deliveredQty} pending.`);
+          throw new Error(
+            `Cannot deliver ${qtyToDeliver}. Only ${invoiceItem.orderedQty - invoiceItem.deliveredQty} pending.`,
+          );
         }
 
         await tx.salesInvoiceItem.update({
           where: { id: item.invoiceItemId },
-          data: { deliveredQty: newDeliveredQty, pendingQty: invoiceItem.orderedQty - newDeliveredQty },
+          data: {
+            deliveredQty: newDeliveredQty,
+            pendingQty: invoiceItem.orderedQty - newDeliveredQty,
+          },
         });
 
         const reservations = await tx.stockReservation.findMany({
-          where: { invoiceId: id, partId: invoiceItem.partId, status: "reserved" },
+          where: {
+            invoiceId: id,
+            partId: invoiceItem.partId,
+            status: "reserved",
+          },
           orderBy: { reservedAt: "asc" },
         });
 
@@ -2707,13 +3050,19 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
         for (const reservation of reservations) {
           if (remainingQty <= 0) break;
           const moveQty = Math.min(reservation.quantity, remainingQty);
-          await tx.stockReservation.update({ where: { id: reservation.id }, data: { status: "out" } });
+          await tx.stockReservation.update({
+            where: { id: reservation.id },
+            data: { status: "out" },
+          });
 
           await tx.stockMovement.create({
             data: {
               id: `sm_${Date.now()}`,
-              partId: invoiceItem.partId, type: "out", quantity: moveQty,
-              referenceType: "sales_invoice", referenceId: id,
+              partId: invoiceItem.partId,
+              type: "out",
+              quantity: moveQty,
+              referenceType: "sales_invoice",
+              referenceId: id,
               notes: `Delivery - Invoice ${invoice.invoiceNo} - Part Sell`,
             },
           });
@@ -2722,57 +3071,118 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
       }
 
       // Update Status
-      const updatedInvoice = await tx.salesInvoice.findUnique({ where: { id }, include: { SalesInvoiceItem: true } });
-      const allDelivered = updatedInvoice?.SalesInvoiceItem?.every(item => item.pendingQty === 0);
-      const hasDelivered = updatedInvoice?.SalesInvoiceItem?.some(item => item.deliveredQty > 0);
+      const updatedInvoice = await tx.salesInvoice.findUnique({
+        where: { id },
+        include: { SalesInvoiceItem: true },
+      });
+      const allDelivered = updatedInvoice?.SalesInvoiceItem?.every(
+        (item) => item.pendingQty === 0,
+      );
+      const hasDelivered = updatedInvoice?.SalesInvoiceItem?.some(
+        (item) => item.deliveredQty > 0,
+      );
       let newStatus = invoice.status;
       if (allDelivered) newStatus = "fully_delivered";
       else if (hasDelivered) newStatus = "partially_delivered";
-      await tx.salesInvoice.update({ where: { id }, data: { status: newStatus } });
+      await tx.salesInvoice.update({
+        where: { id },
+        data: { status: newStatus },
+      });
 
       // COGS
       const inventoryAccount = await tx.account.findFirst({
-        where: { status: "Active", OR: [{ code: "104001" }, { Subgroup: { code: "104" } }, { name: { contains: "Inventory" } }] }
+        where: {
+          status: "Active",
+          OR: [
+            { code: "104001" },
+            { Subgroup: { code: "104" } },
+            { name: { contains: "Inventory" } },
+          ],
+        },
       });
       const cogsAccount = await tx.account.findFirst({
-        where: { status: "Active", OR: [{ code: "901001" }, { Subgroup: { code: "901" } }, { name: { contains: "Cost" } }, { name: { contains: "COGS" } }] }
+        where: {
+          status: "Active",
+          OR: [
+            { code: "901001" },
+            { Subgroup: { code: "901" } },
+            { name: { contains: "Cost" } },
+            { name: { contains: "COGS" } },
+          ],
+        },
       });
 
       if (inventoryAccount && cogsAccount) {
         let deliveryCost = 0;
         for (const reqItem of items) {
-          const invItem = invoice.SalesInvoiceItem?.find((i: any) => i.id === reqItem.invoiceItemId);
+          const invItem = invoice.SalesInvoiceItem?.find(
+            (i: any) => i.id === reqItem.invoiceItemId,
+          );
           if (invItem) {
             deliveryCost += (invItem.avgCost || 0) * Number(reqItem.quantity);
           }
         }
 
         if (deliveryCost > 0) {
-          const jvNum = await getNextNumberForPrefix({ prefix: "JV", voucherType: "journal" });
+          const jvNum = await getNextNumberForPrefix({
+            prefix: "JV",
+            voucherType: "journal",
+          });
           await tx.voucher.create({
             data: {
-              voucherNumber: jvNum, type: "journal", date: new Date(),
+              voucherNumber: jvNum,
+              type: "journal",
+              date: new Date(),
               narration: `COGS Delivery - Invoice ${invoice.invoiceNo}`,
-              totalDebit: deliveryCost, totalCredit: deliveryCost,
-              status: "posted", createdBy: "System", approvedBy: "System", approvedAt: new Date(),
+              totalDebit: deliveryCost,
+              totalCredit: deliveryCost,
+              status: "posted",
+              createdBy: "System",
+              approvedBy: "System",
+              approvedAt: new Date(),
+              salesInvoiceId: id,
               VoucherEntry: {
                 create: [
-                  { accountId: cogsAccount.id, accountName: cogsAccount.name, description: `Cost of Delivery - ${invoice.invoiceNo}`, debit: deliveryCost, credit: 0, sortOrder: 0 },
-                  { accountId: inventoryAccount.id, accountName: inventoryAccount.name, description: `Inventory Reduction - ${invoice.invoiceNo}`, debit: 0, credit: deliveryCost, sortOrder: 1 }
-                ]
-              }
-            }
+                  {
+                    accountId: cogsAccount.id,
+                    accountName: cogsAccount.name,
+                    description: `Cost of Delivery - ${invoice.invoiceNo}`,
+                    debit: deliveryCost,
+                    credit: 0,
+                    sortOrder: 0,
+                    salesInvoiceId: id,
+                  },
+                  {
+                    accountId: inventoryAccount.id,
+                    accountName: inventoryAccount.name,
+                    description: `Inventory Reduction - ${invoice.invoiceNo}`,
+                    debit: 0,
+                    credit: deliveryCost,
+                    sortOrder: 1,
+                    salesInvoiceId: id,
+                  },
+                ],
+              },
+            },
           } as any);
-          await tx.account.update({ where: { id: cogsAccount.id }, data: { currentBalance: { increment: deliveryCost } } });
-          await tx.account.update({ where: { id: inventoryAccount.id }, data: { currentBalance: { decrement: deliveryCost } } });
+          await tx.account.update({
+            where: { id: cogsAccount.id },
+            data: { currentBalance: { increment: deliveryCost } },
+          });
+          await tx.account.update({
+            where: { id: inventoryAccount.id },
+            data: { currentBalance: { decrement: deliveryCost } },
+          });
         }
       }
-
     });
 
     const finalInvoice = await prisma.salesInvoice.findUnique({
       where: { id },
-      include: { SalesInvoiceItem: { include: { Part: true } }, DeliveryLog: { include: { DeliveryLogItem: true } } },
+      include: {
+        SalesInvoiceItem: { include: { Part: true } },
+        DeliveryLog: { include: { DeliveryLogItem: true } },
+      },
     });
     res.json(finalInvoice);
   } catch (error: any) {
@@ -2845,7 +3255,10 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
         });
 
         if (accountsReceivableAccount) {
-          const vNum = await getNextNumberForPrefix({ prefix: "RV", voucherType: "receipt" });
+          const vNum = await getNextNumberForPrefix({
+            prefix: "RV",
+            voucherType: "receipt",
+          });
           await prisma.voucher.create({
             data: {
               voucherNumber: vNum,
@@ -2858,6 +3271,7 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
               createdBy: "System",
               approvedBy: "System",
               approvedAt: new Date(),
+              salesInvoiceId: id,
               VoucherEntry: {
                 create: [
                   {
@@ -2867,6 +3281,7 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
                     debit: amount,
                     credit: 0,
                     sortOrder: 0,
+                    salesInvoiceId: id,
                   },
                   {
                     accountId: accountsReceivableAccount.id,
@@ -2875,6 +3290,7 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
                     debit: 0,
                     credit: amount,
                     sortOrder: 1,
+                    salesInvoiceId: id,
                   },
                 ],
               },
@@ -2956,8 +3372,12 @@ router.post(
         return res.status(404).json({ error: "Invoice not found" });
       }
 
-      const hasPending = invoice.SalesInvoiceItem?.some((item) => item.pendingQty > 0);
-      const hasDelivered = invoice.SalesInvoiceItem?.some((item) => item.deliveredQty > 0);
+      const hasPending = invoice.SalesInvoiceItem?.some(
+        (item) => item.pendingQty > 0,
+      );
+      const hasDelivered = invoice.SalesInvoiceItem?.some(
+        (item) => item.deliveredQty > 0,
+      );
 
       let newStatus = "pending";
       if (hasDelivered && hasPending) {
@@ -2982,93 +3402,780 @@ router.post(
   },
 );
 
-// Update invoice status
+// Update invoice status with full business logic
 router.put("/invoices/:id/status", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, approvedBy, deliveredQtys, holdLocations } = req.body;
+    // deliveredQtys: { [invoiceItemId]: number } — for partial delivery
+    // holdLocations: { [invoiceItemId]: [{ rackId, shelfId, quantity }] } — for hold stock movement
 
-    // Validate status
     const validStatuses = [
       "pending",
       "on_hold",
       "approved",
       "partially_delivered",
-      "fully_delivered",
-      "cancelled",
+      "delivered",
     ];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
-        error:
-          "Invalid status. Must be one of: pending, partially_delivered, fully_delivered, cancelled",
+        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
       });
     }
 
     const invoice = await prisma.salesInvoice.findUnique({
       where: { id },
-      include: { StockReservation: true, Receivable: true, SalesInvoiceItem: true },
-    });
-
-    if (!invoice) {
-      return res.status(404).json({ error: "Invoice not found" });
-    }
-
-    // If changing to cancelled, handle stock reservations and receivables
-    if (status === "cancelled" && invoice.status !== "cancelled") {
-      // Release all reservations
-      for (const reservation of invoice.StockReservation) {
-        if (reservation.status === "reserved") {
-          await prisma.stockReservation.update({
-            where: { id: reservation.id },
-            data: {
-              status: "released",
-              releasedAt: new Date(),
-            },
-          });
-        }
-      }
-
-      // Update receivable if exists
-      if (invoice.Receivable) {
-        await prisma.receivable.update({
-          where: { invoiceId: id },
-          data: { status: "cancelled" },
-        });
-
-        // Update customer balance
-        if (invoice.customerId) {
-          await prisma.customer.update({
-            where: { id: invoice.customerId },
-            data: {
-              openingBalance: {
-                decrement: invoice.Receivable.dueAmount,
-              },
-            },
-          });
-        }
-      }
-    }
-
-    // Update invoice status
-    const updatedInvoice = await prisma.salesInvoice.update({
-      where: { id },
-      data: { status },
       include: {
         SalesInvoiceItem: {
           include: {
-            Part: true,
+            InvoiceRackShelf: true,
           },
         },
-        DeliveryLog: {
-          include: {
-            DeliveryLogItem: true,
+        StockReservation: true,
+        Receivable: true,
+      },
+    });
+
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+    const prevStatus = invoice.status;
+
+    // ─── Validate allowed transitions ───────────────────────────────────────
+    // Allow delivery directly from pending if the user skips the explicit 'Approve' step
+    const deliveryStatuses = ["partially_delivered", "delivered"];
+    const preApprovalStatuses = ["pending", "on_hold"];
+
+    if (
+      ["approved"].includes(status) &&
+      deliveryStatuses.includes(prevStatus)
+    ) {
+      return res.status(400).json({
+        error: "Cannot revert an invoice that has already been delivered.",
+      });
+    }
+
+    // ─── → ON_HOLD: move stock to hold (remove from available) ──────────────
+    if (
+      status === "on_hold" &&
+      [
+        "pending",
+        "approved",
+        "partially_delivered",
+        "pending_approval",
+      ].includes(prevStatus)
+    ) {
+      // If was approved/partially_delivered, we must reverse the "out" movements first
+      if (["approved", "partially_delivered"].includes(prevStatus)) {
+        // Reverse OUT movements (restore to PartRackShelf)
+        const outMovements = await prisma.stockMovement.findMany({
+          where: {
+            type: "out",
+            referenceType: "sales_invoice",
+            referenceId: id,
+          } as any,
+        });
+
+        for (const m of outMovements) {
+          const targetPartId = m.partId;
+          const prs = await prisma.partRackShelf.findFirst({
+            where: {
+              partId: targetPartId,
+              storeId: m.storeId || null,
+              rackId: m.rackId || null,
+              shelfId: m.shelfId || null,
+            },
+          });
+          if (prs) {
+            await prisma.partRackShelf.update({
+              where: { id: prs.id },
+              data: { quantity: { increment: m.quantity } },
+            });
+          }
+        }
+
+        await prisma.stockMovement.deleteMany({
+          where: {
+            type: "out",
+            referenceType: "sales_invoice",
+            referenceId: id,
+          } as any,
+        });
+        // Restore reservations to "reserved" from "out"
+        await prisma.stockReservation.updateMany({
+          where: { invoiceId: id, status: "out" },
+          data: { status: "reserved" },
+        });
+      }
+
+      // Create hold movements and deduct from PartRackShelf (all qty goes to hold/out)
+      for (const item of invoice.SalesInvoiceItem) {
+        const itemAny = item as any;
+        const qtyToHold = item.pendingQty || item.orderedQty;
+        if (qtyToHold <= 0) continue;
+
+        const targetPartId = item.partId;
+
+        // Use InvoiceRackShelf entries as the source of locations
+        const rackShelfEntries: {
+          storeId: string | null;
+          rackId: string | null;
+          shelfId: string | null;
+          quantity: number;
+        }[] =
+          itemAny.InvoiceRackShelf && itemAny.InvoiceRackShelf.length > 0
+            ? itemAny.InvoiceRackShelf.map((irs: any) => ({
+                storeId: irs.storeId || null,
+                rackId: irs.rackId || null,
+                shelfId: irs.shelfId || null,
+                quantity: irs.quantity || qtyToHold,
+              }))
+            : [
+                {
+                  storeId: null,
+                  rackId: null,
+                  shelfId: null,
+                  quantity: qtyToHold,
+                },
+              ];
+
+        for (const loc of rackShelfEntries) {
+          if (loc.quantity <= 0) continue;
+
+          // Decrement existing PartRackShelf entry (remove from available stock)
+          const existingPrs = await prisma.partRackShelf.findFirst({
+            where: {
+              partId: targetPartId,
+              storeId: loc.storeId,
+              rackId: loc.rackId,
+              shelfId: loc.shelfId,
+            },
+          });
+
+          if (existingPrs) {
+            await prisma.partRackShelf.update({
+              where: { id: existingPrs.id },
+              data: { quantity: { decrement: loc.quantity } },
+            });
+          } else {
+            await prisma.partRackShelf.create({
+              data: {
+                partId: targetPartId,
+                storeId: loc.storeId,
+                rackId: loc.rackId,
+                shelfId: loc.shelfId,
+                quantity: -loc.quantity,
+              },
+            });
+          }
+
+          // Create stock-out movement (shows as 'out' in stock movements)
+          await prisma.stockMovement.create({
+            data: {
+              partId: item.partId,
+              storeId: loc.storeId,
+              rackId: loc.rackId,
+              shelfId: loc.shelfId,
+              type: "out",
+              quantity: loc.quantity,
+              referenceType: "sales_invoice",
+              referenceId: id,
+              notes: `Invoice ${invoice.invoiceNo} placed on hold`,
+            } as any,
+          });
+        }
+      }
+    }
+
+    // ─── ON_HOLD → PENDING: restore hold stock back to available ─────────────
+    if (status === "pending" && prevStatus === "on_hold") {
+      // Find hold/out movements to restore balance
+      const holdMovements = await prisma.stockMovement.findMany({
+        where: {
+          type: "out",
+          referenceType: "sales_invoice",
+          referenceId: id,
+          notes: { contains: "placed on hold" },
+        } as any,
+      });
+
+      for (const m of holdMovements) {
+        const targetPartId = m.partId;
+        const prs = await prisma.partRackShelf.findFirst({
+          where: {
+            partId: targetPartId,
+            storeId: m.storeId || null,
+            rackId: m.rackId || null,
+            shelfId: m.shelfId || null,
           },
-        },
+        });
+        if (prs) {
+          await prisma.partRackShelf.update({
+            where: { id: prs.id },
+            data: { quantity: { increment: m.quantity } },
+          });
+        }
+      }
+
+      // Delete hold/out stock movements for this invoice
+      await prisma.stockMovement.deleteMany({
+        where: {
+          type: "out",
+          referenceType: "sales_invoice",
+          referenceId: id,
+          notes: { contains: "placed on hold" },
+        } as any,
+      });
+      // Clear hold fields
+      await prisma.salesInvoice.update({
+        where: { id },
+        data: { holdReason: null, holdSince: null },
+      });
+    }
+
+    // ─── → APPROVED or DELIVERY: stock out + avgCost + voucher ──────────────
+    // If we are moving to approved OR any delivery status, and we haven't 'approved' (stocked out) yet
+    const targetStatusIsPostApproval = [
+      "approved",
+      "partially_delivered",
+      "delivered",
+    ].includes(status);
+    const prevStatusIsPreApproval = preApprovalStatuses.includes(prevStatus);
+
+    if (targetStatusIsPostApproval && prevStatusIsPreApproval) {
+      // Check stock is not already reduced for this invoice
+      const existingOut = await prisma.stockMovement.findFirst({
+        where: { referenceType: "sales_invoice", referenceId: id, type: "out" },
+      });
+
+      if (!existingOut) {
+        // We'll process all items in a single transaction-like sequence (though for loop is fine if each is awaited)
+        for (const item of invoice.SalesInvoiceItem) {
+          // 1. Mark reservations as "out"
+          await prisma.stockReservation.updateMany({
+            where: { invoiceId: id, partId: item.partId, status: "reserved" },
+            data: { status: "out" },
+          });
+
+          // 2. Identify where stock should come from (Locations)
+          // Priority: 1. InvoiceRackShelf, 2. StockReservation, 3. Item Fallback
+          let locations: {
+            storeId: string | null;
+            rackId: string | null;
+            shelfId: string | null;
+            quantity: number;
+          }[] = [];
+
+          const itemAny = item as any;
+          if (itemAny.InvoiceRackShelf && itemAny.InvoiceRackShelf.length > 0) {
+            locations = itemAny.InvoiceRackShelf.map((irs: any) => ({
+              storeId: irs.storeId || null,
+              rackId: irs.rackId || null,
+              shelfId: irs.shelfId || null,
+              quantity: irs.quantity || item.orderedQty,
+            }));
+          } else {
+            // Check reservations for this specific part/invoice
+            const reservations = await prisma.stockReservation.findMany({
+              where: { invoiceId: id, partId: item.partId },
+            });
+            if (reservations.length > 0) {
+              locations = reservations.map((r) => ({
+                storeId: r.storeId || null,
+                rackId: r.rackId || null,
+                shelfId: r.shelfId || null,
+                quantity: r.quantity,
+              }));
+            } else {
+              // Fallback to unlocated
+              locations = [
+                {
+                  storeId: null,
+                  rackId: null,
+                  shelfId: null,
+                  quantity: item.orderedQty,
+                },
+              ];
+            }
+          }
+
+          // 3. Deduct from PartRackShelf and create StockMovements
+          for (const loc of locations) {
+            if (loc.quantity <= 0) continue;
+
+            const targetPartId = item.partId;
+
+            // Atomic update or create
+            const prs = await prisma.partRackShelf.findFirst({
+              where: {
+                partId: targetPartId,
+                storeId: loc.storeId,
+                rackId: loc.rackId,
+                shelfId: loc.shelfId,
+              },
+            });
+
+            if (prs) {
+              await prisma.partRackShelf.update({
+                where: { id: prs.id },
+                data: { quantity: { decrement: loc.quantity } },
+              });
+            } else {
+              await prisma.partRackShelf.create({
+                data: {
+                  partId: targetPartId,
+                  storeId: loc.storeId,
+                  rackId: loc.rackId,
+                  shelfId: loc.shelfId,
+                  quantity: -loc.quantity,
+                },
+              });
+            }
+
+            // Create stock-out movement
+            await prisma.stockMovement.create({
+              data: {
+                partId: item.partId,
+                storeId: loc.storeId,
+                rackId: loc.rackId,
+                shelfId: loc.shelfId,
+                type: "out",
+                quantity: loc.quantity,
+                referenceType: "sales_invoice",
+                referenceId: id,
+                notes: `Sales Invoice ${invoice.invoiceNo} - Approved by ${approvedBy || "Manager"} (from ${prevStatus})`,
+              } as any,
+            });
+          }
+        }
+      } else if (existingOut && status === "approved") {
+        // Already has 'out' movement (likely from on_hold)
+        // Just update the notes to reflect approval
+        await prisma.stockMovement.updateMany({
+          where: {
+            referenceType: "sales_invoice",
+            referenceId: id,
+            type: "out",
+          } as any,
+          data: {
+            notes: `Sales Invoice ${invoice.invoiceNo} - Approved from Hold by ${approvedBy || "Manager"}`,
+          },
+        });
+      }
+
+      for (const item of invoice.SalesInvoiceItem) {
+        // Save avgCost on each item now that stock is confirmed out
+        const part = await prisma.part.findUnique({
+          where: { id: item.partId },
+          select: { avgCost: true, cost: true },
+        });
+        await prisma.salesInvoiceItem.update({
+          where: { id: item.id },
+          data: { avgCost: part?.avgCost || part?.cost || 0 },
+        });
+
+        // Also delete any hold movements if coming from on_hold path
+        if (prevStatus === "on_hold") {
+          await prisma.stockMovement.deleteMany({
+            where: {
+              type: "hold",
+              referenceType: "sales_invoice",
+              referenceId: id,
+            } as any,
+          });
+        }
+      }
+
+      // Create vouchers on Approval — wrap in try/catch so approval still succeeds
+      try {
+        // ── Helper: find account by name keywords ──────────────────────────
+        const findAccount = async (
+          keywords: string[],
+          fallbackCodes: string[] = [],
+        ) => {
+          let acc = await prisma.account.findFirst({
+            where: {
+              status: "Active",
+              OR: keywords.map((k) => ({ name: { contains: k } })),
+            },
+            include: { Subgroup: { include: { MainGroup: true } } },
+          });
+          if (!acc && fallbackCodes.length) {
+            acc = await prisma.account.findFirst({
+              where: {
+                status: "Active",
+                OR: fallbackCodes.map((c) => ({ code: { contains: c } })),
+              },
+              include: { Subgroup: { include: { MainGroup: true } } },
+            });
+          }
+          return acc;
+        };
+
+        // ── Useful accounts ────────────────────────────────────────────────
+        const inventoryAccount = await findAccount(
+          ["Inventory", "Stock"],
+          ["101", "103"],
+        );
+        const costAccount = await findAccount(
+          ["Cost of Goods", "Cost of Inventory", "COGS", "Cost Inventory"],
+          ["501", "701"],
+        );
+        const goodsRevenueAccount = await findAccount(
+          ["Goods Sold", "Sales Revenue", "Revenue", "Sales"],
+          ["401", "701"],
+        );
+        const discountAccount = await findAccount(
+          ["Goods Sold Discount", "Sales Discount", "Discount"],
+          ["502", "702"],
+        );
+
+        // Customer account (for registered customers)
+        let customerAccount: any = null;
+        if (invoice.customerId) {
+          customerAccount = await prisma.account.findFirst({
+            where: {
+              status: "Active",
+              OR: [
+                { customerId: invoice.customerId },
+                { name: invoice.customerName || "" },
+              ],
+            },
+            include: { Subgroup: { include: { MainGroup: true } } },
+          });
+        }
+        // Fallback: generic Receivable account
+        if (!customerAccount) {
+          customerAccount = await findAccount(
+            ["Accounts Receivable", "Receivable"],
+            ["104", "201"],
+          );
+        }
+
+        // Payment account (bank or cash selected at time of invoice)
+        // SalesInvoice.accountId stores the selected bank/cash account
+        const paymentAccountId = invoice.accountId;
+        const paymentAccount = paymentAccountId
+          ? await prisma.account.findUnique({
+              where: { id: paymentAccountId },
+              include: { Subgroup: { include: { MainGroup: true } } },
+            })
+          : null;
+
+        // ── Calculate totals ───────────────────────────────────────────────
+        let totalAvgCost = 0;
+        for (const item of invoice.SalesInvoiceItem) {
+          const part = await prisma.part.findUnique({
+            where: { id: item.partId },
+            select: { avgCost: true, cost: true },
+          });
+          const avgCost = part?.avgCost || part?.cost || 0;
+          totalAvgCost += avgCost * item.orderedQty;
+          // Save avgCost to item
+          await prisma.salesInvoiceItem.update({
+            where: { id: item.id },
+            data: { avgCost },
+          });
+        }
+
+        const totalRevenue =
+          invoice.grandTotal + (invoice.overallDiscount || 0); // before discount
+        const discountAmount = invoice.overallDiscount || 0;
+        const grandTotal = invoice.grandTotal;
+        const paidAmount = invoice.paidAmount || 0;
+        const isWalking = invoice.customerType === "walking";
+
+        // ── JV Voucher ────────────────────────────────────────────────────
+        const jvNo = await getNextNumberForPrefix({
+          prefix: "JV",
+          voucherType: "journal",
+        });
+        const jvEntries: any[] = [];
+
+        if (inventoryAccount && totalAvgCost > 0) {
+          // Inventory CR (cost going out)
+          jvEntries.push({
+            accountId: inventoryAccount.id,
+            accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+            description: `INV: ${invoice.invoiceNo} - Inventory Out (${invoice.customerName})`,
+            debit: 0,
+            credit: totalAvgCost,
+            sortOrder: 0,
+          });
+        }
+        if (costAccount && totalAvgCost > 0) {
+          // Cost of Inventory DR
+          jvEntries.push({
+            accountId: costAccount.id,
+            accountName: `${costAccount.code}-${costAccount.name}`,
+            description: `INV: ${invoice.invoiceNo} - Cost of Goods Sold (${invoice.customerName})`,
+            debit: totalAvgCost,
+            credit: 0,
+            sortOrder: 1,
+          });
+        }
+
+        if (!isWalking) {
+          // ── Registered Customer ──────────────────────────────────────────
+          if (goodsRevenueAccount) {
+            // Goods Revenue CR (subtotal before discount)
+            jvEntries.push({
+              accountId: goodsRevenueAccount.id,
+              accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
+              description: `INV: ${invoice.invoiceNo} - Sales Revenue (${invoice.customerName})`,
+              debit: 0,
+              credit: totalRevenue,
+              sortOrder: 2,
+            });
+          }
+          if (customerAccount) {
+            // Customer Account DR (full invoice total)
+            jvEntries.push({
+              accountId: customerAccount.id,
+              accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+              description: `INV: ${invoice.invoiceNo} - Customer Receivable (${invoice.customerName})`,
+              debit: grandTotal,
+              credit: 0,
+              sortOrder: 3,
+            });
+          }
+          if (discountAmount > 0 && discountAccount) {
+            // Discount DR
+            jvEntries.push({
+              accountId: discountAccount.id,
+              accountName: `${discountAccount.code}-${discountAccount.name}`,
+              description: `INV: ${invoice.invoiceNo} - Sales Discount (${invoice.customerName})`,
+              debit: discountAmount,
+              credit: 0,
+              sortOrder: 4,
+            });
+            // Customer Account CR (discount reduces receivable)
+            if (customerAccount) {
+              jvEntries.push({
+                accountId: customerAccount.id,
+                accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+                description: `INV: ${invoice.invoiceNo} - Discount on Receivable (${invoice.customerName})`,
+                debit: 0,
+                credit: discountAmount,
+                sortOrder: 5,
+              });
+            }
+          }
+        }
+
+        // Post JV if balanced
+        const jvDebit = jvEntries.reduce((s, e) => s + e.debit, 0);
+        const jvCredit = jvEntries.reduce((s, e) => s + e.credit, 0);
+        if (jvEntries.length > 0 && Math.abs(jvDebit - jvCredit) < 0.01) {
+          await prisma.voucher.create({
+            data: {
+              id: `v_${Date.now()}_jv`,
+              voucherNumber: jvNo,
+              type: "journal",
+              date: new Date(),
+              narration: `Sales Invoice ${invoice.invoiceNo} — Approved (${invoice.customerName})`,
+              totalDebit: jvDebit,
+              totalCredit: jvCredit,
+              status: "posted",
+              isSystemGenerated: true,
+              salesInvoiceId: id,
+              VoucherEntry: {
+                create: jvEntries.map((e) => ({ ...e, salesInvoiceId: id })),
+              },
+            } as any,
+          });
+          // Update account balances
+          for (const e of jvEntries) {
+            const acc = await prisma.account.findUnique({
+              where: { id: e.accountId },
+              include: { Subgroup: { include: { MainGroup: true } } },
+            });
+            if (acc) {
+              const nature =
+                (acc as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
+              const isDR = ["asset", "expense", "cost"].includes(nature);
+              await prisma.account.update({
+                where: { id: e.accountId },
+                data: {
+                  currentBalance: {
+                    increment: isDR ? e.debit - e.credit : e.credit - e.debit,
+                  },
+                },
+              });
+            }
+          }
+        }
+
+        // ── RV Voucher — for walking customer always, for registered only if paidAmount > 0
+        const createRV = isWalking || (paidAmount > 0 && paymentAccount);
+        if (createRV) {
+          const rvNo = await getNextNumberForPrefix({
+            prefix: "RV",
+            voucherType: "receipt",
+          });
+          const rvEntries: any[] = [];
+
+          if (isWalking) {
+            // Walking customer RV:
+            // Goods Revenue CR (subtotal), Discount DR (if any), Cash/Bank DR (received)
+            if (goodsRevenueAccount) {
+              rvEntries.push({
+                accountId: goodsRevenueAccount.id,
+                accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
+                description: `INV: ${invoice.invoiceNo} - Sales Revenue`,
+                debit: 0,
+                credit: totalRevenue,
+                sortOrder: 0,
+              });
+            }
+            if (discountAmount > 0 && discountAccount) {
+              rvEntries.push({
+                accountId: discountAccount.id,
+                accountName: `${discountAccount.code}-${discountAccount.name}`,
+                description: `INV: ${invoice.invoiceNo} - Discount`,
+                debit: discountAmount,
+                credit: 0,
+                sortOrder: 1,
+              });
+            }
+            if (paymentAccount) {
+              // Cash/Bank DR = grandTotal (so it always balances with revenue - discount)
+              rvEntries.push({
+                accountId: paymentAccount.id,
+                accountName: `${(paymentAccount as any).code}-${paymentAccount.name}`,
+                description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
+                debit: grandTotal,
+                credit: 0,
+                sortOrder: 2,
+              });
+            } else {
+              // No payment account found — skip RV to avoid imbalance
+              console.warn(
+                `[Voucher] Walking customer RV skipped: no payment account for invoice ${invoice.invoiceNo}`,
+              );
+            }
+          } else {
+            // Registered customer RV: Customer CR, Bank/Cash DR
+            if (customerAccount) {
+              rvEntries.push({
+                accountId: customerAccount.id,
+                accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+                description: `INV: ${invoice.invoiceNo} - Payment from ${invoice.customerName}`,
+                debit: 0,
+                credit: paidAmount,
+                sortOrder: 0,
+              });
+            }
+            if (paymentAccount) {
+              rvEntries.push({
+                accountId: paymentAccount.id,
+                accountName: `${paymentAccount.code}-${paymentAccount.name}`,
+                description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
+                debit: paidAmount,
+                credit: 0,
+                sortOrder: 1,
+              });
+            }
+          }
+
+          const rvDebit = rvEntries.reduce((s, e) => s + e.debit, 0);
+          const rvCredit = rvEntries.reduce((s, e) => s + e.credit, 0);
+          if (rvEntries.length > 0 && Math.abs(rvDebit - rvCredit) < 0.01) {
+            await prisma.voucher.create({
+              data: {
+                id: `v_${Date.now()}_rv`,
+                voucherNumber: rvNo,
+                type: "receipt",
+                date: new Date(),
+                narration: `Payment - Invoice ${invoice.invoiceNo} (${invoice.customerName})`,
+                totalDebit: rvDebit,
+                totalCredit: rvCredit,
+                status: "posted",
+                isSystemGenerated: true,
+                salesInvoiceId: id,
+                VoucherEntry: {
+                  create: rvEntries.map((e) => ({ ...e, salesInvoiceId: id })),
+                },
+              } as any,
+            });
+            // Update account balances for RV
+            for (const e of rvEntries) {
+              const acc = await prisma.account.findUnique({
+                where: { id: e.accountId },
+                include: { Subgroup: { include: { MainGroup: true } } },
+              });
+              if (acc) {
+                const nature =
+                  (acc as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
+                const isDR = ["asset", "expense", "cost"].includes(nature);
+                await prisma.account.update({
+                  where: { id: e.accountId },
+                  data: {
+                    currentBalance: {
+                      increment: isDR ? e.debit - e.credit : e.credit - e.debit,
+                    },
+                  },
+                });
+              }
+            }
+          }
+        }
+      } catch (vErr: any) {
+        console.error("Voucher creation failed (non-fatal):", vErr.message);
+      }
+    }
+
+    // ─── → PARTIALLY_DELIVERED: record specific delivered quantities ─────────
+    if (status === "partially_delivered") {
+      if (!deliveredQtys || typeof deliveredQtys !== "object") {
+        return res.status(400).json({
+          error:
+            "deliveredQtys is required for partial delivery. Provide { [itemId]: qty }.",
+        });
+      }
+      for (const item of invoice.SalesInvoiceItem) {
+        const qty = Number(deliveredQtys[item.id] || 0);
+        if (qty < 0 || qty > item.orderedQty) continue;
+        await prisma.salesInvoiceItem.update({
+          where: { id: item.id },
+          data: {
+            deliveredQty: { increment: qty },
+            pendingQty: { decrement: qty },
+          },
+        });
+      }
+    }
+
+    // ─── → DELIVERED: mark all quantity as delivered ─────────────────────────
+    if (status === "delivered") {
+      for (const item of invoice.SalesInvoiceItem) {
+        await prisma.salesInvoiceItem.update({
+          where: { id: item.id },
+          data: {
+            deliveredQty: item.orderedQty,
+            pendingQty: 0,
+          },
+        });
+      }
+      // Release all stock reservations
+      await prisma.stockReservation.updateMany({
+        where: { invoiceId: id },
+        data: { status: "released", releasedAt: new Date() },
+      });
+    }
+
+    // ─── Save status ─────────────────────────────────────────────────────────
+    const updatedInvoice = await prisma.salesInvoice.update({
+      where: { id },
+      data: { status, updatedAt: new Date() },
+      include: {
+        SalesInvoiceItem: { include: { Part: true } },
+        DeliveryLog: { include: { DeliveryLogItem: true } },
       },
     });
 
     res.json(updatedInvoice);
   } catch (error: any) {
+    console.error("Status update error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -3099,45 +4206,46 @@ router.post("/invoices/:id/cancel", async (req: Request, res: Response) => {
 });
 
 // Soft delete invoice with stock reversal
-router.delete("/invoices/:id/soft-delete", async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
+router.delete(
+  "/invoices/:id/soft-delete",
+  async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
 
-    // First, just get the basic invoice to check if it exists
-    const invoice = await prisma.salesInvoice.findUnique({
-      where: { id }
-    });
-
-    if (!invoice) {
-      return res.status(404).json({ error: "Invoice not found" });
-    }
-
-    // For now, let's skip the deletedAt check and proceed with the soft delete
-    // We'll implement a basic version that just marks as cancelled
-
-    // Start transaction for stock reversal
-    await prisma.$transaction(async (tx) => {
-
-      // Soft delete the invoice - mark as cancelled
-      await tx.salesInvoice.update({
+      // First, just get the basic invoice to check if it exists
+      const invoice = await prisma.salesInvoice.findUnique({
         where: { id },
-        data: {
-          status: "cancelled",
-          updatedAt: new Date()
-        }
       });
-    });
 
-    res.json({
-      success: true,
-      message: "Invoice soft deleted successfully (basic version)"
-    });
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
 
-  } catch (error: any) {
-    console.error("Soft delete error:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
+      // For now, let's skip the deletedAt check and proceed with the soft delete
+      // We'll implement a basic version that just marks as cancelled
+
+      // Start transaction for stock reversal
+      await prisma.$transaction(async (tx) => {
+        // Soft delete the invoice - mark as cancelled
+        await tx.salesInvoice.update({
+          where: { id },
+          data: {
+            status: "cancelled",
+            updatedAt: new Date(),
+          },
+        });
+      });
+
+      res.json({
+        success: true,
+        message: "Invoice soft deleted successfully (basic version)",
+      });
+    } catch (error: any) {
+      console.error("Soft delete error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
 
 // Permanently delete a cancelled invoice
 router.delete("/invoices/:id", async (req: Request, res: Response) => {

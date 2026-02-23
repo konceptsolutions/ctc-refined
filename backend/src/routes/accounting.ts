@@ -389,8 +389,8 @@ router.get("/accounts", async (req: Request, res: Response) => {
       include: {
         Subgroup: {
           include: {
-            MainGroup: true
-          }
+            MainGroup: true,
+          },
         },
       },
       orderBy: { code: "asc" },
@@ -562,13 +562,17 @@ router.post("/journal-entries", async (req: Request, res: Response) => {
     const voucherNumber = `JV-${new Date().getFullYear()}-${String(count + 1).padStart(3, "0")}`;
 
     // Fetch account names for the voucher entries
-    const linesWithNames = await Promise.all(lines.map(async (line: any) => {
-      const account = await prisma.account.findUnique({ where: { id: line.accountId } });
-      return {
-        ...line,
-        accountName: account ? account.name : "Unknown Account"
-      };
-    }));
+    const linesWithNames = await Promise.all(
+      lines.map(async (line: any) => {
+        const account = await prisma.account.findUnique({
+          where: { id: line.accountId },
+        });
+        return {
+          ...line,
+          accountName: account ? account.name : "Unknown Account",
+        };
+      }),
+    );
 
     const entry = await prisma.voucher.create({
       data: {
@@ -776,8 +780,7 @@ router.get("/general-journal", async (req: Request, res: Response) => {
             if (!voucher.voucherNumber.toLowerCase().includes(searchStr))
               return;
           } else if (search_by === "account") {
-            if (!accountName.toLowerCase().includes(searchStr))
-              return;
+            if (!accountName.toLowerCase().includes(searchStr)) return;
           } else if (search_by === "description") {
             if (!description.toLowerCase().includes(searchStr)) return;
           } else {
@@ -895,7 +898,8 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
           date: entry.Voucher.date,
           dateStr: entry.Voucher.date.toISOString().split("T")[0],
           journalNo: entry.Voucher.voucherNumber,
-          reference: entry.Voucher.chequeNumber || entry.Voucher.narration || "",
+          reference:
+            entry.Voucher.chequeNumber || entry.Voucher.narration || "",
           description: entry.description || entry.Voucher.narration || "",
           debit: entry.debit,
           credit: entry.credit,
@@ -996,8 +1000,7 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
       const accountType = account.Subgroup.MainGroup.type;
 
       const totalDebit =
-        account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) ||
-        0;
+        account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) || 0;
       const totalCredit =
         account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) ||
         0;
@@ -1229,7 +1232,7 @@ router.get("/income-statement", async (req: Request, res: Response) => {
         revenue: revenueCategories,
         cost: costCategories,
         expenses: expenseCategories,
-      }
+      },
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1307,11 +1310,34 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
     let asOfDate: Date;
     if (dateParam.includes("/")) {
       const parts = dateParam.split("/");
-      const fullYear = parseInt(parts[2], 10) < 100 ? 2000 + parseInt(parts[2], 10) : parseInt(parts[2], 10);
-      asOfDate = new Date(Date.UTC(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10), 23, 59, 59, 999));
+      const fullYear =
+        parseInt(parts[2], 10) < 100
+          ? 2000 + parseInt(parts[2], 10)
+          : parseInt(parts[2], 10);
+      asOfDate = new Date(
+        Date.UTC(
+          fullYear,
+          parseInt(parts[1], 10) - 1,
+          parseInt(parts[0], 10),
+          23,
+          59,
+          59,
+          999,
+        ),
+      );
     } else {
       const parts = dateParam.split("-");
-      asOfDate = new Date(Date.UTC(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 23, 59, 59, 999));
+      asOfDate = new Date(
+        Date.UTC(
+          parseInt(parts[0], 10),
+          parseInt(parts[1], 10) - 1,
+          parseInt(parts[2], 10),
+          23,
+          59,
+          59,
+          999,
+        ),
+      );
     }
 
     const commonInclude = {
@@ -1345,9 +1371,16 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
     const assets = assetMainGroups.map((mg) => {
       const subgroups = mg.Subgroup.map((sg) => {
         const accounts = sg.Account.map((acc) => {
-          const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-          const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-          const balance = calculateAccountBalance(acc.openingBalance, debit, credit, "Asset");
+          const debit =
+            acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+          const credit =
+            acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+          const balance = calculateAccountBalance(
+            acc.openingBalance,
+            debit,
+            credit,
+            "Asset",
+          );
 
           return {
             id: acc.id,
@@ -1393,9 +1426,16 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
     const liabilities = liabilityMainGroups.map((mg) => {
       const subgroups = mg.Subgroup.map((sg) => {
         const accounts = sg.Account.map((acc) => {
-          const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-          const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-          const balance = calculateAccountBalance(acc.openingBalance, debit, credit, "Liability");
+          const debit =
+            acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+          const credit =
+            acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+          const balance = calculateAccountBalance(
+            acc.openingBalance,
+            debit,
+            credit,
+            "Liability",
+          );
 
           return {
             id: acc.id,
@@ -1441,9 +1481,16 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
     const capital = capitalMainGroups.map((mg) => {
       const subgroups = mg.Subgroup.map((sg) => {
         const accounts = sg.Account.map((acc) => {
-          const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-          const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-          const balance = calculateAccountBalance(acc.openingBalance, debit, credit, "Equity");
+          const debit =
+            acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+          const credit =
+            acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+          const balance = calculateAccountBalance(
+            acc.openingBalance,
+            debit,
+            credit,
+            "Equity",
+          );
 
           return {
             id: acc.id,
@@ -1478,7 +1525,12 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
           },
         },
       },
-      include: commonInclude,
+      include: {
+        ...commonInclude,
+        Subgroup: {
+          include: { MainGroup: true },
+        },
+      },
     });
 
     let revenueSum = 0;
@@ -1486,16 +1538,32 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
     let costSum = 0;
 
     incomeStatementAccounts.forEach((acc) => {
-      const type = acc.Subgroup.MainGroup.type.toLowerCase();
+      const type = (acc.Subgroup?.MainGroup?.type ?? "").toLowerCase();
       const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-      const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-      
+      const credit =
+        acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+
       if (type === "revenue") {
-        revenueSum += calculateAccountBalance(acc.openingBalance, debit, credit, "Revenue");
+        revenueSum += calculateAccountBalance(
+          acc.openingBalance,
+          debit,
+          credit,
+          "Revenue",
+        );
       } else if (type === "expense") {
-        expenseSum += calculateAccountBalance(acc.openingBalance, debit, credit, "Expense");
+        expenseSum += calculateAccountBalance(
+          acc.openingBalance,
+          debit,
+          credit,
+          "Expense",
+        );
       } else if (type === "cost") {
-        costSum += calculateAccountBalance(acc.openingBalance, debit, credit, "Cost");
+        costSum += calculateAccountBalance(
+          acc.openingBalance,
+          debit,
+          credit,
+          "Cost",
+        );
       }
     });
 

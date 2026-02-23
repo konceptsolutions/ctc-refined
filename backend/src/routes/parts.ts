@@ -22,7 +22,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
       search,
       part_no, // Filter by exact part_no (used for family matching)
       page = "1",
-      limit = "100"
+      limit = "100",
     } = req.query;
 
     const pageNum = parseInt(page as string) || 1;
@@ -49,7 +49,8 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
       params.push((part_no as string).trim());
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const sql = `
       SELECT 
@@ -97,8 +98,8 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
         price_a: p.price_a,
         stock: parseInt(p.stock) || 0,
         reserved_stock: parseInt(p.reserved_stock) || 0,
-        updated_at: p.updated_at
-      }))
+        updated_at: p.updated_at,
+      })),
     });
   } catch (error: any) {
     console.error("Error in part-entry-list API:", error.message);
@@ -150,7 +151,7 @@ router.get("/", async (req: Request, res: Response) => {
       const searchStr = (search as string).trim();
       const searchPattern = `%${searchStr}%`;
 
-      if (update_mode === 'group') {
+      if (update_mode === "group") {
         // Expand search to include all "family items" (parts sharing the same masterPartId)
         conditions.push(`(
           p."partNo" ILIKE $${paramIdx} OR 
@@ -254,7 +255,9 @@ router.get("/", async (req: Request, res: Response) => {
         app."name" as application_name,
         COALESCE(st.stock, 0) as current_stock,
         COALESCE(st.reserved, 0) as reserved_stock,
-        lac.cost as latest_adj_cost
+        lac.cost as latest_adj_cost,
+        COALESCE(loc.locations, '[]'::jsonb) as locations,
+        (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock
         ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
       FROM "Part" p
       LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
@@ -276,6 +279,26 @@ router.get("/", async (req: Request, res: Response) => {
           WHERE a.status = 'approved' AND a."deletedAt" IS NULL
           ORDER BY ai."partId", a.date DESC, a."createdAt" DESC, ai."createdAt" DESC
       ) lac ON p.id = lac."partId"
+      LEFT JOIN (
+          SELECT p_inner."partNo",
+            jsonb_agg(jsonb_build_object(
+              'id', prs.id,
+              'storeId', prs."storeId",
+              'storeName', s_loc.name,
+              'rackId', prs."rackId",
+              'rackCode', r_loc."codeNo",
+              'shelfId', prs."shelfId",
+              'shelfNo', sh_loc."shelfNo",
+              'quantity', prs.quantity
+            )) as locations,
+            SUM(prs.quantity) as assigned_stock
+          FROM "PartRackShelf" prs
+          JOIN "Part" p_inner ON prs."partId" = p_inner.id
+          LEFT JOIN "Store" s_loc ON prs."storeId" = s_loc.id
+          LEFT JOIN "Rack" r_loc ON prs."rackId" = r_loc.id
+          LEFT JOIN "Shelf" sh_loc ON prs."shelfId" = sh_loc.id
+          GROUP BY p_inner."partNo"
+      ) loc ON p."partNo" = loc."partNo"
       ${whereClause}
       ORDER BY p."updatedAt" DESC
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}
@@ -319,7 +342,8 @@ router.get("/", async (req: Request, res: Response) => {
         uom: part.uom,
         qty: parseInt(part.current_stock || part.currentstock) || 0,
         stock: parseInt(part.current_stock || part.currentstock) || 0,
-        reserved_stock: parseInt(part.reserved_stock || part.reservedstock) || 0,
+        reserved_stock:
+          parseInt(part.reserved_stock || part.reservedstock) || 0,
         cost: part.cost,
         // Fallback: Use latest approved adjustment cost if available in history, otherwise show 0 if no transactions exist
         purchasePrice: rawPurchasePrice || latestAdjCost || 0,
@@ -329,9 +353,11 @@ router.get("/", async (req: Request, res: Response) => {
         price_b: part.priceB || part.priceb || null,
         price_m: part.priceM || part.pricem || null,
         // Only include images for small result sets
-        image_p1: skipImages ? null : (part.imageP1 || part.imagep1),
-        image_p2: skipImages ? null : (part.imageP2 || part.imagep2),
+        image_p1: skipImages ? null : part.imageP1 || part.imagep1,
+        image_p2: skipImages ? null : part.imageP2 || part.imagep2,
         status: part.status,
+        locations: part.locations || [],
+        unlocated_stock: Math.max(0, parseInt(part.unlocated_stock) || 0),
         created_at: part.createdAt || part.createdat,
         updated_at: part.updatedAt || part.updatedat,
       };
@@ -363,7 +389,7 @@ router.get("/details-search", async (req: Request, res: Response) => {
       model,
       update_mode,
       page = "1",
-      limit = "100"
+      limit = "100",
     } = req.query;
 
     const pageNum = parseInt(page as string) || 1;
@@ -378,7 +404,7 @@ router.get("/details-search", async (req: Request, res: Response) => {
       const searchStr = (search as string).trim();
       const searchPattern = `%${searchStr}%`;
 
-      if (update_mode === 'group') {
+      if (update_mode === "group") {
         // Expand search to include all "family items" (parts sharing the same masterPartId)
         conditions.push(`(
           p."partNo" ILIKE $${paramIdx} OR 
@@ -427,7 +453,8 @@ router.get("/details-search", async (req: Request, res: Response) => {
       params.push(`%${(model as string).trim()}%`);
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const sql = `
       SELECT 
@@ -439,7 +466,8 @@ router.get("/details-search", async (req: Request, res: Response) => {
         sc."name" as subcategory_name,
         COALESCE(st.stock, 0) as stock,
         COALESCE(sr.reserved, 0) as reserved_stock,
-        ph."createdAt" as price_rev_date
+        ph."createdAt" as price_rev_date,
+        loc.stores, loc.racks, loc.shelves
       FROM "Part" p
       LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
       LEFT JOIN "Brand" b ON p."brandId" = b.id
@@ -461,6 +489,18 @@ router.get("/details-search", async (req: Request, res: Response) => {
           FROM "PriceHistory"
           ORDER BY "partId", "createdAt" DESC
       ) ph ON p.id = ph."partId"
+      LEFT JOIN (
+          SELECT p_inner."partNo",
+            string_agg(DISTINCT s_loc.name, ', ') as stores,
+            string_agg(DISTINCT r_loc."codeNo", ', ') as racks,
+            string_agg(DISTINCT sh_loc."shelfNo", ', ') as shelves
+          FROM "PartRackShelf" prs
+          JOIN "Part" p_inner ON prs."partId" = p_inner.id
+          LEFT JOIN "Store" s_loc ON prs."storeId" = s_loc.id
+          LEFT JOIN "Rack" r_loc ON prs."rackId" = r_loc.id
+          LEFT JOIN "Shelf" sh_loc ON prs."shelfId" = sh_loc.id
+          GROUP BY p_inner."partNo"
+      ) loc ON p."partNo" = loc."partNo"
       ${whereClause}
       ORDER BY p."updatedAt" DESC
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}
@@ -471,7 +511,7 @@ router.get("/details-search", async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: result.rows
+      data: result.rows,
     });
   } catch (error: any) {
     console.error("Error in details-search API:", error.message);
@@ -500,7 +540,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
       brand_name,
       model,
       page = "1",
-      limit = "100"
+      limit = "100",
     } = req.query;
 
     const pageNum = parseInt(page as string) || 1;
@@ -538,7 +578,8 @@ router.get("/price-management", async (req: Request, res: Response) => {
       params.push(`%${(brand_name as string).trim()}%`);
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const sql = `
       SELECT 
@@ -597,12 +638,12 @@ router.get("/price-management", async (req: Request, res: Response) => {
       subcategory: p.subcategory_name || p.subcategoryname,
       last_percentage: p.last_update_value || p.lastupdatevalue,
       last_change_type: p.last_update_type || p.lastupdatetype,
-      last_price_field: p.last_price_field || p.lastpricefield
+      last_price_field: p.last_price_field || p.lastpricefield,
     }));
 
     res.json({
       success: true,
-      data: transformedParts
+      data: transformedParts,
     });
   } catch (error: any) {
     console.error("Error fetching price management parts:", error.message);
@@ -815,7 +856,10 @@ router.get("/:id", async (req: Request, res: Response) => {
       by: ["type"],
       where: {
         partId: id,
-        OR: [{ referenceType: null }, { referenceType: { not: "stock_reservation" } }],
+        OR: [
+          { referenceType: null },
+          { referenceType: { not: "stock_reservation" } },
+        ],
       },
       _sum: { quantity: true },
     });
@@ -840,7 +884,10 @@ router.get("/:id", async (req: Request, res: Response) => {
       application_name: (part as any).Application?.name || null,
       application_id: part.applicationId || null,
       application: (part as any).Application
-        ? { id: (part as any).Application.id, name: (part as any).Application.name }
+        ? {
+            id: (part as any).Application.id,
+            name: (part as any).Application.name,
+          }
         : null,
       description: part.description,
       hs_code: part.hsCode,
@@ -918,7 +965,7 @@ router.post("/", async (req: Request, res: Response) => {
           create: {
             id: randomUUID(),
             masterPartNo: masterPartNoValue,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           },
         });
         masterPartId = masterPart.id;
@@ -938,7 +985,7 @@ router.post("/", async (req: Request, res: Response) => {
         create: {
           id: randomUUID(),
           name: brand_name,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         } as any,
       });
       brandId = brand.id;
@@ -1196,9 +1243,7 @@ router.post("/", async (req: Request, res: Response) => {
     if (models && Array.isArray(models) && models.length > 0) {
       partData.Model = {
         create: models
-          .filter(
-            (m: any) => m && m.name && String(m.name).trim() !== "",
-          )
+          .filter((m: any) => m && m.name && String(m.name).trim() !== "")
           .map((m: any) => ({
             id: randomUUID(),
             name: String(m.name).trim(),
@@ -1338,7 +1383,7 @@ router.put("/:id", async (req: Request, res: Response) => {
           create: { masterPartNo: masterPartNoValue } as any,
         });
         masterPartId = masterPart.id;
-      } catch (error: any) { }
+      } catch (error: any) {}
     } else {
     }
 
@@ -1801,7 +1846,9 @@ router.delete("/:id", async (req: Request, res: Response) => {
         .map((ki: any) => ki.Kit.name || ki.Kit.badge)
         .join(", ");
       const moreKits =
-        (part as any)._count.KitItem > 5 ? ` and ${(part as any)._count.KitItem - 5} more` : "";
+        (part as any)._count.KitItem > 5
+          ? ` and ${(part as any)._count.KitItem - 5} more`
+          : "";
 
       return res.status(400).json({
         error: `Cannot delete part because it is used in ${(part as any)._count.KitItem} kit(s)`,
@@ -1844,14 +1891,14 @@ router.delete("/:id", async (req: Request, res: Response) => {
       deletedRelatedRecords:
         totalRelated > 0
           ? {
-            stockMovements: relatedCounts.stockMovements,
-            purchaseOrderItems: relatedCounts.purchaseOrderItems,
-            directPurchaseOrderItems: relatedCounts.directPurchaseOrderItems,
-            adjustmentItems: relatedCounts.adjustmentItems,
-            transferItems: relatedCounts.transferItems,
-            verificationItems: relatedCounts.verificationItems,
-            priceHistory: relatedCounts.priceHistory,
-          }
+              stockMovements: relatedCounts.stockMovements,
+              purchaseOrderItems: relatedCounts.purchaseOrderItems,
+              directPurchaseOrderItems: relatedCounts.directPurchaseOrderItems,
+              adjustmentItems: relatedCounts.adjustmentItems,
+              transferItems: relatedCounts.transferItems,
+              verificationItems: relatedCounts.verificationItems,
+              priceHistory: relatedCounts.priceHistory,
+            }
           : null,
     });
   } catch (error: any) {

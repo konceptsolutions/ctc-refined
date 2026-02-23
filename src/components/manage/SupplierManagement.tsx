@@ -42,6 +42,11 @@ import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 
+export interface ContactPersonInfo {
+  designation: string;
+  contactNumber: string;
+}
+
 interface Supplier {
   id: string;
   code: string;
@@ -63,6 +68,16 @@ interface Supplier {
   status: "active" | "inactive";
   notes: string | null;
   accountId?: string | null; // Account ID for this supplier
+  accountHead?: string | null;
+  title?: string | null; // Titale
+  shortTitle?: string | null;
+  referenceName?: string | null;
+  area?: string | null;
+  cellNumber?: string | null;
+  contactPersons?: ContactPersonInfo[];
+  gstNumber?: string | null;
+  ntn?: string | null;
+  remarks?: string | null;
 }
 
 const emptySupplier: Omit<Supplier, "id"> = {
@@ -85,6 +100,16 @@ const emptySupplier: Omit<Supplier, "id"> = {
   status: "active",
   notes: "",
   accountId: null,
+  accountHead: "",
+  title: "",
+  shortTitle: "",
+  referenceName: "",
+  area: "",
+  cellNumber: "",
+  contactPersons: [],
+  gstNumber: "",
+  ntn: "",
+  remarks: "",
 };
 
 export const SupplierManagement = () => {
@@ -167,16 +192,43 @@ export const SupplierManagement = () => {
     }
   };
 
-  const handleInputChange = (
-    field: keyof Omit<Supplier, "id">,
-    value: string | number,
-  ) => {
+  const handleInputChange = (field: keyof Omit<Supplier, "id">, value: any) => {
     setFormData((prev) => {
       // If field is companyName, ensure it's not undefined/null if that's passed
       if (field === "companyName" && (value === undefined || value === null)) {
         return { ...prev, [field]: "" };
       }
       return { ...prev, [field]: value };
+    });
+  };
+
+  const handleAddContactPerson = () => {
+    setFormData((prev) => ({
+      ...prev,
+      contactPersons: [
+        ...(prev.contactPersons || []),
+        { designation: "", contactNumber: "" },
+      ],
+    }));
+  };
+
+  const handleUpdateContactPerson = (
+    index: number,
+    f: keyof ContactPersonInfo,
+    v: string,
+  ) => {
+    setFormData((prev) => {
+      const arr = [...(prev.contactPersons || [])];
+      arr[index] = { ...arr[index], [f]: v };
+      return { ...prev, contactPersons: arr };
+    });
+  };
+
+  const handleRemoveContactPerson = (index: number) => {
+    setFormData((prev) => {
+      const arr = [...(prev.contactPersons || [])];
+      arr.splice(index, 1);
+      return { ...prev, contactPersons: arr };
     });
   };
 
@@ -232,6 +284,16 @@ export const SupplierManagement = () => {
           status: formData.status,
           notes: formData.notes || undefined,
           accountId: formData.accountId || undefined, // Pass accountId for voucher creation
+          accountHead: formData.accountHead || undefined,
+          title: formData.title || undefined,
+          shortTitle: formData.shortTitle || undefined,
+          referenceName: formData.referenceName || undefined,
+          area: formData.area || undefined,
+          cellNumber: formData.cellNumber || undefined,
+          contactPersons: formData.contactPersons || [],
+          gstNumber: formData.gstNumber || undefined,
+          ntn: formData.ntn || undefined,
+          remarks: formData.remarks || undefined,
         })) as any;
 
         if (response.error) {
@@ -270,6 +332,16 @@ export const SupplierManagement = () => {
           date: formData.date || undefined,
           status: formData.status,
           notes: formData.notes || undefined,
+          accountHead: formData.accountHead || undefined,
+          title: formData.title || undefined,
+          shortTitle: formData.shortTitle || undefined,
+          referenceName: formData.referenceName || undefined,
+          area: formData.area || undefined,
+          cellNumber: formData.cellNumber || undefined,
+          contactPersons: formData.contactPersons || [],
+          gstNumber: formData.gstNumber || undefined,
+          ntn: formData.ntn || undefined,
+          remarks: formData.remarks || undefined,
         };
 
         // Only include code if it's provided and not empty
@@ -329,6 +401,16 @@ export const SupplierManagement = () => {
       status: supplier.status,
       notes: supplier.notes || "",
       accountId: supplier.accountId || null, // Pass accountId for voucher creation
+      accountHead: supplier.accountHead || "",
+      title: supplier.title || "",
+      shortTitle: supplier.shortTitle || "",
+      referenceName: supplier.referenceName || "",
+      area: supplier.area || "",
+      cellNumber: supplier.cellNumber || "",
+      contactPersons: supplier.contactPersons || [],
+      gstNumber: supplier.gstNumber || "",
+      ntn: supplier.ntn || "",
+      remarks: supplier.remarks || "",
     });
     setEditingId(supplier.id);
     setIsDialogOpen(true);
@@ -589,10 +671,11 @@ export const SupplierManagement = () => {
                                 ? "default"
                                 : "secondary"
                             }
-                            className={`text-xs cursor-pointer transition-colors ${supplier.status === "active"
-                              ? "bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700"
-                              : "bg-muted text-muted-foreground hover:bg-green-100 hover:text-green-700"
-                              }`}
+                            className={`text-xs cursor-pointer transition-colors ${
+                              supplier.status === "active"
+                                ? "bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700"
+                                : "bg-muted text-muted-foreground hover:bg-green-100 hover:text-green-700"
+                            }`}
                           >
                             •{" "}
                             {supplier.status === "active"
@@ -734,7 +817,7 @@ export const SupplierManagement = () => {
           setIsDialogOpen(open);
         }}
       >
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="bg-primary text-primary-foreground -m-6 mb-4 p-4 rounded-t-lg">
             <DialogTitle className="text-sm font-semibold">
               {editingId ? "Edit Supplier" : "Add New Supplier"}
@@ -742,7 +825,16 @@ export const SupplierManagement = () => {
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Title</Label>
+                <Input
+                  placeholder="Title"
+                  value={formData.title || ""}
+                  onChange={(e) => handleInputChange("title", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
               <div className="space-y-1">
                 <Label className="text-xs">Name</Label>
                 <Input
@@ -753,45 +845,49 @@ export const SupplierManagement = () => {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Contact No</Label>
+                <Label className="text-xs">Short Title</Label>
                 <Input
-                  placeholder="Contact number"
-                  value={formData.phone || ""}
-                  onChange={(e) => handleInputChange("phone", e.target.value)}
+                  placeholder="Short title"
+                  value={formData.shortTitle || ""}
+                  onChange={(e) =>
+                    handleInputChange("shortTitle", e.target.value)
+                  }
                   className="h-8 text-xs"
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Email</Label>
+                <Label className="text-xs">Account Head</Label>
                 <Input
-                  type="email"
-                  placeholder="Email address"
-                  value={formData.email || ""}
-                  onChange={(e) => handleInputChange("email", e.target.value)}
+                  placeholder="Account head"
+                  value={formData.accountHead || ""}
+                  onChange={(e) =>
+                    handleInputChange("accountHead", e.target.value)
+                  }
                   className="h-8 text-xs"
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">CNIC</Label>
+                <Label className="text-xs">Company Name *</Label>
                 <Input
-                  placeholder="CNIC number"
-                  value={formData.cnic || ""}
-                  onChange={(e) => handleInputChange("cnic", e.target.value)}
+                  placeholder="Company name"
+                  value={formData.companyName || ""}
+                  onChange={(e) =>
+                    handleInputChange("companyName", e.target.value)
+                  }
                   className="h-8 text-xs"
                 />
               </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Company Name *</Label>
-              <Input
-                placeholder="Company name"
-                value={formData.companyName || ""}
-                onChange={(e) =>
-                  handleInputChange("companyName", e.target.value)
-                }
-                className="h-8 text-xs"
-              />
+              <div className="space-y-1">
+                <Label className="text-xs">Reference Name</Label>
+                <Input
+                  placeholder="Reference"
+                  value={formData.referenceName || ""}
+                  onChange={(e) =>
+                    handleInputChange("referenceName", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
             </div>
 
             <div className="space-y-1">
@@ -804,7 +900,16 @@ export const SupplierManagement = () => {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Area</Label>
+                <Input
+                  placeholder="Area"
+                  value={formData.area || ""}
+                  onChange={(e) => handleInputChange("area", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
               <div className="space-y-1">
                 <Label className="text-xs">City</Label>
                 <Input
@@ -817,7 +922,7 @@ export const SupplierManagement = () => {
               <div className="space-y-1">
                 <Label className="text-xs">State</Label>
                 <Input
-                  placeholder="State/Province"
+                  placeholder="State"
                   value={formData.state || ""}
                   onChange={(e) => handleInputChange("state", e.target.value)}
                   className="h-8 text-xs"
@@ -843,18 +948,130 @@ export const SupplierManagement = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Contact Person</Label>
+                <Label className="text-xs">Phone No</Label>
                 <Input
-                  placeholder="Contact person"
-                  value={formData.contactPerson || ""}
+                  placeholder="Phone number"
+                  value={formData.phone || ""}
+                  onChange={(e) => handleInputChange("phone", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cell No</Label>
+                <Input
+                  placeholder="Cell number"
+                  value={formData.cellNumber || ""}
                   onChange={(e) =>
-                    handleInputChange("contactPerson", e.target.value)
+                    handleInputChange("cellNumber", e.target.value)
                   }
                   className="h-8 text-xs"
                 />
               </div>
+              <div className="space-y-1 lg:col-span-2">
+                <Label className="text-xs">Email</Label>
+                <Input
+                  type="email"
+                  placeholder="Email address"
+                  value={formData.email || ""}
+                  onChange={(e) => handleInputChange("email", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">CNIC</Label>
+                <Input
+                  placeholder="CNIC number"
+                  value={formData.cnic || ""}
+                  onChange={(e) => handleInputChange("cnic", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">GST Number</Label>
+                <Input
+                  placeholder="GST Number"
+                  value={formData.gstNumber || ""}
+                  onChange={(e) =>
+                    handleInputChange("gstNumber", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">NTN</Label>
+                <Input
+                  placeholder="NTN"
+                  value={formData.ntn || ""}
+                  onChange={(e) => handleInputChange("ntn", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="border border-border p-3 rounded-lg space-y-3 bg-muted/10">
+              <div className="flex justify-between items-center">
+                <Label className="text-xs font-semibold">Contact Persons</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddContactPerson}
+                  className="h-6 text-xs px-2 bg-background"
+                >
+                  <Plus className="w-3 h-3 mr-1" /> Add
+                </Button>
+              </div>
+              {(formData.contactPersons || []).map((cp, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Designation"
+                    value={cp.designation}
+                    onChange={(e) =>
+                      handleUpdateContactPerson(
+                        idx,
+                        "designation",
+                        e.target.value,
+                      )
+                    }
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Input
+                    placeholder="Contact number"
+                    value={cp.contactNumber}
+                    onChange={(e) =>
+                      handleUpdateContactPerson(
+                        idx,
+                        "contactNumber",
+                        e.target.value,
+                      )
+                    }
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRemoveContactPerson(idx)}
+                    className="h-6 w-6"
+                  >
+                    <X className="w-4 h-4 text-red-500" />
+                  </Button>
+                </div>
+              ))}
+              {(!formData.contactPersons ||
+                formData.contactPersons.length === 0) && (
+                <p className="text-xs text-muted-foreground italic">
+                  No contact persons added.
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Tax ID</Label>
                 <Input
@@ -875,6 +1092,33 @@ export const SupplierManagement = () => {
                   className="h-8 text-xs"
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Opening Balance</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={
+                    formData.openingBalance === 0 ? "" : formData.openingBalance
+                  }
+                  onChange={(e) =>
+                    handleInputChange("openingBalance", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">OB Date</Label>
+                <Input
+                  type="date"
+                  value={formData.date || ""}
+                  onChange={(e) => handleInputChange("date", e.target.value)}
+                  className="h-8 text-xs px-2 min-w-[120px] block w-full uppercase [&::-webkit-calendar-picker-indicator]:opacity-100"
+                />
+              </div>
               <div className="space-y-1">
                 <Label className="text-xs">Status</Label>
                 <Select
@@ -892,42 +1136,27 @@ export const SupplierManagement = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Opening Balance</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={
-                    formData.openingBalance === 0 ? "" : formData.openingBalance
-                  }
-                  onChange={(e) =>
-                    handleInputChange("openingBalance", e.target.value)
-                  }
-                  className="h-8 text-xs"
+                <Label className="text-xs">Notes</Label>
+                <Textarea
+                  placeholder="Additional notes..."
+                  value={formData.notes || ""}
+                  onChange={(e) => handleInputChange("notes", e.target.value)}
+                  className="text-xs min-h-[60px]"
+                  data-preserve-case="true"
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Date</Label>
-                <Input
-                  type="date"
-                  value={formData.date || ""}
-                  onChange={(e) => handleInputChange("date", e.target.value)}
-                  className="h-8 text-xs"
+                <Label className="text-xs">Remarks</Label>
+                <Textarea
+                  placeholder="Remarks..."
+                  value={formData.remarks || ""}
+                  onChange={(e) => handleInputChange("remarks", e.target.value)}
+                  className="text-xs min-h-[60px]"
+                  data-preserve-case="true"
                 />
               </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Notes</Label>
-              <Textarea
-                placeholder="Additional notes..."
-                value={formData.notes || ""}
-                onChange={(e) => handleInputChange("notes", e.target.value)}
-                className="text-xs min-h-[60px]"
-                data-preserve-case="true"
-              />
             </div>
 
             <div className="flex gap-2 pt-2">

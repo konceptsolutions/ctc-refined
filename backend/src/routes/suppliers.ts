@@ -161,6 +161,16 @@ router.post("/", async (req, res) => {
       date,
       status,
       notes,
+      accountHead,
+      title,
+      shortTitle,
+      referenceName,
+      area,
+      cellNumber,
+      contactPersons,
+      gstNumber,
+      ntn,
+      remarks,
     } = req.body;
 
     if (!companyName || companyName.trim() === "") {
@@ -197,6 +207,16 @@ router.post("/", async (req, res) => {
         date: date ? new Date(date) : null,
         status: status || "active",
         notes: notes || null,
+        accountHead: accountHead || null,
+        title: title || null,
+        shortTitle: shortTitle || null,
+        referenceName: referenceName || null,
+        area: area || null,
+        cellNumber: cellNumber || null,
+        contactPersons: contactPersons || [],
+        gstNumber: gstNumber || null,
+        ntn: ntn || null,
+        remarks: remarks || null,
         updatedAt: new Date(),
       },
     });
@@ -426,6 +446,16 @@ router.put("/:id", async (req, res) => {
       date,
       status,
       notes,
+      accountHead,
+      title,
+      shortTitle,
+      referenceName,
+      area,
+      cellNumber,
+      contactPersons,
+      gstNumber,
+      ntn,
+      remarks,
       accountId, // Account ID from payload
     } = req.body;
     const updateData: any = {};
@@ -452,6 +482,18 @@ router.put("/:id", async (req, res) => {
     if (date !== undefined) updateData.date = date ? new Date(date) : null;
     if (status !== undefined) updateData.status = status;
     if (notes !== undefined) updateData.notes = notes || null;
+    if (accountHead !== undefined) updateData.accountHead = accountHead || null;
+    if (title !== undefined) updateData.title = title || null;
+    if (shortTitle !== undefined) updateData.shortTitle = shortTitle || null;
+    if (referenceName !== undefined)
+      updateData.referenceName = referenceName || null;
+    if (area !== undefined) updateData.area = area || null;
+    if (cellNumber !== undefined) updateData.cellNumber = cellNumber || null;
+    if (contactPersons !== undefined)
+      updateData.contactPersons = contactPersons || [];
+    if (gstNumber !== undefined) updateData.gstNumber = gstNumber || null;
+    if (ntn !== undefined) updateData.ntn = ntn || null;
+    if (remarks !== undefined) updateData.remarks = remarks || null;
 
     // 1. Fetch old supplier data BEFORE update to check for opening balance change
     const oldSupplier = await prisma.supplier.findUnique({
@@ -477,14 +519,22 @@ router.put("/:id", async (req, res) => {
     const oldOpeningBalance = oldSupplier.openingBalance;
 
     // 3. Handle Status or Name Change - Update associated account
-    if ((status !== undefined && oldSupplier.status !== status) ||
+    if (
+      (status !== undefined && oldSupplier.status !== status) ||
       (companyName !== undefined && oldSupplier.companyName !== companyName) ||
-      (name !== undefined && oldSupplier.name !== name)) {
+      (name !== undefined && oldSupplier.name !== name)
+    ) {
       try {
-        console.log(`[SYNC-DEBUG] Sync triggering for Supplier ID: ${req.params.id}`);
+        console.log(
+          `[SYNC-DEBUG] Sync triggering for Supplier ID: ${req.params.id}`,
+        );
         console.log(`[SYNC-DEBUG] Status: ${oldSupplier.status} -> ${status}`);
-        console.log(`[SYNC-DEBUG] CompanyName: ${oldSupplier.companyName} -> ${companyName}`);
-        console.log(`[SYNC-DEBUG] Name (Contact): ${oldSupplier.name} -> ${name}`);
+        console.log(
+          `[SYNC-DEBUG] CompanyName: ${oldSupplier.companyName} -> ${companyName}`,
+        );
+        console.log(
+          `[SYNC-DEBUG] Name (Contact): ${oldSupplier.name} -> ${name}`,
+        );
 
         // Find the associated supplier account
         const supplierAccount = await prisma.account.findFirst({
@@ -492,23 +542,32 @@ router.put("/:id", async (req, res) => {
         });
 
         if (supplierAccount) {
-          console.log(`[SYNC-DEBUG] Found associated account: ${supplierAccount.code} (${supplierAccount.name})`);
+          console.log(
+            `[SYNC-DEBUG] Found associated account: ${supplierAccount.code} (${supplierAccount.name})`,
+          );
           const updateAccountData: any = {};
 
           // Handle Status synchronization
           if (status !== undefined && oldSupplier.status !== status) {
-            updateAccountData.status = status === "active" ? "Active" : "Inactive";
+            updateAccountData.status =
+              status === "active" ? "Active" : "Inactive";
           }
 
           // Handle Name synchronization
-          if ((companyName !== undefined && oldSupplier.companyName !== companyName) ||
-            (name !== undefined && oldSupplier.name !== name)) {
+          if (
+            (companyName !== undefined &&
+              oldSupplier.companyName !== companyName) ||
+            (name !== undefined && oldSupplier.name !== name)
+          ) {
             // Priority: new name > new company > old name > old company
-            const finalName = (name !== undefined ? name : oldSupplier.name);
-            const finalCompany = (companyName !== undefined ? companyName : oldSupplier.companyName);
+            const finalName = name !== undefined ? name : oldSupplier.name;
+            const finalCompany =
+              companyName !== undefined ? companyName : oldSupplier.companyName;
             const newAccountName = finalName || finalCompany;
 
-            console.log(`[SYNC-DEBUG] Calculated new account name: "${newAccountName}"`);
+            console.log(
+              `[SYNC-DEBUG] Calculated new account name: "${newAccountName}"`,
+            );
             updateAccountData.name = newAccountName;
             updateAccountData.description = `Supplier Account: ${finalCompany}`;
           }
@@ -518,15 +577,22 @@ router.put("/:id", async (req, res) => {
               where: { id: supplierAccount.id },
               data: updateAccountData,
             });
-            console.log(`[SYNC-DEBUG] SUCCESS: Updated account ${updatedAccount.code}. New Name: "${updatedAccount.name}", Status: ${updatedAccount.status}`);
+            console.log(
+              `[SYNC-DEBUG] SUCCESS: Updated account ${updatedAccount.code}. New Name: "${updatedAccount.name}", Status: ${updatedAccount.status}`,
+            );
           } else {
             console.log(`[SYNC-DEBUG] No actual changes needed for account.`);
           }
         } else {
-          console.warn(`[SYNC-DEBUG] WARNING: No account found for supplier ID: ${req.params.id}`);
+          console.warn(
+            `[SYNC-DEBUG] WARNING: No account found for supplier ID: ${req.params.id}`,
+          );
         }
       } catch (err: any) {
-        console.error("[SYNC-DEBUG] ERROR synchronizing supplier account:", err);
+        console.error(
+          "[SYNC-DEBUG] ERROR synchronizing supplier account:",
+          err,
+        );
       }
     }
 

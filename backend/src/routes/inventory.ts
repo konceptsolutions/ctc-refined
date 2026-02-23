@@ -5,7 +5,10 @@ import { randomUUID } from "crypto";
 import * as crypto from "crypto";
 import prisma from "../config/database";
 import { Prisma } from "@prisma/client";
-import { processPurchaseReceive, calculateAverageCostDPO } from "../utils/inventoryFormulas";
+import {
+  processPurchaseReceive,
+  calculateAverageCostDPO,
+} from "../utils/inventoryFormulas";
 import { getCanonicalPartId } from "../services/partCanonical";
 
 const router = express.Router();
@@ -21,7 +24,7 @@ router.post("/sync-part-rack-shelf", async (req: Request, res: Response) => {
     // 2. Get all movements and all parts to resolve canonical IDs
     const [movements, allParts] = await Promise.all([
       prisma.stockMovement.findMany({}),
-      prisma.part.findMany({ select: { id: true, partNo: true } })
+      prisma.part.findMany({ select: { id: true, partNo: true } }),
     ]);
 
     // Build a map for fast canonical lookup
@@ -34,7 +37,7 @@ router.post("/sync-part-rack-shelf", async (req: Request, res: Response) => {
 
     // Prepare canonical map (ID -> Canonical ID)
     const canonicalMap = new Map<string, string>();
-    // We already have getCanonicalPartId but it's slow in a loop. 
+    // We already have getCanonicalPartId but it's slow in a loop.
     // For sync utility, we'll just pick the oldest ID as canonical for speed, or just use the first.
     // Actually, to match the app's real canonical logic:
     const partNos = Array.from(partNoGroups.keys());
@@ -58,7 +61,7 @@ router.post("/sync-part-rack-shelf", async (req: Request, res: Response) => {
       const shelfId = m.shelfId || "null";
       const key = `${canonicalId}|${storeId}|${rackId}|${shelfId}`;
 
-      const qty = m.type === 'in' ? m.quantity : -m.quantity;
+      const qty = m.type === "in" ? m.quantity : -m.quantity;
       const current = stockMap.get(key) || 0;
       stockMap.set(key, current + qty);
     }
@@ -67,13 +70,13 @@ router.post("/sync-part-rack-shelf", async (req: Request, res: Response) => {
     let insertCount = 0;
     for (const [key, quantity] of stockMap.entries()) {
       // We keep records even if quantity is 0 or negative during sync to match history exactly?
-      // Actually usually we only want to see positive stock in the locations list, 
+      // Actually usually we only want to see positive stock in the locations list,
       // but if we want to "Get all data from PR table", then PR should contain the net balance.
       // If balance is 0, we can skip to keep table clean, or keep it.
       // Let's keep only non-zero to avoid clutter.
       if (quantity === 0) continue;
 
-      const [partId, storeIdRaw, rackIdRaw, shelfIdRaw] = key.split('|');
+      const [partId, storeIdRaw, rackIdRaw, shelfIdRaw] = key.split("|");
       const storeId = storeIdRaw === "null" ? null : storeIdRaw;
       const rackId = rackIdRaw === "null" ? null : rackIdRaw;
       const shelfId = shelfIdRaw === "null" ? null : shelfIdRaw;
@@ -84,14 +87,16 @@ router.post("/sync-part-rack-shelf", async (req: Request, res: Response) => {
           storeId,
           rackId,
           shelfId,
-          quantity
-        }
+          quantity,
+        },
       });
       insertCount++;
     }
 
     console.log(`[API] Sync Completed. Inserted ${insertCount} records.`);
-    res.json({ message: `Synced successfully. Created ${insertCount} records.` });
+    res.json({
+      message: `Synced successfully. Created ${insertCount} records.`,
+    });
   } catch (error: any) {
     console.error("[API] Sync Failed:", error);
     res.status(500).json({ error: error.message });
@@ -188,15 +193,15 @@ router.get("/dashboard", async (req: Request, res: Response) => {
     const allPartMovements =
       partIds.length > 0
         ? await prisma.stockMovement.findMany({
-          where: {
-            partId: { in: partIds },
-          },
-          select: {
-            partId: true,
-            quantity: true,
-            type: true,
-          },
-        })
+            where: {
+              partId: { in: partIds },
+            },
+            select: {
+              partId: true,
+              quantity: true,
+              type: true,
+            },
+          })
         : [];
 
     // Group movements by part
@@ -222,7 +227,9 @@ router.get("/dashboard", async (req: Request, res: Response) => {
       // Use cost if available, otherwise use 0 (will show value as 0)
       const value = (part.cost || 0) * Math.max(0, currentStock);
 
-      const catName = (part as any).Category ? (part as any).Category.name : "Uncategorized";
+      const catName = (part as any).Category
+        ? (part as any).Category.name
+        : "Uncategorized";
       categoryValueMap[catName] = (categoryValueMap[catName] || 0) + value;
       categoryCountMap[catName] = (categoryCountMap[catName] || 0) + 1;
     }
@@ -356,26 +363,15 @@ router.get("/dashboard", async (req: Request, res: Response) => {
   }
 });
 
-
-
-
-
 // Get detailed location breakdown for a specific part
 router.get("/part-locations/:partId", async (req: Request, res: Response) => {
   try {
     const { partId } = req.params;
     console.log(`[API] Part Locations hit for ${partId}`);
 
-    // Resolve Canonical ID
-    const part = await prisma.part.findUnique({ where: { id: partId }, select: { partNo: true } });
-    if (!part) return res.status(404).json({ error: "Part not found" });
-
-    const canonicalId = await getCanonicalPartId(prisma, part.partNo);
-    const searchId = canonicalId || partId;
-
-    // 1. Get ALL records from PartRackShelf for this logical part
-    const records = await prisma.partRackShelf.findMany({
-      where: { partId: searchId },
+    // 1. Get ALL records from PartRackShelf for this exact part first
+    let records = await prisma.partRackShelf.findMany({
+      where: { partId },
       include: {
         Store: true,
         Rack: true,
@@ -383,15 +379,46 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
       },
     });
 
-    // 2. Aggregate by Store/Rack/Shelf
+    // 2. If no direct records, check if the part's stock was stored under a canonical (same-partNo) ID
+    //    This handles legacy data where all copies of a part shared one PartRackShelf entry.
+    let usingCanonicalFallback = false;
+    if (records.length === 0) {
+      const part = await prisma.part.findUnique({
+        where: { id: partId },
+        select: { partNo: true },
+      });
+      if (part?.partNo) {
+        // Find any sibling part with the same partNo that HAS PartRackShelf records
+        const siblingWithRecords = await prisma.part.findFirst({
+          where: {
+            partNo: part.partNo,
+            PartRackShelf: { some: {} },
+          },
+          select: { id: true },
+        });
+        if (siblingWithRecords) {
+          records = await prisma.partRackShelf.findMany({
+            where: { partId: siblingWithRecords.id },
+            include: {
+              Store: true,
+              Rack: true,
+              Shelf: true,
+            },
+          });
+          usingCanonicalFallback = true;
+        }
+      }
+    }
+
+    // 3. Aggregate by Store/Rack/Shelf combination
     const locationMap = new Map();
     let totalAssigned = 0;
 
     for (const r of records) {
-      const storeId = r.storeId || "null";
-      const rackId = r.rackId || "null";
-      const shelfId = r.shelfId || "null";
-      const key = `${storeId}-${rackId}-${shelfId}`;
+      const storeKey = r.storeId || "null";
+      const rackKey = r.rackId || "null";
+      const shelfKey = r.shelfId || "null";
+      const key = `${storeKey}-${rackKey}-${shelfKey}`;
 
       if (!locationMap.has(key)) {
         locationMap.set(key, {
@@ -402,46 +429,57 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
           shelfId: r.shelfId,
           shelf: r.Shelf?.shelfNo || "No Shelf",
           isUnlocated: !r.rackId && !r.shelfId,
-          quantity: 0
+          quantity: 0,
+          rawQuantity: 0,
         });
       }
 
       const existing = locationMap.get(key);
-      // Ensure IDs are present even if merged (should be same for existing key)
       if (!existing.storeId && r.storeId) existing.storeId = r.storeId;
       if (!existing.rackId && r.rackId) existing.rackId = r.rackId;
       if (!existing.shelfId && r.shelfId) existing.shelfId = r.shelfId;
 
-      existing.quantity += r.quantity;
+      existing.rawQuantity += r.quantity;
       totalAssigned += r.quantity;
     }
 
-    // 3. Compare with TOTAL stock from movements to find "Virtual Unallocated"
-    const moveAgg = await prisma.stockMovement.aggregate({
-      where: { partId: searchId },
-      _sum: { quantity: true }
-    });
-
-    // We need to handle in vs out for movements if we were to do a full sum, 
-    // but the system usually tracks quantity as absolute in Sm with type field.
-    // Let's do a more robust sum:
+    // 4. Calculate THIS specific part's actual stock from its own movements
     const sm_in = await prisma.stockMovement.aggregate({
-      where: { partId: searchId, type: 'in' },
-      _sum: { quantity: true }
+      where: { partId, type: "in" },
+      _sum: { quantity: true },
     });
     const sm_out = await prisma.stockMovement.aggregate({
-      where: { partId: searchId, type: 'out' },
-      _sum: { quantity: true }
+      where: { partId, type: "out" },
+      _sum: { quantity: true },
     });
+    const totalActualStock =
+      (sm_in._sum.quantity || 0) - (sm_out._sum.quantity || 0);
 
-    const totalActualStock = (sm_in._sum.quantity || 0) - (sm_out._sum.quantity || 0);
-    const unallocatedDiff = totalActualStock - totalAssigned;
+    // 5. If we used canonical fallback, scale quantities proportionally to this part's own stock
+    //    so that the dialog shows the correct quantity for THIS item, not the shared total.
+    if (usingCanonicalFallback && totalAssigned > 0) {
+      const scale = totalActualStock / totalAssigned;
+      for (const val of locationMap.values()) {
+        val.quantity = Math.round(val.rawQuantity * scale);
+      }
+    } else {
+      // Direct records — quantities are already correct
+      for (const val of locationMap.values()) {
+        val.quantity = val.rawQuantity;
+      }
+    }
 
-    // 4. Convert to array and filter out zeros
-    const locations = Array.from(locationMap.values())
-      .filter((l: any) => l.quantity !== 0);
+    // 6. Filter out zero-quantity entries
+    const locations = Array.from(locationMap.values()).filter(
+      (l: any) => l.quantity !== 0,
+    );
 
-    // If there's a discrepancy, add a "Virtual Unallocated" row
+    // 7. Add Virtual Unallocated if stock > assigned
+    const assignedTotal = locations.reduce(
+      (sum: number, l: any) => sum + l.quantity,
+      0,
+    );
+    const unallocatedDiff = totalActualStock - assignedTotal;
     if (unallocatedDiff !== 0) {
       locations.push({
         storeId: null,
@@ -451,11 +489,11 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
         shelfId: null,
         shelf: "No Shelf",
         isUnlocated: true,
-        quantity: unallocatedDiff
+        quantity: unallocatedDiff,
       });
     }
 
-    // Sort: Allocated first (has rack/shelf), then Unallocated, then by quantity
+    // 8. Sort: allocated first, then unallocated, then by quantity desc
     locations.sort((a: any, b: any) => {
       if (a.isUnlocated !== b.isUnlocated) {
         return a.isUnlocated ? 1 : -1;
@@ -469,7 +507,6 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 
 // Get stock movements
 router.get("/movements", async (req: Request, res: Response) => {
@@ -489,7 +526,7 @@ router.get("/movements", async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = {
-      referenceType: { not: 'location_adjustment' }
+      referenceType: { not: "location_adjustment" },
     };
 
     if (part_id) {
@@ -639,7 +676,8 @@ router.get("/movements", async (req: Request, res: Response) => {
         rack_id: m.rackId,
         rack_code: (m as any).Rack?.codeNo || null,
         shelf_id: m.shelfId,
-        shelf_no: (m as any).Shelf?.shelfNo || (m as any).Shelf?.shelf_no || null,
+        shelf_no:
+          (m as any).Shelf?.shelfNo || (m as any).Shelf?.shelf_no || null,
         shelf: (m as any).Shelf?.shelfNo || (m as any).Shelf?.shelf_no || null,
         reference_type: m.referenceType,
         reference_id: m.referenceId,
@@ -732,21 +770,17 @@ router.post("/movements", async (req: Request, res: Response) => {
       const mStoreId = store_id || null;
       const mRackId = rack_id || null;
       const mShelfId = shelf_id || null;
-      const qtyChange = type === 'in' ? parseInt(quantity) : -parseInt(quantity);
-
-      // Canonicalize partId for PartRackShelf sync
-      const part = await tx.part.findUnique({ where: { id: part_id }, select: { partNo: true } });
-      const canonicalId = part ? (await getCanonicalPartId(tx as any, part.partNo)) : part_id;
-      const syncPartId = canonicalId || part_id;
+      const qtyChange =
+        type === "in" ? parseInt(quantity) : -parseInt(quantity);
 
       // Find existing PartRackShelf entry for this specific location
       const existingEntry = await tx.partRackShelf.findFirst({
         where: {
-          partId: syncPartId,
+          partId: part_id,
           storeId: mStoreId,
           rackId: mRackId,
-          shelfId: mShelfId
-        }
+          shelfId: mShelfId,
+        },
       });
 
       if (existingEntry) {
@@ -759,34 +793,38 @@ router.post("/movements", async (req: Request, res: Response) => {
           // Treating "stop at zero" as "Don't allow transaction" or "Floor at 0"?
           // "stocke will go nagitive means Decreseing... stock will not go in nagitive like -5"
           // Interpretation: Decrease logic is fine, but result cannot be < 0.
-          throw new Error(`Insufficient stock in this location. Available: ${existingEntry.quantity}, Requested: ${parseInt(quantity)}`);
+          throw new Error(
+            `Insufficient stock in this location. Available: ${existingEntry.quantity}, Requested: ${parseInt(quantity)}`,
+          );
         }
 
         if (newQuantity <= 0) {
           await tx.partRackShelf.delete({
-            where: { id: existingEntry.id }
+            where: { id: existingEntry.id },
           });
         } else {
           await tx.partRackShelf.update({
             where: { id: existingEntry.id },
-            data: { quantity: newQuantity }
+            data: { quantity: newQuantity },
           });
         }
       } else {
         // Create new entry ONLY IF it's adding stock (since you can't have negative from nothing)
         if (qtyChange < 0) {
-          throw new Error(`Insufficient stock in this location (None found). Requested: ${parseInt(quantity)}`);
+          throw new Error(
+            `Insufficient stock in this location (None found). Requested: ${parseInt(quantity)}`,
+          );
         }
 
         await tx.partRackShelf.create({
           data: {
             id: randomUUID(),
-            partId: syncPartId,
+            partId: part_id,
             storeId: mStoreId,
             rackId: mRackId,
             shelfId: mShelfId,
-            quantity: qtyChange
-          } as any
+            quantity: qtyChange,
+          } as any,
         });
       }
       return createdMovement;
@@ -814,18 +852,13 @@ router.post("/update-location", async (req: Request, res: Response) => {
     const { part_id, store_id, rack_id, shelf_id, quantity, type } = req.body;
 
     if (!part_id || !quantity) {
-      return res.status(400).json({ error: "part_id and quantity are required" });
+      return res
+        .status(400)
+        .json({ error: "part_id and quantity are required" });
     }
 
-    // Resolve Canonical ID
-    const part = await prisma.part.findUnique({ where: { id: part_id }, select: { partNo: true } });
-    if (!part) return res.status(404).json({ error: "Part not found" });
-
     const qtyVal = parseInt(quantity);
-    const qtyChange = type === 'in' ? qtyVal : -qtyVal;
-
-    const canonicalId = await getCanonicalPartId(prisma, part.partNo);
-    const syncPartId = canonicalId || part_id;
+    const qtyChange = type === "in" ? qtyVal : -qtyVal;
 
     // User Requirement: "i want it will genrate new row of entry... do not update number 30 to 60"
     // ALWAYS create a NEW entry for every location assignment action.
@@ -842,33 +875,35 @@ router.post("/update-location", async (req: Request, res: Response) => {
 
       const existingSum = await prisma.partRackShelf.aggregate({
         where: {
-          partId: syncPartId,
+          partId: part_id,
           storeId: store_id || null,
           rackId: rack_id || null,
-          shelfId: shelf_id || null
+          shelfId: shelf_id || null,
         },
-        _sum: { quantity: true }
+        _sum: { quantity: true },
       });
 
       const totalCurrent = existingSum._sum.quantity || 0;
       if (totalCurrent + qtyChange < 0) {
-        return res.status(400).json({ error: `Insufficient stock in this location. Current Total: ${totalCurrent}` });
+        return res.status(400).json({
+          error: `Insufficient stock in this location. Current Total: ${totalCurrent}`,
+        });
       }
     }
 
     const record = await prisma.partRackShelf.create({
       data: {
-        partId: syncPartId,
+        partId: part_id,
         storeId: store_id || null,
         rackId: rack_id || null,
         shelfId: shelf_id || null,
-        quantity: qtyChange
-      }
+        quantity: qtyChange,
+      },
     });
 
     res.status(201).json({
       message: "Location updated successfully (PartRackShelf only)",
-      data: record
+      data: record,
     });
   } catch (error: any) {
     console.error(`[API] Error in update-location: ${error.message}`);
@@ -880,23 +915,21 @@ router.post("/update-location", async (req: Request, res: Response) => {
 router.post("/transfer-location", async (req: Request, res: Response) => {
   try {
     const { part_id, quantity, source, target } = req.body;
-    console.log(`[API] transfer-location called`, JSON.stringify(req.body, null, 2));
+    console.log(
+      `[API] transfer-location called`,
+      JSON.stringify(req.body, null, 2),
+    );
 
     if (!part_id || !quantity || !target || !target.store_id) {
-      return res.status(400).json({ error: "Missing required fields (part_id, quantity, target store)" });
+      return res.status(400).json({
+        error: "Missing required fields (part_id, quantity, target store)",
+      });
     }
 
     const qtyVal = parseInt(quantity);
     if (qtyVal <= 0) {
       return res.status(400).json({ error: "Quantity must be positive" });
     }
-
-    // Resolve Canonical ID
-    const part = await prisma.part.findUnique({ where: { id: part_id }, select: { partNo: true } });
-    if (!part) return res.status(404).json({ error: "Part not found" });
-
-    const canonicalId = await getCanonicalPartId(prisma, part.partNo);
-    const syncPartId = canonicalId || part_id;
 
     // Transaction for Atomicity
     const result = await prisma.$transaction(async (tx) => {
@@ -912,29 +945,31 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
       // Calculate total available in source
       const sourceStock = await tx.partRackShelf.aggregate({
         where: {
-          partId: syncPartId,
+          partId: part_id,
           storeId: sourceStoreId,
           rackId: sourceRackId,
-          shelfId: sourceShelfId
+          shelfId: sourceShelfId,
         },
-        _sum: { quantity: true }
+        _sum: { quantity: true },
       });
 
       const available = sourceStock._sum.quantity || 0;
 
       if (available < qtyVal) {
-        throw new Error(`Insufficient stock in source location. Available: ${available}, Requested: ${qtyVal}`);
+        throw new Error(
+          `Insufficient stock in source location. Available: ${available}, Requested: ${qtyVal}`,
+        );
       }
 
       // 2. Decrement Source Stock (Update existing PartRackShelf or Find First)
       // Since unique constraint exists on (partId, storeId, rackId, shelfId), find the UNIQUE record.
       const sourceEntry = await tx.partRackShelf.findFirst({
         where: {
-          partId: syncPartId,
+          partId: part_id,
           storeId: sourceStoreId,
           rackId: sourceRackId,
-          shelfId: sourceShelfId
-        }
+          shelfId: sourceShelfId,
+        },
       });
 
       if (!sourceEntry) {
@@ -944,13 +979,13 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
 
       const updatedSource = await tx.partRackShelf.update({
         where: { id: sourceEntry.id },
-        data: { quantity: { decrement: qtyVal } }
+        data: { quantity: { decrement: qtyVal } },
       });
 
       // If quantity becomes 0 or less, delete the entry to keep the location list clean
       if (updatedSource.quantity <= 0) {
         await tx.partRackShelf.delete({
-          where: { id: sourceEntry.id }
+          where: { id: sourceEntry.id },
         });
       }
 
@@ -961,28 +996,28 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
 
       const targetEntry = await tx.partRackShelf.findFirst({
         where: {
-          partId: syncPartId,
+          partId: part_id,
           storeId: targetStoreId,
           rackId: targetRackId,
-          shelfId: targetShelfId
-        }
+          shelfId: targetShelfId,
+        },
       });
 
       if (targetEntry) {
         await tx.partRackShelf.update({
           where: { id: targetEntry.id },
-          data: { quantity: { increment: qtyVal } }
+          data: { quantity: { increment: qtyVal } },
         });
       } else {
         await tx.partRackShelf.create({
           data: {
             id: randomUUID(),
-            partId: syncPartId,
+            partId: part_id,
             storeId: targetStoreId,
             rackId: targetRackId,
             shelfId: targetShelfId,
-            quantity: qtyVal
-          }
+            quantity: qtyVal,
+          },
         });
       }
 
@@ -991,7 +1026,7 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
       await tx.stockMovement.create({
         data: {
           id: randomUUID(),
-          partId: syncPartId,
+          partId: part_id,
           type: "out",
           quantity: qtyVal,
           storeId: sourceStoreId,
@@ -999,14 +1034,14 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
           shelfId: sourceShelfId,
           notes: `Transfer to ${target.store_id ? "Store..." : "Location"} (Ref: Transfer)`,
           createdAt: new Date(),
-        }
+        },
       });
 
       // IN to Target
       await tx.stockMovement.create({
         data: {
           id: randomUUID(),
-          partId: syncPartId,
+          partId: part_id,
           type: "in",
           quantity: qtyVal,
           storeId: targetStoreId,
@@ -1014,7 +1049,7 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
           shelfId: targetShelfId,
           notes: `Transfer from ${sourceStoreId ? "Store..." : "Location"} (Ref: Transfer)`,
           createdAt: new Date(),
-        }
+        },
       });
 
       return { success: true };
@@ -1022,9 +1057,8 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
 
     res.status(201).json({
       message: "Stock transferred successfully",
-      data: result
+      data: result,
     });
-
   } catch (error: any) {
     console.error(`[API] Error in transfer-location: ${error.message}`);
     res.status(500).json({ error: error.message });
@@ -1036,14 +1070,33 @@ router.patch("/movements/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { store_id, rack_id, shelf_id } = req.body;
-    console.log(`[DEBUG] PATCH /movements/${id}`, { store_id, rack_id, shelf_id });
+    console.log(`[DEBUG] PATCH /movements/${id}`, {
+      store_id,
+      rack_id,
+      shelf_id,
+    });
 
     const movement = await prisma.stockMovement.update({
       where: { id },
       data: {
-        storeId: store_id !== undefined ? (store_id === "" || store_id === null ? null : store_id) : undefined,
-        rackId: rack_id !== undefined ? (rack_id === "" || rack_id === null ? null : rack_id) : undefined,
-        shelfId: shelf_id !== undefined ? (shelf_id === "" || shelf_id === null ? null : shelf_id) : undefined,
+        storeId:
+          store_id !== undefined
+            ? store_id === "" || store_id === null
+              ? null
+              : store_id
+            : undefined,
+        rackId:
+          rack_id !== undefined
+            ? rack_id === "" || rack_id === null
+              ? null
+              : rack_id
+            : undefined,
+        shelfId:
+          shelf_id !== undefined
+            ? shelf_id === "" || shelf_id === null
+              ? null
+              : shelf_id
+            : undefined,
       },
       include: {
         Part: true,
@@ -1067,29 +1120,34 @@ router.get("/rack-shelf-balances", async (req: Request, res: Response) => {
   try {
     const movements = await prisma.stockMovement.findMany({
       where: {
-        OR: [
-          { rackId: { not: null } },
-          { shelfId: { not: null } }
-        ]
+        OR: [{ rackId: { not: null } }, { shelfId: { not: null } }],
       },
       include: {
         Part: {
           include: {
             MasterPart: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
-    const stockMap: Record<string, { itemsCount: number; remainingQuantity: number; itemsMap: Record<string, any> }> = {};
+    const stockMap: Record<
+      string,
+      {
+        itemsCount: number;
+        remainingQuantity: number;
+        itemsMap: Record<string, any>;
+      }
+    > = {};
 
-    movements.forEach(m => {
-      const quantity = m.type === 'in' ? m.quantity : -m.quantity;
+    movements.forEach((m) => {
+      const quantity = m.type === "in" ? m.quantity : -m.quantity;
       const partId = m.partId;
-      const partNo = (m as any).Part.MasterPart?.masterPartNo || (m as any).Part.partNo;
-      const description = (m as any).Part.description || '';
+      const partNo =
+        (m as any).Part.MasterPart?.masterPartNo || (m as any).Part.partNo;
+      const description = (m as any).Part.description || "";
 
-      const processLocation = (type: 'rack' | 'shelf', id: string | null) => {
+      const processLocation = (type: "rack" | "shelf", id: string | null) => {
         if (!id) return;
         const key = `${type}_${id}`;
         if (!stockMap[key]) {
@@ -1104,20 +1162,24 @@ router.get("/rack-shelf-balances", async (req: Request, res: Response) => {
         stockMap[key].remainingQuantity += quantity;
       };
 
-      processLocation('rack', m.rackId);
-      processLocation('shelf', m.shelfId);
+      processLocation("rack", m.rackId);
+      processLocation("shelf", m.shelfId);
     });
 
     const result: Record<string, any> = {};
-    Object.keys(stockMap).forEach(key => {
-      const items = Object.values(stockMap[key].itemsMap)
-        .filter((item: any) => item.quantity > 0);
+    Object.keys(stockMap).forEach((key) => {
+      const items = Object.values(stockMap[key].itemsMap).filter(
+        (item: any) => item.quantity > 0,
+      );
 
       if (items.length > 0) {
         result[key] = {
           itemsCount: items.length,
-          remainingQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
-          items
+          remainingQuantity: items.reduce(
+            (sum, item) => sum + item.quantity,
+            0,
+          ),
+          items,
         };
       }
     });
@@ -1136,10 +1198,11 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
 
     // Use queryRaw to replicate parts.ts logic exactly including joins
     // Cast result to any[] to avoid TS issues
-    const result = await prisma.$queryRaw`
+    const result = (await prisma.$queryRaw`
       SELECT 
         p.id, p."avgCost", p.cost, p."purchasePrice", p."priceA",
-        COALESCE(st.stock, 0) as current_stock
+        COALESCE(st.stock, 0) as current_stock,
+        COALESCE(rs.reserved, 0) as reserved_stock
       FROM "Part" p
       LEFT JOIN (
           SELECT "partId", 
@@ -1147,8 +1210,14 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
           FROM "StockMovement"
           GROUP BY "partId"
       ) st ON p.id = st."partId"
+      LEFT JOIN (
+          SELECT "partId", SUM(quantity) as reserved
+          FROM "StockReservation"
+          WHERE status = 'reserved'
+          GROUP BY "partId"
+      ) rs ON p.id = rs."partId"
       WHERE p.id = ${partId}
-    ` as any[];
+    `) as any[];
 
     if (!result || result.length === 0) {
       return res.status(404).json({ error: "Part not found" });
@@ -1164,26 +1233,33 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
       const lastAdjustment = await prisma.adjustmentItem.findFirst({
         where: {
           partId: partId,
-          Adjustment: { status: 'approved', deletedAt: null },
-          cost: { not: null, gt: 0 }
+          Adjustment: { status: "approved", deletedAt: null },
+          cost: { not: null, gt: 0 },
         },
-        orderBy: [{ Adjustment: { date: 'desc' } }, { Adjustment: { createdAt: 'desc' } }],
-        select: { cost: true }
+        orderBy: [
+          { Adjustment: { date: "desc" } },
+          { Adjustment: { createdAt: "desc" } },
+        ],
+        select: { cost: true },
       });
       if (lastAdjustment?.cost) {
         finalAvgCost = lastAdjustment.cost;
       }
     }
 
+    const currentStock = parseInt(row.current_stock) || 0;
+    const reservedStock = parseInt(row.reserved_stock) || 0;
+
     res.json({
       part_id: row.id,
-      current_stock: parseInt(row.current_stock) || 0,
+      current_stock: currentStock,
+      reserved_stock: reservedStock,
+      available_stock: Math.max(0, currentStock - reservedStock),
       avg_cost: finalAvgCost,
       cost: row.cost || 0,
       purchase_price: row.purchasePrice || 0,
-      price_a: row.priceA || 0
+      price_a: row.priceA || 0,
     });
-
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1254,16 +1330,16 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
       where: {
         partId: partId,
         Adjustment: {
-          status: 'approved',
-          deletedAt: null
+          status: "approved",
+          deletedAt: null,
         },
-        cost: { not: null, gt: 0 }
+        cost: { not: null, gt: 0 },
       },
       orderBy: [
-        { Adjustment: { date: 'desc' } },
-        { Adjustment: { createdAt: 'desc' } }
+        { Adjustment: { date: "desc" } },
+        { Adjustment: { createdAt: "desc" } },
       ],
-      select: { cost: true }
+      select: { cost: true },
     });
 
     res.json({
@@ -1284,7 +1360,8 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
         : false,
       is_out_of_stock: currentStock <= 0,
       cost: dbCost || part?.cost || 0,
-      avg_cost: dbAvgCost || dbCost || dbPurchasePrice || lastAdjustment?.cost || 0,
+      avg_cost:
+        dbAvgCost || dbCost || dbPurchasePrice || lastAdjustment?.cost || 0,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1308,7 +1385,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     // 1. Build Query for Parts
-    let whereClause = 'WHERE p.status = \'active\'';
+    let whereClause = "WHERE p.status = 'active'";
     let params: any[] = [];
     let paramIdx = 1;
 
@@ -1318,7 +1395,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
     }
 
     if (search) {
-      whereClause += ` AND (p."partNo" ILIKE $${paramIdx} OR p.description ILIKE $${paramIdx} OR b.name ILIKE $${paramIdx})`;
+      whereClause += ` AND (p."partNo" ILIKE $${paramIdx} OR p.description ILIKE $${paramIdx} OR b.name ILIKE $${paramIdx} OR mp."masterPartNo" ILIKE $${paramIdx})`;
       params.push(`%${search}%`);
       paramIdx++;
     }
@@ -1368,13 +1445,14 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
     const countSql = `
       SELECT COUNT(*) as total 
       FROM "Part" p 
+      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
       LEFT JOIN "Brand" b ON p."brandId" = b.id
       ${whereClause}
     `;
 
     const [result, countResult] = await Promise.all([
       query(sql, params),
-      query(countSql, params)
+      query(countSql, params),
     ]);
 
     const total = parseInt(countResult.rows[0].total);
@@ -1382,14 +1460,14 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
     res.json({
       data: result.rows.map((row: any) => ({
         ...row,
-        current_stock: parseInt(row.current_stock) || 0
+        current_stock: parseInt(row.current_stock) || 0,
       })),
       pagination: {
         page: pageNum,
         limit: limitNum,
         total: total,
         totalPages: Math.ceil(total / limitNum),
-      }
+      },
     });
   } catch (error: any) {
     console.error(`[API] Error in part-rack-shelf: ${error.message}`);
@@ -1436,7 +1514,7 @@ router.get("/balances", async (req: Request, res: Response) => {
 
     if (useFastQuery) {
       // Fast path: Use raw SQL for better performance with large result sets
-      let conditions = ['p.status = \'active\''];
+      let conditions = ["p.status = 'active'"];
       let params: any[] = [];
       let paramIdx = 1;
 
@@ -1449,7 +1527,8 @@ router.get("/balances", async (req: Request, res: Response) => {
         params.push(part_id);
       }
 
-      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const whereClause =
+        conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
       const sql = `
         SELECT 
           p.id as part_id,
@@ -1478,7 +1557,7 @@ router.get("/balances", async (req: Request, res: Response) => {
             SUM(CASE WHEN type = 'in' THEN quantity ELSE 0 END) as stock_in,
             SUM(CASE WHEN type = 'out' THEN quantity ELSE 0 END) as stock_out
           FROM "StockMovement"
-          ${store_id ? `WHERE "storeId" = '${store_id}'` : ''}
+          ${store_id ? `WHERE "storeId" = '${store_id}'` : ""}
           GROUP BY "partId"
         ) sm_agg ON sm_agg."partId" = p.id
         -- Aggregated Locations from PartRackShelf
@@ -1508,7 +1587,7 @@ router.get("/balances", async (req: Request, res: Response) => {
 
       const [result, countResult] = await Promise.all([
         query(sql, params),
-        query(countSql, params)
+        query(countSql, params),
       ]);
 
       const total = parseInt(countResult.rows[0].total);
@@ -1520,7 +1599,10 @@ router.get("/balances", async (req: Request, res: Response) => {
         description: row.description,
         brand: row.brand,
         category: row.category,
-        location: row.rack && row.shelf ? `${row.rack}/${row.shelf}` : (row.rack || row.shelf || null),
+        location:
+          row.rack && row.shelf
+            ? `${row.rack}/${row.shelf}`
+            : row.rack || row.shelf || null,
         rack: row.rack,
         shelf: row.shelf,
         store: row.store,
@@ -1530,7 +1612,9 @@ router.get("/balances", async (req: Request, res: Response) => {
         reserved_quantity: 0, // This will be calculated later if needed, or fetched separately
         available_quantity: Math.max(0, parseInt(row.current_stock) || 0),
         reorder_level: row.reorder_level || 0,
-        is_low_stock: row.reorder_level ? (parseInt(row.current_stock) || 0) <= row.reorder_level : false,
+        is_low_stock: row.reorder_level
+          ? (parseInt(row.current_stock) || 0) <= row.reorder_level
+          : false,
         is_out_of_stock: (parseInt(row.current_stock) || 0) <= 0,
         cost: row.cost,
         price: row.priceA || null,
@@ -1566,7 +1650,7 @@ router.get("/balances", async (req: Request, res: Response) => {
     const movements = await prisma.stockMovement.findMany({
       where: {
         partId: { in: partIds },
-        storeId: store_id ? (store_id as string) : undefined
+        storeId: store_id ? (store_id as string) : undefined,
       },
       select: {
         partId: true,
@@ -1591,17 +1675,27 @@ router.get("/balances", async (req: Request, res: Response) => {
     // Get official Location Info from PartRackShelf
     const locationRecords = await prisma.partRackShelf.findMany({
       where: { partId: { in: partIds } },
-      include: { Rack: true, Shelf: true, Store: true }
+      include: { Rack: true, Shelf: true, Store: true },
     });
 
-    const locationByPart: Record<string, { racks: Set<string>; shelves: Set<string>; stores: Set<string> }> = {};
+    const locationByPart: Record<
+      string,
+      { racks: Set<string>; shelves: Set<string>; stores: Set<string> }
+    > = {};
     for (const record of locationRecords) {
       if (!locationByPart[record.partId]) {
-        locationByPart[record.partId] = { racks: new Set(), shelves: new Set(), stores: new Set() };
+        locationByPart[record.partId] = {
+          racks: new Set(),
+          shelves: new Set(),
+          stores: new Set(),
+        };
       }
-      if (record.Rack?.codeNo) locationByPart[record.partId].racks.add(record.Rack.codeNo);
-      if (record.Shelf?.shelfNo) locationByPart[record.partId].shelves.add(record.Shelf.shelfNo);
-      if (record.Store?.name) locationByPart[record.partId].stores.add(record.Store.name);
+      if (record.Rack?.codeNo)
+        locationByPart[record.partId].racks.add(record.Rack.codeNo);
+      if (record.Shelf?.shelfNo)
+        locationByPart[record.partId].shelves.add(record.Shelf.shelfNo);
+      if (record.Store?.name)
+        locationByPart[record.partId].stores.add(record.Store.name);
     }
 
     // Get reserved quantities
@@ -1618,12 +1712,17 @@ router.get("/balances", async (req: Request, res: Response) => {
 
     const reservedByPart: Record<string, number> = {};
     for (const res of stockReservations) {
-      reservedByPart[res.partId] = (reservedByPart[res.partId] || 0) + res.quantity;
+      reservedByPart[res.partId] =
+        (reservedByPart[res.partId] || 0) + res.quantity;
     }
 
     const balances = parts.map((part) => {
       const stock = stockByPart[part.id] || { in: 0, out: 0 };
-      const locations = locationByPart[part.id] || { racks: new Set(), shelves: new Set(), stores: new Set() };
+      const locations = locationByPart[part.id] || {
+        racks: new Set(),
+        shelves: new Set(),
+        stores: new Set(),
+      };
 
       const currentStock = Math.max(0, stock.in - stock.out);
       const reservedQty = reservedByPart[part.id] || 0;
@@ -1657,7 +1756,9 @@ router.get("/balances", async (req: Request, res: Response) => {
         reserved_quantity: reservedQty,
         available_quantity: availableQty,
         reorder_level: part.reorderLevel,
-        is_low_stock: part.reorderLevel ? currentStock <= part.reorderLevel : false,
+        is_low_stock: part.reorderLevel
+          ? currentStock <= part.reorderLevel
+          : false,
         is_out_of_stock: currentStock <= 0,
         cost: part.cost,
         price: part.priceA || null,
@@ -1671,7 +1772,9 @@ router.get("/balances", async (req: Request, res: Response) => {
       filteredBalances = filteredBalances.filter((b) => b.current_stock > 0);
     }
     if (low_stock === "true") {
-      filteredBalances = filteredBalances.filter((b) => b.is_low_stock && !b.is_out_of_stock);
+      filteredBalances = filteredBalances.filter(
+        (b) => b.is_low_stock && !b.is_out_of_stock,
+      );
     }
     if (out_of_stock === "true") {
       filteredBalances = filteredBalances.filter((b) => b.is_out_of_stock);
@@ -1713,10 +1816,11 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
 
     // Use queryRaw to replicate parts.ts logic exactly including joins
     // Cast result to any[] to avoid TS issues
-    const result = await prisma.$queryRaw`
+    const result = (await prisma.$queryRaw`
       SELECT 
         p.id, p."avgCost", p.cost, p."purchasePrice", p."priceA",
-        COALESCE(st.stock, 0) as current_stock
+        COALESCE(st.stock, 0) as current_stock,
+        COALESCE(rs.reserved, 0) as reserved_stock
       FROM "Part" p
       LEFT JOIN (
           SELECT "partId", 
@@ -1724,8 +1828,14 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
           FROM "StockMovement"
           GROUP BY "partId"
       ) st ON p.id = st."partId"
-      WHERE p.id = ${partId}
-    ` as any[];
+      LEFT JOIN (
+          SELECT "partId", SUM(quantity) as reserved
+          FROM "StockReservation"
+          WHERE status = 'reserved'
+          GROUP BY "partId"
+      ) rs ON p.id = rs."partId"
+      WHERE p.id = ${partId}::uuid
+    `) as any[];
 
     if (!result || result.length === 0) {
       return res.status(404).json({ error: "Part not found" });
@@ -1741,26 +1851,33 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
       const lastAdjustment = await prisma.adjustmentItem.findFirst({
         where: {
           partId: partId,
-          Adjustment: { status: 'approved', deletedAt: null },
-          cost: { not: null, gt: 0 }
+          Adjustment: { status: "approved", deletedAt: null },
+          cost: { not: null, gt: 0 },
         },
-        orderBy: [{ Adjustment: { date: 'desc' } }, { Adjustment: { createdAt: 'desc' } }],
-        select: { cost: true }
+        orderBy: [
+          { Adjustment: { date: "desc" } },
+          { Adjustment: { createdAt: "desc" } },
+        ],
+        select: { cost: true },
       });
       if (lastAdjustment?.cost) {
         finalAvgCost = lastAdjustment.cost;
       }
     }
 
+    const currentStock = parseInt(row.current_stock) || 0;
+    const reservedStock = parseInt(row.reserved_stock) || 0;
+
     res.json({
       part_id: row.id,
-      current_stock: parseInt(row.current_stock) || 0,
+      current_stock: currentStock,
+      reserved_stock: reservedStock,
+      available_stock: Math.max(0, currentStock - reservedStock),
       avg_cost: finalAvgCost,
       cost: row.cost || 0,
       purchase_price: row.purchasePrice || 0,
-      price_a: row.priceA || 0
+      price_a: row.priceA || 0,
     });
-
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1831,16 +1948,16 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
       where: {
         partId: partId,
         Adjustment: {
-          status: 'approved',
-          deletedAt: null
+          status: "approved",
+          deletedAt: null,
         },
-        cost: { not: null, gt: 0 }
+        cost: { not: null, gt: 0 },
       },
       orderBy: [
-        { Adjustment: { date: 'desc' } },
-        { Adjustment: { createdAt: 'desc' } }
+        { Adjustment: { date: "desc" } },
+        { Adjustment: { createdAt: "desc" } },
       ],
-      select: { cost: true }
+      select: { cost: true },
     });
 
     res.json({
@@ -1861,7 +1978,8 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
         : false,
       is_out_of_stock: currentStock <= 0,
       cost: dbCost || part?.cost || 0,
-      avg_cost: dbAvgCost || dbCost || dbPurchasePrice || lastAdjustment?.cost || 0,
+      avg_cost:
+        dbAvgCost || dbCost || dbPurchasePrice || lastAdjustment?.cost || 0,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -2020,7 +2138,9 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
         const matchesSearch =
           part.partNo.toLowerCase().includes(searchLower) ||
           (part.description || "").toLowerCase().includes(searchLower) ||
-          ((part as any).Category?.name || "").toLowerCase().includes(searchLower);
+          ((part as any).Category?.name || "")
+            .toLowerCase()
+            .includes(searchLower);
         if (!matchesSearch) {
           continue;
         }
@@ -2049,8 +2169,6 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-
 
 // Get stock balance & valuation with store and location details
 router.get("/stock-balance-valuation", async (req: Request, res: Response) => {
@@ -2426,7 +2544,8 @@ router.get("/transfers/:id", async (req: Request, res: Response) => {
       notes: transfer.notes,
       total_qty: transfer.totalQty,
       from_store_id: transfer.fromStoreId,
-      from_store: (transfer as any).Store_Transfer_fromStoreIdToStore?.name || null,
+      from_store:
+        (transfer as any).Store_Transfer_fromStoreIdToStore?.name || null,
       to_store_id: transfer.toStoreId,
       to_store: (transfer as any).Store_Transfer_toStoreIdToStore?.name || null,
       items: (transfer as any).TransferItem.map((item: any) => ({
@@ -2438,17 +2557,22 @@ router.get("/transfers/:id", async (req: Request, res: Response) => {
         category: item.Part.Category?.name || "",
         quantity: item.quantity,
         from_store_id: item.fromStoreId,
-        from_store: (item as any).Store_TransferItem_fromStoreIdToStore?.name || null,
+        from_store:
+          (item as any).Store_TransferItem_fromStoreIdToStore?.name || null,
         from_rack_id: item.fromRackId,
-        from_rack: (item as any).Rack_TransferItem_fromRackIdToRack?.codeNo || null,
+        from_rack:
+          (item as any).Rack_TransferItem_fromRackIdToRack?.codeNo || null,
         from_shelf_id: item.fromShelfId,
-        from_shelf: (item as any).Shelf_TransferItem_fromShelfIdToShelf?.shelfNo || null,
+        from_shelf:
+          (item as any).Shelf_TransferItem_fromShelfIdToShelf?.shelfNo || null,
         to_store_id: item.toStoreId,
-        to_store: (item as any).Store_TransferItem_toStoreIdToStore?.name || null,
+        to_store:
+          (item as any).Store_TransferItem_toStoreIdToStore?.name || null,
         to_rack_id: item.toRackId,
         to_rack: (item as any).Rack_TransferItem_toRackIdToRack?.codeNo || null,
         to_shelf_id: item.toShelfId,
-        to_shelf: (item as any).Shelf_TransferItem_toShelfIdToShelf?.shelfNo || null,
+        to_shelf:
+          (item as any).Shelf_TransferItem_toShelfIdToShelf?.shelfNo || null,
       })),
       created_at: transfer.createdAt,
     });
@@ -2555,7 +2679,14 @@ router.delete("/transfers/:id", async (req: Request, res: Response) => {
 // Get adjustments
 router.get("/adjustments", async (req: Request, res: Response) => {
   try {
-    const { from_date, to_date, status, search, page = "1", limit = "50" } = req.query;
+    const {
+      from_date,
+      to_date,
+      status,
+      search,
+      page = "1",
+      limit = "50",
+    } = req.query;
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
@@ -2590,14 +2721,14 @@ router.get("/adjustments", async (req: Request, res: Response) => {
           store: {
             OR: [
               { name: { contains: searchStr, mode: "insensitive" } },
-              { code: { contains: searchStr, mode: "insensitive" } }
-            ]
-          }
+              { code: { contains: searchStr, mode: "insensitive" } },
+            ],
+          },
         },
         {
           voucher: {
-            voucherNumber: { contains: searchStr, mode: "insensitive" }
-          }
+            voucherNumber: { contains: searchStr, mode: "insensitive" },
+          },
         },
         {
           items: {
@@ -2607,19 +2738,24 @@ router.get("/adjustments", async (req: Request, res: Response) => {
                   Part: {
                     OR: [
                       { partNo: { contains: searchStr, mode: "insensitive" } },
-                      { description: { contains: searchStr, mode: "insensitive" } },
+                      {
+                        description: {
+                          contains: searchStr,
+                          mode: "insensitive",
+                        },
+                      },
                       {
                         brand: {
-                          name: { contains: searchStr, mode: "insensitive" }
-                        }
-                      }
-                    ]
-                  }
-                }
-              ]
-            }
-          }
-        }
+                          name: { contains: searchStr, mode: "insensitive" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
       ];
     }
 
@@ -2628,8 +2764,12 @@ router.get("/adjustments", async (req: Request, res: Response) => {
 
     // WORKAROUND: Since prisma generate is failing due to file locks on Windows,
     // we fetch adjustmentNo using raw SQL to ensure it's in the response.
-    const { rows: serialRows } = await query('SELECT id, "adjustmentNo" FROM "Adjustment"');
-    const serialMap = new Map(serialRows.map((r: any) => [r.id, r.adjustmentNo]));
+    const { rows: serialRows } = await query(
+      'SELECT id, "adjustmentNo" FROM "Adjustment"',
+    );
+    const serialMap = new Map(
+      serialRows.map((r: any) => [r.id, r.adjustmentNo]),
+    );
 
     // Get adjustments
     const adjustmentsData = await prisma.adjustment.findMany({
@@ -2668,7 +2808,8 @@ router.get("/adjustments", async (req: Request, res: Response) => {
         total_amount: adj.totalAmount,
         status: adj.status,
         voucher_id: adj.voucherId,
-        voucher_number: adj.Voucher_Adjustment_voucherIdToVoucher?.voucherNumber,
+        voucher_number:
+          adj.Voucher_Adjustment_voucherIdToVoucher?.voucherNumber,
         voucher_status: adj.Voucher_Adjustment_voucherIdToVoucher?.status,
         created_at: adj.createdAt,
         updated_at: adj.updatedAt,
@@ -2737,12 +2878,15 @@ router.post("/adjustments", async (req: Request, res: Response) => {
         .map((item: any) => {
           const part = partMap.get(item.part_id);
           const partInfo = part
-            ? `${part.partNo}/${part.description || ""}/${(part as any).Brand?.name || ""
-            }/${part.partNo}`
+            ? `${part.partNo}/${part.description || ""}/${
+                (part as any).Brand?.name || ""
+              }/${part.partNo}`
             : `Part ${item.part_id}`;
-          return `Item: ${partInfo} is ${add_inventory !== false ? "added" : "remove"
-            } from Adjust Inventory, Qty:${item.quantity}, Rate: ${parseFloat(item.cost) || 0
-            }`;
+          return `Item: ${partInfo} is ${
+            add_inventory !== false ? "added" : "remove"
+          } from Adjust Inventory, Qty:${item.quantity}, Rate: ${
+            parseFloat(item.cost) || 0
+          }`;
         })
         .join("; ");
 
@@ -2999,7 +3143,9 @@ router.post("/adjustments", async (req: Request, res: Response) => {
       await tx.voucher.update({
         where: { id: voucher.id },
         data: {
-          Adjustment_Voucher_adjustmentIdToAdjustment: { connect: { id: adjustmentId } },
+          Adjustment_Voucher_adjustmentIdToAdjustment: {
+            connect: { id: adjustmentId },
+          },
         },
       });
 
@@ -3008,7 +3154,6 @@ router.post("/adjustments", async (req: Request, res: Response) => {
         where: { voucherId: voucher.id },
         data: { adjustmentId: adjustmentId } as any,
       });
-
 
       // 10.5 Update Price A & Price B if provided
       for (const item of items) {
@@ -3399,13 +3544,13 @@ router.get("/adjustments/:id", async (req: Request, res: Response) => {
     // Fetch voucher separately
     const voucher = adjustment.voucherId
       ? await prisma.voucher.findUnique({
-        where: { id: adjustment.voucherId },
-        select: {
-          id: true,
-          voucherNumber: true,
-          status: true,
-        },
-      })
+          where: { id: adjustment.voucherId },
+          select: {
+            id: true,
+            voucherNumber: true,
+            status: true,
+          },
+        })
       : null;
 
     res.json({
@@ -3465,10 +3610,10 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
     // Calculate total amount
     const totalAmount = items
       ? items.reduce((sum: number, item: any) => {
-        const cost = item.cost || 0;
-        const qty = item.quantity || 0;
-        return sum + cost * qty;
-      }, 0)
+          const cost = item.cost || 0;
+          const qty = item.quantity || 0;
+          return sum + cost * qty;
+        }, 0)
       : existingAdjustment.totalAmount;
 
     // Use a transaction for the entire update process
@@ -3582,9 +3727,18 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
                 updatedAt: new Date(),
                 rackId: item.rack_id || null,
                 shelfId: item.shelf_id || null,
-                priceA: item.priceA !== undefined && item.priceA !== "" ? parseFloat(item.priceA) : null,
-                priceB: item.priceB !== undefined && item.priceB !== "" ? parseFloat(item.priceB) : null,
-                priceM: item.priceM !== undefined && item.priceM !== "" ? parseFloat(item.priceM) : null,
+                priceA:
+                  item.priceA !== undefined && item.priceA !== ""
+                    ? parseFloat(item.priceA)
+                    : null,
+                priceB:
+                  item.priceB !== undefined && item.priceB !== ""
+                    ? parseFloat(item.priceB)
+                    : null,
+                priceM:
+                  item.priceM !== undefined && item.priceM !== ""
+                    ? parseFloat(item.priceM)
+                    : null,
               })),
             },
           }),
@@ -3725,9 +3879,9 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
 
           // F. Create NEW Voucher
           const voucherStatus = shouldApprove ? "posted" : "draft";
-          const itemDescriptions = adjustment.AdjustmentItem
-            .map((item: any) => `${item.Part.partNo} (${item.quantity})`)
-            .join(", ");
+          const itemDescriptions = adjustment.AdjustmentItem.map(
+            (item: any) => `${item.Part.partNo} (${item.quantity})`,
+          ).join(", ");
 
           const voucherId = randomUUID();
           console.log("Creating voucher with ID:", voucherId);
@@ -3796,9 +3950,11 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
 
       // 5.5 Update Price A & Price B if provided (from PUT items)
       if (items) {
-        console.log('[PRICE_HISTORY_DEBUG] Processing items for price updates...');
+        console.log(
+          "[PRICE_HISTORY_DEBUG] Processing items for price updates...",
+        );
         for (const item of items) {
-          console.log('[PRICE_HISTORY_DEBUG] Item received:', {
+          console.log("[PRICE_HISTORY_DEBUG] Item received:", {
             part_id: item.part_id,
             priceA: item.priceA,
             priceB: item.priceB,
@@ -3818,7 +3974,11 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
               ? parseFloat(item.priceM)
               : undefined;
 
-          console.log('[PRICE_HISTORY_DEBUG] Parsed prices:', { priceA, priceB, priceM });
+          console.log("[PRICE_HISTORY_DEBUG] Parsed prices:", {
+            priceA,
+            priceB,
+            priceM,
+          });
 
           if (
             priceA !== undefined ||
@@ -3830,7 +3990,7 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
             });
 
             if (part) {
-              console.log('[PRICE_HISTORY_DEBUG] Current part prices:', {
+              console.log("[PRICE_HISTORY_DEBUG] Current part prices:", {
                 partNo: part.partNo,
                 currentPriceA: part.priceA,
                 currentPriceB: part.priceB,
@@ -3906,20 +4066,28 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
               }
 
               if (Object.keys(updateData).length > 0) {
-                console.log('[PRICE_HISTORY_DEBUG] Updating part with:', updateData);
+                console.log(
+                  "[PRICE_HISTORY_DEBUG] Updating part with:",
+                  updateData,
+                );
                 await tx.part.update({
                   where: { id: item.part_id },
                   data: updateData,
                 });
-                console.log('[PRICE_HISTORY_DEBUG] Part updated successfully');
+                console.log("[PRICE_HISTORY_DEBUG] Part updated successfully");
               } else {
-                console.log('[PRICE_HISTORY_DEBUG] No price changes detected, skipping update');
+                console.log(
+                  "[PRICE_HISTORY_DEBUG] No price changes detected, skipping update",
+                );
               }
             } else {
-              console.log('[PRICE_HISTORY_DEBUG] Part not found for id:', item.part_id);
+              console.log(
+                "[PRICE_HISTORY_DEBUG] Part not found for id:",
+                item.part_id,
+              );
             }
           } else {
-            console.log('[PRICE_HISTORY_DEBUG] No prices provided in request');
+            console.log("[PRICE_HISTORY_DEBUG] No prices provided in request");
           }
         }
       }
@@ -4156,23 +4324,23 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
     // Fetch voucher separately
     const voucher = adjustment?.voucherId
       ? await prisma.voucher.findUnique({
-        where: { id: adjustment.voucherId },
-        include: {
-          VoucherEntry: {
-            include: {
-              Account: {
-                include: {
-                  Subgroup: {
-                    include: {
-                      MainGroup: true,
+          where: { id: adjustment.voucherId },
+          include: {
+            VoucherEntry: {
+              include: {
+                Account: {
+                  include: {
+                    Subgroup: {
+                      include: {
+                        MainGroup: true,
+                      },
                     },
                   },
                 },
               },
             },
           },
-        },
-      })
+        })
       : null;
 
     if (adjustment) {
@@ -4240,7 +4408,8 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
           where: { id: existingPrs.id },
           data: {
             quantity: {
-              [adjustment.addInventory ? "increment" : "decrement"]: item.quantity,
+              [adjustment.addInventory ? "increment" : "decrement"]:
+                item.quantity,
             },
           },
         });
@@ -4296,8 +4465,8 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
         const accountType = entry.Account.Subgroup.MainGroup.type.toLowerCase();
         const balanceChange =
           accountType === "asset" ||
-            accountType === "expense" ||
-            accountType === "cost"
+          accountType === "expense" ||
+          accountType === "cost"
             ? entry.debit - entry.credit
             : entry.credit - entry.debit;
 
@@ -4494,13 +4663,13 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
     // Fetch voucher separately
     const updatedVoucherInfo = updatedAdjustment.voucherId
       ? await prisma.voucher.findUnique({
-        where: { id: updatedAdjustment.voucherId },
-        select: {
-          id: true,
-          voucherNumber: true,
-          status: true,
-        },
-      })
+          where: { id: updatedAdjustment.voucherId },
+          select: {
+            id: true,
+            voucherNumber: true,
+            status: true,
+          },
+        })
       : null;
 
     updatedAdjustment.voucher = updatedVoucherInfo;
@@ -4774,8 +4943,8 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
     const suppliers =
       supplierIds.length > 0
         ? await prisma.supplier.findMany({
-          where: { id: { in: supplierIds as string[] } },
-        })
+            where: { id: { in: supplierIds as string[] } },
+          })
         : [];
     const supplierMap = new Map(
       suppliers.map((s) => [s.id, s.companyName || s.name || "N/A"]),
@@ -4889,8 +5058,8 @@ router.get(
       const suppliers =
         supplierIds.length > 0
           ? await prisma.supplier.findMany({
-            where: { id: { in: supplierIds as string[] } },
-          })
+              where: { id: { in: supplierIds as string[] } },
+            })
           : [];
       const supplierMap = new Map(
         suppliers.map((s) => [s.id, s.companyName || s.name || "N/A"]),
@@ -4899,7 +5068,9 @@ router.get(
       // Format response with purchase order details and the specific item for this part
       const result = purchaseOrders
         .map((po) => {
-          const itemForPart = po.PurchaseOrderItem.find((item) => item.partId === partId);
+          const itemForPart = po.PurchaseOrderItem.find(
+            (item) => item.partId === partId,
+          );
           return {
             id: po.id,
             po_number: po.poNumber,
@@ -4914,17 +5085,17 @@ router.get(
             total_amount: po.totalAmount,
             item: itemForPart
               ? {
-                id: itemForPart.id,
-                part_id: itemForPart.partId,
-                part_no: itemForPart.Part.partNo,
-                part_description: itemForPart.Part.description,
-                brand: itemForPart.Part.Brand?.name || "",
-                quantity: itemForPart.quantity,
-                unit_cost: itemForPart.unitCost,
-                total_cost: itemForPart.totalCost,
-                received_qty: itemForPart.receivedQty,
-                notes: itemForPart.notes,
-              }
+                  id: itemForPart.id,
+                  part_id: itemForPart.partId,
+                  part_no: itemForPart.Part.partNo,
+                  part_description: itemForPart.Part.description,
+                  brand: itemForPart.Part.Brand?.name || "",
+                  quantity: itemForPart.quantity,
+                  unit_cost: itemForPart.unitCost,
+                  total_cost: itemForPart.totalCost,
+                  received_qty: itemForPart.receivedQty,
+                  notes: itemForPart.notes,
+                }
               : null,
             created_at: po.createdAt,
           };
@@ -5355,9 +5526,10 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
                   const currentAvg = part.avgCost || part.cost || 0;
 
                   // Formula: (OldQty * OldAvg + NewQty * Rate) / (TotalQty)
-                  const newAvg = (oldQty + qty) > 0
-                    ? (oldQty * currentAvg + qty * rate) / (oldQty + qty)
-                    : rate;
+                  const newAvg =
+                    oldQty + qty > 0
+                      ? (oldQty * currentAvg + qty * rate) / (oldQty + qty)
+                      : rate;
 
                   await prisma.part.update({
                     where: { id: partId },
@@ -5490,8 +5662,9 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
 
             // Debit: Inventory account
             const inventoryDescription =
-              order.PurchaseOrderItem
-                .filter((item: any) => item.receivedQty > 0)
+              order.PurchaseOrderItem.filter(
+                (item: any) => item.receivedQty > 0,
+              )
                 .map((item: any) => {
                   const partName = item.Part?.partNo || "Item";
                   return `PO: ${order.poNumber} Inventory Added ,${partName}/, Qty ${item.receivedQty}, Rate ${item.unitCost}, Cost: ${item.totalCost}`;
@@ -5672,8 +5845,8 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
                 // Liabilities, Equity, Revenue: increase with credit, decrease with debit
                 const balanceChange =
                   accountType === "asset" ||
-                    accountType === "expense" ||
-                    accountType === "cost"
+                  accountType === "expense" ||
+                  accountType === "cost"
                     ? line.debit - line.credit
                     : line.credit - line.debit;
 
@@ -5745,10 +5918,7 @@ router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
     });
 
     // Step 2: Delete related Vouchers and reverse balances
-    const poNumberVariations = [
-      order.poNumber,
-      `PO-${order.poNumber}`,
-    ];
+    const poNumberVariations = [order.poNumber, `PO-${order.poNumber}`];
 
     const vouchers = await prisma.voucher.findMany({
       where: {
@@ -5771,9 +5941,10 @@ router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
     for (const v of vouchers) {
       for (const edge of v.VoucherEntry) {
         const accType = edge.Account.Subgroup.MainGroup.type.toLowerCase();
-        const reverseBalance = (accType === "asset" || accType === "expense" || accType === "cost")
-          ? edge.credit - edge.debit
-          : edge.debit - edge.credit;
+        const reverseBalance =
+          accType === "asset" || accType === "expense" || accType === "cost"
+            ? edge.credit - edge.debit
+            : edge.debit - edge.credit;
 
         await prisma.account.update({
           where: { id: edge.accountId },
@@ -5970,7 +6141,12 @@ router.get("/racks", async (req: Request, res: Response) => {
 // Create rack
 router.post("/racks", async (req: Request, res: Response) => {
   try {
-    const { codeNo, storeId, description, status }: {
+    const {
+      codeNo,
+      storeId,
+      description,
+      status,
+    }: {
       codeNo: string;
       storeId?: string | null;
       description?: string;
@@ -6001,7 +6177,6 @@ router.post("/racks", async (req: Request, res: Response) => {
       storeId: rack.storeId,
       description: rack.description,
       status: rack.status,
-
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -6012,7 +6187,12 @@ router.post("/racks", async (req: Request, res: Response) => {
 router.put("/racks/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { codeNo, storeId, description, status }: {
+    const {
+      codeNo,
+      storeId,
+      description,
+      status,
+    }: {
       codeNo?: string;
       storeId?: string;
       description?: string;
@@ -6038,7 +6218,6 @@ router.put("/racks/:id", async (req: Request, res: Response) => {
       storeId: rack.storeId,
       description: rack.description,
       status: rack.status,
-
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -6107,7 +6286,14 @@ router.get("/shelves", async (req: Request, res: Response) => {
 // Create shelf
 router.post("/shelves", async (req: Request, res: Response) => {
   try {
-    const { id, shelfNo, rackId, description, status, updatedAt }: {
+    const {
+      id,
+      shelfNo,
+      rackId,
+      description,
+      status,
+      updatedAt,
+    }: {
       id?: string;
       shelfNo: string;
       rackId: string;
@@ -6116,7 +6302,14 @@ router.post("/shelves", async (req: Request, res: Response) => {
       updatedAt?: string;
     } = req.body;
 
-    console.log("[SHELF CREATE] Received request:", { id, shelfNo, rackId, description, status, updatedAt });
+    console.log("[SHELF CREATE] Received request:", {
+      id,
+      shelfNo,
+      rackId,
+      description,
+      status,
+      updatedAt,
+    });
 
     if (!shelfNo || !rackId) {
       return res
@@ -6132,7 +6325,7 @@ router.post("/shelves", async (req: Request, res: Response) => {
     if (!rackExists) {
       console.error(`[SHELF CREATE] Rack not found: ${rackId}`);
       return res.status(404).json({
-        error: `Rack with ID ${rackId} not found. Please select a valid rack.`
+        error: `Rack with ID ${rackId} not found. Please select a valid rack.`,
       });
     }
 
@@ -6169,11 +6362,15 @@ router.post("/shelves", async (req: Request, res: Response) => {
     console.error("[SHELF CREATE] Error code:", error.code);
     console.error("[SHELF CREATE] Error meta:", error.meta);
 
-    if (error.code === 'P2002') {
-      return res.status(400).json({ error: "Shelf with this name already exists in this rack" });
+    if (error.code === "P2002") {
+      return res
+        .status(400)
+        .json({ error: "Shelf with this name already exists in this rack" });
     }
-    if (error.code === 'P2003') {
-      return res.status(400).json({ error: "Invalid rack ID. The specified rack does not exist." });
+    if (error.code === "P2003") {
+      return res
+        .status(400)
+        .json({ error: "Invalid rack ID. The specified rack does not exist." });
     }
     res.status(500).json({ error: error.message });
   }
@@ -6184,10 +6381,17 @@ router.post("/shelves/create-new", async (req: Request, res: Response) => {
   try {
     const { shelfNo, rackId, description, status } = req.body;
 
-    console.log("[SHELF CREATE NEW] Received request:", { shelfNo, rackId, description, status });
+    console.log("[SHELF CREATE NEW] Received request:", {
+      shelfNo,
+      rackId,
+      description,
+      status,
+    });
 
     if (!shelfNo || !rackId) {
-      return res.status(400).json({ error: "Shelf number and rack ID are required" });
+      return res
+        .status(400)
+        .json({ error: "Shelf number and rack ID are required" });
     }
 
     // Validate that the rack exists
@@ -6198,7 +6402,7 @@ router.post("/shelves/create-new", async (req: Request, res: Response) => {
     if (!rackExists) {
       console.error(`[SHELF CREATE NEW] Rack not found: ${rackId}`);
       return res.status(404).json({
-        error: `Rack with ID ${rackId} not found. Please select a valid rack.`
+        error: `Rack with ID ${rackId} not found. Please select a valid rack.`,
       });
     }
 
@@ -6229,11 +6433,15 @@ router.post("/shelves/create-new", async (req: Request, res: Response) => {
     console.error("[SHELF CREATE NEW] Error code:", error.code);
     console.error("[SHELF CREATE NEW] Error meta:", error.meta);
 
-    if (error.code === 'P2002') {
-      return res.status(400).json({ error: "Shelf with this name already exists in this rack" });
+    if (error.code === "P2002") {
+      return res
+        .status(400)
+        .json({ error: "Shelf with this name already exists in this rack" });
     }
-    if (error.code === 'P2003') {
-      return res.status(400).json({ error: "Invalid rack ID. The specified rack does not exist." });
+    if (error.code === "P2003") {
+      return res
+        .status(400)
+        .json({ error: "Invalid rack ID. The specified rack does not exist." });
     }
     res.status(500).json({ error: error.message });
   }
@@ -6351,12 +6559,13 @@ router.get("/multi-dimensional-report", async (req: Request, res: Response) => {
     > = {};
 
     for (const part of parts) {
-      const stockIn = part.StockMovement
-        .filter((m) => m.type === "in")
-        .reduce((sum, m) => sum + m.quantity, 0);
-      const stockOut = part.StockMovement
-        .filter((m) => m.type === "out")
-        .reduce((sum, m) => sum + m.quantity, 0);
+      const stockIn = part.StockMovement.filter((m) => m.type === "in").reduce(
+        (sum, m) => sum + m.quantity,
+        0,
+      );
+      const stockOut = part.StockMovement.filter(
+        (m) => m.type === "out",
+      ).reduce((sum, m) => sum + m.quantity, 0);
       const quantity = stockIn - stockOut;
 
       if (quantity > 0) {
@@ -6501,7 +6710,7 @@ router.get("/multi-dimensional-report", async (req: Request, res: Response) => {
       const avgCost =
         group.costs.length > 0
           ? group.costs.reduce((sum, cost) => sum + cost, 0) /
-          group.costs.length
+            group.costs.length
           : 0;
 
       return {
@@ -6609,8 +6818,12 @@ router.get("/verifications", async (req: Request, res: Response) => {
         startDate: v.startDate,
         completedDate: v.completedDate,
         totalItems: v.StockVerificationItem.length,
-        verifiedItems: v.StockVerificationItem.filter((i) => i.status === "Verified").length,
-        discrepancies: v.StockVerificationItem.filter((i) => i.status === "Discrepancy").length,
+        verifiedItems: v.StockVerificationItem.filter(
+          (i) => i.status === "Verified",
+        ).length,
+        discrepancies: v.StockVerificationItem.filter(
+          (i) => i.status === "Discrepancy",
+        ).length,
         createdAt: v.createdAt,
         updatedAt: v.updatedAt,
       })),
@@ -6683,8 +6896,9 @@ router.get("/verifications/active", async (req: Request, res: Response) => {
         };
       }),
       totalItems: verification.StockVerificationItem.length,
-      verifiedItems: verification.StockVerificationItem.filter((i) => i.status === "Verified")
-        .length,
+      verifiedItems: verification.StockVerificationItem.filter(
+        (i) => i.status === "Verified",
+      ).length,
       discrepancies: verification.StockVerificationItem.filter(
         (i) => i.status === "Discrepancy",
       ).length,
@@ -6849,8 +7063,9 @@ router.get("/verifications/:id", async (req: Request, res: Response) => {
         };
       }),
       totalItems: verification.StockVerificationItem.length,
-      verifiedItems: verification.StockVerificationItem.filter((i) => i.status === "Verified")
-        .length,
+      verifiedItems: verification.StockVerificationItem.filter(
+        (i) => i.status === "Verified",
+      ).length,
       discrepancies: verification.StockVerificationItem.filter(
         (i) => i.status === "Discrepancy",
       ).length,
@@ -7106,22 +7321,22 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
             shelfId: item.shelfId,
             rack: item.Rack
               ? {
-                id: item.Rack.id,
-                codeNo: item.Rack.codeNo,
-              }
+                  id: item.Rack.id,
+                  codeNo: item.Rack.codeNo,
+                }
               : null,
             shelf: item.Shelf
               ? {
-                id: item.Shelf.id,
-                shelfNo: item.Shelf.shelfNo,
-              }
+                  id: item.Shelf.id,
+                  shelfNo: item.Shelf.shelfNo,
+                }
               : null,
             part: item.Part
               ? {
-                id: item.Part.id,
-                partNo: item.Part.partNo,
-                description: item.Part.description,
-              }
+                  id: item.Part.id,
+                  partNo: item.Part.partNo,
+                  description: item.Part.description,
+                }
               : null,
           })),
         };
@@ -7276,7 +7491,9 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
 
         let nextNum = 1;
         if (lastDPO) {
-          const match = lastDPO.dpoNumber.match(new RegExp(`^DPO-${year}-(\\d+)$`));
+          const match = lastDPO.dpoNumber.match(
+            new RegExp(`^DPO-${year}-(\\d+)$`),
+          );
           if (match) nextNum = parseInt(match[1]) + 1;
         }
         dpo_number = `DPO-${year}-${String(nextNum).padStart(3, "0")}`;
@@ -7285,11 +7502,21 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       // Calculate totals
       const itemsTotal = items.reduce((sum: number, item: any) => {
         const qty = Number(item.quantity) || 0;
-        const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
-        return sum + (Number(item.amount) || (qty * rate));
+        const rate = Number(
+          item.unit_cost ??
+            item.unitCost ??
+            item.purchase_price ??
+            item.unit_price ??
+            item.unitPrice ??
+            0,
+        );
+        return sum + (Number(item.amount) || qty * rate);
       }, 0);
 
-      const expensesTotal = (expenses || []).reduce((sum: number, exp: any) => sum + (Number(exp.amount) || 0), 0);
+      const expensesTotal = (expenses || []).reduce(
+        (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
+        0,
+      );
       const totalAmount = itemsTotal + expensesTotal;
 
       const dpoId = crypto.randomUUID();
@@ -7309,9 +7536,26 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
               id: crypto.randomUUID(),
               partId: item.part_id,
               quantity: Number(item.quantity) || 0,
-              purchasePrice: Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0),
+              purchasePrice: Number(
+                item.unit_cost ??
+                  item.unitCost ??
+                  item.purchase_price ??
+                  item.unit_price ??
+                  item.unitPrice ??
+                  0,
+              ),
               salePrice: Number(item.sale_price || item.salePrice || 0),
-              amount: Number(item.amount) || (Number(item.quantity) * Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0)),
+              amount:
+                Number(item.amount) ||
+                Number(item.quantity) *
+                  Number(
+                    item.unit_cost ??
+                      item.unitCost ??
+                      item.purchase_price ??
+                      item.unit_price ??
+                      item.unitPrice ??
+                      0,
+                  ),
               priceA: item.price_a != null ? Number(item.price_a) : null,
               priceB: item.price_b != null ? Number(item.price_b) : null,
               priceM: item.price_m != null ? Number(item.price_m) : null,
@@ -7336,13 +7580,21 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       });
 
       // Update Parts and Stock
-      const isApprovedStatus = (s: string) => ["completed", "received", "approved"].includes(s.toLowerCase());
+      const isApprovedStatus = (s: string) =>
+        ["completed", "received", "approved"].includes(s.toLowerCase());
       const currentStatus = status || "Completed";
 
       // 1. Unconditionally update purchase prices for all items
       for (const item of items) {
         const partId = item.part_id;
-        const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
+        const rate = Number(
+          item.unit_cost ??
+            item.unitCost ??
+            item.purchase_price ??
+            item.unit_price ??
+            item.unitPrice ??
+            0,
+        );
         if (partId && rate > 0) {
           await tx.part.update({
             where: { id: partId },
@@ -7356,7 +7608,14 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
         for (const item of items) {
           const partId = item.part_id;
           const qty = Number(item.quantity) || 0;
-          const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
+          const rate = Number(
+            item.unit_cost ??
+              item.unitCost ??
+              item.purchase_price ??
+              item.unit_price ??
+              item.unitPrice ??
+              0,
+          );
 
           if (partId && rate > 0) {
             // Removed auto-update of avgCost and cost per user request
@@ -7381,48 +7640,116 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       }
 
       // Accounting
-      const voucherCreationStatus = { jvCreated: false, pvCreated: false, jvNumber: null as string | null, pvNumber: null as string | null, errors: [] as string[] };
+      const voucherCreationStatus = {
+        jvCreated: false,
+        pvCreated: false,
+        jvNumber: null as string | null,
+        pvNumber: null as string | null,
+        errors: [] as string[],
+      };
       if (isApprovedStatus(currentStatus) && totalAmount > 0) {
         try {
           let inventoryAccount = await tx.account.findFirst({
-            where: { OR: [{ Subgroup: { code: "104" } }, { code: "101001" }, { code: "104005" }, { name: { contains: "Inventory - General" } }], status: "Active" },
-            include: { Subgroup: { include: { MainGroup: true } } }
+            where: {
+              OR: [
+                { Subgroup: { code: "104" } },
+                { code: "101001" },
+                { code: "104005" },
+                { name: { contains: "Inventory - General" } },
+              ],
+              status: "Active",
+            },
+            include: { Subgroup: { include: { MainGroup: true } } },
           });
           if (!inventoryAccount) {
             inventoryAccount = await tx.account.findFirst({
-              where: { OR: [{ Subgroup: { code: "104" } }, { name: { contains: "Inventory" } }], status: "Active" },
-              include: { Subgroup: { include: { MainGroup: true } } }
+              where: {
+                OR: [
+                  { Subgroup: { code: "104" } },
+                  { name: { contains: "Inventory" } },
+                ],
+                status: "Active",
+              },
+              include: { Subgroup: { include: { MainGroup: true } } },
             });
           }
 
-          const supplier = await tx.supplier.findUnique({ where: { id: supplier_id } });
+          const supplier = await tx.supplier.findUnique({
+            where: { id: supplier_id },
+          });
           let mainPayableAccount = await tx.account.findFirst({
-            where: { Subgroup: { code: "301" }, OR: [{ name: supplier?.name || "" }, { name: supplier?.companyName || "" }, { name: { contains: supplier?.name || "Supplier" } }] },
-            include: { Subgroup: { include: { MainGroup: true } } }
+            where: {
+              Subgroup: { code: "301" },
+              OR: [
+                { name: supplier?.name || "" },
+                { name: supplier?.companyName || "" },
+                { name: { contains: supplier?.name || "Supplier" } },
+              ],
+            },
+            include: { Subgroup: { include: { MainGroup: true } } },
           });
           if (!mainPayableAccount) {
             mainPayableAccount = await tx.account.findFirst({
               where: { Subgroup: { code: "301" } },
-              include: { Subgroup: { include: { MainGroup: true } } }
+              include: { Subgroup: { include: { MainGroup: true } } },
             });
           }
 
           if (inventoryAccount && mainPayableAccount) {
-            const lastVoucher = await tx.voucher.findFirst({ where: { type: "journal", voucherNumber: { startsWith: "JV" } }, orderBy: { voucherNumber: "desc" } });
-            const jvNum = lastVoucher ? (parseInt(lastVoucher.voucherNumber.match(/\d+/)![0]) + 1) : 1;
+            const lastVoucher = await tx.voucher.findFirst({
+              where: { type: "journal", voucherNumber: { startsWith: "JV" } },
+              orderBy: { voucherNumber: "desc" },
+            });
+            const jvNum = lastVoucher
+              ? parseInt(lastVoucher.voucherNumber.match(/\d+/)![0]) + 1
+              : 1;
             const jvNumber = `JV${String(jvNum).padStart(4, "0")}`;
 
             const voucherEntries = [
-              { id: crypto.randomUUID(), accountId: inventoryAccount.id, accountName: `${inventoryAccount.code}-${inventoryAccount.name}`, description: `DPO: ${dpo_number} Inventory Added`, debit: itemsTotal, credit: 0, sortOrder: 0 },
-              { id: crypto.randomUUID(), accountId: mainPayableAccount.id, accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`, description: `DPO: ${dpo_number} Liability Created`, debit: 0, credit: itemsTotal, sortOrder: 1 }
+              {
+                id: crypto.randomUUID(),
+                accountId: inventoryAccount.id,
+                accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+                description: `DPO: ${dpo_number} Inventory Added`,
+                debit: itemsTotal,
+                credit: 0,
+                sortOrder: 0,
+              },
+              {
+                id: crypto.randomUUID(),
+                accountId: mainPayableAccount.id,
+                accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
+                description: `DPO: ${dpo_number} Liability Created`,
+                debit: 0,
+                credit: itemsTotal,
+                sortOrder: 1,
+              },
             ];
 
             if (expenses && expenses.length > 0) {
               for (const exp of expenses) {
-                const epAccount = await tx.account.findFirst({ where: { name: exp.payable_account, status: "Active" } });
+                const epAccount = await tx.account.findFirst({
+                  where: { name: exp.payable_account, status: "Active" },
+                });
                 if (epAccount) {
-                  voucherEntries.push({ id: crypto.randomUUID(), accountId: inventoryAccount.id, accountName: `${inventoryAccount.code}-${inventoryAccount.name}`, description: `DPO: ${dpo_number} - ${exp.expense_type}`, debit: exp.amount, credit: 0, sortOrder: voucherEntries.length });
-                  voucherEntries.push({ id: crypto.randomUUID(), accountId: epAccount.id, accountName: `${epAccount.code}-${epAccount.name}`, description: `DPO: ${dpo_number} - ${exp.expense_type} Payable`, debit: 0, credit: exp.amount, sortOrder: voucherEntries.length });
+                  voucherEntries.push({
+                    id: crypto.randomUUID(),
+                    accountId: inventoryAccount.id,
+                    accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+                    description: `DPO: ${dpo_number} - ${exp.expense_type}`,
+                    debit: exp.amount,
+                    credit: 0,
+                    sortOrder: voucherEntries.length,
+                  });
+                  voucherEntries.push({
+                    id: crypto.randomUUID(),
+                    accountId: epAccount.id,
+                    accountName: `${epAccount.code}-${epAccount.name}`,
+                    description: `DPO: ${dpo_number} - ${exp.expense_type} Payable`,
+                    debit: 0,
+                    credit: exp.amount,
+                    sortOrder: voucherEntries.length,
+                  });
                 }
               }
             }
@@ -7433,23 +7760,33 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                 voucherNumber: jvNumber,
                 type: "journal",
                 date: new Date(date),
-                narration: supplier?.companyName || supplier?.name || "Supplier",
+                narration:
+                  supplier?.companyName || supplier?.name || "Supplier",
                 totalDebit: totalAmount,
                 totalCredit: totalAmount,
                 status: "posted",
                 createdBy: "System",
                 approvedBy: "System",
                 approvedAt: new Date(),
-                VoucherEntry: { create: voucherEntries }
-              }
+                VoucherEntry: { create: voucherEntries },
+              },
             });
 
             for (const entry of voucherEntries) {
-              const acc = await tx.account.findUnique({ where: { id: entry.accountId }, include: { Subgroup: { include: { MainGroup: true } } } });
+              const acc = await tx.account.findUnique({
+                where: { id: entry.accountId },
+                include: { Subgroup: { include: { MainGroup: true } } },
+              });
               if (acc) {
                 const type = acc.Subgroup.MainGroup.type.toLowerCase();
-                const change = (type === "asset" || type === "expense" || type === "cost") ? (entry.debit - entry.credit) : (entry.credit - entry.debit);
-                await tx.account.update({ where: { id: entry.accountId }, data: { currentBalance: { increment: change } } });
+                const change =
+                  type === "asset" || type === "expense" || type === "cost"
+                    ? entry.debit - entry.credit
+                    : entry.credit - entry.debit;
+                await tx.account.update({
+                  where: { id: entry.accountId },
+                  data: { currentBalance: { increment: change } },
+                });
               }
             }
             voucherCreationStatus.jvCreated = true;
@@ -7457,10 +7794,17 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
           }
 
           if (account && itemsTotal > 0 && mainPayableAccount) {
-            const cashBankAccount = await tx.account.findUnique({ where: { id: account } });
+            const cashBankAccount = await tx.account.findUnique({
+              where: { id: account },
+            });
             if (cashBankAccount) {
-              const lastPV = await tx.voucher.findFirst({ where: { type: "payment", voucherNumber: { startsWith: "PV" } }, orderBy: { voucherNumber: "desc" } });
-              const pvNum = lastPV ? (parseInt(lastPV.voucherNumber.match(/\d+/)![0]) + 1) : 1;
+              const lastPV = await tx.voucher.findFirst({
+                where: { type: "payment", voucherNumber: { startsWith: "PV" } },
+                orderBy: { voucherNumber: "desc" },
+              });
+              const pvNum = lastPV
+                ? parseInt(lastPV.voucherNumber.match(/\d+/)![0]) + 1
+                : 1;
               const pvNumber = `PV${String(pvNum).padStart(4, "0")}`;
 
               await tx.voucher.create({
@@ -7469,7 +7813,8 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                   voucherNumber: pvNumber,
                   type: "payment",
                   date: new Date(date),
-                  narration: supplier?.companyName || supplier?.name || "Supplier",
+                  narration:
+                    supplier?.companyName || supplier?.name || "Supplier",
                   cashBankAccount: cashBankAccount.name,
                   totalDebit: itemsTotal,
                   totalCredit: itemsTotal,
@@ -7479,15 +7824,37 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                   approvedAt: new Date(),
                   VoucherEntry: {
                     create: [
-                      { id: crypto.randomUUID(), accountId: mainPayableAccount.id, accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`, description: `Payment for DPO ${dpo_number}`, debit: itemsTotal, credit: 0, sortOrder: 0 },
-                      { id: crypto.randomUUID(), accountId: cashBankAccount.id, accountName: `${cashBankAccount.code}-${cashBankAccount.name}`, description: `Payment via ${cashBankAccount.name}`, debit: 0, credit: itemsTotal, sortOrder: 1 }
-                    ]
-                  }
-                }
+                      {
+                        id: crypto.randomUUID(),
+                        accountId: mainPayableAccount.id,
+                        accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
+                        description: `Payment for DPO ${dpo_number}`,
+                        debit: itemsTotal,
+                        credit: 0,
+                        sortOrder: 0,
+                      },
+                      {
+                        id: crypto.randomUUID(),
+                        accountId: cashBankAccount.id,
+                        accountName: `${cashBankAccount.code}-${cashBankAccount.name}`,
+                        description: `Payment via ${cashBankAccount.name}`,
+                        debit: 0,
+                        credit: itemsTotal,
+                        sortOrder: 1,
+                      },
+                    ],
+                  },
+                },
               });
 
-              await tx.account.update({ where: { id: mainPayableAccount.id }, data: { currentBalance: { decrement: itemsTotal } } });
-              await tx.account.update({ where: { id: cashBankAccount.id }, data: { currentBalance: { decrement: itemsTotal } } });
+              await tx.account.update({
+                where: { id: mainPayableAccount.id },
+                data: { currentBalance: { decrement: itemsTotal } },
+              });
+              await tx.account.update({
+                where: { id: cashBankAccount.id },
+                data: { currentBalance: { decrement: itemsTotal } },
+              });
               voucherCreationStatus.pvCreated = true;
               voucherCreationStatus.pvNumber = pvNumber;
             }
@@ -7527,21 +7894,40 @@ router.put(
 
       const existingOrder = await prisma.directPurchaseOrder.findUnique({
         where: { id },
-        include: { DirectPurchaseOrderItem: true, DirectPurchaseOrderExpense: true },
+        include: {
+          DirectPurchaseOrderItem: true,
+          DirectPurchaseOrderExpense: true,
+        },
       });
 
       if (!existingOrder) {
-        return res.status(404).json({ error: "Direct Purchase Order not found" });
+        return res
+          .status(404)
+          .json({ error: "Direct Purchase Order not found" });
       }
 
       // Calculate totals
-      const itemsTotal = items ? items.reduce((sum: number, item: any) => {
-        const qty = Number(item.quantity) || 0;
-        const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
-        return sum + (Number(item.amount) || (qty * rate));
-      }, 0) : existingOrder.totalAmount;
+      const itemsTotal = items
+        ? items.reduce((sum: number, item: any) => {
+            const qty = Number(item.quantity) || 0;
+            const rate = Number(
+              item.unit_cost ??
+                item.unitCost ??
+                item.purchase_price ??
+                item.unit_price ??
+                item.unitPrice ??
+                0,
+            );
+            return sum + (Number(item.amount) || qty * rate);
+          }, 0)
+        : existingOrder.totalAmount;
 
-      const expensesTotal = expenses ? expenses.reduce((sum: number, exp: any) => sum + (Number(exp.amount) || 0), 0) : 0;
+      const expensesTotal = expenses
+        ? expenses.reduce(
+            (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
+            0,
+          )
+        : 0;
       const totalAmount = itemsTotal + expensesTotal;
 
       const order = await prisma.$transaction(async (tx) => {
@@ -7552,9 +7938,15 @@ router.put(
             dpoNumber: dpo_number || existingOrder.dpoNumber,
             date: date ? new Date(date) : existingOrder.date,
             storeId: store_id !== undefined ? store_id : existingOrder.storeId,
-            supplierId: supplier_id !== undefined ? supplier_id : existingOrder.supplierId,
+            supplierId:
+              supplier_id !== undefined
+                ? supplier_id
+                : existingOrder.supplierId,
             account: account !== undefined ? account : existingOrder.account,
-            description: description !== undefined ? description : existingOrder.description,
+            description:
+              description !== undefined
+                ? description
+                : existingOrder.description,
             status: status || existingOrder.status,
             totalAmount,
             updatedAt: new Date(),
@@ -7563,16 +7955,35 @@ router.put(
 
         // 2. Update Items and Stock Movements if provided
         if (items) {
-          await tx.directPurchaseOrderItem.deleteMany({ where: { directPurchaseOrderId: id } });
+          await tx.directPurchaseOrderItem.deleteMany({
+            where: { directPurchaseOrderId: id },
+          });
           await tx.directPurchaseOrderItem.createMany({
             data: items.map((item: any) => ({
               id: crypto.randomUUID(),
               directPurchaseOrderId: id,
               partId: item.part_id,
               quantity: Number(item.quantity) || 0,
-              purchasePrice: Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0),
+              purchasePrice: Number(
+                item.unit_cost ??
+                  item.unitCost ??
+                  item.purchase_price ??
+                  item.unit_price ??
+                  item.unitPrice ??
+                  0,
+              ),
               salePrice: Number(item.sale_price || item.salePrice || 0),
-              amount: Number(item.amount) || (Number(item.quantity) * Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0)),
+              amount:
+                Number(item.amount) ||
+                Number(item.quantity) *
+                  Number(
+                    item.unit_cost ??
+                      item.unitCost ??
+                      item.purchase_price ??
+                      item.unit_price ??
+                      item.unitPrice ??
+                      0,
+                  ),
               priceA: item.price_a != null ? Number(item.price_a) : null,
               priceB: item.price_b != null ? Number(item.price_b) : null,
               priceM: item.price_m != null ? Number(item.price_m) : null,
@@ -7582,11 +7993,21 @@ router.put(
           });
 
           // Unconditionally update purchase prices for all items matching the new data
-          const itemsByPart = new Map<string, { qty: number, rate: number, rackId: string, shelfId: string }>();
+          const itemsByPart = new Map<
+            string,
+            { qty: number; rate: number; rackId: string; shelfId: string }
+          >();
           for (const item of items) {
             const partId = item.part_id;
             const qty = Number(item.quantity) || 0;
-            const rate = Number(item.unit_cost ?? item.unitCost ?? item.purchase_price ?? item.unit_price ?? item.unitPrice ?? 0);
+            const rate = Number(
+              item.unit_cost ??
+                item.unitCost ??
+                item.purchase_price ??
+                item.unit_price ??
+                item.unitPrice ??
+                0,
+            );
             if (partId && (qty > 0 || rate > 0)) {
               if (itemsByPart.has(partId)) {
                 const existing = itemsByPart.get(partId)!;
@@ -7594,7 +8015,12 @@ router.put(
                 // Use last provided positive rate
                 if (rate > 0) existing.rate = rate;
               } else {
-                itemsByPart.set(partId, { qty, rate, rackId: item.rack_id, shelfId: item.shelf_id });
+                itemsByPart.set(partId, {
+                  qty,
+                  rate,
+                  rackId: item.rack_id,
+                  shelfId: item.shelf_id,
+                });
               }
             }
           }
@@ -7610,12 +8036,15 @@ router.put(
           }
 
           // Stock Movements and Avg Cost (Only handle if Completed/Received/Approved)
-          const isApprovedStatus = (s: string) => ["completed", "received", "approved"].includes(s.toLowerCase());
+          const isApprovedStatus = (s: string) =>
+            ["completed", "received", "approved"].includes(s.toLowerCase());
           const newStatus = status || existingOrder.status;
 
           if (isApprovedStatus(newStatus)) {
             // Re-create stock movements. Delete existing movements first to avoid duplication
-            await tx.stockMovement.deleteMany({ where: { referenceType: "direct_purchase", referenceId: id } });
+            await tx.stockMovement.deleteMany({
+              where: { referenceType: "direct_purchase", referenceId: id },
+            });
 
             for (const [partId, data] of itemsByPart.entries()) {
               const { qty, rate } = data;
@@ -7646,7 +8075,9 @@ router.put(
 
         // 3. Update Expenses if provided
         if (expenses) {
-          await tx.directPurchaseOrderExpense.deleteMany({ where: { directPurchaseOrderId: id } });
+          await tx.directPurchaseOrderExpense.deleteMany({
+            where: { directPurchaseOrderId: id },
+          });
           await tx.directPurchaseOrderExpense.createMany({
             data: expenses.map((exp: any) => ({
               id: crypto.randomUUID(),
@@ -7660,48 +8091,114 @@ router.put(
         }
 
         // 4. Accounting (Triggers if status becomes Approved/Received/Completed from another status)
-        const isApprovedStatus = (s: string) => ["completed", "received", "approved"].includes(s.toLowerCase());
-        const isNowApproved = status && isApprovedStatus(status) && !isApprovedStatus(existingOrder.status);
+        const isApprovedStatus = (s: string) =>
+          ["completed", "received", "approved"].includes(s.toLowerCase());
+        const isNowApproved =
+          status &&
+          isApprovedStatus(status) &&
+          !isApprovedStatus(existingOrder.status);
         if (isNowApproved && totalAmount > 0) {
           let inventoryAccount = await tx.account.findFirst({
-            where: { OR: [{ Subgroup: { code: "104" } }, { code: "101001" }, { code: "104005" }, { name: { contains: "Inventory - General" } }], status: "Active" },
-            include: { Subgroup: { include: { MainGroup: true } } }
+            where: {
+              OR: [
+                { Subgroup: { code: "104" } },
+                { code: "101001" },
+                { code: "104005" },
+                { name: { contains: "Inventory - General" } },
+              ],
+              status: "Active",
+            },
+            include: { Subgroup: { include: { MainGroup: true } } },
           });
           if (!inventoryAccount) {
             inventoryAccount = await tx.account.findFirst({
-              where: { OR: [{ Subgroup: { code: "104" } }, { name: { contains: "Inventory" } }], status: "Active" },
-              include: { Subgroup: { include: { MainGroup: true } } }
+              where: {
+                OR: [
+                  { Subgroup: { code: "104" } },
+                  { name: { contains: "Inventory" } },
+                ],
+                status: "Active",
+              },
+              include: { Subgroup: { include: { MainGroup: true } } },
             });
           }
 
-          const supplier = await tx.supplier.findUnique({ where: { id: supplier_id || existingOrder.supplierId || "" } });
+          const supplier = await tx.supplier.findUnique({
+            where: { id: supplier_id || existingOrder.supplierId || "" },
+          });
           let mainPayableAccount = await tx.account.findFirst({
-            where: { Subgroup: { code: "301" }, OR: [{ name: supplier?.name || "" }, { name: supplier?.companyName || "" }, { name: { contains: supplier?.name || "Supplier" } }] },
-            include: { Subgroup: { include: { MainGroup: true } } }
+            where: {
+              Subgroup: { code: "301" },
+              OR: [
+                { name: supplier?.name || "" },
+                { name: supplier?.companyName || "" },
+                { name: { contains: supplier?.name || "Supplier" } },
+              ],
+            },
+            include: { Subgroup: { include: { MainGroup: true } } },
           });
           if (!mainPayableAccount) {
             mainPayableAccount = await tx.account.findFirst({
               where: { Subgroup: { code: "301" } },
-              include: { Subgroup: { include: { MainGroup: true } } }
+              include: { Subgroup: { include: { MainGroup: true } } },
             });
           }
 
           if (inventoryAccount && mainPayableAccount) {
-            const lastVoucher = await tx.voucher.findFirst({ where: { type: "journal", voucherNumber: { startsWith: "JV" } }, orderBy: { voucherNumber: "desc" } });
-            const jvNum = lastVoucher ? (parseInt(lastVoucher.voucherNumber.match(/\d+/)![0]) + 1) : 1;
+            const lastVoucher = await tx.voucher.findFirst({
+              where: { type: "journal", voucherNumber: { startsWith: "JV" } },
+              orderBy: { voucherNumber: "desc" },
+            });
+            const jvNum = lastVoucher
+              ? parseInt(lastVoucher.voucherNumber.match(/\d+/)![0]) + 1
+              : 1;
             const voucherNumber = `JV${String(jvNum).padStart(4, "0")}`;
 
             const voucherEntries = [
-              { id: crypto.randomUUID(), accountId: inventoryAccount.id, accountName: `${inventoryAccount.code}-${inventoryAccount.name}`, description: `DPO: ${updated.dpoNumber} Inventory Added`, debit: itemsTotal, credit: 0, sortOrder: 0 },
-              { id: crypto.randomUUID(), accountId: mainPayableAccount.id, accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`, description: `DPO: ${updated.dpoNumber} Liability Created`, debit: 0, credit: itemsTotal, sortOrder: 1 },
+              {
+                id: crypto.randomUUID(),
+                accountId: inventoryAccount.id,
+                accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+                description: `DPO: ${updated.dpoNumber} Inventory Added`,
+                debit: itemsTotal,
+                credit: 0,
+                sortOrder: 0,
+              },
+              {
+                id: crypto.randomUUID(),
+                accountId: mainPayableAccount.id,
+                accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
+                description: `DPO: ${updated.dpoNumber} Liability Created`,
+                debit: 0,
+                credit: itemsTotal,
+                sortOrder: 1,
+              },
             ];
 
             if (expenses) {
               for (const exp of expenses) {
-                const epAccount = await tx.account.findFirst({ where: { name: exp.payable_account } });
+                const epAccount = await tx.account.findFirst({
+                  where: { name: exp.payable_account },
+                });
                 if (epAccount) {
-                  voucherEntries.push({ id: crypto.randomUUID(), accountId: inventoryAccount.id, accountName: `${inventoryAccount.code}-${inventoryAccount.name}`, description: `DPO: ${updated.dpoNumber} ${exp.expense_type}`, debit: exp.amount, credit: 0, sortOrder: voucherEntries.length });
-                  voucherEntries.push({ id: crypto.randomUUID(), accountId: epAccount.id, accountName: `${epAccount.code}-${epAccount.name}`, description: `DPO: ${updated.dpoNumber} ${exp.expense_type} Payable`, debit: 0, credit: exp.amount, sortOrder: voucherEntries.length });
+                  voucherEntries.push({
+                    id: crypto.randomUUID(),
+                    accountId: inventoryAccount.id,
+                    accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+                    description: `DPO: ${updated.dpoNumber} ${exp.expense_type}`,
+                    debit: exp.amount,
+                    credit: 0,
+                    sortOrder: voucherEntries.length,
+                  });
+                  voucherEntries.push({
+                    id: crypto.randomUUID(),
+                    accountId: epAccount.id,
+                    accountName: `${epAccount.code}-${epAccount.name}`,
+                    description: `DPO: ${updated.dpoNumber} ${exp.expense_type} Payable`,
+                    debit: 0,
+                    credit: exp.amount,
+                    sortOrder: voucherEntries.length,
+                  });
                 }
               }
             }
@@ -7712,7 +8209,8 @@ router.put(
                 voucherNumber,
                 type: "journal",
                 date: new Date(date || updated.date),
-                narration: supplier?.companyName || supplier?.name || "Supplier",
+                narration:
+                  supplier?.companyName || supplier?.name || "Supplier",
                 totalDebit: totalAmount,
                 totalCredit: totalAmount,
                 status: "posted",
@@ -7724,20 +8222,39 @@ router.put(
             });
 
             for (const entry of voucherEntries) {
-              const acc = await tx.account.findUnique({ where: { id: entry.accountId }, include: { Subgroup: { include: { MainGroup: true } } } });
+              const acc = await tx.account.findUnique({
+                where: { id: entry.accountId },
+                include: { Subgroup: { include: { MainGroup: true } } },
+              });
               if (acc) {
                 const type = acc.Subgroup.MainGroup.type.toLowerCase();
-                const change = (type === "asset" || type === "expense" || type === "cost") ? (entry.debit - entry.credit) : (entry.credit - entry.debit);
-                await tx.account.update({ where: { id: entry.accountId }, data: { currentBalance: { increment: change } } });
+                const change =
+                  type === "asset" || type === "expense" || type === "cost"
+                    ? entry.debit - entry.credit
+                    : entry.credit - entry.debit;
+                await tx.account.update({
+                  where: { id: entry.accountId },
+                  data: { currentBalance: { increment: change } },
+                });
               }
             }
 
             const paymentAccountId = account || updated.account;
             if (paymentAccountId && itemsTotal > 0) {
-              const cashBankAccount = await tx.account.findUnique({ where: { id: paymentAccountId } });
+              const cashBankAccount = await tx.account.findUnique({
+                where: { id: paymentAccountId },
+              });
               if (cashBankAccount) {
-                const lastPV = await tx.voucher.findFirst({ where: { type: "payment", voucherNumber: { startsWith: "PV" } }, orderBy: { voucherNumber: "desc" } });
-                const pvNum = lastPV ? (parseInt(lastPV.voucherNumber.match(/\d+/)![0]) + 1) : 1;
+                const lastPV = await tx.voucher.findFirst({
+                  where: {
+                    type: "payment",
+                    voucherNumber: { startsWith: "PV" },
+                  },
+                  orderBy: { voucherNumber: "desc" },
+                });
+                const pvNum = lastPV
+                  ? parseInt(lastPV.voucherNumber.match(/\d+/)![0]) + 1
+                  : 1;
                 const pvVoucherNumber = `PV${String(pvNum).padStart(4, "0")}`;
 
                 await tx.voucher.create({
@@ -7746,7 +8263,8 @@ router.put(
                     voucherNumber: pvVoucherNumber,
                     type: "payment",
                     date: new Date(date || updated.date),
-                    narration: supplier?.companyName || supplier?.name || "Supplier",
+                    narration:
+                      supplier?.companyName || supplier?.name || "Supplier",
                     cashBankAccount: cashBankAccount.name,
                     totalDebit: itemsTotal,
                     totalCredit: itemsTotal,
@@ -7756,15 +8274,37 @@ router.put(
                     approvedAt: new Date(),
                     VoucherEntry: {
                       create: [
-                        { id: crypto.randomUUID(), accountId: mainPayableAccount.id, accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`, description: `Payment for DPO ${updated.dpoNumber}`, debit: itemsTotal, credit: 0, sortOrder: 0 },
-                        { id: crypto.randomUUID(), accountId: cashBankAccount.id, accountName: `${cashBankAccount.code}-${cashBankAccount.name}`, description: `Payment for DPO ${updated.dpoNumber}`, debit: 0, credit: itemsTotal, sortOrder: 1 },
-                      ]
-                    }
+                        {
+                          id: crypto.randomUUID(),
+                          accountId: mainPayableAccount.id,
+                          accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
+                          description: `Payment for DPO ${updated.dpoNumber}`,
+                          debit: itemsTotal,
+                          credit: 0,
+                          sortOrder: 0,
+                        },
+                        {
+                          id: crypto.randomUUID(),
+                          accountId: cashBankAccount.id,
+                          accountName: `${cashBankAccount.code}-${cashBankAccount.name}`,
+                          description: `Payment for DPO ${updated.dpoNumber}`,
+                          debit: 0,
+                          credit: itemsTotal,
+                          sortOrder: 1,
+                        },
+                      ],
+                    },
                   },
                 });
 
-                await tx.account.update({ where: { id: mainPayableAccount.id }, data: { currentBalance: { decrement: itemsTotal } } });
-                await tx.account.update({ where: { id: cashBankAccount.id }, data: { currentBalance: { decrement: itemsTotal } } });
+                await tx.account.update({
+                  where: { id: mainPayableAccount.id },
+                  data: { currentBalance: { decrement: itemsTotal } },
+                });
+                await tx.account.update({
+                  where: { id: cashBankAccount.id },
+                  data: { currentBalance: { decrement: itemsTotal } },
+                });
               }
             }
           }

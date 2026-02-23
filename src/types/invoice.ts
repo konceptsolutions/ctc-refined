@@ -5,14 +5,11 @@ export type CustomerType = "walking" | "registered";
 export type StockStatus = "available" | "reserved" | "out";
 
 export type InvoiceStatus =
-  | "draft"
   | "pending"
-  | "pending_approval"
-  | "partially_delivered"
-  | "fully_delivered"
   | "on_hold"
   | "approved"
-  | "cancelled";
+  | "partially_delivered"
+  | "delivered";
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
@@ -64,6 +61,19 @@ export interface PartItem {
   lastSalePrice?: number;
   lastSaleDate?: string;
   machineModels?: MachineModel[];
+  locations?: StockLocation[];
+  unlocatedStock?: number;
+}
+
+export interface StockLocation {
+  id: string; // PartRackShelf ID
+  storeId?: string;
+  storeName?: string;
+  rackId?: string;
+  rackCode?: string;
+  shelfId?: string;
+  shelfNo?: string;
+  quantity: number;
 }
 
 export interface InvoiceItem {
@@ -83,6 +93,12 @@ export interface InvoiceItem {
   brand?: string;
   machineModel?: string;
   machineRequiredQty?: number;
+  stockLocations?: StockLocation[];
+  totalStock?: number;
+  storeName?: string;
+  rackCode?: string;
+  shelfNo?: string;
+  useUnlocatedStock?: boolean;
 }
 
 export interface DeliveryLogEntry {
@@ -114,6 +130,7 @@ export interface Invoice {
   tax: number;
   grandTotal: number;
   paidAmount: number;
+  accountId?: string;
   status: InvoiceStatus;
   paymentStatus: PaymentStatus;
   deliveryLog: DeliveryLogEntry[];

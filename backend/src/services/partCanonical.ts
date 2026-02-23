@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "@prisma/client";
 
 /**
  * Get the canonical Part ID for a given partNo
@@ -10,8 +10,9 @@ import { PrismaClient } from '@prisma/client';
  */
 export async function getCanonicalPartId(
   prisma: PrismaClient,
-  partNo: string
+  partNo: string | null | undefined,
 ): Promise<string | null> {
+  if (!partNo || partNo.trim() === "") return null;
   const parts = await prisma.part.findMany({
     where: { partNo },
     select: {
@@ -22,9 +23,9 @@ export async function getCanonicalPartId(
       createdAt: true,
     },
     orderBy: [
-      { costUpdatedAt: 'desc' },
-      { updatedAt: 'desc' },
-      { createdAt: 'asc' }, // Fallback to oldest if no updates
+      { costUpdatedAt: "desc" },
+      { updatedAt: "desc" },
+      { createdAt: "asc" }, // Fallback to oldest if no updates
     ],
   });
 
@@ -32,7 +33,7 @@ export async function getCanonicalPartId(
 
   // Priority 1: DPO_RECEIVED with latest costUpdatedAt
   const dpoReceivedParts = parts.filter(
-    p => p.costSource === 'DPO_RECEIVED' && p.costUpdatedAt
+    (p) => p.costSource === "DPO_RECEIVED" && p.costUpdatedAt,
   );
   if (dpoReceivedParts.length > 0) {
     // Already ordered by costUpdatedAt desc, so first one is latest
@@ -40,13 +41,13 @@ export async function getCanonicalPartId(
   }
 
   // Priority 2: Latest costUpdatedAt not null
-  const partsWithCostUpdate = parts.filter(p => p.costUpdatedAt !== null);
+  const partsWithCostUpdate = parts.filter((p) => p.costUpdatedAt !== null);
   if (partsWithCostUpdate.length > 0) {
     return partsWithCostUpdate[0].id;
   }
 
   // Priority 3: Latest updatedAt
-  const partsWithUpdate = parts.filter(p => p.updatedAt !== null);
+  const partsWithUpdate = parts.filter((p) => p.updatedAt !== null);
   if (partsWithUpdate.length > 0) {
     return partsWithUpdate[0].id;
   }
@@ -59,10 +60,7 @@ export async function getCanonicalPartId(
  * Get the canonical Part record for a given partNo
  * Returns the full Part record with relations
  */
-export async function getCanonicalPart(
-  prisma: PrismaClient,
-  partNo: string
-) {
+export async function getCanonicalPart(prisma: PrismaClient, partNo: string) {
   const canonicalId = await getCanonicalPartId(prisma, partNo);
   if (!canonicalId) return null;
 
@@ -84,7 +82,7 @@ export async function getCanonicalPart(
  */
 export async function isExactPartNoMatch(
   prisma: PrismaClient,
-  searchTerm: string
+  searchTerm: string,
 ): Promise<string | null> {
   const trimmed = searchTerm.trim();
   if (!trimmed) return null;

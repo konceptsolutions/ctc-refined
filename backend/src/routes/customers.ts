@@ -49,7 +49,7 @@ router.get("/", async (req, res) => {
     const [allCustomers, totalBeforeFilter] = await Promise.all([
       prisma.customer.findMany({
         where: {
-          status: "active"
+          status: "active",
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -120,6 +120,18 @@ router.post("/", async (req, res) => {
       creditLimit,
       status,
       priceType,
+      code,
+      accountHead,
+      title,
+      shortTitle,
+      referenceName,
+      area,
+      cellNumber,
+      contactPersons,
+      gstNumber,
+      pstNumber,
+      ntn,
+      remarks,
     } = req.body;
 
     if (!name) {
@@ -144,6 +156,18 @@ router.post("/", async (req, res) => {
         creditLimit: creditLimit ? parseFloat(creditLimit) : 0,
         status: status || "active",
         priceType: priceType || null,
+        code: code || null,
+        accountHead: accountHead || null,
+        title: title || null,
+        shortTitle: shortTitle || null,
+        referenceName: referenceName || null,
+        area: area || null,
+        cellNumber: cellNumber || null,
+        contactPersons: contactPersons || [],
+        gstNumber: gstNumber || null,
+        pstNumber: pstNumber || null,
+        ntn: ntn || null,
+        remarks: remarks || null,
         updatedAt: new Date(), // Add updatedAt
       },
     });
@@ -302,7 +326,8 @@ router.post("/", async (req, res) => {
                 approvedAt: new Date(),
                 isSystemGenerated: true,
                 updatedAt: new Date(), // Add required updatedAt
-                VoucherEntry: { // Use VoucherEntry instead of entries
+                VoucherEntry: {
+                  // Use VoucherEntry instead of entries
                   create: [customerEntry, capitalEntry],
                 },
               },
@@ -360,6 +385,18 @@ router.put("/:id", async (req, res) => {
       status,
       priceType,
       accountId, // Account ID from payload
+      code,
+      accountHead,
+      title,
+      shortTitle,
+      referenceName,
+      area,
+      cellNumber,
+      contactPersons,
+      gstNumber,
+      pstNumber,
+      ntn,
+      remarks,
     } = req.body;
     // 1. Fetch old customer data BEFORE update
     const oldCustomer = await prisma.customer.findUnique({
@@ -381,9 +418,24 @@ router.put("/:id", async (req, res) => {
         ? parseFloat(openingBalance.toString())
         : 0;
     if (date !== undefined) updateData.date = date ? new Date(date) : null;
-    if (creditLimit !== undefined) updateData.creditLimit = parseFloat(creditLimit.toString());
+    if (creditLimit !== undefined)
+      updateData.creditLimit = parseFloat(creditLimit.toString());
     if (status !== undefined) updateData.status = status;
     if (priceType !== undefined) updateData.priceType = priceType || null;
+    if (code !== undefined) updateData.code = code || null;
+    if (accountHead !== undefined) updateData.accountHead = accountHead || null;
+    if (title !== undefined) updateData.title = title || null;
+    if (shortTitle !== undefined) updateData.shortTitle = shortTitle || null;
+    if (referenceName !== undefined)
+      updateData.referenceName = referenceName || null;
+    if (area !== undefined) updateData.area = area || null;
+    if (cellNumber !== undefined) updateData.cellNumber = cellNumber || null;
+    if (contactPersons !== undefined)
+      updateData.contactPersons = contactPersons;
+    if (gstNumber !== undefined) updateData.gstNumber = gstNumber || null;
+    if (pstNumber !== undefined) updateData.pstNumber = pstNumber || null;
+    if (ntn !== undefined) updateData.ntn = ntn || null;
+    if (remarks !== undefined) updateData.remarks = remarks || null;
 
     const customer = await prisma.customer.update({
       where: { id: req.params.id },
@@ -400,10 +452,14 @@ router.put("/:id", async (req, res) => {
     const oldOpeningBalance = oldCustomer.openingBalance;
 
     // 3. Handle Status or Name Change - Update associated account
-    if ((status !== undefined && oldCustomer.status !== status) ||
-      (name !== undefined && oldCustomer.name !== name)) {
+    if (
+      (status !== undefined && oldCustomer.status !== status) ||
+      (name !== undefined && oldCustomer.name !== name)
+    ) {
       try {
-        console.log(`[SYNC-DEBUG] Sync triggering for Customer ID: ${req.params.id}`);
+        console.log(
+          `[SYNC-DEBUG] Sync triggering for Customer ID: ${req.params.id}`,
+        );
         console.log(`[SYNC-DEBUG] Status: ${oldCustomer.status} -> ${status}`);
         console.log(`[SYNC-DEBUG] Name: "${oldCustomer.name}" -> "${name}"`);
 
@@ -413,12 +469,15 @@ router.put("/:id", async (req, res) => {
         });
 
         if (customerAccount) {
-          console.log(`[SYNC-DEBUG] Found associated account: ${customerAccount.code} ("${customerAccount.name}")`);
+          console.log(
+            `[SYNC-DEBUG] Found associated account: ${customerAccount.code} ("${customerAccount.name}")`,
+          );
           const updateAccountData: any = {};
 
           // Handle Status synchronization
           if (status !== undefined && oldCustomer.status !== status) {
-            updateAccountData.status = status === "active" ? "Active" : "Inactive";
+            updateAccountData.status =
+              status === "active" ? "Active" : "Inactive";
           }
 
           // Handle Name synchronization
@@ -432,15 +491,22 @@ router.put("/:id", async (req, res) => {
               where: { id: customerAccount.id },
               data: updateAccountData,
             });
-            console.log(`[SYNC-DEBUG] SUCCESS: Updated account ${updatedAcc.code}. New Name: "${updatedAcc.name}", Status: ${updatedAcc.status}`);
+            console.log(
+              `[SYNC-DEBUG] SUCCESS: Updated account ${updatedAcc.code}. New Name: "${updatedAcc.name}", Status: ${updatedAcc.status}`,
+            );
           } else {
             console.log(`[SYNC-DEBUG] No actual changes needed for account.`);
           }
         } else {
-          console.warn(`[SYNC-DEBUG] WARNING: No account found for customer ID: ${req.params.id}`);
+          console.warn(
+            `[SYNC-DEBUG] WARNING: No account found for customer ID: ${req.params.id}`,
+          );
         }
       } catch (err: any) {
-        console.error("[SYNC-DEBUG] ERROR synchronizing customer account:", err);
+        console.error(
+          "[SYNC-DEBUG] ERROR synchronizing customer account:",
+          err,
+        );
       }
     }
 
@@ -486,7 +552,8 @@ router.put("/:id", async (req, res) => {
             voucherToDelete.voucherNumber,
           );
 
-          for (const entry of voucherToDelete.VoucherEntry) { // Use VoucherEntry instead of entries
+          for (const entry of voucherToDelete.VoucherEntry) {
+            // Use VoucherEntry instead of entries
             // Reversal Logic
             if (entry.accountId) {
               await prisma.account.update({

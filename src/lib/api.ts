@@ -40,14 +40,17 @@ interface ApiResponse<T> {
  * Uses crypto.randomUUID if available, otherwise falls back to Math.random.
  */
 export const generateUUID = (): string => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
 
   // Fallback for non-secure contexts or older browsers
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
     const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 };
@@ -84,7 +87,7 @@ class ApiClient {
     });
 
     // Add Authorization header if token exists
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem("authToken");
     if (token) {
       mergedHeaders.set("Authorization", `Bearer ${token}`);
     }
@@ -177,8 +180,8 @@ class ApiClient {
           // Create error object that preserves all error details
           const error = new Error(
             errorData.error ||
-            errorData.message ||
-            `HTTP error! status: ${response.status}`,
+              errorData.message ||
+              `HTTP error! status: ${response.status}`,
           );
           (error as any).response = {
             data: errorData,
@@ -284,7 +287,12 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "" && value !== "all") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          value !== "" &&
+          value !== "all"
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -670,9 +678,7 @@ class ApiClient {
       });
     }
     const queryString = queryParams.toString();
-    return this.request(
-      `/dpo-returns${queryString ? `?${queryString}` : ""}`,
-    );
+    return this.request(`/dpo-returns${queryString ? `?${queryString}` : ""}`);
   }
 
   async getDpoReturn(id: string) {
@@ -801,7 +807,6 @@ class ApiClient {
   async getPartLocations(partId: string) {
     return this.request(`/inventory/part-locations/${partId}`);
   }
-
 
   async transferStockLocation(data: {
     part_id: string;
@@ -1316,7 +1321,11 @@ class ApiClient {
     const id = generateUUID();
     return this.request("/inventory/shelves", {
       method: "POST",
-      body: JSON.stringify({ ...data, id, updatedAt: new Date().toISOString() }),
+      body: JSON.stringify({
+        ...data,
+        id,
+        updatedAt: new Date().toISOString(),
+      }),
     });
   }
 
@@ -1833,6 +1842,18 @@ class ApiClient {
     creditLimit?: number;
     status?: string;
     priceType?: "A" | "B" | "M";
+    code?: string;
+    accountHead?: string;
+    title?: string;
+    shortTitle?: string;
+    referenceName?: string;
+    area?: string;
+    cellNumber?: string;
+    contactPersons?: any[];
+    gstNumber?: string;
+    pstNumber?: string;
+    ntn?: string;
+    remarks?: string;
   }) {
     return this.request("/customers", {
       method: "POST",
@@ -1854,6 +1875,18 @@ class ApiClient {
       status?: string;
       priceType?: "A" | "B" | "M";
       accountId?: string; // Account ID for voucher creation
+      code?: string;
+      accountHead?: string;
+      title?: string;
+      shortTitle?: string;
+      referenceName?: string;
+      area?: string;
+      cellNumber?: string;
+      contactPersons?: any[];
+      gstNumber?: string;
+      pstNumber?: string;
+      ntn?: string;
+      remarks?: string;
     },
   ) {
     return this.request(`/customers/${id}`, {
@@ -1911,6 +1944,17 @@ class ApiClient {
     date?: string;
     status?: string;
     notes?: string;
+    accountId?: string;
+    accountHead?: string;
+    title?: string;
+    shortTitle?: string;
+    referenceName?: string;
+    area?: string;
+    cellNumber?: string;
+    contactPersons?: any[];
+    gstNumber?: string;
+    ntn?: string;
+    remarks?: string;
   }) {
     return this.request("/suppliers", {
       method: "POST",
@@ -1939,7 +1983,17 @@ class ApiClient {
       date?: string;
       status?: string;
       notes?: string;
-      accountId?: string; // Account ID for voucher creation
+      accountId?: string;
+      accountHead?: string;
+      title?: string;
+      shortTitle?: string;
+      referenceName?: string;
+      area?: string;
+      cellNumber?: string;
+      contactPersons?: any[];
+      gstNumber?: string;
+      ntn?: string;
+      remarks?: string; // Account ID for voucher creation
     },
   ) {
     return this.request(`/suppliers/${id}`, {
@@ -2971,6 +3025,9 @@ class ApiClient {
       lineTotal: number;
       grade?: string;
       brand?: string;
+      selectedLocationId?: string;
+      selectedLocationIds?: string[];
+      useUnlocatedStock?: boolean;
     }>;
     subtotal: number;
     overallDiscount?: number;
@@ -3077,10 +3134,21 @@ class ApiClient {
     });
   }
 
-  async updateInvoiceStatus(id: string, status: string) {
+  async updateInvoiceStatus(
+    id: string,
+    status: string,
+    deliveredQtys?: Record<string, number>,
+    approvedBy?: string,
+    holdLocations?: Record<string, any[]>,
+  ) {
     return this.request(`/sales/invoices/${id}/status`, {
       method: "PUT",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        deliveredQtys,
+        approvedBy,
+        holdLocations,
+      }),
     });
   }
 
@@ -3092,7 +3160,6 @@ class ApiClient {
       customerId?: string;
       deliveredTo?: string;
       remarks?: string;
-      overallDiscount?: number;
       items?: Array<{
         partId: string;
         partNo: string;
@@ -3103,7 +3170,19 @@ class ApiClient {
         lineTotal: number;
         grade?: string;
         brand?: string;
+        selectedLocationId?: string;
+        selectedLocationIds?: string[];
+        useUnlocatedStock?: boolean;
       }>;
+      subtotal?: number;
+      overallDiscount?: number;
+      grandTotal?: number;
+      accountId?: string;
+      bankAccountId?: string;
+      cashAccountId?: string;
+      bankAmount?: number;
+      cashAmount?: number;
+      paidAmount?: number;
     },
   ) {
     return this.request(`/sales/invoices/${id}`, {

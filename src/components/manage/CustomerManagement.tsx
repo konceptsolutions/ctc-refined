@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Users, Plus, Search } from "lucide-react";
+import { Users, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,18 @@ interface Customer {
   status: "active" | "inactive";
   priceType?: "A" | "B" | "M" | null;
   accountId?: string | null; // Account ID for this customer
+  code?: string | null;
+  accountHead?: string | null;
+  title?: string | null;
+  shortTitle?: string | null;
+  referenceName?: string | null;
+  area?: string | null;
+  cellNumber?: string | null;
+  contactPersons?: any[];
+  gstNumber?: string | null;
+  pstNumber?: string | null;
+  ntn?: string | null;
+  remarks?: string | null;
 }
 
 const emptyCustomer: Omit<Customer, "id"> = {
@@ -57,6 +70,18 @@ const emptyCustomer: Omit<Customer, "id"> = {
   status: "active",
   priceType: null,
   accountId: null,
+  code: "",
+  accountHead: "",
+  title: "",
+  shortTitle: "",
+  referenceName: "",
+  area: "",
+  cellNumber: "",
+  contactPersons: [],
+  gstNumber: "",
+  pstNumber: "",
+  ntn: "",
+  remarks: "",
 };
 
 export const CustomerManagement = () => {
@@ -147,6 +172,36 @@ export const CustomerManagement = () => {
     }
   };
 
+  const handleAddContactPerson = () => {
+    setFormData((prev) => ({
+      ...prev,
+      contactPersons: [
+        ...(prev.contactPersons || []),
+        { designation: "", contactNumber: "" },
+      ],
+    }));
+  };
+
+  const handleUpdateContactPerson = (
+    index: number,
+    field: string,
+    value: string,
+  ) => {
+    setFormData((prev) => {
+      const updated = [...(prev.contactPersons || [])];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, contactPersons: updated };
+    });
+  };
+
+  const handleRemoveContactPerson = (index: number) => {
+    setFormData((prev) => {
+      const updated = [...(prev.contactPersons || [])];
+      updated.splice(index, 1);
+      return { ...prev, contactPersons: updated };
+    });
+  };
+
   const handleOpenDialog = (customer?: Customer) => {
     if (customer) {
       setFormData({
@@ -161,6 +216,18 @@ export const CustomerManagement = () => {
         status: customer.status,
         priceType: customer.priceType || null,
         accountId: customer.accountId || null, // Pass accountId for voucher creation
+        code: customer.code,
+        accountHead: customer.accountHead,
+        title: customer.title,
+        shortTitle: customer.shortTitle,
+        referenceName: customer.referenceName,
+        area: customer.area,
+        cellNumber: customer.cellNumber,
+        contactPersons: customer.contactPersons || [],
+        gstNumber: customer.gstNumber,
+        pstNumber: customer.pstNumber,
+        ntn: customer.ntn,
+        remarks: customer.remarks,
       });
       setEditingId(customer.id);
     } else {
@@ -213,6 +280,18 @@ export const CustomerManagement = () => {
           status: formData.status,
           priceType: formData.priceType || undefined,
           accountId: formData.accountId || undefined, // Pass accountId for voucher creation
+          code: formData.code || undefined,
+          accountHead: formData.accountHead || undefined,
+          title: formData.title || undefined,
+          shortTitle: formData.shortTitle || undefined,
+          referenceName: formData.referenceName || undefined,
+          area: formData.area || undefined,
+          cellNumber: formData.cellNumber || undefined,
+          contactPersons: formData.contactPersons || [],
+          gstNumber: formData.gstNumber || undefined,
+          pstNumber: formData.pstNumber || undefined,
+          ntn: formData.ntn || undefined,
+          remarks: formData.remarks || undefined,
         })) as any;
 
         if (response.error) {
@@ -241,6 +320,18 @@ export const CustomerManagement = () => {
           creditLimit: formData.creditLimit,
           status: formData.status,
           priceType: formData.priceType || undefined,
+          code: formData.code || undefined,
+          accountHead: formData.accountHead || undefined,
+          title: formData.title || undefined,
+          shortTitle: formData.shortTitle || undefined,
+          referenceName: formData.referenceName || undefined,
+          area: formData.area || undefined,
+          cellNumber: formData.cellNumber || undefined,
+          contactPersons: formData.contactPersons || [],
+          gstNumber: formData.gstNumber || undefined,
+          pstNumber: formData.pstNumber || undefined,
+          ntn: formData.ntn || undefined,
+          remarks: formData.remarks || undefined,
         })) as any;
 
         if (response.error) {
@@ -612,7 +703,7 @@ export const CustomerManagement = () => {
 
       {/* Add/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="bg-primary text-primary-foreground -m-6 mb-4 p-4 rounded-t-lg">
             <DialogTitle className="text-sm font-semibold">
               {editingId ? "Edit Customer" : "Add New Customer"}
@@ -620,21 +711,96 @@ export const CustomerManagement = () => {
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Code</Label>
+                <Input
+                  placeholder="Customer code"
+                  value={formData.code || ""}
+                  onChange={(e) => handleInputChange("code", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Title</Label>
+                <Input
+                  placeholder="Title"
+                  value={formData.title || ""}
+                  onChange={(e) => handleInputChange("title", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
               <div className="space-y-1">
                 <Label className="text-xs">Name *</Label>
                 <Input
                   placeholder="Customer name"
-                  value={formData.name}
+                  value={formData.name || ""}
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   className="h-8 text-xs"
                 />
               </div>
               <div className="space-y-1">
+                <Label className="text-xs">Short Title</Label>
+                <Input
+                  placeholder="Short title"
+                  value={formData.shortTitle || ""}
+                  onChange={(e) =>
+                    handleInputChange("shortTitle", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Account Head</Label>
+                <Input
+                  placeholder="Account head"
+                  value={formData.accountHead || ""}
+                  onChange={(e) =>
+                    handleInputChange("accountHead", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Reference Name</Label>
+                <Input
+                  placeholder="Reference"
+                  value={formData.referenceName || ""}
+                  onChange={(e) =>
+                    handleInputChange("referenceName", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Address</Label>
+                <Input
+                  placeholder="Full address"
+                  value={formData.address || ""}
+                  onChange={(e) => handleInputChange("address", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Area</Label>
+                <Input
+                  placeholder="Area"
+                  value={formData.area || ""}
+                  onChange={(e) => handleInputChange("area", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1">
                 <Label className="text-xs">Contact No</Label>
                 <Input
                   placeholder="Contact number"
-                  value={formData.contactNo}
+                  value={formData.contactNo || ""}
                   onChange={(e) =>
                     handleInputChange("contactNo", e.target.value)
                   }
@@ -642,74 +808,130 @@ export const CustomerManagement = () => {
                 />
               </div>
               <div className="space-y-1">
+                <Label className="text-xs">Cell No</Label>
+                <Input
+                  placeholder="Cell number"
+                  value={formData.cellNumber || ""}
+                  onChange={(e) =>
+                    handleInputChange("cellNumber", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1 lg:col-span-2">
                 <Label className="text-xs">Email</Label>
                 <Input
                   type="email"
                   placeholder="Email address"
-                  value={formData.email}
+                  value={formData.email || ""}
                   onChange={(e) => handleInputChange("email", e.target.value)}
                   className="h-8 text-xs"
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">CNIC</Label>
                 <Input
                   placeholder="CNIC number"
-                  value={formData.cnic}
+                  value={formData.cnic || ""}
                   onChange={(e) => handleInputChange("cnic", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">GST Number</Label>
+                <Input
+                  placeholder="GST Number"
+                  value={formData.gstNumber || ""}
+                  onChange={(e) =>
+                    handleInputChange("gstNumber", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">PST Number</Label>
+                <Input
+                  placeholder="PST Number"
+                  value={formData.pstNumber || ""}
+                  onChange={(e) =>
+                    handleInputChange("pstNumber", e.target.value)
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">NTN</Label>
+                <Input
+                  placeholder="NTN"
+                  value={formData.ntn || ""}
+                  onChange={(e) => handleInputChange("ntn", e.target.value)}
                   className="h-8 text-xs"
                 />
               </div>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs">Address</Label>
-              <Input
-                placeholder="Full address"
-                value={formData.address}
-                onChange={(e) => handleInputChange("address", e.target.value)}
-                className="h-8 text-xs"
-              />
+            <div className="border border-border p-3 rounded-lg space-y-3 bg-muted/10">
+              <div className="flex justify-between items-center">
+                <Label className="text-xs font-semibold">Contact Persons</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddContactPerson}
+                  className="h-6 text-xs px-2 bg-background"
+                >
+                  <Plus className="w-3 h-3 mr-1" /> Add
+                </Button>
+              </div>
+              {(formData.contactPersons || []).map((cp, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Designation"
+                    value={cp.designation || ""}
+                    onChange={(e) =>
+                      handleUpdateContactPerson(
+                        idx,
+                        "designation",
+                        e.target.value,
+                      )
+                    }
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Input
+                    placeholder="Contact number"
+                    value={cp.contactNumber || ""}
+                    onChange={(e) =>
+                      handleUpdateContactPerson(
+                        idx,
+                        "contactNumber",
+                        e.target.value,
+                      )
+                    }
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRemoveContactPerson(idx)}
+                    className="h-6 w-6"
+                  >
+                    <X className="w-4 h-4 text-red-500" />
+                  </Button>
+                </div>
+              ))}
+              {(!formData.contactPersons ||
+                formData.contactPersons.length === 0) && (
+                <p className="text-xs text-muted-foreground italic">
+                  No contact persons added.
+                </p>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs">Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(v) => handleInputChange("status", v)}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Price Type</Label>
-                <Select
-                  value={formData.priceType ? formData.priceType : "none"}
-                  onValueChange={(v) =>
-                    handleInputChange("priceType", v === "none" ? null : v)
-                  }
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select Price Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="A">Price A (Retail)</SelectItem>
-                    <SelectItem value="B">Price B (Wholesale)</SelectItem>
-                    <SelectItem value="M">Price M (Market)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Opening Balance</Label>
                 <Input
@@ -726,26 +948,70 @@ export const CustomerManagement = () => {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Date</Label>
+                <Label className="text-xs">OB Date</Label>
                 <Input
                   type="date"
                   value={formData.date || ""}
                   onChange={(e) => handleInputChange("date", e.target.value)}
+                  className="h-8 text-xs px-2 min-w-[120px] block w-full uppercase [&::-webkit-calendar-picker-indicator]:opacity-100"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Credit Limit</Label>
+                <Input
+                  type="number"
+                  placeholder="0"
+                  value={formData.creditLimit}
+                  onChange={(e) =>
+                    handleInputChange("creditLimit", Number(e.target.value))
+                  }
                   className="h-8 text-xs"
                 />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Price Type</Label>
+                <Select
+                  value={formData.priceType ? formData.priceType : "none"}
+                  onValueChange={(v) =>
+                    handleInputChange("priceType", v === "none" ? null : v)
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Price Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="A">Price A</SelectItem>
+                    <SelectItem value="B">Price B</SelectItem>
+                    <SelectItem value="M">Price M</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(v) => handleInputChange("status", v)}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Credit Limit</Label>
-              <Input
-                type="number"
-                placeholder="0"
-                value={formData.creditLimit}
-                onChange={(e) =>
-                  handleInputChange("creditLimit", Number(e.target.value))
-                }
-                className="h-8 text-xs"
+              <Label className="text-xs">Remarks</Label>
+              <Textarea
+                placeholder="Remarks..."
+                value={formData.remarks || ""}
+                onChange={(e) => handleInputChange("remarks", e.target.value)}
+                className="text-xs min-h-[60px]"
+                data-preserve-case="true"
               />
             </div>
 
