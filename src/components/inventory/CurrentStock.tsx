@@ -333,6 +333,9 @@ export const CurrentStock = () => {
     setViewLocationDialogOpen(true);
     setSelectedPartLocations([]); // Reset while loading
     try {
+      console.log(
+        `[DEBUG] View Locations: item.brand=${item.brand}, item.part_id=${item.part_id}`,
+      );
       const response = await apiClient.getPartLocations(item.part_id);
       // Ensure data is an array
       let data = (response as any).data;
@@ -386,6 +389,9 @@ export const CurrentStock = () => {
     // Load current locations to show in the dialog
     setSelectedPartLocations([]);
     try {
+      console.log(
+        `[DEBUG] Edit Locations: item.brand=${item.brand}, item.part_id=${item.part_id}`,
+      );
       const response = await apiClient.getPartLocations(item.part_id);
       let data = (response as any).data;
       if (!Array.isArray(data)) {

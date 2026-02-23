@@ -367,54 +367,45 @@ router.get("/dashboard", async (req: Request, res: Response) => {
 router.get("/part-locations/:partId", async (req: Request, res: Response) => {
   try {
     const { partId } = req.params;
-    console.log(`[API] Part Locations hit for ${partId}`);
 
-    // 1. Get ALL records from PartRackShelf for this exact part first
-    let records = await prisma.partRackShelf.findMany({
-      where: { partId },
-      include: {
-        Store: true,
-        Rack: true,
-        Shelf: true,
-      },
-    });
+    // Query PartRackShelf ONLY for this exact partId using Raw SQL for maximum consistency with the main table.
+    const records = await query(
+      `SELECT 
+        prs.id, 
+        prs."storeId", 
+        prs."rackId", 
+        prs."shelfId", 
+        prs.quantity,
+        s.name as store_name,
+        r."codeNo" as rack_code,
+        sh."shelfNo" as shelf_no
+      FROM "PartRackShelf" prs
+      LEFT JOIN "Store" s ON prs."storeId" = s.id
+      LEFT JOIN "Rack" r ON prs."rackId" = r.id
+      LEFT JOIN "Shelf" sh ON prs."shelfId" = sh.id
+      WHERE prs."partId" = $1`,
+      [partId],
+    );
 
-    // 2. If no direct records, check if the part's stock was stored under a canonical (same-partNo) ID
-    //    This handles legacy data where all copies of a part shared one PartRackShelf entry.
-    let usingCanonicalFallback = false;
-    if (records.length === 0) {
-      const part = await prisma.part.findUnique({
-        where: { id: partId },
-        select: { partNo: true },
-      });
-      if (part?.partNo) {
-        // Find any sibling part with the same partNo that HAS PartRackShelf records
-        const siblingWithRecords = await prisma.part.findFirst({
-          where: {
-            partNo: part.partNo,
-            PartRackShelf: { some: {} },
-          },
-          select: { id: true },
-        });
-        if (siblingWithRecords) {
-          records = await prisma.partRackShelf.findMany({
-            where: { partId: siblingWithRecords.id },
-            include: {
-              Store: true,
-              Rack: true,
-              Shelf: true,
-            },
-          });
-          usingCanonicalFallback = true;
-        }
-      }
-    }
+    // Look up the part for diagnostics
+    const partInfoResult = await query(
+      `SELECT p."partNo", b.name as brand_name 
+       FROM "Part" p 
+       LEFT JOIN "Brand" b ON p."brandId" = b.id 
+       WHERE p.id = $1`,
+      [partId],
+    );
+    const partInfo = partInfoResult.rows[0];
 
-    // 3. Aggregate by Store/Rack/Shelf combination
+    console.log(
+      `[API] part-locations partId=${partId} brand=${partInfo?.brand_name} partNo=${partInfo?.partNo} => found ${records.rows.length} PartRackShelf rows using RAW SQL`,
+    );
+
+    // Aggregate by Store/Rack/Shelf combination
     const locationMap = new Map();
     let totalAssigned = 0;
 
-    for (const r of records) {
+    for (const r of records.rows) {
       const storeKey = r.storeId || "null";
       const rackKey = r.rackId || "null";
       const shelfKey = r.shelfId || "null";
@@ -423,27 +414,22 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
       if (!locationMap.has(key)) {
         locationMap.set(key, {
           storeId: r.storeId,
-          store: r.Store?.name || "No Store",
+          store: r.store_name || "No Store",
           rackId: r.rackId,
-          rack: r.Rack?.codeNo || "No Rack",
+          rack: r.rack_code || "No Rack",
           shelfId: r.shelfId,
-          shelf: r.Shelf?.shelfNo || "No Shelf",
+          shelf: r.shelf_no || "No Shelf",
           isUnlocated: !r.rackId && !r.shelfId,
           quantity: 0,
-          rawQuantity: 0,
         });
       }
 
       const existing = locationMap.get(key);
-      if (!existing.storeId && r.storeId) existing.storeId = r.storeId;
-      if (!existing.rackId && r.rackId) existing.rackId = r.rackId;
-      if (!existing.shelfId && r.shelfId) existing.shelfId = r.shelfId;
-
-      existing.rawQuantity += r.quantity;
+      existing.quantity += r.quantity;
       totalAssigned += r.quantity;
     }
 
-    // 4. Calculate THIS specific part's actual stock from its own movements
+    // Calculate this specific part's actual stock from its own movements only
     const sm_in = await prisma.stockMovement.aggregate({
       where: { partId, type: "in" },
       _sum: { quantity: true },
@@ -455,31 +441,13 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
     const totalActualStock =
       (sm_in._sum.quantity || 0) - (sm_out._sum.quantity || 0);
 
-    // 5. If we used canonical fallback, scale quantities proportionally to this part's own stock
-    //    so that the dialog shows the correct quantity for THIS item, not the shared total.
-    if (usingCanonicalFallback && totalAssigned > 0) {
-      const scale = totalActualStock / totalAssigned;
-      for (const val of locationMap.values()) {
-        val.quantity = Math.round(val.rawQuantity * scale);
-      }
-    } else {
-      // Direct records — quantities are already correct
-      for (const val of locationMap.values()) {
-        val.quantity = val.rawQuantity;
-      }
-    }
-
-    // 6. Filter out zero-quantity entries
+    // Filter out zero-quantity entries
     const locations = Array.from(locationMap.values()).filter(
       (l: any) => l.quantity !== 0,
     );
 
-    // 7. Add Virtual Unallocated if stock > assigned
-    const assignedTotal = locations.reduce(
-      (sum: number, l: any) => sum + l.quantity,
-      0,
-    );
-    const unallocatedDiff = totalActualStock - assignedTotal;
+    // Add Virtual Unallocated row if there is stock not assigned to any location
+    const unallocatedDiff = totalActualStock - totalAssigned;
     if (unallocatedDiff !== 0) {
       locations.push({
         storeId: null,
@@ -493,11 +461,9 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
       });
     }
 
-    // 8. Sort: allocated first, then unallocated, then by quantity desc
+    // Sort: allocated first, then unallocated, then largest quantity first
     locations.sort((a: any, b: any) => {
-      if (a.isUnlocated !== b.isUnlocated) {
-        return a.isUnlocated ? 1 : -1;
-      }
+      if (a.isUnlocated !== b.isUnlocated) return a.isUnlocated ? 1 : -1;
       return b.quantity - a.quantity;
     });
 

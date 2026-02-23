@@ -280,7 +280,7 @@ router.get("/", async (req: Request, res: Response) => {
           ORDER BY ai."partId", a.date DESC, a."createdAt" DESC, ai."createdAt" DESC
       ) lac ON p.id = lac."partId"
       LEFT JOIN (
-          SELECT p_inner."partNo",
+          SELECT prs."partId",
             jsonb_agg(jsonb_build_object(
               'id', prs.id,
               'storeId', prs."storeId",
@@ -293,12 +293,11 @@ router.get("/", async (req: Request, res: Response) => {
             )) as locations,
             SUM(prs.quantity) as assigned_stock
           FROM "PartRackShelf" prs
-          JOIN "Part" p_inner ON prs."partId" = p_inner.id
           LEFT JOIN "Store" s_loc ON prs."storeId" = s_loc.id
           LEFT JOIN "Rack" r_loc ON prs."rackId" = r_loc.id
           LEFT JOIN "Shelf" sh_loc ON prs."shelfId" = sh_loc.id
-          GROUP BY p_inner."partNo"
-      ) loc ON p."partNo" = loc."partNo"
+          GROUP BY prs."partId"
+      ) loc ON p.id = loc."partId"
       ${whereClause}
       ORDER BY p."updatedAt" DESC
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}
@@ -490,17 +489,16 @@ router.get("/details-search", async (req: Request, res: Response) => {
           ORDER BY "partId", "createdAt" DESC
       ) ph ON p.id = ph."partId"
       LEFT JOIN (
-          SELECT p_inner."partNo",
+          SELECT prs."partId",
             string_agg(DISTINCT s_loc.name, ', ') as stores,
             string_agg(DISTINCT r_loc."codeNo", ', ') as racks,
             string_agg(DISTINCT sh_loc."shelfNo", ', ') as shelves
           FROM "PartRackShelf" prs
-          JOIN "Part" p_inner ON prs."partId" = p_inner.id
           LEFT JOIN "Store" s_loc ON prs."storeId" = s_loc.id
           LEFT JOIN "Rack" r_loc ON prs."rackId" = r_loc.id
           LEFT JOIN "Shelf" sh_loc ON prs."shelfId" = sh_loc.id
-          GROUP BY p_inner."partNo"
-      ) loc ON p."partNo" = loc."partNo"
+          GROUP BY prs."partId"
+      ) loc ON p.id = loc."partId"
       ${whereClause}
       ORDER BY p."updatedAt" DESC
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}

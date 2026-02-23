@@ -805,7 +805,7 @@ class ApiClient {
   }
 
   async getPartLocations(partId: string) {
-    return this.request(`/inventory/part-locations/${partId}`);
+    return this.request(`/inventory/part-locations/${partId}?t=${Date.now()}`);
   }
 
   async transferStockLocation(data: {
