@@ -1,0 +1,36 @@
+﻿Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+node.exe : Error: 
+At line:1 char:1
++ & "C:\nvm4w\nodejs/n
+ode.exe" "C:\nvm4w\nod
+ejs/node_modules/npm/b
+in/np ...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (Error: :St   
+ ring) [], RemoteE    
+xception
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+EPERM: operation not 
+permitted, rename 'C:\
+Users\Ksol\.vscode\pro
+jects\ctc-refined\back
+end\node_modules\.pris
+ma\client\query_engine
+-windows.dll.node.tmp1
+1760' -> 'C:\Users\Kso
+l\.vscode\projects\ctc
+-refined\backend\node_
+modules\.prisma\client
+\query_engine-windows.
+dll.node'
+
+

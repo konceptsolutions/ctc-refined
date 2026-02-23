@@ -1,0 +1,64 @@
+﻿Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+node.exe : Error: 
+Prisma schema 
+validation - 
+(get-dmmf wasm)
+At line:1 char:1
++ & "C:\nvm4w\nodejs/n
+ode.exe" "C:\nvm4w\nod
+ejs/node_modules/npm/b
+in/np ...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (Error: Pri   
+ sma s...(get-dmmf    
+ wasm):String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+Error code: P1012
+[1;91merror[0m: 
+[1mThe model 
+"SalesInvoice" cannot 
+be defined because a 
+model with that name 
+already exists.[0m
+  [1;94m-->[0m  [4m
+prisma\schema.prisma:1
+000[0m
+[1;94m   | [0m
+[1;94m999 | [0m
+[1;94m1000 | 
+[0mmodel [1;91mSales
+Invoice[0m {
+[1;94m   | [0m
+[1;91merror[0m: 
+[1mThe model 
+"SalesInvoiceItem" 
+cannot be defined 
+because a model with 
+that name already 
+exists.[0m
+  [1;94m-->[0m  [4m
+prisma\schema.prisma:1
+032[0m
+[1;94m   | [0m
+[1;94m1031 | [0m
+[1;94m1032 | 
+[0mmodel [1;91mSales
+InvoiceItem[0m {
+[1;94m   | [0m
+
+Validation Error 
+Count: 2
+[Context: getDmmf]
+
+Prisma CLI Version : 
+5.22.0

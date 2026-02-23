@@ -1,0 +1,28 @@
+﻿223: router.get("/inquiries", async (req: Request, res: Response) => {
+252: router.get("/inquiries/:id", async (req: Request, res: Response) => {
+282: router.post("/inquiries", async (req: Request, res: Response) => {
+370: router.put("/inquiries/:id", async (req: Request, res: Response) => {
+460: router.delete("/inquiries/:id", async (req: Request, res: Response) => {
+473: router.post(
+573: router.get("/quotations", async (req: Request, res: Response) => {
+608: router.get("/quotations/:id", async (req: Request, res: Response) => {
+638: router.post("/quotations", async (req: Request, res: Response) => {
+723: router.put("/quotations/:id", async (req: Request, res: Response) => {
+799: router.delete("/quotations/:id", async (req: Request, res: Response) => {
+812: router.post(
+1081: router.get("/invoices", async (req: Request, res: Response) => {
+1129: router.get("/invoices/:id", async (req: Request, res: Response) => {
+1166: router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
+1288: router.post("/invoices", async (req: Request, res: Response) => {
+2171: router.put("/invoices/:id", async (req: Request, res: Response) => {
+2361: router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
+2666: router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
+2894: router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
+3035: router.post("/invoices/:id/hold", async (req: Request, res: Response) => {
+3056: router.post(
+3102: router.put("/invoices/:id/status", async (req: Request, res: Response) => {
+3197: router.post("/invoices/:id/cancel", async (req: Request, res: Response) => {
+3222: router.delete(
+3264: router.delete("/invoices/:id", async (req: Request, res: Response) => {
+3297: router.get("/stock/reserved/:partId", async (req: Request, res: Response) => {
+3310: router.get("/stock/available/:partId", async (req: Request, res: Response) => {

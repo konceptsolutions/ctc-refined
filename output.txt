@@ -1,0 +1,26 @@
+   column_name   |          data_type          | is_nullable |  column_default   
+-----------------+-----------------------------+-------------+-------------------
+ id              | text                        | NO          | 
+ invoiceNo       | text                        | NO          | 
+ invoiceDate     | timestamp without time zone | NO          | 
+ customerId      | text                        | YES         | 
+ customerName    | text                        | NO          | 
+ customerType    | text                        | NO          | 
+ salesPerson     | text                        | YES         | 
+ subtotal        | double precision            | NO          | 0
+ overallDiscount | double precision            | NO          | 0
+ tax             | double precision            | NO          | 0
+ grandTotal      | double precision            | NO          | 0
+ paidAmount      | double precision            | NO          | 0
+ status          | text                        | NO          | 'pending'::text
+ paymentStatus   | text                        | NO          | 'unpaid'::text
+ accountId       | text                        | YES         | 
+ deliveredTo     | text                        | YES         | 
+ remarks         | text                        | YES         | 
+ quotationId     | text                        | YES         | 
+ holdReason      | text                        | YES         | 
+ holdSince       | timestamp without time zone | YES         | 
+ createdAt       | timestamp without time zone | NO          | CURRENT_TIMESTAMP
+ updatedAt       | timestamp without time zone | NO          | 
+(22 rows)
+
