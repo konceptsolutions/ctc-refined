@@ -805,7 +805,9 @@ class ApiClient {
   }
 
   async getPartLocations(partId: string) {
-    return this.request(`/inventory/part-locations/${partId}?t=${Date.now()}`);
+    return this.request<any[]>(
+      `/inventory/part-locations/${partId}?t=${Date.now()}`,
+    );
   }
 
   async transferStockLocation(data: {
@@ -1844,7 +1846,6 @@ class ApiClient {
     priceType?: "A" | "B" | "M";
     code?: string;
     accountHead?: string;
-    title?: string;
     shortTitle?: string;
     referenceName?: string;
     area?: string;
@@ -1854,6 +1855,9 @@ class ApiClient {
     pstNumber?: string;
     ntn?: string;
     remarks?: string;
+    category?: string;
+    accountOpeningDate?: string;
+    accountClosingDate?: string;
   }) {
     return this.request("/customers", {
       method: "POST",
@@ -1887,6 +1891,9 @@ class ApiClient {
       pstNumber?: string;
       ntn?: string;
       remarks?: string;
+      category?: string;
+      accountOpeningDate?: string;
+      accountClosingDate?: string;
     },
   ) {
     return this.request(`/customers/${id}`, {
@@ -1898,6 +1905,17 @@ class ApiClient {
   async deleteCustomer(id: string) {
     return this.request(`/customers/${id}`, {
       method: "DELETE",
+    });
+  }
+
+  async getAreas() {
+    return this.request("/dropdowns/areas");
+  }
+
+  async createArea(name: string) {
+    return this.request("/dropdowns/areas", {
+      method: "POST",
+      body: JSON.stringify({ name }),
     });
   }
 

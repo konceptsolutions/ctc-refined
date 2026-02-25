@@ -337,12 +337,7 @@ export const CurrentStock = () => {
         `[DEBUG] View Locations: item.brand=${item.brand}, item.part_id=${item.part_id}`,
       );
       const response = await apiClient.getPartLocations(item.part_id);
-      // Ensure data is an array
-      let data = (response as any).data;
-      if (!Array.isArray(data)) {
-        // If response itself is an array use it, otherwise empty array
-        data = Array.isArray(response) ? response : [];
-      }
+      const data = response.data || (Array.isArray(response) ? response : []);
 
       const { displayRows } = processLocationData(data);
       setSelectedPartLocations(displayRows);
@@ -393,10 +388,7 @@ export const CurrentStock = () => {
         `[DEBUG] Edit Locations: item.brand=${item.brand}, item.part_id=${item.part_id}`,
       );
       const response = await apiClient.getPartLocations(item.part_id);
-      let data = (response as any).data;
-      if (!Array.isArray(data)) {
-        data = Array.isArray(response) ? response : [];
-      }
+      const data = response.data || (Array.isArray(response) ? response : []);
       const { displayRows, netUnallocated } = processLocationData(data);
       setSelectedPartLocations(displayRows);
       setUnallocatedDerived(netUnallocated);
@@ -557,10 +549,7 @@ export const CurrentStock = () => {
 
       // Refresh Dialog Data
       const response = await apiClient.getPartLocations(editingItem.part_id);
-      let data = (response as any).data;
-      if (!Array.isArray(data)) {
-        data = Array.isArray(response) ? response : [];
-      }
+      const data = response.data || (Array.isArray(response) ? response : []);
       const { displayRows, netUnallocated } = processLocationData(data);
       setSelectedPartLocations(displayRows);
       setUnallocatedDerived(netUnallocated);

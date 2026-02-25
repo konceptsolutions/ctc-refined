@@ -41,8 +41,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 export interface ContactPersonInfo {
+  name: string;
   designation: string;
   contactNumber: string;
 }
@@ -69,7 +71,6 @@ interface Supplier {
   notes: string | null;
   accountId?: string | null; // Account ID for this supplier
   accountHead?: string | null;
-  title?: string | null; // Titale
   shortTitle?: string | null;
   referenceName?: string | null;
   area?: string | null;
@@ -101,7 +102,6 @@ const emptySupplier: Omit<Supplier, "id"> = {
   notes: "",
   accountId: null,
   accountHead: "",
-  title: "",
   shortTitle: "",
   referenceName: "",
   area: "",
@@ -130,6 +130,20 @@ export const SupplierManagement = () => {
   const [supplierToToggle, setSupplierToToggle] = useState<Supplier | null>(
     null,
   );
+  const [areas, setAreas] = useState<string[]>([]);
+
+  const fetchAreas = async () => {
+    try {
+      const response = await apiClient.getAreas();
+      if (response && Array.isArray(response)) {
+        setAreas(response);
+      } else if ((response as any).data) {
+        setAreas((response as any).data);
+      }
+    } catch (error) {
+      console.error("Error fetching areas:", error);
+    }
+  };
 
   const fetchSuppliers = async () => {
     setLoading(true);
@@ -165,6 +179,7 @@ export const SupplierManagement = () => {
 
   useEffect(() => {
     fetchSuppliers();
+    fetchAreas();
   }, [currentPage, rowsPerPage, statusFilter]);
 
   // Reset to page 1 when filters change
@@ -194,11 +209,28 @@ export const SupplierManagement = () => {
 
   const handleInputChange = (field: keyof Omit<Supplier, "id">, value: any) => {
     setFormData((prev) => {
+      let updated = { ...prev };
+
       // If field is companyName, ensure it's not undefined/null if that's passed
       if (field === "companyName" && (value === undefined || value === null)) {
-        return { ...prev, [field]: "" };
+        updated.companyName = "";
+      } else {
+        (updated as any)[field] = value;
       }
-      return { ...prev, [field]: value };
+
+      // Auto-generate Short Title when Name changes
+      if (field === "name" && typeof value === "string") {
+        const initials = value
+          .trim()
+          .split(/\s+/)
+          .filter((word) => word.length > 0)
+          .map((word) => word[0].toUpperCase())
+          .join("")
+          .slice(0, 3);
+        updated.shortTitle = initials;
+      }
+
+      return updated;
     });
   };
 
@@ -207,7 +239,7 @@ export const SupplierManagement = () => {
       ...prev,
       contactPersons: [
         ...(prev.contactPersons || []),
-        { designation: "", contactNumber: "" },
+        { name: "", designation: "", contactNumber: "" },
       ],
     }));
   };
@@ -285,7 +317,6 @@ export const SupplierManagement = () => {
           notes: formData.notes || undefined,
           accountId: formData.accountId || undefined, // Pass accountId for voucher creation
           accountHead: formData.accountHead || undefined,
-          title: formData.title || undefined,
           shortTitle: formData.shortTitle || undefined,
           referenceName: formData.referenceName || undefined,
           area: formData.area || undefined,
@@ -333,7 +364,6 @@ export const SupplierManagement = () => {
           status: formData.status,
           notes: formData.notes || undefined,
           accountHead: formData.accountHead || undefined,
-          title: formData.title || undefined,
           shortTitle: formData.shortTitle || undefined,
           referenceName: formData.referenceName || undefined,
           area: formData.area || undefined,
@@ -402,7 +432,6 @@ export const SupplierManagement = () => {
       notes: supplier.notes || "",
       accountId: supplier.accountId || null, // Pass accountId for voucher creation
       accountHead: supplier.accountHead || "",
-      title: supplier.title || "",
       shortTitle: supplier.shortTitle || "",
       referenceName: supplier.referenceName || "",
       area: supplier.area || "",
@@ -827,18 +856,9 @@ export const SupplierManagement = () => {
           <div className="space-y-4 pt-2">
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Title</Label>
+                <Label className="text-xs">Title *</Label>
                 <Input
-                  placeholder="Title"
-                  value={formData.title || ""}
-                  onChange={(e) => handleInputChange("title", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Name</Label>
-                <Input
-                  placeholder="Supplier name"
+                  placeholder="Supplier title"
                   value={formData.name || ""}
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   className="h-8 text-xs"
@@ -903,11 +923,25 @@ export const SupplierManagement = () => {
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Area</Label>
-                <Input
-                  placeholder="Area"
+                <SearchableSelect
+                  placeholder="Search or add area..."
+                  options={areas.map((area) => ({
+                    value: area,
+                    label: area,
+                  }))}
                   value={formData.area || ""}
-                  onChange={(e) => handleInputChange("area", e.target.value)}
-                  className="h-8 text-xs"
+                  onValueChange={(val) => handleInputChange("area", val)}
+                  allowCustom={true}
+                  onCreate={async (newArea) => {
+                    try {
+                      await apiClient.createArea(newArea);
+                      fetchAreas();
+                    } catch (error) {
+                      console.error("Error creating area:", error);
+                    }
+                  }}
+                  createLabel="area"
+                  className="h-8"
                 />
               </div>
               <div className="space-y-1">
@@ -1028,6 +1062,14 @@ export const SupplierManagement = () => {
               </div>
               {(formData.contactPersons || []).map((cp, idx) => (
                 <div key={idx} className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Person Name"
+                    value={cp.name}
+                    onChange={(e) =>
+                      handleUpdateContactPerson(idx, "name", e.target.value)
+                    }
+                    className="h-8 text-xs flex-1"
+                  />
                   <Input
                     placeholder="Designation"
                     value={cp.designation}

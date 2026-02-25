@@ -51,6 +51,12 @@ router.get("/", async (req, res) => {
         where: {
           status: "active",
         },
+        include: {
+          Account: {
+            where: { status: "Active" },
+            select: { id: true, code: true, currentBalance: true },
+          },
+        },
         orderBy: { createdAt: "desc" },
       }),
       prisma.customer.count({ where }),
@@ -65,12 +71,49 @@ router.get("/", async (req, res) => {
     const total = filteredCustomers.length;
     const paginatedCustomers = filteredCustomers.slice(skip, skip + limitNum);
 
-    // Map customers to include accountId
-    const customersWithAccountId = paginatedCustomers.map((customer: any) => ({
-      ...customer,
-      accountId: null, // Set to null since we don't have accounts data
-      accounts: undefined, // Remove accounts array from response
-    }));
+    // Get all account IDs for the paginated customers
+    const accountIds = paginatedCustomers
+      .flatMap((c: any) => c.Account?.map((a: any) => a.id) || [])
+      .filter(Boolean);
+
+    // Fetch sums of debits and credits from VoucherEntry for these accounts
+    const voucherSums = await prisma.voucherEntry.groupBy({
+      by: ["accountId"],
+      where: {
+        accountId: { in: accountIds },
+        deletedAt: null,
+      },
+      _sum: {
+        debit: true,
+        credit: true,
+      },
+    });
+
+    const balanceMap: Record<string, number> = {};
+    voucherSums.forEach((sum) => {
+      if (sum.accountId) {
+        balanceMap[sum.accountId] =
+          (sum._sum.debit || 0) - (sum._sum.credit || 0);
+      }
+    });
+
+    // Map customers to include accountId and calculated balance
+    const customersWithAccountId = paginatedCustomers.map((customer: any) => {
+      // Find the primary account (usually starting with 103 for receivables)
+      const primaryAccount =
+        customer.Account?.find((a: any) => a.code?.startsWith("103")) ||
+        customer.Account?.[0];
+
+      return {
+        ...customer,
+        balance: primaryAccount
+          ? balanceMap[primaryAccount.id] || 0
+          : customer.openingBalance || 0,
+        accountId: primaryAccount?.id || null,
+        accounts: undefined, // Remove accounts array from response
+        Account: undefined, // Clean up unused relations
+      };
+    });
 
     res.json({
       data: customersWithAccountId,
@@ -91,16 +134,45 @@ router.get("/:id", async (req, res) => {
   try {
     const customer = await prisma.customer.findUnique({
       where: { id: req.params.id },
+      include: {
+        Account: {
+          where: { status: "Active" },
+        },
+      },
     });
 
     if (!customer) {
       return res.status(404).json({ error: "Customer not found" });
     }
 
-    // Get the customer's account ID if exists
-    const accountId = null; // Set to null since we don't have accounts data
+    // Find primary account
+    const primaryAccount =
+      customer.Account?.find((a: any) => a.code?.startsWith("103")) ||
+      customer.Account?.[0];
 
-    res.json({ data: { ...customer, accountId } });
+    let balance = customer.openingBalance || 0;
+    let accountId = primaryAccount?.id || null;
+
+    if (primaryAccount) {
+      const voucherSum = await prisma.voucherEntry.aggregate({
+        _sum: {
+          debit: true,
+          credit: true,
+        },
+        where: {
+          accountId: primaryAccount.id,
+          deletedAt: null,
+        },
+      });
+
+      balance = (voucherSum._sum.debit || 0) - (voucherSum._sum.credit || 0);
+    }
+
+    // Remove Account from response to match original format
+    const customerData = { ...customer };
+    delete (customerData as any).Account;
+
+    res.json({ data: { ...customerData, balance, accountId } });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -122,7 +194,6 @@ router.post("/", async (req, res) => {
       priceType,
       code,
       accountHead,
-      title,
       shortTitle,
       referenceName,
       area,
@@ -132,6 +203,9 @@ router.post("/", async (req, res) => {
       pstNumber,
       ntn,
       remarks,
+      category,
+      accountOpeningDate,
+      accountClosingDate,
     } = req.body;
 
     if (!name) {
@@ -142,6 +216,23 @@ router.post("/", async (req, res) => {
     const parsedOpeningBalance = openingBalance
       ? parseFloat(openingBalance)
       : 0;
+
+    // Auto-generate code if missing
+    let finalCode = code;
+    if (!finalCode) {
+      const lastCustomer = await prisma.customer.findFirst({
+        orderBy: { code: "desc" },
+        where: { code: { startsWith: "CUST-" } },
+      });
+      let nextNum = 1;
+      if (lastCustomer && lastCustomer.code) {
+        const match = lastCustomer.code.match(/CUST-(\d+)/);
+        if (match) {
+          nextNum = parseInt(match[1], 10) + 1;
+        }
+      }
+      finalCode = `CUST-${String(nextNum).padStart(4, "0")}`;
+    }
 
     const customer = await prisma.customer.create({
       data: {
@@ -156,9 +247,8 @@ router.post("/", async (req, res) => {
         creditLimit: creditLimit ? parseFloat(creditLimit) : 0,
         status: status || "active",
         priceType: priceType || null,
-        code: code || null,
+        code: finalCode,
         accountHead: accountHead || null,
-        title: title || null,
         shortTitle: shortTitle || null,
         referenceName: referenceName || null,
         area: area || null,
@@ -168,6 +258,13 @@ router.post("/", async (req, res) => {
         pstNumber: pstNumber || null,
         ntn: ntn || null,
         remarks: remarks || null,
+        category: category || null,
+        accountOpeningDate: accountOpeningDate
+          ? new Date(accountOpeningDate)
+          : null,
+        accountClosingDate: accountClosingDate
+          ? new Date(accountClosingDate)
+          : null,
         updatedAt: new Date(), // Add updatedAt
       },
     });
@@ -387,7 +484,6 @@ router.put("/:id", async (req, res) => {
       accountId, // Account ID from payload
       code,
       accountHead,
-      title,
       shortTitle,
       referenceName,
       area,
@@ -397,6 +493,9 @@ router.put("/:id", async (req, res) => {
       pstNumber,
       ntn,
       remarks,
+      category,
+      accountOpeningDate,
+      accountClosingDate,
     } = req.body;
     // 1. Fetch old customer data BEFORE update
     const oldCustomer = await prisma.customer.findUnique({
@@ -424,7 +523,6 @@ router.put("/:id", async (req, res) => {
     if (priceType !== undefined) updateData.priceType = priceType || null;
     if (code !== undefined) updateData.code = code || null;
     if (accountHead !== undefined) updateData.accountHead = accountHead || null;
-    if (title !== undefined) updateData.title = title || null;
     if (shortTitle !== undefined) updateData.shortTitle = shortTitle || null;
     if (referenceName !== undefined)
       updateData.referenceName = referenceName || null;
@@ -436,6 +534,15 @@ router.put("/:id", async (req, res) => {
     if (pstNumber !== undefined) updateData.pstNumber = pstNumber || null;
     if (ntn !== undefined) updateData.ntn = ntn || null;
     if (remarks !== undefined) updateData.remarks = remarks || null;
+    if (category !== undefined) updateData.category = category || null;
+    if (accountOpeningDate !== undefined)
+      updateData.accountOpeningDate = accountOpeningDate
+        ? new Date(accountOpeningDate)
+        : null;
+    if (accountClosingDate !== undefined)
+      updateData.accountClosingDate = accountClosingDate
+        ? new Date(accountClosingDate)
+        : null;
 
     const customer = await prisma.customer.update({
       where: { id: req.params.id },

@@ -16,27 +16,36 @@ dotenv.config({ path: envPath, override: true });
 // Never allow any other database to be used.
 // This guard overrides stale system/user environment variables.
 // ============================================================
-const REQUIRED_DB = 'koncepts_dev';
-const currentDbUrl = process.env.DATABASE_URL || '';
+const REQUIRED_DB = "koncepts_dev";
+const currentDbUrl = process.env.DATABASE_URL || "";
 
 if (!currentDbUrl.includes(REQUIRED_DB)) {
   // Force-override: set it back to the correct DB from .env
-  const fs = require('fs');
-  const envContent = fs.readFileSync(envPath, 'utf-8');
+  const fs = require("fs");
+  const envContent = fs.readFileSync(envPath, "utf-8");
   const match = envContent.match(/DATABASE_URL=([^\r\n]+)/);
   if (match && match[1].includes(REQUIRED_DB)) {
     process.env.DATABASE_URL = match[1].trim();
-    console.warn(`[SERVER] ⚠️  DATABASE_URL was pointing to wrong DB. Overridden to: ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':****@')}`);
+    console.warn(
+      `[SERVER] ⚠️  DATABASE_URL was pointing to wrong DB. Overridden to: ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ":****@")}`,
+    );
   } else {
-    throw new Error(`[SERVER] FATAL: Could not find a valid koncepts_dev DATABASE_URL in ${envPath}. Refusing to start.`);
+    throw new Error(
+      `[SERVER] FATAL: Could not find a valid koncepts_dev DATABASE_URL in ${envPath}. Refusing to start.`,
+    );
   }
 }
 
 if (!process.env.DATABASE_URL?.includes(REQUIRED_DB)) {
-  throw new Error(`[SERVER] FATAL: DATABASE_URL must point to "${REQUIRED_DB}". Got: ${process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':****@')}. Refusing to start.`);
+  throw new Error(
+    `[SERVER] FATAL: DATABASE_URL must point to "${REQUIRED_DB}". Got: ${process.env.DATABASE_URL?.replace(/:[^:@]+@/, ":****@")}. Refusing to start.`,
+  );
 }
 
-console.log('[SERVER] DATABASE_URL:', process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':****@'));
+console.log(
+  "[SERVER] DATABASE_URL:",
+  process.env.DATABASE_URL?.replace(/:[^:@]+@/, ":****@"),
+);
 
 // Set timezone to Pakistan (Asia/Karachi)
 process.env.TZ = "Asia/Karachi";
@@ -75,7 +84,12 @@ const PORT = Number(process.env.PORT) || 3001;
 // Middleware - CORS configuration
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
-  : ["http://localhost:5173", "http://localhost:8080", "http://localhost:8081", "http://localhost:83"];
+  : [
+      "http://localhost:5173",
+      "http://localhost:8080",
+      "http://localhost:8081",
+      "http://localhost:83",
+    ];
 
 app.use(
   cors({
@@ -155,9 +169,11 @@ app.use(
 app.use((req, res, next) => {
   // Simple request logger
   const start = Date.now();
-  res.on('finish', () => {
+  res.on("finish", () => {
     const duration = Date.now() - start;
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
+    console.log(
+      `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`,
+    );
   });
 
   // Only apply to API routes
@@ -175,7 +191,10 @@ app.use((req, res, next) => {
 // Serve uploaded files statically
 // This ensures images uploaded to public/uploads are accessible via the backend URL
 // (e.g., http://localhost:3001/uploads/parts/image.jpg)
-app.use("/uploads", express.static(path.join(__dirname, "../../public/uploads")));
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "../../public/uploads")),
+);
 
 // Increase body parser limit to handle image uploads (base64 encoded images can be large)
 // Base64 encoding increases size by ~33%, so 100mb allows for larger images even after compression
@@ -397,21 +416,43 @@ app.use("/dev-koncepts/api/reports", authenticateJWT, reportsRoutes);
 app.use("/dev-koncepts/api/users", authenticateJWT, usersRoutes);
 app.use("/dev-koncepts/api/roles", authenticateJWT, rolesRoutes);
 app.use("/dev-koncepts/api/activity-logs", authenticateJWT, activityLogsRoutes);
-app.use("/dev-koncepts/api/approval-flows", authenticateJWT, approvalFlowsRoutes);
+app.use(
+  "/dev-koncepts/api/approval-flows",
+  authenticateJWT,
+  approvalFlowsRoutes,
+);
 app.use("/dev-koncepts/api/backups", authenticateJWT, backupsRoutes);
-app.use("/dev-koncepts/api/company-profile", authenticateJWT, companyProfileRoutes);
-app.use("/dev-koncepts/api/whatsapp-settings", authenticateJWT, whatsappSettingsRoutes);
-app.use("/dev-koncepts/api/longcat-settings", authenticateJWT, longcatSettingsRoutes);
+app.use(
+  "/dev-koncepts/api/company-profile",
+  authenticateJWT,
+  companyProfileRoutes,
+);
+app.use(
+  "/dev-koncepts/api/whatsapp-settings",
+  authenticateJWT,
+  whatsappSettingsRoutes,
+);
+app.use(
+  "/dev-koncepts/api/longcat-settings",
+  authenticateJWT,
+  longcatSettingsRoutes,
+);
 app.use("/dev-koncepts/api/kits", authenticateJWT, kitsRoutes);
 app.use("/dev-koncepts/api/vouchers", authenticateJWT, vouchersRoutes);
 app.use("/dev-koncepts/api/getVouchers", authenticateJWT, vouchersRoutes);
 app.use("/dev-koncepts/api/sales", authenticateJWT, salesRoutes);
 app.use("/dev-koncepts/api/dpo-returns", authenticateJWT, dpoReturnsRoutes);
 app.use("/dev-koncepts/api/sales-returns", authenticateJWT, salesReturnsRoutes);
-app.use("/dev-koncepts/api/advanced-search", authenticateJWT, advancedSearchRoutes);
+app.use(
+  "/dev-koncepts/api/advanced-search",
+  authenticateJWT,
+  advancedSearchRoutes,
+);
 
 // RESTART TRIGGER - EXPLICIT FORCE AT 2026-02-03 18:22
-console.log("[SERVER] Registering all API routes including /api/inventory/rack-shelf-balances... REBOOT TRIGGER 2026-02-13 15:09 - FIX APPROVAL ITERABLE ERROR");
+console.log(
+  "[SERVER] Registering all API routes including /api/inventory/rack-shelf-balances... REBOOT TRIGGER 2026-02-13 15:09 - FIX APPROVAL ITERABLE ERROR",
+);
 
 // Error handling middleware
 app.use(
@@ -434,5 +475,3 @@ app.listen(PORT, () => {
     `Balance Sheet endpoint: http://localhost:${PORT}/api/accounting/balance-sheet`,
   );
 });
-
-

@@ -144,6 +144,12 @@ export const SalesInvoice = () => {
   });
   const [creatingCustomer, setCreatingCustomer] = useState(false);
 
+  // Edit Credit Limit State
+  const [showEditCreditLimitDialog, setShowEditCreditLimitDialog] =
+    useState(false);
+  const [editingCreditLimit, setEditingCreditLimit] = useState<number>(0);
+  const [updatingCreditLimit, setUpdatingCreditLimit] = useState(false);
+
   // Inline items state - matching reference design
   const [inlineItems, setInlineItems] = useState<InlineItemRow[]>([]);
 
@@ -177,6 +183,43 @@ export const SalesInvoice = () => {
     >
   >({});
   const [loadingStock, setLoadingStock] = useState<Record<string, boolean>>({});
+
+  // Accurate locations for parts (fetched on demand or refreshed)
+  const [partLocations, setPartLocations] = useState<Record<string, any[]>>({});
+  const [loadingLocations, setLoadingLocations] = useState<
+    Record<string, boolean>
+  >({});
+
+  const fetchPartLocations = async (partId: string) => {
+    if (!partId) return;
+    setLoadingLocations((prev) => ({ ...prev, [partId]: true }));
+    try {
+      const response = await apiClient.getPartLocations(partId);
+      // Backend returns data: [...] or it might be the array itself
+      const locData =
+        (response as any).data || (Array.isArray(response) ? response : []);
+
+      // Normalize to match parts list format (rackCode, shelfNo, storeName)
+      const normalized = locData.map((loc: any) => ({
+        id: loc.id || `${loc.rackId}-${loc.shelfId}`,
+        storeId: loc.storeId,
+        storeName: loc.store || loc.storeName || "No Store",
+        rackId: loc.rackId,
+        rackCode: loc.rack || loc.rackCode || "No Rack",
+        shelfId: loc.shelfId,
+        shelfNo: loc.shelf || loc.shelfNo || "No Shelf",
+        quantity: loc.quantity,
+      }));
+
+      setPartLocations((prev) => ({
+        ...prev,
+        [partId]: normalized,
+      }));
+    } catch (error) {
+    } finally {
+      setLoadingLocations((prev) => ({ ...prev, [partId]: false }));
+    }
+  };
 
   // Navigation
   const navigate = useNavigate();
@@ -321,16 +364,21 @@ export const SalesInvoice = () => {
                 updated.selectedPriceType = "M";
               }
 
-              // Fetch accurate stock balance for this part
-              fetchPartStockBalance(value);
+              // Reset selections for new part
+              updated.selectedLocationIds = [];
+              updated.selectedLocationId = "";
+              updated.useUnlocatedStock = false;
 
-              // Auto-complete Rack and Shelf if locations exist
+              // Fetch accurate stock balance and locations for this part
+              fetchPartStockBalance(value);
+              fetchPartLocations(value);
+
+              // Auto-select first location if available in the cached part data
               if (part.locations && part.locations.length > 0) {
                 const firstLoc = part.locations[0];
-                updated.selectedRackId = firstLoc.rackId;
                 updated.selectedLocationId = firstLoc.id;
+                updated.selectedLocationIds = [firstLoc.id];
               } else if (part.unlocatedStock && part.unlocatedStock > 0) {
-                // If no assigned locations but unlocated stock exists, auto-check unlocated
                 updated.useUnlocatedStock = true;
               }
             }
@@ -343,9 +391,8 @@ export const SalesInvoice = () => {
   };
 
   // Fetch accurate stock balance for a part
-  const fetchPartStockBalance = async (partId: string) => {
-    if (partStockBalances[partId]) {
-      // Already fetched, but refresh it
+  const fetchPartStockBalance = async (partId: string, force = false) => {
+    if (partStockBalances[partId] && !force) {
       return;
     }
 
@@ -385,6 +432,7 @@ export const SalesInvoice = () => {
   const fetchParts = async (
     searchTerm: string = "",
     forceRefresh: boolean = false,
+    silent: boolean = false,
   ) => {
     // If parts already loaded and no search term, don't refetch (use client-side filtering)
     if (
@@ -399,7 +447,7 @@ export const SalesInvoice = () => {
       hasFetchedInitialPartsRef.current = true;
     }
 
-    setPartsLoading(true);
+    if (!silent) setPartsLoading(true);
     try {
       const params: any = {
         limit: 500, // Load reasonable amount for fast initial display
@@ -463,8 +511,43 @@ export const SalesInvoice = () => {
     } catch (error) {
       setParts([]);
     } finally {
-      setPartsLoading(false);
+      if (!silent) setPartsLoading(false);
     }
+  };
+
+  // Background stock polling (every 60 seconds)
+  useEffect(() => {
+    // Only start polling if we have initial data and we are not currently searching
+    const hasSearchTerm = Object.values(partsSearchTerm).some(
+      (s) => s.length > 0,
+    );
+
+    if (hasFetchedInitialPartsRef.current && !hasSearchTerm) {
+      const interval = setInterval(() => {
+        // Quietly background refresh parts data to capture external stock changes
+        fetchParts("", true, true);
+
+        // Also refresh individual stock balances for visible items if any
+        if (inlineItems.length > 0) {
+          inlineItems.forEach((item) => {
+            if (item.selectedPartId) {
+              fetchPartStockBalance(item.selectedPartId, true);
+              fetchPartLocations(item.selectedPartId);
+            }
+          });
+        }
+      }, 60000);
+
+      return () => clearInterval(interval);
+    }
+  }, [partsSearchTerm, inlineItems.length]); // Dependencies to ensure we don't poll while user is active or context changes inappropriately
+
+  // Force refresh parts list and clear stock balance cache
+  const refreshPartsData = async () => {
+    hasFetchedInitialPartsRef.current = false;
+    setPartStockBalances({});
+    setPartLocations({}); // IMPORTANT: Clear location cache too
+    await fetchParts("", true); // forceRefresh=true
   };
 
   // Cleanup debounce timers on unmount
@@ -637,7 +720,7 @@ export const SalesInvoice = () => {
               id: c.id,
               name: c.name,
               type: c.type || "registered",
-              balance: c.openingBalance || 0,
+              balance: c.balance || 0,
               creditLimit: c.creditLimit || 0,
               creditDays: c.creditDays || 0,
             }),
@@ -859,6 +942,32 @@ export const SalesInvoice = () => {
     const totalReceived = calculateTotalReceived();
     const grandTotal = calculateAmountAfterDiscount();
 
+    // NEW: Credit Limit Validation for Registered Customers
+    if (newInvoice.customerType === "registered" && selectedCustomerId) {
+      const customer = customers.find((c) => c.id === selectedCustomerId);
+      if (
+        customer &&
+        customer.creditLimit !== undefined &&
+        customer.creditLimit > 0
+      ) {
+        // Due amount for this invoice
+        const invoiceDueAmount = grandTotal - totalReceived;
+        const currentBalance = customer.balance || 0;
+
+        // Combined total
+        const combinedTotal = currentBalance + invoiceDueAmount;
+
+        if (combinedTotal > customer.creditLimit) {
+          toast({
+            title: "Credit Limit Exceeded",
+            description: `The combined total of previous balance (${currentBalance.toFixed(2)}) and new due amount (${invoiceDueAmount.toFixed(2)}) exceeds the customer's credit limit (${customer.creditLimit.toFixed(2)}).`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+    }
+
     if (newInvoice.customerType === "walking") {
       if (totalReceived <= 0) {
         toast({
@@ -926,7 +1035,10 @@ export const SalesInvoice = () => {
         let selectedStockTotal = 0;
         const selectedLocsText = [];
         for (const locId of item.selectedLocationIds) {
-          const loc = part.locations?.find((l) => l.id === locId);
+          // Check our newly added partLocations state first (accurate real-time), then fallback to parts list locations
+          const loc = (partLocations[part.id] || part.locations || []).find(
+            (l: any) => l.id === locId,
+          );
           if (loc) {
             selectedStockTotal += loc.quantity;
             selectedLocsText.push(
@@ -1084,6 +1196,7 @@ export const SalesInvoice = () => {
       });
 
       resetForm();
+      refreshPartsData();
 
       // Refresh invoices
       const invoicesResponse = await apiClient.getSalesInvoices();
@@ -1377,7 +1490,7 @@ export const SalesInvoice = () => {
           id: c.id,
           name: c.name,
           type: c.type || "registered",
-          balance: c.openingBalance || 0,
+          balance: c.balance || 0,
           creditLimit: c.creditLimit || 0,
           creditDays: c.creditDays || 0,
         }));
@@ -1444,6 +1557,8 @@ export const SalesInvoice = () => {
         title: "Delivery Recorded",
         description: `${delivery.challanNo} - Items moved from RESERVED to OUT stock.`,
       });
+
+      refreshPartsData();
 
       // Refresh invoices
       const invoicesResponse = await apiClient.getSalesInvoices();
@@ -1546,6 +1661,8 @@ export const SalesInvoice = () => {
         description: `Invoice ${invoice.invoiceNo} approved. Stock has been reduced.`,
       });
 
+      refreshPartsData();
+
       // Refresh invoices
       const invoicesResponse = await apiClient.getSalesInvoices({
         status: filterStatus !== "all" ? filterStatus : undefined,
@@ -1633,6 +1750,8 @@ export const SalesInvoice = () => {
         description: `Invoice ${invoiceToHold.invoiceNo} is now on hold with specific stock locations.`,
       });
 
+      refreshPartsData();
+
       // Refresh invoices
       const response = await apiClient.getSalesInvoices();
       const invoicesData: any = Array.isArray(response)
@@ -1719,6 +1838,8 @@ export const SalesInvoice = () => {
         title: "Invoice Cancelled",
         description: `Invoice has been cancelled. Reserved stock returned to available.`,
       });
+
+      refreshPartsData();
 
       // Refresh invoices
       const invoicesResponse = await apiClient.getSalesInvoices();
@@ -2212,10 +2333,22 @@ export const SalesInvoice = () => {
             Create invoices with stock reservation & partial delivery tracking
           </p>
         </div>
-        <Button onClick={() => setShowNewInvoice(true)} className="gap-2">
-          <Plus className="w-4 h-4" />
-          New Invoice
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={refreshPartsData}
+            title="Refresh Stock Data"
+            disabled={partsLoading}
+            className={partsLoading ? "animate-spin" : ""}
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+          <Button onClick={() => setShowNewInvoice(true)} className="gap-2">
+            <Plus className="w-4 h-4" />
+            New Invoice
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -2462,6 +2595,51 @@ export const SalesInvoice = () => {
                       <Plus className="w-4 h-4" />
                     </Button>
                   </div>
+                  {/* Show Previous Balance and Credit Limit */}
+                  {selectedCustomerId &&
+                    (() => {
+                      const customer = customers.find(
+                        (c) => c.id === selectedCustomerId,
+                      );
+                      if (!customer) return null;
+                      return (
+                        <div className="text-xs flex flex-row gap-4 mt-1 bg-muted/50 p-2 rounded-md items-center shadow-sm border border-border/50">
+                          <div>
+                            <span className="text-muted-foreground font-medium mr-1 tracking-tight">
+                              Previous Balance:
+                            </span>
+                            <span
+                              className={`font-semibold tracking-tight ${customer.balance && customer.balance > 0 ? "text-red-600" : "text-emerald-600"}`}
+                            >
+                              Rs {customer.balance?.toFixed(2) || "0.00"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-muted-foreground font-medium tracking-tight">
+                              Credit Limit:
+                            </span>
+                            <span className="font-semibold tracking-tight">
+                              {customer.creditLimit && customer.creditLimit > 0
+                                ? `Rs ${customer.creditLimit.toFixed(2)}`
+                                : "Unlimited"}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="link"
+                              className="h-auto p-0 text-xs text-blue-600 hover:text-blue-800 flex items-center underline-offset-2"
+                              onClick={() => {
+                                setEditingCreditLimit(
+                                  customer.creditLimit || 0,
+                                );
+                                setShowEditCreditLimitDialog(true);
+                              }}
+                            >
+                              (Update)
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })()}
                 </div>
               )}
 
@@ -2989,8 +3167,11 @@ export const SalesInvoice = () => {
                                 <ScrollArea className="h-32">
                                   <div className="space-y-1.5 py-1">
                                     {(() => {
-                                      const allLocations =
-                                        part?.locations || [];
+                                      const allLocations = (
+                                        partLocations[item.selectedPartId] ||
+                                        part?.locations ||
+                                        []
+                                      ).filter((l: any) => l.quantity !== 0);
 
                                       // Create FLATTENED Rack-Shelf Pairings
                                       const flatLocations = [];
@@ -3085,8 +3266,11 @@ export const SalesInvoice = () => {
                                 <ScrollArea className="h-32">
                                   <div className="space-y-1.5 py-1">
                                     {(() => {
-                                      const allLocations =
-                                        part?.locations || [];
+                                      const allLocations = (
+                                        partLocations[item.selectedPartId] ||
+                                        part?.locations ||
+                                        []
+                                      ).filter((l: any) => l.quantity !== 0);
 
                                       // Same Flattened logic for synchronization
                                       const flatLocations = [];
@@ -3185,18 +3369,16 @@ export const SalesInvoice = () => {
                             <TableCell className="text-center">
                               <div>
                                 {(() => {
-                                  const stockBalance = part?.id
-                                    ? partStockBalances[part.id]
-                                    : null;
+                                  const stockBalance =
+                                    partStockBalances[item.selectedPartId];
                                   const currentStock =
                                     stockBalance?.available_stock ??
                                     (part?.availableQty || 0);
                                   const avgCost =
                                     stockBalance?.avg_cost ??
                                     (part?.price || 0);
-                                  const isLoading = part?.id
-                                    ? loadingStock[part.id]
-                                    : false;
+                                  const isLoading =
+                                    loadingStock[item.selectedPartId];
 
                                   return (
                                     <>
@@ -3229,15 +3411,13 @@ export const SalesInvoice = () => {
                             <TableCell className="text-center">
                               <div>
                                 {(() => {
-                                  const stockBalance = part?.id
-                                    ? partStockBalances[part.id]
-                                    : null;
+                                  const stockBalance =
+                                    partStockBalances[item.selectedPartId];
                                   const reservedStock =
                                     stockBalance?.reserved_stock ??
                                     (part?.reservedQty || 0);
-                                  const isLoading = part?.id
-                                    ? loadingStock[part.id]
-                                    : false;
+                                  const isLoading =
+                                    loadingStock[item.selectedPartId];
 
                                   return (
                                     <div className="flex items-center justify-center gap-2">
@@ -4732,6 +4912,87 @@ export const SalesInvoice = () => {
             </Button>
             <Button onClick={handleAddCustomer} disabled={creatingCustomer}>
               {creatingCustomer ? "Creating..." : "Add Customer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={showEditCreditLimitDialog}
+        onOpenChange={setShowEditCreditLimitDialog}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Update Credit Limit</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-credit-limit">New Credit Limit</Label>
+              <Input
+                id="edit-credit-limit"
+                type="number"
+                placeholder="Enter new credit limit"
+                value={editingCreditLimit}
+                onChange={(e) =>
+                  setEditingCreditLimit(parseFloat(e.target.value) || 0)
+                }
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Enter 0 for unlimited credit limit.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setShowEditCreditLimitDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={updatingCreditLimit}
+              onClick={async () => {
+                if (!selectedCustomerId) return;
+                try {
+                  setUpdatingCreditLimit(true);
+                  const response = await apiClient.updateCustomer(
+                    selectedCustomerId,
+                    {
+                      creditLimit: editingCreditLimit,
+                    },
+                  );
+                  if (response.error) {
+                    toast({
+                      title: "Error",
+                      description: response.error,
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  toast({
+                    title: "Success",
+                    description: "Credit limit updated.",
+                  });
+                  // Update local state without full refresh
+                  setCustomers((prev) =>
+                    prev.map((c) =>
+                      c.id === selectedCustomerId
+                        ? { ...c, creditLimit: editingCreditLimit }
+                        : c,
+                    ),
+                  );
+                  setShowEditCreditLimitDialog(false);
+                } catch (e: any) {
+                  toast({
+                    title: "Error",
+                    description: "Failed to update credit limit.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setUpdatingCreditLimit(false);
+                }
+              }}
+            >
+              {updatingCreditLimit ? "Saving..." : "Save Limit"}
             </Button>
           </DialogFooter>
         </DialogContent>

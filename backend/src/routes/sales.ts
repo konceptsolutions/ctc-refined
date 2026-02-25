@@ -7,12 +7,13 @@ const router = express.Router();
 async function getNextNumberForPrefix(args: {
   prefix: string;
   voucherType?: string;
+  tx?: any;
 }): Promise<string> {
-  const { prefix, voucherType } = args;
+  const { prefix, voucherType, tx = prisma } = args;
   const re = new RegExp(`^${prefix}(\\d+)$`);
 
   const [lastVoucher] = await Promise.all([
-    prisma.voucher.findFirst({
+    tx.voucher.findFirst({
       where: {
         ...(voucherType ? { type: voucherType } : {}),
         voucherNumber: { startsWith: prefix },
@@ -66,160 +67,387 @@ async function getReservedQuantity(partId: string): Promise<number> {
   }
 }
 
-// Helper function to create voucher for sales invoice
-async function createVoucherForInvoice(
-  invoiceNo: string,
-  invoiceDate: Date,
-  customerType: string,
-  accountId: string | null | undefined,
-  grandTotal: number,
-  invoiceId: string,
-  salesPerson?: string,
+// Robust helper to find account by name keywords with optional exclusion
+async function findAccountByKeywords(
+  keywords: string[],
+  fallbackCodes: string[] = [],
+  excludeKeywords: string[] = [],
+  tx: any = prisma,
 ) {
-  try {
-    // Generate voucher number (format: JV4707)
-    const lastVoucher = await prisma.voucher.findFirst({
+  // Try exact match first for better precision
+  for (const k of keywords) {
+    const exactAcc = await tx.account.findFirst({
       where: {
-        type: "journal",
-        voucherNumber: {
-          startsWith: "JV",
-        },
-      },
-      orderBy: {
-        voucherNumber: "desc",
-      },
-    });
-
-    let nextNumber = 1;
-    if (lastVoucher) {
-      const match = lastVoucher.voucherNumber.match(/^JV(\d+)$/);
-      if (match) {
-        nextNumber = parseInt(match[1]) + 1;
-      } else {
-        const voucherCount = await prisma.voucher.count({
-          where: { type: "journal" },
-        });
-        nextNumber = voucherCount + 1;
-      }
-    }
-    const voucherNumber = `JV${String(nextNumber).padStart(4, "0")}`;
-
-    // Get accounts for voucher entries
-    const accountsReceivableAccount =
-      customerType === "registered"
-        ? await prisma.account.findFirst({
-            where: {
-              OR: [
-                { name: { contains: "Accounts Receivable" } },
-                { name: { contains: "Receivable" } },
-              ],
-              status: "Active",
-            },
-          })
-        : null;
-
-    const salesRevenueAccount = await prisma.account.findFirst({
-      where: {
-        name: { contains: "Sales Revenue" },
         status: "Active",
+        name: { equals: k, mode: "insensitive" },
       },
+      include: { Subgroup: { include: { MainGroup: true } } },
     });
+    if (exactAcc) return exactAcc;
+  }
 
-    if (!salesRevenueAccount) {
-      throw new Error("Sales Revenue account not found");
-    }
-
-    // Create voucher entries based on customer type
-    const voucherEntries = [];
-
-    if (customerType === "walking" && accountId) {
-      // Cash sale - Cash/Bank account (debit) and Sales Revenue (credit)
-      const cashAccount = await prisma.account.findUnique({
-        where: { id: accountId },
-        select: { code: true, name: true },
-      });
-
-      voucherEntries.push({
-        accountId: accountId,
-        accountName: cashAccount
-          ? `${cashAccount.code}-${cashAccount.name}`
-          : "Cash Account",
-        description: `Cash sale - Invoice ${invoiceNo}`,
-        debit: grandTotal,
-        credit: 0,
-        sortOrder: 0,
-      });
-
-      voucherEntries.push({
-        accountId: salesRevenueAccount.id,
-        accountName: `${salesRevenueAccount.code}-${salesRevenueAccount.name}`,
-        description: `Sales Revenue - Invoice ${invoiceNo}`,
-        debit: 0,
-        credit: grandTotal,
-        sortOrder: 1,
-      });
-    } else if (customerType === "registered" && accountsReceivableAccount) {
-      // Party sale - Accounts Receivable (debit) and Sales Revenue (credit)
-      voucherEntries.push({
-        accountId: accountsReceivableAccount.id,
-        accountName: `${accountsReceivableAccount.code}-${accountsReceivableAccount.name}`,
-        description: `Receivable - Invoice ${invoiceNo}`,
-        debit: grandTotal,
-        credit: 0,
-        sortOrder: 0,
-      });
-
-      voucherEntries.push({
-        accountId: salesRevenueAccount.id,
-        accountName: `${salesRevenueAccount.code}-${salesRevenueAccount.name}`,
-        description: `Sales Revenue - Invoice ${invoiceNo}`,
-        debit: 0,
-        credit: grandTotal,
-        sortOrder: 1,
-      });
-    } else {
-      // Fallback: only sales revenue if accounts not found
-      voucherEntries.push({
-        accountId: salesRevenueAccount.id,
-        accountName: `${salesRevenueAccount.code}-${salesRevenueAccount.name}`,
-        description: `Sales Revenue - Invoice ${invoiceNo}`,
-        debit: 0,
-        credit: grandTotal,
-        sortOrder: 0,
-      });
-    }
-
-    // Extract invoice number for narration
-    const invoiceNoDisplay = invoiceNo.replace(/^INV-?/i, "");
-
-    // Create voucher
-    const voucher = await prisma.voucher.create({
-      data: {
-        id: crypto.randomUUID(),
-        voucherNumber,
-        type: "journal",
-        date: invoiceDate,
-        narration: `Sales Invoice Number: ${invoiceNoDisplay}`,
-        totalDebit: grandTotal,
-        totalCredit: grandTotal,
-        status: "posted",
-        createdBy: salesPerson || "System",
-        approvedBy: "System",
-        approvedAt: new Date(),
-        updatedAt: new Date(),
-        salesInvoiceId: invoiceId,
-        VoucherEntry: {
-          create: voucherEntries.map((e) => ({
-            ...e,
-            salesInvoiceId: invoiceId,
+  let acc = await tx.account.findFirst({
+    where: {
+      status: "Active",
+      AND: [
+        {
+          OR: keywords.map((k) => ({
+            name: { contains: k, mode: "insensitive" },
           })),
         },
+        ...(excludeKeywords.length > 0
+          ? [
+              {
+                NOT: {
+                  OR: excludeKeywords.map((k) => ({
+                    name: { contains: k, mode: "insensitive" },
+                  })),
+                },
+              },
+            ]
+          : []),
+      ] as any,
+    },
+    include: { Subgroup: { include: { MainGroup: true } } },
+  });
+
+  if (!acc && fallbackCodes.length) {
+    acc = await tx.account.findFirst({
+      where: {
+        status: "Active",
+        OR: fallbackCodes.map((c) => ({ code: { contains: c } })),
+      },
+      include: { Subgroup: { include: { MainGroup: true } } },
+    });
+  }
+  return acc;
+}
+
+// Robust helper to create all vouchers (JV/RV) for an invoice upon approval/delivery
+async function createFullVouchersForInvoice(
+  id: string,
+  approvedBy: string,
+  tx: any = prisma,
+) {
+  try {
+    const invoice = await tx.salesInvoice.findUnique({
+      where: { id },
+      include: {
+        SalesInvoiceItem: { include: { Part: true } },
       },
     });
 
-    return voucher;
-  } catch (error: any) {
-    throw error;
+    if (!invoice) return;
+
+    // 1. Find necessary accounts
+    const inventoryAccount = await findAccountByKeywords(
+      ["Inventory", "Stock"],
+      ["101", "103", "104"],
+      ["Cost", "COGS", "Discount"], // Exclude cost/discount accounts when looking for inventory
+      tx,
+    );
+    const costAccount = await findAccountByKeywords(
+      ["Cost of Goods", "COGS", "Cost Inventory", "Cost of Sales"],
+      ["501", "901"],
+      [],
+      tx,
+    );
+    const goodsRevenueAccount = await findAccountByKeywords(
+      ["Sales Revenue", "Revenue", "Goods Sold"],
+      ["401", "701"],
+      [],
+      tx,
+    );
+    const discountAccount = await findAccountByKeywords(
+      ["Goods Sold Discount", "Sales Discount", "Discount Allowed", "Discount"],
+      ["502", "702"],
+      ["Cost", "Purchase", "Inventory"],
+      tx,
+    );
+
+    let customerAccount: any = null;
+    if (invoice.customerId) {
+      customerAccount = await tx.account.findFirst({
+        where: {
+          status: "Active",
+          OR: [
+            { customerId: invoice.customerId },
+            { name: invoice.customerName || "" },
+          ],
+        },
+        include: { Subgroup: { include: { MainGroup: true } } },
+      });
+    }
+    if (!customerAccount) {
+      customerAccount = await findAccountByKeywords(
+        ["Accounts Receivable", "Receivable"],
+        ["104", "201"],
+        [],
+        tx,
+      );
+    }
+
+    const paymentAccount = invoice.accountId
+      ? await tx.account.findUnique({
+          where: { id: invoice.accountId },
+          include: { Subgroup: { include: { MainGroup: true } } },
+        })
+      : null;
+
+    // 2. Calculate Totals and persist avgCost to items
+    let totalAvgCost = 0;
+    for (const item of invoice.SalesInvoiceItem) {
+      const avgCost =
+        item.avgCost || item.Part?.avgCost || item.Part?.cost || 0;
+      totalAvgCost += avgCost * item.orderedQty;
+
+      // Persist snapshot of cost at the time of approval
+      await tx.salesInvoiceItem.update({
+        where: { id: item.id },
+        data: { avgCost },
+      });
+    }
+
+    const totalRevenue = invoice.grandTotal + (invoice.overallDiscount || 0);
+    const discountAmount = invoice.overallDiscount || 0;
+    const grandTotal = invoice.grandTotal;
+    const paidAmount = invoice.paidAmount || 0;
+    const isWalking = invoice.customerType === "walking";
+
+    // 3. Create JV (COGS + Revenue/AR)
+    const jvEntries: any[] = [];
+
+    // COGS Part
+    let currentSortOrder = 0;
+    if (inventoryAccount && costAccount) {
+      for (const item of invoice.SalesInvoiceItem) {
+        const avgCost =
+          item.avgCost || item.Part?.avgCost || item.Part?.cost || 0;
+        const lineCost = avgCost * item.orderedQty;
+
+        if (lineCost > 0) {
+          jvEntries.push({
+            accountId: inventoryAccount.id,
+            accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+            description: `Inventory Out - ${item.partNo} (Qty: ${item.orderedQty}, AvgCost: ${avgCost.toFixed(2)}) - INV ${invoice.invoiceNo}`,
+            debit: 0,
+            credit: lineCost,
+            sortOrder: currentSortOrder++,
+          });
+          jvEntries.push({
+            accountId: costAccount.id,
+            accountName: `${costAccount.code}-${costAccount.name}`,
+            description: `COGS - ${item.partNo} (Qty: ${item.orderedQty}, AvgCost: ${avgCost.toFixed(2)}) - INV ${invoice.invoiceNo}`,
+            debit: lineCost,
+            credit: 0,
+            sortOrder: currentSortOrder++,
+          });
+        }
+      }
+    }
+
+    // Revenue/AR Part (for Registered Customers)
+    if (!isWalking) {
+      if (goodsRevenueAccount) {
+        jvEntries.push({
+          accountId: goodsRevenueAccount.id,
+          accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
+          description: `Revenue - INV ${invoice.invoiceNo}`,
+          debit: 0,
+          credit: totalRevenue,
+          sortOrder: currentSortOrder++,
+        });
+      }
+      if (customerAccount) {
+        jvEntries.push({
+          accountId: customerAccount.id,
+          accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+          description: `Receivable - INV ${invoice.invoiceNo}`,
+          debit: grandTotal,
+          credit: 0,
+          sortOrder: currentSortOrder++,
+        });
+      }
+      if (discountAmount > 0 && discountAccount) {
+        jvEntries.push({
+          accountId: discountAccount.id,
+          accountName: `${discountAccount.code}-${discountAccount.name}`,
+          description: `Discount - INV ${invoice.invoiceNo}`,
+          debit: discountAmount,
+          credit: 0,
+          sortOrder: currentSortOrder++,
+        });
+      }
+    }
+
+    // Post JV
+    const jvNo = await getNextNumberForPrefix({
+      prefix: "JV",
+      voucherType: "journal",
+      tx,
+    });
+    const jvDebit = jvEntries.reduce((s, e) => s + e.debit, 0);
+    const jvCredit = jvEntries.reduce((s, e) => s + e.credit, 0);
+
+    if (jvEntries.length > 0 && Math.abs(jvDebit - jvCredit) < 0.01) {
+      await tx.voucher.create({
+        data: {
+          voucherNumber: jvNo,
+          type: "journal",
+          date: new Date(),
+          narration: `Sales Invoice ${invoice.invoiceNo} Approval`,
+          totalDebit: jvDebit,
+          totalCredit: jvCredit,
+          status: "posted",
+          isSystemGenerated: true,
+          salesInvoiceId: id,
+          VoucherEntry: {
+            create: jvEntries.map((e) => ({ ...e, salesInvoiceId: id })),
+          },
+        } as any,
+      });
+
+      // Update balances
+      for (const entry of jvEntries) {
+        const acc = await tx.account.findUnique({
+          where: { id: entry.accountId },
+          include: { Subgroup: { include: { MainGroup: true } } },
+        });
+        if (acc) {
+          const type = acc.Subgroup.MainGroup.type.toLowerCase();
+          const isDrBalance = ["asset", "expense", "cost"].includes(type);
+          const diff = entry.debit - entry.credit;
+          await tx.account.update({
+            where: { id: entry.accountId },
+            data: {
+              currentBalance: {
+                increment: isDrBalance ? diff : -diff,
+              },
+            },
+          });
+        }
+      }
+    } else if (jvEntries.length > 0) {
+      throw new Error(
+        `[VOUCHER ERROR] Failed to create JV for Invoice ${invoice.invoiceNo} due to unbalanced entries. Debits: ${jvDebit}, Credits: ${jvCredit}`,
+      );
+    }
+
+    // 4. Create RV (Revenue/Cash) for Walking or Payment
+    const shouldCreateRV = isWalking || (paidAmount > 0 && paymentAccount);
+    if (shouldCreateRV) {
+      const rvEntries: any[] = [];
+      const rvNo = await getNextNumberForPrefix({
+        prefix: "RV",
+        voucherType: "receipt",
+        tx,
+      });
+
+      if (isWalking) {
+        if (goodsRevenueAccount) {
+          rvEntries.push({
+            accountId: goodsRevenueAccount.id,
+            accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
+            description: `Cash Sale Revenue - INV ${invoice.invoiceNo}`,
+            debit: 0,
+            credit: totalRevenue,
+            sortOrder: 0,
+          });
+        }
+        if (discountAmount > 0 && discountAccount) {
+          rvEntries.push({
+            accountId: discountAccount.id,
+            accountName: `${discountAccount.code}-${discountAccount.name}`,
+            description: `Cash Sale Discount - INV ${invoice.invoiceNo}`,
+            debit: discountAmount,
+            credit: 0,
+            sortOrder: 1,
+          });
+        }
+        if (paymentAccount) {
+          rvEntries.push({
+            accountId: paymentAccount.id,
+            accountName: `${paymentAccount.code}-${paymentAccount.name}`,
+            description: `Cash Sale Payment - INV ${invoice.invoiceNo}`,
+            debit: grandTotal,
+            credit: 0,
+            sortOrder: 2,
+          });
+        }
+      } else {
+        // Registered Payment
+        if (customerAccount) {
+          rvEntries.push({
+            accountId: customerAccount.id,
+            accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+            description: `Payment from ${invoice.customerName} - INV ${invoice.invoiceNo}`,
+            debit: 0,
+            credit: paidAmount,
+            sortOrder: 0,
+          });
+        }
+        if (paymentAccount) {
+          rvEntries.push({
+            accountId: paymentAccount.id,
+            accountName: `${paymentAccount.code}-${paymentAccount.name}`,
+            description: `Cash/Bank Received - INV ${invoice.invoiceNo}`,
+            debit: paidAmount,
+            credit: 0,
+            sortOrder: 1,
+          });
+        }
+      }
+
+      const rvDebit = rvEntries.reduce((s, e) => s + e.debit, 0);
+      const rvCredit = rvEntries.reduce((s, e) => s + e.credit, 0);
+
+      if (rvEntries.length > 0 && Math.abs(rvDebit - rvCredit) < 0.01) {
+        await tx.voucher.create({
+          data: {
+            voucherNumber: rvNo,
+            type: "receipt",
+            date: new Date(),
+            narration: `Payment for Invoice ${invoice.invoiceNo}`,
+            totalDebit: rvDebit,
+            totalCredit: rvCredit,
+            status: "posted",
+            isSystemGenerated: true,
+            salesInvoiceId: id,
+            VoucherEntry: {
+              create: rvEntries.map((e) => ({ ...e, salesInvoiceId: id })),
+            },
+          } as any,
+        });
+
+        // Update balances
+        for (const entry of rvEntries) {
+          const acc = await tx.account.findUnique({
+            where: { id: entry.accountId },
+            include: { Subgroup: { include: { MainGroup: true } } },
+          });
+          if (acc) {
+            const type = acc.Subgroup.MainGroup.type.toLowerCase();
+            const isDrBalance = ["asset", "expense", "cost"].includes(type);
+            const diff = entry.debit - entry.credit;
+            await tx.account.update({
+              where: { id: entry.accountId },
+              data: {
+                currentBalance: {
+                  increment: isDrBalance ? diff : -diff,
+                },
+              },
+            });
+          }
+        }
+      } else if (rvEntries.length > 0) {
+        throw new Error(
+          `[VOUCHER ERROR] Failed to create RV for Invoice ${invoice.invoiceNo} due to unbalanced entries. Debits: ${rvDebit}, Credits: ${rvCredit}`,
+        );
+      }
+    }
+  } catch (err: any) {
+    console.error("Critical error in createFullVouchersForInvoice:", err);
+    throw err;
   }
 }
 
@@ -1012,17 +1240,7 @@ router.post(
           },
         });
 
-        if (accountsReceivableAccount && salesRevenueAccount) {
-          await createVoucherForInvoice(
-            invoiceNo,
-            new Date(invoiceDate || new Date()),
-            customerType,
-            null,
-            grandTotal,
-            invoice.id,
-            salesPerson,
-          );
-        }
+        // VOUCHER CREATION REMOVED: Vouchers are now only created when the invoice is approved.
 
         // Update customer balance
         await prisma.customer.update({
@@ -1044,20 +1262,7 @@ router.post(
           },
         });
 
-        if (salesRevenueAccount) {
-          // Create voucher for cash sale
-          try {
-            await createVoucherForInvoice(
-              invoiceNo,
-              new Date(invoiceDate || new Date()),
-              customerType,
-              accountId,
-              grandTotal,
-              invoice.id,
-              salesPerson,
-            );
-          } catch (voucherError: any) {}
-        }
+        // VOUCHER CREATION REMOVED: Vouchers are now only created when the invoice is approved.
       }
 
       const updatedInvoice = await prisma.salesInvoice.findUnique({
@@ -1522,701 +1727,8 @@ router.post("/invoices", async (req: Request, res: Response) => {
       data: { status: initialStatus },
     });
 
-    // ========== VOUCHER CREATION LOGIC (Similar to DPO) ==========
-    // Always create JV voucher, and RV vouchers if accounts with amounts are selected
-    try {
-      // Get Sales Revenue account (required for all invoices)
-      // STricter search: Prioritize by Main Group Type 'Revenue'
-      let salesRevenueAccount = await prisma.account.findFirst({
-        where: {
-          Subgroup: {
-            MainGroup: {
-              type: {
-                in: [
-                  "Revenue",
-                  "revenue",
-                  "REVENUE",
-                  "Income",
-                  "income",
-                  "INCOME",
-                ],
-              },
-            },
-          },
-          status: "Active",
-        },
-        include: {
-          Subgroup: {
-            include: {
-              MainGroup: true,
-            },
-          },
-        },
-        orderBy: {
-          code: "asc", // Usually picking the first revenue account is safe
-        },
-      });
-
-      // Fallback only if no Revenue type account exists
-      if (!salesRevenueAccount) {
-        salesRevenueAccount = await prisma.account.findFirst({
-          where: {
-            OR: [
-              { name: { contains: "Sales Revenue" } },
-              { name: { contains: "Goods Sold" } },
-              { name: { contains: "Revenue" } },
-              { name: { contains: "Sales" } },
-              { code: { startsWith: "701" } },
-              { code: { startsWith: "401" } },
-            ],
-            status: "Active",
-          },
-          include: {
-            Subgroup: {
-              include: {
-                MainGroup: true,
-              },
-            },
-          },
-        });
-      }
-
-      // If Sales Revenue account doesn't exist, try to find or create Revenue subgroup and account
-      if (!salesRevenueAccount) {
-        // Find Revenue main group
-        const revenueMainGroup = await prisma.mainGroup.findFirst({
-          where: {
-            OR: [
-              { type: "Revenue" },
-              { type: "revenue" },
-              { type: "Income" },
-              { type: "income" },
-              { name: { contains: "Revenue" } },
-              { name: { contains: "Income" } },
-            ],
-          },
-        });
-
-        if (revenueMainGroup) {
-          // Find or create Revenue subgroup
-          let revenueSubgroup = await prisma.subgroup.findFirst({
-            where: {
-              mainGroupId: revenueMainGroup.id,
-              OR: [
-                { code: "401" },
-                { name: { contains: "Revenue" } },
-                { name: { contains: "Sales" } },
-                { name: { contains: "Income" } },
-              ],
-            },
-          });
-
-          if (!revenueSubgroup) {
-            // Create Revenue subgroup
-            const existingSubgroups = await prisma.subgroup.findMany({
-              where: {
-                mainGroupId: revenueMainGroup.id,
-                code: {
-                  startsWith: "401",
-                },
-              },
-              orderBy: {
-                code: "desc",
-              },
-            });
-
-            let subgroupCode = "401001";
-            if (existingSubgroups.length > 0) {
-              const lastCode = existingSubgroups[0].code;
-              if (lastCode.length >= 6) {
-                const sequence = parseInt(lastCode.slice(-3)) || 0;
-                subgroupCode = `401${String(sequence + 1).padStart(3, "0")}`;
-              }
-            }
-
-            revenueSubgroup = await prisma.subgroup.create({
-              data: {
-                mainGroupId: revenueMainGroup.id,
-                code: subgroupCode,
-                name: "Sales Revenue",
-              } as any,
-            });
-          }
-
-          if (revenueSubgroup) {
-            // Create Sales Revenue account
-            const existingAccounts = await prisma.account.findMany({
-              where: {
-                subgroupId: revenueSubgroup.id,
-                code: {
-                  startsWith: revenueSubgroup.code,
-                },
-              },
-              orderBy: {
-                code: "desc",
-              },
-            });
-
-            let accountCode = `${revenueSubgroup.code}001`;
-            if (existingAccounts.length > 0) {
-              const lastCode = existingAccounts[0].code;
-              if (lastCode.length >= 6) {
-                const sequence = parseInt(lastCode.slice(-3)) || 0;
-                accountCode = `${revenueSubgroup.code}${String(sequence + 1).padStart(3, "0")}`;
-              }
-            }
-
-            salesRevenueAccount = await prisma.account.create({
-              data: {
-                subgroupId: revenueSubgroup.id,
-                code: accountCode,
-                name: "Sales Revenue",
-                accountType: "regular",
-                openingBalance: 0,
-                currentBalance: 0,
-                status: "Active",
-              } as any,
-              include: {
-                Subgroup: {
-                  include: {
-                    MainGroup: true,
-                  },
-                },
-              },
-            });
-          }
-        }
-      }
-
-      if (!salesRevenueAccount) {
-        console.error(
-          "CRITICAL: Failed to find or create Sales Revenue Account. Voucher skipped.",
-        );
-      } else {
-        // Generate JV voucher/journal entry number (must be unique across both tables)
-        const jvVoucherNumber = await getNextNumberForPrefix({
-          prefix: "JV",
-          voucherType: "journal",
-        });
-
-        // Get customer receivable account
-        let customerReceivableAccount = null;
-        if (
-          customerId &&
-          (customerType === "walking" || customerType === "registered")
-        ) {
-          const customer = await prisma.customer.findUnique({
-            where: { id: customerId },
-          });
-
-          if (customer) {
-            // Find customer account in Accounts Receivable subgroup (typically 201)
-            const receivableSubgroup = await prisma.subgroup.findFirst({
-              where: {
-                OR: [
-                  { code: "104" }, // Sales Customer Receivables
-                  { code: "201" }, // Standard Accounts Receivable subgroup
-                  { name: { contains: "Receivable" } },
-                  {
-                    MainGroup: { type: "Asset" },
-                    name: { contains: "Receivable" },
-                  },
-                ],
-              },
-            });
-
-            if (receivableSubgroup) {
-              customerReceivableAccount = await prisma.account.findFirst({
-                where: {
-                  subgroupId: receivableSubgroup.id,
-                  name: customer.name,
-                  status: "Active",
-                },
-                include: {
-                  Subgroup: {
-                    include: {
-                      MainGroup: true,
-                    },
-                  },
-                },
-              });
-
-              // If customer account doesn't exist, create it
-              if (!customerReceivableAccount && receivableSubgroup) {
-                const existingAccounts = await prisma.account.findMany({
-                  where: {
-                    subgroupId: receivableSubgroup.id,
-                    code: {
-                      startsWith: receivableSubgroup.code,
-                    },
-                  },
-                  orderBy: {
-                    code: "desc",
-                  },
-                });
-
-                let accountCode = `${receivableSubgroup.code}001`;
-                if (existingAccounts.length > 0) {
-                  const lastCode = existingAccounts[0].code;
-                  const lastSequence = parseInt(lastCode.slice(-3)) || 0;
-                  accountCode = `${receivableSubgroup.code}${String(lastSequence + 1).padStart(3, "0")}`;
-                }
-
-                customerReceivableAccount = await prisma.account.create({
-                  data: {
-                    subgroupId: receivableSubgroup.id,
-                    code: accountCode,
-                    name: customer.name,
-                    accountType: "regular",
-                    openingBalance: customer.openingBalance || 0,
-                    currentBalance: customer.openingBalance || 0,
-                    status: "Active",
-                  } as any,
-                  include: {
-                    Subgroup: {
-                      include: {
-                        MainGroup: true,
-                      },
-                    },
-                  },
-                });
-              }
-            }
-          }
-        }
-
-        // Build JV voucher entries
-        const jvVoucherEntries = [];
-
-        // Determine receivable account to use
-        let receivableAccount = customerReceivableAccount;
-        if (!receivableAccount) {
-          // Fallback to generic Accounts Receivable
-          const receivableSubgroup = await prisma.subgroup.findFirst({
-            where: {
-              OR: [
-                { code: "104" },
-                { code: "201" },
-                { name: { contains: "Receivable" } },
-              ],
-            },
-          });
-
-          if (receivableSubgroup) {
-            receivableAccount = await prisma.account.findFirst({
-              where: {
-                subgroupId: receivableSubgroup.id,
-                OR: [
-                  { code: "104001" },
-                  { code: "201001" },
-                  { name: { contains: "Accounts Receivable" } },
-                ],
-                status: "Active",
-              },
-              include: {
-                Subgroup: {
-                  include: {
-                    MainGroup: true,
-                  },
-                },
-              },
-            });
-          }
-        }
-
-        // JV Entry 1: Debit Accounts Receivable (or Customer Account)
-        if (receivableAccount) {
-          jvVoucherEntries.push({
-            accountId: receivableAccount.id,
-            accountName: `${receivableAccount.code}-${receivableAccount.name}`,
-            description: `INV: ${invoiceNo} Receivable Created - ${customerName}`,
-            debit: grandTotal,
-            credit: 0,
-            sortOrder: 0,
-          });
-        }
-
-        // JV Entry 2: Credit Sales Revenue
-        jvVoucherEntries.push({
-          accountId: salesRevenueAccount.id,
-          accountName: `${salesRevenueAccount.code}-${salesRevenueAccount.name}`,
-          description: `INV: ${invoiceNo} Sales Revenue - ${customerName}`,
-          debit: 0,
-          credit: grandTotal,
-          sortOrder: 1,
-        });
-
-        // Create Journal Entry (for ledger tracking)
-        const journalLines = jvVoucherEntries.map((entry, index) => ({
-          id: `jl_${Date.now()}_${index}`,
-          accountId: entry.accountId,
-          description: entry.description,
-          debit: entry.debit,
-          credit: entry.credit,
-          lineOrder: entry.sortOrder,
-        }));
-
-        const totalDebit = journalLines.reduce(
-          (sum, line) => sum + line.debit,
-          0,
-        );
-        const totalCredit = journalLines.reduce(
-          (sum, line) => sum + line.credit,
-          0,
-        );
-
-        // For WALKING customers: skip creation-time JV.
-        // Their vouchers (JV for COGS + RV for revenue/payment) are created at approval time.
-        // For REGISTERED customers: create JV now (AR DR + Revenue CR) to track the receivable.
-        if (
-          jvVoucherEntries.length > 0 &&
-          totalDebit === totalCredit &&
-          customerType !== "walking"
-        ) {
-          // Create JV Voucher
-          const jvVoucher = await prisma.voucher.create({
-            data: {
-              voucherNumber: jvVoucherNumber,
-              type: "journal",
-              date: new Date(invoiceDate),
-              narration: customerName,
-              totalDebit,
-              totalCredit,
-              status: "posted",
-              createdBy: salesPerson || "System",
-              approvedBy: "System",
-              approvedAt: new Date(),
-              salesInvoiceId: invoice.id,
-              VoucherEntry: {
-                create: jvVoucherEntries.map((e) => ({
-                  ...e,
-                  salesInvoiceId: invoice.id,
-                })),
-              },
-            } as any,
-          });
-
-          // Update account balances for JV
-          for (const entry of jvVoucherEntries) {
-            const acc = await prisma.account.findUnique({
-              where: { id: entry.accountId },
-              include: { Subgroup: { include: { MainGroup: true } } },
-            });
-            if (acc) {
-              const accountType = acc.Subgroup.MainGroup.type.toLowerCase();
-              const balanceChange =
-                accountType === "asset" ||
-                accountType === "expense" ||
-                accountType === "cost"
-                  ? entry.debit - entry.credit
-                  : entry.credit - entry.debit;
-
-              await prisma.account.update({
-                where: { id: entry.accountId },
-                data: {
-                  currentBalance: {
-                    increment: balanceChange,
-                  },
-                },
-              });
-            }
-          }
-
-          // ========== RV VOUCHER CREATION (if accounts with amounts are selected) ==========
-          const accountsToProcess: Array<{
-            id: string;
-            name: string;
-            amount: number;
-          }> = [];
-
-          // Check bank account with amount
-          if (bankAccountId && bankAmount && bankAmount > 0) {
-            const bankAccount = await prisma.account.findUnique({
-              where: { id: bankAccountId },
-              include: {
-                Subgroup: {
-                  include: {
-                    MainGroup: true,
-                  },
-                },
-              },
-            });
-
-            if (bankAccount) {
-              accountsToProcess.push({
-                id: bankAccountId,
-                name: bankAccount.name,
-                amount: bankAmount,
-              });
-            }
-          }
-
-          // Check cash account with amount
-          if (cashAccountId && cashAmount && cashAmount > 0) {
-            const cashAccount = await prisma.account.findUnique({
-              where: { id: cashAccountId },
-              include: {
-                Subgroup: {
-                  include: {
-                    MainGroup: true,
-                  },
-                },
-              },
-            });
-
-            if (cashAccount) {
-              accountsToProcess.push({
-                id: cashAccountId,
-                name: cashAccount.name,
-                amount: cashAmount,
-              });
-            }
-          }
-
-          // Create RV vouchers for each account with amount
-          for (const accountInfo of accountsToProcess) {
-            try {
-              const account = await prisma.account.findUnique({
-                where: { id: accountInfo.id },
-                include: {
-                  Subgroup: {
-                    include: {
-                      MainGroup: true,
-                    },
-                  },
-                },
-              });
-
-              if (!account) continue;
-
-              const subgroupCode = account.Subgroup?.code || "";
-              const isCashOrBank =
-                subgroupCode === "101" || subgroupCode === "102";
-
-              if (!isCashOrBank) {
-                const accountType =
-                  account.Subgroup?.MainGroup?.type?.toLowerCase() || "";
-                if (accountType !== "asset") {
-                  continue;
-                }
-              }
-
-              // Generate RV number (format: RV####)
-              const lastRV = await prisma.voucher.findFirst({
-                where: {
-                  type: "receipt",
-                  voucherNumber: {
-                    startsWith: "RV",
-                  },
-                },
-                orderBy: {
-                  voucherNumber: "desc",
-                },
-              });
-
-              let rvNumber = 1;
-              if (lastRV) {
-                const match = lastRV.voucherNumber.match(/^RV(\d+)$/);
-                if (match) {
-                  rvNumber = parseInt(match[1]) + 1;
-                } else {
-                  const voucherCount = await prisma.voucher.count({
-                    where: { type: "receipt" },
-                  });
-                  rvNumber = voucherCount + 1;
-                }
-              }
-              const rvVoucherNumber = `RV${String(rvNumber).padStart(4, "0")}`;
-
-              // Create RV Voucher
-              // Debit Cash/Bank (increases asset) and Credit Receivable (decreases receivable)
-              const rvVoucher = await prisma.voucher.create({
-                data: {
-                  voucherNumber: rvVoucherNumber,
-                  type: "receipt",
-                  date: new Date(invoiceDate),
-                  narration: customerName,
-                  cashBankAccount: account.name,
-                  totalDebit: accountInfo.amount,
-                  totalCredit: accountInfo.amount,
-                  status: "posted",
-                  createdBy: salesPerson || "System",
-                  approvedBy: "System",
-                  approvedAt: new Date(),
-                  salesInvoiceId: invoice.id,
-                  VoucherEntry: {
-                    create: [
-                      {
-                        accountId: account.id,
-                        accountName: `${account.code}-${account.name}`,
-                        description: `Receipt for INV ${invoiceNo}`,
-                        debit: accountInfo.amount,
-                        credit: 0,
-                        sortOrder: 0,
-                        salesInvoiceId: invoice.id,
-                      },
-                      {
-                        accountId: receivableAccount!.id,
-                        accountName: `${receivableAccount!.code}-${receivableAccount!.name}`,
-                        description: `Receipt for INV ${invoiceNo}`,
-                        debit: 0,
-                        credit: accountInfo.amount,
-                        sortOrder: 1,
-                        salesInvoiceId: invoice.id,
-                      },
-                    ],
-                  },
-                },
-              } as any);
-
-              // Update account balances for RV voucher
-              // Debit Cash/Bank (increases asset)
-              await prisma.account.update({
-                where: { id: account.id },
-                data: {
-                  currentBalance: {
-                    increment: accountInfo.amount, // Asset increases with debit
-                  },
-                },
-              });
-
-              // Credit Receivable (decreases receivable asset)
-              await prisma.account.update({
-                where: { id: receivableAccount!.id },
-                data: {
-                  currentBalance: {
-                    decrement: accountInfo.amount, // Receivable decreases with credit
-                  },
-                },
-              });
-            } catch (rvError: any) {}
-          }
-
-          if (accountsToProcess.length === 0) {
-            // ========== CASH SALE RV VOUCHER CREATION ==========
-            // NOTE: For walking customers, RV is created at APPROVAL time (not here).
-            // This avoids duplicate vouchers. Skip walking customer RV on invoice creation.
-            if (
-              false && // Disabled: walking customer RV created at approval time
-              customerType === "walking" &&
-              finalAccountId &&
-              paidAmount > 0
-            ) {
-              try {
-                const cashAccount = await prisma.account.findUnique({
-                  where: { id: finalAccountId },
-                  include: {
-                    Subgroup: {
-                      include: { MainGroup: true },
-                    },
-                  },
-                });
-
-                if (cashAccount) {
-                  const subgroupCode = cashAccount.Subgroup?.code || "";
-                  const isCashOrBank =
-                    subgroupCode === "101" || subgroupCode === "102";
-                  const accountType =
-                    cashAccount.Subgroup?.MainGroup?.type?.toLowerCase() || "";
-
-                  if (isCashOrBank || accountType === "asset") {
-                    // Generate RV number
-                    const lastRV = await prisma.voucher.findFirst({
-                      where: {
-                        type: "receipt",
-                        voucherNumber: { startsWith: "RV" },
-                      },
-                      orderBy: { voucherNumber: "desc" },
-                    });
-
-                    let rvNumber = 1;
-                    if (lastRV) {
-                      const match = lastRV.voucherNumber.match(/^RV(\d+)$/);
-                      if (match) {
-                        rvNumber = parseInt(match[1]) + 1;
-                      } else {
-                        const voucherCount = await prisma.voucher.count({
-                          where: { type: "receipt" },
-                        });
-                        rvNumber = voucherCount + 1;
-                      }
-                    }
-                    const rvVoucherNumber = `RV${String(rvNumber).padStart(4, "0")}`;
-
-                    // Get Sales Revenue account for RV
-                    const salesRevenueAccount = await prisma.account.findFirst({
-                      where: {
-                        OR: [
-                          { name: { contains: "Sales Revenue" } },
-                          { code: { startsWith: "701" } },
-                        ],
-                        status: "Active",
-                      },
-                    });
-
-                    if (salesRevenueAccount) {
-                      // Create RV Voucher: DR Cash/Bank, CR Sales Revenue
-                      const rvVoucher = await prisma.voucher.create({
-                        data: {
-                          voucherNumber: rvVoucherNumber,
-                          type: "receipt",
-                          date: new Date(invoiceDate),
-                          narration: `Cash Sale - Invoice ${invoiceNo}`,
-                          cashBankAccount: cashAccount.name,
-                          totalDebit: paidAmount,
-                          totalCredit: paidAmount,
-                          status: "posted",
-                          createdBy: salesPerson || "System",
-                          approvedBy: "System",
-                          approvedAt: new Date(),
-                          salesInvoiceId: invoice.id,
-                          VoucherEntry: {
-                            create: [
-                              {
-                                accountId: cashAccount.id,
-                                accountName: `${cashAccount.code}-${cashAccount.name}`,
-                                description: `Cash Sale - Invoice ${invoiceNo}`,
-                                debit: paidAmount,
-                                credit: 0,
-                                sortOrder: 0,
-                                salesInvoiceId: invoice.id,
-                              },
-                              {
-                                accountId: salesRevenueAccount.id,
-                                accountName: `${salesRevenueAccount.code}-${salesRevenueAccount.name}`,
-                                description: `Sales Revenue - Invoice ${invoiceNo}`,
-                                debit: 0,
-                                credit: paidAmount,
-                                sortOrder: 1,
-                                salesInvoiceId: invoice.id,
-                              },
-                            ],
-                          },
-                        },
-                      } as any);
-
-                      // Update account balances
-                      await prisma.account.update({
-                        where: { id: cashAccount.id },
-                        data: { currentBalance: { increment: paidAmount } },
-                      });
-
-                      await prisma.account.update({
-                        where: { id: salesRevenueAccount.id },
-                        data: { currentBalance: { increment: paidAmount } },
-                      });
-                    }
-                  }
-                }
-              } catch (rvError: any) {}
-            } else {
-            }
-          }
-        }
-      }
-    } catch (voucherError: any) {
-      // Don't fail invoice creation if voucher creation fails
-    }
+    // VOUCHER CREATION REMOVED: Vouchers are now only created when the invoice status is updated to 'approved'.
+    // This ensures that financial records are only generated for finalized transactions.
 
     // PART SELL (walking) - Credit Sale Logic (for receivable creation)
     // NO immediate stock reduction - stock will be reduced when delivery is confirmed
@@ -2584,376 +2096,163 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
-    // Only cash sales (registered) can be approved
-    if (invoice.customerType !== "registered") {
-      return res.status(400).json({
-        error:
-          "Only cash sales can be approved. Part sell invoices require delivery confirmation.",
+    const updatedInvoice = await prisma.$transaction(async (tx) => {
+      // Check if already approved (stock already reduced)
+      const hasStockMovements = await tx.stockMovement.findFirst({
+        where: {
+          referenceType: "sales_invoice",
+          referenceId: id,
+          notes: { contains: "Approved" },
+        },
       });
-    }
 
-    // Check if already approved (stock already reduced)
-    const hasStockMovements = await prisma.stockMovement.findFirst({
-      where: {
-        referenceType: "sales_invoice",
-        referenceId: id,
-        notes: { contains: "Approved" },
-      },
-    });
+      if (hasStockMovements) {
+        throw new Error("Invoice already approved");
+      }
 
-    if (hasStockMovements) {
-      return res.status(400).json({ error: "Invoice already approved" });
-    }
-
-    // Reduce stock only if it hasn't been reduced already (e.g., from 'on_hold' transition)
-    if (invoice.status !== "on_hold") {
-      // Reduce stock immediately for cash sale (coming from pending)
-      for (const item of invoice.SalesInvoiceItem) {
-        // Update stock reservation status to "out"
-        await prisma.stockReservation.updateMany({
-          where: { invoiceId: id, partId: item.partId, status: "reserved" },
-          data: { status: "out" },
-        });
-
-        // Identify where stock should come from (Locations)
-        let locations: {
-          storeId: string | null;
-          rackId: string | null;
-          shelfId: string | null;
-          quantity: number;
-        }[] = [];
-
-        const itemAny = item as any;
-        if (itemAny.InvoiceRackShelf && itemAny.InvoiceRackShelf.length > 0) {
-          locations = itemAny.InvoiceRackShelf.map((irs: any) => ({
-            storeId: irs.storeId || null,
-            rackId: irs.rackId || null,
-            shelfId: irs.shelfId || null,
-            quantity: irs.quantity || item.orderedQty,
-          }));
-        } else {
-          // Check reservations
-          const reservations = await prisma.stockReservation.findMany({
-            where: { invoiceId: id, partId: item.partId },
+      // Reduce stock only if it hasn't been reduced already (e.g., from 'on_hold' transition)
+      if (invoice.status !== "on_hold") {
+        // Reduce stock immediately for cash sale (coming from pending)
+        for (const item of invoice.SalesInvoiceItem) {
+          // Update stock reservation status to "out"
+          await tx.stockReservation.updateMany({
+            where: { invoiceId: id, partId: item.partId, status: "reserved" },
+            data: { status: "out" },
           });
-          if (reservations.length > 0) {
-            locations = reservations.map((r) => ({
-              storeId: r.storeId || null,
-              rackId: r.rackId || null,
-              shelfId: r.shelfId || null,
-              quantity: r.quantity,
+
+          // Identify where stock should come from (Locations)
+          let locations: {
+            storeId: string | null;
+            rackId: string | null;
+            shelfId: string | null;
+            quantity: number;
+          }[] = [];
+
+          const itemAny = item as any;
+          if (itemAny.InvoiceRackShelf && itemAny.InvoiceRackShelf.length > 0) {
+            locations = itemAny.InvoiceRackShelf.map((irs: any) => ({
+              storeId: irs.storeId || null,
+              rackId: irs.rackId || null,
+              shelfId: irs.shelfId || null,
+              quantity: irs.quantity || item.orderedQty,
             }));
           } else {
-            locations = [
-              {
-                storeId: null,
-                rackId: null,
-                shelfId: null,
-                quantity: item.orderedQty,
-              },
-            ];
-          }
-        }
-
-        for (const loc of locations) {
-          if (loc.quantity <= 0) continue;
-
-          const targetPartId = item.partId;
-
-          const prs = await prisma.partRackShelf.findFirst({
-            where: {
-              partId: targetPartId,
-              storeId: loc.storeId,
-              rackId: loc.rackId,
-              shelfId: loc.shelfId,
-            },
-          });
-
-          if (prs) {
-            await prisma.partRackShelf.update({
-              where: { id: prs.id },
-              data: { quantity: { decrement: loc.quantity } },
+            // Check reservations
+            const reservations = await tx.stockReservation.findMany({
+              where: { invoiceId: id, partId: item.partId },
             });
-          } else {
-            await prisma.partRackShelf.create({
-              data: {
+            if (reservations.length > 0) {
+              locations = reservations.map((r) => ({
+                storeId: r.storeId || null,
+                rackId: r.rackId || null,
+                shelfId: r.shelfId || null,
+                quantity: r.quantity,
+              }));
+            } else {
+              locations = [
+                {
+                  storeId: null,
+                  rackId: null,
+                  shelfId: null,
+                  quantity: item.orderedQty,
+                },
+              ];
+            }
+          }
+
+          for (const loc of locations) {
+            if (loc.quantity <= 0) continue;
+
+            const targetPartId = item.partId;
+
+            const prs = await tx.partRackShelf.findFirst({
+              where: {
                 partId: targetPartId,
                 storeId: loc.storeId,
                 rackId: loc.rackId,
                 shelfId: loc.shelfId,
-                quantity: -loc.quantity,
               },
             });
-          }
 
-          // Create stock movement with location info
-          await prisma.stockMovement.create({
-            data: {
-              partId: item.partId,
-              storeId: loc.storeId,
-              rackId: loc.rackId,
-              shelfId: loc.shelfId,
-              type: "out",
-              quantity: loc.quantity,
-              referenceType: "sales_invoice",
-              referenceId: id,
-              customerId: invoice.customerId,
-              notes: `Sales Invoice ${invoice.invoiceNo} - Approved by ${approvedBy || "Store Manager"}`,
-            } as any,
-          });
-        }
-      }
-    } else {
-      // Coming from on_hold — stock is already reduced.
-      // Just update existing 'out' movement notes to reflect approval
-      await prisma.stockMovement.updateMany({
-        where: {
-          referenceType: "sales_invoice",
-          referenceId: id,
-          type: "out",
-        } as any,
-        data: {
-          notes: `Sales Invoice ${invoice.invoiceNo} - Approved from Hold by ${approvedBy || "Store Manager"}`,
-        },
-      });
-      // Mark reservations as out (they might still be 'reserved' or already 'out' depending on hold implementation)
-      await prisma.stockReservation.updateMany({
-        where: { invoiceId: id, status: "reserved" },
-        data: { status: "out" },
-      });
-    }
-
-    // Update invoice status
-    await prisma.salesInvoice.update({
-      where: { id },
-      data: {
-        status: "approved", // Mark as approved
-      },
-    });
-
-    // Create cost JV (COGS vs Inventory) when stock is reduced (approval step)
-    // This keeps inventory valuation and COGS in sync with stock-out movements.
-    try {
-      const costMarker = `COGS for INV ${invoice.invoiceNo}`;
-
-      const existingCostVoucher = await prisma.voucher.findFirst({
-        where: {
-          type: "journal",
-          VoucherEntry: {
-            some: {
-              description: { contains: costMarker },
-            },
-          },
-        },
-        select: { id: true, voucherNumber: true },
-      });
-
-      if (!existingCostVoucher) {
-        // Inventory account (flexible search)
-        const inventoryAccount = await prisma.account.findFirst({
-          where: {
-            OR: [
-              { code: "101001" },
-              { code: "104005" },
-              { name: { contains: "Inventory" } },
-              { Subgroup: { name: { contains: "Inventory" } } },
-              {
-                Subgroup: {
-                  MainGroup: { type: "Asset" },
-                  name: { contains: "Inventory" },
+            if (prs) {
+              await tx.partRackShelf.update({
+                where: { id: prs.id },
+                data: { quantity: { decrement: loc.quantity } },
+              });
+            } else {
+              await tx.partRackShelf.create({
+                data: {
+                  partId: targetPartId,
+                  storeId: loc.storeId,
+                  rackId: loc.rackId,
+                  shelfId: loc.shelfId,
+                  quantity: -loc.quantity,
                 },
-              },
-            ],
-            status: "Active",
-          },
-          include: {
-            Subgroup: { include: { MainGroup: true } },
-          },
-        });
-
-        // COGS account (flexible search)
-        let cogsAccount = await prisma.account.findFirst({
-          where: {
-            status: "Active",
-            OR: [
-              { code: "901001" },
-              { name: { contains: "Cost of Goods Sold" } },
-              { name: { contains: "COGS" } },
-              { name: { contains: "Cost Inventory" } },
-              { Subgroup: { MainGroup: { name: "Cost" } } },
-              { Subgroup: { MainGroup: { type: "Cost" } } },
-            ],
-          },
-          include: {
-            Subgroup: { include: { MainGroup: true } },
-          },
-        });
-
-        if (!cogsAccount) {
-          // Find or create "Cost" main group
-          let costMainGroup = await prisma.mainGroup.findFirst({
-            where: {
-              OR: [
-                { code: "9" },
-                { type: "Cost" },
-                { type: "cost" },
-                { name: { contains: "Cost" } },
-                { name: { contains: "COGS" } },
-              ],
-            },
-          });
-          if (!costMainGroup) {
-            costMainGroup = await prisma.mainGroup.create({
-              data: {
-                code: "9",
-                name: "Cost",
-                type: "Cost",
-                displayOrder: 9,
-              } as any,
-            });
-          }
-
-          // Find or create "Cost of Goods Sold" subgroup (901)
-          let cogsSubgroup = await prisma.subgroup.findFirst({
-            where: {
-              mainGroupId: costMainGroup.id,
-              OR: [
-                { code: "901" },
-                { name: { contains: "Cost of Goods" } },
-                { name: { contains: "COGS" } },
-              ],
-            },
-          });
-          if (!cogsSubgroup) {
-            cogsSubgroup = await prisma.subgroup.create({
-              data: {
-                mainGroupId: costMainGroup.id,
-                code: "901",
-                name: "Cost of Goods Sold",
-              } as any,
-            });
-          }
-
-          cogsAccount = await prisma.account.create({
-            data: {
-              subgroupId: cogsSubgroup.id,
-              code: "901001",
-              name: "Cost of Goods Sold",
-              accountType: "regular",
-              openingBalance: 0,
-              currentBalance: 0,
-              status: "Active",
-            } as any,
-            include: {
-              Subgroup: { include: { MainGroup: true } },
-            },
-          });
-        }
-
-        if (inventoryAccount && cogsAccount) {
-          // Cost basis: prefer Part.cost; fallback to most recent DPO purchase price.
-          let totalCost = 0;
-          for (const item of invoice.SalesInvoiceItem) {
-            const part = await prisma.part.findUnique({
-              where: { id: item.partId },
-              select: { cost: true },
-            });
-            let unitCost =
-              typeof part?.cost === "number" && part.cost > 0 ? part.cost : 0;
-            if (!unitCost) {
-              const lastDpoItem =
-                await prisma.directPurchaseOrderItem.findFirst({
-                  where: { partId: item.partId },
-                  orderBy: { createdAt: "desc" },
-                  select: { purchasePrice: true },
-                });
-              if (lastDpoItem?.purchasePrice && lastDpoItem.purchasePrice > 0) {
-                unitCost = lastDpoItem.purchasePrice;
-              }
+              });
             }
-            totalCost += unitCost * item.orderedQty;
-          }
 
-          if (totalCost > 0) {
-            // Generate JV voucher number
-            const costVoucherNumber = await getNextNumberForPrefix({
-              prefix: "JV",
-              voucherType: "journal",
-            });
-
-            const totalDebit = totalCost;
-            const totalCredit = totalCost;
-
-            // Voucher
-            const costVoucher = await prisma.voucher.create({
+            // Create stock movement with location info
+            await tx.stockMovement.create({
               data: {
-                voucherNumber: costVoucherNumber,
-                type: "journal",
-                date: invoice.invoiceDate,
-                narration: `COGS - ${invoice.invoiceNo}`,
-                totalDebit,
-                totalCredit,
-                status: "posted",
-                createdBy: approvedBy || "System",
-                approvedBy: "System",
-                approvedAt: new Date(),
-                salesInvoiceId: id,
-                VoucherEntry: {
-                  create: [
-                    {
-                      accountId: cogsAccount.id,
-                      accountName: `${cogsAccount.code}-${cogsAccount.name}`,
-                      description: costMarker,
-                      debit: totalCost,
-                      credit: 0,
-                      sortOrder: 0,
-                      salesInvoiceId: id,
-                    },
-                    {
-                      accountId: inventoryAccount.id,
-                      accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-                      description: costMarker,
-                      debit: 0,
-                      credit: totalCost,
-                      sortOrder: 1,
-                      salesInvoiceId: id,
-                    },
-                  ],
-                },
-              },
-            } as any);
-
-            // Update account balances
-            await prisma.account.update({
-              where: { id: cogsAccount.id },
-              data: { currentBalance: { increment: totalCost } },
+                partId: item.partId,
+                storeId: loc.storeId,
+                rackId: loc.rackId,
+                shelfId: loc.shelfId,
+                type: "out",
+                quantity: loc.quantity,
+                referenceType: "sales_invoice",
+                referenceId: id,
+                customerId: invoice.customerId,
+                notes: `Sales Invoice ${invoice.invoiceNo} - Approved by ${approvedBy || "Store Manager"}`,
+              } as any,
             });
-            await prisma.account.update({
-              where: { id: inventoryAccount.id },
-              data: { currentBalance: { decrement: totalCost } },
-            });
-          } else {
           }
-        } else {
         }
+      } else {
+        // Coming from on_hold — stock is already reduced.
+        // Just update existing 'out' movement notes to reflect approval
+        await tx.stockMovement.updateMany({
+          where: {
+            referenceType: "sales_invoice",
+            referenceId: id,
+            type: "out",
+          } as any,
+          data: {
+            notes: `Sales Invoice ${invoice.invoiceNo} - Approved from Hold by ${approvedBy || "Store Manager"}`,
+          },
+        });
+        // Mark reservations as out (they might still be 'reserved' or already 'out' depending on hold implementation)
+        await tx.stockReservation.updateMany({
+          where: { invoiceId: id, status: "reserved" },
+          data: { status: "out" },
+        });
       }
-    } catch (costErr: any) {
-      // Don't fail approval if cost voucher creation fails
-    }
 
-    const updatedInvoice = await prisma.salesInvoice.findUnique({
-      where: { id },
-      include: {
-        SalesQuotation: {
-          include: {
-            SalesQuotationItem: {
-              include: {
-                Part: true,
+      // Update invoice status
+      await tx.salesInvoice.update({
+        where: { id },
+        data: {
+          status: "approved", // Mark as approved
+        },
+      });
+
+      // Create all vouchers (COGS, Revenue, AR, Payment) upon approval
+      await createFullVouchersForInvoice(id, approvedBy || "Store Manager", tx);
+
+      return await tx.salesInvoice.findUnique({
+        where: { id },
+        include: {
+          SalesQuotation: {
+            include: {
+              SalesQuotationItem: {
+                include: {
+                  Part: true,
+                },
               },
             },
           },
         },
-      },
+      });
     });
 
     res.json(updatedInvoice);
@@ -3090,27 +2389,16 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
       });
 
       // COGS
-      const inventoryAccount = await tx.account.findFirst({
-        where: {
-          status: "Active",
-          OR: [
-            { code: "104001" },
-            { Subgroup: { code: "104" } },
-            { name: { contains: "Inventory" } },
-          ],
-        },
-      });
-      const cogsAccount = await tx.account.findFirst({
-        where: {
-          status: "Active",
-          OR: [
-            { code: "901001" },
-            { Subgroup: { code: "901" } },
-            { name: { contains: "Cost" } },
-            { name: { contains: "COGS" } },
-          ],
-        },
-      });
+      // Use the same robust account finding logic as createFullVouchersForInvoice
+      const inventoryAccount = await findAccountByKeywords(
+        ["Inventory", "Stock"],
+        ["101", "103", "104"],
+        ["Cost", "COGS", "Discount"],
+      );
+      const cogsAccount = await findAccountByKeywords(
+        ["Cost of Goods", "COGS", "Cost Inventory", "Cost of Sales"],
+        ["501", "901"],
+      );
 
       if (inventoryAccount && cogsAccount) {
         let deliveryCost = 0;
@@ -3142,26 +2430,37 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
               approvedAt: new Date(),
               salesInvoiceId: id,
               VoucherEntry: {
-                create: [
-                  {
-                    accountId: cogsAccount.id,
-                    accountName: cogsAccount.name,
-                    description: `Cost of Delivery - ${invoice.invoiceNo}`,
-                    debit: deliveryCost,
-                    credit: 0,
-                    sortOrder: 0,
-                    salesInvoiceId: id,
-                  },
-                  {
-                    accountId: inventoryAccount.id,
-                    accountName: inventoryAccount.name,
-                    description: `Inventory Reduction - ${invoice.invoiceNo}`,
-                    debit: 0,
-                    credit: deliveryCost,
-                    sortOrder: 1,
-                    salesInvoiceId: id,
-                  },
-                ],
+                create: items.flatMap((reqItem: any, index: number) => {
+                  const invItem = invoice.SalesInvoiceItem?.find(
+                    (i: any) => i.id === reqItem.invoiceItemId,
+                  );
+                  const avgCost = invItem?.avgCost || 0;
+                  const qty = Number(reqItem.quantity);
+                  const lineCost = avgCost * qty;
+
+                  if (lineCost <= 0) return [];
+
+                  return [
+                    {
+                      accountId: cogsAccount.id,
+                      accountName: cogsAccount.name,
+                      description: `Cost of Delivery - ${invItem?.partNo} (Qty: ${qty}, AvgCost: ${avgCost.toFixed(2)}) - ${invoice.invoiceNo}`,
+                      debit: lineCost,
+                      credit: 0,
+                      sortOrder: index * 2,
+                      salesInvoiceId: id,
+                    },
+                    {
+                      accountId: inventoryAccount.id,
+                      accountName: inventoryAccount.name,
+                      description: `Inventory Reduction - ${invItem?.partNo} (Qty: ${qty}, AvgCost: ${avgCost.toFixed(2)}) - ${invoice.invoiceNo}`,
+                      debit: 0,
+                      credit: lineCost,
+                      sortOrder: index * 2 + 1,
+                      salesInvoiceId: id,
+                    },
+                  ];
+                }),
               },
             },
           } as any);
@@ -3785,343 +3084,8 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
         }
       }
 
-      // Create vouchers on Approval — wrap in try/catch so approval still succeeds
-      try {
-        // ── Helper: find account by name keywords ──────────────────────────
-        const findAccount = async (
-          keywords: string[],
-          fallbackCodes: string[] = [],
-        ) => {
-          let acc = await prisma.account.findFirst({
-            where: {
-              status: "Active",
-              OR: keywords.map((k) => ({ name: { contains: k } })),
-            },
-            include: { Subgroup: { include: { MainGroup: true } } },
-          });
-          if (!acc && fallbackCodes.length) {
-            acc = await prisma.account.findFirst({
-              where: {
-                status: "Active",
-                OR: fallbackCodes.map((c) => ({ code: { contains: c } })),
-              },
-              include: { Subgroup: { include: { MainGroup: true } } },
-            });
-          }
-          return acc;
-        };
-
-        // ── Useful accounts ────────────────────────────────────────────────
-        const inventoryAccount = await findAccount(
-          ["Inventory", "Stock"],
-          ["101", "103"],
-        );
-        const costAccount = await findAccount(
-          ["Cost of Goods", "Cost of Inventory", "COGS", "Cost Inventory"],
-          ["501", "701"],
-        );
-        const goodsRevenueAccount = await findAccount(
-          ["Goods Sold", "Sales Revenue", "Revenue", "Sales"],
-          ["401", "701"],
-        );
-        const discountAccount = await findAccount(
-          ["Goods Sold Discount", "Sales Discount", "Discount"],
-          ["502", "702"],
-        );
-
-        // Customer account (for registered customers)
-        let customerAccount: any = null;
-        if (invoice.customerId) {
-          customerAccount = await prisma.account.findFirst({
-            where: {
-              status: "Active",
-              OR: [
-                { customerId: invoice.customerId },
-                { name: invoice.customerName || "" },
-              ],
-            },
-            include: { Subgroup: { include: { MainGroup: true } } },
-          });
-        }
-        // Fallback: generic Receivable account
-        if (!customerAccount) {
-          customerAccount = await findAccount(
-            ["Accounts Receivable", "Receivable"],
-            ["104", "201"],
-          );
-        }
-
-        // Payment account (bank or cash selected at time of invoice)
-        // SalesInvoice.accountId stores the selected bank/cash account
-        const paymentAccountId = invoice.accountId;
-        const paymentAccount = paymentAccountId
-          ? await prisma.account.findUnique({
-              where: { id: paymentAccountId },
-              include: { Subgroup: { include: { MainGroup: true } } },
-            })
-          : null;
-
-        // ── Calculate totals ───────────────────────────────────────────────
-        let totalAvgCost = 0;
-        for (const item of invoice.SalesInvoiceItem) {
-          const part = await prisma.part.findUnique({
-            where: { id: item.partId },
-            select: { avgCost: true, cost: true },
-          });
-          const avgCost = part?.avgCost || part?.cost || 0;
-          totalAvgCost += avgCost * item.orderedQty;
-          // Save avgCost to item
-          await prisma.salesInvoiceItem.update({
-            where: { id: item.id },
-            data: { avgCost },
-          });
-        }
-
-        const totalRevenue =
-          invoice.grandTotal + (invoice.overallDiscount || 0); // before discount
-        const discountAmount = invoice.overallDiscount || 0;
-        const grandTotal = invoice.grandTotal;
-        const paidAmount = invoice.paidAmount || 0;
-        const isWalking = invoice.customerType === "walking";
-
-        // ── JV Voucher ────────────────────────────────────────────────────
-        const jvNo = await getNextNumberForPrefix({
-          prefix: "JV",
-          voucherType: "journal",
-        });
-        const jvEntries: any[] = [];
-
-        if (inventoryAccount && totalAvgCost > 0) {
-          // Inventory CR (cost going out)
-          jvEntries.push({
-            accountId: inventoryAccount.id,
-            accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-            description: `INV: ${invoice.invoiceNo} - Inventory Out (${invoice.customerName})`,
-            debit: 0,
-            credit: totalAvgCost,
-            sortOrder: 0,
-          });
-        }
-        if (costAccount && totalAvgCost > 0) {
-          // Cost of Inventory DR
-          jvEntries.push({
-            accountId: costAccount.id,
-            accountName: `${costAccount.code}-${costAccount.name}`,
-            description: `INV: ${invoice.invoiceNo} - Cost of Goods Sold (${invoice.customerName})`,
-            debit: totalAvgCost,
-            credit: 0,
-            sortOrder: 1,
-          });
-        }
-
-        if (!isWalking) {
-          // ── Registered Customer ──────────────────────────────────────────
-          if (goodsRevenueAccount) {
-            // Goods Revenue CR (subtotal before discount)
-            jvEntries.push({
-              accountId: goodsRevenueAccount.id,
-              accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - Sales Revenue (${invoice.customerName})`,
-              debit: 0,
-              credit: totalRevenue,
-              sortOrder: 2,
-            });
-          }
-          if (customerAccount) {
-            // Customer Account DR (full invoice total)
-            jvEntries.push({
-              accountId: customerAccount.id,
-              accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - Customer Receivable (${invoice.customerName})`,
-              debit: grandTotal,
-              credit: 0,
-              sortOrder: 3,
-            });
-          }
-          if (discountAmount > 0 && discountAccount) {
-            // Discount DR
-            jvEntries.push({
-              accountId: discountAccount.id,
-              accountName: `${discountAccount.code}-${discountAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - Sales Discount (${invoice.customerName})`,
-              debit: discountAmount,
-              credit: 0,
-              sortOrder: 4,
-            });
-            // Customer Account CR (discount reduces receivable)
-            if (customerAccount) {
-              jvEntries.push({
-                accountId: customerAccount.id,
-                accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Discount on Receivable (${invoice.customerName})`,
-                debit: 0,
-                credit: discountAmount,
-                sortOrder: 5,
-              });
-            }
-          }
-        }
-
-        // Post JV if balanced
-        const jvDebit = jvEntries.reduce((s, e) => s + e.debit, 0);
-        const jvCredit = jvEntries.reduce((s, e) => s + e.credit, 0);
-        if (jvEntries.length > 0 && Math.abs(jvDebit - jvCredit) < 0.01) {
-          await prisma.voucher.create({
-            data: {
-              id: `v_${Date.now()}_jv`,
-              voucherNumber: jvNo,
-              type: "journal",
-              date: new Date(),
-              narration: `Sales Invoice ${invoice.invoiceNo} — Approved (${invoice.customerName})`,
-              totalDebit: jvDebit,
-              totalCredit: jvCredit,
-              status: "posted",
-              isSystemGenerated: true,
-              salesInvoiceId: id,
-              VoucherEntry: {
-                create: jvEntries.map((e) => ({ ...e, salesInvoiceId: id })),
-              },
-            } as any,
-          });
-          // Update account balances
-          for (const e of jvEntries) {
-            const acc = await prisma.account.findUnique({
-              where: { id: e.accountId },
-              include: { Subgroup: { include: { MainGroup: true } } },
-            });
-            if (acc) {
-              const nature =
-                (acc as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
-              const isDR = ["asset", "expense", "cost"].includes(nature);
-              await prisma.account.update({
-                where: { id: e.accountId },
-                data: {
-                  currentBalance: {
-                    increment: isDR ? e.debit - e.credit : e.credit - e.debit,
-                  },
-                },
-              });
-            }
-          }
-        }
-
-        // ── RV Voucher — for walking customer always, for registered only if paidAmount > 0
-        const createRV = isWalking || (paidAmount > 0 && paymentAccount);
-        if (createRV) {
-          const rvNo = await getNextNumberForPrefix({
-            prefix: "RV",
-            voucherType: "receipt",
-          });
-          const rvEntries: any[] = [];
-
-          if (isWalking) {
-            // Walking customer RV:
-            // Goods Revenue CR (subtotal), Discount DR (if any), Cash/Bank DR (received)
-            if (goodsRevenueAccount) {
-              rvEntries.push({
-                accountId: goodsRevenueAccount.id,
-                accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Sales Revenue`,
-                debit: 0,
-                credit: totalRevenue,
-                sortOrder: 0,
-              });
-            }
-            if (discountAmount > 0 && discountAccount) {
-              rvEntries.push({
-                accountId: discountAccount.id,
-                accountName: `${discountAccount.code}-${discountAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Discount`,
-                debit: discountAmount,
-                credit: 0,
-                sortOrder: 1,
-              });
-            }
-            if (paymentAccount) {
-              // Cash/Bank DR = grandTotal (so it always balances with revenue - discount)
-              rvEntries.push({
-                accountId: paymentAccount.id,
-                accountName: `${(paymentAccount as any).code}-${paymentAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
-                debit: grandTotal,
-                credit: 0,
-                sortOrder: 2,
-              });
-            } else {
-              // No payment account found — skip RV to avoid imbalance
-              console.warn(
-                `[Voucher] Walking customer RV skipped: no payment account for invoice ${invoice.invoiceNo}`,
-              );
-            }
-          } else {
-            // Registered customer RV: Customer CR, Bank/Cash DR
-            if (customerAccount) {
-              rvEntries.push({
-                accountId: customerAccount.id,
-                accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Payment from ${invoice.customerName}`,
-                debit: 0,
-                credit: paidAmount,
-                sortOrder: 0,
-              });
-            }
-            if (paymentAccount) {
-              rvEntries.push({
-                accountId: paymentAccount.id,
-                accountName: `${paymentAccount.code}-${paymentAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
-                debit: paidAmount,
-                credit: 0,
-                sortOrder: 1,
-              });
-            }
-          }
-
-          const rvDebit = rvEntries.reduce((s, e) => s + e.debit, 0);
-          const rvCredit = rvEntries.reduce((s, e) => s + e.credit, 0);
-          if (rvEntries.length > 0 && Math.abs(rvDebit - rvCredit) < 0.01) {
-            await prisma.voucher.create({
-              data: {
-                id: `v_${Date.now()}_rv`,
-                voucherNumber: rvNo,
-                type: "receipt",
-                date: new Date(),
-                narration: `Payment - Invoice ${invoice.invoiceNo} (${invoice.customerName})`,
-                totalDebit: rvDebit,
-                totalCredit: rvCredit,
-                status: "posted",
-                isSystemGenerated: true,
-                salesInvoiceId: id,
-                VoucherEntry: {
-                  create: rvEntries.map((e) => ({ ...e, salesInvoiceId: id })),
-                },
-              } as any,
-            });
-            // Update account balances for RV
-            for (const e of rvEntries) {
-              const acc = await prisma.account.findUnique({
-                where: { id: e.accountId },
-                include: { Subgroup: { include: { MainGroup: true } } },
-              });
-              if (acc) {
-                const nature =
-                  (acc as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
-                const isDR = ["asset", "expense", "cost"].includes(nature);
-                await prisma.account.update({
-                  where: { id: e.accountId },
-                  data: {
-                    currentBalance: {
-                      increment: isDR ? e.debit - e.credit : e.credit - e.debit,
-                    },
-                  },
-                });
-              }
-            }
-          }
-        }
-      } catch (vErr: any) {
-        console.error("Voucher creation failed (non-fatal):", vErr.message);
-      }
+      // Create all vouchers (COGS, Revenue, AR, Payment) upon approval/delivery
+      await createFullVouchersForInvoice(id, approvedBy || "Admin");
     }
 
     // ─── → PARTIALLY_DELIVERED: record specific delivered quantities ─────────

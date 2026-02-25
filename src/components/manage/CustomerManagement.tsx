@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface Customer {
   id: string;
@@ -39,14 +40,17 @@ interface Customer {
   cnic: string | null;
   contactNo: string | null;
   openingBalance: number;
+  balance?: number;
   date: string | null;
   creditLimit: number;
-  status: "active" | "inactive";
+  status: "active" | "closed" | "deferred";
+  category?: "Reseller" | "EndUser" | null;
+  accountOpeningDate?: string | null;
+  accountClosingDate?: string | null;
   priceType?: "A" | "B" | "M" | null;
   accountId?: string | null; // Account ID for this customer
   code?: string | null;
   accountHead?: string | null;
-  title?: string | null;
   shortTitle?: string | null;
   referenceName?: string | null;
   area?: string | null;
@@ -72,7 +76,6 @@ const emptyCustomer: Omit<Customer, "id"> = {
   accountId: null,
   code: "",
   accountHead: "",
-  title: "",
   shortTitle: "",
   referenceName: "",
   area: "",
@@ -82,6 +85,9 @@ const emptyCustomer: Omit<Customer, "id"> = {
   pstNumber: "",
   ntn: "",
   remarks: "",
+  category: null,
+  accountOpeningDate: null,
+  accountClosingDate: null,
 };
 
 export const CustomerManagement = () => {
@@ -98,6 +104,20 @@ export const CustomerManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
+  const [areas, setAreas] = useState<string[]>([]);
+
+  const fetchAreas = async () => {
+    try {
+      const response = await apiClient.getAreas();
+      if (response && Array.isArray(response)) {
+        setAreas(response);
+      } else if ((response as any).data) {
+        setAreas((response as any).data);
+      }
+    } catch (error) {
+      console.error("Error fetching areas:", error);
+    }
+  };
 
   const fetchCustomers = async () => {
     setLoading(true);
@@ -133,6 +153,7 @@ export const CustomerManagement = () => {
 
   useEffect(() => {
     fetchCustomers();
+    fetchAreas();
   }, [currentPage, rowsPerPage, statusFilter]);
 
   const totalPages = Math.ceil(totalRecords / rowsPerPage);
@@ -157,7 +178,21 @@ export const CustomerManagement = () => {
     field: keyof Omit<Customer, "id">,
     value: string | number | null,
   ) => {
-    setFormData({ ...formData, [field]: value === "" ? null : value });
+    let updatedData = { ...formData, [field]: value === "" ? null : value };
+
+    // Auto-generate Short Title when Name changes
+    if (field === "name" && typeof value === "string") {
+      const initials = value
+        .trim()
+        .split(/\s+/)
+        .filter((word) => word.length > 0)
+        .map((word) => word[0].toUpperCase())
+        .join("")
+        .slice(0, 3);
+      updatedData.shortTitle = initials;
+    }
+
+    setFormData(updatedData);
   };
 
   const formatDateForInput = (date: string | null | undefined): string => {
@@ -177,7 +212,7 @@ export const CustomerManagement = () => {
       ...prev,
       contactPersons: [
         ...(prev.contactPersons || []),
-        { designation: "", contactNumber: "" },
+        { name: "", designation: "", contactNumber: "" },
       ],
     }));
   };
@@ -218,7 +253,6 @@ export const CustomerManagement = () => {
         accountId: customer.accountId || null, // Pass accountId for voucher creation
         code: customer.code,
         accountHead: customer.accountHead,
-        title: customer.title,
         shortTitle: customer.shortTitle,
         referenceName: customer.referenceName,
         area: customer.area,
@@ -228,6 +262,9 @@ export const CustomerManagement = () => {
         pstNumber: customer.pstNumber,
         ntn: customer.ntn,
         remarks: customer.remarks,
+        category: customer.category as any,
+        accountOpeningDate: formatDateForInput(customer.accountOpeningDate),
+        accountClosingDate: formatDateForInput(customer.accountClosingDate),
       });
       setEditingId(customer.id);
     } else {
@@ -281,8 +318,6 @@ export const CustomerManagement = () => {
           priceType: formData.priceType || undefined,
           accountId: formData.accountId || undefined, // Pass accountId for voucher creation
           code: formData.code || undefined,
-          accountHead: formData.accountHead || undefined,
-          title: formData.title || undefined,
           shortTitle: formData.shortTitle || undefined,
           referenceName: formData.referenceName || undefined,
           area: formData.area || undefined,
@@ -292,6 +327,9 @@ export const CustomerManagement = () => {
           pstNumber: formData.pstNumber || undefined,
           ntn: formData.ntn || undefined,
           remarks: formData.remarks || undefined,
+          category: formData.category || undefined,
+          accountOpeningDate: formData.accountOpeningDate || undefined,
+          accountClosingDate: formData.accountClosingDate || undefined,
         })) as any;
 
         if (response.error) {
@@ -321,8 +359,6 @@ export const CustomerManagement = () => {
           status: formData.status,
           priceType: formData.priceType || undefined,
           code: formData.code || undefined,
-          accountHead: formData.accountHead || undefined,
-          title: formData.title || undefined,
           shortTitle: formData.shortTitle || undefined,
           referenceName: formData.referenceName || undefined,
           area: formData.area || undefined,
@@ -332,6 +368,9 @@ export const CustomerManagement = () => {
           pstNumber: formData.pstNumber || undefined,
           ntn: formData.ntn || undefined,
           remarks: formData.remarks || undefined,
+          category: formData.category || undefined,
+          accountOpeningDate: formData.accountOpeningDate || undefined,
+          accountClosingDate: formData.accountClosingDate || undefined,
         })) as any;
 
         if (response.error) {
@@ -448,9 +487,10 @@ export const CustomerManagement = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="closed">Closed</SelectItem>
+                  <SelectItem value="deferred">Deferred</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -461,7 +501,7 @@ export const CustomerManagement = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="name">Name</SelectItem>
+                  <SelectItem value="name">Title</SelectItem>
                   <SelectItem value="email">Email</SelectItem>
                   <SelectItem value="cnic">CNIC</SelectItem>
                   <SelectItem value="contact">Contact</SelectItem>
@@ -505,7 +545,7 @@ export const CustomerManagement = () => {
                     />
                   </TableHead>
                   <TableHead className="text-xs font-medium">Sr. No</TableHead>
-                  <TableHead className="text-xs font-medium">Name</TableHead>
+                  <TableHead className="text-xs font-medium">Title</TableHead>
                   <TableHead className="text-xs font-medium">Address</TableHead>
                   <TableHead className="text-xs font-medium">Email</TableHead>
                   <TableHead className="text-xs font-medium">CNIC</TableHead>
@@ -513,7 +553,7 @@ export const CustomerManagement = () => {
                     Contact No
                   </TableHead>
                   <TableHead className="text-xs font-medium text-right">
-                    Opening Balance
+                    Balance
                   </TableHead>
                   <TableHead className="text-xs font-medium text-right">
                     Credit Limit
@@ -571,9 +611,12 @@ export const CustomerManagement = () => {
                         {customer.contactNo || "-"}
                       </TableCell>
                       <TableCell className="text-xs text-right font-medium">
-                        Rs {customer.openingBalance.toFixed(2)}
+                        Rs{" "}
+                        {(customer.balance ?? customer.openingBalance).toFixed(
+                          2,
+                        )}
                       </TableCell>
-                      <TableCell className="text-xs text-right font-medium">
+                      <TableCell className="text-xs text-right font-medium text-red-600">
                         Rs {customer.creditLimit.toFixed(2)}
                       </TableCell>
                       <TableCell>
@@ -715,25 +758,17 @@ export const CustomerManagement = () => {
               <div className="space-y-1">
                 <Label className="text-xs">Code</Label>
                 <Input
-                  placeholder="Customer code"
+                  placeholder="Auto-generated"
                   value={formData.code || ""}
                   onChange={(e) => handleInputChange("code", e.target.value)}
                   className="h-8 text-xs"
+                  readOnly={!editingId}
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Title</Label>
+                <Label className="text-xs">Title *</Label>
                 <Input
-                  placeholder="Title"
-                  value={formData.title || ""}
-                  onChange={(e) => handleInputChange("title", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Name *</Label>
-                <Input
-                  placeholder="Customer name"
+                  placeholder="Customer title"
                   value={formData.name || ""}
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   className="h-8 text-xs"
@@ -746,17 +781,6 @@ export const CustomerManagement = () => {
                   value={formData.shortTitle || ""}
                   onChange={(e) =>
                     handleInputChange("shortTitle", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Account Head</Label>
-                <Input
-                  placeholder="Account head"
-                  value={formData.accountHead || ""}
-                  onChange={(e) =>
-                    handleInputChange("accountHead", e.target.value)
                   }
                   className="h-8 text-xs"
                 />
@@ -786,11 +810,25 @@ export const CustomerManagement = () => {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Area</Label>
-                <Input
-                  placeholder="Area"
+                <SearchableSelect
+                  placeholder="Search or add area..."
+                  options={areas.map((area) => ({
+                    value: area,
+                    label: area,
+                  }))}
                   value={formData.area || ""}
-                  onChange={(e) => handleInputChange("area", e.target.value)}
-                  className="h-8 text-xs"
+                  onValueChange={(val) => handleInputChange("area", val)}
+                  allowCustom={true}
+                  onCreate={async (newArea) => {
+                    try {
+                      await apiClient.createArea(newArea);
+                      fetchAreas();
+                    } catch (error) {
+                      console.error("Error creating area:", error);
+                    }
+                  }}
+                  createLabel="area"
+                  className="h-8"
                 />
               </div>
             </div>
@@ -889,6 +927,14 @@ export const CustomerManagement = () => {
               {(formData.contactPersons || []).map((cp, idx) => (
                 <div key={idx} className="flex gap-2 items-center">
                   <Input
+                    placeholder="Person Name"
+                    value={cp.name || ""}
+                    onChange={(e) =>
+                      handleUpdateContactPerson(idx, "name", e.target.value)
+                    }
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Input
                     placeholder="Designation"
                     value={cp.designation || ""}
                     onChange={(e) =>
@@ -931,7 +977,66 @@ export const CustomerManagement = () => {
               )}
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Category</Label>
+                <Select
+                  value={formData.category ? formData.category : "none"}
+                  onValueChange={(v) =>
+                    handleInputChange("category", v === "none" ? null : v)
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="Reseller">Reseller</SelectItem>
+                    <SelectItem value="EndUser">End User</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Opening Date</Label>
+                <Input
+                  type="date"
+                  value={formData.accountOpeningDate || ""}
+                  onChange={(e) =>
+                    handleInputChange("accountOpeningDate", e.target.value)
+                  }
+                  className="h-8 text-xs px-2 min-w-[120px] block w-full uppercase [&::-webkit-calendar-picker-indicator]:opacity-100"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Closing Date</Label>
+                <Input
+                  type="date"
+                  value={formData.accountClosingDate || ""}
+                  onChange={(e) =>
+                    handleInputChange("accountClosingDate", e.target.value)
+                  }
+                  className="h-8 text-xs px-2 min-w-[120px] block w-full uppercase [&::-webkit-calendar-picker-indicator]:opacity-100"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(v) => handleInputChange("status", v)}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                    <SelectItem value="deferred">Deferred</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Opening Balance</Label>
                 <Input
@@ -984,21 +1089,6 @@ export const CustomerManagement = () => {
                     <SelectItem value="A">Price A</SelectItem>
                     <SelectItem value="B">Price B</SelectItem>
                     <SelectItem value="M">Price M</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(v) => handleInputChange("status", v)}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

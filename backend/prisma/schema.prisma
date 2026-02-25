@@ -86,6 +86,14 @@ model AdjustmentItem {
   Shelf        Shelf?     @relation(fields: [shelfId], references: [id])
 }
 
+model Area {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Application {
   id            String       @id @default(uuid())
   subcategoryId String?
@@ -173,7 +181,6 @@ model Customer {
   id             String         @id @default(uuid())
   code           String?        @unique
   accountHead    String?
-  title          String?
   shortTitle     String?
   referenceName  String?
   name           String
@@ -193,6 +200,9 @@ model Customer {
   creditLimit    Float          @default(0)
   status         String         @default("active")
   priceType      String?
+  category       String?
+  accountOpeningDate DateTime?
+  accountClosingDate DateTime?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   Account        Account[]
@@ -907,7 +917,6 @@ model Supplier {
   status                    String                      @default("active")
   notes                     String?
   accountHead               String?
-  title                     String?
   shortTitle                String?
   referenceName             String?
   area                      String?

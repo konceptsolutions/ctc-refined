@@ -371,11 +371,11 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
     // Query PartRackShelf ONLY for this exact partId using Raw SQL for maximum consistency with the main table.
     const records = await query(
       `SELECT 
-        prs.id, 
-        prs."storeId", 
-        prs."rackId", 
-        prs."shelfId", 
-        prs.quantity,
+        prs.id as id, 
+        prs."storeId" as "storeId", 
+        prs."rackId" as "rackId", 
+        prs."shelfId" as "shelfId", 
+        prs.quantity as quantity,
         s.name as store_name,
         r."codeNo" as rack_code,
         sh."shelfNo" as shelf_no
@@ -413,6 +413,7 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
 
       if (!locationMap.has(key)) {
         locationMap.set(key, {
+          id: r.id,
           storeId: r.storeId,
           store: r.store_name || "No Store",
           rackId: r.rackId,
@@ -450,6 +451,7 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
     const unallocatedDiff = totalActualStock - totalAssigned;
     if (unallocatedDiff !== 0) {
       locations.push({
+        id: `unallocated-${partId}`,
         storeId: null,
         store: "Unallocated",
         rackId: null,

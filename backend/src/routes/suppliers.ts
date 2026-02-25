@@ -162,7 +162,6 @@ router.post("/", async (req, res) => {
       status,
       notes,
       accountHead,
-      title,
       shortTitle,
       referenceName,
       area,
@@ -208,7 +207,6 @@ router.post("/", async (req, res) => {
         status: status || "active",
         notes: notes || null,
         accountHead: accountHead || null,
-        title: title || null,
         shortTitle: shortTitle || null,
         referenceName: referenceName || null,
         area: area || null,
@@ -447,7 +445,6 @@ router.put("/:id", async (req, res) => {
       status,
       notes,
       accountHead,
-      title,
       shortTitle,
       referenceName,
       area,
@@ -483,7 +480,6 @@ router.put("/:id", async (req, res) => {
     if (status !== undefined) updateData.status = status;
     if (notes !== undefined) updateData.notes = notes || null;
     if (accountHead !== undefined) updateData.accountHead = accountHead || null;
-    if (title !== undefined) updateData.title = title || null;
     if (shortTitle !== undefined) updateData.shortTitle = shortTitle || null;
     if (referenceName !== undefined)
       updateData.referenceName = referenceName || null;
