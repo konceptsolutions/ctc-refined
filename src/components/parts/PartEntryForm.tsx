@@ -760,8 +760,8 @@ export const PartEntryForm = ({
 
             setFormData({
               ...initialFormData,
-              masterPartNo: part.part_no || "",
-              partNo: part.master_part_no || "",
+              masterPartNo: part.master_part_no || "",
+              partNo: part.part_no || "",
               brand: part.brand_name || selectedPart.brand || "",
               uom: part.uom || selectedPart.uom || "NOS",
               cost: costValue,

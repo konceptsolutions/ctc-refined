@@ -591,7 +591,21 @@ router.get("/price-management", async (req: Request, res: Response) => {
         COALESCE(st.reserved, 0) as reserved_stock,
         ph."updateValue" as last_update_value,
         ph."updateType" as last_update_type,
-        ph."priceField" as last_price_field
+        ph."priceField" as last_price_field,
+        COALESCE(
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id', m.id,
+                'name', m.name,
+                'qty_used', m."qtyUsed"
+              )
+            )
+            FROM "Model" m 
+            WHERE m."partId" = p.id
+          ),
+          '[]'::json
+        ) as models
       FROM "Part" p
       LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
       LEFT JOIN "Brand" b ON p."brandId" = b.id
@@ -617,7 +631,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
     params.push(limitNum, offset);
     const result = await query(sql, params);
 
-    const transformedParts = result.rows.map((p: any) => ({
+    const transformedParts = result.rows.map((p: any) =>({
       id: p.id,
       partNo: p.partNo || p.partno,
       master_part_no: p.master_part_no || p.masterpartno,
@@ -637,6 +651,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
       last_percentage: p.last_update_value || p.lastupdatevalue,
       last_change_type: p.last_update_type || p.lastupdatetype,
       last_price_field: p.last_price_field || p.lastpricefield,
+      models: p.models || [],
     }));
 
     res.json({

@@ -1261,13 +1261,12 @@ export const ItemsListView = ({
                   </label>
                   <SearchableSelect
                     options={finalMasterPartOptions}
-                    placeholder="Type to search or enter new"
+                    placeholder="Type to search"
                     value={localInputValues.master_part_no}
                     onValueChange={(value) =>
                       updateFilter("master_part_no", value)
                     }
                     className="h-8 text-xs"
-                    allowCustom={true}
                     data-preserve-case="true"
                   />
                 </div>
@@ -1277,11 +1276,10 @@ export const ItemsListView = ({
                   </label>
                   <SearchableSelect
                     options={partNoOptions}
-                    placeholder="Type to search or enter new"
+                    placeholder="Type to search"
                     value={localInputValues.part_no}
                     onValueChange={(value) => updateFilter("part_no", value)}
                     className="h-8 text-xs"
-                    allowCustom={true}
                     data-preserve-case="true"
                   />
                 </div>
@@ -1291,11 +1289,10 @@ export const ItemsListView = ({
                   </label>
                   <SearchableSelect
                     options={finalBrandOptions}
-                    placeholder="Type to search or enter new"
+                    placeholder="Type to search"
                     value={localInputValues.brand_name}
                     onValueChange={(value) => updateFilter("brand_name", value)}
                     className="h-8 text-xs"
-                    allowCustom={true}
                     data-preserve-case="true"
                   />
                 </div>

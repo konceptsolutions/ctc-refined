@@ -466,7 +466,7 @@ export const SalesInvoice = () => {
     if (!silent) setPartsLoading(true);
     try {
       const params: any = {
-        limit: 500, // Load reasonable amount for fast initial display
+        limit: "all", // Load all active parts as requested
         page: 1,
         status: "active",
       };
@@ -474,7 +474,7 @@ export const SalesInvoice = () => {
       // Use search parameter if provided (for server-side search when needed)
       if (searchTerm && searchTerm.trim().length > 0) {
         params.search = searchTerm.trim();
-        params.limit = 200; // Smaller limit for search results
+        params.limit = "all"; // Load all matching parts
       }
 
       const response = await apiClient.getParts(params);
@@ -3124,19 +3124,23 @@ export const SalesInvoice = () => {
                                       }));
 
                                       // Clear existing debounce timer for this item
-                                      if (
-                                        partsSearchDebounceRef.current[item.id]
-                                      ) {
-                                        clearTimeout(
-                                          partsSearchDebounceRef.current[
-                                          item.id
-                                          ],
-                                        );
+                                      if (partsSearchDebounceRef.current[item.id]) {
+                                        clearTimeout(partsSearchDebounceRef.current[item.id]);
                                       }
 
-                                      // Client-side filtering - no debounce needed, instant results
-                                      // Parts are already loaded, just filter them client-side
-                                      // No API call needed for search - use client-side filtering for speed
+                                      // Server-side search with debounce
+                                      partsSearchDebounceRef.current[item.id] =
+                                        setTimeout(() => {
+                                          if (searchValue.trim().length > 0) {
+                                            fetchParts(searchValue.trim());
+                                          } else {
+                                            // Reset to all parts when clearing search
+                                            fetchParts("", false, true);
+                                          }
+                                        }, 400);
+
+                                      // Client-side filtering still provides instant feedback
+                                      // but the server-side call above will refresh 'parts' list with fresh data from DB
                                     }}
                                     onKeyDown={(e) => {
                                       // Allow all key inputs including backspace
@@ -3292,6 +3296,12 @@ export const SalesInvoice = () => {
                                                       .includes(
                                                         searchValue.toLowerCase(),
                                                       ) ||
+                                                    (p.masterPartNo &&
+                                                      p.masterPartNo
+                                                        .toLowerCase()
+                                                        .includes(
+                                                          searchValue.toLowerCase(),
+                                                        )) ||
                                                     p.description
                                                       .toLowerCase()
                                                       .includes(
@@ -3301,25 +3311,22 @@ export const SalesInvoice = () => {
                                                       .toLowerCase()
                                                       .includes(
                                                         searchValue.toLowerCase(),
-                                                      ),
+                                                      ) ||
+                                                    (p.machineModels &&
+                                                      p.machineModels.some((m) =>
+                                                        m.name
+                                                          .toLowerCase()
+                                                          .includes(
+                                                            searchValue.toLowerCase(),
+                                                          ),
+                                                      )),
                                                 )
                                                 : parts; // Show all parts when no search term
 
                                               return filteredParts.length >
                                                 0 ? (
                                                 <>
-                                                  {filteredParts.length >
-                                                    100 && (
-                                                      <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
-                                                        Showing{" "}
-                                                        {filteredParts.length}{" "}
-                                                        parts{" "}
-                                                        {searchValue
-                                                          ? "matching your search"
-                                                          : ""}
-                                                      </div>
-                                                    )}
-                                                  {filteredParts.map((p) => (
+                                                  {filteredParts.slice(0, 500).map((p) => (
                                                     <div
                                                       key={p.id}
                                                       data-dropdown-item

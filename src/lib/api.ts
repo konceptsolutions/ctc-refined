@@ -17,7 +17,7 @@ export function getApiBaseUrl(): string {
     return `${origin}/api`;
   }
 
-  return "http://192.168.18.57:3001/api";
+  return "http://192.168.18.57:5000/api";
 }
 
 const API_BASE_URL = getApiBaseUrl();
@@ -223,12 +223,12 @@ class ApiClient {
         if (msg.includes("404")) {
           return {
             error:
-              "Request returned 404. Ensure the backend server is running on port 3001 and the proxy configuration is correct.",
+              "Request returned 404. Ensure the backend server is running on port 5000 and the proxy configuration is correct.",
           };
         }
         return {
           error:
-            "Backend API is not responding. Please ensure the backend server is running on port 3001.",
+            "Backend API is not responding. Please ensure the backend server is running on port 5000.",
         };
       }
       return { error: msg || "Network error occurred" };
@@ -290,8 +290,7 @@ class ApiClient {
         if (
           value !== undefined &&
           value !== null &&
-          value !== "" &&
-          value !== "all"
+          value !== ""
         ) {
           queryParams.append(key, String(value));
         }
@@ -333,8 +332,7 @@ class ApiClient {
         if (
           value !== undefined &&
           value !== null &&
-          value !== "" &&
-          value !== "all"
+          value !== ""
         ) {
           queryParams.append(key, String(value));
         }
