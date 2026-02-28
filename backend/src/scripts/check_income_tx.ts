@@ -27,26 +27,7 @@ async function main() {
         console.log(`Voucher: ${t.Voucher.voucherNumber}, Account: ${t.Account?.name}, Debit: ${t.debit}, Credit: ${t.credit}`);
     });
 
-    const jTransactions = await prisma.journalLine.findMany({
-        where: {
-            Account: {
-                Subgroup: {
-                    MainGroup: {
-                        type: { in: ["Revenue", "Expense", "Cost", "revenue", "expense", "cost"] }
-                    }
-                }
-            },
-            JournalEntry: {
-                status: "posted"
-            }
-        },
-        include: {
-            Account: true,
-            JournalEntry: true
-        }
-    });
-
-    console.log(`\nFound ${jTransactions.length} Revenue/Expense/Cost transactions via Journals.`);
+    console.log(`\nAll revenue/expense transactions are now handled via Vouchers.`);
 
     await prisma.$disconnect();
 }

@@ -45,12 +45,44 @@ router.get("/", async (req, res) => {
       }
     }
 
-    // Fetch all customers (we'll filter out "Demo" customers in memory since SQLite doesn't support case-insensitive mode)
-    const [allCustomers, totalBeforeFilter] = await Promise.all([
+    // Build the full where clause combining status and search
+    const finalWhere: any = { status: "active" };
+
+    // Apply search if provided (without searchBy, search all name/email fields)
+    if (search) {
+      const searchTerm = search as string;
+      if (searchBy) {
+        switch (searchBy) {
+          case "name":
+            finalWhere.name = { contains: searchTerm };
+            break;
+          case "email":
+            finalWhere.email = { contains: searchTerm };
+            break;
+          case "cnic":
+            finalWhere.cnic = { contains: searchTerm };
+            break;
+          case "contact":
+            finalWhere.contactNo = { contains: searchTerm };
+            break;
+          default:
+            finalWhere.OR = [
+              { name: { contains: searchTerm } },
+              { email: { contains: searchTerm } },
+            ];
+        }
+      } else {
+        finalWhere.OR = [
+          { name: { contains: searchTerm } },
+          { email: { contains: searchTerm } },
+        ];
+      }
+    }
+
+    // Fetch customers with search applied at the database level
+    const [allCustomers] = await Promise.all([
       prisma.customer.findMany({
-        where: {
-          status: "active",
-        },
+        where: finalWhere,
         include: {
           Account: {
             where: { status: "Active" },
@@ -59,7 +91,7 @@ router.get("/", async (req, res) => {
         },
         orderBy: { createdAt: "desc" },
       }),
-      prisma.customer.count({ where }),
+      prisma.customer.count({ where: finalWhere }),
     ]);
 
     // Filter out "Demo" customers (case-insensitive) - SQLite doesn't support mode: 'insensitive'

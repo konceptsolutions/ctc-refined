@@ -67,6 +67,7 @@ import {
   CheckCircle2,
   Circle,
   Ban,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -248,6 +249,15 @@ export const SalesInvoice = () => {
   const [showDeliveryLog, setShowDeliveryLog] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
 
+  // Payment Recording State
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [recordingPayment, setRecordingPayment] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: 0,
+    accountId: "",
+    paymentDate: new Date().toISOString().split("T")[0],
+  });
+
   // View Invoice
   const [showViewInvoice, setShowViewInvoice] = useState(false);
 
@@ -278,6 +288,12 @@ export const SalesInvoice = () => {
   const [partialDeliveryQtys, setPartialDeliveryQtys] = useState<
     Record<string, number>
   >({});
+
+  // Reverse Quantity Dialog - Multiple items
+  const [showReverseDialog, setShowReverseDialog] = useState(false);
+  const [itemsToReverse, setItemsToReverse] = useState<InvoiceItem[]>([]);
+  const [reverseQuantities, setReverseQuantities] = useState<Record<string, number>>({});
+  const [reversing, setReversing] = useState(false);
 
   // Filter invoices (only by search term, status and customerType are filtered by API)
   // Also exclude invoices with demo customers
@@ -633,55 +649,58 @@ export const SalesInvoice = () => {
         const invoicesData: any = Array.isArray(response)
           ? response
           : response.data || [];
+
         // Transform backend data to frontend format
-        const transformedInvoices: Invoice[] = invoicesData.map((inv: any) => ({
-          id: inv.id,
-          invoiceNo: inv.invoiceNo,
-          invoiceDate: inv.invoiceDate,
-          customerType: inv.customerType as CustomerType,
-          customerId: inv.customerId,
-          customerName: inv.customerName,
-          salesPerson: inv.salesPerson || "Admin",
-          items:
-            inv.items?.map((item: any) => ({
-              id: item.id,
-              partId: item.partId,
-              partNo: item.partNo,
-              description: item.description || "",
-              orderedQty: item.orderedQty,
-              deliveredQty: item.deliveredQty,
-              pendingQty: item.pendingQty,
-              unitPrice: item.unitPrice,
-              avgCost: item.avgCost || 0,
-              discount: item.discount || 0,
-              discountType: "percent" as const,
-              lineTotal: item.lineTotal,
-              grade: (item.grade || "A") as ItemGrade,
-              brand: item.brand,
-            })) || [],
-          subtotal: inv.subtotal,
-          overallDiscount: inv.overallDiscount || 0,
-          overallDiscountType: "fixed" as const,
-          tax: inv.tax || 0,
-          grandTotal: inv.grandTotal,
-          paidAmount: inv.paidAmount || 0,
-          status: inv.status as InvoiceStatus,
-          paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
-          accountId: inv.accountId,
-          deliveryLog:
-            inv.deliveryLogs?.map((log: any) => ({
-              challanNo: log.challanNo,
-              deliveryDate: log.deliveryDate,
-              deliveredBy: log.deliveredBy || "",
-              items:
-                log.items?.map((item: any) => ({
-                  invoiceItemId: item.invoiceItemId,
-                  quantity: item.quantity,
-                })) || [],
-            })) || [],
-          createdAt: inv.createdAt,
-          updatedAt: inv.updatedAt,
-        }));
+        const transformedInvoices: Invoice[] = invoicesData
+          .map((inv: any) => ({
+            id: inv.id,
+            invoiceNo: inv.invoiceNo,
+            invoiceDate: inv.invoiceDate,
+            customerType: inv.customerType as CustomerType,
+            customerId: inv.customerId,
+            customerName: inv.customerName,
+            salesPerson: inv.salesPerson || "Admin",
+            items:
+              inv.SalesInvoiceItem?.map((item: any) => ({
+                id: item.id,
+                partId: item.partId,
+                partNo: item.partNo,
+                description: item.description || "",
+                orderedQty: item.orderedQty,
+                deliveredQty: item.deliveredQty,
+                pendingQty: item.pendingQty,
+                unitPrice: item.unitPrice,
+                avgCost: item.avgCost || 0,
+                discount: item.discount || 0,
+                discountType: "percent" as const,
+                lineTotal: item.lineTotal,
+                grade: (item.grade || "A") as ItemGrade,
+                brand: item.brand,
+              })) || [],
+            subtotal: inv.subtotal,
+            overallDiscount: inv.overallDiscount || 0,
+            overallDiscountType: "fixed" as const,
+            tax: inv.tax || 0,
+            grandTotal: inv.grandTotal,
+            paidAmount: inv.paidAmount || 0,
+            status: inv.status as InvoiceStatus,
+            paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
+            accountId: inv.accountId,
+            deliveryLog:
+              inv.deliveryLogs?.map((log: any) => ({
+                challanNo: log.challanNo,
+                deliveryDate: log.deliveryDate,
+                deliveredBy: log.deliveredBy || "",
+                items:
+                  log.items?.map((item: any) => ({
+                    invoiceItemId: item.invoiceItemId,
+                    quantity: item.quantity,
+                  })) || [],
+              })) || [],
+            createdAt: inv.createdAt,
+            updatedAt: inv.updatedAt,
+          }))
+          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
         setInvoices(transformedInvoices);
       } catch (error: any) {
@@ -787,25 +806,40 @@ export const SalesInvoice = () => {
           );
         });
 
-        // Separate Bank accounts (subgroup 102 = Bank Accounts)
+        // Separate Bank accounts (subgroup 103 = Bank Accounts)
         const bankAccountsList = currentAssetsAccounts
           .filter((acc: any) => {
             const subgroupCode = acc.Subgroup?.code || "";
             const accountCode = acc.code || "";
             const accountName = (acc.name || "").toLowerCase();
 
-            // Explicitly exclude Accounts Receivable (103) and Inventory (104)
-            if (subgroupCode === "103" || subgroupCode === "104") return false;
+            // Special case: Exclude "Abdullah" account from bank accounts
+            if (accountName.includes("abdullah")) return false;
 
-            // Check subgroup code first (most reliable)
-            if (subgroupCode === "102") return true;
+            // Explicitly exclude Accounts Receivable (104) and Inventory (101)
+            if (subgroupCode === "104" || subgroupCode === "101") return false;
 
-            // Check account code pattern (102xxx)
-            if (/^102\d{3}$/.test(accountCode)) return true;
+            // Priority 1: Check subgroup code (most reliable)
+            if (subgroupCode === "103") return true;
 
-            // Check account name contains "bank" but not "inventory"
+            // Priority 2: Exclude if it's clearly a cash account by subgroup
+            if (subgroupCode === "102") return false;
+
+            // Priority 3: Check account code pattern (103xxx) but exclude obvious cash accounts
+            if (/^103\d{3}$/.test(accountCode)) {
+              // Exclude if account name suggests it's cash/petty cash
+              if (accountName.includes("cash") || accountName.includes("petty")) {
+                return false;
+              }
+              return true;
+            }
+
+            // Priority 4: Check account name contains "bank" but not "cash" or "inventory"
             return (
-              accountName.includes("bank") && !accountName.includes("inventory")
+              accountName.includes("bank") &&
+              !accountName.includes("cash") &&
+              !accountName.includes("petty") &&
+              !accountName.includes("inventory")
             );
           })
           .map((acc: any) => ({
@@ -815,26 +849,41 @@ export const SalesInvoice = () => {
             code: acc.code || "",
           }));
 
-        // Separate Cash accounts (subgroup 101 = Cash and Cash Equivalents)
+        // Separate Cash accounts (subgroup 102 = Cash and Cash Equivalents)
         const cashAccountsList = currentAssetsAccounts
           .filter((acc: any) => {
             const subgroupCode = acc.Subgroup?.code || "";
             const accountCode = acc.code || "";
             const accountName = (acc.name || "").toLowerCase();
 
-            // Explicitly exclude Accounts Receivable (103) and Inventory (104)
-            if (subgroupCode === "103" || subgroupCode === "104") return false;
+            // Special case: Include "Abdullah" account in cash accounts
+            if (accountName.includes("abdullah")) return true;
 
-            // Check subgroup code first (most reliable)
-            if (subgroupCode === "101") return true;
+            // Explicitly exclude Accounts Receivable (104) and Inventory (101)
+            if (subgroupCode === "104" || subgroupCode === "101") return false;
 
-            // Check account code pattern (101xxx)
-            if (/^101\d{3}$/.test(accountCode)) return true;
+            // Priority 1: Check subgroup code (most reliable)
+            if (subgroupCode === "102") return true;
 
-            // Check account name contains "cash" or "petty" but not "inventory"
+            // Priority 2: Exclude if it's clearly a bank account by subgroup
+            if (subgroupCode === "103") return false;
+
+            // Priority 3: Check account code pattern (102xxx)
+            if (/^102\d{3}$/.test(accountCode)) return true;
+
+            // Priority 4: Check if it has 103xxx code but name suggests cash, or has cash-related name
+            if (/^103\d{3}$/.test(accountCode)) {
+              // Include if account name suggests it's cash/petty cash despite 103 code
+              if (accountName.includes("cash") || accountName.includes("petty")) {
+                return true;
+              }
+            }
+
+            // Priority 5: Check account name contains "cash" or "petty" but not "inventory" or "bank"
             return (
               (accountName.includes("cash") || accountName.includes("petty")) &&
-              !accountName.includes("inventory")
+              !accountName.includes("inventory") &&
+              !accountName.includes("bank")
             );
           })
           .map((acc: any) => ({
@@ -1211,7 +1260,7 @@ export const SalesInvoice = () => {
         customerId: inv.customerId,
         customerName: inv.customerName,
         salesPerson: inv.salesPerson || "Admin",
-        items: inv.items?.map((item: any) => ({
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
           partId: item.partId,
           partNo: item.partNo,
@@ -1219,6 +1268,7 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -1352,12 +1402,12 @@ export const SalesInvoice = () => {
             useUnlocatedStock: item.useUnlocatedStock || false,
             selectedLocationId:
               item.InvoiceRackShelf?.[0]?.rackId &&
-              item.InvoiceRackShelf?.[0]?.shelfId
+                item.InvoiceRackShelf?.[0]?.shelfId
                 ? item.Part?.PartRackShelf?.find(
-                    (prs: any) =>
-                      prs.rackId === item.InvoiceRackShelf[0].rackId &&
-                      prs.shelfId === item.InvoiceRackShelf[0].shelfId,
-                  )?.id || ""
+                  (prs: any) =>
+                    prs.rackId === item.InvoiceRackShelf[0].rackId &&
+                    prs.shelfId === item.InvoiceRackShelf[0].shelfId,
+                )?.id || ""
                 : "",
             selectedLocationIds: (item.InvoiceRackShelf || [])
               .map((irs: any) => {
@@ -1529,6 +1579,113 @@ export const SalesInvoice = () => {
     }
   };
 
+  // Handle payment recording
+  const handleRecordPayment = async () => {
+    if (!selectedInvoice) return;
+    if (paymentForm.amount <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Please enter a valid payment amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!paymentForm.accountId) {
+      toast({
+        title: "Select Account",
+        description: "Please select a bank or cash account for the payment.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRecordingPayment(true);
+    try {
+      const response = await apiClient.post(`/sales/invoices/${selectedInvoice.id}/payment`, {
+        amount: paymentForm.amount,
+        accountId: paymentForm.accountId,
+        paymentDate: paymentForm.paymentDate,
+      });
+
+      if (response.error) {
+        toast({
+          title: "Error",
+          description: response.error || "Failed to record payment",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Payment Recorded",
+        description: `Successfully recorded payment of Rs ${paymentForm.amount} for invoice ${selectedInvoice.invoiceNo}.`,
+      });
+
+      setShowPaymentDialog(false);
+
+      // Refresh invoices
+      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesData: any = Array.isArray(invoicesResponse)
+        ? invoicesResponse
+        : invoicesResponse.data || [];
+      const transformedInvoices: Invoice[] = invoicesData.map((inv: any) => ({
+        id: inv.id,
+        invoiceNo: inv.invoiceNo,
+        invoiceDate: inv.invoiceDate,
+        customerType: inv.customerType as CustomerType,
+        customerId: inv.customerId,
+        customerName: inv.customerName,
+        salesPerson: inv.salesPerson || "Admin",
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
+          id: item.id,
+          partId: item.partId,
+          partNo: item.partNo,
+          description: item.description || "",
+          orderedQty: item.orderedQty,
+          deliveredQty: item.deliveredQty,
+          pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
+          unitPrice: item.unitPrice,
+          discount: item.discount || 0,
+          discountType: "percent" as const,
+          lineTotal: item.lineTotal,
+          grade: (item.grade || "A") as ItemGrade,
+          brand: item.brand,
+        })),
+        subtotal: inv.subtotal,
+        overallDiscount: inv.overallDiscount || 0,
+        overallDiscountType: "fixed" as const,
+        tax: inv.tax || 0,
+        grandTotal: inv.grandTotal,
+        paidAmount: inv.paidAmount || 0,
+        status: inv.status as InvoiceStatus,
+        paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
+        accountId: inv.accountId,
+        deliveryLog:
+          inv.deliveryLogs?.map((log: any) => ({
+            challanNo: log.challanNo,
+            deliveryDate: log.deliveryDate,
+            deliveredBy: log.deliveredBy || "",
+            items: log.items?.map((item: any) => ({
+              invoiceItemId: item.invoiceItemId,
+              quantity: item.quantity,
+            })),
+          })) || [],
+        createdAt: inv.createdAt,
+        updatedAt: inv.updatedAt,
+      }));
+      setInvoices(transformedInvoices);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to record payment",
+        variant: "destructive",
+      });
+    } finally {
+      setRecordingPayment(false);
+    }
+  };
+
   // Handle delivery recording
   const handleRecordDelivery = async (
     delivery: DeliveryLogEntry,
@@ -1573,7 +1730,7 @@ export const SalesInvoice = () => {
         customerId: inv.customerId,
         customerName: inv.customerName,
         salesPerson: inv.salesPerson || "Admin",
-        items: inv.items?.map((item: any) => ({
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
           partId: item.partId,
           partNo: item.partNo,
@@ -1581,6 +1738,7 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -1617,7 +1775,7 @@ export const SalesInvoice = () => {
         (inv) => inv.id === selectedInvoice.id,
       );
       if (updatedInvoice) {
-        setSelectedInvoice(updatedInvoice);
+        setSelectedInvoice({ ...updatedInvoice, items: updatedInvoice.items || [] });
       }
     } catch (error: any) {
       toast({
@@ -1625,6 +1783,135 @@ export const SalesInvoice = () => {
         description: error.message || "Failed to record delivery",
         variant: "destructive",
       });
+    }
+  };
+
+  // Handle reverse quantity for multiple items
+  const handleReverseQuantity = async () => {
+    if (!selectedInvoice || itemsToReverse.length === 0) return;
+
+    // Validate all quantities
+    for (const item of itemsToReverse) {
+      const qty = reverseQuantities[item.id] || 0;
+      const maxReverse = item.pendingQty - (item.reversedQty || 0);
+      if (qty <= 0) {
+        toast({
+          title: "Invalid Quantity",
+          description: `Please enter a valid quantity for ${item.partNo}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      if (qty > maxReverse) {
+        toast({
+          title: "Invalid Quantity",
+          description: `Cannot reverse more than ${maxReverse} units for ${item.partNo}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setReversing(true);
+    try {
+      // Create a single bulk reverse request
+      const reverseItems = itemsToReverse.map(item => ({
+        invoiceItemId: item.id,
+        quantity: reverseQuantities[item.id],
+      }));
+
+      // Use the apiClient to make authenticated request
+      const response = await apiClient.bulkReverseInvoiceItems(selectedInvoice.id, {
+        items: reverseItems,
+        reason: `Bulk reverse - Invoice ${selectedInvoice.invoiceNo}`,
+      });
+
+      if (response.error) {
+        throw new Error(response.error || 'Failed to reverse items');
+      }
+
+      const totalReversed = itemsToReverse.reduce((sum, item) => sum + (reverseQuantities[item.id] || 0), 0);
+      const voucherNumber = (response as any).voucherNumber || 'N/A';
+      toast({
+        title: "Quantity Reversed",
+        description: `Successfully reversed ${totalReversed} units from ${itemsToReverse.length} items back to stock. Voucher ${voucherNumber} created.`,
+      });
+
+      setShowReverseDialog(false);
+      setItemsToReverse([]);
+      setReverseQuantities({});
+
+      // Refresh invoices
+      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesData: any = Array.isArray(invoicesResponse)
+        ? invoicesResponse
+        : invoicesResponse.data || [];
+      const transformedInvoices: Invoice[] = invoicesData.map((inv: any) => ({
+        id: inv.id,
+        invoiceNo: inv.invoiceNo,
+        invoiceDate: inv.invoiceDate,
+        customerType: inv.customerType as CustomerType,
+        customerId: inv.customerId,
+        customerName: inv.customerName,
+        salesPerson: inv.salesPerson || "Admin",
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
+          id: item.id,
+          partId: item.partId,
+          partNo: item.partNo,
+          description: item.description || "",
+          orderedQty: item.orderedQty,
+          deliveredQty: item.deliveredQty,
+          pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
+          unitPrice: item.unitPrice,
+          discount: item.discount || 0,
+          discountType: "percent" as const,
+          lineTotal: item.lineTotal,
+          grade: (item.grade || "A") as ItemGrade,
+          brand: item.brand,
+        })),
+        subtotal: inv.subtotal,
+        overallDiscount: inv.overallDiscount || 0,
+        overallDiscountType: "fixed" as const,
+        tax: inv.tax || 0,
+        grandTotal: inv.grandTotal,
+        paidAmount: inv.paidAmount || 0,
+        status: inv.status as InvoiceStatus,
+        paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
+        accountId: inv.accountId,
+        deliveryLog:
+          inv.deliveryLogs?.map((log: any) => ({
+            challanNo: log.challanNo,
+            deliveryDate: log.deliveryDate,
+            deliveredBy: log.deliveredBy || "",
+            items: log.items?.map((item: any) => ({
+              invoiceItemId: item.invoiceItemId,
+              quantity: item.quantity,
+            })) || [],
+          })) || [],
+        createdAt: inv.createdAt,
+        updatedAt: inv.updatedAt,
+      }));
+      setInvoices(transformedInvoices);
+
+      // Update selected invoice
+      if (selectedInvoice) {
+        const updatedInvoice = transformedInvoices.find(
+          (inv) => inv.id === selectedInvoice.id,
+        );
+        if (updatedInvoice) {
+          setSelectedInvoice(updatedInvoice);
+        }
+      }
+    } catch (error: any) {
+      console.error("Error reversing quantity:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reverse quantity",
+        variant: "destructive",
+      });
+    } finally {
+      setReversing(false);
     }
   };
 
@@ -1680,7 +1967,7 @@ export const SalesInvoice = () => {
         customerId: inv.customerId,
         customerName: inv.customerName,
         salesPerson: inv.salesPerson || "Admin",
-        items: inv.items?.map((item: any) => ({
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
           partId: item.partId,
           partNo: item.partNo,
@@ -1688,6 +1975,7 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -1854,7 +2142,7 @@ export const SalesInvoice = () => {
         customerId: inv.customerId,
         customerName: inv.customerName,
         salesPerson: inv.salesPerson || "Admin",
-        items: inv.items?.map((item: any) => ({
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
           partId: item.partId,
           partNo: item.partNo,
@@ -1862,6 +2150,7 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -1944,7 +2233,7 @@ export const SalesInvoice = () => {
         customerId: inv.customerId,
         customerName: inv.customerName,
         salesPerson: inv.salesPerson || "Admin",
-        items: inv.items?.map((item: any) => ({
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
           partId: item.partId,
           partNo: item.partNo,
@@ -1952,6 +2241,7 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -2029,7 +2319,7 @@ export const SalesInvoice = () => {
         customerId: inv.customerId,
         customerName: inv.customerName,
         salesPerson: inv.salesPerson || "Admin",
-        items: inv.items?.map((item: any) => ({
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
           partId: item.partId,
           partNo: item.partNo,
@@ -2037,6 +2327,7 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -2111,7 +2402,7 @@ export const SalesInvoice = () => {
         customerId: inv.customerId,
         customerName: inv.customerName,
         salesPerson: inv.salesPerson || "Admin",
-        items: inv.items?.map((item: any) => ({
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
           partId: item.partId,
           partNo: item.partNo,
@@ -2119,6 +2410,7 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -2207,7 +2499,7 @@ export const SalesInvoice = () => {
         customerId: inv.customerId,
         customerName: inv.customerName,
         salesPerson: inv.salesPerson || "Admin",
-        items: inv.items?.map((item: any) => ({
+        items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
           partId: item.partId,
           partNo: item.partNo,
@@ -2215,6 +2507,7 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
+          reversedQty: item.reversedQty || 0,
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -2262,7 +2555,10 @@ export const SalesInvoice = () => {
       on_hold: "On Hold",
       approved: "Approved",
       partially_delivered: "Partially Delivered",
+      partially_delivered_reversed: "Partially Delivered Reverse",
       delivered: "Delivered",
+      cancelled: "Cancelled",
+      fully_delivered: "Fully Delivered",
     };
     return labels[status] ?? status;
   };
@@ -2274,6 +2570,8 @@ export const SalesInvoice = () => {
       approved: "bg-indigo-600/10 text-indigo-700 border-indigo-600/20",
       partially_delivered:
         "bg-orange-500/10 text-orange-600 border-orange-500/20",
+      partially_delivered_reversed:
+        "bg-red-500/10 text-red-600 border-red-500/20",
       delivered: "bg-green-500/10 text-green-600 border-green-500/20",
     };
     const labels: Record<string, string> = {
@@ -2281,6 +2579,7 @@ export const SalesInvoice = () => {
       on_hold: "On Hold",
       approved: "Approved",
       partially_delivered: "Partially Delivered",
+      partially_delivered_reversed: "Partially Delivered Reverse",
       delivered: "Delivered",
     };
 
@@ -2351,131 +2650,134 @@ export const SalesInvoice = () => {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <FileText className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  {totalInvoices}
-                </p>
-                <p className="text-xs text-muted-foreground">Total Invoices</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-500/10 rounded-lg">
-                <DollarSign className="w-5 h-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  Rs {totalReceived.toLocaleString()}
-                </p>
-                <p className="text-xs text-muted-foreground">Received</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-orange-500/10 rounded-lg">
-                <DollarSign className="w-5 h-5 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  Rs {totalReceivable.toLocaleString()}
-                </p>
-                <p className="text-xs text-muted-foreground">Receivable</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <Truck className="w-5 h-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  {pendingDelivery}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Pending Delivery
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-500/10 rounded-lg">
-                <AlertTriangle className="w-5 h-5 text-yellow-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  {onHoldCount}
-                </p>
-                <p className="text-xs text-muted-foreground">On Hold</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by invoice number or customer..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Select
-              value={filterCustomerType}
-              onValueChange={setFilterCustomerType}
-            >
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Customer Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="walking">Cash Sale</SelectItem>
-                <SelectItem value="registered">Party Sale</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="on_hold">On Hold</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="partially_delivered">
-                  Partially Delivered
-                </SelectItem>
-                <SelectItem value="delivered">Delivered</SelectItem>
-              </SelectContent>
-            </Select>
+      {!showNewInvoice && (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <FileText className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">
+                      {totalInvoices}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Total Invoices</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-500/10 rounded-lg">
+                    <DollarSign className="w-5 h-5 text-green-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">
+                      Rs {totalReceived.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Received</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-500/10 rounded-lg">
+                    <DollarSign className="w-5 h-5 text-orange-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">
+                      Rs {totalReceivable.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Receivable</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-500/10 rounded-lg">
+                    <Truck className="w-5 h-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">
+                      {pendingDelivery}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Pending Delivery
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-yellow-500/10 rounded-lg">
+                    <AlertTriangle className="w-5 h-5 text-yellow-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">
+                      {onHoldCount}
+                    </p>
+                    <p className="text-xs text-muted-foreground">On Hold</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Filters */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by invoice number or customer..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select
+                  value={filterCustomerType}
+                  onValueChange={setFilterCustomerType}
+                >
+                  <SelectTrigger className="w-full sm:w-40">
+                    <SelectValue placeholder="Customer Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="walking">Cash Sale</SelectItem>
+                    <SelectItem value="registered">Party Sale</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-full sm:w-40">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="partially_delivered">
+                      Partially Delivered
+                    </SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* New Invoice Inline Form OR Invoices Table */}
       {showNewInvoice ? (
@@ -2674,23 +2976,21 @@ export const SalesInvoice = () => {
               </Button>
 
               {inlineItems.length > 0 && (
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border rounded-lg overflow-x-auto shadow-sm">
                   <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="min-w-[250px]">
-                          Item Parts
-                        </TableHead>
-                        <TableHead>Rack</TableHead>
-                        <TableHead>Shelf</TableHead>
-                        <TableHead className="text-center">In Stock</TableHead>
-                        <TableHead className="text-center">Reserved</TableHead>
-                        <TableHead className="text-center">Qty</TableHead>
-                        <TableHead className="text-center">Price A</TableHead>
-                        <TableHead className="text-center">Price B</TableHead>
-                        <TableHead className="text-center">Price M</TableHead>
-                        <TableHead className="text-center">Total</TableHead>
-                        <TableHead className="text-center">Remove</TableHead>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow className="border-b">
+                        <TableHead className="w-[380px] font-bold text-foreground">Part Details</TableHead>
+                        <TableHead className="w-[140px] font-bold text-foreground">Rack</TableHead>
+                        <TableHead className="w-[140px] font-bold text-foreground">Shelf</TableHead>
+                        <TableHead className="w-[100px] text-center font-bold text-foreground">In Stock</TableHead>
+                        <TableHead className="w-[100px] text-center font-bold text-foreground">Reserved</TableHead>
+                        <TableHead className="w-[100px] text-center font-bold text-foreground">Available</TableHead>
+                        <TableHead className="w-[110px] text-center font-bold text-foreground">Qty</TableHead>
+                        <TableHead className="w-[110px] text-center font-bold text-foreground">Price A</TableHead>
+                        <TableHead className="w-[110px] text-center font-bold text-foreground">Price B</TableHead>
+                        <TableHead className="w-[110px] text-center font-bold text-foreground">Total</TableHead>
+                        <TableHead className="w-[60px] text-center font-bold text-foreground">Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -2698,7 +2998,7 @@ export const SalesInvoice = () => {
                         const part = getPartForItem(item.selectedPartId);
                         return (
                           <TableRow key={item.id}>
-                            <TableCell>
+                            <TableCell className="align-middle">
                               <div className="space-y-2">
                                 <div className="relative">
                                   <Input
@@ -2829,7 +3129,7 @@ export const SalesInvoice = () => {
                                       ) {
                                         clearTimeout(
                                           partsSearchDebounceRef.current[
-                                            item.id
+                                          item.id
                                           ],
                                         );
                                       }
@@ -2853,29 +3153,29 @@ export const SalesInvoice = () => {
                                             item.id
                                           ]
                                             ? parts.filter(
-                                                (p) =>
-                                                  p.partNo
-                                                    .toLowerCase()
-                                                    .includes(
-                                                      partsSearchTerm[
-                                                        item.id
-                                                      ].toLowerCase(),
-                                                    ) ||
-                                                  p.description
-                                                    .toLowerCase()
-                                                    .includes(
-                                                      partsSearchTerm[
-                                                        item.id
-                                                      ].toLowerCase(),
-                                                    ) ||
-                                                  p.category
-                                                    .toLowerCase()
-                                                    .includes(
-                                                      partsSearchTerm[
-                                                        item.id
-                                                      ].toLowerCase(),
-                                                    ),
-                                              )
+                                              (p) =>
+                                                p.partNo
+                                                  .toLowerCase()
+                                                  .includes(
+                                                    partsSearchTerm[
+                                                      item.id
+                                                    ].toLowerCase(),
+                                                  ) ||
+                                                p.description
+                                                  .toLowerCase()
+                                                  .includes(
+                                                    partsSearchTerm[
+                                                      item.id
+                                                    ].toLowerCase(),
+                                                  ) ||
+                                                p.category
+                                                  .toLowerCase()
+                                                  .includes(
+                                                    partsSearchTerm[
+                                                      item.id
+                                                    ].toLowerCase(),
+                                                  ),
+                                            )
                                             : parts;
                                           if (filteredParts.length > 0) {
                                             handleUpdateInlineItem(
@@ -2986,23 +3286,23 @@ export const SalesInvoice = () => {
                                               // Filter parts client-side for instant results while typing
                                               const filteredParts = searchValue
                                                 ? parts.filter(
-                                                    (p) =>
-                                                      p.partNo
-                                                        .toLowerCase()
-                                                        .includes(
-                                                          searchValue.toLowerCase(),
-                                                        ) ||
-                                                      p.description
-                                                        .toLowerCase()
-                                                        .includes(
-                                                          searchValue.toLowerCase(),
-                                                        ) ||
-                                                      p.category
-                                                        .toLowerCase()
-                                                        .includes(
-                                                          searchValue.toLowerCase(),
-                                                        ),
-                                                  )
+                                                  (p) =>
+                                                    p.partNo
+                                                      .toLowerCase()
+                                                      .includes(
+                                                        searchValue.toLowerCase(),
+                                                      ) ||
+                                                    p.description
+                                                      .toLowerCase()
+                                                      .includes(
+                                                        searchValue.toLowerCase(),
+                                                      ) ||
+                                                    p.category
+                                                      .toLowerCase()
+                                                      .includes(
+                                                        searchValue.toLowerCase(),
+                                                      ),
+                                                )
                                                 : parts; // Show all parts when no search term
 
                                               return filteredParts.length >
@@ -3010,15 +3310,15 @@ export const SalesInvoice = () => {
                                                 <>
                                                   {filteredParts.length >
                                                     100 && (
-                                                    <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
-                                                      Showing{" "}
-                                                      {filteredParts.length}{" "}
-                                                      parts{" "}
-                                                      {searchValue
-                                                        ? "matching your search"
-                                                        : ""}
-                                                    </div>
-                                                  )}
+                                                      <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
+                                                        Showing{" "}
+                                                        {filteredParts.length}{" "}
+                                                        parts{" "}
+                                                        {searchValue
+                                                          ? "matching your search"
+                                                          : ""}
+                                                      </div>
+                                                    )}
                                                   {filteredParts.map((p) => (
                                                     <div
                                                       key={p.id}
@@ -3070,6 +3370,12 @@ export const SalesInvoice = () => {
                                                         <div className="font-medium">
                                                           {p.partNo}
                                                         </div>
+                                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${(p.availableQty ?? p.stockQty ?? 0) > 0
+                                                          ? "bg-green-100 text-green-700"
+                                                          : "bg-red-100 text-red-600"
+                                                          }`}>
+                                                          {p.availableQty ?? p.stockQty ?? 0} pcs
+                                                        </span>
                                                       </div>
                                                       <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
                                                         {p.description ||
@@ -3102,70 +3408,13 @@ export const SalesInvoice = () => {
                                     Required
                                   </p>
                                 )}
-                                {part && (
-                                  <>
-                                    <p className="text-xs text-muted-foreground">
-                                      Last Sold at: {part.lastSalePrice || 0}
-                                    </p>
-                                    {part.brands && part.brands.length > 0 && (
-                                      <p className="text-xs font-medium text-foreground">
-                                        {part.brands
-                                          .map((b) => b.name)
-                                          .join(", ")}
-                                      </p>
-                                    )}
-                                    {/* Show details automatically when part is selected */}
-                                    {part && (
-                                      <div className="mt-2 p-2 bg-muted/50 rounded text-xs space-y-1">
-                                        <p className="font-medium text-foreground">
-                                          {part.description ||
-                                            "No description available"}
-                                        </p>
-                                        <p>
-                                          <strong>Grade:</strong>{" "}
-                                          <Badge
-                                            variant="outline"
-                                            className={getGradeColor(
-                                              part.grade,
-                                            )}
-                                          >
-                                            {part.grade}
-                                          </Badge>
-                                        </p>
-                                        <p>
-                                          <strong>Category:</strong>{" "}
-                                          {part.category}
-                                        </p>
-                                        {part.brands &&
-                                          part.brands.length > 0 && (
-                                            <p>
-                                              <strong>Brands:</strong>{" "}
-                                              {part.brands
-                                                .map((b) => b.name)
-                                                .join(", ")}
-                                            </p>
-                                          )}
-                                        {part.machineModels && (
-                                          <p>
-                                            <strong>Machines:</strong>{" "}
-                                            {part.machineModels
-                                              .map(
-                                                (m) =>
-                                                  `${m.name} (${m.requiredQty})`,
-                                              )
-                                              .join(", ")}
-                                          </p>
-                                        )}
-                                      </div>
-                                    )}
-                                  </>
-                                )}
+
                               </div>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="align-middle">
                               {item.selectedPartId ? (
-                                <ScrollArea className="h-32">
-                                  <div className="space-y-1.5 py-1">
+                                <ScrollArea className="h-[60px] border rounded-md">
+                                  <div className="p-1 space-y-0.5">
                                     {(() => {
                                       const allLocations = (
                                         partLocations[item.selectedPartId] ||
@@ -3173,7 +3422,6 @@ export const SalesInvoice = () => {
                                         []
                                       ).filter((l: any) => l.quantity !== 0);
 
-                                      // Create FLATTENED Rack-Shelf Pairings
                                       const flatLocations = [];
                                       const locMap = new Map();
                                       allLocations.forEach((loc) => {
@@ -3197,58 +3445,39 @@ export const SalesInvoice = () => {
 
                                       if (flatLocations.length === 0) {
                                         return (
-                                          <div className="text-[10px] text-muted-foreground italic h-6 flex items-center">
-                                            No Rack
+                                          <div className="text-[10px] text-muted-foreground italic py-1">
+                                            No Rack Info
                                           </div>
                                         );
                                       }
 
                                       return flatLocations.map((loc) => {
                                         const isChecked = loc.ids.every((id) =>
-                                          (
-                                            item.selectedLocationIds || []
-                                          ).includes(id),
+                                          (item.selectedLocationIds || []).includes(id),
                                         );
 
                                         return (
                                           <div
                                             key={loc.id}
-                                            className="flex items-center space-x-2 px-1 h-6 hover:bg-accent/50 rounded cursor-pointer transition-colors"
+                                            className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
                                             onClick={(e) => {
                                               e.preventDefault();
-                                              const currentIds = [
-                                                ...(item.selectedLocationIds ||
-                                                  []),
-                                              ];
+                                              const currentIds = [...(item.selectedLocationIds || [])];
                                               let nextIds: string[];
                                               if (isChecked) {
-                                                nextIds = currentIds.filter(
-                                                  (id) => !loc.ids.includes(id),
-                                                );
+                                                nextIds = currentIds.filter((id) => !loc.ids.includes(id));
                                               } else {
                                                 nextIds = currentIds;
                                                 loc.ids.forEach((id) => {
-                                                  if (!nextIds.includes(id))
-                                                    nextIds.push(id);
+                                                  if (!nextIds.includes(id)) nextIds.push(id);
                                                 });
                                               }
-                                              handleUpdateInlineItem(
-                                                item.id,
-                                                "selectedLocationIds",
-                                                nextIds,
-                                              );
-                                              handleUpdateInlineItem(
-                                                item.id,
-                                                "selectedLocationId",
-                                                nextIds[0] || "",
-                                              );
+                                              handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
+                                              handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
                                             }}
                                           >
-                                            <Checkbox
-                                              checked={isChecked}
-                                              className="h-3.5 w-3.5"
-                                            />
-                                            <span className="text-[10px] font-medium truncate">
+                                            <Checkbox checked={isChecked} className="h-3 w-3" />
+                                            <span className="text-[10px] font-medium truncate leading-none">
                                               {loc.rackCode}
                                             </span>
                                           </div>
@@ -3258,13 +3487,13 @@ export const SalesInvoice = () => {
                                   </div>
                                 </ScrollArea>
                               ) : (
-                                "-"
+                                <div className="text-center text-muted-foreground">-</div>
                               )}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="align-middle">
                               {item.selectedPartId ? (
-                                <ScrollArea className="h-32">
-                                  <div className="space-y-1.5 py-1">
+                                <ScrollArea className="h-[60px] border rounded-md">
+                                  <div className="p-1 space-y-0.5">
                                     {(() => {
                                       const allLocations = (
                                         partLocations[item.selectedPartId] ||
@@ -3272,7 +3501,6 @@ export const SalesInvoice = () => {
                                         []
                                       ).filter((l: any) => l.quantity !== 0);
 
-                                      // Same Flattened logic for synchronization
                                       const flatLocations = [];
                                       const locMap = new Map();
                                       allLocations.forEach((loc) => {
@@ -3296,65 +3524,46 @@ export const SalesInvoice = () => {
 
                                       if (flatLocations.length === 0) {
                                         return (
-                                          <div className="text-[10px] text-muted-foreground italic h-6 flex items-center">
-                                            No Shelf
+                                          <div className="text-[10px] text-muted-foreground italic py-1">
+                                            No Shelf Info
                                           </div>
                                         );
                                       }
 
                                       return flatLocations.map((loc) => {
                                         const isChecked = loc.ids.every((id) =>
-                                          (
-                                            item.selectedLocationIds || []
-                                          ).includes(id),
+                                          (item.selectedLocationIds || []).includes(id),
                                         );
 
                                         return (
                                           <div
                                             key={loc.id}
-                                            className="flex items-center space-x-2 px-1 h-6 hover:bg-accent/50 rounded cursor-pointer transition-colors"
+                                            className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
                                             onClick={(e) => {
                                               e.preventDefault();
-                                              const currentIds = [
-                                                ...(item.selectedLocationIds ||
-                                                  []),
-                                              ];
+                                              const currentIds = [...(item.selectedLocationIds || [])];
                                               let nextIds: string[];
                                               if (isChecked) {
-                                                nextIds = currentIds.filter(
-                                                  (id) => !loc.ids.includes(id),
-                                                );
+                                                nextIds = currentIds.filter((id) => !loc.ids.includes(id));
                                               } else {
                                                 nextIds = currentIds;
                                                 loc.ids.forEach((id) => {
-                                                  if (!nextIds.includes(id))
-                                                    nextIds.push(id);
+                                                  if (!nextIds.includes(id)) nextIds.push(id);
                                                 });
                                               }
-                                              handleUpdateInlineItem(
-                                                item.id,
-                                                "selectedLocationIds",
-                                                nextIds,
-                                              );
-                                              handleUpdateInlineItem(
-                                                item.id,
-                                                "selectedLocationId",
-                                                nextIds[0] || "",
-                                              );
+                                              handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
+                                              handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
                                             }}
                                           >
-                                            <Checkbox
-                                              checked={isChecked}
-                                              className="h-3.5 w-3.5"
-                                            />
-                                            <Label className="flex-1 text-[10px] cursor-pointer flex justify-between items-center gap-1 font-normal">
-                                              <span className="truncate">
+                                            <Checkbox checked={isChecked} className="h-3 w-3" />
+                                            <div className="flex-1 flex justify-between items-center gap-1 overflow-hidden">
+                                              <span className="text-[10px] truncate leading-none">
                                                 {loc.shelfNo}
                                               </span>
-                                              <span className="font-bold text-primary shrink-0">
+                                              <Badge variant="secondary" className="px-1 text-[9px] h-3.5 leading-none">
                                                 {loc.quantity}
-                                              </span>
-                                            </Label>
+                                              </Badge>
+                                            </div>
                                           </div>
                                         );
                                       });
@@ -3362,112 +3571,99 @@ export const SalesInvoice = () => {
                                   </div>
                                 </ScrollArea>
                               ) : (
-                                "-"
+                                <div className="text-center text-muted-foreground">-</div>
                               )}
                             </TableCell>
 
-                            <TableCell className="text-center">
-                              <div>
-                                {(() => {
-                                  const stockBalance =
-                                    partStockBalances[item.selectedPartId];
-                                  const currentStock =
-                                    stockBalance?.available_stock ??
-                                    (part?.availableQty || 0);
-                                  const avgCost =
-                                    stockBalance?.avg_cost ??
-                                    (part?.price || 0);
-                                  const isLoading =
-                                    loadingStock[item.selectedPartId];
+                            <TableCell className="text-center align-middle">
+                              {(() => {
+                                const stockBalance = partStockBalances[item.selectedPartId];
+                                const currentStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
+                                const avgCost = stockBalance?.avg_cost ?? (part?.price || 0);
+                                const isLoading = loadingStock[item.selectedPartId];
 
-                                  return (
-                                    <>
-                                      <div className="flex items-center justify-center gap-2">
-                                        <p className="font-medium">
-                                          {isLoading ? "..." : currentStock}
-                                        </p>
-                                        {part?.id && (
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-4 w-4"
-                                            onClick={() =>
-                                              navigate("/inventory")
-                                            }
-                                            title="View Stock Details"
-                                          >
-                                            <Package className="w-3 h-3" />
-                                          </Button>
-                                        )}
-                                      </div>
-                                      <p className="text-xs text-muted-foreground">
-                                        Avg Cost: {avgCost.toFixed(2)}
-                                      </p>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <div>
-                                {(() => {
-                                  const stockBalance =
-                                    partStockBalances[item.selectedPartId];
-                                  const reservedStock =
-                                    stockBalance?.reserved_stock ??
-                                    (part?.reservedQty || 0);
-                                  const isLoading =
-                                    loadingStock[item.selectedPartId];
-
-                                  return (
-                                    <div className="flex items-center justify-center gap-2">
-                                      <p className="font-medium text-orange-500">
-                                        {isLoading ? "..." : reservedStock}
-                                      </p>
+                                return (
+                                  <div className="flex flex-col items-center justify-center">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                                        {isLoading ? "..." : currentStock}
+                                      </span>
+                                      {part?.id && (
+                                        <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                                      )}
                                     </div>
-                                  );
-                                })()}
+                                    <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap">
+                                      Cost: {avgCost.toFixed(2)}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+                            </TableCell>
+                            <TableCell className="text-center align-middle">
+                              {(() => {
+                                const stockBalance = partStockBalances[item.selectedPartId];
+                                const reservedStock = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
+                                const isLoading = loadingStock[item.selectedPartId];
+
+                                return (
+                                  <span className="text-sm font-semibold text-orange-600">
+                                    {isLoading ? "..." : reservedStock}
+                                  </span>
+                                );
+                              })()}
+                            </TableCell>
+                            {/* ── Avail. Qty cell ── */}
+                            <TableCell className="text-center align-middle">
+                              {(() => {
+                                const stockBalance = partStockBalances[item.selectedPartId];
+                                const inStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
+                                const reserved = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
+                                const available = stockBalance
+                                  ? Math.max(0, inStock - reserved)
+                                  : Math.max(0, (part?.availableQty ?? 0));
+                                const isLoading = loadingStock[item.selectedPartId];
+                                return isLoading ? (
+                                  <span className="text-xs text-muted-foreground">...</span>
+                                ) : (
+                                  <Badge variant={available > 0 ? "default" : "destructive"} className="px-2 py-0.5 font-bold">
+                                    {available}
+                                  </Badge>
+                                );
+                              })()}
+                            </TableCell>
+                            <TableCell className="align-middle">
+                              <div className="flex flex-col items-center justify-center">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  value={item.qty || ""}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value) || 0;
+                                    const stockBalance = part?.id ? partStockBalances[part.id] : null;
+                                    const currentStock = stockBalance?.available_stock ?? (part?.availableQty || 0);
+
+                                    if (val > currentStock && currentStock >= 0) {
+                                      toast({
+                                        title: "Insufficient Stock",
+                                        description: `Cannot enter ${val}. Available stock is only ${currentStock}.`,
+                                        variant: "destructive",
+                                      });
+                                      handleUpdateInlineItem(item.id, "qty", currentStock);
+                                    } else {
+                                      handleUpdateInlineItem(item.id, "qty", val);
+                                    }
+                                  }}
+                                  className="w-16 h-8 text-center font-bold"
+                                  placeholder="0"
+                                />
+                                {item.qty === 0 && item.selectedPartId && (
+                                  <p className="text-destructive text-[9px] font-semibold">
+                                    Required
+                                  </p>
+                                )}
                               </div>
                             </TableCell>
-                            <TableCell>
-                              <Input
-                                type="number"
-                                min={0}
-                                value={item.qty || ""}
-                                onChange={(e) => {
-                                  const val = parseInt(e.target.value) || 0;
-                                  const stockBalance = part?.id
-                                    ? partStockBalances[part.id]
-                                    : null;
-                                  const currentStock =
-                                    stockBalance?.available_stock ??
-                                    (part?.availableQty || 0);
-
-                                  if (val > currentStock && currentStock >= 0) {
-                                    toast({
-                                      title: "Insufficient Stock",
-                                      description: `Cannot enter ${val}. Available stock is only ${currentStock}.`,
-                                      variant: "destructive",
-                                    });
-                                    handleUpdateInlineItem(
-                                      item.id,
-                                      "qty",
-                                      currentStock,
-                                    );
-                                  } else {
-                                    handleUpdateInlineItem(item.id, "qty", val);
-                                  }
-                                }}
-                                className="w-20 text-center mx-auto"
-                                placeholder="0"
-                              />
-                              {item.qty === 0 && item.selectedPartId && (
-                                <p className="text-destructive text-xs text-center mt-1">
-                                  Required
-                                </p>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
+                            <TableCell className="text-center align-middle">
                               {(() => {
                                 const priceAValue =
                                   item.priceA !== undefined
@@ -3497,7 +3693,7 @@ export const SalesInvoice = () => {
                                 );
                               })()}
                             </TableCell>
-                            <TableCell className="text-center">
+                            <TableCell className="text-center align-middle">
                               {(() => {
                                 const priceBValue =
                                   item.priceB !== undefined
@@ -3527,50 +3723,19 @@ export const SalesInvoice = () => {
                                 );
                               })()}
                             </TableCell>
-                            <TableCell className="text-center">
-                              {(() => {
-                                const priceMValue =
-                                  item.priceM !== undefined
-                                    ? item.priceM
-                                    : part?.priceM || 0;
-                                const isSelected =
-                                  item.selectedPriceType === "M";
-                                return priceMValue > 0 ? (
-                                  <Button
-                                    variant={isSelected ? "default" : "outline"}
-                                    size="sm"
-                                    className="w-full text-xs"
-                                    onClick={() => {
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "selectedPriceType",
-                                        "M",
-                                      );
-                                    }}
-                                  >
-                                    {priceMValue.toFixed(2)}
-                                  </Button>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">
-                                    -
-                                  </span>
-                                );
-                              })()}
-                            </TableCell>
-                            <TableCell className="text-center font-medium">
+
+                            <TableCell className="text-center align-middle font-bold text-base text-primary">
                               {calculateLineTotal(item).toLocaleString()}
                             </TableCell>
-                            <TableCell>
-                              <div className="flex items-center justify-center gap-2">
+                            <TableCell className="align-middle">
+                              <div className="flex items-center justify-center">
                                 <Button
-                                  variant="destructive"
+                                  variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() =>
-                                    handleRemoveInlineItem(item.id)
-                                  }
+                                  className="h-9 w-9 text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
+                                  onClick={() => handleRemoveInlineItem(item.id)}
                                 >
-                                  <X className="w-4 h-4" />
+                                  <Trash2 className="w-5 h-5" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -3798,14 +3963,6 @@ export const SalesInvoice = () => {
               <Button variant="outline" onClick={resetForm}>
                 Cancel
               </Button>
-              <Button
-                variant="destructive"
-                onClick={resetForm}
-                title="Discard this draft and return to invoice list"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </Button>
               <Button onClick={handleSaveInvoice}>
                 <FileText className="w-4 h-4 mr-2" />
                 {editingInvoiceId ? "Save Changes" : "Create Invoice"}
@@ -3869,13 +4026,33 @@ export const SalesInvoice = () => {
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
+                            {/* Record Payment */}
+                            {inv.paymentStatus !== "paid" && inv.status !== "pending" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                onClick={() => {
+                                  setSelectedInvoice(inv);
+                                  setPaymentForm({
+                                    amount: inv.grandTotal - inv.paidAmount,
+                                    accountId: inv.accountId || "",
+                                    paymentDate: new Date().toISOString().split("T")[0],
+                                  });
+                                  setShowPaymentDialog(true);
+                                }}
+                                title="Record Payment"
+                              >
+                                <DollarSign className="w-4 h-4" />
+                              </Button>
+                            )}
                             {/* View */}
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-muted-foreground hover:text-foreground"
                               onClick={() => {
-                                setSelectedInvoice(inv);
+                                setSelectedInvoice({ ...inv, items: inv.items || [] });
                                 setShowViewInvoice(true);
                               }}
                             >
@@ -3884,21 +4061,21 @@ export const SalesInvoice = () => {
                             {/* Approve — pending or on_hold */}
                             {(inv.status === "pending" ||
                               inv.status === "on_hold") && (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
-                                onClick={() =>
-                                  handleUpdateStatus(inv, "approved")
-                                }
-                                disabled={approvingInvoice === inv.id}
-                              >
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                {approvingInvoice === inv.id
-                                  ? "Approving..."
-                                  : "Approve"}
-                              </Button>
-                            )}
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
+                                  onClick={() =>
+                                    handleUpdateStatus(inv, "approved")
+                                  }
+                                  disabled={approvingInvoice === inv.id}
+                                >
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  {approvingInvoice === inv.id
+                                    ? "Approving..."
+                                    : "Approve"}
+                                </Button>
+                              )}
                             {/* Print */}
                             <Button
                               variant="ghost"
@@ -3925,6 +4102,35 @@ export const SalesInvoice = () => {
                                 <FileText className="w-4 h-4" />
                               </Button>
                             )}
+                            {/* Reverse Stock - for approved/partially delivered with pending items */}
+                            {(inv.status === "approved" || inv.status === "partially_delivered") &&
+                              inv.items?.some((item) => (item.pendingQty || 0) - (item.reversedQty || 0) > 0) && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                  onClick={() => {
+                                    // Find ALL items with pending quantity and open reverse dialog
+                                    const allItemsWithPending = inv.items?.filter(
+                                      (item) => (item.pendingQty || 0) - (item.reversedQty || 0) > 0
+                                    );
+                                    if (allItemsWithPending && allItemsWithPending.length > 0) {
+                                      setSelectedInvoice({ ...inv, items: inv.items || [] });
+                                      setItemsToReverse(allItemsWithPending);
+                                      // Initialize reverse quantities for all items to their full pending qty
+                                      const initialQtys: Record<string, number> = {};
+                                      allItemsWithPending.forEach(item => {
+                                        initialQtys[item.id] = (item.pendingQty || 0) - (item.reversedQty || 0);
+                                      });
+                                      setReverseQuantities(initialQtys);
+                                      setShowReverseDialog(true);
+                                    }
+                                  }}
+                                  title="Reverse undelivered stock to inventory"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                </Button>
+                              )}
                             {/* Delete (Pending only) */}
                             {inv.status === "pending" && (
                               <Button
@@ -3940,199 +4146,6 @@ export const SalesInvoice = () => {
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             )}
-                            {/* Status dropdown */}
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                >
-                                  <Info className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {/* Pending ↔ On Hold — only before approved */}
-                                {inv.status === "on_hold" && (
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      handleUpdateStatus(inv, "pending")
-                                    }
-                                    className="text-blue-600"
-                                  >
-                                    <Circle className="w-4 h-4 mr-2" />
-                                    Back to Pending
-                                  </DropdownMenuItem>
-                                )}
-                                {inv.status === "pending" && (
-                                  <DropdownMenuItem
-                                    onClick={async () => {
-                                      try {
-                                        await apiClient.updateInvoiceStatus(
-                                          inv.id,
-                                          "on_hold",
-                                          undefined,
-                                          "Admin",
-                                        );
-                                        await apiClient.holdInvoice(inv.id, {
-                                          holdReason: "",
-                                        });
-                                        toast({
-                                          title: "Invoice On Hold",
-                                          description: `Invoice ${inv.invoiceNo} is now on hold. All stock moved out.`,
-                                        });
-                                        const response =
-                                          await apiClient.getSalesInvoices();
-                                        const invoicesData: any = Array.isArray(
-                                          response,
-                                        )
-                                          ? response
-                                          : (response as any).data || [];
-                                        setInvoices(
-                                          invoicesData.map((i: any) => ({
-                                            id: i.id,
-                                            invoiceNo: i.invoiceNo,
-                                            invoiceDate: i.invoiceDate,
-                                            customerType:
-                                              i.customerType as CustomerType,
-                                            customerId: i.customerId,
-                                            customerName: i.customerName,
-                                            salesPerson:
-                                              i.salesPerson || "Admin",
-                                            items:
-                                              i.SalesInvoiceItem?.map(
-                                                (item: any) => ({
-                                                  id: item.id,
-                                                  partId: item.partId,
-                                                  partNo: item.partNo,
-                                                  description:
-                                                    item.description || "",
-                                                  orderedQty: item.orderedQty,
-                                                  deliveredQty:
-                                                    item.deliveredQty,
-                                                  pendingQty: item.pendingQty,
-                                                  unitPrice: item.unitPrice,
-                                                  discount: item.discount || 0,
-                                                  discountType:
-                                                    "percent" as const,
-                                                  lineTotal: item.lineTotal,
-                                                  grade: (item.grade ||
-                                                    "A") as ItemGrade,
-                                                  brand: item.brand,
-                                                  useUnlocatedStock:
-                                                    item.useUnlocatedStock,
-                                                }),
-                                              ) || [],
-                                            subtotal: i.subtotal,
-                                            overallDiscount:
-                                              i.overallDiscount || 0,
-                                            overallDiscountType:
-                                              "fixed" as const,
-                                            tax: i.tax || 0,
-                                            grandTotal: i.grandTotal,
-                                            paidAmount: i.paidAmount || 0,
-                                            status: i.status as InvoiceStatus,
-                                            paymentStatus:
-                                              i.status === "paid"
-                                                ? "paid"
-                                                : i.paidAmount > 0
-                                                  ? "partial"
-                                                  : "unpaid",
-                                            accountId: i.accountId,
-                                            deliveryLog: [],
-                                            createdAt: i.createdAt,
-                                            updatedAt: i.updatedAt,
-                                          })),
-                                        );
-                                      } catch (err: any) {
-                                        toast({
-                                          title: "Error",
-                                          description:
-                                            err.message ||
-                                            "Failed to put invoice on hold",
-                                          variant: "destructive",
-                                        });
-                                      }
-                                    }}
-                                    className="text-yellow-600"
-                                  >
-                                    <Clock className="w-4 h-4 mr-2" />
-                                    Place On Hold
-                                  </DropdownMenuItem>
-                                )}
-                                {inv.status !== "delivered" && (
-                                  <DropdownMenuItem
-                                    onClick={async () => {
-                                      // Fetch full invoice with items
-                                      try {
-                                        const full =
-                                          (await apiClient.getSalesInvoice(
-                                            inv.id,
-                                          )) as any;
-                                        const items = (
-                                          full.SalesInvoiceItem || []
-                                        ).map((item: any) => {
-                                          const part = item.Part || {};
-                                          const stockLocations = (
-                                            part.PartRackShelf || []
-                                          ).map((prs: any) => ({
-                                            rackCode: prs.Rack?.codeNo,
-                                            shelfNo: prs.Shelf?.shelfNo,
-                                            quantity: prs.quantity,
-                                          }));
-
-                                          // Calculate total stock from PartRackShelf entries
-                                          const totalStock =
-                                            stockLocations.reduce(
-                                              (sum: number, loc: any) =>
-                                                sum + loc.quantity,
-                                              0,
-                                            );
-
-                                          return {
-                                            id: item.id,
-                                            partId: item.partId,
-                                            partNo: item.partNo,
-                                            description: item.description || "",
-                                            orderedQty: item.orderedQty,
-                                            deliveredQty: item.deliveredQty,
-                                            pendingQty: item.pendingQty,
-                                            unitPrice: item.unitPrice,
-                                            discount: item.discount || 0,
-                                            discountType: "percent" as const,
-                                            lineTotal: item.lineTotal,
-                                            grade: (item.grade || "A") as any,
-                                            brand: item.brand,
-                                            stockLocations,
-                                            totalStock,
-                                          };
-                                        });
-                                        setSelectedInvoice({ ...inv, items });
-                                      } catch {
-                                        setSelectedInvoice(inv);
-                                      }
-                                      setShowPartialDeliveryDialog(true);
-                                    }}
-                                    className="text-orange-600"
-                                  >
-                                    <Package className="w-4 h-4 mr-2" />
-                                    Partially Delivered
-                                  </DropdownMenuItem>
-                                )}
-                                {/* Delivered — only after approved or pending */}
-                                {inv.status !== "delivered" && (
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      handleUpdateStatus(inv, "delivered")
-                                    }
-                                    className="text-green-600"
-                                  >
-                                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                                    Mark as Delivered
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -4153,7 +4166,8 @@ export const SalesInvoice = () => {
             )}
           </CardContent>
         </Card>
-      )}
+      )
+      }
 
       {/* View Invoice Dialog */}
       <Dialog open={showViewInvoice} onOpenChange={setShowViewInvoice}>
@@ -4211,36 +4225,66 @@ export const SalesInvoice = () => {
                       <TableHead className="text-center">Ordered</TableHead>
                       <TableHead className="text-center">Delivered</TableHead>
                       <TableHead className="text-center">Pending</TableHead>
-                      <TableHead className="text-center">Avg Cost</TableHead>
+                      <TableHead className="text-center">Reversed</TableHead>
+                      <TableHead className="text-center">Rate</TableHead>
                       <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {selectedInvoice.items.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">
-                          {item.partNo}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {item.description}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {item.orderedQty}
-                        </TableCell>
-                        <TableCell className="text-center text-green-600">
-                          {item.deliveredQty}
-                        </TableCell>
-                        <TableCell className="text-center text-orange-600">
-                          {item.pendingQty}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {item.avgCost ? item.avgCost.toFixed(2) : "0.00"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          Rs {item.lineTotal.toFixed(2)}
+                    {selectedInvoice.items?.length > 0 ? (
+                      selectedInvoice.items.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium">
+                            {item.partNo}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {item.description}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {item.orderedQty}
+                          </TableCell>
+                          <TableCell className="text-center text-green-600">
+                            {item.deliveredQty}
+                          </TableCell>
+                          <TableCell className="text-center text-orange-600">
+                            {item.pendingQty}
+                          </TableCell>
+                          <TableCell className="text-center text-red-600">
+                            {item.reversedQty || 0}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {item.unitPrice ? item.unitPrice.toFixed(2) : "0.00"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            Rs {item.lineTotal.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {(item.pendingQty || 0) - (item.reversedQty || 0) > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                onClick={() => {
+                                  // Set only this item for reversal
+                                  setItemsToReverse([item]);
+                                  setReverseQuantities({ [item.id]: (item.pendingQty || 0) - (item.reversedQty || 0) });
+                                  setShowReverseDialog(true);
+                                }}
+                                title="Reverse undelivered quantity to stock"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))) : (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-center py-4">
+                          <p className="text-muted-foreground">No items found for this invoice</p>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -4278,17 +4322,121 @@ export const SalesInvoice = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Record Payment Dialog */}
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-green-600" />
+              Record Payment - {selectedInvoice?.invoiceNo}
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedInvoice && (
+            <div className="space-y-6 pt-4">
+              {/* Payment Summary */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg border">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Total Amount</p>
+                  <p className="text-lg font-bold">Rs {selectedInvoice.grandTotal.toLocaleString()}</p>
+                </div>
+                <div className="space-y-1 text-right">
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Discount</p>
+                  <p className="text-lg font-bold text-orange-600">- Rs {(selectedInvoice.overallDiscount || 0).toLocaleString()}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Paid So Far</p>
+                  <p className="text-lg font-bold text-green-600">Rs {selectedInvoice.paidAmount.toLocaleString()}</p>
+                </div>
+                <div className="space-y-1 text-right">
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Remaining</p>
+                  <p className="text-xl font-black text-primary">Rs {(selectedInvoice.grandTotal - selectedInvoice.paidAmount).toLocaleString()}</p>
+                </div>
+              </div>
+
+              {/* Input Fields */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Payment Date</Label>
+                    <Input
+                      type="date"
+                      value={paymentForm.paymentDate}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, paymentDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Amount to Pay (Rs)</Label>
+                    <Input
+                      type="number"
+                      value={paymentForm.amount || ""}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })}
+                      className="font-bold text-primary"
+                      max={selectedInvoice.grandTotal - selectedInvoice.paidAmount}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Select Account (Bank/Cash)</Label>
+                  <Select
+                    value={paymentForm.accountId}
+                    onValueChange={(val) => setPaymentForm({ ...paymentForm, accountId: val })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select account..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <div className="p-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/50">Cash Accounts</div>
+                      {cashAccounts.map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>{acc.name} ({acc.code || 'No Code'})</SelectItem>
+                      ))}
+                      <div className="p-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/50 mt-1">Bank Accounts</div>
+                      {bankAccounts.map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>{acc.name} ({acc.code || 'Bank'})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-2">
+            <Button variant="outline" onClick={() => setShowPaymentDialog(false)} disabled={recordingPayment}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRecordPayment}
+              disabled={recordingPayment}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {recordingPayment ? (
+                <>Saving...</>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Save Payment
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delivery Log */}
-      {selectedInvoice && (
-        <InvoiceDeliveryLog
-          open={showDeliveryLog}
-          onOpenChange={setShowDeliveryLog}
-          invoiceNo={selectedInvoice.invoiceNo}
-          items={selectedInvoice.items}
-          deliveryLog={selectedInvoice.deliveryLog}
-          onRecordDelivery={handleRecordDelivery}
-        />
-      )}
+      {
+        selectedInvoice && (
+          <InvoiceDeliveryLog
+            open={showDeliveryLog}
+            onOpenChange={setShowDeliveryLog}
+            invoiceNo={selectedInvoice.invoiceNo}
+            items={selectedInvoice.items || []}
+            deliveryLog={selectedInvoice.deliveryLog}
+            onRecordDelivery={handleRecordDelivery}
+          />
+        )
+      }
 
       {/* Hold Dialog */}
       <Dialog
@@ -4380,10 +4528,10 @@ export const SalesInvoice = () => {
                                       parseInt(e.target.value) || 0,
                                       loc.quantity,
                                       totalTarget -
-                                        (totalSelected -
-                                          (holdLocationQtys[item.id]?.[
-                                            locKey
-                                          ] || 0)),
+                                      (totalSelected -
+                                        (holdLocationQtys[item.id]?.[
+                                          locKey
+                                        ] || 0)),
                                     );
                                     setHoldLocationQtys((prev) => ({
                                       ...prev,
@@ -4486,89 +4634,93 @@ export const SalesInvoice = () => {
                 not yet delivered.
               </p>
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                {selectedInvoice.items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {item.partNo}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {item.description}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Ordered: {item.orderedQty} | Delivered:{" "}
-                        {item.deliveredQty} | Pending: {item.pendingQty}
-                      </p>
-                      {item.stockLocations &&
-                        item.stockLocations.length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            <p className="text-[10px] uppercase font-bold text-muted-foreground px-1">
-                              Stock Locations:
-                            </p>
-                            {item.stockLocations.map((loc, idx) => (
-                              <div
-                                key={idx}
-                                className="text-[10px] flex items-center justify-between px-2 py-1 rounded bg-background/50 border border-border/50"
-                              >
-                                <div className="flex gap-2">
-                                  <span className="opacity-70">Rack:</span>
-                                  <span className="font-semibold">
-                                    {loc.rackCode || "Unallocated"}
-                                  </span>
-                                  <span className="opacity-70 ml-1">
-                                    Shelf:
-                                  </span>
-                                  <span className="font-semibold">
-                                    {loc.shelfNo || "-"}
-                                  </span>
-                                </div>
-                                <div className="flex gap-1 items-center">
-                                  <span className="opacity-70">In Stock:</span>
-                                  <span
-                                    className={`font-bold ${
-                                      loc.quantity > 0
+                {selectedInvoice.items?.length > 0 ? (
+                  selectedInvoice.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {item.partNo}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {item.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Ordered: {item.orderedQty} | Delivered:{" "}
+                          {item.deliveredQty} | Pending: {item.pendingQty}
+                        </p>
+                        {item.stockLocations &&
+                          item.stockLocations.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              <p className="text-[10px] uppercase font-bold text-muted-foreground px-1">
+                                Stock Locations:
+                              </p>
+                              {item.stockLocations.map((loc, idx) => (
+                                <div
+                                  key={idx}
+                                  className="text-[10px] flex items-center justify-between px-2 py-1 rounded bg-background/50 border border-border/50"
+                                >
+                                  <div className="flex gap-2">
+                                    <span className="opacity-70">Rack:</span>
+                                    <span className="font-semibold">
+                                      {loc.rackCode || "Unallocated"}
+                                    </span>
+                                    <span className="opacity-70 ml-1">
+                                      Shelf:
+                                    </span>
+                                    <span className="font-semibold">
+                                      {loc.shelfNo || "-"}
+                                    </span>
+                                  </div>
+                                  <div className="flex gap-1 items-center">
+                                    <span className="opacity-70">In Stock:</span>
+                                    <span
+                                      className={`font-bold ${loc.quantity > 0
                                         ? "text-blue-600"
                                         : "text-destructive"
-                                    }`}
-                                  >
-                                    {loc.quantity}
-                                  </span>
+                                        }`}
+                                    >
+                                      {loc.quantity}
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
-                            {item.totalStock !== undefined && (
-                              <div className="text-[10px] font-bold text-green-600 px-1 mt-1 flex justify-between">
-                                <span>Total Available Stock:</span>
-                                <span>{item.totalStock}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                              ))}
+                              {item.totalStock !== undefined && (
+                                <div className="text-[10px] font-bold text-green-600 px-1 mt-1 flex justify-between">
+                                  <span>Total Available Stock:</span>
+                                  <span>{item.totalStock}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                      </div>
+                      <div className="w-24 shrink-0 self-start mt-1">
+                        <Label className="text-xs">Deliver Qty</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={item.pendingQty}
+                          value={partialDeliveryQtys[item.id] ?? 0}
+                          onChange={(e) =>
+                            setPartialDeliveryQtys((prev) => ({
+                              ...prev,
+                              [item.id]: Math.min(
+                                Number(e.target.value) || 0,
+                                item.pendingQty,
+                              ),
+                            }))
+                          }
+                          className="h-8 text-sm"
+                        />
+                      </div>
                     </div>
-                    <div className="w-24 shrink-0 self-start mt-1">
-                      <Label className="text-xs">Deliver Qty</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={item.pendingQty}
-                        value={partialDeliveryQtys[item.id] ?? 0}
-                        onChange={(e) =>
-                          setPartialDeliveryQtys((prev) => ({
-                            ...prev,
-                            [item.id]: Math.min(
-                              Number(e.target.value) || 0,
-                              item.pendingQty,
-                            ),
-                          }))
-                        }
-                        className="h-8 text-sm"
-                      />
-                    </div>
+                  ))) : (
+                  <div className="text-center py-4">
+                    <p className="text-muted-foreground">No items found for this invoice</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}
@@ -4997,6 +5149,53 @@ export const SalesInvoice = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* Reverse Quantity Dialog */}
+      <AlertDialog open={showReverseDialog} onOpenChange={setShowReverseDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RotateCcw className="w-5 h-5 text-orange-600" />
+              Reverse Quantity to Stock
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {itemsToReverse.length > 0 && (
+                <div className="space-y-4">
+                  <p>
+                    Are you sure you want to reverse back the remaining qty of {itemsToReverse.length} item(s)?
+                  </p>
+                  <div className="text-sm bg-muted p-3 rounded max-h-40 overflow-y-auto">
+                    {itemsToReverse.map(item => (
+                      <div key={item.id} className="mb-2 pb-2 border-b last:border-0">
+                        <p><strong>Part:</strong> {item.partNo}</p>
+                        <p><strong>Remaining Qty:</strong> {(item.pendingQty || 0) - (item.reversedQty || 0)} units</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setItemsToReverse([]);
+                setReverseQuantities({});
+              }}
+              disabled={reversing}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleReverseQuantity}
+              disabled={reversing}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {reversing ? "Reversing..." : "Yes, Reverse to Stock"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div >
   );
 };

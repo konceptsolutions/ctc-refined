@@ -17,7 +17,7 @@ export function getApiBaseUrl(): string {
     return `${origin}/api`;
   }
 
-  return "http://localhost:3001/api";
+  return "http://192.168.18.57:3001/api";
 }
 
 const API_BASE_URL = getApiBaseUrl();
@@ -180,8 +180,8 @@ class ApiClient {
           // Create error object that preserves all error details
           const error = new Error(
             errorData.error ||
-              errorData.message ||
-              `HTTP error! status: ${response.status}`,
+            errorData.message ||
+            `HTTP error! status: ${response.status}`,
           );
           (error as any).response = {
             data: errorData,
@@ -3206,6 +3206,42 @@ class ApiClient {
     return this.request(`/sales/invoices/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    });
+  }
+
+  async getUndeliveredStockAlerts() {
+    return this.request('/sales/invoices/undelivered-alerts');
+  }
+
+  async reverseInvoiceItem(
+    itemId: string,
+    data: {
+      quantity: number;
+      reason?: string;
+    },
+  ) {
+    return this.request(`/sales/invoices/items/${itemId}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async bulkReverseInvoiceItems(
+    invoiceId: string,
+    data: {
+      items: Array<{
+        invoiceItemId: string;
+        quantity: number;
+      }>;
+      reason?: string;
+    },
+  ) {
+    return this.request(`/sales/invoices/bulk-reverse`, {
+      method: 'POST',
+      body: JSON.stringify({
+        invoiceId,
+        ...data,
+      }),
     });
   }
 

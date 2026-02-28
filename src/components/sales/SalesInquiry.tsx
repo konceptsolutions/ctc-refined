@@ -142,11 +142,7 @@ export const SalesInquiry = () => {
   const [selectedPart, setSelectedPart] = useState<PartDetail | null>(null);
   const [showMasterDropdown, setShowMasterDropdown] = useState(false);
   const [showPartDropdown, setShowPartDropdown] = useState(false);
-  const [partsData, setPartsData] = useState<PartDetail[]>([]);
-  const [loadingParts, setLoadingParts] = useState(false);
   const [loadingPartDetails, setLoadingPartDetails] = useState(false);
-  const [rackMap, setRackMap] = useState<Record<string, string>>({});
-  const [partIdMap, setPartIdMap] = useState<Record<string, string>>({}); // Map partNo to part ID
   const [purchaseOrderHistory, setPurchaseOrderHistory] = useState<any[]>([]);
   const [loadingPOHistory, setLoadingPOHistory] = useState(false);
   const [deletePODialogOpen, setDeletePODialogOpen] = useState(false);
@@ -159,13 +155,55 @@ export const SalesInquiry = () => {
   const [loadingRelatedKits, setLoadingRelatedKits] = useState(false);
   const [partModels, setPartModels] = useState<any[]>([]);
   const [loadingPartModels, setLoadingPartModels] = useState(false);
-  const [modelsSheetOpen, setModelsSheetOpen] = useState(false);
-  const [selectedPartForModels, setSelectedPartForModels] = useState<PartDetail | null>(null);
 
   const masterDropdownRef = useRef<HTMLDivElement>(null);
   const partDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch parts from database
+  const [partsData, setPartsData] = useState<PartDetail[]>([]);
+  const [loadingParts, setLoadingParts] = useState(false);
+  const [partIdMap, setPartIdMap] = useState<Record<string, string>>({});
+  const [rackMap, setRackMap] = useState<Record<string, string>>({});
+  const [searchResults, setSearchResults] = useState<PartDetail[]>([]);
+
+  // Correctly transform parts based on project convention (Swapped)
+  const transformPart = (p: any, rackMapData: Record<string, string>, stockMapData: Record<string, number>): PartDetail => {
+    // Format numbers properly
+    const formatNumber = (val: any): string => {
+      if (val === null || val === undefined || val === '') return '0';
+      const num = parseFloat(val);
+      if (isNaN(num)) return '0';
+      return num % 1 === 0 ? String(num) : num.toFixed(2);
+    };
+
+    // SWAPPED mapping to match project convention:
+    // - UI "Part No" field shows master_part_no data
+    // - UI "Master Part" field shows part_no data
+    // NOTE: master_part_no is the actual item number (e.g. 0021212)
+    // part_no is the family/master number (e.g. 0021212 or 9G6744)
+    return {
+      id: p.id,
+      partNo: String(p.master_part_no || p.masterPart || p.master_part_no || '').trim() || 'N/A',
+      masterPart: String(p.part_no || p.partNo || p.part_no || '').trim() || 'N/A',
+      brand: String(p.brand_name || p.brand || '').trim() || 'N/A',
+      description: String(p.description || p.part_no || '').trim() || 'No description',
+      category: String(p.category_name || p.category || '').trim() || 'N/A',
+      subCategory: String(p.subcategory_name || p.subcategory || '').trim() || 'N/A',
+      uom: String(p.uom || 'NOS').trim(),
+      hsCode: String(p.hs_code || p.hsCode || '').trim() || 'N/A',
+      weight: formatNumber(p.weight),
+      cost: formatNumber(p.cost),
+      priceA: formatNumber(p.price_a || p.priceA),
+      priceB: formatNumber(p.price_b || p.priceB),
+      priceM: formatNumber(p.price_m || p.priceM),
+      origin: String(p.origin || '').trim() || 'N/A',
+      grade: String(p.grade || 'A').trim(),
+      status: (p.status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
+      rackNo: rackMapData[p.id] || 'N/A',
+      reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
+      quantity: stockMapData[p.id] !== undefined ? stockMapData[p.id] : 0,
+    };
+  };
+
   useEffect(() => {
     const fetchParts = async () => {
       setLoadingParts(true);
@@ -173,31 +211,18 @@ export const SalesInquiry = () => {
         const [partsResponse, balancesResponse] = await Promise.all([
           apiClient.getParts({
             status: 'active',
-            limit: 10000,
+            limit: 1000,
             page: 1
           }).catch((err: any) => {
             return { error: err.message || 'Failed to fetch parts', data: [] };
           }),
-          apiClient.getStockBalances({ limit: 10000 }).catch(() => ({ data: [], error: null }))
+          apiClient.getStockBalances({ limit: 5000 }).catch(() => ({ data: [], error: null }))
         ]);
-
-        if ((partsResponse as any).error) {
-          setPartsData([]);
-          setPartIdMap({});
-          toast({
-            title: "Error",
-            description: (partsResponse as any).error || "Failed to load parts from database",
-            variant: "destructive",
-          });
-          return;
-        }
 
         let partsDataArray: any[] = [];
         if (Array.isArray(partsResponse)) {
           partsDataArray = partsResponse;
         } else if ((partsResponse as any).data && Array.isArray((partsResponse as any).data)) {
-          partsDataArray = (partsResponse as any).data;
-        } else if ((partsResponse as any).pagination && (partsResponse as any).data) {
           partsDataArray = (partsResponse as any).data;
         }
 
@@ -208,82 +233,32 @@ export const SalesInquiry = () => {
           balancesData = (balancesResponse as any).data;
         }
 
-        // Create rack map and stock quantity map from stock balances
         const rackMapData: Record<string, string> = {};
         const stockMapData: Record<string, number> = {};
         if (Array.isArray(balancesData)) {
           balancesData.forEach((b: any) => {
             if (b.part_id) {
-              if (b.rack_no) {
-                rackMapData[b.part_id] = b.rack_no;
-              }
-              if (b.current_stock !== undefined && b.current_stock !== null) {
-                stockMapData[b.part_id] = b.current_stock;
-              }
+              if (b.rack_no) rackMapData[b.part_id] = b.rack_no;
+              if (b.current_stock !== undefined) stockMapData[b.part_id] = b.current_stock;
             }
           });
         }
         setRackMap(rackMapData);
 
-        // Create part ID map
         const idMap: Record<string, string> = {};
-
-        // Transform API data to PartDetail format
-        const transformedParts: PartDetail[] = partsDataArray
+        const transformedParts = partsDataArray
           .filter((p: any) => p.status === 'active' || !p.status)
           .map((p: any) => {
-            const partNo = String(p.part_no || p.partNo || '').trim();
-            if (partNo && p.id) {
-              idMap[partNo] = p.id;
-            }
-
-            // Format numbers properly
-            const formatNumber = (val: any): string => {
-              if (val === null || val === undefined || val === '') return '0';
-              const num = parseFloat(val);
-              if (isNaN(num)) return '0';
-              // Remove unnecessary decimals if whole number
-              return num % 1 === 0 ? String(num) : num.toFixed(2);
-            };
-
-            return {
-              id: p.id,
-              partNo: String(p.master_part_no || p.masterPart || p.master_part_no || '').trim() || 'N/A',
-              masterPart: partNo,
-              brand: String(p.brand_name || p.brand || '').trim() || 'N/A',
-              description: String(p.description || p.part_no || '').trim() || 'No description',
-              category: String(p.category_name || p.category || '').trim() || 'N/A',
-              subCategory: String(p.subcategory_name || p.subcategory || '').trim() || 'N/A',
-              uom: String(p.uom || 'NOS').trim(),
-              hsCode: String(p.hs_code || p.hsCode || '').trim() || 'N/A',
-              weight: formatNumber(p.weight),
-              cost: formatNumber(p.cost),
-              priceA: formatNumber(p.price_a || p.priceA),
-              priceB: formatNumber(p.price_b || p.priceB),
-              priceM: formatNumber(p.price_m || p.priceM),
-              origin: String(p.origin || '').trim() || 'N/A',
-              grade: String(p.grade || 'A').trim(),
-              status: (p.status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
-              rackNo: rackMapData[p.id] || 'N/A',
-              reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
-              quantity: stockMapData[p.id] !== undefined ? stockMapData[p.id] : 0,
-            };
+            const part = transformPart(p, rackMapData, stockMapData);
+            if (part.partNo && part.id) idMap[part.partNo] = part.id;
+            return part;
           })
-          .filter((p: PartDetail) => p.partNo && p.partNo.trim() !== '');
+          .filter((p: PartDetail) => p.partNo && p.partNo !== 'N/A');
 
         setPartIdMap(idMap);
         setPartsData(transformedParts);
       } catch (error: any) {
-        setPartsData([]);
-        setPartIdMap({});
-        const errorMessage = error?.message || error?.toString() || "Failed to fetch parts from database";
-        toast({
-          title: "Error",
-          description: errorMessage.includes('502') || errorMessage.includes('Bad Gateway')
-            ? "Backend server is not responding. Please check if the server is running."
-            : errorMessage,
-          variant: "destructive",
-        });
+        toast({ title: "Error", description: "Failed to load parts", variant: "destructive" });
       } finally {
         setLoadingParts(false);
       }
@@ -291,6 +266,35 @@ export const SalesInquiry = () => {
 
     fetchParts();
   }, []);
+
+  // Debounced search for Part No
+  useEffect(() => {
+    if (!partNoSearch || partNoSearch.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLoadingParts(true);
+      try {
+        const response: any = await apiClient.getParts({
+          search: partNoSearch,
+          limit: 50,
+          status: 'active'
+        });
+
+        const data = Array.isArray(response) ? response : response?.data || [];
+        const transformed = data.map((p: any) => transformPart(p, rackMap, {}));
+        setSearchResults(transformed);
+      } catch (err) {
+        console.error("Search failed", err);
+      } finally {
+        setLoadingParts(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [partNoSearch]);
 
   // Fetch inquiries from backend
   useEffect(() => {
@@ -454,8 +458,8 @@ export const SalesInquiry = () => {
                     ? (itemAmount + distributedExpense) / itemQty
                     : purchasePrice;
 
-                  return { 
-                    ...fullDpo, 
+                  return {
+                    ...fullDpo,
                     item,
                     costPriceWithExpenses: costPerUnitWithExpenses
                   };
@@ -505,54 +509,6 @@ export const SalesInquiry = () => {
     fetchDpoHistory();
   }, [selectedPart, partIdMap]);
 
-  // Fetch models when models sheet opens
-  useEffect(() => {
-    const fetchModels = async () => {
-      if (!modelsSheetOpen || !selectedPartForModels?.id) {
-        setPartModels([]);
-        return;
-      }
-
-      setLoadingPartModels(true);
-      try {
-        const response = await apiClient.getPart(selectedPartForModels.id);
-        
-        if ((response as any).error) {
-          toast({
-            title: "Error",
-            description: (response as any).error || "Failed to fetch models",
-            variant: "destructive",
-          });
-          setPartModels([]);
-          return;
-        }
-
-        const responseData = (response as any).data || response;
-        const apiModels = responseData?.models || [];
-        
-        const transformedModels = apiModels.map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          qtyUsed: m.qty_used || m.qtyUsed || 1,
-          partId: selectedPartForModels.id,
-        }));
-        
-        setPartModels(transformedModels);
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error.message || "Failed to fetch models",
-          variant: "destructive",
-        });
-        setPartModels([]);
-      } finally {
-        setLoadingPartModels(false);
-      }
-    };
-
-    fetchModels();
-  }, [modelsSheetOpen, selectedPartForModels]);
-
   // Get unique master part numbers from database
   const masterPartNumbers = useMemo(() => {
     const uniqueMasters = [...new Set(partsData.map((item) => item.masterPart))].filter(Boolean);
@@ -566,21 +522,51 @@ export const SalesInquiry = () => {
 
   // Filter parts based on search and selected master part
   const filteredParts = useMemo(() => {
-    let filtered = partsData;
+    // Combine local data and search results
+    const combined = [...partsData];
+    searchResults.forEach(res => {
+      if (!combined.find(p => p.id === res.id)) {
+        combined.push(res);
+      }
+    });
+
+    let filtered = combined;
     if (selectedMasterPart) {
       filtered = filtered.filter((item) => item.masterPart === selectedMasterPart);
     }
+
     if (partNoSearch) {
       const searchLower = partNoSearch.toLowerCase();
-      filtered = filtered.filter(
-        (item) =>
-          item.partNo.toLowerCase().includes(searchLower) ||
-          item.description.toLowerCase().includes(searchLower) ||
-          item.brand.toLowerCase().includes(searchLower)
-      );
+
+      // STRICT FILTERING: Only show items where Part No or Master Part includes the search
+      // This ensures unrelated descriptions/brands don't cause false positives
+      filtered = filtered.filter((item) => {
+        const pNo = item.partNo.toLowerCase();
+        const mNo = item.masterPart.toLowerCase();
+
+        return pNo.includes(searchLower) || mNo.includes(searchLower);
+      });
+
+      // Prioritize exact partNo matches followed by startsWith
+      filtered = [...filtered].sort((a, b) => {
+        const aNo = a.partNo.toLowerCase();
+        const bNo = b.partNo.toLowerCase();
+
+        const aExact = aNo === searchLower;
+        const bExact = bNo === searchLower;
+        if (aExact && !bExact) return -1;
+        if (!aExact && bExact) return 1;
+
+        const aStarts = aNo.startsWith(searchLower);
+        const bStarts = bNo.startsWith(searchLower);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+
+        return 0;
+      });
     }
-    return filtered;
-  }, [selectedMasterPart, partNoSearch, partsData]);
+    return filtered.slice(0, 100);
+  }, [selectedMasterPart, partNoSearch, partsData, searchResults]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -621,17 +607,22 @@ export const SalesInquiry = () => {
       setLoadingPartDetails(true);
       try {
         const [partResponse, stockResponse] = await Promise.all([
-          apiClient.getPart(part.id),
+          apiClient.getPart(part.id).catch(() => ({ data: {}, error: 'Failed to fetch' })),
           apiClient.getStockBalance(part.id).catch(() => ({ current_stock: 0, error: null }))
         ]);
 
-        if ((partResponse as any).error) {
-          // Keep the selected part from list if API fails
-          return;
-        }
-
         const p = (partResponse as any).data || partResponse;
         const stockData = (stockResponse as any).data || stockResponse;
+
+        // Fetch and transform models as well
+        const apiModels = p?.models || [];
+        const transformedModels = apiModels.map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          qtyUsed: m.qty_used || m.qtyUsed || 1,
+          partId: part.id,
+        }));
+        setPartModels(transformedModels);
 
         // Format numbers properly
         const formatNumber = (val: any): string => {
@@ -688,6 +679,7 @@ export const SalesInquiry = () => {
     setSelectedMasterPart(null);
     setPartNoSearch("");
     setSelectedPart(null);
+    setPartModels([]);
   };
 
   const handleRefreshParts = async () => {
@@ -1242,7 +1234,7 @@ export const SalesInquiry = () => {
                           const stock = item.stock || 0;
                           const reserved = item.reservedQty || 0;
                           const availableQty = Math.max(0, stock - reserved);
-                          
+
                           return (
                             <TableRow key={item.id || index}>
                               <TableCell className="font-medium">{item.part?.partNo || 'N/A'}</TableCell>
@@ -1590,6 +1582,11 @@ export const SalesInquiry = () => {
                       setSelectedMasterPart(null);
                     }
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && masterPartNumbers.length === 1) {
+                      handleSelectMasterPart(masterPartNumbers[0]);
+                    }
+                  }}
                   onFocus={() => setShowMasterDropdown(true)}
                   className={cn(
                     "pl-10",
@@ -1641,6 +1638,11 @@ export const SalesInquiry = () => {
                       setSelectedPart(null);
                     }
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && filteredParts.length === 1) {
+                      handleSelectPart(filteredParts[0]);
+                    }
+                  }}
                   onFocus={() => setShowPartDropdown(true)}
                   className={cn(
                     "pl-10",
@@ -1658,7 +1660,7 @@ export const SalesInquiry = () => {
                   ) : filteredParts.length > 0 ? (
                     filteredParts.map((part) => (
                       <button
-                        key={part.partNo}
+                        key={part.id}
                         onClick={() => handleSelectPart(part)}
                         className={cn(
                           "w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b border-border last:border-b-0",
@@ -1686,41 +1688,42 @@ export const SalesInquiry = () => {
             </Button>
           </div>
 
-          {/* Part Details Display (Read-only) */}
-          {selectedPart && (
-            <div className="mt-4 p-4 rounded-lg bg-muted/30 border">
-              <div className="flex items-center justify-end mb-4">
-                <div className="flex items-center gap-2">
-                  {loadingPartDetails && (
-                    <Badge variant="outline" className="text-xs">
-                      Loading details...
-                    </Badge>
-                  )}
-                  {showForm && (
-                    <Button
-                      size="sm"
-                      onClick={handleAddItem}
-                      className="gap-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add to Inquiry
-                    </Button>
-                  )}
-                </div>
+          {/* Part Details Display (Fixed View) */}
+          <div className="mt-4 p-4 rounded-lg bg-muted/30 border min-h-[160px]">
+            <div className="flex items-center justify-end mb-4 h-8">
+              <div className="flex items-center gap-2">
+                {loadingPartDetails && (
+                  <Badge variant="outline" className="text-xs animate-pulse">
+                    Enriching data...
+                  </Badge>
+                )}
+                {showForm && selectedPart && (
+                  <Button
+                    size="sm"
+                    onClick={handleAddItem}
+                    className="gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add to Inquiry
+                  </Button>
+                )}
               </div>
-              <div className="border border-border rounded-lg overflow-hidden shadow-sm bg-card">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-primary/5 border-b-2 border-primary/20">
-                      <TableHead className="font-bold text-foreground text-sm py-4 px-6">Part Details</TableHead>
-                      <TableHead className="font-bold text-foreground text-sm py-4 px-6 text-right">Prices</TableHead>
-                      <TableHead className="font-bold text-foreground text-sm py-4 px-6">Category/Application</TableHead>
-                      <TableHead className="font-bold text-foreground text-sm py-4 px-6 text-center">Available Qty</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow className="hover:bg-muted/30 transition-colors">
-                      <TableCell className="py-4 px-6">
+            </div>
+            <div className="border border-border rounded-lg overflow-hidden shadow-sm bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-primary/5 border-b-2 border-primary/20">
+                    <TableHead className="font-bold text-foreground text-sm py-4 px-6">Part Details</TableHead>
+                    <TableHead className="font-bold text-foreground text-sm py-4 px-6 text-right">Prices</TableHead>
+                    <TableHead className="font-bold text-foreground text-sm py-4 px-6">Category/Application</TableHead>
+                    <TableHead className="font-bold text-foreground text-sm py-4 px-6 text-center">Quantity Used</TableHead>
+                    <TableHead className="font-bold text-foreground text-sm py-4 px-6 text-center">Available Qty</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow className="hover:bg-muted/30 transition-colors">
+                    <TableCell className="py-4 px-6">
+                      {selectedPart ? (
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
                             <div className="w-1 h-5 bg-primary rounded-full"></div>
@@ -1733,257 +1736,240 @@ export const SalesInquiry = () => {
                           </div>
                           <div className="text-sm text-muted-foreground pl-3">{selectedPart.description || 'N/A'}</div>
                         </div>
-                      </TableCell>
-                      <TableCell className="py-4 px-6 text-right">
+                      ) : (
+                        <div className="py-4 text-muted-foreground italic text-sm">No part selected. Start searching above.</div>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-4 px-6 text-right">
+                      {selectedPart ? (
                         <div className="space-y-2 text-sm">
                           <div className="font-semibold text-primary">Cost: <span className="font-bold">Rs {selectedPart.cost && selectedPart.cost !== '0' ? parseFloat(selectedPart.cost).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</span></div>
                           <div className="font-semibold text-green-600">Price-A: <span className="font-bold">Rs {selectedPart.priceA && selectedPart.priceA !== '0' ? parseFloat(selectedPart.priceA).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</span></div>
                           <div className="font-semibold text-green-600">Price-B: <span className="font-bold">Rs {selectedPart.priceB && selectedPart.priceB !== '0' ? parseFloat(selectedPart.priceB).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</span></div>
                           <div className="font-semibold text-green-600">Price-M: <span className="font-bold">Rs {selectedPart.priceM && selectedPart.priceM !== '0' ? parseFloat(selectedPart.priceM).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</span></div>
                         </div>
-                      </TableCell>
-                      <TableCell className="py-4 px-6">
+                      ) : (
+                        <div className="text-muted-foreground opacity-30">--</div>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-4 px-6">
+                      {selectedPart ? (
                         <div className="space-y-2 text-sm">
                           <div className="font-semibold text-foreground">{selectedPart.category || 'N/A'}</div>
                           <div className="text-muted-foreground">{selectedPart.subCategory || 'N/A'}</div>
                           <div className="text-muted-foreground">{selectedPart.application || 'N/A'}</div>
                         </div>
-                      </TableCell>
-                      <TableCell className="py-4 px-6 text-center">
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="inline-flex items-center justify-center min-w-[60px] px-3 py-2 rounded-md bg-blue-50 border border-blue-200">
-                            <span className="font-bold text-lg text-blue-700">
-                              {selectedPart.quantity !== undefined ? selectedPart.quantity.toLocaleString('en-US') : '0'}
-                            </span>
-                          </div>
-                          {selectedPart.id && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs gap-1.5"
-                              onClick={() => {
-                                setSelectedPartForModels(selectedPart);
-                                setModelsSheetOpen(true);
-                              }}
-                            >
-                              <Info className="w-3.5 h-3.5" />
-                              Models
-                            </Button>
-                          )}
+                      ) : (
+                        <div className="text-muted-foreground opacity-30">--</div>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-4 px-6 text-center">
+                      {selectedPart && partModels.length > 0 ? (
+                        <div className="flex flex-col items-center gap-1.5 min-w-[120px]">
+                          {partModels.map((m, idx) => (
+                            <div key={idx} className="flex items-center justify-between w-full px-2 py-1 rounded bg-muted/50 border border-border/50">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{m.name}</span>
+                              <span className="font-bold text-primary text-sm">{m.qtyUsed}</span>
+                            </div>
+                          ))}
                         </div>
-                      </TableCell>
+                      ) : (
+                        <div className="text-muted-foreground opacity-30">--</div>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-4 px-6 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className={cn(
+                          "inline-flex items-center justify-center min-w-[60px] px-3 py-2 rounded-md border transition-all",
+                          selectedPart ? "bg-blue-50 border-blue-200" : "bg-muted/50 border-muted opacity-20"
+                        )}>
+                          <span className={cn(
+                            "font-bold text-lg",
+                            selectedPart ? "text-blue-700" : "text-muted-foreground"
+                          )}>
+                            {selectedPart && selectedPart.quantity !== undefined ? selectedPart.quantity.toLocaleString('en-US') : '0'}
+                          </span>
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* History Section (Fixed Tabs) */}
+          <Tabs defaultValue="last-sales-invoice" className="mt-6">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="last-sales-invoice" className="flex items-center gap-1.5 text-xs">
+                <FileText className="h-3.5 w-3.5" />
+                Last Sales Invoice
+              </TabsTrigger>
+              <TabsTrigger value="last-dpo" className="flex items-center gap-1.5 text-xs">
+                <Truck className="h-3.5 w-3.5" />
+                Last Direct PO
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Last Sales Invoice Tab */}
+            <TabsContent value="last-sales-invoice" className="mt-4">
+              <div className="rounded-md border bg-card">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-xs">Invoice No</TableHead>
+                      <TableHead className="text-xs">Date</TableHead>
+                      <TableHead className="text-xs">Customer</TableHead>
+                      <TableHead className="text-xs">Customer Type</TableHead>
+                      <TableHead className="text-xs">Qty</TableHead>
+                      <TableHead className="text-xs">Unit Price</TableHead>
+                      <TableHead className="text-xs">Line Total</TableHead>
                     </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {!selectedPart ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm opacity-50">
+                          Select a part to view sales history
+                        </TableCell>
+                      </TableRow>
+                    ) : loadingSalesInvoiceHistory ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
+                          <div className="flex items-center justify-center gap-2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                            Loading sales invoice history...
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : salesInvoiceHistory.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm italic">
+                          No sales invoice history available for this part
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      salesInvoiceHistory.map((invoice) => (
+                        <TableRow key={invoice.id} className="hover:bg-muted/20">
+                          <TableCell className="text-xs font-medium">{invoice.invoice_no || 'N/A'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{invoice.customer_name || 'N/A'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            <Badge variant={invoice.customer_type === 'walking' ? 'secondary' : 'default'} className="text-xs">
+                              {invoice.customer_type === 'walking' ? 'Party Sale' : invoice.customer_type === 'registered' ? 'Cash Sale' : invoice.customer_type || 'N/A'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {invoice.item?.ordered_qty || 0}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            Rs {invoice.item?.unit_price?.toFixed(2) || '0.00'}
+                          </TableCell>
+                          <TableCell className="text-xs font-medium">
+                            Rs {invoice.item?.line_total?.toFixed(2) || '0.00'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
-            </div>
-          )}
+            </TabsContent>
 
-          {!selectedPart && (
-            <div className="text-center py-6 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
-              <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>Select a part from the dropdown to view details</p>
-            </div>
-          )}
-
-          {/* Tabs Section */}
-          {selectedPart && (
-            <Tabs defaultValue="last-sales-invoice" className="mt-6">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="last-sales-invoice" className="flex items-center gap-1.5 text-xs">
-                  <FileText className="h-3.5 w-3.5" />
-                  Last Sales Invoice
-                </TabsTrigger>
-                <TabsTrigger value="last-dpo" className="flex items-center gap-1.5 text-xs">
-                  <Truck className="h-3.5 w-3.5" />
-                  Last Direct PO
-                </TabsTrigger>
-              </TabsList>
-
-              {/* Last Sales Invoice Tab */}
-              <TabsContent value="last-sales-invoice" className="mt-4">
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="text-xs">Invoice No</TableHead>
-                        <TableHead className="text-xs">Date</TableHead>
-                        <TableHead className="text-xs">Customer</TableHead>
-                        <TableHead className="text-xs">Customer Type</TableHead>
-                        <TableHead className="text-xs">Qty</TableHead>
-                        <TableHead className="text-xs">Unit Price</TableHead>
-                        <TableHead className="text-xs">Line Total</TableHead>
+            {/* Last Direct Purchase Order Tab */}
+            <TabsContent value="last-dpo" className="mt-4">
+              <div className="rounded-md border bg-card">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-xs">DPO No</TableHead>
+                      <TableHead className="text-xs">Date</TableHead>
+                      <TableHead className="text-xs">Customer</TableHead>
+                      <TableHead className="text-xs">Qty</TableHead>
+                      <TableHead className="text-xs">Rate</TableHead>
+                      <TableHead className="text-xs">DPO Cost Price</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {!selectedPart ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm opacity-50">
+                          Select a part to view purchase history
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {loadingSalesInvoiceHistory ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground text-sm">
-                            Loading sales invoice history...
-                          </TableCell>
-                        </TableRow>
-                      ) : salesInvoiceHistory.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground text-sm">
-                            No sales invoice history available for this part
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        salesInvoiceHistory.map((invoice) => (
-                          <TableRow key={invoice.id} className="hover:bg-muted/20">
-                            <TableCell className="text-xs font-medium">{invoice.invoice_no || 'N/A'}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : 'N/A'}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{invoice.customer_name || 'N/A'}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              <Badge variant={invoice.customer_type === 'walking' ? 'secondary' : 'default'} className="text-xs">
-                                {invoice.customer_type === 'walking' ? 'Party Sale' : invoice.customer_type === 'registered' ? 'Cash Sale' : invoice.customer_type || 'N/A'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {invoice.item?.ordered_qty || 0}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              Rs {invoice.item?.unit_price?.toFixed(2) || '0.00'}
-                            </TableCell>
-                            <TableCell className="text-xs font-medium">
-                              Rs {invoice.item?.line_total?.toFixed(2) || '0.00'}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </TabsContent>
-
-              {/* Last Direct Purchase Order Tab */}
-              <TabsContent value="last-dpo" className="mt-4">
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="text-xs">DPO No</TableHead>
-                        <TableHead className="text-xs">Date</TableHead>
-                        <TableHead className="text-xs">Customer</TableHead>
-                        <TableHead className="text-xs">Qty</TableHead>
-                        <TableHead className="text-xs">Rate</TableHead>
-                        <TableHead className="text-xs">DPO Cost Price</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {loadingDpoHistory ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground text-sm">
+                    ) : loadingDpoHistory ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
+                          <div className="flex items-center justify-center gap-2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                             Loading direct purchase order history...
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : dpoHistory.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm italic">
+                          No direct purchase order history available for this part
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      dpoHistory.map((dpo) => (
+                        <TableRow key={dpo.id} className="hover:bg-muted/20">
+                          <TableCell className="text-xs font-medium">{dpo.dpo_no || 'N/A'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {dpo.date ? format(new Date(dpo.date), 'dd MMM yyyy') : 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{dpo.supplier_name || dpo.customer || 'N/A'}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{dpo.item?.quantity || dpo.qty || 0}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            Rs {(dpo.item?.purchase_price || dpo.rate || 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-xs font-medium">
+                            Rs {(dpo.costPriceWithExpenses || dpo.item?.purchase_price || dpo.rate || 0).toFixed(2)}
                           </TableCell>
                         </TableRow>
-                      ) : dpoHistory.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground text-sm">
-                            No direct purchase order history available for this part
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        dpoHistory.map((dpo) => (
-                          <TableRow key={dpo.id} className="hover:bg-muted/20">
-                            <TableCell className="text-xs font-medium">{dpo.dpo_no || 'N/A'}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {dpo.date ? format(new Date(dpo.date), 'dd MMM yyyy') : 'N/A'}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{dpo.supplier_name || dpo.customer || 'N/A'}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{dpo.item?.quantity || dpo.qty || 0}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              Rs {(dpo.item?.purchase_price || dpo.rate || 0).toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-xs font-medium">
-                              Rs {(dpo.costPriceWithExpenses || dpo.item?.purchase_price || dpo.rate || 0).toFixed(2)}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </TabsContent>
-            </Tabs>
-          )}
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
       {/* Hidden Print Component */}
-      {printInquiry && (
-        <div className="hidden">
-          <PrintableDocument
-            ref={printRef}
-            type="inquiry"
-            data={{
-              documentNo: printInquiry.inquiryNo,
-              date: printInquiry.inquiryDate ? format(new Date(printInquiry.inquiryDate), 'PPP') : '',
-              customerName: printInquiry.customerName,
-              customerEmail: printInquiry.customerEmail || '',
-              customerPhone: printInquiry.customerPhone || '',
-              subject: printInquiry.subject,
-              description: printInquiry.description || '',
-              status: printInquiry.status,
-              items: (printInquiry.items || []).map((item) => ({
-                partNo: item.part?.partNo || 'N/A',
-                description: item.part?.description || 'N/A',
-                quantity: item.quantity || 0,
-                unitPrice: item.priceA || item.purchasePrice || 0,
-                total: (item.quantity || 0) * (item.priceA || item.purchasePrice || 0),
-              })),
-            }}
-          />
-        </div>
-      )}
-
-      {/* Models Sheet - Slide from Right */}
-      <Sheet open={modelsSheetOpen} onOpenChange={setModelsSheetOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              <Settings2 className="w-5 h-5" />
-              Quantity Used Details
-            </SheetTitle>
-          </SheetHeader>
-          
-          <div className="mt-6">
-            {loadingPartModels ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Loading models...
-              </div>
-            ) : partModels.length > 0 ? (
-              <div className="space-y-4">
-                <div className="border rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="font-bold text-foreground">Model</TableHead>
-                        <TableHead className="font-bold text-foreground text-center">Quantity Used</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {partModels.map((model) => (
-                        <TableRow key={model.id}>
-                          <TableCell className="font-medium">{model.name || 'N/A'}</TableCell>
-                          <TableCell className="text-center font-semibold">{model.qtyUsed || 0}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/20">
-                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No models found for this part</p>
-              </div>
-            )}
+      {
+        printInquiry && (
+          <div className="hidden">
+            <PrintableDocument
+              ref={printRef}
+              type="inquiry"
+              data={{
+                documentNo: printInquiry.inquiryNo,
+                date: printInquiry.inquiryDate ? format(new Date(printInquiry.inquiryDate), 'PPP') : '',
+                customerName: printInquiry.customerName,
+                customerEmail: printInquiry.customerEmail || '',
+                customerPhone: printInquiry.customerPhone || '',
+                subject: printInquiry.subject,
+                description: printInquiry.description || '',
+                status: printInquiry.status,
+                items: (printInquiry.items || []).map((item) => ({
+                  partNo: item.part?.partNo || 'N/A',
+                  description: item.part?.description || 'N/A',
+                  quantity: item.quantity || 0,
+                  unitPrice: item.priceA || item.purchasePrice || 0,
+                  total: (item.quantity || 0) * (item.priceA || item.purchasePrice || 0),
+                })),
+              }}
+            />
           </div>
-        </SheetContent>
-      </Sheet>
-    </div>
+        )
+      }
+
+
+    </div >
   );
 };
