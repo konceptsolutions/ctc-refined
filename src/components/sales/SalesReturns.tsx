@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiClient } from "@/lib/api";
+import { usePagination } from "@/hooks/usePagination";
+import EnhancedPagination from "@/components/ui/EnhancedPagination";
 import {
   Table,
   TableBody,
@@ -103,9 +105,12 @@ export const SalesReturns = () => {
   const [selectedReturn, setSelectedReturn] = useState<SalesReturn | null>(null);
   const [returnToDelete, setReturnToDelete] = useState<SalesReturn | null>(null);
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  // Pagination using custom hook
+  const pagination = usePagination({
+    totalItems: returns.length,
+    initialPage: 1,
+    initialItemsPerPage: 10,
+  });
 
   // Fetch returns from database/localStorage
   useEffect(() => {
@@ -204,11 +209,7 @@ export const SalesReturns = () => {
     return matchesItemType && matchesItem && matchesCustomer && matchesCustomerName;
   });
 
-  const totalPages = Math.ceil(filteredReturns.length / itemsPerPage);
-  const paginatedReturns = filteredReturns.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const paginatedReturns = pagination.paginatedData(filteredReturns);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -227,7 +228,7 @@ export const SalesReturns = () => {
   };
 
   const handleSearch = () => {
-    setCurrentPage(1);
+    pagination.setCurrentPage(1);
     const filteredCount = filteredReturns.length;
     toast({
       title: "Search Applied",
@@ -421,12 +422,6 @@ export const SalesReturns = () => {
     });
   };
 
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-    }
-  };
-
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -564,7 +559,7 @@ export const SalesReturns = () => {
                           onCheckedChange={(checked) => handleSelectReturn(returnItem.id, checked as boolean)}
                         />
                       </TableCell>
-                      <TableCell className="text-xs">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
+                      <TableCell className="text-xs">{pagination.startIndex + index + 1}</TableCell>
                       <TableCell className="text-xs font-medium">{returnItem.invoiceNo}</TableCell>
                       <TableCell className="text-xs">{returnItem.returnDate}</TableCell>
                       <TableCell className="text-xs">{returnItem.customerName}</TableCell>
@@ -624,67 +619,16 @@ export const SalesReturns = () => {
           </div>
 
           {/* Pagination */}
-          <div className="flex flex-col sm:flex-row items-center justify-between p-4 border-t border-border gap-4">
-            <p className="text-xs text-muted-foreground">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
-              {Math.min(currentPage * itemsPerPage, filteredReturns.length)} of{" "}
-              {filteredReturns.length} Records
-            </p>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => goToPage(1)}
-                disabled={currentPage === 1}
-                className="text-xs h-8"
-              >
-                First
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => goToPage(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="text-xs h-8"
-              >
-                Prev
-              </Button>
-              <span className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded">
-                {currentPage}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => goToPage(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="text-xs h-8"
-              >
-                Next
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => goToPage(totalPages)}
-                disabled={currentPage === totalPages}
-                className="text-xs h-8"
-              >
-                Last
-              </Button>
-
-              <Select value={String(itemsPerPage)} onValueChange={(value) => setItemsPerPage(Number(value))}>
-                <SelectTrigger className="w-16 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="25">25</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <EnhancedPagination
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          totalItems={filteredReturns.length}
+          itemsPerPage={pagination.itemsPerPage}
+          startIndex={pagination.startIndex}
+          endIndex={pagination.endIndex}
+          onPageChange={pagination.setCurrentPage}
+          onItemsPerPageChange={pagination.setItemsPerPage}
+        />
         </CardContent>
       </Card>
 

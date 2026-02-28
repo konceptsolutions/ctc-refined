@@ -327,16 +327,26 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
 
     const salesRevenueAccount = await prisma.account.findFirst({
       where: {
-        name: { contains: 'Sales Revenue' },
         status: 'Active',
+        OR: [
+          { name: 'Goods Sold' },
+          { name: 'Sales Revenue' },
+          { name: { contains: 'Sales Revenue', mode: 'insensitive' } }
+        ]
       },
       include: { Subgroup: { include: { MainGroup: true } } },
     });
 
     const cogsAccount = await prisma.account.findFirst({
       where: {
-        name: { contains: 'Cost of Goods Sold' },
         status: 'Active',
+        OR: [
+          { name: 'Cost Inventory' },
+          { name: 'Cost of Goods Sold' },
+          { name: { contains: 'Cost of Goods Sold', mode: 'insensitive' } },
+          { name: { contains: 'Cost of Sales', mode: 'insensitive' } },
+          { name: { contains: 'COGS', mode: 'insensitive' } }
+        ]
       },
       include: { Subgroup: { include: { MainGroup: true } } },
     });

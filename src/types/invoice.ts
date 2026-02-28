@@ -9,7 +9,10 @@ export type InvoiceStatus =
   | "on_hold"
   | "approved"
   | "partially_delivered"
-  | "delivered";
+  | "partially_delivered_reversed"
+  | "delivered"
+  | "cancelled"
+  | "fully_delivered";
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
@@ -84,6 +87,7 @@ export interface InvoiceItem {
   orderedQty: number;
   deliveredQty: number;
   pendingQty: number;
+  reversedQty?: number;
   unitPrice: number;
   avgCost?: number;
   discount: number;

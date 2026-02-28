@@ -41,6 +41,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Voucher } from "./VoucherManagement";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { apiClient } from "@/lib/api";
+import { usePagination } from "@/hooks/usePagination";
+import EnhancedPagination from "@/components/ui/EnhancedPagination";
 
 interface ViewVouchersTabProps {
   vouchers: Voucher[];
@@ -81,9 +83,12 @@ export const ViewVouchersTab = ({
   const [searchBy, setSearchBy] = useState("voucher-no");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  // Pagination using custom hook
+  const pagination = usePagination({
+    totalItems: vouchers.length,
+    initialPage: 1,
+    initialItemsPerPage: 10,
+  });
 
   // Selection
   const [selectedVouchers, setSelectedVouchers] = useState<string[]>([]);
@@ -428,7 +433,7 @@ export const ViewVouchersTab = ({
       search_by: searchBy,
       search: searchQuery
     });
-    setCurrentPage(1);
+    pagination.setCurrentPage(1);
   };
 
   const clearFilters = () => {
@@ -444,16 +449,12 @@ export const ViewVouchersTab = ({
     setSearchQuery("");
 
     onSearch({});
-    setCurrentPage(1);
+    pagination.resetPagination();
   };
 
   // Skip local filtering, use vouchers directly as they will come filtered from server
   const filteredVouchers = vouchers;
-
-  // Pagination
-  const totalPages = Math.ceil(filteredVouchers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedVouchers = filteredVouchers.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedVouchers = pagination.paginatedData(filteredVouchers);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -968,7 +969,7 @@ export const ViewVouchersTab = ({
                         }
                       />
                     </TableCell>
-                    <TableCell>{startIndex + index + 1}</TableCell>
+                    <TableCell>{pagination.startIndex + index + 1}</TableCell>
                     <TableCell className="text-primary font-medium">
                       {voucher.voucherNumber}
                     </TableCell>
@@ -1053,115 +1054,16 @@ export const ViewVouchersTab = ({
         </div>
 
         {/* Pagination */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-border">
-          <p className="text-sm text-primary">
-            Showing {filteredVouchers.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + itemsPerPage, filteredVouchers.length)} of {filteredVouchers.length} items
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-            >
-              «
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(currentPage - 1)}
-              disabled={currentPage === 1}
-            >
-              ‹
-            </Button>
-            {(() => {
-              const pages: (number | string)[] = [];
-              const maxVisible = 5;
-
-              if (totalPages <= maxVisible) {
-                // Show all pages if total is less than max visible
-                for (let i = 1; i <= totalPages; i++) {
-                  pages.push(i);
-                }
-              } else {
-                // Show first page
-                pages.push(1);
-
-                if (currentPage > 3) {
-                  pages.push('...');
-                }
-
-                // Show pages around current page
-                const start = Math.max(2, currentPage - 1);
-                const end = Math.min(totalPages - 1, currentPage + 1);
-
-                for (let i = start; i <= end; i++) {
-                  if (i !== 1 && i !== totalPages) {
-                    pages.push(i);
-                  }
-                }
-
-                if (currentPage < totalPages - 2) {
-                  pages.push('...');
-                }
-
-                // Show last page
-                if (totalPages > 1) {
-                  pages.push(totalPages);
-                }
-              }
-
-              return pages.map((page, idx) => {
-                if (page === '...') {
-                  return <span key={`ellipsis-${idx}`} className="px-2">...</span>;
-                }
-                return (
-                  <Button
-                    key={page}
-                    variant={currentPage === page ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setCurrentPage(page as number)}
-                  >
-                    {page}
-                  </Button>
-                );
-              });
-            })()}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(currentPage + 1)}
-              disabled={currentPage === totalPages || totalPages === 0}
-            >
-              ›
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages || totalPages === 0}
-            >
-              »
-            </Button>
-            <Select
-              value={itemsPerPage.toString()}
-              onValueChange={(v) => {
-                setItemsPerPage(Number(v));
-                setCurrentPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="25">25</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-                <SelectItem value="100">100</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <EnhancedPagination
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          totalItems={filteredVouchers.length}
+          itemsPerPage={pagination.itemsPerPage}
+          startIndex={pagination.startIndex}
+          endIndex={pagination.endIndex}
+          onPageChange={pagination.setCurrentPage}
+          onItemsPerPageChange={pagination.setItemsPerPage}
+        />
       </div>
 
       {/* Edit Dialog */}

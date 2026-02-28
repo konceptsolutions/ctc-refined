@@ -649,6 +649,7 @@ model SalesInvoiceItem {
   orderedQty      Int
   deliveredQty    Int               @default(0)
   pendingQty      Int
+  reversedQty     Int               @default(0)
   unitPrice       Float
   avgCost         Float             @default(0)
   discount        Float             @default(0)

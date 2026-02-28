@@ -15,12 +15,8 @@ import {
 import {
   Plus, Search, X, Trash2, Pencil, ShoppingCart, Printer,
   RefreshCw, FileText, User, Package, ChevronDown, Check,
-  ArrowLeft, Save, MoreHorizontal,
+  ArrowLeft, Save,
 } from "lucide-react";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -681,28 +677,44 @@ export const SalesQuotation = () => {
                           </span>
                         </TableCell>
                         <TableCell className="py-3 pr-5 text-right" onClick={e => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-44">
-                              <DropdownMenuItem onClick={() => openEdit(q)}>
-                                <Pencil className="w-4 h-4 mr-2" /> Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setConvertDialog(q)}>
-                                <ShoppingCart className="w-4 h-4 mr-2" /> Convert to Invoice
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handlePrint(q)}>
-                                <Printer className="w-4 h-4 mr-2" /> Print / PDF
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => setDeleteDialog(q)} className="text-destructive focus:text-destructive">
-                                <Trash2 className="w-4 h-4 mr-2" /> Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => openEdit(q)}
+                              title="Edit"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => setConvertDialog(q)}
+                              title="Convert to Invoice"
+                            >
+                              <ShoppingCart className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handlePrint(q)}
+                              title="Print / PDF"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => setDeleteDialog(q)}
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

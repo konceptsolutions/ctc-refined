@@ -127,7 +127,7 @@ interface PurchaseOrder {
   }>;
 }
 
-interface SalesInvoice {
+interface StockOutOrder {
   id: string;
   invoiceNo: string;
   invoiceDate: string;
@@ -167,7 +167,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const { addNotification } = useNotifications();
   const [orders, setOrders] = useState<DirectPurchaseOrder[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
-  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
+  const [stockOutOrders, setStockOutOrders] = useState<StockOutOrder[]>([]);
   const [adjustments, setAdjustments] = useState<any[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
@@ -175,7 +175,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState<"all" | "receiving" | "delivering" | "adjusted">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "receiving" | "stock-out" | "adjusted">("all");
   const [receivingFilter, setReceivingFilter] = useState<"all" | "po" | "dpo">("all");
   const [loading, setLoading] = useState(false);
 
@@ -193,9 +193,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [selectedPurchaseOrderFull, setSelectedPurchaseOrderFull] = useState<any>(null);
   const [receivingOrderType, setReceivingOrderType] = useState<"dpo" | "po" | null>(null);
   const [deleteOrderType, setDeleteOrderType] = useState<"dpo" | "po" | null>(null);
-  const [selectedSalesInvoice, setSelectedSalesInvoice] = useState<SalesInvoice | null>(null);
-  const [salesInvoiceReceiptOpen, setSalesInvoiceReceiptOpen] = useState(false);
-  const [editSalesInvoiceDialogOpen, setEditSalesInvoiceDialogOpen] = useState(false);
+  const [selectedStockOutOrder, setSelectedStockOutOrder] = useState<StockOutOrder | null>(null);
+  const [stockOutReceiptOpen, setStockOutReceiptOpen] = useState(false);
   const [selectedAdjustment, setSelectedAdjustment] = useState<any | null>(null);
   const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
 
@@ -226,11 +225,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchPurchaseOrders();
         fetchOrders(); // DPOs are receivable items
         setAdjustments([]);
-        setSalesInvoices([]);
-      } else if (typeFilter === "delivering") {
-        // Only fetch Sales Invoices for delivering - NO DPOs
-        fetchSalesInvoices();
-        // Clear DPOs and Purchase Orders when showing delivering
+        setStockOutOrders([]);
+      } else if (typeFilter === "stock-out") {
+        // Only fetch Sales Invoices for stock out
+        fetchStockOutOrders();
+        // Clear other data
         setOrders([]);
         setPurchaseOrders([]);
         setAdjustments([]);
@@ -240,12 +239,12 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         // Clear other data
         setOrders([]);
         setPurchaseOrders([]);
-        setSalesInvoices([]);
+        setStockOutOrders([]);
       } else {
         // All Orders - fetch everything (Receiving + Delivering + Adjusted)
         fetchPurchaseOrders();
         fetchOrders();
-        fetchSalesInvoices();
+        fetchStockOutOrders();
         fetchAdjustments();
       }
     }
@@ -257,8 +256,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
     const interval = setInterval(() => {
       // Keep the currently selected view up-to-date, with newest orders on top.
-      if (typeFilter === "delivering") {
-        fetchSalesInvoices(true);
+      if (typeFilter === "stock-out") {
+        fetchStockOutOrders(true);
       } else if (typeFilter === "receiving") {
         fetchPurchaseOrders(true);
         fetchOrders(true);
@@ -267,7 +266,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       } else {
         fetchPurchaseOrders(true);
         fetchOrders(true);
-        fetchSalesInvoices(true);
+        fetchStockOutOrders(true);
         fetchAdjustments(true);
       }
     }, 30000);
@@ -476,18 +475,20 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     }
   };
 
-  const fetchSalesInvoices = async (silent = false) => {
+  const fetchStockOutOrders = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
+      // Fetch ALL invoices (both walking/cash and registered/party) — no customerType filter
       const response = await apiClient.getSalesInvoices({
         status: statusFilter !== "all" ? statusFilter : undefined,
-        customerType: 'walking', // Only fetch Party Sale invoices for delivery
       });
 
       const invoicesData = Array.isArray(response) ? response : (response.data || []);
       if (Array.isArray(invoicesData)) {
         const formattedInvoices = invoicesData
-          .filter((invoice: any) => invoice.customerType === 'walking') // Double-check: only Party Sale
+          // Show all customer types — cash sale and party sale both need store delivery
+          // Also show fully_delivered and partially_delivered_reversed for reference (disabled)
+          .filter((invoice: any) => ['approved', 'partially_delivered', 'fully_delivered', 'partially_delivered_reversed'].includes(invoice.status))
           .map((invoice: any) => ({
             id: invoice.id,
             invoiceNo: invoice.invoiceNo,
@@ -500,9 +501,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             createdAt: invoice.createdAt || invoice.created_at,
             customerType: invoice.customerType || 'walking',
           }));
-        setSalesInvoices(formattedInvoices);
+        setStockOutOrders(formattedInvoices);
       } else {
-        setSalesInvoices([]);
+        setStockOutOrders([]);
       }
     } catch (error: any) {
       if (!silent) toast.error(error.error || "Failed to fetch sales invoices");
@@ -533,27 +534,29 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     }
   };
 
-  const handlePrintSalesInvoiceReceipt = async (invoice: SalesInvoice) => {
+  const handlePrintStockOutReceipt = async (order: StockOutOrder) => {
     try {
       // Fetch full invoice details
-      const response = await apiClient.getSalesInvoice(invoice.id);
+      const response = await apiClient.getSalesInvoice(order.id);
       const invoiceData: any = response.data || response;
 
       if (invoiceData) {
-        const invoiceWithItems = {
-          ...invoice,
-          items: invoiceData.items?.map((item: any) => ({
+        // Backend returns items under SalesInvoiceItem (Prisma relation name)
+        const rawItems = invoiceData.SalesInvoiceItem || invoiceData.items || [];
+        const orderWithItems = {
+          ...order,
+          items: rawItems.map((item: any) => ({
             id: item.id,
             partNo: item.partNo || item.part_no,
             description: item.description || "",
-            orderedQty: item.orderedQty || item.ordered_qty,
+            orderedQty: item.orderedQty || item.ordered_qty || 0,
             deliveredQty: item.deliveredQty || item.delivered_qty || 0,
-            unitPrice: item.unitPrice || item.unit_price,
-            lineTotal: item.lineTotal || item.line_total,
-          })) || [],
+            unitPrice: item.unitPrice || item.unit_price || 0,
+            lineTotal: item.lineTotal || item.line_total || 0,
+          })),
         };
-        setSelectedSalesInvoice(invoiceWithItems as SalesInvoice);
-        setSalesInvoiceReceiptOpen(true);
+        setSelectedStockOutOrder(orderWithItems as StockOutOrder);
+        setStockOutReceiptOpen(true);
       }
     } catch (error: any) {
       toast.error("Failed to load invoice details");
@@ -618,42 +621,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     }
   };
 
-  const handleEditSalesInvoice = async (invoice: SalesInvoice) => {
-    try {
-      // Fetch full invoice details
-      const response = await apiClient.getSalesInvoice(invoice.id);
-      const invoiceData: any = response.data || response;
-
-      if (invoiceData) {
-        const invoiceWithItems: SalesInvoice = {
-          ...invoice,
-          subtotal: invoiceData.subtotal,
-          overallDiscount: invoiceData.overallDiscount,
-          remarks: invoiceData.remarks,
-          items: invoiceData.items?.map((item: any) => ({
-            id: item.id,
-            partId: item.partId,
-            partNo: item.partNo || item.part_no,
-            description: item.description || "",
-            brand: item.brand || item.part?.brand?.name || "",
-            orderedQty: item.orderedQty || item.ordered_qty,
-            deliveredQty: item.deliveredQty || item.delivered_qty || 0,
-            pendingQty: item.pendingQty || item.pending_qty || 0,
-            unitPrice: item.unitPrice || item.unit_price,
-            discount: item.discount || 0,
-            lineTotal: item.lineTotal || item.line_total,
-            grade: item.grade || "A",
-          })) || [],
-        };
-        setSelectedSalesInvoice(invoiceWithItems);
-        setEditSalesInvoiceDialogOpen(true);
-      } else {
-        toast.error("Failed to load invoice details");
-      }
-    } catch (error: any) {
-      toast.error("Failed to load invoice details");
-    }
-  };
 
   const handleDeleteOrder = (order: DirectPurchaseOrder | PurchaseOrder) => {
     if ('dpo_no' in order) {
@@ -922,7 +889,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     : [];
 
   // Filter Sales Invoices (for Delivering)
-  const filteredSalesInvoices = (salesInvoices || []).filter((invoice) => {
+  const filteredStockOutOrders = (stockOutOrders || []).filter((invoice) => {
     const inDateRange = isWithinDateRange(invoice.invoiceDate);
     const matchesSearch =
       invoice.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -957,15 +924,15 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       deliveredTo: "",
       raw: order,
     })),
-    ...filteredSalesInvoices.map((invoice) => ({
-      type: "invoice" as const,
+    ...filteredStockOutOrders.map((invoice) => ({
+      type: "stock-out" as const,
       id: invoice.id,
       number: invoice.invoiceNo,
       date: invoice.invoiceDate,
       party: invoice.customerName || "N/A",
       itemsCount: invoice.items_count,
       quantity: 0,
-      amount: invoice.grandTotal || 0,
+      amount: 0, // No amount for Store Manager on stock out
       status: invoice.status,
       deliveredTo: invoice.deliveredTo || "",
       raw: invoice,
@@ -1198,13 +1165,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   Receiving Items
                 </Button>
                 <Button
-                  variant={typeFilter === "delivering" ? "default" : "outline"}
+                  variant={typeFilter === "stock-out" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setTypeFilter("delivering")}
+                  onClick={() => setTypeFilter("stock-out")}
                   className="gap-2"
                 >
                   <ArrowUpCircle className="w-4 h-4" />
-                  Delivering Items
+                  Stock Out Items
                 </Button>
                 <Button
                   variant={typeFilter === "adjusted" ? "default" : "outline"}
@@ -1228,8 +1195,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             <CardTitle>
               {typeFilter === "receiving"
                 ? "Receiving Items"
-                : typeFilter === "delivering"
-                  ? "Delivering Items"
+                : typeFilter === "stock-out"
+                  ? "Stock Out Items"
                   : typeFilter === "adjusted"
                     ? "Adjusted Items"
                     : "All Orders"}
@@ -1273,17 +1240,17 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline">
-                                  {row.type === "po" ? "PO" : row.type === "dpo" ? "DPO" : "INV"}
+                                  {row.type === "po" ? "PO" : row.type === "dpo" ? "DPO" : "Stock Out"}
                                 </Badge>
                               </TableCell>
                               <TableCell>{row.party}</TableCell>
                               <TableCell>{row.itemsCount} items</TableCell>
-                              <TableCell>{row.type === "invoice" ? "-" : row.quantity}</TableCell>
+                              <TableCell>{row.type === "stock-out" ? "-" : row.quantity}</TableCell>
                               <TableCell>
-                                Rs {Number(row.amount || 0).toFixed(2)}
+                                {row.type === "stock-out" ? "-" : `Rs ${Number(row.amount || 0).toFixed(2)}`}
                               </TableCell>
                               <TableCell>
-                                {row.type === "invoice" ? (
+                                {row.type === "stock-out" ? (
                                   <Badge
                                     variant={
                                       row.status === "fully_delivered" || row.status === "approved"
@@ -1323,7 +1290,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   </Badge>
                                 )}
                               </TableCell>
-                              <TableCell>{row.type === "invoice" ? (row.deliveredTo || "-") : "-"}</TableCell>
+                              <TableCell>{row.type === "stock-out" ? (row.deliveredTo || "-") : "-"}</TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
                                   {row.type === "po" && (
@@ -1441,12 +1408,12 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     </>
                                   )}
 
-                                  {row.type === "invoice" && row.status !== "fully_delivered" && (
+                                  {row.type === "stock-out" && row.status !== "fully_delivered" && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      onClick={() => handlePrintSalesInvoiceReceipt(row.raw as SalesInvoice)}
-                                      title="Print Receipt & Confirm Delivery"
+                                      onClick={() => handlePrintStockOutReceipt(row.raw as StockOutOrder)}
+                                      title="Print Receipt & Confirm Stock Out"
                                     >
                                       <Printer className="w-4 h-4" />
                                     </Button>
@@ -1665,29 +1632,28 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   )
                 )}
 
-                {/* Delivering Items - Sales Invoices */}
-                {typeFilter === "delivering" && (
-                  filteredSalesInvoices.length === 0 ? (
+                {/* Stock Out Items - Sales Invoices */}
+                {typeFilter === "stock-out" && (
+                  filteredStockOutOrders.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      No sales invoices found for delivery.
+                      No stock out orders found.
                     </div>
                   ) : (
                     <div className="rounded-md border">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Invoice Number</TableHead>
+                            <TableHead>Order Number</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Customer</TableHead>
                             <TableHead>Items</TableHead>
-                            <TableHead>Total Amount</TableHead>
                             <TableHead>Status</TableHead>
-                            <TableHead>Deliver To</TableHead>
+                            <TableHead>Sent To</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredSalesInvoices.map((invoice) => (
+                          {filteredStockOutOrders.map((invoice) => (
                             <TableRow key={invoice.id}>
                               <TableCell className="font-medium">
                                 {invoice.invoiceNo}
@@ -1698,40 +1664,36 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell>{invoice.customerName}</TableCell>
                               <TableCell>{invoice.items_count} items</TableCell>
                               <TableCell>
-                                Rs {invoice.grandTotal.toFixed(2)}
-                              </TableCell>
-                              <TableCell>
                                 <Badge
                                   variant={
                                     invoice.status === "fully_delivered"
                                       ? "default"
-                                      : invoice.status === "pending"
-                                        ? "secondary"
-                                        : "outline"
+                                      : invoice.status === "partially_delivered_reversed"
+                                        ? "destructive"
+                                        : invoice.status === "pending"
+                                          ? "secondary"
+                                          : "outline"
                                   }
                                 >
-                                  {invoice.status}
+                                  {invoice.status.replace(/_/g, ' ')}
                                 </Badge>
                               </TableCell>
                               <TableCell>{invoice.deliveredTo || "-"}</TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
                                   <Button
-                                    variant="outline"
+                                    variant="default"
                                     size="sm"
-                                    onClick={() => handleEditSalesInvoice(invoice)}
-                                    title="Edit Invoice"
+                                    onClick={() => handlePrintStockOutReceipt(invoice)}
+                                    title="Confirm Stock Out"
+                                    disabled={invoice.status === "fully_delivered" || invoice.status === "partially_delivered_reversed"}
                                   >
-                                    <Edit className="w-4 h-4 mr-1" />
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handlePrintSalesInvoiceReceipt(invoice)}
-                                    title="Print Receipt & Confirm Delivery"
-                                  >
-                                    <Printer className="w-4 h-4" />
+                                    <Printer className="w-4 h-4 mr-1" />
+                                    {invoice.status === "fully_delivered" 
+                                      ? "Delivered" 
+                                      : invoice.status === "partially_delivered_reversed"
+                                        ? "Reversed"
+                                        : "Stock Out"}
                                   </Button>
                                 </div>
                               </TableCell>
@@ -1877,15 +1839,15 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         />
       )}
 
-      {/* Print Sales Invoice Receipt Dialog */}
-      {selectedSalesInvoice && (
+      {/* Stock Out Receipt Dialog */}
+      {selectedStockOutOrder && (
         <StoreSalesInvoiceReceipt
-          invoice={selectedSalesInvoice}
-          open={salesInvoiceReceiptOpen}
-          onOpenChange={setSalesInvoiceReceiptOpen}
+          invoice={selectedStockOutOrder}
+          open={stockOutReceiptOpen}
+          onOpenChange={setStockOutReceiptOpen}
           onDeliveryConfirmed={async () => {
-            setSalesInvoiceReceiptOpen(false);
-            await fetchSalesInvoices();
+            setStockOutReceiptOpen(false);
+            await fetchStockOutOrders();
           }}
         />
       )}
@@ -1946,20 +1908,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         />
       )}
 
-      {/* Edit Sales Invoice Dialog */}
-      {selectedSalesInvoice && (
-        <StoreEditSalesInvoice
-          invoice={selectedSalesInvoice as any}
-          open={editSalesInvoiceDialogOpen}
-          onOpenChange={setEditSalesInvoiceDialogOpen}
-          onSuccess={async () => {
-            setEditSalesInvoiceDialogOpen(false);
-            setSelectedSalesInvoice(null);
-            // Refresh invoices
-            await fetchSalesInvoices();
-          }}
-        />
-      )}
 
       {/* Adjusted Item Dialog */}
       {selectedAdjustment && (

@@ -395,6 +395,7 @@ router.get("/accounts", async (req: Request, res: Response) => {
       },
       orderBy: { code: "asc" },
     });
+
     res.json({ data: Account });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

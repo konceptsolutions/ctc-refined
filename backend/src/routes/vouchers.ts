@@ -73,7 +73,7 @@ router.get('/', async (req: Request, res: Response) => {
             }
           }
         },
-        orderBy: { date: 'desc' },
+        orderBy: { createdAt: 'desc' },
         skip,
         take: limitNum,
       }),

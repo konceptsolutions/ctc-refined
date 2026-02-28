@@ -3,6 +3,7 @@ import { Search, Package, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { GlobalSearch } from "./GlobalSearch";
+import { useUndeliveredStockAlerts } from "@/hooks/useUndeliveredStockAlerts";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +16,9 @@ import {
 export const Header = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const navigate = useNavigate();
+
+  // Enable undelivered stock alerts for admin
+  useUndeliveredStockAlerts();
 
   const handleLogout = () => {
     import("@/utils/auth").then((auth) => {
