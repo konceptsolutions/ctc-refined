@@ -8,34 +8,25 @@ const prisma = new PrismaClient();
 // Generate next supplier code
 async function generateSupplierCode(): Promise<string> {
   try {
-    // Get the last supplier ordered by code
-    const lastSupplier = await prisma.supplier.findFirst({
-      where: {
-        code: {
-          startsWith: "SUP-",
-        },
-      },
-      orderBy: {
-        code: "desc",
-      },
+    const suppliers = await prisma.supplier.findMany({
+      where: { code: { startsWith: "SUP-" } },
+      select: { code: true },
     });
 
-    if (!lastSupplier) {
-      return "SUP-001";
-    }
+    let maxNum = 0;
+    suppliers.forEach((s) => {
+      if (s.code) {
+        const match = s.code.match(/SUP-(\d+)/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+    });
 
-    // Extract number from last code (e.g., "SUP-001" -> 1)
-    const match = lastSupplier.code.match(/SUP-(\d+)/);
-    if (match) {
-      const lastNum = parseInt(match[1], 10);
-      const nextNum = lastNum + 1;
-      return `SUP-${String(nextNum).padStart(3, "0")}`;
-    }
-
-    // If format doesn't match, start from 001
-    return "SUP-001";
+    const nextNum = maxNum + 1;
+    return `SUP-${String(nextNum).padStart(3, "0")}`;
   } catch (error) {
-    // Fallback: start from 001 if error occurs
     return "SUP-001";
   }
 }

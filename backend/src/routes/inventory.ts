@@ -3462,7 +3462,7 @@ router.get("/adjustments/by-store", async (req: Request, res: Response) => {
             shelf_id: item.shelfId,
             shelf_no: item.Shelf?.shelfNo || null,
           })),
-          items_count: a.AdjustmentItem.length,
+          items_count: a.AdjustmentItem?.length || 0,
           created_at: a.createdAt,
           updated_at: a.updatedAt,
         };
@@ -4261,7 +4261,7 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
       date: result.date,
       subject: result.subject,
       total_amount: result.totalAmount,
-      items_count: result.items.length,
+      items_count: result.AdjustmentItem?.length || 0,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -4660,7 +4660,7 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
         shelf_id: item.shelfId,
         shelf_no: item.shelf?.shelfNo || null,
       })),
-      items_count: updatedAdjustment.AdjustmentItem.length,
+      items_count: updatedAdjustment.AdjustmentItem?.length || 0,
       message:
         "Adjustment approved successfully. Voucher auto-approved and accounts updated.",
     });

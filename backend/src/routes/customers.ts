@@ -252,17 +252,23 @@ router.post("/", async (req, res) => {
     // Auto-generate code if missing
     let finalCode = code;
     if (!finalCode) {
-      const lastCustomer = await prisma.customer.findFirst({
-        orderBy: { code: "desc" },
+      const customers = await prisma.customer.findMany({
         where: { code: { startsWith: "CUST-" } },
+        select: { code: true },
       });
-      let nextNum = 1;
-      if (lastCustomer && lastCustomer.code) {
-        const match = lastCustomer.code.match(/CUST-(\d+)/);
-        if (match) {
-          nextNum = parseInt(match[1], 10) + 1;
+
+      let maxNum = 0;
+      customers.forEach((c) => {
+        if (c.code) {
+          const match = c.code.match(/CUST-(\d+)/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
         }
-      }
+      });
+
+      const nextNum = maxNum + 1;
       finalCode = `CUST-${String(nextNum).padStart(4, "0")}`;
     }
 

@@ -154,6 +154,9 @@ export const SalesInvoice = () => {
   // Inline items state - matching reference design
   const [inlineItems, setInlineItems] = useState<InlineItemRow[]>([]);
 
+  // Map to store full part objects for all selected parts (persists across searches)
+  const [selectedPartsMap, setSelectedPartsMap] = useState<Record<string, PartItem>>({});
+
   // Parts data from API
   const [parts, setParts] = useState<PartItem[]>([]);
   const [partsLoading, setPartsLoading] = useState(false);
@@ -325,7 +328,7 @@ export const SalesInvoice = () => {
   // Add new inline item row
   const handleAddNewItem = () => {
     const newItem: InlineItemRow = {
-      id: `row-${Date.now()}`,
+      id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       selectedPartId: "",
       qty: 0,
       priceA: undefined,
@@ -366,10 +369,20 @@ export const SalesInvoice = () => {
           if (field === "selectedPartId" && value) {
             const part = parts.find((p) => p.id === value);
             if (part) {
+              // Store full part details to persist across search filters
+              setSelectedPartsMap((prev) => ({
+                ...prev,
+                [part.id]: part,
+              }));
+
               // Set editable prices from part data
               updated.priceA = part.priceA || 0;
               updated.priceB = part.priceB || 0;
               updated.priceM = part.priceM || 0;
+
+              // Store fallbacks for durable display
+              updated.partNoFallback = part.partNo;
+              updated.descriptionFallback = part.description;
 
               // Auto-select Price A if available, otherwise B, then M
               if (part.priceA) {
@@ -908,7 +921,7 @@ export const SalesInvoice = () => {
 
   // Get part data for inline item
   const getPartForItem = (partId: string) => {
-    return parts.find((p) => p.id === partId);
+    return parts.find((p) => p.id === partId) || selectedPartsMap[partId];
   };
 
   // Calculate line total for inline item
@@ -1434,6 +1447,15 @@ export const SalesInvoice = () => {
             }
           });
           return merged;
+        });
+
+        // Also add to persistent lookup map
+        setSelectedPartsMap((prev) => {
+          const updated = { ...prev };
+          partItemsToMerge.forEach((p) => {
+            updated[p.id] = p;
+          });
+          return updated;
         });
       }
 
@@ -3027,9 +3049,11 @@ export const SalesInvoice = () => {
                                             selectedPart.partNo || "";
                                           const description =
                                             selectedPart.description || "";
-                                          return description
+                                          const brandName = selectedPart.brands?.[0]?.name || "";
+                                          const baseLabel = description
                                             ? `${partNo} - ${description}`
                                             : partNo;
+                                          return brandName ? `${baseLabel} (${brandName})` : baseLabel;
                                         }
 
                                         // Fallback if parts didn't load yet but we have data from Edit
@@ -3037,6 +3061,7 @@ export const SalesInvoice = () => {
                                           const partNo = item.partNoFallback;
                                           const description =
                                             item.descriptionFallback || "";
+                                          // Note: we don't have brand fallback currently, so we just use the existing logic
                                           return description
                                             ? `${partNo} - ${description}`
                                             : partNo;
@@ -3254,6 +3279,20 @@ export const SalesInvoice = () => {
                                     }}
                                     className="w-full"
                                   />
+                                  {item.selectedPartId && (
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                      {part?.brands?.[0]?.name && (
+                                        <Badge variant="secondary" className="px-1 py-0 h-4 text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                                          {part.brands[0].name}
+                                        </Badge>
+                                      )}
+                                      {part?.category && (
+                                        <span className="text-[10px] text-muted-foreground italic truncate max-w-[200px]">
+                                          {part.category}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                   {showPartsDropdown[item.id] &&
                                     typeof window !== "undefined" &&
                                     dropdownPosition[item.id] &&
@@ -3315,6 +3354,14 @@ export const SalesInvoice = () => {
                                                     (p.machineModels &&
                                                       p.machineModels.some((m) =>
                                                         m.name
+                                                          .toLowerCase()
+                                                          .includes(
+                                                            searchValue.toLowerCase(),
+                                                          ),
+                                                      )) ||
+                                                    (p.brands &&
+                                                      p.brands.some((b) =>
+                                                        b.name
                                                           .toLowerCase()
                                                           .includes(
                                                             searchValue.toLowerCase(),
@@ -3391,6 +3438,11 @@ export const SalesInvoice = () => {
                                                       {p.category && (
                                                         <div className="text-[11px] text-muted-foreground/80 mt-0.5">
                                                           {p.category}
+                                                        </div>
+                                                      )}
+                                                      {p.brands && p.brands.length > 0 && (
+                                                        <div className="text-[10px] uppercase font-semibold text-primary/70 mt-0.5 tracking-wider">
+                                                          {p.brands.map((b) => b.name).join(", ")}
                                                         </div>
                                                       )}
                                                     </div>
