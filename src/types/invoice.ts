@@ -27,6 +27,7 @@ export interface Customer {
   balance?: number;
   creditLimit?: number;
   creditDays?: number;
+  priceType?: "A" | "B" | "M" | null;
 }
 
 export interface ItemBrand {

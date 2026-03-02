@@ -128,6 +128,7 @@ export const SalesInvoice = () => {
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
+  const [customerPriceType, setCustomerPriceType] = useState<"A" | "B" | "M" | null>(null);
 
   // Add Customer Dialog State
   const [showAddCustomerDialog, setShowAddCustomerDialog] = useState(false);
@@ -384,8 +385,19 @@ export const SalesInvoice = () => {
               updated.partNoFallback = part.partNo;
               updated.descriptionFallback = part.description;
 
-              // Auto-select Price A if available, otherwise B, then M
-              if (part.priceA) {
+              // Auto-select price type: customer's assigned type takes priority
+              if (customerPriceType === "A" && part.priceA) {
+                updated.selectedPriceType = "A";
+              } else if (customerPriceType === "B" && part.priceB) {
+                updated.selectedPriceType = "B";
+              } else if (customerPriceType === "M" && part.priceM) {
+                updated.selectedPriceType = "M";
+              } else if (customerPriceType) {
+                // Customer has a price type assigned but part might not have that price
+                // Still respect customer preference
+                updated.selectedPriceType = customerPriceType;
+              } else if (part.priceA) {
+                // No customer price type: fall back to part's available prices
                 updated.selectedPriceType = "A";
               } else if (part.priceB) {
                 updated.selectedPriceType = "B";
@@ -517,10 +529,10 @@ export const SalesInvoice = () => {
               masterPartNo: masterPartNo, // Master Part No (Red Block) - stored but not displayed
               description: p.description || "",
               category: p.category_name || "",
-              price: p.price_a || p.cost || 0,
-              priceA: p.price_a || null,
-              priceB: p.price_b || null,
-              priceM: p.price_m || null,
+              price: p.price_a ?? p.cost ?? 0,
+              priceA: p.price_a ?? null,
+              priceB: p.price_b ?? null,
+              priceM: p.price_m ?? null,
               stockQty: p.stock || 0,
               reservedQty: p.reserved_stock || 0,
               availableQty: (p.stock || 0) - (p.reserved_stock || 0),
@@ -755,6 +767,7 @@ export const SalesInvoice = () => {
               balance: c.balance || 0,
               creditLimit: c.creditLimit || 0,
               creditDays: c.creditDays || 0,
+              priceType: c.priceType || null,
             }),
           );
 
@@ -1345,6 +1358,7 @@ export const SalesInvoice = () => {
     setRemarks("");
     setSelectedCustomerId("");
     setSelectedCustomerName("");
+    setCustomerPriceType(null);
   };
 
   // Handle Edit Invoice
@@ -1363,6 +1377,9 @@ export const SalesInvoice = () => {
       });
       setSelectedCustomerId(invoice.customerId || "");
       setSelectedCustomerName(invoice.customerName || "");
+      // Restore customer price type when editing
+      const editCustomer = customers.find((c) => c.id === invoice.customerId);
+      setCustomerPriceType(editCustomer?.priceType || null);
 
       const partItemsToMerge: PartItem[] = [];
 
@@ -2873,6 +2890,17 @@ export const SalesInvoice = () => {
                         const customer = customers.find((c) => c.id === value);
                         if (customer) {
                           setSelectedCustomerName(customer.name);
+                          const pt = customer.priceType || null;
+                          setCustomerPriceType(pt);
+                          // Auto-apply price type to all existing inline items
+                          if (pt) {
+                            setInlineItems((prev) =>
+                              prev.map((item) => {
+                                if (!item.selectedPartId) return item;
+                                return { ...item, selectedPriceType: pt };
+                              }),
+                            );
+                          }
                         }
                       }}
                       disabled={loadingCustomers}
@@ -2893,7 +2921,19 @@ export const SalesInvoice = () => {
                           customers.length > 0 &&
                           customers.map((customer) => (
                             <SelectItem key={customer.id} value={customer.id}>
-                              {customer.name}
+                              <span className="flex items-center gap-2">
+                                {customer.name}
+                                {customer.priceType && (
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${customer.priceType === "A"
+                                      ? "bg-blue-100 text-blue-700"
+                                      : customer.priceType === "B"
+                                        ? "bg-indigo-100 text-indigo-700"
+                                        : "bg-purple-100 text-purple-700"
+                                    }`}>
+                                    Price {customer.priceType}
+                                  </span>
+                                )}
+                              </span>
                             </SelectItem>
                           ))}
                         {!loadingCustomers && customers.length === 0 && (
@@ -3440,11 +3480,23 @@ export const SalesInvoice = () => {
                                                           {p.category}
                                                         </div>
                                                       )}
-                                                      {p.brands && p.brands.length > 0 && (
-                                                        <div className="text-[10px] uppercase font-semibold text-primary/70 mt-0.5 tracking-wider">
-                                                          {p.brands.map((b) => b.name).join(", ")}
-                                                        </div>
-                                                      )}
+                                                      <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                                                        {p.brands && p.brands.length > 0 && (
+                                                          <div className="text-[10px] uppercase font-semibold text-primary/70 tracking-wider">
+                                                            {p.brands.map((b) => b.name).join(", ")}
+                                                          </div>
+                                                        )}
+                                                        {(p.priceA !== null || p.priceB !== null) && (
+                                                          <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600">
+                                                            {p.priceA !== null && (
+                                                              <span className="bg-blue-50 px-1 rounded border border-blue-100 italic">A: {Number(p.priceA).toLocaleString()}</span>
+                                                            )}
+                                                            {p.priceB !== null && (
+                                                              <span className="bg-indigo-50 px-1 rounded border border-indigo-100 italic">B: {Number(p.priceB).toLocaleString()}</span>
+                                                            )}
+                                                          </div>
+                                                        )}
+                                                      </div>
                                                     </div>
                                                   ))}
                                                 </>
