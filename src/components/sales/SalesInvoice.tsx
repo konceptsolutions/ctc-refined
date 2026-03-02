@@ -77,6 +77,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
+import { CustomerFormDialog } from "./CustomerFormDialog";
 import {
   Invoice,
   InvoiceItem,
@@ -132,19 +133,6 @@ export const SalesInvoice = () => {
 
   // Add Customer Dialog State
   const [showAddCustomerDialog, setShowAddCustomerDialog] = useState(false);
-  const [newCustomerForm, setNewCustomerForm] = useState({
-    name: "",
-    address: "",
-    email: "",
-    cnic: "",
-    contactNo: "",
-    openingBalance: 0,
-    date: "",
-    creditLimit: 0,
-    status: "active" as "active" | "inactive",
-    priceType: "" as "A" | "B" | "M" | "",
-  });
-  const [creatingCustomer, setCreatingCustomer] = useState(false);
 
   // Edit Credit Limit State
   const [showEditCreditLimitDialog, setShowEditCreditLimitDialog] =
@@ -1525,96 +1513,35 @@ export const SalesInvoice = () => {
     }
   };
 
-  // Handle Add Customer
-  const handleAddCustomer = async () => {
-    if (!newCustomerForm.name.trim()) {
-      toast({
-        title: "Error",
-        description: "Customer name is required",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setCreatingCustomer(true);
+  // Handle customer created in the CustomerFormDialog
+  const handleCustomerCreated = async (created: { id: string; name: string; priceType: string | null }) => {
+    // Refresh customers list
     try {
-      const response = await apiClient.createCustomer({
-        name: newCustomerForm.name.trim(),
-        address: newCustomerForm.address || undefined,
-        email: newCustomerForm.email || undefined,
-        cnic: newCustomerForm.cnic || undefined,
-        contactNo: newCustomerForm.contactNo || undefined,
-        openingBalance: newCustomerForm.openingBalance || 0,
-        date: newCustomerForm.date || undefined,
-        creditLimit: newCustomerForm.creditLimit || 0,
-        status: newCustomerForm.status,
-        priceType: newCustomerForm.priceType || undefined,
-      });
-
-      if (response.error) {
-        toast({
-          title: "Error",
-          description: response.error || "Failed to create customer",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const customerData = response.data || response;
-      toast({
-        title: "Success",
-        description: `Customer "${newCustomerForm.name}" created successfully`,
-      });
-
-      // Refresh customers list
-      const customersResponse = await apiClient.getCustomers({
-        status: "active",
-        limit: 1000,
-      });
-      const customersData = Array.isArray(customersResponse)
-        ? customersResponse
-        : customersResponse.data || [];
+      const customersResponse = await apiClient.getCustomers({ status: "active", limit: 1000 });
+      const customersData = Array.isArray(customersResponse) ? customersResponse : customersResponse.data || [];
       if (Array.isArray(customersData)) {
-        const formattedCustomers: Customer[] = customersData.map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          type: c.type || "registered",
-          balance: c.balance || 0,
-          creditLimit: c.creditLimit || 0,
-          creditDays: c.creditDays || 0,
-        }));
-        const filteredCustomers = formattedCustomers.filter(
-          (c) => !c.name.toLowerCase().includes("demo"),
-        );
-        setCustomers(filteredCustomers);
+        const formattedCustomers: Customer[] = customersData
+          .filter((c: any) => !c.name.toLowerCase().includes("demo"))
+          .map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            type: c.type || "registered",
+            balance: c.balance || 0,
+            creditLimit: c.creditLimit || 0,
+            creditDays: c.creditDays || 0,
+            priceType: c.priceType || null,
+          }));
+        setCustomers(formattedCustomers);
       }
+    } catch { /* ignore refresh error */ }
 
-      // Select the newly created customer
-      setSelectedCustomerId((customerData as any).id);
-      setSelectedCustomerName((customerData as any).name);
-
-      // Reset form and close dialog
-      setNewCustomerForm({
-        name: "",
-        address: "",
-        email: "",
-        cnic: "",
-        contactNo: "",
-        openingBalance: 0,
-        date: "",
-        creditLimit: 0,
-        status: "active",
-        priceType: "",
-      });
-      setShowAddCustomerDialog(false);
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create customer",
-        variant: "destructive",
-      });
-    } finally {
-      setCreatingCustomer(false);
+    // Auto-select the newly created customer
+    setSelectedCustomerId(created.id);
+    setSelectedCustomerName(created.name);
+    const pt = (created.priceType as "A" | "B" | "M" | null) || null;
+    setCustomerPriceType(pt);
+    if (pt) {
+      setInlineItems((prev) => prev.map((item) => item.selectedPartId ? { ...item, selectedPriceType: pt } : item));
     }
   };
 
@@ -2925,10 +2852,10 @@ export const SalesInvoice = () => {
                                 {customer.name}
                                 {customer.priceType && (
                                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${customer.priceType === "A"
-                                      ? "bg-blue-100 text-blue-700"
-                                      : customer.priceType === "B"
-                                        ? "bg-indigo-100 text-indigo-700"
-                                        : "bg-purple-100 text-purple-700"
+                                    ? "bg-blue-100 text-blue-700"
+                                    : customer.priceType === "B"
+                                      ? "bg-indigo-100 text-indigo-700"
+                                      : "bg-purple-100 text-purple-700"
                                     }`}>
                                     Price {customer.priceType}
                                   </span>
@@ -4968,217 +4895,11 @@ export const SalesInvoice = () => {
       </AlertDialog>
 
       {/* Add Customer Dialog */}
-      <Dialog
+      <CustomerFormDialog
         open={showAddCustomerDialog}
         onOpenChange={setShowAddCustomerDialog}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add New Customer</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div className="space-y-2">
-              <Label htmlFor="customer-name">Customer Name *</Label>
-              <Input
-                id="customer-name"
-                placeholder="Enter customer name"
-                value={newCustomerForm.name}
-                onChange={(e) =>
-                  setNewCustomerForm({
-                    ...newCustomerForm,
-                    name: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="customer-contact">Contact No</Label>
-                <Input
-                  id="customer-contact"
-                  placeholder="Contact number"
-                  value={newCustomerForm.contactNo}
-                  onChange={(e) =>
-                    setNewCustomerForm({
-                      ...newCustomerForm,
-                      contactNo: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customer-email">Email</Label>
-                <Input
-                  id="customer-email"
-                  type="email"
-                  placeholder="Email address"
-                  value={newCustomerForm.email}
-                  onChange={(e) =>
-                    setNewCustomerForm({
-                      ...newCustomerForm,
-                      email: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="customer-cnic">CNIC</Label>
-                <Input
-                  id="customer-cnic"
-                  placeholder="CNIC number"
-                  value={newCustomerForm.cnic}
-                  onChange={(e) =>
-                    setNewCustomerForm({
-                      ...newCustomerForm,
-                      cnic: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customer-status">Status</Label>
-                <Select
-                  value={newCustomerForm.status}
-                  onValueChange={(v) =>
-                    setNewCustomerForm({
-                      ...newCustomerForm,
-                      status: v as "active" | "inactive",
-                    })
-                  }
-                >
-                  <SelectTrigger id="customer-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="customer-price-type">Price Type</Label>
-                <Select
-                  value={newCustomerForm.priceType || "none"}
-                  onValueChange={(v) =>
-                    setNewCustomerForm({
-                      ...newCustomerForm,
-                      priceType: v === "none" ? "" : (v as "A" | "B" | "M"),
-                    })
-                  }
-                >
-                  <SelectTrigger id="customer-price-type">
-                    <SelectValue placeholder="Select Price Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="A">Price A (Retail)</SelectItem>
-                    <SelectItem value="B">Price B (Wholesale)</SelectItem>
-                    <SelectItem value="M">Price M (Market)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="customer-address">Address</Label>
-              <Input
-                id="customer-address"
-                placeholder="Full address"
-                value={newCustomerForm.address}
-                onChange={(e) =>
-                  setNewCustomerForm({
-                    ...newCustomerForm,
-                    address: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="customer-opening-balance">
-                  Opening Balance
-                </Label>
-                <Input
-                  id="customer-opening-balance"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={newCustomerForm.openingBalance}
-                  onChange={(e) =>
-                    setNewCustomerForm({
-                      ...newCustomerForm,
-                      openingBalance: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customer-date">Date</Label>
-                <Input
-                  id="customer-date"
-                  type="date"
-                  value={newCustomerForm.date}
-                  onChange={(e) =>
-                    setNewCustomerForm({
-                      ...newCustomerForm,
-                      date: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="customer-credit-limit">Credit Limit</Label>
-              <Input
-                id="customer-credit-limit"
-                type="number"
-                placeholder="0"
-                value={newCustomerForm.creditLimit}
-                onChange={(e) =>
-                  setNewCustomerForm({
-                    ...newCustomerForm,
-                    creditLimit: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter className="mt-6">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowAddCustomerDialog(false);
-                setNewCustomerForm({
-                  name: "",
-                  address: "",
-                  email: "",
-                  cnic: "",
-                  contactNo: "",
-                  openingBalance: 0,
-                  date: "",
-                  creditLimit: 0,
-                  status: "active",
-                  priceType: "",
-                });
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleAddCustomer} disabled={creatingCustomer}>
-              {creatingCustomer ? "Creating..." : "Add Customer"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onCreated={handleCustomerCreated}
+      />
       <Dialog
         open={showEditCreditLimitDialog}
         onOpenChange={setShowEditCreditLimitDialog}
