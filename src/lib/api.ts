@@ -2978,6 +2978,10 @@ class ApiClient {
   }
 
   // Sales Invoice
+  async generateInvoiceNumber() {
+    return this.request("/sales/invoices/generate-number");
+  }
+
   async getSalesInvoices(params?: {
     status?: string;
     paymentStatus?: string;

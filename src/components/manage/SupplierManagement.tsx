@@ -595,7 +595,6 @@ export const SupplierManagement = () => {
                   <TableHead className="text-xs font-medium">NAME</TableHead>
                   <TableHead className="text-xs font-medium">ADDRESS</TableHead>
                   <TableHead className="text-xs font-medium">EMAIL</TableHead>
-                  <TableHead className="text-xs font-medium">CNIC</TableHead>
                   <TableHead className="text-xs font-medium">
                     CONTACT NO
                   </TableHead>
@@ -607,7 +606,7 @@ export const SupplierManagement = () => {
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={8}
                       className="text-center py-8 text-xs text-muted-foreground"
                     >
                       Loading...
@@ -616,7 +615,7 @@ export const SupplierManagement = () => {
                 ) : suppliers.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={8}
                       className="text-center py-8 text-xs text-muted-foreground"
                     >
                       No suppliers found
@@ -636,14 +635,14 @@ export const SupplierManagement = () => {
                       <TableCell className="text-xs">
                         {(currentPage - 1) * rowsPerPage + index + 1}
                       </TableCell>
+                      <TableCell className="text-xs max-w-[150px] truncate">
+                        {supplier.name || "-"}
+                      </TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate">
                         {supplier.address || "-"}
                       </TableCell>
                       <TableCell className="text-xs text-primary">
                         {supplier.email || "-"}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {supplier.cnic || "-"}
                       </TableCell>
                       <TableCell className="text-xs">
                         {supplier.phone || "-"}

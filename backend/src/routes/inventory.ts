@@ -3140,15 +3140,15 @@ router.post("/adjustments", async (req: Request, res: Response) => {
       // 10.5 Update Price A & Price B if provided
       for (const item of items) {
         const priceA =
-          item.priceA !== undefined && item.priceA !== ""
+          item.priceA !== undefined && item.priceA !== null
             ? parseFloat(item.priceA)
             : undefined;
         const priceB =
-          item.priceB !== undefined && item.priceB !== ""
+          item.priceB !== undefined && item.priceB !== null
             ? parseFloat(item.priceB)
             : undefined;
         const priceM =
-          item.priceM !== undefined && item.priceM !== ""
+          item.priceM !== undefined && item.priceM !== null
             ? parseFloat(item.priceM)
             : undefined;
 
@@ -3761,15 +3761,15 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
                 rackId: item.rack_id || null,
                 shelfId: item.shelf_id || null,
                 priceA:
-                  item.priceA !== undefined && item.priceA !== ""
+                  item.priceA !== undefined && item.priceA !== null
                     ? parseFloat(item.priceA)
                     : null,
                 priceB:
-                  item.priceB !== undefined && item.priceB !== ""
+                  item.priceB !== undefined && item.priceB !== null
                     ? parseFloat(item.priceB)
                     : null,
                 priceM:
-                  item.priceM !== undefined && item.priceM !== ""
+                  item.priceM !== undefined && item.priceM !== null
                     ? parseFloat(item.priceM)
                     : null,
               })),
@@ -3995,15 +3995,15 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
           });
 
           const priceA =
-            item.priceA !== undefined && item.priceA !== ""
+            item.priceA !== undefined && item.priceA !== null
               ? parseFloat(item.priceA)
               : undefined;
           const priceB =
-            item.priceB !== undefined && item.priceB !== ""
+            item.priceB !== undefined && item.priceB !== null
               ? parseFloat(item.priceB)
               : undefined;
           const priceM =
-            item.priceM !== undefined && item.priceM !== ""
+            item.priceM !== undefined && item.priceM !== null
               ? parseFloat(item.priceM)
               : undefined;
 
