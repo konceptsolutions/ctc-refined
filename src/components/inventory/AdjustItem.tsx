@@ -87,6 +87,7 @@ interface AdjustmentRecord {
   totalAmount: number;
   status: string;
   adjustment_no?: number;
+  createdAt?: string;
 }
 
 export const AdjustItem = () => {
@@ -143,6 +144,7 @@ export const AdjustItem = () => {
   const [records, setRecords] = useState<AdjustmentRecord[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterPartId, setFilterPartId] = useState<string>("");
   const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
   const [parts, setParts] = useState<
     {
@@ -165,14 +167,19 @@ export const AdjustItem = () => {
 
   // Fetch adjustments
   const fetchAdjustments = async () => {
-    console.log("fetchAdjustments called", { currentPage, itemsPerPage });
+    console.log("fetchAdjustments called", { currentPage, itemsPerPage, filterPartId, debouncedSearch });
     try {
       setLoading(true);
-      const response: any = await apiClient.getAdjustments({
+      const params: any = {
         page: currentPage,
         limit: itemsPerPage,
         search: debouncedSearch,
-      });
+      };
+      if (filterPartId) {
+        params.part_id = filterPartId;
+      }
+      console.log("API call params:", params);
+      const response: any = await apiClient.getAdjustments(params);
       console.log("fetchAdjustments response", response);
 
       if (response.error) {
@@ -196,6 +203,7 @@ export const AdjustItem = () => {
           notes: a.notes || "",
           totalAmount: parseFloat(a.total_amount) || 0,
           status: a.status || "pending",
+          createdAt: a.created_at,
         })),
       );
       setTotalRecords(pagination.total || 0);
@@ -366,18 +374,19 @@ export const AdjustItem = () => {
     }
   };
 
-  // Fetch parts and stock balances
-  // Fetch parts and stock balances - OPTIMIZED FOR DROPDOWN SPEED
+  // Fetch parts and stock balances - ONLY items that are in adjustments
   const fetchParts = async () => {
     try {
-      const response: any = await apiClient.getPartsDropdown();
+      console.log("Fetching parts that are in adjustments...");
+      const response: any = await apiClient.getAdjustmentParts();
 
       if (response.error) {
-        toast.error(`Error fetching parts: ${response.error}`);
+        toast.error(`Error fetching adjustment parts: ${response.error}`);
         return;
       }
 
       const partsData = response.data || [];
+      console.log(`Found ${partsData.length} parts that are in adjustments`);
 
       setStockBalances({});
 
@@ -404,14 +413,14 @@ export const AdjustItem = () => {
         }),
       );
     } catch (error: any) {
-      console.error("Error fetching parts:", error);
+      console.error("Error fetching adjustment parts:", error);
       toast.error("Failed to load parts list");
     }
   };
 
   useEffect(() => {
     fetchAdjustments();
-  }, [currentPage, itemsPerPage, debouncedSearch]);
+  }, [currentPage, itemsPerPage, debouncedSearch, filterPartId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -426,8 +435,12 @@ export const AdjustItem = () => {
   }, []);
 
   useEffect(() => {
+    fetchParts();
+  }, []);
+
+  useEffect(() => {
     if (view === "create" || view === "edit") {
-      fetchParts();
+      // Re-fetch or refresh if needed when store changes
     }
   }, [view, store, addInventory]);
 
@@ -444,6 +457,15 @@ export const AdjustItem = () => {
   }, [store, view]);
 
 
+  // Sort records by adjustment_no desc for frontend display
+  const sortedRecords = useMemo(() => {
+    return [...records].sort((a, b) => {
+      const noA = Number(a.adjustment_no || 0);
+      const noB = Number(b.adjustment_no || 0);
+      return noB - noA;
+    });
+  }, [records]);
+
   // Pagination logic
   const totalPages = Math.ceil(totalRecords / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -455,7 +477,7 @@ export const AdjustItem = () => {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(records.map((r) => r.id));
+      setSelectedIds(sortedRecords.map((r) => r.id));
     } else {
       setSelectedIds([]);
     }
@@ -950,6 +972,22 @@ export const AdjustItem = () => {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <div className="flex-1 max-w-[250px]">
+            <SearchableSelect
+              options={parts.map((p) => ({
+                value: p.id,
+                label: `${p.partNo} (${p.brand})`,
+              }))}
+              value={filterPartId}
+              onValueChange={(value) => {
+                console.log("SearchableSelect onValueChange:", value);
+                setFilterPartId(value);
+                setCurrentPage(1); // Reset to first page when filter changes
+              }}
+              placeholder="Filter by Item"
+              className="h-9"
+            />
+          </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -980,8 +1018,8 @@ export const AdjustItem = () => {
                   <TableHead className="w-10">
                     <Checkbox
                       checked={
-                        selectedIds.length === records.length &&
-                        records.length > 0
+                        selectedIds.length === sortedRecords.length &&
+                        sortedRecords.length > 0
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -1011,7 +1049,7 @@ export const AdjustItem = () => {
                       Loading...
                     </TableCell>
                   </TableRow>
-                ) : records.length === 0 ? (
+                ) : sortedRecords.length === 0 ? (
                   <TableRow>
                     <TableCell
                       colSpan={6}
@@ -1021,7 +1059,7 @@ export const AdjustItem = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  records.map((record, index) => (
+                  sortedRecords.map((record, index) => (
                     <TableRow key={record.id} className="hover:bg-muted/20">
                       <TableCell>
                         <Checkbox

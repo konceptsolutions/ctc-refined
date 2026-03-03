@@ -27,18 +27,14 @@ export const LongCatSettingsTab = () => {
       try {
         const response = await apiClient.getLongCatSettings();
         if (response.error) {
+          console.error('Failed to fetch LongCat settings:', response.error);
         } else if (response.data) {
-          // Pre-fill with provided API key if not already set
-          setApiKey(response.data.apiKey || "ak_2No6Dx1vk4Di5so3aB53O3gd0B61t");
+          setApiKey(response.data.apiKey || '');
           setModel(response.data.model || "LongCat-Flash-Chat");
           setBaseUrl(response.data.baseUrl || "https://api.longcat.chat");
-        } else {
-          // If no settings exist, pre-fill with default API key
-          setApiKey("ak_2No6Dx1vk4Di5so3aB53O3gd0B61t");
         }
       } catch (error: any) {
-        // Pre-fill with default API key on error
-        setApiKey("ak_2No6Dx1vk4Di5so3aB53O3gd0B61t");
+        console.error('Error fetching LongCat settings:', error);
       }
     };
     fetchSettings();

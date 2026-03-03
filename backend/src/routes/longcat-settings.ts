@@ -9,10 +9,11 @@ router.get('/', async (req, res) => {
   try {
     let settings = await prisma.longCatSettings.findFirst();
 
+    // If no settings in database, return environment variable or default
     if (!settings) {
       return res.json({
         data: {
-          apiKey: '',
+          apiKey: process.env.LONGCAT_API_KEY || '',
           model: 'LongCat-Flash-Chat',
           baseUrl: 'https://api.longcat.chat',
         },
@@ -21,7 +22,7 @@ router.get('/', async (req, res) => {
 
     res.json({
       data: {
-        apiKey: settings.apiKey || '',
+        apiKey: settings.apiKey || process.env.LONGCAT_API_KEY || '',
         model: settings.model || 'LongCat-Flash-Chat',
         baseUrl: settings.baseUrl || 'https://api.longcat.chat',
       },

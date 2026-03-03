@@ -147,7 +147,7 @@ async function createFullVouchersForInvoice(
     // 1. Find necessary accounts
     const inventoryAccount = await findAccountByKeywords(
       ["Inventory", "Stock"],
-      ["101", "103", "104"],
+      ["101", "104"], // Removed 103 which is now Bank
       ["Cost", "COGS", "Discount"], // Exclude cost/discount accounts when looking for inventory
       tx,
     );
@@ -187,8 +187,8 @@ async function createFullVouchersForInvoice(
     // Secondary fallback for customer account
     if (!customerAccount) {
       customerAccount = await findAccountByKeywords(
-        ["Accounts Receivable", "Receivable", "Customer", invoice.customerName || ""],
-        ["104", "201", "105"],
+        ["Customer Receivable", "Accounts Receivable", "Receivable", "Customer", invoice.customerName || ""],
+        ["105", "104", "201"], // Prioritized 105
         ["Revenue", "COGS", "Inventory"],
         tx,
       );
@@ -2493,10 +2493,10 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
         }
 
         const paymentAccount = accountId
-          ? await tx.account.findUnique({ 
-              where: { id: accountId },
-              include: { Subgroup: { include: { MainGroup: true } } }
-            })
+          ? await tx.account.findUnique({
+            where: { id: accountId },
+            include: { Subgroup: { include: { MainGroup: true } } }
+          })
           : await findAccountByKeywords(
             ["Cash in Hand", "Main Cash", "Cash", "Bank"],
             ["101", "102"],
@@ -3477,7 +3477,7 @@ router.post("/invoices/bulk-reverse", async (req: Request, res: Response) => {
         // Calculate totals for voucher
         const itemTotal = invoiceItem.unitPrice * quantity;
         const itemCost = (invoiceItem.avgCost || invoiceItem.Part?.avgCost || invoiceItem.Part?.cost || 0) * quantity;
-        
+
         totalReversedAmount += itemTotal;
         totalReversedCost += itemCost;
         reversedItems.push({

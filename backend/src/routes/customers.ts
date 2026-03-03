@@ -131,9 +131,9 @@ router.get("/", async (req, res) => {
 
     // Map customers to include accountId and calculated balance
     const customersWithAccountId = paginatedCustomers.map((customer: any) => {
-      // Find the primary account (usually starting with 103 for receivables)
+      // Find the primary account (usually starting with 105 for receivables)
       const primaryAccount =
-        customer.Account?.find((a: any) => a.code?.startsWith("103")) ||
+        customer.Account?.find((a: any) => a.code?.startsWith("105")) ||
         customer.Account?.[0];
 
       return {
@@ -177,9 +177,9 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Customer not found" });
     }
 
-    // Find primary account
+    // Find primary account (starting with 105)
     const primaryAccount =
-      customer.Account?.find((a: any) => a.code?.startsWith("103")) ||
+      customer.Account?.find((a: any) => a.code?.startsWith("105")) ||
       customer.Account?.[0];
 
     let balance = customer.openingBalance || 0;
@@ -307,20 +307,20 @@ router.post("/", async (req, res) => {
       },
     });
 
-    // ALWAYS create customer account under Current Assets (subgroup 103)
-    // This ensures all customers appear in Current Assets as Accounts Receivable
+    // ALWAYS create customer account under Current Assets (subgroup 105)
+    // This ensures all customers appear in Current Assets as Accounts Receivable (Customer Receivable)
     try {
-      // Find Accounts Receivable subgroup (103) - Current Assets
+      // Find Customer Receivable subgroup (105) - Current Assets
       const receivablesSubgroup = await prisma.subgroup.findFirst({
-        where: { code: "103" },
+        where: { code: "105" },
       });
 
       if (receivablesSubgroup) {
-        // Generate account code: 103XXX where XXX is sequential
+        // Generate account code: 105XXX where XXX is sequential
         const existingAccounts = await prisma.account.findMany({
           where: {
             code: {
-              startsWith: "103",
+              startsWith: "105",
             },
           },
           orderBy: {
@@ -328,14 +328,14 @@ router.post("/", async (req, res) => {
           },
         });
 
-        let accountCode = "103001";
+        let accountCode = "105001";
         if (existingAccounts.length > 0) {
           const lastCode = existingAccounts[0].code;
-          const match = lastCode.match(/^103(\d+)$/);
+          const match = lastCode.match(/^105(\d+)$/);
           if (match) {
             const lastNum = parseInt(match[1], 10);
             const nextNum = lastNum + 1;
-            accountCode = `103${String(nextNum).padStart(3, "0")}`;
+            accountCode = `105${String(nextNum).padStart(3, "0")}`;
           }
         }
 
@@ -354,7 +354,7 @@ router.post("/", async (req, res) => {
               subgroupId: receivablesSubgroup.id,
               code: accountCode,
               name: name,
-              description: `Customer Account: ${name}`,
+              description: `Customer Receivable: ${name}`,
               openingBalance: 0,
               currentBalance: parsedOpeningBalance || 0, // Set initial balance if opening balance exists
               status: "Active",
@@ -763,7 +763,7 @@ router.put("/:id", async (req, res) => {
               // Fallback: Find by name (for legacy accounts without FK)
               console.log("Falling back to name lookup...");
               const receivables = await prisma.subgroup.findFirst({
-                where: { code: "103" },
+                where: { code: "105" },
               });
               if (receivables) {
                 const found = await prisma.account.findFirst({

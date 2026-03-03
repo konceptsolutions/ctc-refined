@@ -196,7 +196,7 @@ export const CustomerFormDialog = ({
 
                 <div className="space-y-4 pt-2">
                     {/* Row 1: Code, Title, Short Title, Reference Name */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div className="space-y-1">
                             <Label className="text-xs">Code</Label>
                             <Input
@@ -236,7 +236,7 @@ export const CustomerFormDialog = ({
                     </div>
 
                     {/* Row 2: Address, Area */}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-1">
                             <Label className="text-xs">Address</Label>
                             <Input
@@ -269,7 +269,7 @@ export const CustomerFormDialog = ({
                     </div>
 
                     {/* Row 3: Contact No, Cell No, Email */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div className="space-y-1">
                             <Label className="text-xs">Contact No</Label>
                             <Input
@@ -301,7 +301,7 @@ export const CustomerFormDialog = ({
                     </div>
 
                     {/* Row 4: CNIC, GST, PST, NTN */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div className="space-y-1">
                             <Label className="text-xs">CNIC</Label>
                             <Input
@@ -355,34 +355,36 @@ export const CustomerFormDialog = ({
                             </Button>
                         </div>
                         {form.contactPersons.map((cp, idx) => (
-                            <div key={idx} className="flex gap-2 items-center">
+                            <div key={idx} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center border-b sm:border-0 pb-3 sm:pb-0">
                                 <Input
                                     placeholder="Person Name"
                                     value={cp.name}
                                     onChange={(e) => updateContactPerson(idx, "name", e.target.value)}
-                                    className="h-8 text-xs flex-1"
+                                    className="h-8 text-xs w-full sm:flex-1"
                                 />
                                 <Input
                                     placeholder="Designation"
                                     value={cp.designation}
                                     onChange={(e) => updateContactPerson(idx, "designation", e.target.value)}
-                                    className="h-8 text-xs flex-1"
+                                    className="h-8 text-xs w-full sm:flex-1"
                                 />
-                                <Input
-                                    placeholder="Contact number"
-                                    value={cp.contactNumber}
-                                    onChange={(e) => updateContactPerson(idx, "contactNumber", e.target.value)}
-                                    className="h-8 text-xs flex-1"
-                                />
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => removeContactPerson(idx)}
-                                    className="h-6 w-6"
-                                >
-                                    <X className="w-4 h-4 text-red-500" />
-                                </Button>
+                                <div className="flex gap-2 w-full sm:flex-1">
+                                    <Input
+                                        placeholder="Contact number"
+                                        value={cp.contactNumber}
+                                        onChange={(e) => updateContactPerson(idx, "contactNumber", e.target.value)}
+                                        className="h-8 text-xs flex-1"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => removeContactPerson(idx)}
+                                        className="h-8 w-8 text-red-500 hover:bg-red-50"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                </div>
                             </div>
                         ))}
                         {form.contactPersons.length === 0 && (
@@ -391,7 +393,7 @@ export const CustomerFormDialog = ({
                     </div>
 
                     {/* Row 5: Category, Opening Date, Closing Date, Status */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div className="space-y-1">
                             <Label className="text-xs">Category</Label>
                             <Select
@@ -444,7 +446,7 @@ export const CustomerFormDialog = ({
                     </div>
 
                     {/* Row 6: Opening Balance, OB Date, Credit Limit, Price Type */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div className="space-y-1">
                             <Label className="text-xs">Opening Balance</Label>
                             <Input

@@ -348,9 +348,9 @@ router.get("/", async (req: Request, res: Response) => {
         purchasePrice: rawPurchasePrice || latestAdjCost || 0,
         avgCost: rawAvgCost || latestAdjCost || 0,
 
-        price_a: part.priceA || part.pricea || null,
-        price_b: part.priceB || part.priceb || null,
-        price_m: part.priceM || part.pricem || null,
+        price_a: part.priceA ?? part.pricea ?? null,
+        price_b: part.priceB ?? part.priceb ?? null,
+        price_m: part.priceM ?? part.pricem ?? null,
         // Only include images for small result sets
         image_p1: skipImages ? null : part.imageP1 || part.imagep1,
         image_p2: skipImages ? null : part.imageP2 || part.imagep2,
@@ -631,7 +631,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
     params.push(limitNum, offset);
     const result = await query(sql, params);
 
-    const transformedParts = result.rows.map((p: any) =>({
+    const transformedParts = result.rows.map((p: any) => ({
       id: p.id,
       partNo: p.partNo || p.partno,
       master_part_no: p.master_part_no || p.masterpartno,
@@ -898,9 +898,9 @@ router.get("/:id", async (req: Request, res: Response) => {
       application_id: part.applicationId || null,
       application: (part as any).Application
         ? {
-            id: (part as any).Application.id,
-            name: (part as any).Application.name,
-          }
+          id: (part as any).Application.id,
+          name: (part as any).Application.name,
+        }
         : null,
       description: part.description,
       hs_code: part.hsCode,
@@ -1396,7 +1396,7 @@ router.put("/:id", async (req: Request, res: Response) => {
           create: { masterPartNo: masterPartNoValue } as any,
         });
         masterPartId = masterPart.id;
-      } catch (error: any) {}
+      } catch (error: any) { }
     } else {
     }
 
@@ -1904,14 +1904,14 @@ router.delete("/:id", async (req: Request, res: Response) => {
       deletedRelatedRecords:
         totalRelated > 0
           ? {
-              stockMovements: relatedCounts.stockMovements,
-              purchaseOrderItems: relatedCounts.purchaseOrderItems,
-              directPurchaseOrderItems: relatedCounts.directPurchaseOrderItems,
-              adjustmentItems: relatedCounts.adjustmentItems,
-              transferItems: relatedCounts.transferItems,
-              verificationItems: relatedCounts.verificationItems,
-              priceHistory: relatedCounts.priceHistory,
-            }
+            stockMovements: relatedCounts.stockMovements,
+            purchaseOrderItems: relatedCounts.purchaseOrderItems,
+            directPurchaseOrderItems: relatedCounts.directPurchaseOrderItems,
+            adjustmentItems: relatedCounts.adjustmentItems,
+            transferItems: relatedCounts.transferItems,
+            verificationItems: relatedCounts.verificationItems,
+            priceHistory: relatedCounts.priceHistory,
+          }
           : null,
     });
   } catch (error: any) {

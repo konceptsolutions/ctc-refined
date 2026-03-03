@@ -53,7 +53,6 @@ interface Supplier {
   id: string;
   code: string;
   name: string | null;
-  companyName: string;
   address: string | null;
   city: string | null;
   state: string | null;
@@ -84,7 +83,6 @@ interface Supplier {
 const emptySupplier: Omit<Supplier, "id"> = {
   code: "",
   name: "",
-  companyName: "",
   address: "",
   city: "",
   state: "",
@@ -211,12 +209,7 @@ export const SupplierManagement = () => {
     setFormData((prev) => {
       let updated = { ...prev };
 
-      // If field is companyName, ensure it's not undefined/null if that's passed
-      if (field === "companyName" && (value === undefined || value === null)) {
-        updated.companyName = "";
-      } else {
-        (updated as any)[field] = value;
-      }
+      (updated as any)[field] = value;
 
       // Auto-generate Short Title when Name changes
       if (field === "name" && typeof value === "string") {
@@ -270,36 +263,13 @@ export const SupplierManagement = () => {
       e.stopPropagation();
     }
 
-    // Validate Company Name - ensure it's not empty or just whitespace
-    if (!formData.companyName || formData.companyName.trim() === "") {
-      toast({
-        title: "Validation Error",
-        description: "Company Name is required.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Validate Date if Opening Balance is provided and not 0
-    // Check for both number 0 and string "0" (or empty string which usually means 0 in this context validation)
-    const balanceValue = Number(formData.openingBalance);
-    if (!isNaN(balanceValue) && balanceValue !== 0) {
-      if (!formData.date || formData.date.trim() === "") {
-        toast({
-          title: "Validation Error",
-          description: "Date is required when an Opening Balance is provided.",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
+    
+    
     try {
       if (editingId) {
         const response = (await apiClient.updateSupplier(editingId, {
           code: formData.code,
           name: formData.name || undefined,
-          companyName: formData.companyName,
           address: formData.address || undefined,
           city: formData.city || undefined,
           state: formData.state || undefined,
@@ -347,7 +317,6 @@ export const SupplierManagement = () => {
         // Don't send code field if it's empty - let backend auto-generate
         const supplierData: any = {
           name: formData.name || undefined,
-          companyName: formData.companyName,
           address: formData.address || undefined,
           city: formData.city || undefined,
           state: formData.state || undefined,
@@ -391,7 +360,7 @@ export const SupplierManagement = () => {
           const createdSupplier = (response as any).data;
           toast({
             title: "Supplier Created",
-            description: `New supplier "${createdSupplier?.companyName}" has been added with code "${createdSupplier?.code}".`,
+            description: `New supplier "${createdSupplier?.name}" has been added with code "${createdSupplier?.code}".`,
           });
           setFormData(emptySupplier);
           setEditingId(null);
@@ -412,7 +381,6 @@ export const SupplierManagement = () => {
     setFormData({
       code: supplier.code,
       name: supplier.name || "",
-      companyName: supplier.companyName || "", // Ensure string
       address: supplier.address || "",
       city: supplier.city || "",
       state: supplier.state || "",
@@ -499,7 +467,7 @@ export const SupplierManagement = () => {
         } else {
           toast({
             title: "Status Updated",
-            description: `${supplierToToggle.companyName} is now ${newStatus === "active" ? "Active" : "Inactive"}.`,
+            description: `${supplierToToggle.name} is now ${newStatus === "active" ? "Active" : "Inactive"}.`,
           });
           fetchSuppliers();
         }
@@ -625,9 +593,6 @@ export const SupplierManagement = () => {
                   </TableHead>
                   <TableHead className="text-xs font-medium">SR. NO</TableHead>
                   <TableHead className="text-xs font-medium">NAME</TableHead>
-                  <TableHead className="text-xs font-medium">
-                    COMPANY NAME
-                  </TableHead>
                   <TableHead className="text-xs font-medium">ADDRESS</TableHead>
                   <TableHead className="text-xs font-medium">EMAIL</TableHead>
                   <TableHead className="text-xs font-medium">CNIC</TableHead>
@@ -642,7 +607,7 @@ export const SupplierManagement = () => {
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={9}
                       className="text-center py-8 text-xs text-muted-foreground"
                     >
                       Loading...
@@ -651,7 +616,7 @@ export const SupplierManagement = () => {
                 ) : suppliers.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={9}
                       className="text-center py-8 text-xs text-muted-foreground"
                     >
                       No suppliers found
@@ -670,12 +635,6 @@ export const SupplierManagement = () => {
                       </TableCell>
                       <TableCell className="text-xs">
                         {(currentPage - 1) * rowsPerPage + index + 1}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {supplier.name || "-"}
-                      </TableCell>
-                      <TableCell className="text-xs font-medium">
-                        {supplier.companyName}
                       </TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate">
                         {supplier.address || "-"}
@@ -856,7 +815,7 @@ export const SupplierManagement = () => {
           <div className="space-y-4 pt-2">
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Title *</Label>
+                <Label className="text-xs">Title</Label>
                 <Input
                   placeholder="Supplier title"
                   value={formData.name || ""}
@@ -875,29 +834,7 @@ export const SupplierManagement = () => {
                   className="h-8 text-xs"
                 />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Account Head</Label>
-                <Input
-                  placeholder="Account head"
-                  value={formData.accountHead || ""}
-                  onChange={(e) =>
-                    handleInputChange("accountHead", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Company Name *</Label>
-                <Input
-                  placeholder="Company name"
-                  value={formData.companyName || ""}
-                  onChange={(e) =>
-                    handleInputChange("companyName", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
+                                          <div className="space-y-1">
                 <Label className="text-xs">Reference Name</Label>
                 <Input
                   placeholder="Reference"
@@ -1153,7 +1090,7 @@ export const SupplierManagement = () => {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">OB Date</Label>
+                <Label className="text-xs">Account Opening Balance Date</Label>
                 <Input
                   type="date"
                   value={formData.date || ""}
@@ -1232,7 +1169,7 @@ export const SupplierManagement = () => {
               {supplierToToggle?.status === "active"
                 ? "deactivate"
                 : "activate"}{" "}
-              "{supplierToToggle?.companyName}"?
+              "{supplierToToggle?.name}"?
               {supplierToToggle?.status === "active"
                 ? " This supplier will no longer appear in active supplier lists."
                 : " This supplier will be available for new purchase orders."}

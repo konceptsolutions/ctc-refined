@@ -373,6 +373,60 @@ app.get("/api/debug/part-cost/:partNo", async (req, res) => {
 
 // API Routes
 app.use("/api/auth", authRoutes); // Login route (public)
+// Temporary public endpoint for testing adjustment parts
+app.get("/api/inventory/adjustment-parts", async (req, res) => {
+  try {
+    console.log("Fetching parts that are in adjustments (public endpoint)");
+    
+    // Get unique part IDs from all AdjustmentItem records
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient();
+    
+    const adjustmentItems = await prisma.adjustmentItem.findMany({
+      where: {
+        Adjustment: {
+          deletedAt: null,
+        },
+      },
+      select: {
+        partId: true,
+      },
+      distinct: ['partId'],
+    });
+
+    const partIds = adjustmentItems.map((item: any) => item.partId);
+    console.log(`Found ${partIds.length} unique parts in adjustments`);
+
+    // Now fetch the full part details for these IDs
+    const parts = await prisma.part.findMany({
+      where: {
+        id: {
+          in: partIds,
+        },
+      },
+      include: {
+        Brand: true,
+      },
+      orderBy: {
+        partNo: 'asc',
+      },
+    });
+
+    const result = parts.map((part: any) => ({
+      id: part.id,
+      partNo: part.partNo,
+      brand: part.Brand?.name || '',
+      description: part.description,
+    }));
+
+    console.log(`Returning ${result.length} parts for dropdown`);
+    res.json({ data: result });
+  } catch (error: any) {
+    console.error("Error fetching adjustment parts:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.use("/api/parts", authenticateJWT, partsRoutes);
 app.use("/api/dropdowns", authenticateJWT, dropdownsRoutes);
 app.use("/api/inventory", authenticateJWT, inventoryRoutes);

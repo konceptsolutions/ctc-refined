@@ -125,7 +125,7 @@ export const SalesQuotation = () => {
     const t = setTimeout(async () => {
       setLoadingCustomers(true);
       try {
-        const res: any = await apiClient.getCustomers({ search: formData.customerName, limit: 10, status: "active" });
+        const res: any = await apiClient.getCustomers({ search: formData.customerName, limit: 1000, status: "active" });
         setCustomers(Array.isArray(res) ? res : res?.data || []);
       } catch { setCustomers([]); }
       finally { setLoadingCustomers(false); }

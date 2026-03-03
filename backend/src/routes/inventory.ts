@@ -2653,9 +2653,12 @@ router.get("/adjustments", async (req: Request, res: Response) => {
       to_date,
       status,
       search,
+      part_id,
       page = "1",
       limit = "50",
     } = req.query;
+
+    console.log("Adjustments API called with params:", { from_date, to_date, status, search, part_id, page, limit });
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
@@ -2665,6 +2668,16 @@ router.get("/adjustments", async (req: Request, res: Response) => {
     const where: any = {
       deletedAt: null,
     };
+
+    if (part_id) {
+      console.log("Adding part_id filter:", part_id);
+      where.AdjustmentItem = {
+        some: {
+          partId: part_id as string,
+        },
+      };
+      console.log("Where clause with part_id:", JSON.stringify(where, null, 2));
+    }
 
     if (from_date) {
       where.date = { ...where.date, gte: new Date(from_date as string) };
@@ -2743,7 +2756,7 @@ router.get("/adjustments", async (req: Request, res: Response) => {
     // Get adjustments
     const adjustmentsData = await prisma.adjustment.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: { adjustmentNo: "desc" },
       skip: offset,
       take: limitNum,
       include: {
@@ -2762,6 +2775,9 @@ router.get("/adjustments", async (req: Request, res: Response) => {
         },
       },
     });
+
+    console.log(`Found ${adjustmentsData.length} adjustments matching criteria`);
+    console.log("Sample adjustment data:", adjustmentsData[0]);
 
     const adjustments = adjustmentsData.map((adj: any) => {
       const serialNo = serialMap.get(adj.id) || adj.adjustmentNo;
@@ -3475,6 +3491,57 @@ router.get("/adjustments/by-store", async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get parts that are in adjustments (for filter dropdown)
+router.get("/adjustment-parts", async (req: Request, res: Response) => {
+  try {
+    console.log("Fetching parts that are in adjustments");
+    
+    // Get unique part IDs from all AdjustmentItem records
+    const adjustmentItems = await prisma.adjustmentItem.findMany({
+      where: {
+        Adjustment: {
+          deletedAt: null,
+        },
+      },
+      select: {
+        partId: true,
+      },
+      distinct: ['partId'],
+    });
+
+    const partIds = adjustmentItems.map((item: any) => item.partId);
+    console.log(`Found ${partIds.length} unique parts in adjustments`);
+
+    // Now fetch the full part details for these IDs
+    const parts = await prisma.part.findMany({
+      where: {
+        id: {
+          in: partIds,
+        },
+      },
+      include: {
+        Brand: true,
+      },
+      orderBy: {
+        partNo: 'asc',
+      },
+    });
+
+    const result = parts.map((part: any) => ({
+      id: part.id,
+      partNo: part.partNo,
+      brand: part.Brand?.name || '',
+      description: part.description,
+    }));
+
+    console.log(`Returning ${result.length} parts for dropdown`);
+    res.json({ data: result });
+  } catch (error: any) {
+    console.error("Error fetching adjustment parts:", error);
     res.status(500).json({ error: error.message });
   }
 });

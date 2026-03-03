@@ -11,3 +11,9 @@ build/
 .vscode/settings.json
 coverage/
 node_modules
+
+# Backup files
+*.sql
+*.sql.gz
+*.db
+*.dump

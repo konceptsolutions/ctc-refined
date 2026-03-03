@@ -1010,6 +1010,7 @@ class ApiClient {
     to_date?: string;
     status?: string;
     search?: string;
+    part_id?: string;
     page?: number;
     limit?: number;
   }) {
@@ -1025,6 +1026,10 @@ class ApiClient {
     return this.request(
       `/inventory/adjustments${queryString ? `?${queryString}` : ""}`,
     );
+  }
+
+  async getAdjustmentParts() {
+    return this.request("/inventory/adjustment-parts");
   }
 
   async getStockDetails(partId: string, storeId?: string) {

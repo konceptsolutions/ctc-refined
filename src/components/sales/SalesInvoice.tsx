@@ -2588,28 +2588,26 @@ export const SalesInvoice = () => {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      {/* Top Bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-semibold text-foreground">
-            Sales Invoice
-          </h2>
+          <h1 className="text-2xl font-bold text-foreground">Sales Invoices</h1>
           <p className="text-sm text-muted-foreground">
-            Create invoices with stock reservation & partial delivery tracking
+            Manage your sales invoices and inventory movements.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           <Button
             variant="outline"
             size="icon"
             onClick={refreshPartsData}
             title="Refresh Stock Data"
             disabled={partsLoading}
-            className={partsLoading ? "animate-spin" : ""}
+            className={partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"}
           >
             <RefreshCw className="w-4 h-4" />
           </Button>
-          <Button onClick={() => setShowNewInvoice(true)} className="gap-2">
+          <Button onClick={() => setShowNewInvoice(true)} className="gap-2 flex-1 sm:flex-none whitespace-nowrap">
             <Plus className="w-4 h-4" />
             New Invoice
           </Button>
@@ -2619,7 +2617,7 @@ export const SalesInvoice = () => {
       {!showNewInvoice && (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -2967,7 +2965,7 @@ export const SalesInvoice = () => {
               {inlineItems.length > 0 && (
                 <div className="border rounded-lg overflow-x-auto shadow-sm">
                   <Table>
-                    <TableHeader className="bg-muted/50">
+                    <TableHeader className="hidden md:table-header-group bg-muted/50">
                       <TableRow className="border-b">
                         <TableHead className="w-[380px] font-bold text-foreground">Part Details</TableHead>
                         <TableHead className="w-[140px] font-bold text-foreground">Rack</TableHead>
@@ -2986,8 +2984,9 @@ export const SalesInvoice = () => {
                       {inlineItems.map((item) => {
                         const part = getPartForItem(item.selectedPartId);
                         return (
-                          <TableRow key={item.id}>
-                            <TableCell className="align-middle">
+                          <TableRow key={item.id} className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-4 md:space-y-0 relative">
+                            <TableCell className="md:table-cell block p-0 md:p-4 align-middle">
+                              <span className="md:hidden text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">Part Details</span>
                               <div className="space-y-2">
                                 <div className="relative">
                                   <Input
@@ -3446,111 +3445,164 @@ export const SalesInvoice = () => {
                                     Required
                                   </p>
                                 )}
-
                               </div>
                             </TableCell>
-                            <TableCell className="align-middle">
-                              {item.selectedPartId ? (
-                                <ScrollArea className="h-[60px] border rounded-md">
-                                  <div className="p-1 space-y-0.5">
-                                    {(() => {
-                                      const allLocations = (
-                                        partLocations[item.selectedPartId] ||
-                                        part?.locations ||
-                                        []
-                                      ).filter((l: any) => l.quantity !== 0);
 
-                                      const flatLocations = [];
-                                      const locMap = new Map();
-                                      allLocations.forEach((loc) => {
-                                        const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
-                                        if (!locMap.has(key)) {
-                                          const entry = {
-                                            id: key,
-                                            rackCode: loc.rackCode || "No Rack",
-                                            shelfNo: loc.shelfNo || "No Shelf",
-                                            ids: [loc.id],
-                                            quantity: loc.quantity,
-                                          };
-                                          locMap.set(key, entry);
-                                          flatLocations.push(entry);
-                                        } else {
-                                          const entry = locMap.get(key);
-                                          entry.ids.push(loc.id);
-                                          entry.quantity += loc.quantity;
-                                        }
-                                      });
-
-                                      if (flatLocations.length === 0) {
-                                        return (
-                                          <div className="text-[10px] text-muted-foreground italic py-1">
-                                            No Rack Info
-                                          </div>
-                                        );
-                                      }
-
-                                      return flatLocations.map((loc) => {
-                                        const isChecked = loc.ids.every((id) =>
-                                          (item.selectedLocationIds || []).includes(id),
-                                        );
-
-                                        return (
-                                          <div
-                                            key={loc.id}
-                                            className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
-                                            onClick={(e) => {
-                                              e.preventDefault();
-                                              const currentIds = [...(item.selectedLocationIds || [])];
-                                              let nextIds: string[];
-                                              if (isChecked) {
-                                                nextIds = currentIds.filter((id) => !loc.ids.includes(id));
+                            {/* Column 2: Rack (Mobile Groups Rack+Shelf) */}
+                            <TableCell className="md:table-cell block p-0 md:p-4 align-middle">
+                              <div className="md:hidden">
+                                <span className="text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">Storage Info</span>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-1">
+                                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Rack</span>
+                                    {/* Rack Content (Mobile) */}
+                                    {item.selectedPartId ? (
+                                      <ScrollArea className="h-[60px] border rounded-md">
+                                        <div className="p-1 space-y-0.5">
+                                          {(() => {
+                                            const allLocations = (partLocations[item.selectedPartId] || part?.locations || []).filter((l: any) => l.quantity !== 0);
+                                            const flatLocations = [];
+                                            const locMap = new Map();
+                                            allLocations.forEach((loc) => {
+                                              const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
+                                              if (!locMap.has(key)) {
+                                                const entry = { id: key, rackCode: loc.rackCode || "No Rack", shelfNo: loc.shelfNo || "No Shelf", ids: [loc.id], quantity: loc.quantity };
+                                                locMap.set(key, entry);
+                                                flatLocations.push(entry);
                                               } else {
-                                                nextIds = currentIds;
-                                                loc.ids.forEach((id) => {
-                                                  if (!nextIds.includes(id)) nextIds.push(id);
-                                                });
+                                                const entry = locMap.get(key);
+                                                entry.ids.push(loc.id);
+                                                entry.quantity += loc.quantity;
                                               }
-                                              handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
-                                              handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
-                                            }}
-                                          >
-                                            <Checkbox checked={isChecked} className="h-3 w-3" />
-                                            <span className="text-[10px] font-medium truncate leading-none">
-                                              {loc.rackCode}
-                                            </span>
-                                          </div>
-                                        );
-                                      });
-                                    })()}
+                                            });
+                                            if (flatLocations.length === 0) return <div className="text-[10px] text-muted-foreground italic py-1">No Rack Info</div>;
+                                            return flatLocations.map((loc) => {
+                                              const isChecked = loc.ids.every((id) => (item.selectedLocationIds || []).includes(id));
+                                              return (
+                                                <div key={loc.id} className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors" onClick={(e) => {
+                                                  e.preventDefault();
+                                                  const currentIds = [...(item.selectedLocationIds || [])];
+                                                  let nextIds = isChecked ? currentIds.filter((id) => !loc.ids.includes(id)) : [...currentIds, ...loc.ids.filter(id => !currentIds.includes(id))];
+                                                  handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
+                                                  handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
+                                                }}>
+                                                  <Checkbox checked={isChecked} className="h-3 w-3" />
+                                                  <span className="text-[10px] font-medium truncate leading-none">{loc.rackCode}</span>
+                                                </div>
+                                              );
+                                            });
+                                          })()}
+                                        </div>
+                                      </ScrollArea>
+                                    ) : <div className="text-center text-muted-foreground">-</div>}
                                   </div>
-                                </ScrollArea>
-                              ) : (
-                                <div className="text-center text-muted-foreground">-</div>
-                              )}
+                                  <div className="space-y-1">
+                                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Shelf</span>
+                                    {/* Shelf Content (Mobile) */}
+                                    {item.selectedPartId ? (
+                                      <ScrollArea className="h-[60px] border rounded-md">
+                                        <div className="p-1 space-y-0.5">
+                                          {(() => {
+                                            const allLocations = (partLocations[item.selectedPartId] || part?.locations || []).filter((l: any) => l.quantity !== 0);
+                                            const flatLocations = [];
+                                            const locMap = new Map();
+                                            allLocations.forEach((loc) => {
+                                              const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
+                                              if (!locMap.has(key)) {
+                                                const entry = { id: key, rackCode: loc.rackCode || "No Rack", shelfNo: loc.shelfNo || "No Shelf", ids: [loc.id], quantity: loc.quantity };
+                                                locMap.set(key, entry);
+                                                flatLocations.push(entry);
+                                              } else {
+                                                const entry = locMap.get(key);
+                                                entry.ids.push(loc.id);
+                                                entry.quantity += loc.quantity;
+                                              }
+                                            });
+                                            if (flatLocations.length === 0) return <div className="text-[10px] text-muted-foreground italic py-1">No Shelf Info</div>;
+                                            return flatLocations.map((loc) => {
+                                              const isChecked = loc.ids.every((id) => (item.selectedLocationIds || []).includes(id));
+                                              return (
+                                                <div key={loc.id} className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors" onClick={(e) => {
+                                                  e.preventDefault();
+                                                  const currentIds = [...(item.selectedLocationIds || [])];
+                                                  let nextIds = isChecked ? currentIds.filter((id) => !loc.ids.includes(id)) : [...currentIds, ...loc.ids.filter(id => !currentIds.includes(id))];
+                                                  handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
+                                                  handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
+                                                }}>
+                                                  <Checkbox checked={isChecked} className="h-3 w-3" />
+                                                  <div className="flex-1 flex justify-between items-center gap-1 overflow-hidden">
+                                                    <span className="text-[10px] truncate leading-none">{loc.shelfNo}</span>
+                                                    <Badge variant="secondary" className="px-1 text-[9px] h-3.5 leading-none">{loc.quantity}</Badge>
+                                                  </div>
+                                                </div>
+                                              );
+                                            });
+                                          })()}
+                                        </div>
+                                      </ScrollArea>
+                                    ) : <div className="text-center text-muted-foreground">-</div>}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="hidden md:block">
+                                {/* Rack Content (Desktop) */}
+                                {item.selectedPartId ? (
+                                  <ScrollArea className="h-[60px] border rounded-md">
+                                    <div className="p-1 space-y-0.5">
+                                      {(() => {
+                                        const allLocations = (partLocations[item.selectedPartId] || part?.locations || []).filter((l: any) => l.quantity !== 0);
+                                        const flatLocations = [];
+                                        const locMap = new Map();
+                                        allLocations.forEach((loc) => {
+                                          const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
+                                          if (!locMap.has(key)) {
+                                            const entry = { id: key, rackCode: loc.rackCode || "No Rack", ids: [loc.id], quantity: loc.quantity };
+                                            locMap.set(key, entry);
+                                            flatLocations.push(entry);
+                                          } else {
+                                            const entry = locMap.get(key);
+                                            entry.ids.push(loc.id);
+                                            entry.quantity += loc.quantity;
+                                          }
+                                        });
+                                        if (flatLocations.length === 0) return <div className="text-[10px] text-muted-foreground italic py-1 text-center">No Rack</div>;
+                                        return flatLocations.map((loc) => {
+                                          const isChecked = loc.ids.every((id) => (item.selectedLocationIds || []).includes(id));
+                                          return (
+                                            <div key={loc.id} className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors" onClick={(e) => {
+                                              e.preventDefault();
+                                              const currentIds = [...(item.selectedLocationIds || [])];
+                                              let nextIds = isChecked ? currentIds.filter((id) => !loc.ids.includes(id)) : [...currentIds, ...loc.ids.filter(id => !currentIds.includes(id))];
+                                              handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
+                                              handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
+                                            }}>
+                                              <Checkbox checked={isChecked} className="h-3 w-3" />
+                                              <span className="text-[10px] font-medium truncate leading-none">{loc.rackCode}</span>
+                                            </div>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  </ScrollArea>
+                                ) : (
+                                  <div className="text-center text-muted-foreground">-</div>
+                                )}
+                              </div>
                             </TableCell>
-                            <TableCell className="align-middle">
+
+                            {/* Column 3: Shelf (Desktop Only, Hidden Mobile) */}
+                            <TableCell className="hidden md:table-cell align-middle">
                               {item.selectedPartId ? (
                                 <ScrollArea className="h-[60px] border rounded-md">
                                   <div className="p-1 space-y-0.5">
                                     {(() => {
-                                      const allLocations = (
-                                        partLocations[item.selectedPartId] ||
-                                        part?.locations ||
-                                        []
-                                      ).filter((l: any) => l.quantity !== 0);
-
+                                      const allLocations = (partLocations[item.selectedPartId] || part?.locations || []).filter((l: any) => l.quantity !== 0);
                                       const flatLocations = [];
                                       const locMap = new Map();
                                       allLocations.forEach((loc) => {
                                         const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
                                         if (!locMap.has(key)) {
-                                          const entry = {
-                                            id: key,
-                                            rackCode: loc.rackCode || "No Rack",
-                                            shelfNo: loc.shelfNo || "No Shelf",
-                                            ids: [loc.id],
-                                            quantity: loc.quantity,
-                                          };
+                                          const entry = { id: key, shelfNo: loc.shelfNo || "No Shelf", ids: [loc.id], quantity: loc.quantity };
                                           locMap.set(key, entry);
                                           flatLocations.push(entry);
                                         } else {
@@ -3559,48 +3611,21 @@ export const SalesInvoice = () => {
                                           entry.quantity += loc.quantity;
                                         }
                                       });
-
-                                      if (flatLocations.length === 0) {
-                                        return (
-                                          <div className="text-[10px] text-muted-foreground italic py-1">
-                                            No Shelf Info
-                                          </div>
-                                        );
-                                      }
-
+                                      if (flatLocations.length === 0) return <div className="text-[10px] text-muted-foreground italic py-1 text-center">No Shelf</div>;
                                       return flatLocations.map((loc) => {
-                                        const isChecked = loc.ids.every((id) =>
-                                          (item.selectedLocationIds || []).includes(id),
-                                        );
-
+                                        const isChecked = loc.ids.every((id) => (item.selectedLocationIds || []).includes(id));
                                         return (
-                                          <div
-                                            key={loc.id}
-                                            className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
-                                            onClick={(e) => {
-                                              e.preventDefault();
-                                              const currentIds = [...(item.selectedLocationIds || [])];
-                                              let nextIds: string[];
-                                              if (isChecked) {
-                                                nextIds = currentIds.filter((id) => !loc.ids.includes(id));
-                                              } else {
-                                                nextIds = currentIds;
-                                                loc.ids.forEach((id) => {
-                                                  if (!nextIds.includes(id)) nextIds.push(id);
-                                                });
-                                              }
-                                              handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
-                                              handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
-                                            }}
-                                          >
+                                          <div key={loc.id} className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors" onClick={(e) => {
+                                            e.preventDefault();
+                                            const currentIds = [...(item.selectedLocationIds || [])];
+                                            let nextIds = isChecked ? currentIds.filter((id) => !loc.ids.includes(id)) : [...currentIds, ...loc.ids.filter(id => !currentIds.includes(id))];
+                                            handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
+                                            handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
+                                          }}>
                                             <Checkbox checked={isChecked} className="h-3 w-3" />
                                             <div className="flex-1 flex justify-between items-center gap-1 overflow-hidden">
-                                              <span className="text-[10px] truncate leading-none">
-                                                {loc.shelfNo}
-                                              </span>
-                                              <Badge variant="secondary" className="px-1 text-[9px] h-3.5 leading-none">
-                                                {loc.quantity}
-                                              </Badge>
+                                              <span className="text-[10px] truncate leading-none">{loc.shelfNo}</span>
+                                              <Badge variant="secondary" className="px-1 text-[9px] h-3.5 leading-none">{loc.quantity}</Badge>
                                             </div>
                                           </div>
                                         );
@@ -3608,174 +3633,170 @@ export const SalesInvoice = () => {
                                     })()}
                                   </div>
                                 </ScrollArea>
-                              ) : (
-                                <div className="text-center text-muted-foreground">-</div>
-                              )}
+                              ) : <div className="text-center text-muted-foreground">-</div>}
                             </TableCell>
 
-                            <TableCell className="text-center align-middle">
+                            {/* Column 4: In Stock (Desktop ONLY, Mobile combined in section below) */}
+                            <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
                                 const stockBalance = partStockBalances[item.selectedPartId];
                                 const currentStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
                                 const avgCost = stockBalance?.avg_cost ?? (part?.price || 0);
                                 const isLoading = loadingStock[item.selectedPartId];
-
                                 return (
                                   <div className="flex flex-col items-center justify-center">
                                     <div className="flex items-center gap-1.5">
-                                      <span className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}>
-                                        {isLoading ? "..." : currentStock}
-                                      </span>
-                                      {part?.id && (
-                                        <Package className="w-3.5 h-3.5 text-muted-foreground" />
-                                      )}
+                                      <span className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}>{isLoading ? "..." : currentStock}</span>
+                                      {part?.id && <Package className="w-3.5 h-3.5 text-muted-foreground" />}
                                     </div>
-                                    <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap">
-                                      Cost: {avgCost.toFixed(2)}
-                                    </span>
+                                    <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap">Cost: {avgCost.toFixed(2)}</span>
                                   </div>
                                 );
                               })()}
                             </TableCell>
-                            <TableCell className="text-center align-middle">
+
+                            {/* Column 5: Reserved (Desktop ONLY) */}
+                            <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
                                 const stockBalance = partStockBalances[item.selectedPartId];
                                 const reservedStock = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
                                 const isLoading = loadingStock[item.selectedPartId];
-
-                                return (
-                                  <span className="text-sm font-semibold text-orange-600">
-                                    {isLoading ? "..." : reservedStock}
-                                  </span>
-                                );
+                                return <span className="text-sm font-semibold text-orange-600">{isLoading ? "..." : reservedStock}</span>;
                               })()}
                             </TableCell>
-                            {/* ── Avail. Qty cell ── */}
-                            <TableCell className="text-center align-middle">
+
+                            {/* Column 6: Available (Desktop ONLY) */}
+                            <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
                                 const stockBalance = partStockBalances[item.selectedPartId];
                                 const inStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
                                 const reserved = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
-                                const available = stockBalance
-                                  ? Math.max(0, inStock - reserved)
-                                  : Math.max(0, (part?.availableQty ?? 0));
+                                const available = stockBalance ? Math.max(0, inStock - reserved) : Math.max(0, (part?.availableQty ?? 0));
                                 const isLoading = loadingStock[item.selectedPartId];
-                                return isLoading ? (
-                                  <span className="text-xs text-muted-foreground">...</span>
-                                ) : (
-                                  <Badge variant={available > 0 ? "default" : "destructive"} className="px-2 py-0.5 font-bold">
-                                    {available}
-                                  </Badge>
-                                );
+                                return isLoading ? <span className="text-xs text-muted-foreground">...</span> : <Badge variant={available > 0 ? "default" : "destructive"} className="px-2 py-0.5 font-bold h-fit">{available}</Badge>;
                               })()}
                             </TableCell>
-                            <TableCell className="align-middle">
+
+                            {/* Mobile Section: Stock Status (Hidden on Desktop) */}
+                            <TableCell className="md:hidden block p-0 align-middle">
+                              <span className="text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">Stock Status</span>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
+                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">In Stock</span>
+                                  {(() => {
+                                    const stockBalance = partStockBalances[item.selectedPartId];
+                                    const currentStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
+                                    const isLoading = loadingStock[item.selectedPartId];
+                                    return <span className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}>{isLoading ? "..." : currentStock}</span>;
+                                  })()}
+                                </div>
+                                <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
+                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">Reserved</span>
+                                  {(() => {
+                                    const stockBalance = partStockBalances[item.selectedPartId];
+                                    const reservedStock = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
+                                    const isLoading = loadingStock[item.selectedPartId];
+                                    return <span className="text-sm font-semibold text-orange-600">{isLoading ? "..." : reservedStock}</span>;
+                                  })()}
+                                </div>
+                                <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
+                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">Available</span>
+                                  {(() => {
+                                    const stockBalance = partStockBalances[item.selectedPartId];
+                                    const inStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
+                                    const reserved = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
+                                    const available = stockBalance ? Math.max(0, inStock - reserved) : Math.max(0, (part?.availableQty ?? 0));
+                                    const isLoading = loadingStock[item.selectedPartId];
+                                    return isLoading ? <span className="text-xs text-muted-foreground">...</span> : <Badge variant={available > 0 ? "default" : "destructive"} className="px-2 py-0.5 font-bold h-fit">{available}</Badge>;
+                                  })()}
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Column 7: Qty (Desktop ONLY UI, Mobile combined section below) */}
+                            <TableCell className="hidden md:table-cell align-middle">
                               <div className="flex flex-col items-center justify-center">
                                 <Input
-                                  type="number"
-                                  min={0}
-                                  value={item.qty || ""}
+                                  type="number" min={0} value={item.qty || ""}
                                   onChange={(e) => {
                                     const val = parseInt(e.target.value) || 0;
-                                    const stockBalance = part?.id ? partStockBalances[part.id] : null;
-                                    const currentStock = stockBalance?.available_stock ?? (part?.availableQty || 0);
-
+                                    const currentStock = (part?.id ? partStockBalances[part.id] : null)?.available_stock ?? (part?.availableQty || 0);
                                     if (val > currentStock && currentStock >= 0) {
-                                      toast({
-                                        title: "Insufficient Stock",
-                                        description: `Cannot enter ${val}. Available stock is only ${currentStock}.`,
-                                        variant: "destructive",
-                                      });
+                                      toast({ title: "Insufficient Stock", description: `Cannot enter ${val}. Available stock is only ${currentStock}.`, variant: "destructive" });
                                       handleUpdateInlineItem(item.id, "qty", currentStock);
-                                    } else {
-                                      handleUpdateInlineItem(item.id, "qty", val);
-                                    }
+                                    } else handleUpdateInlineItem(item.id, "qty", val);
                                   }}
-                                  className="w-16 h-8 text-center font-bold"
-                                  placeholder="0"
+                                  className="w-16 h-8 text-center font-bold" placeholder="0"
                                 />
-                                {item.qty === 0 && item.selectedPartId && (
-                                  <p className="text-destructive text-[9px] font-semibold">
-                                    Required
-                                  </p>
-                                )}
+                                {item.qty === 0 && item.selectedPartId && <p className="text-destructive text-[9px] font-semibold">Required</p>}
                               </div>
                             </TableCell>
-                            <TableCell className="text-center align-middle">
+
+                            {/* Column 8: Price A (Desktop ONLY) */}
+                            <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
-                                const priceAValue =
-                                  item.priceA !== undefined
-                                    ? item.priceA
-                                    : part?.priceA || 0;
-                                const isSelected =
-                                  item.selectedPriceType === "A";
+                                const priceAValue = item.priceA !== undefined ? item.priceA : part?.priceA || 0;
+                                const isSelected = item.selectedPriceType === "A";
                                 return priceAValue > 0 ? (
-                                  <Button
-                                    variant={isSelected ? "default" : "outline"}
-                                    size="sm"
-                                    className="w-full text-xs"
-                                    onClick={() => {
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "selectedPriceType",
-                                        "A",
-                                      );
-                                    }}
-                                  >
-                                    {priceAValue.toFixed(2)}
+                                  <Button variant={isSelected ? "default" : "outline"} size="sm" className="w-full text-xs" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "A")}>
+                                    {priceAValue.toFixed(0)}
                                   </Button>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">
-                                    -
-                                  </span>
-                                );
-                              })()}
-                            </TableCell>
-                            <TableCell className="text-center align-middle">
-                              {(() => {
-                                const priceBValue =
-                                  item.priceB !== undefined
-                                    ? item.priceB
-                                    : part?.priceB || 0;
-                                const isSelected =
-                                  item.selectedPriceType === "B";
-                                return priceBValue > 0 ? (
-                                  <Button
-                                    variant={isSelected ? "default" : "outline"}
-                                    size="sm"
-                                    className="w-full text-xs"
-                                    onClick={() => {
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "selectedPriceType",
-                                        "B",
-                                      );
-                                    }}
-                                  >
-                                    {priceBValue.toFixed(2)}
-                                  </Button>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">
-                                    -
-                                  </span>
-                                );
+                                ) : <span className="text-xs text-muted-foreground">-</span>;
                               })()}
                             </TableCell>
 
-                            <TableCell className="text-center align-middle font-bold text-base text-primary">
-                              {calculateLineTotal(item).toLocaleString()}
+                            {/* Column 9: Price B (Desktop ONLY) */}
+                            <TableCell className="hidden md:table-cell text-center align-middle">
+                              {(() => {
+                                const priceBValue = item.priceB !== undefined ? item.priceB : part?.priceB || 0;
+                                const isSelected = item.selectedPriceType === "B";
+                                return priceBValue > 0 ? (
+                                  <Button variant={isSelected ? "default" : "outline"} size="sm" className="w-full text-xs" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "B")}>
+                                    {priceBValue.toFixed(0)}
+                                  </Button>
+                                ) : <span className="text-xs text-muted-foreground">-</span>;
+                              })()}
                             </TableCell>
-                            <TableCell className="align-middle">
-                              <div className="flex items-center justify-center">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-9 w-9 text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
-                                  onClick={() => handleRemoveInlineItem(item.id)}
-                                >
-                                  <Trash2 className="w-5 h-5" />
-                                </Button>
+
+                            {/* Mobile Section: Qty & Price (Hidden on Desktop) */}
+                            <TableCell className="md:hidden block p-0 align-middle">
+                              <span className="text-xs font-bold text-muted-foreground block mb-2 uppercase tracking-wider">Quantity & Price</span>
+                              <div className="grid grid-cols-3 gap-2 items-center">
+                                <div className="space-y-1">
+                                  <span className="text-[9px] text-muted-foreground uppercase">Qty</span>
+                                  <Input type="number" min={0} value={item.qty || ""} onChange={(e) => handleUpdateInlineItem(item.id, "qty", parseInt(e.target.value) || 0)} className="h-8 text-center font-bold" />
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-[9px] text-muted-foreground uppercase">Price A</span>
+                                  {(() => {
+                                    const val = item.priceA !== undefined ? item.priceA : part?.priceA || 0;
+                                    return val > 0 ? <Button variant={item.selectedPriceType === "A" ? "default" : "outline"} size="sm" className="w-full h-8 text-[10px]" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "A")}>{val.toFixed(0)}</Button> : <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">-</div>;
+                                  })()}
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-[9px] text-muted-foreground uppercase">Price B</span>
+                                  {(() => {
+                                    const val = item.priceB !== undefined ? item.priceB : part?.priceB || 0;
+                                    return val > 0 ? <Button variant={item.selectedPriceType === "B" ? "default" : "outline"} size="sm" className="w-full h-8 text-[10px]" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "B")}>{val.toFixed(0)}</Button> : <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">-</div>;
+                                  })()}
+                                </div>
                               </div>
+                            </TableCell>
+
+                            {/* Column 10: Total */}
+                            <TableCell className="md:table-cell block p-0 md:p-4 md:text-center align-middle font-bold">
+                              <div className="flex md:flex-col justify-between items-center bg-primary/5 p-3 md:p-0 rounded border border-primary/10 md:border-0 md:bg-transparent">
+                                <span className="md:hidden text-xs font-bold text-primary uppercase">Total</span>
+                                <span className="text-lg md:text-base text-primary">Rs {calculateLineTotal(item).toLocaleString()}</span>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive md:hidden" onClick={() => handleRemoveInlineItem(item.id)}><Trash2 className="w-4 h-4" /></Button>
+                              </div>
+                            </TableCell>
+
+                            {/* Column 11: Action (Desktop Only) */}
+                            <TableCell className="hidden md:table-cell align-middle text-center">
+                              <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10" onClick={() => handleRemoveInlineItem(item.id)}>
+                                <Trash2 className="w-5 h-5" />
+                              </Button>
                             </TableCell>
                           </TableRow>
                         );
@@ -3837,7 +3858,7 @@ export const SalesInvoice = () => {
                             {account.code
                               ? `${account.code} - ${account.name}`
                               : account.name}{" "}
-                            {account.type && account.type !== "General"
+                            {account.type && account.type !== "General" && account.type !== "Current Assets"
                               ? `(${account.type})`
                               : ""}
                           </SelectItem>
@@ -3901,7 +3922,7 @@ export const SalesInvoice = () => {
                             {account.code
                               ? `${account.code} - ${account.name}`
                               : account.name}{" "}
-                            {account.type && account.type !== "General"
+                            {account.type && account.type !== "General" && account.type !== "Current Assets"
                               ? `(${account.type})`
                               : ""}
                           </SelectItem>
@@ -3997,11 +4018,11 @@ export const SalesInvoice = () => {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex justify-end gap-3">
-              <Button variant="outline" onClick={resetForm}>
+            <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
+              <Button variant="outline" onClick={resetForm} className="w-full sm:w-auto order-2 sm:order-1">
                 Cancel
               </Button>
-              <Button onClick={handleSaveInvoice}>
+              <Button onClick={handleSaveInvoice} className="w-full sm:w-auto order-1 sm:order-2">
                 <FileText className="w-4 h-4 mr-2" />
                 {editingInvoiceId ? "Save Changes" : "Create Invoice"}
               </Button>
@@ -4020,16 +4041,16 @@ export const SalesInvoice = () => {
                 Loading invoices...
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
+              <div className="overflow-x-auto -mx-2 sm:mx-0">
+                <Table className="min-w-[800px] md:min-w-full">
+                  <TableHeader className="hidden md:table-header-group">
                     <TableRow>
                       <TableHead>Invoice #</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right px-4">Paid</TableHead>
                       <TableHead className="text-center">Delivery</TableHead>
                       <TableHead className="text-center">Payment</TableHead>
                       <TableHead className="text-center">Actions</TableHead>
@@ -4037,33 +4058,45 @@ export const SalesInvoice = () => {
                   </TableHeader>
                   <TableBody>
                     {filteredInvoices.map((inv) => (
-                      <TableRow key={inv.id}>
-                        <TableCell className="font-medium">
+                      <TableRow key={inv.id} className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-3 md:space-y-0 relative">
+                        <TableCell className="md:table-cell font-bold md:font-medium p-0 md:p-4 block">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Invoice #</span>
                           {inv.invoiceNo}
                         </TableCell>
-                        <TableCell>{inv.invoiceDate}</TableCell>
-                        <TableCell>{inv.customerName}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
+                        <TableCell className="md:table-cell block p-0 md:p-4">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Date</span>
+                          {inv.invoiceDate}
+                        </TableCell>
+                        <TableCell className="md:table-cell block p-0 md:p-4">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Customer</span>
+                          {inv.customerName}
+                        </TableCell>
+                        <TableCell className="md:table-cell block p-0 md:p-4">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Type</span>
+                          <Badge variant="outline" className="text-[10px] md:text-xs">
                             {inv.customerType === "walking"
                               ? "Cash Sale"
                               : "Party Sale"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-right font-medium">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Total</span>
                           Rs {inv.grandTotal.toLocaleString()}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-right">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Paid</span>
                           Rs {inv.paidAmount.toLocaleString()}
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-center">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Delivery</span>
                           {getStatusBadge(inv.status)}
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-center">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Payment</span>
                           {getPaymentBadge(inv.paymentStatus)}
                         </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
+                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-center pt-2 md:pt-4 border-t md:border-t-0">
+                          <div className="flex items-center md:justify-center gap-1">
                             {/* Record Payment */}
                             {inv.paymentStatus !== "paid" && inv.status !== "pending" && (
                               <Button

@@ -46,6 +46,7 @@ model ActivityLog {
 
 model Adjustment {
   id                                       String           @id @default(uuid())
+  adjustmentNo                             Int              @unique @default(autoincrement())
   date                                     DateTime
   subject                                  String?
   storeId                                  String?
@@ -57,7 +58,6 @@ model Adjustment {
   deletedAt                                DateTime?
   createdAt                                DateTime         @default(now())
   updatedAt                                DateTime         @updatedAt
-  adjustmentNo                             Int              @unique @default(autoincrement())
   Store                                    Store?           @relation(fields: [storeId], references: [id])
   Voucher_Adjustment_voucherIdToVoucher    Voucher?         @relation("Adjustment_voucherIdToVoucher", fields: [voucherId], references: [id])
   AdjustmentItem                           AdjustmentItem[]
@@ -78,8 +78,8 @@ model AdjustmentItem {
   priceA       Float?
   priceB       Float?
   priceM       Float?
-  deletedAt    DateTime?
   updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
   Adjustment   Adjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
   Part         Part       @relation(fields: [partId], references: [id], onDelete: Cascade)
   Rack         Rack?      @relation(fields: [rackId], references: [id])
@@ -178,38 +178,38 @@ model CompanyProfile {
 }
 
 model Customer {
-  id             String         @id @default(uuid())
-  code           String?        @unique
-  accountHead    String?
-  shortTitle     String?
-  referenceName  String?
-  name           String
-  area           String?
-  address        String?
-  email          String?
-  cnic           String?
-  contactNo      String?
-  cellNumber     String?
-  contactPersons Json?          @default("[]")
-  gstNumber      String?
-  pstNumber      String?
-  ntn            String?
-  remarks        String?
-  openingBalance Float          @default(0)
-  date           DateTime?
-  creditLimit    Float          @default(0)
-  status         String         @default("active")
-  priceType      String?
-  category       String?
-  accountOpeningDate DateTime?
+  id                 String         @id @default(uuid())
+  name               String
+  address            String?
+  email              String?
+  cnic               String?
+  contactNo          String?
+  openingBalance     Float          @default(0)
+  date               DateTime?
+  creditLimit        Float          @default(0)
+  status             String         @default("active")
+  priceType          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  accountHead        String?
+  area               String?
+  cellNumber         String?
+  code               String?        @unique
+  contactPersons     Json?          @default("[]")
+  gstNumber          String?
+  ntn                String?
+  pstNumber          String?
+  referenceName      String?
+  remarks            String?
+  shortTitle         String?
   accountClosingDate DateTime?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  Account        Account[]
-  Receivable     Receivable[]
-  SalesInvoice   SalesInvoice[]
-  SalesReturn    SalesReturn[]
-  VoucherEntry   VoucherEntry[]
+  accountOpeningDate DateTime?
+  category           String?
+  Account            Account[]
+  Receivable         Receivable[]
+  SalesInvoice       SalesInvoice[]
+  SalesReturn        SalesReturn[]
+  VoucherEntry       VoucherEntry[]
 }
 
 model DeliveryLog {
@@ -291,11 +291,11 @@ model DirectPurchaseOrderReturn {
   reason                        String?
   status                        String                          @default("pending")
   totalAmount                   Float                           @default(0)
-  deduction                     Float                           @default(0)
-  netAmount                     Float                           @default(0)
   createdAt                     DateTime                        @default(now())
   updatedAt                     DateTime                        @updatedAt
   supplierId                    String?
+  deduction                     Float                           @default(0)
+  netAmount                     Float                           @default(0)
   DirectPurchaseOrder           DirectPurchaseOrder             @relation(fields: [directPurchaseOrderId], references: [id], onDelete: Cascade)
   Supplier                      Supplier?                       @relation(fields: [supplierId], references: [id])
   DirectPurchaseOrderReturnItem DirectPurchaseOrderReturnItem[]
@@ -393,9 +393,9 @@ model Model {
   id        String   @id @default(uuid())
   partId    String
   name      String
-  qtyUsed   Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  qtyUsed   Int      @default(1)
   Part      Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
 
   @@unique([partId, name])
@@ -536,12 +536,12 @@ model Rack {
   updatedAt                                  DateTime                  @updatedAt
   AdjustmentItem                             AdjustmentItem[]
   DirectPurchaseOrderItem                    DirectPurchaseOrderItem[]
-  PartRackShelf                              PartRackShelf[]
   InvoiceRackShelf                           InvoiceRackShelf[]
-  StockReservation                           StockReservation[]
+  PartRackShelf                              PartRackShelf[]
   Store                                      Store?                    @relation(fields: [storeId], references: [id])
   Shelf                                      Shelf[]
   StockMovement                              StockMovement[]
+  StockReservation                           StockReservation[]
   StockVerificationItem                      StockVerificationItem[]
   TransferItem_TransferItem_fromRackIdToRack TransferItem[]            @relation("TransferItem_fromRackIdToRack")
   TransferItem_TransferItem_toRackIdToRack   TransferItem[]            @relation("TransferItem_toRackIdToRack")
@@ -618,7 +618,7 @@ model SalesInvoice {
   tax              Float              @default(0)
   grandTotal       Float              @default(0)
   paidAmount       Float              @default(0)
-  status           String             @default("pending") // pending, on_hold, approved, partially_delivered, delivered
+  status           String             @default("pending")
   paymentStatus    String             @default("unpaid")
   accountId        String?
   deliveredTo      String?
@@ -641,27 +641,26 @@ model SalesInvoice {
 }
 
 model SalesInvoiceItem {
-  id              String            @id @default(uuid())
-  invoiceId       String
-  partId          String
-  partNo          String
-  description     String?
-  orderedQty      Int
-  deliveredQty    Int               @default(0)
-  pendingQty      Int
-  reversedQty     Int               @default(0)
-  unitPrice       Float
-  avgCost         Float             @default(0)
-  discount        Float             @default(0)
-  lineTotal       Float
+  id                String             @id @default(uuid())
+  invoiceId         String
+  partId            String
+  partNo            String
+  description       String?
+  orderedQty        Int
+  deliveredQty      Int                @default(0)
+  pendingQty        Int
+  unitPrice         Float
+  discount          Float              @default(0)
+  lineTotal         Float
   grade             String?
   brand             String?
-  useUnlocatedStock Boolean           @default(false)
-  createdAt         DateTime          @default(now())
+  createdAt         DateTime           @default(now())
+  avgCost           Float              @default(0)
+  useUnlocatedStock Boolean            @default(false)
   DeliveryLogItem   DeliveryLogItem[]
-  SalesInvoice      SalesInvoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  Part              Part              @relation(fields: [partId], references: [id], onDelete: Cascade)
   InvoiceRackShelf  InvoiceRackShelf[]
+  SalesInvoice      SalesInvoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  Part              Part               @relation(fields: [partId], references: [id], onDelete: Cascade)
 }
 
 model InvoiceRackShelf {
@@ -672,10 +671,10 @@ model InvoiceRackShelf {
   shelfId            String?
   quantity           Int              @default(0)
   createdAt          DateTime         @default(now())
-  SalesInvoiceItem   SalesInvoiceItem @relation(fields: [salesInvoiceItemId], references: [id], onDelete: Cascade)
-  Store              Store?           @relation(fields: [storeId], references: [id], onDelete: Cascade)
   Rack               Rack?            @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  SalesInvoiceItem   SalesInvoiceItem @relation(fields: [salesInvoiceItemId], references: [id], onDelete: Cascade)
   Shelf              Shelf?           @relation(fields: [shelfId], references: [id], onDelete: Cascade)
+  Store              Store?           @relation(fields: [storeId], references: [id], onDelete: Cascade)
 }
 
 model SalesQuotation {
@@ -740,9 +739,9 @@ model SalesReturnItem {
   partId            String
   returnQuantity    Int
   originalSalePrice Float
-  avgCost           Float       @default(0)
   amount            Float
   createdAt         DateTime    @default(now())
+  avgCost           Float       @default(0)
   Part              Part        @relation(fields: [partId], references: [id], onDelete: Cascade)
   SalesReturn       SalesReturn @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
 
@@ -760,11 +759,11 @@ model Shelf {
   updatedAt                                    DateTime                  @updatedAt
   AdjustmentItem                               AdjustmentItem[]
   DirectPurchaseOrderItem                      DirectPurchaseOrderItem[]
-  PartRackShelf                                PartRackShelf[]
   InvoiceRackShelf                             InvoiceRackShelf[]
-  StockReservation                             StockReservation[]
+  PartRackShelf                                PartRackShelf[]
   Rack                                         Rack                      @relation(fields: [rackId], references: [id], onDelete: Cascade)
   StockMovement                                StockMovement[]
+  StockReservation                             StockReservation[]
   StockVerificationItem                        StockVerificationItem[]
   TransferItem_TransferItem_fromShelfIdToShelf TransferItem[]            @relation("TransferItem_fromShelfIdToShelf")
   TransferItem_TransferItem_toShelfIdToShelf   TransferItem[]            @relation("TransferItem_toShelfIdToShelf")
@@ -780,11 +779,11 @@ model StockMovement {
   storeId       String?
   rackId        String?
   shelfId       String?
-  supplierId    String?
   referenceType String?
   referenceId   String?
   notes         String?
   createdAt     DateTime  @default(now())
+  supplierId    String?
   Part          Part      @relation(fields: [partId], references: [id], onDelete: Cascade)
   Rack          Rack?     @relation(fields: [rackId], references: [id])
   Shelf         Shelf?    @relation(fields: [shelfId], references: [id])
@@ -793,23 +792,23 @@ model StockMovement {
 }
 
 model StockReservation {
-  id           String        @id @default(uuid())
-  invoiceId    String?
-  partId       String
-  quantity     Int
-  reservedAt   DateTime      @default(now())
-  releasedAt   DateTime?
+  id                String        @id @default(uuid())
+  invoiceId         String?
+  partId            String
+  quantity          Int
+  reservedAt        DateTime      @default(now())
+  releasedAt        DateTime?
   status            String        @default("reserved")
   notes             String?
-  storeId           String?
   rackId            String?
   shelfId           String?
+  storeId           String?
   useUnlocatedStock Boolean       @default(false)
   SalesInvoice      SalesInvoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   Part              Part          @relation(fields: [partId], references: [id], onDelete: Cascade)
-  Store             Store?        @relation(fields: [storeId], references: [id])
   Rack              Rack?         @relation(fields: [rackId], references: [id])
   Shelf             Shelf?        @relation(fields: [shelfId], references: [id])
+  Store             Store?        @relation(fields: [storeId], references: [id])
 }
 
 model StockVerification {
@@ -857,11 +856,11 @@ model Store {
   updatedAt                                    DateTime                @updatedAt
   Adjustment                                   Adjustment[]
   DirectPurchaseOrder                          DirectPurchaseOrder[]
-  PartRackShelf                                PartRackShelf[]
   InvoiceRackShelf                             InvoiceRackShelf[]
-  StockReservation                             StockReservation[]
+  PartRackShelf                                PartRackShelf[]
   Rack                                         Rack[]
   StockMovement                                StockMovement[]
+  StockReservation                             StockReservation[]
   StockVerificationItem                        StockVerificationItem[]
   Transfer_Transfer_fromStoreIdToStore         Transfer[]              @relation("Transfer_fromStoreIdToStore")
   Transfer_Transfer_toStoreIdToStore           Transfer[]              @relation("Transfer_toStoreIdToStore")
@@ -917,23 +916,23 @@ model Supplier {
   date                      DateTime?
   status                    String                      @default("active")
   notes                     String?
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime                    @updatedAt
   accountHead               String?
-  shortTitle                String?
-  referenceName             String?
   area                      String?
   cellNumber                String?
   contactPersons            Json?                       @default("[]")
   gstNumber                 String?
   ntn                       String?
+  referenceName             String?
   remarks                   String?
-  createdAt                 DateTime                    @default(now())
-  updatedAt                 DateTime                    @updatedAt
+  shortTitle                String?
   Account                   Account[]
   DirectPurchaseOrder       DirectPurchaseOrder[]
   DirectPurchaseOrderReturn DirectPurchaseOrderReturn[]
   PurchaseOrder             PurchaseOrder[]
-  VoucherEntry              VoucherEntry[]
   StockMovement             StockMovement[]
+  VoucherEntry              VoucherEntry[]
 }
 
 model Transfer {
@@ -1001,41 +1000,41 @@ model Voucher {
   createdBy                                   String?
   approvedBy                                  String?
   approvedAt                                  DateTime?
+  isSystemGenerated                           Boolean        @default(false)
   createdAt                                   DateTime       @default(now())
   updatedAt                                   DateTime       @updatedAt
   deletedAt                                   DateTime?
-  adjustmentId                                String?
   storeId                                     String?
-  isSystemGenerated                           Boolean        @default(false)
+  adjustmentId                                String?
   salesInvoiceId                              String?
-  SalesInvoice                                SalesInvoice?  @relation(fields: [salesInvoiceId], references: [id])
   Adjustment_Adjustment_voucherIdToVoucher    Adjustment[]   @relation("Adjustment_voucherIdToVoucher")
   Adjustment_Voucher_adjustmentIdToAdjustment Adjustment?    @relation("Voucher_adjustmentIdToAdjustment", fields: [adjustmentId], references: [id])
+  SalesInvoice                                SalesInvoice?  @relation(fields: [salesInvoiceId], references: [id])
   Store                                       Store?         @relation(fields: [storeId], references: [id])
   VoucherEntry                                VoucherEntry[]
 }
 
 model VoucherEntry {
-  id           String      @id @default(uuid())
-  voucherId    String
-  accountId    String?
-  accountName  String
-  description  String?
-  debit        Float       @default(0)
-  credit       Float       @default(0)
-  sortOrder    Int         @default(0)
-  supplierId   String?
-  customerId   String?
-  createdAt    DateTime    @default(now())
-  deletedAt    DateTime?
-  adjustmentId String?
+  id             String        @id @default(uuid())
+  voucherId      String
+  accountId      String?
+  accountName    String
+  description    String?
+  debit          Float         @default(0)
+  credit         Float         @default(0)
+  sortOrder      Int           @default(0)
+  supplierId     String?
+  customerId     String?
+  createdAt      DateTime      @default(now())
+  deletedAt      DateTime?
+  adjustmentId   String?
   salesInvoiceId String?
-  Account      Account?    @relation(fields: [accountId], references: [id])
-  Adjustment   Adjustment? @relation(fields: [adjustmentId], references: [id])
-  SalesInvoice SalesInvoice? @relation(fields: [salesInvoiceId], references: [id])
-  Customer     Customer?   @relation(fields: [customerId], references: [id])
-  Supplier     Supplier?   @relation(fields: [supplierId], references: [id])
-  Voucher      Voucher     @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  Account        Account?      @relation(fields: [accountId], references: [id])
+  Adjustment     Adjustment?   @relation(fields: [adjustmentId], references: [id])
+  Customer       Customer?     @relation(fields: [customerId], references: [id])
+  SalesInvoice   SalesInvoice? @relation(fields: [salesInvoiceId], references: [id])
+  Supplier       Supplier?     @relation(fields: [supplierId], references: [id])
+  Voucher        Voucher       @relation(fields: [voucherId], references: [id], onDelete: Cascade)
 }
 
 model WhatsAppSettings {
