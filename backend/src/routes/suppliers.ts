@@ -163,10 +163,6 @@ router.post("/", async (req, res) => {
       remarks,
     } = req.body;
 
-    if (!companyName || companyName.trim() === "") {
-      return res.status(400).json({ error: "Company Name is required" });
-    }
-
     // Parse openingBalance to ensure it's a number (not a string)
     const parsedOpeningBalance = openingBalance
       ? parseFloat(openingBalance)

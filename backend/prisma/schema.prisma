@@ -900,7 +900,7 @@ model Supplier {
   id                        String                      @id @default(uuid())
   code                      String                      @unique
   name                      String?
-  companyName               String
+  companyName               String?
   address                   String?
   city                      String?
   state                     String?
