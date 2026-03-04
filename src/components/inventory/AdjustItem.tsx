@@ -374,19 +374,19 @@ export const AdjustItem = () => {
     }
   };
 
-  // Fetch parts and stock balances - ONLY items that are in adjustments
+  // Fetch all active parts for the dropdown selection
   const fetchParts = async () => {
     try {
-      console.log("Fetching parts that are in adjustments...");
-      const response: any = await apiClient.getAdjustmentParts();
+      console.log("Fetching all active parts for dropdown...");
+      const response: any = await apiClient.getPartsDropdown();
 
       if (response.error) {
         toast.error(`Error fetching adjustment parts: ${response.error}`);
         return;
       }
 
-      const partsData = response.data || [];
-      console.log(`Found ${partsData.length} parts that are in adjustments`);
+      const partsData = response.data || response || [];
+      console.log(`Found ${partsData.length} active parts for selection`);
 
       setStockBalances({});
 
