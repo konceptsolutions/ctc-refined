@@ -132,6 +132,7 @@ router.get("/", async (req: Request, res: Response) => {
       master_part_no,
       part_no,
       description,
+      include_locations = "false",
       page = "1",
       limit = "50",
     } = req.query;
@@ -242,6 +243,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     // Skip images for large result sets to reduce payload size (29MB -> <1MB)
     const skipImages = limitNum > 1000;
+    const showLocations = include_locations === "true";
 
     const sql = `
       SELECT 
@@ -255,9 +257,8 @@ router.get("/", async (req: Request, res: Response) => {
         app."name" as application_name,
         COALESCE(st.stock, 0) as current_stock,
         COALESCE(st.reserved, 0) as reserved_stock,
-        lac.cost as latest_adj_cost,
-        COALESCE(loc.locations, '[]'::jsonb) as locations,
-        (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock
+        lac.cost as latest_adj_cost
+        ${showLocations ? ", COALESCE(loc.locations, '[]'::jsonb) as locations, (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock" : ""}
         ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
       FROM "Part" p
       LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
@@ -279,6 +280,7 @@ router.get("/", async (req: Request, res: Response) => {
           WHERE a.status = 'approved' AND a."deletedAt" IS NULL
           ORDER BY ai."partId", a.date DESC, a."createdAt" DESC, ai."createdAt" DESC
       ) lac ON p.id = lac."partId"
+      ${showLocations ? `
       LEFT JOIN (
           SELECT prs."partId",
             jsonb_agg(jsonb_build_object(
@@ -297,7 +299,7 @@ router.get("/", async (req: Request, res: Response) => {
           LEFT JOIN "Rack" r_loc ON prs."rackId" = r_loc.id
           LEFT JOIN "Shelf" sh_loc ON prs."shelfId" = sh_loc.id
           GROUP BY prs."partId"
-      ) loc ON p.id = loc."partId"
+      ) loc ON p.id = loc."partId" ` : ""}
       ${whereClause}
       ORDER BY p."updatedAt" DESC
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}

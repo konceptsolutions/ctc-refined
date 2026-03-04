@@ -23,7 +23,7 @@ export const ItemsListPage = ({
   const [items, setItems] = useState<Item[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsPage, setItemsPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(1000);
+  const [itemsPerPage, setItemsPerPage] = useState(100);
   const [totalItems, setTotalItems] = useState(0);
   const [categoryOptions, setCategoryOptions] = useState<
     { value: string; label: string }[]
@@ -92,22 +92,16 @@ export const ItemsListPage = ({
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const [cats, subs, apps] = await Promise.all([
+        const [cats, subs, apps, brands, mParts] = await Promise.all([
           apiClient.getAllCategories?.(),
-          apiClient.getAllSubcategories?.(undefined, "all"), // Get all subcategories regardless of status
+          apiClient.getAllSubcategories?.(undefined, "all"),
           apiClient.getAllApplications?.(),
+          apiClient.getAllBrands?.(),
+          apiClient.getMasterParts?.(),
         ]);
 
-        const catData = Array.isArray(cats?.data)
-          ? cats.data
-          : Array.isArray(cats)
-            ? cats
-            : [];
-        // Remove duplicates by using a Map to track unique category names
-        const uniqueCatMap = new Map<
-          string,
-          { value: string; label: string }
-        >();
+        const catData = Array.isArray(cats?.data) ? cats.data : Array.isArray(cats) ? cats : [];
+        const uniqueCatMap = new Map<string, { value: string; label: string }>();
         catData.forEach((c: any) => {
           const name = c.name;
           if (name && !uniqueCatMap.has(name)) {
@@ -116,19 +110,8 @@ export const ItemsListPage = ({
         });
         setCategoryOptions(Array.from(uniqueCatMap.values()));
 
-        const subData = Array.isArray((subs as any)?.data)
-          ? (subs as any).data
-          : Array.isArray(subs)
-            ? subs
-            : [];
-        // Store ALL subcategories with category information for filtering
-        // IMPORTANT: Keep ALL subcategories with their categoryName - don't deduplicate yet
-        // We need all entries to properly filter by category later
-        const subcategoryOptionsList: {
-          value: string;
-          label: string;
-          categoryName?: string;
-        }[] = [];
+        const subData = Array.isArray((subs as any)?.data) ? (subs as any).data : Array.isArray(subs) ? subs : [];
+        const subcategoryOptionsList: { value: string; label: string; categoryName?: string }[] = [];
         subData.forEach((s: any) => {
           const name = (s.name || "").trim();
           if (name && name !== "null" && name !== "undefined") {
@@ -139,82 +122,30 @@ export const ItemsListPage = ({
             });
           }
         });
-        // Store all subcategories - we'll deduplicate when displaying, but keep all for filtering
         setSubcategoryOptions(subcategoryOptionsList);
 
-        const appData = Array.isArray((apps as any)?.data)
-          ? (apps as any).data
-          : Array.isArray(apps)
-            ? apps
-            : [];
-        // Filter out invalid application names (dots, empty, null, undefined)
+        const appData = Array.isArray((apps as any)?.data) ? (apps as any).data : Array.isArray(apps) ? apps : [];
         const validApplications = appData
-          .map((a: any) => {
-            const name = (a.name || "").trim();
-            return name;
-          })
-          .filter(
-            (name: string) =>
-              name &&
-              name !== "null" &&
-              name !== "undefined" &&
-              name !== "." &&
-              name.length > 0,
-          );
-        // Remove duplicates and create options
+          .map((a: any) => (a.name || "").trim())
+          .filter((name: string) => name && name !== "null" && name !== "undefined" && name !== "." && name.length > 0);
         const uniqueApps = Array.from(new Set(validApplications));
-        setApplicationOptions(
-          uniqueApps.map((name: any) => ({
-            value: String(name),
-            label: String(name),
-          })),
-        );
+        setApplicationOptions(uniqueApps.map((name: any) => ({ value: String(name), label: String(name) })));
 
-        // Fetch brands and master parts separately to handle potential failures gracefully
-        try {
-          const brandsResponse = await apiClient.getAllBrands?.();
-          const brandsData = Array.isArray((brandsResponse as any)?.data)
-            ? (brandsResponse as any).data
-            : Array.isArray(brandsResponse)
-              ? brandsResponse
-              : [];
+        const brandsData = Array.isArray((brands as any)?.data) ? (brands as any).data : Array.isArray(brands) ? brands : [];
+        const uniqueBrands = new Set<string>();
+        brandsData.forEach((b: any) => {
+          const name = b.name || b.brand_name || "";
+          if (name && name.trim()) uniqueBrands.add(name.trim());
+        });
+        setBrandOptions(Array.from(uniqueBrands).map((b) => ({ value: b, label: b })));
 
-          const uniqueBrands = new Set<string>();
-          brandsData.forEach((b: any) => {
-            const name = b.name || b.brand_name || "";
-            if (name && name.trim()) uniqueBrands.add(name.trim());
-          });
-
-          setBrandOptions(
-            Array.from(uniqueBrands).map((b) => ({ value: b, label: b })),
-          );
-        } catch (e) { }
-
-        try {
-          const masterPartsResponse = await apiClient.getMasterParts?.();
-          const masterPartsData = Array.isArray(
-            (masterPartsResponse as any)?.data,
-          )
-            ? (masterPartsResponse as any).data
-            : Array.isArray(masterPartsResponse)
-              ? masterPartsResponse
-              : [];
-
-          // Ensure master parts are just strings or objects with name/master_part_no
-          const uniqueMasterParts = new Set<string>();
-          masterPartsData.forEach((mp: any) => {
-            const val =
-              typeof mp === "string" ? mp : mp.master_part_no || mp.name || "";
-            if (val && val.trim()) uniqueMasterParts.add(val.trim());
-          });
-
-          setMasterPartOptions(
-            Array.from(uniqueMasterParts).map((mp) => ({
-              value: mp,
-              label: mp,
-            })),
-          );
-        } catch (e) { }
+        const masterPartsData = Array.isArray((mParts as any)?.data) ? (mParts as any).data : Array.isArray(mParts) ? mParts : [];
+        const uniqueMasterParts = new Set<string>();
+        masterPartsData.forEach((mp: any) => {
+          const val = typeof mp === "string" ? mp : mp.master_part_no || mp.name || "";
+          if (val && val.trim()) uniqueMasterParts.add(val.trim());
+        });
+        setMasterPartOptions(Array.from(uniqueMasterParts).map((mp) => ({ value: mp, label: mp })));
       } catch (err) { }
     };
     fetchDropdowns();
@@ -524,8 +455,8 @@ export const ItemsListPage = ({
         (activeFilters.subcategory_name && activeFilters.subcategory_name !== 'all') ||
         (activeFilters.application_name && activeFilters.application_name !== 'all');
 
-      const effectiveLimit = "all";
-      const params: any = { page, limit: effectiveLimit };
+      const effectiveLimit = limit;
+      const params: any = { page, limit: effectiveLimit, include_locations: "false" };
 
       // Add search filters - use activeFilters, not the stale filters parameter
       if (activeFilters.search) params.search = activeFilters.search;
