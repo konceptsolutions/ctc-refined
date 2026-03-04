@@ -3254,7 +3254,7 @@ export const SalesInvoice = () => {
                                   {item.selectedPartId && (
                                     <div className="flex flex-wrap gap-2 mt-1">
                                       {part?.brands?.[0]?.name && (
-                                        <Badge variant="secondary" className="px-1 py-0 h-4 text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                                        <Badge variant="secondary" className="px-1 py-0 h-4 text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-black hover:bg-primary/20 transition-colors">
                                           {part.brands[0].name}
                                         </Badge>
                                       )}
@@ -3414,7 +3414,7 @@ export const SalesInvoice = () => {
                                                       )}
                                                       <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                                                         {p.brands && p.brands.length > 0 && (
-                                                          <div className="text-[10px] uppercase font-semibold text-primary/70 tracking-wider">
+                                                          <div className="text-[10px] uppercase font-semibold text-black tracking-wider">
                                                             {p.brands.map((b) => b.name).join(", ")}
                                                           </div>
                                                         )}
