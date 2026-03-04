@@ -3,8 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Calendar, Download, Printer, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { Calendar as CalendarIcon, Download, Printer, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import { apiClient } from "@/lib/api";
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 interface IncomeCategory {
   name: string;
@@ -16,23 +20,23 @@ export const IncomeStatementTab = () => {
   const [costData, setCostData] = useState<IncomeCategory[]>([]);
   const [expenseData, setExpenseData] = useState<IncomeCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fromDate, setFromDate] = useState(() => {
+  const [fromDate, setFromDate] = useState<Date | undefined>(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    d.setDate(1); // First day of current month
+    return d;
   });
-  const [toDate, setToDate] = useState(() => {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
-  });
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
 
   const fetchIncomeStatement = async () => {
     try {
       setLoading(true);
-      console.log("Fetching Income Statement with dates:", fromDate, toDate);
+      const fromDateStr = fromDate ? format(fromDate, "yyyy-MM-dd") : "";
+      const toDateStr = toDate ? format(toDate, "yyyy-MM-dd") : "";
+      console.log("Fetching Income Statement with dates:", fromDateStr, toDateStr);
 
       const params: { [key: string]: any } = {
-        from_date: fromDate,
-        to_date: toDate,
+        from_date: fromDateStr,
+        to_date: toDateStr,
       };
 
       const result = await apiClient.get<any>('/accounting/income-statement', { params, cache: 'no-store' });
@@ -87,7 +91,7 @@ export const IncomeStatementTab = () => {
           </style>
         </head>
         <body>
-          <h1>Income Statement - ${fromDate} to ${toDate}</h1>
+          <h1>Income Statement - ${fromDate ? format(fromDate, "dd/MM/yyyy") : ""} to ${toDate ? format(toDate, "dd/MM/yyyy") : ""}</h1>
           <div class="section">
             <h2>Revenue</h2>
             ${revenueData.map(cat => `
@@ -235,21 +239,55 @@ export const IncomeStatementTab = () => {
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
                 <label className="text-sm text-muted-foreground">From:</label>
-                <Input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="w-[150px]"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "w-[150px] justify-start text-left font-normal",
+                        !fromDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {fromDate ? format(fromDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={fromDate}
+                      onSelect={setFromDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm text-muted-foreground">To:</label>
-                <Input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="w-[150px]"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "w-[150px] justify-start text-left font-normal",
+                        !toDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {toDate ? format(toDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={toDate}
+                      onSelect={setToDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <Button
                 variant="default"

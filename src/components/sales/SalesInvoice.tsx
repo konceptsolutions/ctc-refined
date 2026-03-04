@@ -2757,201 +2757,207 @@ export const SalesInvoice = () => {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Customer Section */}
-            <div
-              className={`grid grid-cols-1 gap-4 ${newInvoice.customerType === "registered" ? "md:grid-cols-5" : "md:grid-cols-4"}`}
-            >
-              <div className="space-y-2">
-                <Label>Customer Type</Label>
-                <Select
-                  value={newInvoice.customerType}
-                  onValueChange={(v) => {
-                    const customerType = v as CustomerType;
-                    setNewInvoice((prev) => ({ ...prev, customerType }));
-                    // Reset customer selection when type changes to registered
-                    if (customerType === "registered") {
-                      setSelectedCustomerId("");
-                      setSelectedCustomerName("");
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="registered">Party Sale</SelectItem>
-                    <SelectItem value="walking">Cash Sale</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          <CardContent className="space-y-8 p-6">
+            {/* Customer & Order Logistics Section */}
+            <div className="bg-primary/5 rounded-xl p-5 border border-primary/10">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-primary/80 mb-4 flex items-center gap-2">
+                <Users className="w-4 h-4" /> Customer & Delivery Info
+              </h3>
+              <div
+                className={`grid grid-cols-1 gap-6 ${newInvoice.customerType === "registered" ? "md:grid-cols-12" : "md:grid-cols-12"}`}
+              >
+                <div className="space-y-2 md:col-span-3 lg:col-span-2">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Sale Type</Label>
+                  <Select
+                    value={newInvoice.customerType}
+                    onValueChange={(v) => {
+                      const customerType = v as CustomerType;
+                      setNewInvoice((prev) => ({ ...prev, customerType }));
+                      // Reset customer selection when type changes to registered
+                      if (customerType === "registered") {
+                        setSelectedCustomerId("");
+                        setSelectedCustomerName("");
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-11">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="registered">Party Sale (Credit)</SelectItem>
+                      <SelectItem value="walking">Cash Sale (Walk-in)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* Customer Name Input - Only show for Cash Sale (walking) */}
-              {newInvoice.customerType === "walking" && (
+                {/* Customer Name Input - Only show for Cash Sale (walking) */}
+                {newInvoice.customerType === "walking" && (
+                  <div className="space-y-2 md:col-span-5 lg:col-span-4">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Customer Name</Label>
+                    <Input
+                      placeholder="Enter walk-in customer name"
+                      value={newInvoice.customerName || ""}
+                      onChange={(e) =>
+                        setNewInvoice((prev) => ({
+                          ...prev,
+                          customerName: e.target.value,
+                        }))
+                      }
+                      className="bg-background border-primary/20 h-11"
+                    />
+                  </div>
+                )}
+
+                {/* Customer Dropdown - Only show for Party Sale (registered) */}
+                {newInvoice.customerType === "registered" && (
+                  <div className="space-y-2 md:col-span-5 lg:col-span-4">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Select Customer</Label>
+                    <div className="flex gap-2">
+                      <Select
+                        value={selectedCustomerId || undefined}
+                        onValueChange={(value) => {
+                          setSelectedCustomerId(value);
+                          const customer = customers.find((c) => c.id === value);
+                          if (customer) {
+                            setSelectedCustomerName(customer.name);
+                            const pt = customer.priceType || null;
+                            setCustomerPriceType(pt);
+                            // Auto-apply price type to all existing inline items
+                            if (pt) {
+                              setInlineItems((prev) =>
+                                prev.map((item) => {
+                                  if (!item.selectedPartId) return item;
+                                  return { ...item, selectedPriceType: pt };
+                                }),
+                              );
+                            }
+                          }
+                        }}
+                        disabled={loadingCustomers}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue
+                            placeholder={
+                              loadingCustomers
+                                ? "Loading..."
+                                : customers.length === 0
+                                  ? "No customers available"
+                                  : "Select customer..."
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {!loadingCustomers &&
+                            customers.length > 0 &&
+                            customers.map((customer) => (
+                              <SelectItem key={customer.id} value={customer.id}>
+                                <span className="flex items-center gap-2">
+                                  {customer.name}
+                                  {customer.priceType && (
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${customer.priceType === "A"
+                                      ? "bg-blue-100 text-blue-700"
+                                      : customer.priceType === "B"
+                                        ? "bg-indigo-100 text-indigo-700"
+                                        : "bg-purple-100 text-purple-700"
+                                      }`}>
+                                      Price {customer.priceType}
+                                    </span>
+                                  )}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          {!loadingCustomers && customers.length === 0 && (
+                            <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                              No customers available
+                            </div>
+                          )}
+                          {loadingCustomers && (
+                            <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                              Loading customers...
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setShowAddCustomerDialog(true)}
+                        title="Add New Customer"
+                        className="shrink-0"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    {/* Show Previous Balance and Credit Limit */}
+                    {selectedCustomerId &&
+                      (() => {
+                        const customer = customers.find(
+                          (c) => c.id === selectedCustomerId,
+                        );
+                        if (!customer) return null;
+                        return (
+                          <div className="text-xs flex flex-row gap-4 mt-1 bg-muted/50 p-2 rounded-md items-center shadow-sm border border-border/50">
+                            <div>
+                              <span className="text-muted-foreground font-medium mr-1 tracking-tight">
+                                Previous Balance:
+                              </span>
+                              <span
+                                className={`font-semibold tracking-tight ${customer.balance && customer.balance > 0 ? "text-red-600" : "text-emerald-600"}`}
+                              >
+                                Rs {customer.balance?.toFixed(2) || "0.00"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap text-[11px] bg-background/50 py-1 px-2 rounded border border-border/40">
+                              <span className="text-muted-foreground uppercase tracking-wider font-semibold">
+                                Credit Limit:
+                              </span>
+                              <span className="font-bold">
+                                {customer.creditLimit && customer.creditLimit > 0
+                                  ? `Rs ${customer.creditLimit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : "Unlimited"}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="link"
+                                className="h-auto p-0 text-[10px] text-blue-600 hover:text-blue-800 flex items-center"
+                                onClick={() => {
+                                  setEditingCreditLimit(
+                                    customer.creditLimit || 0,
+                                  );
+                                  setShowEditCreditLimitDialog(true);
+                                }}
+                              >
+                                (EDIT)
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                  </div>
+                )}
+
                 <div className="space-y-2">
-                  <Label>Customer Name</Label>
+                  <Label>Tax Type</Label>
+                  <Select value={taxType} onValueChange={setTaxType}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Without GST">Without GST</SelectItem>
+                      <SelectItem value="With GST">With GST</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Delivered To</Label>
                   <Input
-                    placeholder="Enter customer name"
-                    value={newInvoice.customerName || ""}
-                    onChange={(e) =>
-                      setNewInvoice((prev) => ({
-                        ...prev,
-                        customerName: e.target.value,
-                      }))
-                    }
+                    placeholder="Enter name"
+                    value={deliveredTo}
+                    onChange={(e) => setDeliveredTo(e.target.value)}
                   />
                 </div>
-              )}
-
-              {/* Customer Dropdown - Only show for Party Sale (registered) */}
-              {newInvoice.customerType === "registered" && (
-                <div className="space-y-2">
-                  <Label>Customer</Label>
-                  <div className="flex gap-2">
-                    <Select
-                      value={selectedCustomerId || undefined}
-                      onValueChange={(value) => {
-                        setSelectedCustomerId(value);
-                        const customer = customers.find((c) => c.id === value);
-                        if (customer) {
-                          setSelectedCustomerName(customer.name);
-                          const pt = customer.priceType || null;
-                          setCustomerPriceType(pt);
-                          // Auto-apply price type to all existing inline items
-                          if (pt) {
-                            setInlineItems((prev) =>
-                              prev.map((item) => {
-                                if (!item.selectedPartId) return item;
-                                return { ...item, selectedPriceType: pt };
-                              }),
-                            );
-                          }
-                        }
-                      }}
-                      disabled={loadingCustomers}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue
-                          placeholder={
-                            loadingCustomers
-                              ? "Loading..."
-                              : customers.length === 0
-                                ? "No customers available"
-                                : "Select customer..."
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {!loadingCustomers &&
-                          customers.length > 0 &&
-                          customers.map((customer) => (
-                            <SelectItem key={customer.id} value={customer.id}>
-                              <span className="flex items-center gap-2">
-                                {customer.name}
-                                {customer.priceType && (
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${customer.priceType === "A"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : customer.priceType === "B"
-                                      ? "bg-indigo-100 text-indigo-700"
-                                      : "bg-purple-100 text-purple-700"
-                                    }`}>
-                                    Price {customer.priceType}
-                                  </span>
-                                )}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        {!loadingCustomers && customers.length === 0 && (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            No customers available
-                          </div>
-                        )}
-                        {loadingCustomers && (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            Loading customers...
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setShowAddCustomerDialog(true)}
-                      title="Add New Customer"
-                      className="shrink-0"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  {/* Show Previous Balance and Credit Limit */}
-                  {selectedCustomerId &&
-                    (() => {
-                      const customer = customers.find(
-                        (c) => c.id === selectedCustomerId,
-                      );
-                      if (!customer) return null;
-                      return (
-                        <div className="text-xs flex flex-row gap-4 mt-1 bg-muted/50 p-2 rounded-md items-center shadow-sm border border-border/50">
-                          <div>
-                            <span className="text-muted-foreground font-medium mr-1 tracking-tight">
-                              Previous Balance:
-                            </span>
-                            <span
-                              className={`font-semibold tracking-tight ${customer.balance && customer.balance > 0 ? "text-red-600" : "text-emerald-600"}`}
-                            >
-                              Rs {customer.balance?.toFixed(2) || "0.00"}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-muted-foreground font-medium tracking-tight">
-                              Credit Limit:
-                            </span>
-                            <span className="font-semibold tracking-tight">
-                              {customer.creditLimit && customer.creditLimit > 0
-                                ? `Rs ${customer.creditLimit.toFixed(2)}`
-                                : "Unlimited"}
-                            </span>
-                            <Button
-                              type="button"
-                              variant="link"
-                              className="h-auto p-0 text-xs text-blue-600 hover:text-blue-800 flex items-center underline-offset-2"
-                              onClick={() => {
-                                setEditingCreditLimit(
-                                  customer.creditLimit || 0,
-                                );
-                                setShowEditCreditLimitDialog(true);
-                              }}
-                            >
-                              (Update)
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label>Tax Type</Label>
-                <Select value={taxType} onValueChange={setTaxType}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Without GST">Without GST</SelectItem>
-                    <SelectItem value="With GST">With GST</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Delivered To</Label>
-                <Input
-                  placeholder="Enter name"
-                  value={deliveredTo}
-                  onChange={(e) => setDeliveredTo(e.target.value)}
-                />
               </div>
             </div>
 

@@ -3,7 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiClient } from "@/lib/api";
-import { Loader2 } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 interface BalanceSheetAccount {
   id: string;
@@ -49,25 +54,22 @@ interface SupplierAccount {
 }
 
 export const BalanceSheetTab = () => {
-  const [date, setDate] = useState<string>(() => {
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, "0");
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const year = String(today.getFullYear()).slice(-2);
-    return `${day}/${month}/${year}`;
-  });
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [loading, setLoading] = useState(true);
   const [balanceSheetData, setBalanceSheetData] =
     useState<BalanceSheetData | null>(null);
 
   useEffect(() => {
-    fetchBalanceSheet();
-  }, [date]);
+    if (selectedDate) {
+      fetchBalanceSheet();
+    }
+  }, [selectedDate]);
 
   const fetchBalanceSheet = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.getBalanceSheet({ date });
+      const dateStr = selectedDate ? format(selectedDate, "yyyy-MM-dd") : "";
+      const response = await apiClient.getBalanceSheet({ date: dateStr });
       if (response.data) {
         setBalanceSheetData(response.data as BalanceSheetData);
       }
@@ -187,14 +189,32 @@ export const BalanceSheetTab = () => {
             </Label>
             <div className="flex items-center gap-2">
               <Label htmlFor="balance-sheet-date">Date:</Label>
-              <Input
-                id="balance-sheet-date"
-                type="text"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                placeholder="DD/MM/YY"
-                className="w-32"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-48 justify-start text-left font-normal",
+                      !selectedDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {selectedDate ? (
+                      format(selectedDate, "dd/MM/yyyy")
+                    ) : (
+                      <span>Pick a date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </CardContent>

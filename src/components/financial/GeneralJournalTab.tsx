@@ -5,9 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BookOpen, ArrowUpDown, Search, Calendar, Filter, Download, Printer } from "lucide-react";
+import { BookOpen, ArrowUpDown, Search, Calendar as CalendarIcon, Filter, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 interface JournalEntry {
   id: number;
@@ -32,8 +36,11 @@ export const GeneralJournalTab = () => {
   const getDefaultToDate = () => {
     return new Date().toISOString().split('T')[0];
   };
-  const [fromDate, setFromDate] = useState(getDefaultFromDate());
-  const [toDate, setToDate] = useState(getDefaultToDate());
+  const [fromDate, setFromDate] = useState<Date | undefined>(() => {
+    const date = new Date();
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  });
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [sortField, setSortField] = useState<keyof JournalEntry | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -52,8 +59,8 @@ export const GeneralJournalTab = () => {
       const response = await apiClient.getGeneralJournal({
         search_by: searchType,
         search: searchValue || undefined,
-        from_date: fromDate,
-        to_date: toDate,
+        from_date: fromDate ? format(fromDate, "yyyy-MM-dd") : undefined,
+        to_date: toDate ? format(toDate, "yyyy-MM-dd") : undefined,
         page,
         limit
       });
@@ -227,7 +234,7 @@ export const GeneralJournalTab = () => {
   return (
     <Card className="shadow-lg border-0 bg-card">
       <CardHeader className="pb-4 border-b border-border/50">
-          <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-3 text-xl font-bold">
             <div className="p-2 bg-primary/10 rounded-lg">
               <BookOpen className="h-5 w-5 text-primary" />
@@ -292,26 +299,58 @@ export const GeneralJournalTab = () => {
 
           <div className="flex flex-wrap items-end gap-4 pt-2 border-t border-border/30">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Calendar className="h-4 w-4" />
+              <CalendarIcon className="h-4 w-4" />
               Date Range
             </div>
             <div className="space-y-2">
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">From</Label>
-              <Input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="w-44 bg-background"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-44 justify-start text-left font-normal bg-background",
+                      !fromDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {fromDate ? format(fromDate, "dd/MM/yyyy") : <span>DD/MM/YYYY</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={fromDate}
+                    onSelect={setFromDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-2">
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">To</Label>
-              <Input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="w-44 bg-background"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-44 justify-start text-left font-normal bg-background",
+                      !toDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {toDate ? format(toDate, "dd/MM/yyyy") : <span>DD/MM/YYYY</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={toDate}
+                    onSelect={setToDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </div>
@@ -359,36 +398,36 @@ export const GeneralJournalTab = () => {
                 </TableRow>
               ) : (
                 entries.map((entry, index) => (
-                <TableRow 
-                  key={entry.id} 
-                  className={`
+                  <TableRow
+                    key={entry.id}
+                    className={`
                     transition-colors hover:bg-muted/40
                     ${index % 2 === 0 ? 'bg-background' : 'bg-muted/20'}
                   `}
-                >
-                  <TableCell className="font-medium text-foreground">{entry.tId}</TableCell>
-                  <TableCell>
-                    <span className="px-2 py-1 bg-primary/10 text-primary rounded-md text-sm font-medium">
-                      {entry.VoucherNo}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{entry.date}</TableCell>
-                  <TableCell className="font-medium text-foreground">{entry.account}</TableCell>
-                  <TableCell className="max-w-md text-muted-foreground">
-                    <span className="line-clamp-2">{entry.description}</span>
-                  </TableCell>
-                  <TableCell className="text-right font-mono font-semibold">
-                    <span className={entry.debit > 0 ? "text-orange-500" : "text-muted-foreground/50"}>
-                      {entry.debit > 0 ? formatNumber(entry.debit) : "0"}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right font-mono font-semibold">
-                    <span className={entry.credit > 0 ? "text-blue-500" : "text-muted-foreground/50"}>
-                      {entry.credit > 0 ? formatNumber(entry.credit) : "0"}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              )))}
+                  >
+                    <TableCell className="font-medium text-foreground">{entry.tId}</TableCell>
+                    <TableCell>
+                      <span className="px-2 py-1 bg-primary/10 text-primary rounded-md text-sm font-medium">
+                        {entry.VoucherNo}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{entry.date}</TableCell>
+                    <TableCell className="font-medium text-foreground">{entry.account}</TableCell>
+                    <TableCell className="max-w-md text-muted-foreground">
+                      <span className="line-clamp-2">{entry.description}</span>
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold">
+                      <span className={entry.debit > 0 ? "text-orange-500" : "text-muted-foreground/50"}>
+                        {entry.debit > 0 ? formatNumber(entry.debit) : "0"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold">
+                      <span className={entry.credit > 0 ? "text-blue-500" : "text-muted-foreground/50"}>
+                        {entry.credit > 0 ? formatNumber(entry.credit) : "0"}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                )))}
               {/* Total Row */}
               <TableRow className="bg-muted/60 border-t-2 border-border font-bold hover:bg-muted/60">
                 <TableCell colSpan={5} className="text-right text-base py-4">

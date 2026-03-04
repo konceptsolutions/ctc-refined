@@ -22,6 +22,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Users, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Calendar as CalendarIcon } from "lucide-react";
 import {
   SearchableSelect,
   SearchableSelectOption,
@@ -59,8 +64,12 @@ export const LedgersTab = () => {
   const [selectedMainGroup, setSelectedMainGroup] = useState("");
   const [selectedSubGroup, setSelectedSubGroup] = useState("");
   const [selectedAccount, setSelectedAccount] = useState("");
-  const [fromDate, setFromDate] = useState(getCurrentDate());
-  const [toDate, setToDate] = useState(getCurrentDate());
+  const [fromDate, setFromDate] = useState<Date | undefined>(() => {
+    const d = new Date();
+    d.setDate(1); // Default to first of month
+    return d;
+  });
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [selectedEntries, setSelectedEntries] = useState<number[]>([]);
   const [mainGroups, setMainGroups] = useState<AccountGroup[]>([]);
@@ -77,7 +86,7 @@ export const LedgersTab = () => {
           setSubGroups(response.data.subGroups || []);
           setAccounts(response.data.accounts || []);
         }
-      } catch (error) {}
+      } catch (error) { }
     };
     fetchAccountGroups();
   }, []);
@@ -140,8 +149,8 @@ export const LedgersTab = () => {
         main_group: selectedMainGroup || undefined,
         sub_group: selectedSubGroup || undefined,
         account: selectedAccount || undefined,
-        from_date: fromDate,
-        to_date: toDate,
+        from_date: fromDate ? format(fromDate, "yyyy-MM-dd") : undefined,
+        to_date: toDate ? format(toDate, "yyyy-MM-dd") : undefined,
         page: 1,
         limit: 10000, // Fetch all entries at once
       });
@@ -244,7 +253,7 @@ export const LedgersTab = () => {
         </head>
         <body>
           <h1>Ledgers</h1>
-          <p>Period: ${fromDate} to ${toDate}</p>
+          <p>Period: ${fromDate ? format(fromDate, "dd/MM/yyyy") : ""} to ${toDate ? format(toDate, "dd/MM/yyyy") : ""}</p>
           <table>
             <thead>
               <tr>
@@ -259,8 +268,8 @@ export const LedgersTab = () => {
             </thead>
             <tbody>
               ${entries
-                .map(
-                  (entry) => `
+        .map(
+          (entry) => `
                 <tr>
                   <td>${entry.tId ?? "-"}</td>
                   <td>${entry.voucherNo}</td>
@@ -271,8 +280,8 @@ export const LedgersTab = () => {
                   <td class="text-right">${formatNumber(entry.balance)}</td>
                 </tr>
               `,
-                )
-                .join("")}
+        )
+        .join("")}
             </tbody>
           </table>
         </body>
@@ -366,21 +375,53 @@ export const LedgersTab = () => {
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-2">
             <Label>From</Label>
-            <Input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="w-40"
-            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-44 justify-start text-left font-normal",
+                    !fromDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {fromDate ? format(fromDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={fromDate}
+                  onSelect={setFromDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="space-y-2">
             <Label>To</Label>
-            <Input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="w-40"
-            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-44 justify-start text-left font-normal",
+                    !toDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {toDate ? format(toDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={toDate}
+                  onSelect={setToDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
           <Button onClick={handleSearch} disabled={loading}>
             Search
