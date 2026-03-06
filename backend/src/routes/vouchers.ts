@@ -27,7 +27,7 @@ function normalizeVoucherTypeFilter(typeParam: unknown): string | undefined {
 // Get all vouchers
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { type, status, from_date, to_date, search, page = '1', limit = '100' } = req.query;
+    const { type, status, from_date, to_date, search, search_by, page = '1', limit = '100' } = req.query;
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
@@ -50,11 +50,32 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     if (search) {
+      const searchTerm = (search as string).trim();
+      const searchBy = search_by as string || 'voucher-no';
+      
       // SQLite doesn't support case-insensitive mode, so we use contains directly
-      where.OR = [
-        { voucherNumber: { contains: search as string } },
-        { narration: { contains: search as string } },
-      ];
+      switch (searchBy) {
+        case 'voucher-no':
+          where.OR = [
+            { voucherNumber: { contains: searchTerm } }
+          ];
+          break;
+        case 'voucher-name':
+          where.OR = [
+            { narration: { contains: searchTerm } }
+          ];
+          break;
+        case 'amount':
+          // For amount search, we need to search in voucher entries
+          // First get all vouchers, then filter by amount in entries
+          break;
+        default:
+          // Default search both voucher number and narration
+          where.OR = [
+            { voucherNumber: { contains: searchTerm } },
+            { narration: { contains: searchTerm } }
+          ];
+      }
     }
 
     const [vouchers, total] = await Promise.all([
@@ -81,11 +102,24 @@ router.get('/', async (req: Request, res: Response) => {
     ]);
 
     // Filter out vouchers linked to soft-deleted sales invoices
-    const filteredVouchers = vouchers.filter((voucher) => {
+    let filteredVouchers = vouchers.filter((voucher) => {
       // This is a simple filter since we don't have entries loaded
       // In a real implementation, you'd need to check voucher entries for customer links
       return true; // For now, return all vouchers
     });
+
+    // Handle amount search if needed
+    if (search && (search_by as string) === 'amount') {
+      const searchAmount = parseFloat(search as string);
+      if (!isNaN(searchAmount)) {
+        filteredVouchers = filteredVouchers.filter(voucher => {
+          // Check if any voucher entry has the searched amount
+          return voucher.VoucherEntry.some(entry => 
+            entry.debit === searchAmount || entry.credit === searchAmount
+          );
+        });
+      }
+    }
 
     // Transform vouchers to match frontend format
     const transformedVouchers = filteredVouchers.map((voucher) => ({
@@ -308,10 +342,100 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Check if voucher exists
     const existingVoucher = await prisma.voucher.findUnique({
       where: { id },
+      include: {
+        VoucherEntry: {
+          include: {
+            Account: {
+              include: {
+                Subgroup: {
+                  include: {
+                    MainGroup: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     });
 
     if (!existingVoucher) {
       return res.status(404).json({ error: 'Voucher not found' });
+    }
+
+    // Check if status is changing to "posted" and update account balances
+    if (existingVoucher.status !== 'posted' && status === 'posted') {
+      console.log(`Posting voucher ${existingVoucher.voucherNumber}, updating account balances...`);
+      
+      for (const entry of existingVoucher.VoucherEntry) {
+        if (!entry.accountId || !entry.Account) {
+          console.log(`Skipping entry ${entry.id} - no account linked`);
+          continue;
+        }
+
+        const accountType = entry.Account.Subgroup.MainGroup.type.toLowerCase();
+        let balanceChange = 0;
+
+        // Calculate balance change based on account type
+        // Assets/Expenses: Debit increases balance, Credit decreases balance
+        // Liabilities/Equity/Revenue: Credit increases balance, Debit decreases balance
+        if (accountType === 'asset' || accountType === 'expense' || accountType === 'cost') {
+          balanceChange = entry.debit - entry.credit;
+        } else {
+          balanceChange = entry.credit - entry.debit;
+        }
+
+        // Update account balance
+        if (balanceChange !== 0) {
+          await prisma.account.update({
+            where: { id: entry.accountId },
+            data: {
+              currentBalance: {
+                increment: balanceChange,
+              },
+              updatedAt: new Date(),
+            },
+          });
+          
+          console.log(`Updated account ${entry.Account.code} (${entry.Account.name}): ${balanceChange > 0 ? '+' : ''}Rs. ${balanceChange}`);
+        }
+      }
+    }
+
+    // If status is changing from "posted" to "draft", reverse the balances
+    if (existingVoucher.status === 'posted' && status === 'draft') {
+      console.log(`Unposting voucher ${existingVoucher.voucherNumber}, reversing account balances...`);
+      
+      for (const entry of existingVoucher.VoucherEntry) {
+        if (!entry.accountId || !entry.Account) {
+          continue;
+        }
+
+        const accountType = entry.Account.Subgroup.MainGroup.type.toLowerCase();
+        let balanceReversal = 0;
+
+        // Calculate reversal (opposite of posting)
+        if (accountType === 'asset' || accountType === 'expense' || accountType === 'cost') {
+          balanceReversal = entry.credit - entry.debit;
+        } else {
+          balanceReversal = entry.debit - entry.credit;
+        }
+
+        // Reverse the balance change
+        if (balanceReversal !== 0) {
+          await prisma.account.update({
+            where: { id: entry.accountId },
+            data: {
+              currentBalance: {
+                increment: balanceReversal,
+              },
+              updatedAt: new Date(),
+            },
+          });
+          
+          console.log(`Reversed account ${entry.Account.code} (${entry.Account.name}): ${balanceReversal > 0 ? '+' : ''}Rs. ${balanceReversal}`);
+        }
+      }
     }
 
     if ((existingVoucher as any).isSystemGenerated || (existingVoucher as any).adjustmentId) {

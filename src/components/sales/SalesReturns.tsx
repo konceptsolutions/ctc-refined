@@ -5,8 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiClient } from "@/lib/api";
-import { usePagination } from "@/hooks/usePagination";
-import EnhancedPagination from "@/components/ui/EnhancedPagination";
 import {
   Table,
   TableBody,
@@ -105,12 +103,10 @@ export const SalesReturns = () => {
   const [selectedReturn, setSelectedReturn] = useState<SalesReturn | null>(null);
   const [returnToDelete, setReturnToDelete] = useState<SalesReturn | null>(null);
 
-  // Pagination using custom hook
-  const pagination = usePagination({
-    totalItems: returns.length,
-    initialPage: 1,
-    initialItemsPerPage: 10,
-  });
+  // Simple pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const totalPages = Math.ceil(returns.length / itemsPerPage);
 
   // Fetch returns from database/localStorage
   useEffect(() => {
@@ -209,7 +205,10 @@ export const SalesReturns = () => {
     return matchesItemType && matchesItem && matchesCustomer && matchesCustomerName;
   });
 
-  const paginatedReturns = pagination.paginatedData(filteredReturns);
+  const paginatedReturns = filteredReturns.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -228,7 +227,7 @@ export const SalesReturns = () => {
   };
 
   const handleSearch = () => {
-    pagination.setCurrentPage(1);
+    setCurrentPage(1);
     const filteredCount = filteredReturns.length;
     toast({
       title: "Search Applied",
@@ -559,7 +558,7 @@ export const SalesReturns = () => {
                           onCheckedChange={(checked) => handleSelectReturn(returnItem.id, checked as boolean)}
                         />
                       </TableCell>
-                      <TableCell className="text-xs">{pagination.startIndex + index + 1}</TableCell>
+                      <TableCell className="text-xs">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                       <TableCell className="text-xs font-medium">{returnItem.invoiceNo}</TableCell>
                       <TableCell className="text-xs">{returnItem.returnDate}</TableCell>
                       <TableCell className="text-xs">{returnItem.customerName}</TableCell>
@@ -618,17 +617,35 @@ export const SalesReturns = () => {
             </Table>
           </div>
 
-          {/* Pagination */}
-          <EnhancedPagination
-          currentPage={pagination.currentPage}
-          totalPages={pagination.totalPages}
-          totalItems={filteredReturns.length}
-          itemsPerPage={pagination.itemsPerPage}
-          startIndex={pagination.startIndex}
-          endIndex={pagination.endIndex}
-          onPageChange={pagination.setCurrentPage}
-          onItemsPerPageChange={pagination.setItemsPerPage}
-        />
+          {/* Simple Pagination */}
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center space-x-2">
+              <p className="text-sm text-muted-foreground">
+                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredReturns.length)} of {filteredReturns.length} entries
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-sm">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

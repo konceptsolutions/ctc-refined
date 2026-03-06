@@ -17,7 +17,7 @@ export function getApiBaseUrl(): string {
     return `${origin}/api`;
   }
 
-  return "http://192.168.18.57:5000/api";
+  return "http://155.94.150.168:5000/api";
 }
 
 const API_BASE_URL = getApiBaseUrl();

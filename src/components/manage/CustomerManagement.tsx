@@ -93,6 +93,7 @@ const emptyCustomer: Omit<Customer, "id"> = {
 export const CustomerManagement = () => {
   const { toast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -116,6 +117,22 @@ export const CustomerManagement = () => {
       }
     } catch (error) {
       console.error("Error fetching areas:", error);
+    }
+  };
+
+  const fetchAllCustomers = async () => {
+    try {
+      const response = await apiClient.getCustomers({
+        status: "all", // Fetch all customers regardless of status
+        page: 1,
+        limit: 10000, // Large limit to get all customers
+      });
+
+      if ((response as any).data) {
+        setAllCustomers((response as any).data);
+      }
+    } catch (error) {
+      console.error("Error fetching all customers:", error);
     }
   };
 
@@ -154,6 +171,7 @@ export const CustomerManagement = () => {
   useEffect(() => {
     fetchCustomers();
     fetchAreas();
+    fetchAllCustomers();
   }, [currentPage, rowsPerPage, statusFilter]);
 
   const totalPages = Math.ceil(totalRecords / rowsPerPage);
@@ -510,16 +528,36 @@ export const CustomerManagement = () => {
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Search</Label>
-              <Input
-                placeholder="Enter search term..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-48 h-8 text-xs"
+              <SearchableSelect
+                placeholder="Type to search customers..."
+                options={allCustomers.map(c => ({
+                  value: c.id,
+                  label: c.name,
+                  description: `${c.email || 'No email'} • ${c.contactNo || 'No contact'}`
+                }))}
+                value={allCustomers.find(c => c.name === searchTerm)?.id || ''}
+                onValueChange={(value) => {
+                  if (!value) {
+                    setSearchTerm('');
+                    handleSearch();
+                  } else {
+                    const customer = allCustomers.find(c => c.id === value);
+                    if (customer) {
+                      setSearchTerm(customer.name);
+                      handleSearch();
+                    }
+                  }
+                }}
+                className="w-64"
               />
             </div>
             <Button
               className="bg-primary text-primary-foreground h-8 text-xs px-6"
-              onClick={handleSearch}
+              onClick={() => {
+                if (searchTerm) {
+                  handleSearch();
+                }
+              }}
             >
               <Search className="w-3 h-3 mr-1" />
               Search
@@ -612,12 +650,17 @@ export const CustomerManagement = () => {
                       </TableCell>
                       <TableCell className="text-xs text-right font-medium">
                         Rs{" "}
-                        {(customer.balance ?? customer.openingBalance).toFixed(
-                          2,
+                        {(customer.balance ?? customer.openingBalance).toLocaleString(
+                          undefined,
+                          { minimumFractionDigits: 0, maximumFractionDigits: 2 },
                         )}
                       </TableCell>
                       <TableCell className="text-xs text-right font-medium text-red-600">
-                        Rs {customer.creditLimit.toFixed(2)}
+                        Rs{" "}
+                        {customer.creditLimit.toLocaleString(undefined, {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 2,
+                        })}
                       </TableCell>
                       <TableCell>
                         <Select
@@ -690,12 +733,14 @@ export const CustomerManagement = () => {
                 }}
               >
                 <SelectTrigger className="w-16 h-7 text-xs">
-                  <SelectValue />
+                  <SelectValue placeholder={rowsPerPage} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="10">10</SelectItem>
                   <SelectItem value="25">25</SelectItem>
                   <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="200">200</SelectItem>
                 </SelectContent>
               </Select>
               <div className="flex gap-1">

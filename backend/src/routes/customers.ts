@@ -13,94 +13,68 @@ router.get("/", async (req, res) => {
     const limitNum = parseInt(limit as string, 10);
     const skip = (pageNum - 1) * limitNum;
 
-    // Build where clause
+    // Build the where clause
     const where: any = {};
 
-    // Status filter
+    // Status filter - only apply if not "all"
     if (status && status !== "all") {
       where.status = status;
     }
 
-    // Search filter
-    if (search && searchBy) {
-      const searchTerm = (search as string).toLowerCase();
-      switch (searchBy) {
-        case "name":
-          where.name = { contains: searchTerm };
-          break;
-        case "email":
-          where.email = { contains: searchTerm };
-          break;
-        case "cnic":
-          where.cnic = { contains: search as string };
-          break;
-        case "contact":
-          where.contactNo = { contains: search as string };
-          break;
-        default:
-          where.OR = [
-            { name: { contains: searchTerm } },
-            { email: { contains: searchTerm } },
-          ];
-      }
-    }
-
-    // Build the full where clause combining status and search
-    const finalWhere: any = { status: "active" };
-
-    // Apply search if provided (without searchBy, search all name/email fields)
-    if (search) {
-      const searchTerm = search as string;
-      if (searchBy) {
-        switch (searchBy) {
-          case "name":
-            finalWhere.name = { contains: searchTerm };
-            break;
-          case "email":
-            finalWhere.email = { contains: searchTerm };
-            break;
-          case "cnic":
-            finalWhere.cnic = { contains: searchTerm };
-            break;
-          case "contact":
-            finalWhere.contactNo = { contains: searchTerm };
-            break;
-          default:
-            finalWhere.OR = [
-              { name: { contains: searchTerm } },
-              { email: { contains: searchTerm } },
-            ];
-        }
-      } else {
-        finalWhere.OR = [
-          { name: { contains: searchTerm } },
-          { email: { contains: searchTerm } },
-        ];
-      }
-    }
-
-    // Fetch customers with search applied at the database level
-    const [allCustomers] = await Promise.all([
-      prisma.customer.findMany({
-        where: finalWhere,
-        include: {
-          Account: {
-            where: { status: "Active" },
-            select: { id: true, code: true, currentBalance: true },
-          },
+    // Fetch all customers matching status filter
+    const allCustomers = await prisma.customer.findMany({
+      where,
+      include: {
+        Account: {
+          where: { status: "Active" },
+          select: { id: true, code: true, currentBalance: true },
         },
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.customer.count({ where: finalWhere }),
-    ]);
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-    // Filter out "Demo" customers (case-insensitive) - SQLite doesn't support mode: 'insensitive'
-    const filteredCustomers = allCustomers.filter(
+    // Filter out "Demo" customers (case-insensitive)
+    let filteredCustomers = allCustomers.filter(
       (customer: any) => !customer.name.toLowerCase().includes("demo"),
     );
 
-    // Apply pagination after filtering
+    // Apply case-insensitive search filter in JavaScript (SQLite compatible)
+    if (search) {
+      const searchTerm = (search as string).toLowerCase();
+      filteredCustomers = filteredCustomers.filter((customer: any) => {
+        if (searchBy) {
+          switch (searchBy) {
+            case "name":
+              return customer.name?.toLowerCase().includes(searchTerm);
+            case "email":
+              return customer.email?.toLowerCase().includes(searchTerm);
+            case "cnic":
+              return customer.cnic?.toLowerCase().includes(searchTerm);
+            case "contact":
+              return (
+                customer.contactNo?.toLowerCase().includes(searchTerm) ||
+                customer.cellNumber?.toLowerCase().includes(searchTerm)
+              );
+            default:
+              return (
+                customer.name?.toLowerCase().includes(searchTerm) ||
+                customer.email?.toLowerCase().includes(searchTerm)
+              );
+          }
+        } else {
+          // Search both name and email
+          return (
+            customer.name?.toLowerCase().includes(searchTerm) ||
+            customer.email?.toLowerCase().includes(searchTerm)
+          );
+        }
+      });
+    }
+
+    // Get total count for pagination
     const total = filteredCustomers.length;
+
+    // Apply pagination
     const paginatedCustomers = filteredCustomers.slice(skip, skip + limitNum);
 
     // Get all account IDs for the paginated customers

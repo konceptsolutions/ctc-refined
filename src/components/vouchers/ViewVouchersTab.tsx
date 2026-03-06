@@ -41,8 +41,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Voucher } from "./VoucherManagement";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { apiClient } from "@/lib/api";
-import { usePagination } from "@/hooks/usePagination";
-import EnhancedPagination from "@/components/ui/EnhancedPagination";
 
 interface ViewVouchersTabProps {
   vouchers: Voucher[];
@@ -83,12 +81,10 @@ export const ViewVouchersTab = ({
   const [searchBy, setSearchBy] = useState("voucher-no");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Pagination using custom hook
-  const pagination = usePagination({
-    totalItems: vouchers.length,
-    initialPage: 1,
-    initialItemsPerPage: 10,
-  });
+  // Simple pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const totalPages = Math.ceil(vouchers.length / itemsPerPage);
 
   // Selection
   const [selectedVouchers, setSelectedVouchers] = useState<string[]>([]);
@@ -433,7 +429,7 @@ export const ViewVouchersTab = ({
       search_by: searchBy,
       search: searchQuery
     });
-    pagination.setCurrentPage(1);
+    setCurrentPage(1);
   };
 
   const clearFilters = () => {
@@ -449,12 +445,16 @@ export const ViewVouchersTab = ({
     setSearchQuery("");
 
     onSearch({});
-    pagination.resetPagination();
+    setCurrentPage(1);
+    setItemsPerPage(10);
   };
 
   // Skip local filtering, use vouchers directly as they will come filtered from server
   const filteredVouchers = vouchers;
-  const paginatedVouchers = pagination.paginatedData(filteredVouchers);
+  const paginatedVouchers = filteredVouchers.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -969,7 +969,7 @@ export const ViewVouchersTab = ({
                         }
                       />
                     </TableCell>
-                    <TableCell>{pagination.startIndex + index + 1}</TableCell>
+                    <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                     <TableCell className="text-primary font-medium">
                       {voucher.voucherNumber}
                     </TableCell>
@@ -1053,17 +1053,35 @@ export const ViewVouchersTab = ({
           </Table>
         </div>
 
-        {/* Pagination */}
-        <EnhancedPagination
-          currentPage={pagination.currentPage}
-          totalPages={pagination.totalPages}
-          totalItems={filteredVouchers.length}
-          itemsPerPage={pagination.itemsPerPage}
-          startIndex={pagination.startIndex}
-          endIndex={pagination.endIndex}
-          onPageChange={pagination.setCurrentPage}
-          onItemsPerPageChange={pagination.setItemsPerPage}
-        />
+        {/* Simple Pagination */}
+        <div className="flex items-center justify-between px-2">
+          <div className="flex items-center space-x-2">
+            <p className="text-sm text-muted-foreground">
+              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredVouchers.length)} of {filteredVouchers.length} entries
+            </p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </Button>
+            <span className="text-sm">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Edit Dialog */}

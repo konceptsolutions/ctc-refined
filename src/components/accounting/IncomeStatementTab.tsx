@@ -30,27 +30,56 @@ export const IncomeStatementTab = () => {
   const fetchIncomeStatement = async () => {
     try {
       setLoading(true);
-      const fromDateStr = fromDate ? format(fromDate, "yyyy-MM-dd") : "";
-      const toDateStr = toDate ? format(toDate, "yyyy-MM-dd") : "";
-      console.log("Fetching Income Statement with dates:", fromDateStr, toDateStr);
-
-      const params: { [key: string]: any } = {
-        from_date: fromDateStr,
-        to_date: toDateStr,
+      
+      // Temporarily hardcode sample data to test UI rendering
+      const sampleData = {
+        revenue: [
+          { code: "4000", name: "Sales Revenue", amount: 100000 },
+          { code: "4010", name: "Service Revenue", amount: 25000 }
+        ],
+        cost: [
+          { code: "5000", name: "Cost of Goods Sold", amount: 60000 }
+        ],
+        expenses: [
+          { code: "6000", name: "Operating Expenses", amount: 20000 },
+          { code: "6010", name: "Administrative Expenses", amount: 10000 }
+        ]
       };
-
-      const result = await apiClient.get<any>('/accounting/income-statement', { params, cache: 'no-store' });
-
-      if (result.data) {
-        console.log("Income Statement Response:", result.data);
-        setRevenueData(result.data.revenue || []);
-        setCostData(result.data.cost || []);
-        setExpenseData(result.data.expenses || []);
-      } else if (result.error) {
-        console.error("Income Statement load failure:", result.error);
-      }
-    } catch (error) {
-      console.error("Error in fetchIncomeStatement:", error);
+      
+      // Transform sample data
+      const transformedRevenue: IncomeCategory[] = [{
+        name: "Revenue",
+        items: sampleData.revenue.map(account => ({
+          name: `${account.code}-${account.name}`,
+          amount: account.amount,
+        })),
+      }];
+      
+      const transformedCost: IncomeCategory[] = [{
+        name: "Cost of Goods Sold",
+        items: sampleData.cost.map(account => ({
+          name: `${account.code}-${account.name}`,
+          amount: account.amount,
+        })),
+      }];
+      
+      const transformedExpenses: IncomeCategory[] = [{
+        name: "Operating Expenses",
+        items: sampleData.expenses.map(account => ({
+          name: `${account.code}-${account.name}`,
+          amount: account.amount,
+        })),
+      }];
+      
+      setRevenueData(transformedRevenue);
+      setCostData(transformedCost);
+      setExpenseData(transformedExpenses);
+      
+    } catch (error: any) {
+      console.error("Error:", error);
+      setRevenueData([]);
+      setCostData([]);
+      setExpenseData([]);
     } finally {
       setLoading(false);
     }
@@ -75,6 +104,10 @@ export const IncomeStatementTab = () => {
   );
 
   const netIncome = grossProfit - totalExpenses;
+  
+  console.log("Rendering - Revenue:", revenueData.length, "categories, Total:", totalRevenue);
+  console.log("Rendering - Cost:", costData.length, "categories, Total:", totalCost);
+  console.log("Rendering - Expenses:", expenseData.length, "categories, Total:", totalExpenses);
 
   const handlePrint = () => {
     const printHTML = `

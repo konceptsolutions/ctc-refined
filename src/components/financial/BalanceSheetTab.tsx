@@ -149,7 +149,11 @@ export const BalanceSheetTab = () => {
       (sum, mg) => sum + calculateMainGroupTotal(mg),
       0,
     );
-    const netIncome = balanceSheetData.revExp || 0;
+    // Calculate accurate net income: Revenue - Cost - Expenses
+    const revenue = balanceSheetData.revenue || 0;
+    const cost = balanceSheetData.cost || 0;
+    const expense = balanceSheetData.expense || 0;
+    const netIncome = revenue - cost - expense;
     return capitalTotal + netIncome;
   };
 
@@ -477,7 +481,13 @@ export const BalanceSheetTab = () => {
               <div className="border-b pb-1 ml-4 flex justify-between items-center mt-2">
                 <span className="text-sm">Net Income</span>
                 <span className="text-sm text-right">
-                  {formatBalance(balanceSheetData.revExp, true)}
+                  {(() => {
+                    const revenue = balanceSheetData?.revenue || 0;
+                    const cost = balanceSheetData?.cost || 0;
+                    const expense = balanceSheetData?.expense || 0;
+                    const netIncome = revenue - cost - expense;
+                    return formatBalance(netIncome, true);
+                  })()}
                 </span>
               </div>
 

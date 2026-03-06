@@ -2,7 +2,6 @@ import { Package, LogOut } from "lucide-react";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import { useUndeliveredStockAlerts } from "@/hooks/useUndeliveredStockAlerts";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,9 +17,6 @@ interface StoreHeaderProps {
 
 export const StoreHeader = ({ storeName }: StoreHeaderProps) => {
   const navigate = useNavigate();
-  
-  // Enable undelivered stock alerts for store manager
-  useUndeliveredStockAlerts();
 
   const handleLogout = () => {
     import("@/utils/auth").then((auth) => {

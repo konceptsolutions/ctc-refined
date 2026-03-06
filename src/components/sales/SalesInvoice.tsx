@@ -682,6 +682,7 @@ export const SalesInvoice = () => {
                 orderedQty: item.orderedQty,
                 deliveredQty: item.deliveredQty,
                 pendingQty: item.pendingQty,
+                reversedQty: item.reversedQty || 0,
                 unitPrice: item.unitPrice,
                 avgCost: item.avgCost || 0,
                 discount: item.discount || 0,
@@ -1759,7 +1760,8 @@ export const SalesInvoice = () => {
     // Validate all quantities
     for (const item of itemsToReverse) {
       const qty = reverseQuantities[item.id] || 0;
-      const maxReverse = item.pendingQty - (item.reversedQty || 0);
+      // maxReverse = pendingQty (which is orderedQty - deliveredQty, stored correctly in DB)
+      const maxReverse = item.pendingQty || 0;
       if (qty <= 0) {
         toast({
           title: "Invalid Quantity",
@@ -4179,28 +4181,36 @@ export const SalesInvoice = () => {
                                 <FileText className="w-4 h-4" />
                               </Button>
                             )}
-                            {/* Reverse Stock - for approved/partially delivered with pending items */}
-                            {(inv.status === "approved" || inv.status === "partially_delivered") &&
-                              inv.items?.some((item) => (item.pendingQty || 0) - (item.reversedQty || 0) > 0) && (
+                            {/* Reverse Stock - for approved invoices with pending (undelivered) quantity */}
+                            {inv.status === "approved" &&
+                              inv.items?.some((item) => (item.pendingQty || 0) > 0) && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
                                   onClick={() => {
-                                    // Find ALL items with pending quantity and open reverse dialog
-                                    const allItemsWithPending = inv.items?.filter(
-                                      (item) => (item.pendingQty || 0) - (item.reversedQty || 0) > 0
+                                    // Show all items that still have pending (undelivered) quantity
+                                    const itemsToProcess = inv.items?.filter(
+                                      (item) => (item.pendingQty || 0) > 0
                                     );
-                                    if (allItemsWithPending && allItemsWithPending.length > 0) {
+
+                                    if (itemsToProcess && itemsToProcess.length > 0) {
                                       setSelectedInvoice({ ...inv, items: inv.items || [] });
-                                      setItemsToReverse(allItemsWithPending);
-                                      // Initialize reverse quantities for all items to their full pending qty
+                                      setItemsToReverse(itemsToProcess);
+                                      // Initialize reverse quantities to the full pending amount
                                       const initialQtys: Record<string, number> = {};
-                                      allItemsWithPending.forEach(item => {
-                                        initialQtys[item.id] = (item.pendingQty || 0) - (item.reversedQty || 0);
+                                      itemsToProcess.forEach((item) => {
+                                        initialQtys[item.id] = item.pendingQty || 0;
                                       });
                                       setReverseQuantities(initialQtys);
                                       setShowReverseDialog(true);
+                                    } else {
+                                      toast({
+                                        title: "No Reversible Items",
+                                        description:
+                                          "This invoice has no items that can be reversed.",
+                                        variant: "destructive",
+                                      });
                                     }
                                   }}
                                   title="Reverse undelivered stock to inventory"
@@ -5039,7 +5049,7 @@ export const SalesInvoice = () => {
                     {itemsToReverse.map(item => (
                       <div key={item.id} className="mb-2 pb-2 border-b last:border-0">
                         <p><strong>Part:</strong> {item.partNo}</p>
-                        <p><strong>Remaining Qty:</strong> {(item.pendingQty || 0) - (item.reversedQty || 0)} units</p>
+                        <p><strong>Pending Qty:</strong> {item.pendingQty || 0} units</p>
                       </div>
                     ))}
                   </div>

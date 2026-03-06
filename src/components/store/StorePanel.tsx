@@ -478,17 +478,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const fetchStockOutOrders = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      // Fetch ALL invoices (both walking/cash and registered/party) — no customerType filter
-      const response = await apiClient.getSalesInvoices({
-        status: statusFilter !== "all" ? statusFilter : undefined,
-      });
+      // Fetch ALL invoices (both walking/cash and registered/party) without status filter
+      const response = await apiClient.getSalesInvoices({});
 
       const invoicesData = Array.isArray(response) ? response : (response.data || []);
       if (Array.isArray(invoicesData)) {
         const formattedInvoices = invoicesData
-          // Show all customer types — cash sale and party sale both need store delivery
-          // Also show fully_delivered and partially_delivered_reversed for reference (disabled)
-          .filter((invoice: any) => ['approved', 'partially_delivered', 'fully_delivered', 'partially_delivered_reversed'].includes(invoice.status))
+          // Show ALL invoices regardless of status for Stock Out Items
+          // This allows users to see all sales invoices that may need delivery
           .map((invoice: any) => ({
             id: invoice.id,
             invoiceNo: invoice.invoiceNo,
@@ -536,6 +533,20 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
   const handlePrintStockOutReceipt = async (order: StockOutOrder) => {
     try {
+      // Prevent opening stock out for fully delivered, reversed, or cancelled invoices
+      if (order.status === "fully_delivered") {
+        toast.info("This invoice is already fully delivered and cannot be processed for stock out.");
+        return;
+      }
+      if (order.status === "reversed" || order.status === "partially_reversed") {
+        toast.info("This invoice has been reversed and cannot be processed for stock out.");
+        return;
+      }
+      if (order.status === "cancelled") {
+        toast.info("This invoice has been cancelled and cannot be processed for stock out.");
+        return;
+      }
+
       // Fetch full invoice details
       const response = await apiClient.getSalesInvoice(order.id);
       const invoiceData: any = response.data || response;
@@ -1408,7 +1419,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     </>
                                   )}
 
-                                  {row.type === "stock-out" && row.status !== "fully_delivered" && (
+                                  {row.type === "stock-out" && row.status !== "fully_delivered" && row.status !== "reversed" && row.status !== "partially_reversed" && row.status !== "cancelled" && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -1668,7 +1679,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   variant={
                                     invoice.status === "fully_delivered"
                                       ? "default"
-                                      : invoice.status === "partially_delivered_reversed"
+                                      : invoice.status === "reversed" || invoice.status === "partially_reversed" || invoice.status === "cancelled"
                                         ? "destructive"
                                         : invoice.status === "pending"
                                           ? "secondary"
@@ -1686,14 +1697,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     size="sm"
                                     onClick={() => handlePrintStockOutReceipt(invoice)}
                                     title="Confirm Stock Out"
-                                    disabled={invoice.status === "fully_delivered" || invoice.status === "partially_delivered_reversed"}
+                                    disabled={invoice.status === "fully_delivered" || invoice.status === "reversed" || invoice.status === "partially_reversed" || invoice.status === "cancelled"}
                                   >
                                     <Printer className="w-4 h-4 mr-1" />
                                     {invoice.status === "fully_delivered" 
                                       ? "Delivered" 
-                                      : invoice.status === "partially_delivered_reversed"
+                                      : invoice.status === "reversed" || invoice.status === "partially_reversed"
                                         ? "Reversed"
-                                        : "Stock Out"}
+                                        : invoice.status === "cancelled"
+                                          ? "Cancelled"
+                                          : "Stock Out"}
                                   </Button>
                                 </div>
                               </TableCell>
