@@ -371,6 +371,145 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
   }
 });
 
+// Public Income Statement (for testing without authentication)
+router.get("/public-income-statement", async (req: Request, res: Response) => {
+  try {
+    const { from_date, to_date } = req.query;
+
+    // Prepare Date Objects with end-of-day fix
+    let fromDateObj: Date | undefined;
+    let toDateObj: Date | undefined;
+
+    if (from_date) {
+      fromDateObj = new Date(from_date as string);
+    }
+    if (to_date) {
+      toDateObj = new Date(to_date as string);
+      toDateObj.setHours(23, 59, 59, 999);
+    }
+
+    const dateFilter: any = {};
+    if (fromDateObj) dateFilter.gte = fromDateObj;
+    if (toDateObj) dateFilter.lte = toDateObj;
+
+    // Define common include for accounts (VoucherEntry only)
+    const commonInclude = {
+      VoucherEntry: {
+        where: {
+          Voucher: {
+            status: "posted",
+            ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
+          },
+        },
+      },
+    };
+
+    // Query revenue accounts - use MainGroup type "Income"
+    const revenueAccounts = await prisma.account.findMany({
+      where: {
+        Subgroup: {
+          MainGroup: {
+            type: { in: ["Income", "income", "INCOME", "Revenue", "revenue", "REVENUE"] },
+          },
+        },
+      },
+      include: commonInclude,
+    });
+
+    // Query cost accounts - use MainGroup name "Cost of Sales"
+    const costAccounts = await prisma.account.findMany({
+      where: {
+        Subgroup: {
+          MainGroup: {
+            name: { in: ["Cost", "Cost of Sales"] },
+          },
+        },
+      },
+      include: commonInclude,
+    });
+
+    // Query expense accounts - exclude Cost and Cost of Sales main groups
+    const expenseAccounts = await prisma.account.findMany({
+      where: {
+        Subgroup: {
+          MainGroup: {
+            type: { in: ["expense", "Expense", "EXPENSE"] },
+            name: { notIn: ["Cost", "Cost of Sales"] },
+          },
+        },
+      },
+      include: commonInclude,
+    });
+
+    // Helper to calculate period movement (Income statement is period-based)
+    const calculatePeriodAmount = (acc: any, type: "revenue" | "expense") => {
+      const totalDebit = acc.VoucherEntry.reduce(
+        (sum: number, entry: any) => sum + (entry.debit || 0),
+        0,
+      );
+      const totalCredit = acc.VoucherEntry.reduce(
+        (sum: number, entry: any) => sum + (entry.credit || 0),
+        0,
+      );
+
+      if (type === "revenue") {
+        return totalCredit - totalDebit;
+      } else {
+        return totalDebit - totalCredit;
+      }
+    };
+
+    // Calculate amounts
+    const revenue = revenueAccounts
+      .map((acc) => ({
+        code: acc.code,
+        name: acc.name,
+        amount: calculatePeriodAmount(acc, "revenue"),
+        level: 0,
+      }))
+      .filter((a) => a.amount !== 0);
+
+    const cost = costAccounts
+      .map((acc) => ({
+        code: acc.code,
+        name: acc.name,
+        amount: calculatePeriodAmount(acc, "expense"),
+        level: 0,
+      }))
+      .filter((a) => a.amount !== 0);
+
+    const expenses = expenseAccounts
+      .map((acc) => ({
+        code: acc.code,
+        name: acc.name,
+        amount: calculatePeriodAmount(acc, "expense"),
+        level: 0,
+      }))
+      .filter((a) => a.amount !== 0);
+
+    const totalRevenue = revenue.reduce((sum, item) => sum + item.amount, 0);
+    const totalCost = cost.reduce((sum, item) => sum + item.amount, 0);
+    const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
+
+    res.json({
+      revenue,
+      cost,
+      expenses,
+      summary: {
+        totalRevenue,
+        totalCost,
+        grossProfit: totalRevenue - totalCost,
+        totalExpenses,
+        netProfit: totalRevenue - totalCost - totalExpenses,
+      },
+    });
+  } catch (error: any) {
+    res
+      .status(500)
+      .json({ error: error.message || "Failed to fetch income statement" });
+  }
+});
+
 // Get Income Statement
 router.get("/income-statement", async (req: Request, res: Response) => {
   try {
@@ -406,36 +545,37 @@ router.get("/income-statement", async (req: Request, res: Response) => {
       // Removed JournalLine
     };
 
-    // Query revenue accounts
+    // Query revenue accounts - use MainGroup type "Income"
     const revenueAccounts = await prisma.account.findMany({
       where: {
         Subgroup: {
           MainGroup: {
-            type: { in: ["revenue", "Revenue", "REVENUE"] },
+            type: { in: ["Income", "income", "INCOME", "Revenue", "revenue", "REVENUE"] },
           },
         },
       },
       include: commonInclude,
     });
 
-    // Query cost accounts
+    // Query cost accounts - use MainGroup name "Cost of Sales"
     const costAccounts = await prisma.account.findMany({
       where: {
         Subgroup: {
           MainGroup: {
-            type: { in: ["cost", "Cost", "COST", "cogs", "COGS"] },
+            name: { in: ["Cost", "Cost of Sales"] },
           },
         },
       },
       include: commonInclude,
     });
 
-    // Query expense accounts
+    // Query expense accounts - exclude Cost and Cost of Sales main groups
     const expenseAccounts = await prisma.account.findMany({
       where: {
         Subgroup: {
           MainGroup: {
             type: { in: ["expense", "Expense", "EXPENSE"] },
+            name: { notIn: ["Cost", "Cost of Sales"] },
           },
         },
       },

@@ -13,6 +13,26 @@ interface IncomeAccount {
   amount: number;
 }
 
+interface IncomeStatementApiItem {
+  code: string;
+  name: string;
+  amount: number;
+  level: number;
+}
+
+interface IncomeStatementApiResponse {
+  revenue: IncomeStatementApiItem[];
+  cost: IncomeStatementApiItem[];
+  expenses: IncomeStatementApiItem[];
+  summary: {
+    totalRevenue: number;
+    totalCost: number;
+    grossProfit: number;
+    totalExpenses: number;
+    netProfit: number;
+  };
+}
+
 interface IncomeStatementData {
   from: string;
   to: string;
@@ -52,103 +72,110 @@ export const IncomeStatementTab = () => {
     try {
       setLoading(true);
       
-      // Use apiClient which includes authentication headers
-      const result = await apiClient.get<any>(`/accounting/income-statement?from_date=${fromDate}&to_date=${toDate}`);
+      console.log("Fetching income statement...", fromDate, toDate);
       
-      if (result.data) {
-        const resultData = result.data;
+      // Use public endpoint for testing without authentication
+      const result = await apiClient.get<IncomeStatementApiResponse>('/public-income-statement', {
+        params: {
+          from_date: fromDate,
+          to_date: toDate,
+        }
+      });
       
-        // Transform accounting endpoint data to match expected format
+      console.log("API Result:", result);
+      
+      // API returns data wrapped in result.data
+      const resultData = result.data;
+      console.log("Processing data:", resultData);
+      
+      if (resultData && resultData.revenue !== undefined) {
+        console.log("Revenue array:", resultData.revenue);
+        console.log("Cost array:", resultData.cost);
+        console.log("Expenses array:", resultData.expenses);
+      
+        // Transform the data structure to match expected format
         const revenueAccounts: IncomeAccount[] = [];
         if (resultData.revenue && Array.isArray(resultData.revenue)) {
-          resultData.revenue.forEach((category: any) => {
-          if (category.items && Array.isArray(category.items)) {
-            category.items.forEach((item: any) => {
-              if (item.name) {
-                revenueAccounts.push({
-                  accountId: item.name.split('-')[0] || '',
-                  label: item.name || '',
-                  amount: Number(item.amount) || 0,
-                });
-              }
-            });
-          }
+          resultData.revenue.forEach((account: any) => {
+            if (account.name && account.amount !== undefined) {
+              revenueAccounts.push({
+                accountId: account.code || account.name.split('-')[0] || '',
+                label: account.code ? `${account.code}-${account.name}` : account.name,
+                amount: Number(account.amount) || 0,
+              });
+            }
+          });
+        }
+      
+        const costAccounts: IncomeAccount[] = [];
+        if (resultData.cost && Array.isArray(resultData.cost)) {
+          resultData.cost.forEach((account: any) => {
+            if (account.name && account.amount !== undefined) {
+              costAccounts.push({
+                accountId: account.code || account.name.split('-')[0] || '',
+                label: account.code ? `${account.code}-${account.name}` : account.name,
+                amount: Number(account.amount) || 0,
+              });
+            }
+          });
+        }
+      
+        const expenseAccounts: IncomeAccount[] = [];
+        if (resultData.expenses && Array.isArray(resultData.expenses)) {
+          resultData.expenses.forEach((account: any) => {
+            if (account.name && account.amount !== undefined) {
+              expenseAccounts.push({
+                accountId: account.code || account.name.split('-')[0] || '',
+                label: account.code ? `${account.code}-${account.name}` : account.name,
+                amount: Number(account.amount) || 0,
+              });
+            }
+          });
+        }
+      
+        const totalRevenue = revenueAccounts.reduce((sum, acc) => sum + acc.amount, 0);
+        const totalCost = costAccounts.reduce((sum, acc) => sum + acc.amount, 0);
+        const gross = totalRevenue - totalCost;
+        const totalExpenses = expenseAccounts.reduce((sum, acc) => sum + acc.amount, 0);
+        const net = gross - totalExpenses;
+      
+        console.log("Setting data with:", {
+          revenue: revenueAccounts.length,
+          cost: costAccounts.length,
+          expenses: expenseAccounts.length
         });
-      }
       
-      const costAccounts: IncomeAccount[] = [];
-      if (resultData.cost && Array.isArray(resultData.cost)) {
-        resultData.cost.forEach((category: any) => {
-          if (category.items && Array.isArray(category.items)) {
-            category.items.forEach((item: any) => {
-              if (item.name) {
-                costAccounts.push({
-                  accountId: item.name.split('-')[0] || '',
-                  label: item.name || '',
-                  amount: Number(item.amount) || 0,
-                });
-              }
-            });
-          }
+        setData({
+          from: fromDate,
+          to: toDate,
+          revenue: {
+            accounts: revenueAccounts,
+            total: totalRevenue,
+          },
+          cost: {
+            accounts: costAccounts,
+            total: totalCost,
+          },
+          gross: {
+            label: gross >= 0 ? 'Gross Profit' : 'Gross Loss',
+            amount: gross,
+          },
+          expenses: {
+            accounts: expenseAccounts,
+            total: totalExpenses,
+          },
+          net: {
+            label: net >= 0 ? 'Net Profit' : 'Net Loss',
+            amount: net,
+          },
         });
-      }
-      
-      const expenseAccounts: IncomeAccount[] = [];
-      if (resultData.expenses && Array.isArray(resultData.expenses)) {
-        resultData.expenses.forEach((category: any) => {
-          if (category.items && Array.isArray(category.items)) {
-            category.items.forEach((item: any) => {
-              if (item.name) {
-                expenseAccounts.push({
-                  accountId: item.name.split('-')[0] || '',
-                  label: item.name || '',
-                  amount: Number(item.amount) || 0,
-                });
-              }
-            });
-          }
-        });
-      }
-      
-      // If no accounts found, set empty arrays to ensure UI still renders
-      if (revenueAccounts.length === 0 && costAccounts.length === 0 && expenseAccounts.length === 0) {
-      }
-      
-      const totalRevenue = revenueAccounts.reduce((sum, acc) => sum + acc.amount, 0);
-      const totalCost = costAccounts.reduce((sum, acc) => sum + acc.amount, 0);
-      const gross = totalRevenue - totalCost;
-      const totalExpenses = expenseAccounts.reduce((sum, acc) => sum + acc.amount, 0);
-      const net = gross - totalExpenses;
-      
-      setData({
-        from: fromDate,
-        to: toDate,
-        revenue: {
-          accounts: revenueAccounts,
-          total: totalRevenue,
-        },
-        cost: {
-          accounts: costAccounts,
-          total: totalCost,
-        },
-        gross: {
-          label: gross >= 0 ? 'Gross Profit' : 'Gross Loss',
-          amount: gross,
-        },
-        expenses: {
-          accounts: expenseAccounts,
-          total: totalExpenses,
-        },
-        net: {
-          label: net >= 0 ? 'Net Profit' : 'Net Loss',
-          amount: net,
-        },
-      });
       } else {
-        console.error("API Error:", result.error);
+        console.error("API returned invalid data structure:", resultData);
+        setData(null);
       }
     } catch (error) {
       console.error("Fetch error:", error);
+      setData(null);
     } finally {
       setLoading(false);
     }

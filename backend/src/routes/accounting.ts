@@ -1518,11 +1518,47 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
     });
 
     // Calculate Net Income (Revenue - Expense - Cost)
-    const incomeStatementAccounts = await prisma.account.findMany({
+    // Revenue accounts have MainGroup.type = "Income"
+    const revenueAccounts = await prisma.account.findMany({
       where: {
         Subgroup: {
           MainGroup: {
-            type: { in: ["Revenue", "Expense", "Cost"] },
+            type: { in: ["Income", "Revenue"] },
+          },
+        },
+      },
+      include: {
+        ...commonInclude,
+        Subgroup: {
+          include: { MainGroup: true },
+        },
+      },
+    });
+
+    // Cost accounts have MainGroup.name = "Cost" or "Cost of Sales" (type = "Expense")
+    const costAccounts = await prisma.account.findMany({
+      where: {
+        Subgroup: {
+          MainGroup: {
+            name: { in: ["Cost", "Cost of Sales"] },
+          },
+        },
+      },
+      include: {
+        ...commonInclude,
+        Subgroup: {
+          include: { MainGroup: true },
+        },
+      },
+    });
+
+    // Expense accounts have type = "Expense" but exclude Cost main groups
+    const expenseAccounts = await prisma.account.findMany({
+      where: {
+        Subgroup: {
+          MainGroup: {
+            type: "Expense",
+            name: { notIn: ["Cost", "Cost of Sales"] },
           },
         },
       },
@@ -1538,34 +1574,28 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
     let expenseSum = 0;
     let costSum = 0;
 
-    incomeStatementAccounts.forEach((acc) => {
-      const type = (acc.Subgroup?.MainGroup?.type ?? "").toLowerCase();
+    // Calculate revenue
+    revenueAccounts.forEach((acc) => {
       const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-      const credit =
-        acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+      const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+      // Revenue: credit - debit
+      revenueSum += credit - debit;
+    });
 
-      if (type === "revenue") {
-        revenueSum += calculateAccountBalance(
-          acc.openingBalance,
-          debit,
-          credit,
-          "Revenue",
-        );
-      } else if (type === "expense") {
-        expenseSum += calculateAccountBalance(
-          acc.openingBalance,
-          debit,
-          credit,
-          "Expense",
-        );
-      } else if (type === "cost") {
-        costSum += calculateAccountBalance(
-          acc.openingBalance,
-          debit,
-          credit,
-          "Cost",
-        );
-      }
+    // Calculate cost
+    costAccounts.forEach((acc) => {
+      const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+      const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+      // Cost: debit - credit (expense type)
+      costSum += debit - credit;
+    });
+
+    // Calculate expenses
+    expenseAccounts.forEach((acc) => {
+      const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
+      const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
+      // Expense: debit - credit
+      expenseSum += debit - credit;
     });
 
     const netIncome = revenueSum - expenseSum - costSum;
