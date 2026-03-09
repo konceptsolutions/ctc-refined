@@ -18,9 +18,9 @@ export default defineConfig(({ mode }) => ({
 
     host: "::",
 
-    port: 83,
+    port: 5173,
 
-    strictPort: true,
+    strictPort: false,
 
     open: false,
 
@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => ({
 
       "/api": {
 
-        target: "http://localhost:5000",
+        target: "http://localhost:3001",
 
         changeOrigin: true,
 
@@ -38,7 +38,7 @@ export default defineConfig(({ mode }) => ({
 
       "/uploads": {
 
-        target: "http://localhost:5000",
+        target: "http://localhost:3001",
 
         changeOrigin: true,
 
@@ -52,7 +52,7 @@ export default defineConfig(({ mode }) => ({
 
   preview: {
 
-    port: 83,
+    port: 5173,
 
     host: "::",
 

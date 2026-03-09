@@ -2642,6 +2642,7 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
 
 // Approve Cash Sale Invoice (reduces stock immediately)
 router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
+  console.log(`[APPROVE] Starting approval for invoice ID: ${req.params.id}`);
   try {
     const { id } = req.params;
     const { approvedBy } = req.body;
@@ -2811,6 +2812,8 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
 
     // Create cost JV (COGS vs Inventory) when stock is reduced (approval step)
     // This keeps inventory valuation and COGS in sync with stock-out movements.
+    // DISABLED: COGS is now handled in the main voucher creation to avoid duplication
+    // Main voucher creation logic will handle all vouchers including COGS
     try {
       const costMarker = `COGS for INV ${invoice.invoiceNo}`;
 
@@ -3017,6 +3020,281 @@ router.post("/invoices/:id/approve", async (req: Request, res: Response) => {
       }
     } catch (costErr: any) {
       // Don't fail approval if cost voucher creation fails
+    }
+
+    // Create vouchers on Approval — wrap in try/catch so approval still succeeds
+    try {
+      console.log(`[VOUCHER] Starting voucher creation for invoice ${invoice.invoiceNo}, customerType: ${invoice.customerType}, paidAmount: ${invoice.paidAmount}`);
+      
+      // ── Use exact account IDs ───────────────────────────────────────────
+      const inventoryAccountId = "101001"; // Inventory account ID
+      const costAccountId = "501001"; // Cost of Goods Sold account ID (you may need to adjust this)
+      const goodsRevenueAccountId = "401001"; // Sales Revenue account ID (you may need to adjust this)
+      const discountAccountId = "502001"; // Discount account ID (you may need to adjust this)
+      
+      console.log(`[VOUCHER] Using account IDs: inventory=${inventoryAccountId}, cost=${costAccountId}, revenue=${goodsRevenueAccountId}, discount=${discountAccountId}`);
+
+      // Customer account (for registered customers)
+      let customerAccount: any = null;
+      if (invoice.customerId) {
+        customerAccount = await prisma.account.findFirst({
+          where: {
+            status: "Active",
+            OR: [
+              { customerId: invoice.customerId },
+              { name: invoice.customerName || "" },
+            ],
+          },
+          include: { Subgroup: { include: { MainGroup: true } } },
+        });
+      }
+
+      // Payment account (cash/bank) - use inventory account as fallback for cash
+      let paymentAccountId: string | null = null;
+      if (invoice.paidAmount > 0) {
+        paymentAccountId = "101001"; // Use inventory account as cash account for now
+      }
+
+      // ── Calculate totals ───────────────────────────────────────────────
+      const subtotal = invoice.subtotal || 0;
+      const overallDiscount = invoice.overallDiscount || 0;
+      const grandTotal = invoice.grandTotal || 0;
+      const paidAmount = invoice.paidAmount || 0;
+      const discountAmount = overallDiscount || 0;
+
+      console.log(`[VOUCHER] Invoice totals: subtotal=${subtotal}, discount=${discountAmount}, grandTotal=${grandTotal}, paid=${paidAmount}`);
+
+      // ── Generate voucher numbers ────────────────────────────────────────
+      const jvNo = await getNextNumberForPrefix({
+        prefix: "JV",
+        voucherType: "journal",
+      });
+      const rvNo = await getNextNumberForPrefix({
+        prefix: "RV",
+        voucherType: "receipt",
+      });
+
+      // ── JV Voucher ───────────────────────────────────────────────────────
+      // Only create JV for registered customers
+      let jvEntries: any[] = [];
+      if (invoice.customerType === "registered") {
+
+        // Inventory CR (cost)
+        let totalCost = 0;
+        for (const item of invoice.SalesInvoiceItem) {
+          const part = await prisma.part.findUnique({
+            where: { id: item.partId },
+            select: { avgCost: true, cost: true },
+          });
+          const avgCost = part?.avgCost || part?.cost || 0;
+          totalCost += avgCost * item.orderedQty;
+        }
+
+        if (totalCost > 0) {
+          jvEntries.push({
+            accountId: inventoryAccountId,
+            accountName: `101001-Inventory`,
+            description: `INV: ${invoice.invoiceNo} - Inventory Cost`,
+            debit: 0,
+            credit: totalCost,
+            sortOrder: 0,
+          });
+
+          jvEntries.push({
+            accountId: costAccountId,
+            accountName: `501001-Cost of Goods Sold`,
+            description: `INV: ${invoice.invoiceNo} - Cost of Goods Sold`,
+            debit: totalCost,
+            credit: 0,
+            sortOrder: 1,
+          });
+        }
+
+        // Sales Revenue CR (subtotal)
+        jvEntries.push({
+          accountId: goodsRevenueAccountId,
+          accountName: `401001-Sales Revenue`,
+          description: `INV: ${invoice.invoiceNo} - Sales Revenue`,
+          debit: 0,
+          credit: subtotal,
+          sortOrder: 2,
+        });
+
+        // Customer Receivable DR (grand total)
+        if (customerAccount) {
+          jvEntries.push({
+            accountId: customerAccount.id,
+            accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+            description: `INV: ${invoice.invoiceNo} - Customer Receivable (${invoice.customerName})`,
+            debit: grandTotal,
+            credit: 0,
+            sortOrder: 3,
+          });
+        }
+
+        // Discount DR (if any)
+        if (discountAmount > 0) {
+          jvEntries.push({
+            accountId: discountAccountId,
+            accountName: `502001-Discount`,
+            description: `INV: ${invoice.invoiceNo} - Discount Given`,
+            debit: discountAmount,
+            credit: 0,
+            sortOrder: 4,
+          });
+
+          // Customer Account CR (discount amount)
+          if (customerAccount) {
+            jvEntries.push({
+              accountId: customerAccount.id,
+              accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+              description: `INV: ${invoice.invoiceNo} - Discount Adjustment`,
+              debit: 0,
+              credit: discountAmount,
+              sortOrder: 5,
+            });
+          }
+        }
+
+        // Create JV voucher
+        const jvDebit = jvEntries.reduce((s, e) => s + e.debit, 0);
+        const jvCredit = jvEntries.reduce((s, e) => s + e.credit, 0);
+        if (jvEntries.length > 0 && Math.abs(jvDebit - jvCredit) < 0.01) {
+          await prisma.voucher.create({
+            data: {
+              id: `v_${Date.now()}_jv`,
+              voucherNumber: jvNo,
+              type: "journal",
+              date: invoice.invoiceDate, // Use invoice date instead of current date
+              narration: `Sales Invoice ${invoice.invoiceNo} - ${invoice.customerName}`,
+              totalDebit: jvDebit,
+              totalCredit: jvCredit,
+              status: "posted",
+              createdBy: "System",
+              approvedBy: "System",
+              approvedAt: new Date(),
+              salesInvoiceId: id,
+              VoucherEntry: {
+                create: jvEntries,
+              },
+            } as any,
+          });
+          console.log(`[VOUCHER] JV voucher created: ${jvNo}`);
+        }
+      }
+
+      // ── RV Voucher ───────────────────────────────────────────────────────
+      const rvEntries: any[] = [];
+      const isWalking = (invoice.customerType as string) === "walking";
+
+      if (isWalking) {
+        // Walking customer RV - full accounting
+        rvEntries.push({
+          accountId: goodsRevenueAccountId,
+          accountName: `401001-Sales Revenue`,
+          description: `INV: ${invoice.invoiceNo} - Sales Revenue`,
+          debit: 0,
+          credit: subtotal,
+          sortOrder: 0,
+        });
+
+        if (discountAmount > 0) {
+          rvEntries.push({
+            accountId: discountAccountId,
+            accountName: `502001-Discount`,
+            description: `INV: ${invoice.invoiceNo} - Discount Given`,
+            debit: discountAmount,
+            credit: 0,
+            sortOrder: 1,
+          });
+        }
+
+        if (paymentAccountId) {
+          rvEntries.push({
+            accountId: paymentAccountId,
+            accountName: `101001-Cash/Bank`,
+            description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
+            debit: grandTotal,
+            credit: 0,
+            sortOrder: 2,
+          });
+        }
+      } else {
+        // Registered customer RV - only when paidAmount > 0
+        if (paidAmount > 0 && customerAccount) {
+          // Customer Account CR (payment amount)
+          rvEntries.push({
+            accountId: customerAccount.id,
+            accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+            description: `INV: ${invoice.invoiceNo} - Payment Received (${invoice.customerName})`,
+            debit: 0,
+            credit: paidAmount,
+            sortOrder: 0,
+          });
+          
+          if (paymentAccountId) {
+            // Cash/Bank Account DR (payment amount)
+            rvEntries.push({
+              accountId: paymentAccountId,
+              accountName: `101001-Cash/Bank`,
+              description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
+              debit: paidAmount,
+              credit: 0,
+              sortOrder: 1,
+            });
+          }
+        }
+      }
+
+      // Create RV voucher
+      const rvDebit = rvEntries.reduce((s, e) => s + e.debit, 0);
+      const rvCredit = rvEntries.reduce((s, e) => s + e.credit, 0);
+      if (rvEntries.length > 0 && Math.abs(rvDebit - rvCredit) < 0.01) {
+        await prisma.voucher.create({
+          data: {
+            id: `v_${Date.now()}_rv`,
+            voucherNumber: rvNo,
+            type: "receipt",
+            date: invoice.invoiceDate, // Use invoice date instead of current date
+            narration: `Receipt for Invoice ${invoice.invoiceNo} - ${invoice.customerName}`,
+            totalDebit: rvDebit,
+            totalCredit: rvCredit,
+            status: "posted",
+            createdBy: "System",
+            approvedBy: "System",
+            approvedAt: new Date(),
+            salesInvoiceId: id,
+            VoucherEntry: {
+              create: rvEntries,
+            },
+          } as any,
+        });
+        console.log(`[VOUCHER] RV voucher created: ${rvNo}`);
+      }
+
+      // Update account balances
+      for (const entry of [...jvEntries, ...rvEntries]) {
+        const account = await prisma.account.findUnique({
+          where: { id: entry.accountId },
+          include: { Subgroup: { include: { MainGroup: true } } },
+        });
+        if (account) {
+          const nature = account.Subgroup?.MainGroup?.type?.toLowerCase() || "asset";
+          const isDR = ["asset", "expense", "cost"].includes(nature);
+          await prisma.account.update({
+            where: { id: entry.accountId },
+            data: {
+              currentBalance: {
+                increment: isDR ? entry.debit - entry.credit : entry.credit - entry.debit,
+              },
+            },
+          });
+        }
+      }
+    } catch (vErr: any) {
+      console.error("Voucher creation failed (non-fatal):", vErr.message);
+      console.error("Full error:", vErr);
+      console.error("Stack trace:", vErr.stack);
     }
 
     const updatedInvoice = await prisma.salesInvoice.findUnique({

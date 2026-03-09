@@ -3202,6 +3202,7 @@ class ApiClient {
       subtotal?: number;
       overallDiscount?: number;
       grandTotal?: number;
+      tax?: number;
       accountId?: string;
       bankAccountId?: string;
       cashAccountId?: string;

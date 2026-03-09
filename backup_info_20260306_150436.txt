@@ -1,0 +1,21 @@
+Database Backup Information
+==========================
+Backup Date: 03/06/2026 15:04:41
+Database: koncepts_dev
+Host: localhost
+Port: 5432
+
+Backup Details:
+- File: full_backup_koncepts_dev_20260306_150436.sql
+- Size: 19.46 MB
+- Duration: 4.33 seconds
+- Tables:     62 
+- Records:    2 
+
+Restore Instructions:
+1. Stop the application servers
+2. Drop and recreate the database (optional)
+3. Run: psql -h localhost -p 5432 -U postgres -d koncepts_dev -f full_backup_koncepts_dev_20260306_150436.sql
+4. Restart the application servers
+
+Note: This is a custom format backup that includes schema and data.

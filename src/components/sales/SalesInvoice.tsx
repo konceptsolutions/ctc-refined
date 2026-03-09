@@ -130,6 +130,7 @@ export const SalesInvoice = () => {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
   const [customerPriceType, setCustomerPriceType] = useState<"A" | "B" | "M" | null>(null);
+  const [selectedCustomerCategory, setSelectedCustomerCategory] = useState<string | null>(null);
 
   // Add Customer Dialog State
   const [showAddCustomerDialog, setShowAddCustomerDialog] = useState(false);
@@ -234,8 +235,12 @@ export const SalesInvoice = () => {
   // Payment fields
   const [discount, setDiscount] = useState(0);
   const [taxType, setTaxType] = useState("Without GST");
+  const [gstPercentage, setGstPercentage] = useState(0);
+  const [customGstPercentage, setCustomGstPercentage] = useState("");
+  const [useCustomGst, setUseCustomGst] = useState(false);
   const [deliveredTo, setDeliveredTo] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
 
   // Delivery Log
   const [showDeliveryLog, setShowDeliveryLog] = useState(false);
@@ -249,6 +254,19 @@ export const SalesInvoice = () => {
     accountId: "",
     paymentDate: new Date().toISOString().split("T")[0],
   });
+
+  // Auto-set GST percentage based on customer category
+  useEffect(() => {
+    // Only auto-set if we are creating a NEW invoice, or if we haven't manually changed it yet
+    // To keep it simple: auto-set when taxType or customer changes if not explicitly in custom mode
+    if (!editingInvoiceId && taxType === "With GST" && !useCustomGst) {
+      if (selectedCustomerCategory === "Reseller") {
+        setGstPercentage(22);
+      } else if (selectedCustomerCategory === "EndUser") {
+        setGstPercentage(18);
+      }
+    }
+  }, [taxType, selectedCustomerCategory, editingInvoiceId, useCustomGst]);
 
   // View Invoice
   const [showViewInvoice, setShowViewInvoice] = useState(false);
@@ -757,6 +775,7 @@ export const SalesInvoice = () => {
               creditLimit: c.creditLimit || 0,
               creditDays: c.creditDays || 0,
               priceType: c.priceType || null,
+              category: c.category || null,
             }),
           );
 
@@ -952,9 +971,25 @@ export const SalesInvoice = () => {
     return inlineItems.reduce((sum, item) => sum + calculateLineTotal(item), 0);
   };
 
+  // Calculate tax based on GST percentage and tax type selection
+  const calculateTax = () => {
+    if (taxType !== "With GST") return 0;
+
+    const subtotal = calculateTotalAmount();
+    const afterDiscount = subtotal - discount;
+
+    // Use custom GST percentage if enabled or if Walk-in Customer, otherwise use selected percentage
+    const isWalking = newInvoice.customerType === "walking";
+    const gstRate = (useCustomGst || isWalking) ? (parseFloat(customGstPercentage) || 0) : gstPercentage;
+    return (afterDiscount * gstRate) / 100;
+  };
+
   // Calculate amount after discount
   const calculateAmountAfterDiscount = () => {
-    return calculateTotalAmount() - discount;
+    const subtotal = calculateTotalAmount();
+    const afterDiscount = subtotal - discount;
+    const tax = calculateTax();
+    return afterDiscount + tax;
   };
 
   // Calculate due amount
@@ -1005,6 +1040,16 @@ export const SalesInvoice = () => {
     const subtotal = calculateTotalAmount();
     const totalReceived = calculateTotalReceived();
     const grandTotal = calculateAmountAfterDiscount();
+
+    // Validation for Registered Customers (Party Sale)
+    if (newInvoice.customerType === "registered" && !selectedCustomerId) {
+      toast({
+        title: "Customer Required",
+        description: "Please select a customer for Party Sale (Credit).",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // NEW: Credit Limit Validation for Registered Customers
     if (newInvoice.customerType === "registered" && selectedCustomerId) {
@@ -1180,13 +1225,13 @@ export const SalesInvoice = () => {
             ? newInvoice.customerName // Cash Sale: use typed name
             : newInvoice.customerType === "registered"
               ? "Walk-in Customer" // Party Sale fallback
-              : "Cash Customer"; // Cash Sale fallback
+              : "Walk-in Customer"; // Cash Sale fallback
 
       let response;
       if (editingInvoiceId) {
         // UPDATE Existing Invoice
         response = await apiClient.updateSalesInvoice(editingInvoiceId, {
-          invoiceDate: new Date().toISOString().split("T")[0],
+          invoiceDate: invoiceDate,
           customerId: selectedCustomerId || undefined,
           customerName: customerName,
           deliveredTo: deliveredTo || undefined,
@@ -1194,6 +1239,7 @@ export const SalesInvoice = () => {
           items: invoiceItems,
           subtotal,
           overallDiscount: discount,
+          tax: calculateTax(),
           grandTotal,
           accountId: selectedBankAccount || selectedCashAccount || undefined,
           bankAccountId: selectedBankAccount || undefined,
@@ -1210,7 +1256,7 @@ export const SalesInvoice = () => {
       } else {
         // CREATE New Invoice
         response = await apiClient.createSalesInvoice({
-          invoiceDate: new Date().toISOString().split("T")[0],
+          invoiceDate: invoiceDate,
           customerId: selectedCustomerId || undefined,
           customerName: customerName,
           customerType: newInvoice.customerType as CustomerType,
@@ -1227,7 +1273,7 @@ export const SalesInvoice = () => {
           items: invoiceItems,
           subtotal,
           overallDiscount: discount,
-          tax: 0,
+          tax: calculateTax(),
           grandTotal,
           paidAmount:
             selectedBankAccount || selectedCashAccount
@@ -1343,11 +1389,15 @@ export const SalesInvoice = () => {
     setSelectedBankAccount("");
     setSelectedCashAccount("");
     setTaxType("Without GST");
+    setGstPercentage(0);
+    setCustomGstPercentage("");
+    setUseCustomGst(false);
     setDeliveredTo("");
     setRemarks("");
     setSelectedCustomerId("");
     setSelectedCustomerName("");
     setCustomerPriceType(null);
+    setSelectedCustomerCategory(null);
   };
 
   // Handle Edit Invoice
@@ -1369,6 +1419,7 @@ export const SalesInvoice = () => {
       // Restore customer price type when editing
       const editCustomer = customers.find((c) => c.id === invoice.customerId);
       setCustomerPriceType(editCustomer?.priceType || null);
+      setSelectedCustomerCategory(editCustomer?.category || null);
 
       const partItemsToMerge: PartItem[] = [];
 
@@ -1531,6 +1582,7 @@ export const SalesInvoice = () => {
             creditLimit: c.creditLimit || 0,
             creditDays: c.creditDays || 0,
             priceType: c.priceType || null,
+            tax: c.tax || 0,
           }));
         setCustomers(formattedCustomers);
       }
@@ -2765,24 +2817,22 @@ export const SalesInvoice = () => {
               <h3 className="text-sm font-semibold uppercase tracking-wider text-primary/80 mb-4 flex items-center gap-2">
                 <Users className="w-4 h-4" /> Customer & Delivery Info
               </h3>
-              <div
-                className={`grid grid-cols-1 gap-6 ${newInvoice.customerType === "registered" ? "md:grid-cols-12" : "md:grid-cols-12"}`}
-              >
-                <div className="space-y-2 md:col-span-3 lg:col-span-2">
+              <div className="flex flex-wrap gap-3 items-start">
+                <div className="space-y-1.5 w-40">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Sale Type</Label>
                   <Select
                     value={newInvoice.customerType}
                     onValueChange={(v) => {
                       const customerType = v as CustomerType;
                       setNewInvoice((prev) => ({ ...prev, customerType }));
-                      // Reset customer selection when type changes to registered
-                      if (customerType === "registered") {
-                        setSelectedCustomerId("");
-                        setSelectedCustomerName("");
-                      }
+                      // Reset customer selections when switching
+                      setSelectedCustomerId("");
+                      setSelectedCustomerName("");
+                      setCustomerPriceType(null);
+                      setSelectedCustomerCategory(null);
                     }}
                   >
-                    <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-11">
+                    <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-9 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -2792,12 +2842,23 @@ export const SalesInvoice = () => {
                   </Select>
                 </div>
 
+                {/* Invoice Date */}
+                <div className="space-y-1.5 w-56">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Invoice Date</Label>
+                  <Input
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    className="bg-background border-primary/20 h-9 text-sm"
+                  />
+                </div>
+
                 {/* Customer Name Input - Only show for Cash Sale (walking) */}
                 {newInvoice.customerType === "walking" && (
-                  <div className="space-y-2 md:col-span-5 lg:col-span-4">
+                  <div className="space-y-1.5 w-56">
                     <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Customer Name</Label>
                     <Input
-                      placeholder="Enter walk-in customer name"
+                      placeholder=""
                       value={newInvoice.customerName || ""}
                       onChange={(e) =>
                         setNewInvoice((prev) => ({
@@ -2805,14 +2866,14 @@ export const SalesInvoice = () => {
                           customerName: e.target.value,
                         }))
                       }
-                      className="bg-background border-primary/20 h-11"
+                      className="bg-background border-primary/20 h-9 text-sm"
                     />
                   </div>
                 )}
 
                 {/* Customer Dropdown - Only show for Party Sale (registered) */}
                 {newInvoice.customerType === "registered" && (
-                  <div className="space-y-2 md:col-span-5 lg:col-span-4">
+                  <div className="space-y-1.5 w-85">
                     <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Select Customer</Label>
                     <div className="flex gap-2">
                       <Select
@@ -2824,6 +2885,7 @@ export const SalesInvoice = () => {
                             setSelectedCustomerName(customer.name);
                             const pt = customer.priceType || null;
                             setCustomerPriceType(pt);
+                            setSelectedCustomerCategory(customer.category || null);
                             // Auto-apply price type to all existing inline items
                             if (pt) {
                               setInlineItems((prev) =>
@@ -2939,10 +3001,10 @@ export const SalesInvoice = () => {
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <Label>Tax Type</Label>
+                <div className="space-y-1.5 w-36">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Tax Type</Label>
                   <Select value={taxType} onValueChange={setTaxType}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -2952,12 +3014,87 @@ export const SalesInvoice = () => {
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Delivered To</Label>
+                {taxType === "With GST" && (
+                  <div className="space-y-1.5 w-44">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">GST Percentage</Label>
+                    {newInvoice.customerType === "walking" ? (
+                      /* Walk-in (Cash Sale): Show only Custom Input, no buttons/dropdown */
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder=""
+                          value={customGstPercentage}
+                          onChange={(e) => setCustomGstPercentage(e.target.value)}
+                          className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                      </div>
+                    ) : (
+                      /* Registered (Party Sale): Toggle between Preset and Custom */
+                      !useCustomGst ? (
+                        <div className="flex gap-3">
+                          <Select value={gstPercentage.toString()} onValueChange={(value) => {
+                            setGstPercentage(parseFloat(value) || 0);
+                            setUseCustomGst(false);
+                          }}>
+                            <SelectTrigger className="flex-1 h-9 text-sm">
+                              <SelectValue placeholder="Select GST %" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="18">18%</SelectItem>
+                              <SelectItem value="22">22%</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setUseCustomGst(true);
+                              if (gstPercentage > 0) {
+                                setCustomGstPercentage(gstPercentage.toString());
+                              }
+                            }}
+                            className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                          >
+                            Custom
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder=""
+                              value={customGstPercentage}
+                              onChange={(e) => setCustomGstPercentage(e.target.value)}
+                              className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setUseCustomGst(false);
+                              setCustomGstPercentage("");
+                            }}
+                            className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                          >
+                            Preset
+                          </Button>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-1.5 w-56">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Delivered To</Label>
                   <Input
-                    placeholder="Enter name"
+                    placeholder=""
                     value={deliveredTo}
                     onChange={(e) => setDeliveredTo(e.target.value)}
+                    className="h-9 text-sm"
                   />
                 </div>
               </div>
@@ -3997,8 +4134,18 @@ export const SalesInvoice = () => {
                 <div className="flex justify-between border-t pt-2">
                   <span className="font-medium">After Discount:</span>
                   <span className="font-bold">
-                    Rs {calculateAmountAfterDiscount().toLocaleString()}
+                    Rs {(calculateTotalAmount() - discount).toLocaleString()}
                   </span>
+                </div>
+                {taxType === "With GST" && (
+                  <div className="flex justify-between text-blue-600">
+                    <span>GST ({useCustomGst ? (parseFloat(customGstPercentage) || 0) : gstPercentage}%):</span>
+                    <span>Rs {calculateTax().toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t pt-2 font-bold text-lg">
+                  <span>Grand Total:</span>
+                  <span className="text-green-600">Rs {calculateAmountAfterDiscount().toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-green-600">
                   <span>Received:</span>

@@ -28,6 +28,7 @@ export interface Customer {
   creditLimit?: number;
   creditDays?: number;
   priceType?: "A" | "B" | "M" | null;
+  category?: "Reseller" | "EndUser" | string | null;
 }
 
 export interface ItemBrand {
