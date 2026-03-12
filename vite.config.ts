@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => ({
 
       "/api": {
 
-        target: "http://localhost:3001",
+        target: "http://localhost:5000",
 
         changeOrigin: true,
 
@@ -38,7 +38,7 @@ export default defineConfig(({ mode }) => ({
 
       "/uploads": {
 
-        target: "http://localhost:3001",
+        target: "http://localhost:5000",
 
         changeOrigin: true,
 
