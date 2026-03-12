@@ -36,24 +36,31 @@ interface TrialBalanceData {
 }
 
 export const TrialBalanceTab = () => {
-  const [selectedDateObj, setSelectedDateObj] = useState<Date | undefined>(new Date());
+  const [fromDateObj, setFromDateObj] = useState<Date | undefined>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d;
+  });
+  const [toDateObj, setToDateObj] = useState<Date | undefined>(new Date());
 
-  // Keep selectedDate for API compat if needed, but we'll use format(selectedDateObj, 'yyyy-MM-dd')
-  const selectedDate = selectedDateObj ? format(selectedDateObj, "yyyy-MM-dd") : getCurrentDatePakistan();
+  const fromDate = fromDateObj ? format(fromDateObj, "yyyy-MM-dd") : "";
+  const toDate = toDateObj ? format(toDateObj, "yyyy-MM-dd") : getCurrentDatePakistan();
   const [data, setData] = useState<TrialBalanceData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchTrialBalance();
-  }, [selectedDate]);
+  }, [fromDate, toDate]);
 
   const fetchTrialBalance = async () => {
     try {
       setLoading(true);
-      console.log("Fetching trial balance for date:", selectedDate);
+      console.log("Fetching trial balance from:", fromDate, "to:", toDate);
 
-      // Use apiClient which includes authentication headers
-      const result = await apiClient.get<any[]>(`/accounting/trial-balance?to_date=${selectedDate}`);
+      const params = new URLSearchParams();
+      if (fromDate) params.set("from_date", fromDate);
+      if (toDate) params.set("to_date", toDate);
+      const result = await apiClient.get<any[]>(`/accounting/trial-balance?${params.toString()}`);
 
       console.log("API Response:", result);
 
@@ -178,7 +185,7 @@ export const TrialBalanceTab = () => {
           fallbackRows.push(fallbackSubgroup);
 
           setData({
-            date: selectedDate,
+            date: `${fromDate} to ${toDate}`,
             rows: fallbackRows,
             totalDebit,
             totalCredit,
@@ -195,7 +202,7 @@ export const TrialBalanceTab = () => {
           });
 
           setData({
-            date: selectedDate,
+            date: `${fromDate} to ${toDate}`,
             rows,
             totalDebit,
             totalCredit,
@@ -229,40 +236,78 @@ export const TrialBalanceTab = () => {
       {/* Filter Section */}
       <div className="space-y-2">
         <Label className="text-sm font-medium">Filter</Label>
-        <div className="flex items-center gap-3">
-          <Label className="text-sm text-muted-foreground whitespace-nowrap">Date:</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className={cn(
-                  "w-48 justify-start text-left font-normal",
-                  !selectedDateObj && "text-muted-foreground"
-                )}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {selectedDateObj ? (
-                  format(selectedDateObj, "dd/MM/yyyy")
-                ) : (
-                  <span>Pick a date</span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={selectedDateObj}
-                onSelect={setSelectedDateObj}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground whitespace-nowrap">From:</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-48 justify-start text-left font-normal",
+                    !fromDateObj && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {fromDateObj ? (
+                    format(fromDateObj, "dd/MM/yyyy")
+                  ) : (
+                    <span>Pick date</span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={fromDateObj}
+                  onSelect={setFromDateObj}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground whitespace-nowrap">To:</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-48 justify-start text-left font-normal",
+                    !toDateObj && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {toDateObj ? (
+                    format(toDateObj, "dd/MM/yyyy")
+                  ) : (
+                    <span>Pick date</span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={toDateObj}
+                  onSelect={setToDateObj}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
       </div>
 
       {/* Trial Balance Table */}
       <Card className="border-border/50">
         <CardContent className="p-0">
+          {data?.date && (
+            <p className="text-sm text-muted-foreground px-4 pt-3">
+              Period: {fromDateObj ? format(fromDateObj, "dd/MM/yyyy") : ""}
+              {fromDateObj && toDateObj ? " to " : ""}
+              {toDateObj ? format(toDateObj, "dd/MM/yyyy") : ""}
+            </p>
+          )}
           <div className="border rounded-lg overflow-hidden">
             <Table>
               <TableHeader>

@@ -4,13 +4,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -320,46 +313,34 @@ export const LedgersTab = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label>Main Group</Label>
-            <Select
+            <SearchableSelect
+              options={mainGroups.map((group) => ({
+                value: group.id,
+                label: group.name,
+              }))}
               value={selectedMainGroup}
               onValueChange={(val) => {
                 setSelectedMainGroup(val);
                 setSelectedSubGroup("");
                 setSelectedAccount("");
               }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select..." />
-              </SelectTrigger>
-              <SelectContent>
-                {mainGroups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Search main group..."
+            />
           </div>
           <div className="space-y-2">
             <Label>Sub Group</Label>
-            <Select
+            <SearchableSelect
+              options={filteredSubGroups.map((group) => ({
+                value: group.id,
+                label: group.name,
+              }))}
               value={selectedSubGroup}
               onValueChange={(val) => {
                 setSelectedSubGroup(val);
                 setSelectedAccount("");
               }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select..." />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredSubGroups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Search sub group..."
+            />
           </div>
           <div className="space-y-2">
             <Label>Account</Label>

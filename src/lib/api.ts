@@ -351,6 +351,13 @@ class ApiClient {
     return this.request(`/parts/${id}`);
   }
 
+  async getPartByPartNo(partNo: string, masterPartNo?: string) {
+    const params = new URLSearchParams();
+    params.set("part_no", partNo.trim());
+    if (masterPartNo?.trim()) params.set("master_part_no", masterPartNo.trim());
+    return this.request(`/parts/by-part-no?${params.toString()}`);
+  }
+
   async createPart(data: any) {
     return this.request("/parts", {
       method: "POST",
@@ -2719,6 +2726,7 @@ class ApiClient {
         }
       });
     }
+    queryParams.set("_t", Date.now().toString());
     const queryString = queryParams.toString();
     return this.request(`/vouchers${queryString ? `?${queryString}` : ""}`);
   }
@@ -3057,6 +3065,7 @@ class ApiClient {
     subtotal: number;
     overallDiscount?: number;
     tax?: number;
+    taxPercentage?: number;
     grandTotal: number;
     paidAmount?: number;
   }) {
@@ -3203,6 +3212,7 @@ class ApiClient {
       overallDiscount?: number;
       grandTotal?: number;
       tax?: number;
+      taxPercentage?: number;
       accountId?: string;
       bankAccountId?: string;
       cashAccountId?: string;

@@ -134,6 +134,7 @@ export interface Invoice {
   overallDiscount: number;
   overallDiscountType: "percent" | "fixed";
   tax: number;
+  taxPercentage?: number | null;
   grandTotal: number;
   paidAmount: number;
   accountId?: string;

@@ -76,6 +76,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import {
@@ -306,19 +307,22 @@ export const SalesInvoice = () => {
   const [reversing, setReversing] = useState(false);
 
   // Filter invoices (only by search term, status and customerType are filtered by API)
-  // Also exclude invoices with demo customers
-  const filteredInvoices = invoices.filter((inv) => {
-    // Exclude invoices with demo customers (case-insensitive)
-    if (inv.customerName.toLowerCase().includes("demo")) {
-      return false;
-    }
+  // Also exclude invoices with demo customers. Always sort by invoice no descending (newest first).
+  const filteredInvoices = invoices
+    .filter((inv) => {
+      // Exclude invoices with demo customers (case-insensitive)
+      if (inv.customerName.toLowerCase().includes("demo")) {
+        return false;
+      }
 
-    if (!searchTerm) return true;
-    return (
-      inv.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inv.customerName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  });
+      if (!searchTerm) return true;
+      return (
+        inv.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        inv.customerName.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    })
+    .slice()
+    .sort((a, b) => b.invoiceNo.localeCompare(a.invoiceNo, undefined, { numeric: true }));
 
   // Calculate totals
   const totalInvoices = invoices.length;
@@ -700,7 +704,12 @@ export const SalesInvoice = () => {
                 orderedQty: item.orderedQty,
                 deliveredQty: item.deliveredQty,
                 pendingQty: item.pendingQty,
-                reversedQty: item.reversedQty || 0,
+                reversedQty: Math.max(
+                  0,
+                  (item.orderedQty || 0) -
+                    (item.deliveredQty || 0) -
+                    (item.pendingQty || 0),
+                ),
                 unitPrice: item.unitPrice,
                 avgCost: item.avgCost || 0,
                 discount: item.discount || 0,
@@ -883,42 +892,15 @@ export const SalesInvoice = () => {
             code: acc.code || "",
           }));
 
-        // Separate Cash accounts (subgroup 102 = Cash and Cash Equivalents)
+        // Cash accounts: only from Cash sub group (subgroup code 102)
         const cashAccountsList = currentAssetsAccounts
           .filter((acc: any) => {
-            const subgroupCode = acc.Subgroup?.code || "";
-            const accountCode = acc.code || "";
-            const accountName = (acc.name || "").toLowerCase();
-
-            // Special case: Include "Abdullah" account in cash accounts
-            if (accountName.includes("abdullah")) return true;
-
-            // Explicitly exclude Accounts Receivable (104) and Inventory (101)
-            if (subgroupCode === "104" || subgroupCode === "101") return false;
-
-            // Priority 1: Check subgroup code (most reliable)
+            const subgroupCode = (acc.Subgroup?.code || "").trim();
+            const subgroupName = (acc.Subgroup?.name || "").toLowerCase();
+            // Include only accounts that belong to the Cash sub group (code 102 or name contains "cash" and not "bank")
             if (subgroupCode === "102") return true;
-
-            // Priority 2: Exclude if it's clearly a bank account by subgroup
-            if (subgroupCode === "103") return false;
-
-            // Priority 3: Check account code pattern (102xxx)
-            if (/^102\d{3}$/.test(accountCode)) return true;
-
-            // Priority 4: Check if it has 103xxx code but name suggests cash, or has cash-related name
-            if (/^103\d{3}$/.test(accountCode)) {
-              // Include if account name suggests it's cash/petty cash despite 103 code
-              if (accountName.includes("cash") || accountName.includes("petty")) {
-                return true;
-              }
-            }
-
-            // Priority 5: Check account name contains "cash" or "petty" but not "inventory" or "bank"
-            return (
-              (accountName.includes("cash") || accountName.includes("petty")) &&
-              !accountName.includes("inventory") &&
-              !accountName.includes("bank")
-            );
+            if (subgroupName.includes("cash") && !subgroupName.includes("bank")) return true;
+            return false;
           })
           .map((acc: any) => ({
             id: acc.id,
@@ -971,25 +953,38 @@ export const SalesInvoice = () => {
     return inlineItems.reduce((sum, item) => sum + calculateLineTotal(item), 0);
   };
 
-  // Calculate tax based on GST percentage and tax type selection
-  const calculateTax = () => {
+  // Get current GST rate based on form state
+  const getCurrentGstRate = () => {
     if (taxType !== "With GST") return 0;
-
-    const subtotal = calculateTotalAmount();
-    const afterDiscount = subtotal - discount;
-
-    // Use custom GST percentage if enabled or if Walk-in Customer, otherwise use selected percentage
     const isWalking = newInvoice.customerType === "walking";
-    const gstRate = (useCustomGst || isWalking) ? (parseFloat(customGstPercentage) || 0) : gstPercentage;
-    return (afterDiscount * gstRate) / 100;
+    if (isWalking) {
+      return parseFloat(customGstPercentage) || 0;
+    }
+    if (useCustomGst) {
+      return parseFloat(customGstPercentage) || 0;
+    }
+    return gstPercentage;
   };
 
-  // Calculate amount after discount
-  const calculateAmountAfterDiscount = () => {
+  // Calculate tax (GST) on total amount — discount is applied after GST
+  const calculateTax = () => {
+    if (taxType !== "With GST") return 0;
     const subtotal = calculateTotalAmount();
-    const afterDiscount = subtotal - discount;
+    const gstRate = getCurrentGstRate();
+    return (subtotal * gstRate) / 100;
+  };
+
+  // Total after GST (before discount)
+  const calculateTotalAfterGst = () => {
+    const subtotal = calculateTotalAmount();
     const tax = calculateTax();
-    return afterDiscount + tax;
+    return subtotal + tax;
+  };
+
+  // Grand total: total after GST minus discount
+  const calculateAmountAfterDiscount = () => {
+    const totalAfterGst = calculateTotalAfterGst();
+    return Math.max(0, totalAfterGst - discount);
   };
 
   // Calculate due amount
@@ -1240,6 +1235,7 @@ export const SalesInvoice = () => {
           subtotal,
           overallDiscount: discount,
           tax: calculateTax(),
+          taxPercentage: taxType === "With GST" ? getCurrentGstRate() : undefined,
           grandTotal,
           accountId: selectedBankAccount || selectedCashAccount || undefined,
           bankAccountId: selectedBankAccount || undefined,
@@ -1274,6 +1270,7 @@ export const SalesInvoice = () => {
           subtotal,
           overallDiscount: discount,
           tax: calculateTax(),
+          taxPercentage: taxType === "With GST" ? getCurrentGstRate() : undefined,
           grandTotal,
           paidAmount:
             selectedBankAccount || selectedCashAccount
@@ -1329,7 +1326,12 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
-          reversedQty: item.reversedQty || 0,
+          reversedQty: Math.max(
+            0,
+            (item.orderedQty || 0) -
+              (item.deliveredQty || 0) -
+              (item.pendingQty || 0),
+          ),
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -1341,6 +1343,7 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage: inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -1394,6 +1397,7 @@ export const SalesInvoice = () => {
     setUseCustomGst(false);
     setDeliveredTo("");
     setRemarks("");
+    setInvoiceDate(new Date().toISOString().split("T")[0]); // Reset to today when starting a new invoice
     setSelectedCustomerId("");
     setSelectedCustomerName("");
     setCustomerPriceType(null);
@@ -1416,6 +1420,13 @@ export const SalesInvoice = () => {
       });
       setSelectedCustomerId(invoice.customerId || "");
       setSelectedCustomerName(invoice.customerName || "");
+      // Restore invoice date when editing
+      const invDate = fullInvoice.invoiceDate ?? invoice.invoiceDate;
+      setInvoiceDate(
+        typeof invDate === "string"
+          ? invDate.slice(0, 10)
+          : new Date(invDate).toISOString().split("T")[0],
+      );
       // Restore customer price type when editing
       const editCustomer = customers.find((c) => c.id === invoice.customerId);
       setCustomerPriceType(editCustomer?.priceType || null);
@@ -1475,6 +1486,7 @@ export const SalesInvoice = () => {
                 item.InvoiceRackShelf?.[0]?.shelfId
                 ? item.Part?.PartRackShelf?.find(
                   (prs: any) =>
+                    prs.storeId === item.InvoiceRackShelf?.[0]?.storeId &&
                     prs.rackId === item.InvoiceRackShelf[0].rackId &&
                     prs.shelfId === item.InvoiceRackShelf[0].shelfId,
                 )?.id || ""
@@ -1483,7 +1495,9 @@ export const SalesInvoice = () => {
               .map((irs: any) => {
                 return item.Part?.PartRackShelf?.find(
                   (prs: any) =>
-                    prs.rackId === irs.rackId && prs.shelfId === irs.shelfId,
+                    prs.storeId === irs.storeId &&
+                    prs.rackId === irs.rackId &&
+                    prs.shelfId === irs.shelfId,
                 )?.id;
               })
               .filter(Boolean),
@@ -1517,10 +1531,11 @@ export const SalesInvoice = () => {
       }
 
       setInlineItems(convertedItems);
-      // Fetch stock balances for the loaded items so they render instantly
+      // Fetch stock balances and locations for the loaded items so rack/shelf show correctly
       convertedItems.forEach((item: any) => {
         if (item.selectedPartId) {
           fetchPartStockBalance(item.selectedPartId);
+          fetchPartLocations(item.selectedPartId);
         }
       });
 
@@ -1663,7 +1678,12 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
-          reversedQty: item.reversedQty || 0,
+          reversedQty: Math.max(
+            0,
+            (item.orderedQty || 0) -
+              (item.deliveredQty || 0) -
+              (item.pendingQty || 0),
+          ),
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -1675,6 +1695,7 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage: inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -1757,7 +1778,12 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
-          reversedQty: item.reversedQty || 0,
+          reversedQty: Math.max(
+            0,
+            (item.orderedQty || 0) -
+              (item.deliveredQty || 0) -
+              (item.pendingQty || 0),
+          ),
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -1882,7 +1908,12 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
-          reversedQty: item.reversedQty || 0,
+          reversedQty: Math.max(
+            0,
+            (item.orderedQty || 0) -
+              (item.deliveredQty || 0) -
+              (item.pendingQty || 0),
+          ),
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -1894,6 +1925,7 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage: inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -2186,6 +2218,7 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage: inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -2261,7 +2294,12 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
-          reversedQty: item.reversedQty || 0,
+          reversedQty: Math.max(
+            0,
+            (item.orderedQty || 0) -
+              (item.deliveredQty || 0) -
+              (item.pendingQty || 0),
+          ),
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -2347,7 +2385,12 @@ export const SalesInvoice = () => {
           orderedQty: item.orderedQty,
           deliveredQty: item.deliveredQty,
           pendingQty: item.pendingQty,
-          reversedQty: item.reversedQty || 0,
+          reversedQty: Math.max(
+            0,
+            (item.orderedQty || 0) -
+              (item.deliveredQty || 0) -
+              (item.pendingQty || 0),
+          ),
           unitPrice: item.unitPrice,
           discount: item.discount || 0,
           discountType: "percent" as const,
@@ -2661,7 +2704,13 @@ export const SalesInvoice = () => {
           >
             <RefreshCw className="w-4 h-4" />
           </Button>
-          <Button onClick={() => setShowNewInvoice(true)} className="gap-2 flex-1 sm:flex-none whitespace-nowrap">
+          <Button
+            onClick={() => {
+              setInvoiceDate(new Date().toISOString().split("T")[0]);
+              setShowNewInvoice(true);
+            }}
+            className="gap-2 flex-1 sm:flex-none whitespace-nowrap"
+          >
             <Plus className="w-4 h-4" />
             New Invoice
           </Button>
@@ -2842,17 +2891,6 @@ export const SalesInvoice = () => {
                   </Select>
                 </div>
 
-                {/* Invoice Date */}
-                <div className="space-y-1.5 w-56">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Invoice Date</Label>
-                  <Input
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                    className="bg-background border-primary/20 h-9 text-sm"
-                  />
-                </div>
-
                 {/* Customer Name Input - Only show for Cash Sale (walking) */}
                 {newInvoice.customerType === "walking" && (
                   <div className="space-y-1.5 w-56">
@@ -2876,8 +2914,14 @@ export const SalesInvoice = () => {
                   <div className="space-y-1.5 w-85">
                     <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Select Customer</Label>
                     <div className="flex gap-2">
-                      <Select
-                        value={selectedCustomerId || undefined}
+                      <SearchableSelect
+                        options={customers.map((customer) => ({
+                          value: customer.id,
+                          label: customer.priceType
+                            ? `${customer.name} (Price ${customer.priceType})`
+                            : customer.name,
+                        }))}
+                        value={selectedCustomerId || ""}
                         onValueChange={(value) => {
                           setSelectedCustomerId(value);
                           const customer = customers.find((c) => c.id === value);
@@ -2898,50 +2942,15 @@ export const SalesInvoice = () => {
                           }
                         }}
                         disabled={loadingCustomers}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue
-                            placeholder={
-                              loadingCustomers
-                                ? "Loading..."
-                                : customers.length === 0
-                                  ? "No customers available"
-                                  : "Select customer..."
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {!loadingCustomers &&
-                            customers.length > 0 &&
-                            customers.map((customer) => (
-                              <SelectItem key={customer.id} value={customer.id}>
-                                <span className="flex items-center gap-2">
-                                  {customer.name}
-                                  {customer.priceType && (
-                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${customer.priceType === "A"
-                                      ? "bg-blue-100 text-blue-700"
-                                      : customer.priceType === "B"
-                                        ? "bg-indigo-100 text-indigo-700"
-                                        : "bg-purple-100 text-purple-700"
-                                      }`}>
-                                      Price {customer.priceType}
-                                    </span>
-                                  )}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          {!loadingCustomers && customers.length === 0 && (
-                            <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                              No customers available
-                            </div>
-                          )}
-                          {loadingCustomers && (
-                            <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                              Loading customers...
-                            </div>
-                          )}
-                        </SelectContent>
-                      </Select>
+                        placeholder={
+                          loadingCustomers
+                            ? "Loading..."
+                            : customers.length === 0
+                              ? "No customers available"
+                              : "Search customer..."
+                        }
+                        className="flex-1 h-9"
+                      />
                       <Button
                         type="button"
                         variant="outline"
@@ -3085,6 +3094,9 @@ export const SalesInvoice = () => {
                         </div>
                       )
                     )}
+                    <p className="text-xs font-medium text-muted-foreground mt-1">
+                      GST Amount: Rs {calculateTax().toLocaleString()}
+                    </p>
                   </div>
                 )}
 
@@ -3095,6 +3107,17 @@ export const SalesInvoice = () => {
                     value={deliveredTo}
                     onChange={(e) => setDeliveredTo(e.target.value)}
                     className="h-9 text-sm"
+                  />
+                </div>
+
+                {/* Invoice Date */}
+                <div className="space-y-1.5 w-56">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Invoice Date</Label>
+                  <Input
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    className="bg-background border-primary/20 h-9 text-sm"
                   />
                 </div>
               </div>
@@ -3158,12 +3181,17 @@ export const SalesInvoice = () => {
                                         if (selectedPart) {
                                           const partNo =
                                             selectedPart.partNo || "";
+                                          const masterPartNo =
+                                            selectedPart.masterPartNo || "";
                                           const description =
                                             selectedPart.description || "";
                                           const brandName = selectedPart.brands?.[0]?.name || "";
-                                          const baseLabel = description
-                                            ? `${partNo} - ${description}`
+                                          const partLabel = masterPartNo && masterPartNo !== partNo
+                                            ? `${masterPartNo} | ${partNo}`
                                             : partNo;
+                                          const baseLabel = description
+                                            ? `${partLabel} - ${description}`
+                                            : partLabel;
                                           return brandName ? `${baseLabel} (${brandName})` : baseLabel;
                                         }
 
@@ -3484,7 +3512,7 @@ export const SalesInvoice = () => {
                                               return filteredParts.length >
                                                 0 ? (
                                                 <>
-                                                  {filteredParts.slice(0, 500).map((p) => (
+                                                  {filteredParts.map((p) => (
                                                     <div
                                                       key={p.id}
                                                       data-dropdown-item
@@ -3533,7 +3561,9 @@ export const SalesInvoice = () => {
                                                     >
                                                       <div className="flex items-center justify-between gap-2">
                                                         <div className="font-medium">
-                                                          {p.partNo}
+                                                          {p.masterPartNo && p.masterPartNo !== p.partNo
+                                                            ? `${p.masterPartNo} | ${p.partNo}`
+                                                            : p.partNo}
                                                         </div>
                                                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${(p.availableQty ?? p.stockQty ?? 0) > 0
                                                           ? "bg-green-100 text-green-700"
@@ -4127,22 +4157,32 @@ export const SalesInvoice = () => {
                     Rs {calculateTotalAmount().toLocaleString()}
                   </span>
                 </div>
-                <div className="flex justify-between text-destructive">
+                {taxType === "With GST" && (
+                  <>
+                    <div className="flex justify-between text-blue-600">
+                      <span>GST %:</span>
+                      <span>{getCurrentGstRate()}%</span>
+                    </div>
+                    <div className="flex justify-between text-blue-600">
+                      <span>GST Amount:</span>
+                      <span>Rs {calculateTax().toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-green-600">
+                      <span>Total after GST:</span>
+                      <span>Rs {calculateTotalAfterGst().toLocaleString()}</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between text-destructive border-t pt-2">
                   <span>Discount:</span>
                   <span>-Rs {discount.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2">
                   <span className="font-medium">After Discount:</span>
                   <span className="font-bold">
-                    Rs {(calculateTotalAmount() - discount).toLocaleString()}
+                    Rs {(calculateTotalAfterGst() - discount).toLocaleString()}
                   </span>
                 </div>
-                {taxType === "With GST" && (
-                  <div className="flex justify-between text-blue-600">
-                    <span>GST ({useCustomGst ? (parseFloat(customGstPercentage) || 0) : gstPercentage}%):</span>
-                    <span>Rs {calculateTax().toLocaleString()}</span>
-                  </div>
-                )}
                 <div className="flex justify-between border-t pt-2 font-bold text-lg">
                   <span>Grand Total:</span>
                   <span className="text-green-600">Rs {calculateAmountAfterDiscount().toLocaleString()}</span>
@@ -4204,6 +4244,7 @@ export const SalesInvoice = () => {
                       <TableHead>Date</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead className="text-right">Tax %</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                       <TableHead className="text-right px-4">Paid</TableHead>
                       <TableHead className="text-center">Delivery</TableHead>
@@ -4233,6 +4274,12 @@ export const SalesInvoice = () => {
                               ? "Cash Sale"
                               : "Party Sale"}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-right">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Tax %</span>
+                          {inv.taxPercentage != null && Number(inv.taxPercentage) > 0
+                            ? `${Number(inv.taxPercentage)}%`
+                            : "-"}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-right font-medium">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">Total</span>
@@ -4328,8 +4375,9 @@ export const SalesInvoice = () => {
                                 <FileText className="w-4 h-4" />
                               </Button>
                             )}
-                            {/* Reverse Stock - for approved invoices with pending (undelivered) quantity */}
-                            {inv.status === "approved" &&
+                            {/* Reverse Stock - for approved or partially delivered party sale (registered) only; not for cash sale */}
+                            {inv.customerType === "registered" &&
+                              (inv.status === "approved" || inv.status === "partially_delivered") &&
                               inv.items?.some((item) => (item.pendingQty || 0) > 0) && (
                                 <Button
                                   variant="ghost"
@@ -4494,7 +4542,8 @@ export const SalesInvoice = () => {
                             Rs {item.lineTotal.toFixed(2)}
                           </TableCell>
                           <TableCell className="text-center">
-                            {(item.pendingQty || 0) - (item.reversedQty || 0) > 0 && (
+                            {selectedInvoice.customerType === "registered" &&
+                              (item.pendingQty || 0) - (item.reversedQty || 0) > 0 && (
                               <Button
                                 variant="ghost"
                                 size="icon"

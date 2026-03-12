@@ -54,7 +54,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
 
     const sql = `
       SELECT 
-        p.id, p."partNo" as part_no, p.description, p.cost, p."priceA" as price_a, 
+        p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, 
         p.uom, p.weight, p."updatedAt" as updated_at,
         mp."masterPartNo" as master_part_no,
         b."name" as brand_name,
@@ -83,6 +83,88 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
 
     params.push(limitNum, offset);
     const result = await query(sql, params);
+    const partIds = result.rows.map((r: any) => r.id);
+
+    // Model total qty per part (sum of qtyUsed); use sibling's total when part has no models
+    let modelTotalByPartId: Record<string, number> = {};
+    if (partIds.length > 0) {
+      const modelSums = await prisma.model.groupBy({
+        by: ["partId"],
+        where: { partId: { in: partIds } },
+        _sum: { qtyUsed: true },
+      });
+      modelSums.forEach((row) => {
+        modelTotalByPartId[row.partId] = row._sum.qtyUsed || 0;
+      });
+
+      // Helper: get model total for any part in DB by partNo or masterPartId
+      const getModelTotalByPartNo = async (partNo: string): Promise<number> => {
+        const trimmed = (partNo || "").trim();
+        if (!trimmed) return 0;
+        const other = await prisma.part.findFirst({
+          where: { partNo: trimmed, status: "active", Model: { some: {} } },
+          include: { Model: true },
+        });
+        if (!other?.Model?.length) return 0;
+        return other.Model.reduce((s, m) => s + (m.qtyUsed || 0), 0);
+      };
+      const getModelTotalByMasterPartId = async (masterPartId: string): Promise<number> => {
+        const other = await prisma.part.findFirst({
+          where: { masterPartId, status: "active", Model: { some: {} } },
+          include: { Model: true },
+        });
+        if (!other?.Model?.length) return 0;
+        return other.Model.reduce((s, m) => s + (m.qtyUsed || 0), 0);
+      };
+
+      // For each part in result with 0 model total, look up sibling in full DB by part_no (Part.partNo)
+      const partNosToResolve = new Set<string>();
+      result.rows.forEach((p: any) => {
+        const total = modelTotalByPartId[p.id] ?? 0;
+        if (total === 0) {
+          const pno = (p.part_no != null && String(p.part_no).trim() !== "") ? String(p.part_no).trim() : null;
+          if (pno) partNosToResolve.add(pno);
+        }
+      });
+      const partNoToTotal: Record<string, number> = {};
+      await Promise.all(
+        Array.from(partNosToResolve).map(async (pno) => {
+          const tot = await getModelTotalByPartNo(pno);
+          if (tot > 0) partNoToTotal[pno] = tot;
+        }),
+      );
+      result.rows.forEach((p: any) => {
+        const pid = p.id;
+        if ((modelTotalByPartId[pid] ?? 0) === 0) {
+          const pno = (p.part_no != null && String(p.part_no).trim() !== "") ? String(p.part_no).trim() : null;
+          if (pno && partNoToTotal[pno] != null) modelTotalByPartId[pid] = partNoToTotal[pno];
+        }
+      });
+
+      // Same by master part: parts with 0 and a masterPartId get total from any sibling in DB
+      const masterIdsToResolve = new Set<string>();
+      result.rows.forEach((p: any) => {
+        const total = modelTotalByPartId[p.id] ?? 0;
+        if (total === 0) {
+          const mid = p.masterPartId || p.masterpartid;
+          if (mid) masterIdsToResolve.add(mid);
+        }
+      });
+      const masterIdToTotal: Record<string, number> = {};
+      await Promise.all(
+        Array.from(masterIdsToResolve).map(async (mid) => {
+          const tot = await getModelTotalByMasterPartId(mid);
+          if (tot > 0) masterIdToTotal[mid] = tot;
+        }),
+      );
+      result.rows.forEach((p: any) => {
+        const pid = p.id;
+        if ((modelTotalByPartId[pid] ?? 0) === 0) {
+          const mid = p.masterPartId || p.masterpartid;
+          if (mid && masterIdToTotal[mid] != null) modelTotalByPartId[pid] = masterIdToTotal[mid];
+        }
+      });
+    }
 
     res.json({
       success: true,
@@ -99,6 +181,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
         stock: parseInt(p.stock) || 0,
         reserved_stock: parseInt(p.reserved_stock) || 0,
         updated_at: p.updated_at,
+        model_total_qty: modelTotalByPartId[p.id] ?? 0,
       })),
     });
   } catch (error: any) {
@@ -256,7 +339,7 @@ router.get("/", async (req: Request, res: Response) => {
         sc."name" as subcategory_name,
         app."name" as application_name,
         COALESCE(st.stock, 0) as current_stock,
-        COALESCE(st.reserved, 0) as reserved_stock,
+        (COALESCE(st.reserved, 0) + COALESCE(sr.reserved, 0)) as reserved_stock,
         lac.cost as latest_adj_cost
         ${showLocations ? ", COALESCE(loc.locations, '[]'::jsonb) as locations, (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock" : ""}
         ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
@@ -273,6 +356,12 @@ router.get("/", async (req: Request, res: Response) => {
           FROM "StockMovement"
           GROUP BY "partId"
       ) st ON p.id = st."partId"
+      LEFT JOIN (
+          SELECT "partId", SUM(quantity) as reserved
+          FROM "StockReservation"
+          WHERE status = 'reserved'
+          GROUP BY "partId"
+      ) sr ON p.id = sr."partId"
       LEFT JOIN (
           SELECT DISTINCT ON (ai."partId") ai."partId", ai.cost
           FROM "AdjustmentItem" ai
@@ -845,6 +934,122 @@ router.get("/price-history", async (req: Request, res: Response) => {
   }
 });
 
+// Get single part by part_no (and optional master_part_no)
+router.get("/by-part-no", async (req: Request, res: Response) => {
+  try {
+    const part_no = (req.query.part_no as string)?.trim();
+    const master_part_no = (req.query.master_part_no as string)?.trim();
+    if (!part_no && !master_part_no) {
+      return res.status(400).json({ error: "part_no or master_part_no is required" });
+    }
+
+    const where: any = {};
+    if (part_no) where.partNo = part_no;
+    if (master_part_no) {
+      const mp = await prisma.masterPart.findFirst({
+        where: { masterPartNo: master_part_no },
+      });
+      if (!mp) return res.status(404).json({ error: "Part not found" });
+      where.masterPartId = mp.id;
+    }
+
+    const part = await prisma.part.findFirst({
+      where,
+      include: {
+        MasterPart: true,
+        Brand: true,
+        Category: true,
+        Subcategory: true,
+        Application: true,
+        Model: true,
+      },
+    });
+
+    if (!part) {
+      return res.status(404).json({ error: "Part not found" });
+    }
+
+    // If this part has no models but shares a master part, use models from a sibling part
+    let modelsToReturn = (part as any).Model || [];
+    if (modelsToReturn.length === 0 && part.masterPartId) {
+      const siblingWithModels = await prisma.part.findFirst({
+        where: {
+          masterPartId: part.masterPartId,
+          id: { not: part.id },
+          Model: { some: {} },
+        },
+        include: { Model: true },
+      });
+      if (siblingWithModels?.Model?.length) {
+        modelsToReturn = siblingWithModels.Model;
+      }
+    }
+
+    const id = part.id;
+    const stockMovements = await prisma.stockMovement.groupBy({
+      by: ["type"],
+      where: {
+        partId: id,
+        OR: [
+          { referenceType: null },
+          { referenceType: { not: "stock_reservation" } },
+        ],
+      },
+      _sum: { quantity: true },
+    });
+    let currentStock = 0;
+    stockMovements.forEach((m) => {
+      const qty = m._sum.quantity || 0;
+      if (m.type === "in") currentStock += qty;
+      else if (m.type === "out") currentStock -= qty;
+    });
+
+    return res.json({
+      id: part.id,
+      master_part_no: (part as any).MasterPart?.masterPartNo || null,
+      part_no: part.partNo,
+      brand_name: (part as any).Brand?.name || null,
+      brand_id: part.brandId || null,
+      category_name: (part as any).Category?.name || null,
+      category_id: part.categoryId || null,
+      subcategory_name: (part as any).Subcategory?.name || null,
+      subcategory_id: part.subcategoryId || null,
+      application_name: (part as any).Application?.name || null,
+      application_id: part.applicationId || null,
+      application: (part as any).Application
+        ? { id: (part as any).Application.id, name: (part as any).Application.name }
+        : null,
+      description: part.description,
+      hs_code: part.hsCode,
+      weight: part.weight,
+      reorder_level: part.reorderLevel || (part as any).reorderlevel,
+      uom: part.uom,
+      qty: currentStock,
+      stock: currentStock,
+      cost: part.cost,
+      price_a: part.priceA || (part as any).pricea || null,
+      price_b: part.priceB || (part as any).priceb || null,
+      price_m: part.priceM || (part as any).pricem || null,
+      smc: part.smc || null,
+      size: part.size || null,
+      origin: part.origin || null,
+      image_p1: part.imageP1 || null,
+      image_p2: part.imageP2 || null,
+      status: part.status || "active",
+      remarks: (part as any).remarks || null,
+      models: modelsToReturn.map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        qty_used: m.qtyUsed,
+      })),
+      created_at: part.createdAt,
+      updated_at: part.updatedAt,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get single part by ID
 router.get("/:id", async (req: Request, res: Response) => {
   try {
@@ -864,6 +1069,22 @@ router.get("/:id", async (req: Request, res: Response) => {
 
     if (!part) {
       return res.status(404).json({ error: "Part not found" });
+    }
+
+    // If this part has no models but shares a master part, use models from a sibling part
+    let modelsToReturn = (part as any).Model || [];
+    if (modelsToReturn.length === 0 && part.masterPartId) {
+      const siblingWithModels = await prisma.part.findFirst({
+        where: {
+          masterPartId: part.masterPartId,
+          id: { not: part.id },
+          Model: { some: {} },
+        },
+        include: { Model: true },
+      });
+      if (siblingWithModels?.Model?.length) {
+        modelsToReturn = siblingWithModels.Model;
+      }
     }
 
     // Calculate stock
@@ -922,7 +1143,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       image_p2: part.imageP2 || null,
       status: part.status || "active",
       remarks: (part as any).remarks || null,
-      models: ((part as any).Model || []).map((m: any) => ({
+      models: modelsToReturn.map((m: any) => ({
         id: m.id,
         name: m.name,
         qty_used: m.qtyUsed,

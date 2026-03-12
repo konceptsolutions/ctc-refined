@@ -879,6 +879,33 @@ export const PartEntryForm = ({
     }
   }, [selectedPart]);
 
+  // When Part No and Master Part No are set, load part by part no to get models (including sibling models)
+  useEffect(() => {
+    const partNo = formData.partNo?.trim() || "";
+    const masterPartNo = formData.masterPartNo?.trim() || "";
+    if (!partNo || !masterPartNo) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const response: any = await apiClient.getPartByPartNo(partNo, masterPartNo);
+        const part = response?.data || response;
+        if (part?.models && Array.isArray(part.models) && part.models.length > 0) {
+          setModelQuantities(
+            part.models.map((m: any, index: number) => ({
+              id: m.id || `model-${index}`,
+              model: m.name || "",
+              qty: m.qty_used ?? m.qtyUsed ?? 0,
+            })),
+          );
+        }
+      } catch {
+        // Ignore: part may not exist or network error
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData.partNo, formData.masterPartNo]);
+
   // Validate maximum limit (10 lakhs)
   const validateMaxLimit = (value: string, fieldName: string): string => {
     if (!value || value.trim() === "") {

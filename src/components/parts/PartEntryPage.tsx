@@ -71,6 +71,7 @@ export const PartEntryPage = ({
             stock: p.stock || 0,
             reservedStock: p.reserved_stock || 0,
             masterPartNo: (p.part_no || "").trim(),
+            modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
           }));
           setParts(transformedParts);
         }
@@ -182,6 +183,10 @@ export const PartEntryPage = ({
         price: savedPart.price_a ? parseFloat(savedPart.price_a) : null,
         stock: savedPart.qty || savedPart.stock || 0,
         reservedStock: savedPart.reserved_stock || 0,
+        modelTotalQty:
+          savedPart.model_total_qty != null
+            ? savedPart.model_total_qty
+            : partData.modelQuantities?.reduce((s: number, mq: any) => s + (mq?.qty || 0), 0),
       };
 
       if (selectedPart) {
@@ -308,6 +313,7 @@ export const PartEntryPage = ({
                             stock: p.stock || 0,
                             reservedStock: p.reserved_stock || 0,
                             masterPartNo: (p.part_no || "").trim(),
+                            modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
                           }),
                         );
                         setParts(transformedParts);
@@ -358,6 +364,7 @@ export const PartEntryPage = ({
                               stock: p.stock || 0,
                               reservedStock: p.reserved_stock || 0,
                               masterPartNo: (p.part_no || "").trim(),
+                              modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
                             }),
                           );
                           setParts(transformedParts);
@@ -427,6 +434,7 @@ export const PartEntryPage = ({
                                   stock: p.stock || 0,
                                   reservedStock: p.reserved_stock || 0,
                                   masterPartNo: (p.part_no || "").trim(),
+                                  modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
                                 }),
                               );
                               setParts(transformedParts);
@@ -569,6 +577,7 @@ export const PartEntryPage = ({
                             stock: p.stock || 0,
                             reservedStock: p.reserved_stock || 0,
                             masterPartNo: (p.part_no || "").trim(),
+                            modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
                           }),
                         );
                         setParts(transformedParts);

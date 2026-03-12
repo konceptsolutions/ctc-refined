@@ -327,8 +327,6 @@ export const BalanceSheetTab = () => {
 
                         {subgroup.coa_accounts?.map((account) => {
                           const accountBalance = getAccountBalance(account);
-                          if (accountBalance === null || accountBalance === 0)
-                            return null;
                           return (
                             <div
                               key={account.id}
@@ -338,7 +336,7 @@ export const BalanceSheetTab = () => {
                                 {account.code}-{account.name}
                               </span>
                               <span className="text-xs text-right">
-                                {formatBalance(accountBalance, true)}
+                                {formatBalance(accountBalance ?? 0, true)}
                               </span>
                             </div>
                           );

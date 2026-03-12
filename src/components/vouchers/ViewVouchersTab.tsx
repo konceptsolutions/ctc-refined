@@ -838,53 +838,44 @@ export const ViewVouchersTab = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Main Group</Label>
-            <Select value={mainGroupFilter} onValueChange={setMainGroupFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_all">All</SelectItem>
-                {mainGroups.map((group) => (
-                  <SelectItem key={group.value} value={group.value}>
-                    {group.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={[
+                { value: "_all", label: "All" },
+                ...mainGroups.map((group) => ({ value: group.value, label: group.label })),
+              ]}
+              value={mainGroupFilter}
+              onValueChange={setMainGroupFilter}
+              placeholder="Search main group..."
+              className="h-9"
+            />
           </div>
 
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Sub Group</Label>
-            <Select value={subGroupFilter} onValueChange={setSubGroupFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_all">All</SelectItem>
-                {subGroups.map((group) => (
-                  <SelectItem key={group.value} value={group.value}>
-                    {group.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={[
+                { value: "_all", label: "All" },
+                ...subGroups.map((group) => ({ value: group.value, label: group.label })),
+              ]}
+              value={subGroupFilter}
+              onValueChange={setSubGroupFilter}
+              placeholder="Search sub group..."
+              className="h-9"
+            />
           </div>
 
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Account</Label>
-            <Select value={accountFilter} onValueChange={setAccountFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_all">All</SelectItem>
-                {accounts.map((acc) => (
-                  <SelectItem key={acc.value} value={acc.value}>
-                    {acc.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={[
+                { value: "_all", label: "All" },
+                ...accounts.map((acc) => ({ value: acc.value, label: acc.label })),
+              ]}
+              value={accountFilter}
+              onValueChange={setAccountFilter}
+              placeholder="Search account..."
+              className="h-9"
+            />
           </div>
         </div>
 

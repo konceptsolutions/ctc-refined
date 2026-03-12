@@ -159,6 +159,9 @@ export const PricingCosting = () => {
   const [filterUpdateStatus, setFilterUpdateStatus] = useState<
     "all" | "updated" | "non-updated"
   >("all");
+  const [filterZeroPrice, setFilterZeroPrice] = useState<
+    "all" | "price-a-zero" | "price-b-zero" | "any-zero"
+  >("all");
   const [filterStartDate, setFilterStartDate] = useState<string>("");
   const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<
@@ -286,6 +289,7 @@ export const PricingCosting = () => {
     filterSubCategory,
     filterBrand,
     filterUpdateStatus,
+    filterZeroPrice,
     filterStartDate,
     filterEndDate,
     sortOrder,
@@ -940,6 +944,20 @@ export const PricingCosting = () => {
             ? Boolean(item.lastUpdated)
             : !item.lastUpdated;
 
+      // Zero price filter - show items where Price A, Price B, or both are zero
+      const priceAIsZero = (item.priceA ?? 0) === 0;
+      const priceBIsZero = (item.priceB ?? 0) === 0;
+      const matchesZeroPrice =
+        filterZeroPrice === "all"
+          ? true
+          : filterZeroPrice === "price-a-zero"
+            ? priceAIsZero
+            : filterZeroPrice === "price-b-zero"
+              ? priceBIsZero
+              : filterZeroPrice === "any-zero"
+                ? priceAIsZero || priceBIsZero
+                : true;
+
       // Date filter - check if item's createdAt or lastUpdated date falls within the range (time filters removed)
       let matchesDate = true;
       if (filterStartDate || filterEndDate) {
@@ -982,6 +1000,7 @@ export const PricingCosting = () => {
         matchesSubCategory &&
         matchesBrand &&
         matchesUpdateStatus &&
+        matchesZeroPrice &&
         matchesDate
       );
     });
@@ -992,6 +1011,7 @@ export const PricingCosting = () => {
     filterSubCategory,
     filterBrand,
     filterUpdateStatus,
+    filterZeroPrice,
     filterStartDate,
     filterEndDate,
   ]);
@@ -1780,6 +1800,20 @@ export const PricingCosting = () => {
                       <SelectItem value="non-updated">Not Updated</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Select
+                    value={filterZeroPrice}
+                    onValueChange={(value: any) => setFilterZeroPrice(value)}
+                  >
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="Zero Prices" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Prices</SelectItem>
+                      <SelectItem value="price-a-zero">Price A is zero</SelectItem>
+                      <SelectItem value="price-b-zero">Price B is zero</SelectItem>
+                      <SelectItem value="any-zero">Price A and/or B is zero</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <div className="flex items-center gap-2">
                     <label className="text-sm text-muted-foreground whitespace-nowrap flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
@@ -1839,6 +1873,7 @@ export const PricingCosting = () => {
                       <TableHead>PART NO</TableHead>
                       <TableHead>DESCRIPTION</TableHead>
                       <TableHead>CATEGORY</TableHead>
+                      <TableHead>BRAND</TableHead>
                       <TableHead className="text-right">AVG PRICE</TableHead>
                       <TableHead className="text-right">LAST PUR. PRICE</TableHead>
                       <TableHead className="text-right">COST</TableHead>
@@ -1864,7 +1899,7 @@ export const PricingCosting = () => {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={16} className="text-center py-8">
+                        <TableCell colSpan={17} className="text-center py-8">
                           <div className="flex items-center justify-center">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                             <span className="ml-2">Loading...</span>
@@ -1874,7 +1909,7 @@ export const PricingCosting = () => {
                     ) : paginatedItems.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={16}
+                          colSpan={17}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No pricing data found
@@ -1925,6 +1960,7 @@ export const PricingCosting = () => {
                               {item.description}
                             </TableCell>
                             <TableCell>{item.category}</TableCell>
+                            <TableCell>{item.brand}</TableCell>
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                               {formatCurrency(item.avgPrice)}
                             </TableCell>
@@ -2458,6 +2494,7 @@ export const PricingCosting = () => {
                     <TableHead>Part No</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Category</TableHead>
+                    <TableHead>Brand</TableHead>
                     <TableHead className="text-right">Avg Price</TableHead>
                     <TableHead className="text-right">Last Pur. Price</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
@@ -2469,7 +2506,7 @@ export const PricingCosting = () => {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8">
+                      <TableCell colSpan={10} className="text-center py-8">
                         <div className="flex items-center justify-center">
                           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                           <span className="ml-2">Loading...</span>
@@ -2567,7 +2604,7 @@ export const PricingCosting = () => {
                         return (
                           <TableRow>
                             <TableCell
-                              colSpan={9}
+                              colSpan={10}
                               className="text-center text-muted-foreground py-8"
                             >
                               No items found matching the filters
@@ -2601,6 +2638,7 @@ export const PricingCosting = () => {
                             </TableCell>
                             <TableCell>{item.description}</TableCell>
                             <TableCell>{item.category}</TableCell>
+                            <TableCell>{item.brand}</TableCell>
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                               {formatCurrency(item.avgPrice)}
                             </TableCell>

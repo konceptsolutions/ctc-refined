@@ -150,6 +150,7 @@ export const AdjustItem = () => {
     {
       id: string;
       partNo: string;
+      masterPartNo: string | null;
       brand: string;
       description: string;
       qtyInStock: number;
@@ -400,6 +401,7 @@ export const AdjustItem = () => {
           return {
             id: p.id,
             partNo: p.partNo || "",
+            masterPartNo: p.masterPartNo ?? null,
             brand: p.brand || "",
             description: cleanDescription,
             qtyInStock: 0,
@@ -974,10 +976,16 @@ export const AdjustItem = () => {
           </div>
           <div className="flex-1 max-w-[250px]">
             <SearchableSelect
-              options={parts.map((p) => ({
-                value: p.id,
-                label: `${p.partNo} (${p.brand})`,
-              }))}
+              options={parts.map((p) => {
+                const master = p.masterPartNo || "";
+                const partNo = p.partNo || "";
+                const both = master && partNo ? `${master} | ${partNo}` : master || partNo;
+                const brand = p.brand ? ` (${p.brand})` : "";
+                return {
+                  value: p.id,
+                  label: `${both}${brand}`,
+                };
+              })}
               value={filterPartId}
               onValueChange={(value) => {
                 console.log("SearchableSelect onValueChange:", value);
@@ -1803,10 +1811,16 @@ export const AdjustItem = () => {
                     <TableRow key={item.id}>
                       <TableCell>
                         <SearchableSelect
-                          options={parts.map((p) => ({
-                            value: p.id,
-                            label: `${p.partNo}${p.brand ? ` (${p.brand})` : ''} - ${p.description}`,
-                          }))}
+                          options={parts.map((p) => {
+                            const master = p.masterPartNo || "";
+                            const partNo = p.partNo || "";
+                            const both = master && partNo ? `${master} | ${partNo}` : master || partNo;
+                            const brand = p.brand ? ` (${p.brand})` : "";
+                            return {
+                              value: p.id,
+                              label: `${both}${brand} - ${p.description}`,
+                            };
+                          })}
                           value={item.itemId}
                           onValueChange={(v) =>
                             handleItemChange(item.id, "itemId", v)

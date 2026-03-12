@@ -37,15 +37,17 @@ router.get("/dropdown", async (req: Request, res: Response) => {
         };
 
         if (search) {
+            const searchStr = search as string;
             where.OR = [
-                { partNo: { contains: search as string, mode: "insensitive" } },
-                { description: { contains: search as string, mode: "insensitive" } },
-                { Brand: { name: { contains: search as string, mode: "insensitive" } } }
+                { partNo: { contains: searchStr, mode: "insensitive" } },
+                { description: { contains: searchStr, mode: "insensitive" } },
+                { Brand: { name: { contains: searchStr, mode: "insensitive" } } },
+                { MasterPart: { masterPartNo: { contains: searchStr, mode: "insensitive" } } }
             ];
         }
 
         // Use select to fetch ONLY what is needed for the dropdown label
-        // Label format: `${p.partNo}${p.brand ? ` (${p.brand})` : ''} - ${p.description}`
+        // Label format: Master Part | Part No (brand) for easy filtering
         const parts = await prisma.part.findMany({
             where,
             select: {
@@ -55,6 +57,11 @@ router.get("/dropdown", async (req: Request, res: Response) => {
                 Brand: {
                     select: {
                         name: true
+                    }
+                },
+                MasterPart: {
+                    select: {
+                        masterPartNo: true
                     }
                 }
             },
@@ -67,6 +74,7 @@ router.get("/dropdown", async (req: Request, res: Response) => {
         const transformed = parts.map(p => ({
             id: p.id,
             partNo: p.partNo,
+            masterPartNo: (p as any).MasterPart?.masterPartNo ?? null,
             description: p.description,
             brand: p.Brand?.name || null
         }));

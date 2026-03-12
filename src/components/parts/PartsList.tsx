@@ -24,6 +24,7 @@ export interface Part {
   stock: number;
   reservedStock?: number;
   masterPartNo?: string;
+  modelTotalQty?: number;
 }
 
 const initialParts: Part[] = [];
@@ -97,6 +98,9 @@ export const PartsList = ({
               <TableHead className="font-bold text-foreground text-xs py-2">
                 UOM
               </TableHead>
+              <TableHead className="font-bold text-foreground text-xs py-2 text-right">
+                Model Qty
+              </TableHead>
               <TableHead className="font-bold text-foreground text-xs py-2">
                 Weight
               </TableHead>
@@ -129,6 +133,11 @@ export const PartsList = ({
                 </TableCell>
                 <TableCell className="text-muted-foreground text-xs py-1.5">
                   {part.uom}
+                </TableCell>
+                <TableCell className="text-right text-foreground text-xs py-1.5">
+                  {part.modelTotalQty != null && part.modelTotalQty > 0
+                    ? part.modelTotalQty
+                    : "-"}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-xs py-1.5">
                   {part.weight}

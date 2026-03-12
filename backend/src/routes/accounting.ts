@@ -952,15 +952,15 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
   try {
     const { from_date, to_date, type } = req.query;
 
-    // Build date filter for Vouchers
+    // Build date filter for Vouchers (to_date inclusive: end of day)
     let VoucherDateFilter: any = {};
     if (from_date || to_date) {
       VoucherDateFilter.date = {};
       if (from_date) {
-        VoucherDateFilter.date.gte = new Date(from_date as string);
+        VoucherDateFilter.date.gte = new Date((from_date as string) + "T00:00:00.000Z");
       }
       if (to_date) {
-        VoucherDateFilter.date.lte = new Date(to_date as string);
+        VoucherDateFilter.date.lte = new Date((to_date as string) + "T23:59:59.999Z");
       }
     }
 
@@ -1407,12 +1407,20 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       };
     });
 
-    // Get Liabilities
-    const liabilityMainGroups = await prisma.mainGroup.findMany({
-      where: { type: "Liability" },
+    // Get Liabilities (include common type and code variants so Current/Long Term Liabilities show)
+    const liabilityMainGroupsRaw = await prisma.mainGroup.findMany({
+      where: {
+        OR: [
+          { type: "Liability" },
+          { type: "Liabilities" },
+          { type: { equals: "Liability", mode: "insensitive" } },
+          { type: { equals: "Liabilities", mode: "insensitive" } },
+          // Also include standard liability codes 3 (Current Liabilities) and 4 (Long Term Liabilities)
+          { code: { in: ["3", "4"] } },
+        ],
+      },
       include: {
         Subgroup: {
-          where: { isActive: true },
           include: {
             Account: {
               include: commonInclude,
@@ -1423,6 +1431,24 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       },
       orderBy: { code: "asc" },
     });
+    // If no liability groups found by type, include any main group whose type contains "liab" (e.g. "Current Liability")
+    const liabilityMainGroups =
+      liabilityMainGroupsRaw.length > 0
+        ? liabilityMainGroupsRaw
+        : await prisma.mainGroup.findMany({
+            where: {
+              type: { contains: "liab", mode: "insensitive" },
+            },
+            include: {
+              Subgroup: {
+                include: {
+                  Account: { include: commonInclude },
+                },
+                orderBy: { code: "asc" },
+              },
+            },
+            orderBy: { code: "asc" },
+          });
 
     const liabilities = liabilityMainGroups.map((mg) => {
       const subgroups = mg.Subgroup.map((sg) => {
