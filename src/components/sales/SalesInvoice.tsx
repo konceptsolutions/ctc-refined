@@ -3910,9 +3910,10 @@ export const SalesInvoice = () => {
                             {/* Column 8: Price A (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
-                                const priceAValue = item.priceA !== undefined ? item.priceA : part?.priceA || 0;
+                                const priceAValue =
+                                  item.priceA ?? (part?.priceA ?? null);
                                 const isSelected = item.selectedPriceType === "A";
-                                return priceAValue > 0 ? (
+                                return priceAValue != null ? (
                                   <Button variant={isSelected ? "default" : "outline"} size="sm" className="w-full text-xs" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "A")}>
                                     {priceAValue.toFixed(0)}
                                   </Button>
@@ -3923,9 +3924,10 @@ export const SalesInvoice = () => {
                             {/* Column 9: Price B (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
-                                const priceBValue = item.priceB !== undefined ? item.priceB : part?.priceB || 0;
+                                const priceBValue =
+                                  item.priceB ?? (part?.priceB ?? null);
                                 const isSelected = item.selectedPriceType === "B";
-                                return priceBValue > 0 ? (
+                                return priceBValue != null ? (
                                   <Button variant={isSelected ? "default" : "outline"} size="sm" className="w-full text-xs" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "B")}>
                                     {priceBValue.toFixed(0)}
                                   </Button>
@@ -3944,15 +3946,63 @@ export const SalesInvoice = () => {
                                 <div className="space-y-1">
                                   <span className="text-[9px] text-muted-foreground uppercase">Price A</span>
                                   {(() => {
-                                    const val = item.priceA !== undefined ? item.priceA : part?.priceA || 0;
-                                    return val > 0 ? <Button variant={item.selectedPriceType === "A" ? "default" : "outline"} size="sm" className="w-full h-8 text-[10px]" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "A")}>{val.toFixed(0)}</Button> : <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">-</div>;
+                                    const val =
+                                      item.priceA ?? (part?.priceA ?? null);
+                                    return val != null ? (
+                                      <Button
+                                        variant={
+                                          item.selectedPriceType === "A"
+                                            ? "default"
+                                            : "outline"
+                                        }
+                                        size="sm"
+                                        className="w-full h-8 text-[10px]"
+                                        onClick={() =>
+                                          handleUpdateInlineItem(
+                                            item.id,
+                                            "selectedPriceType",
+                                            "A",
+                                          )
+                                        }
+                                      >
+                                        {val.toFixed(0)}
+                                      </Button>
+                                    ) : (
+                                      <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">
+                                        -
+                                      </div>
+                                    );
                                   })()}
                                 </div>
                                 <div className="space-y-1">
                                   <span className="text-[9px] text-muted-foreground uppercase">Price B</span>
                                   {(() => {
-                                    const val = item.priceB !== undefined ? item.priceB : part?.priceB || 0;
-                                    return val > 0 ? <Button variant={item.selectedPriceType === "B" ? "default" : "outline"} size="sm" className="w-full h-8 text-[10px]" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "B")}>{val.toFixed(0)}</Button> : <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">-</div>;
+                                    const val =
+                                      item.priceB ?? (part?.priceB ?? null);
+                                    return val != null ? (
+                                      <Button
+                                        variant={
+                                          item.selectedPriceType === "B"
+                                            ? "default"
+                                            : "outline"
+                                        }
+                                        size="sm"
+                                        className="w-full h-8 text-[10px]"
+                                        onClick={() =>
+                                          handleUpdateInlineItem(
+                                            item.id,
+                                            "selectedPriceType",
+                                            "B",
+                                          )
+                                        }
+                                      >
+                                        {val.toFixed(0)}
+                                      </Button>
+                                    ) : (
+                                      <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">
+                                        -
+                                      </div>
+                                    );
                                   })()}
                                 </div>
                               </div>

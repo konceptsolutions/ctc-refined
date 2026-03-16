@@ -1878,12 +1878,16 @@ export const AdjustItem = () => {
                         <Input
                           type="number"
                           placeholder="Rate"
-                          value={item.rate || ""}
+                          value={item.rate ?? ""}
                           onChange={(e) =>
                             handleItemChange(
                               item.id,
                               "rate",
-                              parseFloat(e.target.value) || 0,
+                              e.target.value === ""
+                                ? 0
+                                : Number.isNaN(parseFloat(e.target.value))
+                                  ? 0
+                                  : parseFloat(e.target.value),
                             )
                           }
                           className="h-8 text-xs"
