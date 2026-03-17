@@ -64,6 +64,7 @@ export interface PartItem {
   brands: ItemBrand[];
   lastSaleQty?: number;
   lastSalePrice?: number;
+  lastSaleCustomerName?: string;
   lastSaleDate?: string;
   machineModels?: MachineModel[];
   locations?: StockLocation[];

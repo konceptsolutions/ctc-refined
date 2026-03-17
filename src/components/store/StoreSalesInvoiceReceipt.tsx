@@ -84,8 +84,7 @@ export const StoreSalesInvoiceReceipt = ({
     }
   };
 
-  const getDeliveryQty = (itemId: string) =>
-    deliveryQuantities[itemId] ?? 0;
+  const getDeliveryQty = (itemId: string) => deliveryQuantities[itemId] ?? 0;
 
   const hasAnyDelivery = () =>
     Object.values(deliveryQuantities).some((qty) => qty > 0);
@@ -120,20 +119,20 @@ export const StoreSalesInvoiceReceipt = ({
 
       const totalPending = (invoice.items || []).reduce(
         (sum, item) => sum + (item.orderedQty - item.deliveredQty),
-        0
+        0,
       );
       const totalDelivering = deliveryItems.reduce(
         (sum, item) => sum + item.quantity,
-        0
+        0,
       );
 
       if (totalDelivering < totalPending) {
         toast.success(
-          `Partial stock out confirmed for Order ${invoice.invoiceNo}.`
+          `Partial stock out confirmed for Order ${invoice.invoiceNo}.`,
         );
       } else {
         toast.success(
-          `Full stock out confirmed for Order ${invoice.invoiceNo}.`
+          `Full stock out confirmed for Order ${invoice.invoiceNo}.`,
         );
       }
 
@@ -148,7 +147,7 @@ export const StoreSalesInvoiceReceipt = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Truck className="w-5 h-5 text-primary" />
@@ -198,7 +197,6 @@ export const StoreSalesInvoiceReceipt = ({
                       <TableCell className="text-center align-middle font-medium">
                         {item.orderedQty}
                       </TableCell>
-
 
                       {/* Stock Out Qty – editable */}
                       <TableCell className="text-center align-middle">

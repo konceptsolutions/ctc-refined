@@ -340,7 +340,11 @@ router.get("/", async (req: Request, res: Response) => {
         app."name" as application_name,
         COALESCE(st.stock, 0) as current_stock,
         (COALESCE(st.reserved, 0) + COALESCE(sr.reserved, 0)) as reserved_stock,
-        lac.cost as latest_adj_cost
+        lac.cost as latest_adj_cost,
+        ls.last_sale_qty,
+        ls.last_sale_price,
+        ls.last_sale_customer,
+        ls.last_sale_date
         ${showLocations ? ", COALESCE(loc.locations, '[]'::jsonb) as locations, (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock" : ""}
         ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
       FROM "Part" p
@@ -369,6 +373,18 @@ router.get("/", async (req: Request, res: Response) => {
           WHERE a.status = 'approved' AND a."deletedAt" IS NULL
           ORDER BY ai."partId", a.date DESC, a."createdAt" DESC, ai."createdAt" DESC
       ) lac ON p.id = lac."partId"
+      LEFT JOIN LATERAL (
+          SELECT
+            sii."orderedQty" as last_sale_qty,
+            sii."unitPrice" as last_sale_price,
+            si."customerName" as last_sale_customer,
+            si."invoiceDate" as last_sale_date
+          FROM "SalesInvoiceItem" sii
+          JOIN "SalesInvoice" si ON sii."invoiceId" = si.id
+          WHERE sii."partId" = p.id
+          ORDER BY si."invoiceDate" DESC, sii."createdAt" DESC
+          LIMIT 1
+      ) ls ON true
       ${showLocations ? `
       LEFT JOIN (
           SELECT prs."partId",
@@ -442,6 +458,10 @@ router.get("/", async (req: Request, res: Response) => {
         price_a: part.priceA ?? part.pricea ?? null,
         price_b: part.priceB ?? part.priceb ?? null,
         price_m: part.priceM ?? part.pricem ?? null,
+        lastSaleQty: parseInt(part.last_sale_qty) || 0,
+        lastSalePrice: parseFloat(part.last_sale_price) || 0,
+        lastSaleCustomerName: part.last_sale_customer || "",
+        lastSaleDate: part.last_sale_date || null,
         // Only include images for small result sets
         image_p1: skipImages ? null : part.imageP1 || part.imagep1,
         image_p2: skipImages ? null : part.imageP2 || part.imagep2,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
@@ -98,6 +98,7 @@ interface InlineItemRow {
   priceA?: number; // Editable Price A
   priceB?: number; // Editable Price B
   priceM?: number; // Editable Price M
+  unitPrice?: number; // Actual price used for this line (can be custom)
   selectedPriceType?: "A" | "B" | "M"; // Track which price is selected
   selectedRackId?: string;
   selectedLocationId?: string; // PartRackShelf ID
@@ -130,8 +131,12 @@ export const SalesInvoice = () => {
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
-  const [customerPriceType, setCustomerPriceType] = useState<"A" | "B" | "M" | null>(null);
-  const [selectedCustomerCategory, setSelectedCustomerCategory] = useState<string | null>(null);
+  const [customerPriceType, setCustomerPriceType] = useState<
+    "A" | "B" | "M" | null
+  >(null);
+  const [selectedCustomerCategory, setSelectedCustomerCategory] = useState<
+    string | null
+  >(null);
 
   // Add Customer Dialog State
   const [showAddCustomerDialog, setShowAddCustomerDialog] = useState(false);
@@ -141,12 +146,16 @@ export const SalesInvoice = () => {
     useState(false);
   const [editingCreditLimit, setEditingCreditLimit] = useState<number>(0);
   const [updatingCreditLimit, setUpdatingCreditLimit] = useState(false);
+  const [overrideCreditLimit, setOverrideCreditLimit] = useState(false);
+  const [showLastSaleInfo, setShowLastSaleInfo] = useState(false);
 
   // Inline items state - matching reference design
   const [inlineItems, setInlineItems] = useState<InlineItemRow[]>([]);
 
   // Map to store full part objects for all selected parts (persists across searches)
-  const [selectedPartsMap, setSelectedPartsMap] = useState<Record<string, PartItem>>({});
+  const [selectedPartsMap, setSelectedPartsMap] = useState<
+    Record<string, PartItem>
+  >({});
 
   // Parts data from API
   const [parts, setParts] = useState<PartItem[]>([]);
@@ -185,7 +194,7 @@ export const SalesInvoice = () => {
     Record<string, boolean>
   >({});
 
-  const fetchPartLocations = async (partId: string) => {
+  const fetchPartLocations = useCallback(async (partId: string) => {
     if (!partId) return;
     setLoadingLocations((prev) => ({ ...prev, [partId]: true }));
     try {
@@ -211,10 +220,11 @@ export const SalesInvoice = () => {
         [partId]: normalized,
       }));
     } catch (error) {
+      console.error("Failed to fetch part locations:", error);
     } finally {
       setLoadingLocations((prev) => ({ ...prev, [partId]: false }));
     }
-  };
+  }, []);
 
   // Navigation
   const navigate = useNavigate();
@@ -241,7 +251,9 @@ export const SalesInvoice = () => {
   const [useCustomGst, setUseCustomGst] = useState(false);
   const [deliveredTo, setDeliveredTo] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
+  const [invoiceDate, setInvoiceDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
 
   // Delivery Log
   const [showDeliveryLog, setShowDeliveryLog] = useState(false);
@@ -303,7 +315,9 @@ export const SalesInvoice = () => {
   // Reverse Quantity Dialog - Multiple items
   const [showReverseDialog, setShowReverseDialog] = useState(false);
   const [itemsToReverse, setItemsToReverse] = useState<InvoiceItem[]>([]);
-  const [reverseQuantities, setReverseQuantities] = useState<Record<string, number>>({});
+  const [reverseQuantities, setReverseQuantities] = useState<
+    Record<string, number>
+  >({});
   const [reversing, setReversing] = useState(false);
 
   // Filter invoices (only by search term, status and customerType are filtered by API)
@@ -322,7 +336,9 @@ export const SalesInvoice = () => {
       );
     })
     .slice()
-    .sort((a, b) => b.invoiceNo.localeCompare(a.invoiceNo, undefined, { numeric: true }));
+    .sort((a, b) =>
+      b.invoiceNo.localeCompare(a.invoiceNo, undefined, { numeric: true }),
+    );
 
   // Calculate totals
   const totalInvoices = invoices.length;
@@ -345,10 +361,26 @@ export const SalesInvoice = () => {
       priceA: undefined,
       priceB: undefined,
       priceM: undefined,
+       unitPrice: undefined,
       selectedPriceType: undefined,
     };
     // Add new item at the top (first position), existing items move down
     setInlineItems([newItem, ...inlineItems]);
+  };
+
+  // Helper to derive unit price from selected price type + part data
+  const getDerivedUnitPrice = (item: InlineItemRow, part: PartItem | null) => {
+    if (!part) return 0;
+    if (item.selectedPriceType === "A") {
+      return item.priceA ?? part.priceA ?? 0;
+    }
+    if (item.selectedPriceType === "B") {
+      return item.priceB ?? part.priceB ?? 0;
+    }
+    if (item.selectedPriceType === "M") {
+      return item.priceM ?? part.priceM ?? 0;
+    }
+    return 0;
   };
 
   // Update inline item
@@ -360,7 +392,7 @@ export const SalesInvoice = () => {
     setInlineItems((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          let updated = { ...item, [field]: value };
+          let updated: InlineItemRow = { ...item, [field]: value };
 
           // Cross-field logic for location selection vs unlocated stock
           if (field === "useUnlocatedStock" && value === true) {
@@ -414,6 +446,8 @@ export const SalesInvoice = () => {
               } else if (part.priceM) {
                 updated.selectedPriceType = "M";
               }
+              // Set unit price based on selected price type
+              updated.unitPrice = getDerivedUnitPrice(updated, part);
 
               // Reset selections for new part
               updated.selectedLocationIds = [];
@@ -434,6 +468,12 @@ export const SalesInvoice = () => {
               }
             }
           }
+
+          // If price type was changed explicitly, update unit price to match that selection
+          if (field === "selectedPriceType") {
+            const part = getPartForItem(updated.selectedPartId);
+            updated.unitPrice = getDerivedUnitPrice(updated, part);
+          }
           return updated;
         }
         return item;
@@ -442,7 +482,7 @@ export const SalesInvoice = () => {
   };
 
   // Fetch accurate stock balance for a part
-  const fetchPartStockBalance = async (partId: string, force = false) => {
+  const fetchPartStockBalance = useCallback(async (partId: string, force = false) => {
     if (partStockBalances[partId] && !force) {
       return;
     }
@@ -466,10 +506,11 @@ export const SalesInvoice = () => {
         },
       }));
     } catch (error) {
+      console.error("Failed to fetch part stock balance:", error);
     } finally {
       setLoadingStock((prev) => ({ ...prev, [partId]: false }));
     }
-  };
+  }, [partStockBalances]);
 
   // Remove inline item
   const handleRemoveInlineItem = (id: string) => {
@@ -546,7 +587,9 @@ export const SalesInvoice = () => {
               stockQty: p.stock || 0,
               reservedQty: p.reserved_stock || 0,
               availableQty: (p.stock || 0) - (p.reserved_stock || 0),
+              lastSaleQty: p.lastSaleQty || 0,
               lastSalePrice: p.lastSalePrice || 0,
+              lastSaleCustomerName: p.lastSaleCustomerName || "",
               grade: p.grade || "A",
               brands: p.brand_name
                 ? [{ id: p.brand_id || "", name: p.brand_name }]
@@ -591,7 +634,7 @@ export const SalesInvoice = () => {
 
       return () => clearInterval(interval);
     }
-  }, [partsSearchTerm, inlineItems.length]); // Dependencies to ensure we don't poll while user is active or context changes inappropriately
+  }, [partsSearchTerm, inlineItems, fetchPartStockBalance, fetchPartLocations]); // Dependencies to ensure we don't poll while user is active or context changes inappropriately
 
   // Force refresh parts list and clear stock balance cache
   const refreshPartsData = async () => {
@@ -603,8 +646,9 @@ export const SalesInvoice = () => {
 
   // Cleanup debounce timers on unmount
   useEffect(() => {
+    const debounceTimers = partsSearchDebounceRef.current;
     return () => {
-      Object.values(partsSearchDebounceRef.current).forEach((timer) => {
+      Object.values(debounceTimers).forEach((timer) => {
         if (timer) clearTimeout(timer);
       });
     };
@@ -741,7 +785,10 @@ export const SalesInvoice = () => {
             createdAt: inv.createdAt,
             updatedAt: inv.updatedAt,
           }))
-          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          .sort(
+            (a: any, b: any) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          );
 
         setInvoices(transformedInvoices);
       } catch (error: any) {
@@ -871,7 +918,10 @@ export const SalesInvoice = () => {
             // Priority 3: Check account code pattern (103xxx) but exclude obvious cash accounts
             if (/^103\d{3}$/.test(accountCode)) {
               // Exclude if account name suggests it's cash/petty cash
-              if (accountName.includes("cash") || accountName.includes("petty")) {
+              if (
+                accountName.includes("cash") ||
+                accountName.includes("petty")
+              ) {
                 return false;
               }
               return true;
@@ -899,7 +949,8 @@ export const SalesInvoice = () => {
             const subgroupName = (acc.Subgroup?.name || "").toLowerCase();
             // Include only accounts that belong to the Cash sub group (code 102 or name contains "cash" and not "bank")
             if (subgroupCode === "102") return true;
-            if (subgroupName.includes("cash") && !subgroupName.includes("bank")) return true;
+            if (subgroupName.includes("cash") && !subgroupName.includes("bank"))
+              return true;
             return false;
           })
           .map((acc: any) => ({
@@ -930,22 +981,14 @@ export const SalesInvoice = () => {
   // Calculate line total for inline item
   const calculateLineTotal = (item: InlineItemRow) => {
     const part = getPartForItem(item.selectedPartId);
-    if (!part || !item.selectedPriceType) return 0;
+    const qty = item.qty || 0;
+    if (!part && item.unitPrice == null) return 0;
 
-    // Get the selected price value
-    let selectedPrice = 0;
-    if (item.selectedPriceType === "A") {
-      selectedPrice =
-        item.priceA !== undefined ? item.priceA : part.priceA || 0;
-    } else if (item.selectedPriceType === "B") {
-      selectedPrice =
-        item.priceB !== undefined ? item.priceB : part.priceB || 0;
-    } else if (item.selectedPriceType === "M") {
-      selectedPrice =
-        item.priceM !== undefined ? item.priceM : part.priceM || 0;
-    }
+    // Prefer explicit unitPrice (allows custom price), otherwise derive from price type
+    const unitPrice =
+      item.unitPrice != null ? item.unitPrice : getDerivedUnitPrice(item, part);
 
-    return item.qty * selectedPrice;
+    return qty * unitPrice;
   };
 
   // Calculate total amount
@@ -1046,8 +1089,12 @@ export const SalesInvoice = () => {
       return;
     }
 
-    // NEW: Credit Limit Validation for Registered Customers
-    if (newInvoice.customerType === "registered" && selectedCustomerId) {
+    // NEW: Credit Limit Validation for Registered Customers (can be overridden via checkbox)
+    if (
+      newInvoice.customerType === "registered" &&
+      selectedCustomerId &&
+      !overrideCreditLimit
+    ) {
       const customer = customers.find((c) => c.id === selectedCustomerId);
       if (
         customer &&
@@ -1176,29 +1223,21 @@ export const SalesInvoice = () => {
 
     // Convert inline items to invoice items
     const invoiceItems = inlineItems
-      .filter((i) => i.selectedPartId && i.qty > 0 && i.selectedPriceType)
+      .filter((i) => i.selectedPartId && i.qty > 0)
       .map((item) => {
         const part = getPartForItem(item.selectedPartId);
-
-        // Get the selected price value
-        let unitPrice = 0;
-        if (item.selectedPriceType === "A") {
-          unitPrice =
-            item.priceA !== undefined ? item.priceA : part?.priceA || 0;
-        } else if (item.selectedPriceType === "B") {
-          unitPrice =
-            item.priceB !== undefined ? item.priceB : part?.priceB || 0;
-        } else if (item.selectedPriceType === "M") {
-          unitPrice =
-            item.priceM !== undefined ? item.priceM : part?.priceM || 0;
-        }
+        // Prefer explicit unitPrice (custom or A/B/M), otherwise derive from price type
+        const unitPrice =
+          item.unitPrice != null
+            ? item.unitPrice
+            : getDerivedUnitPrice(item, part);
 
         return {
           partId: item.selectedPartId,
           partNo: part?.partNo || "",
           description: part?.description || "",
           orderedQty: item.qty,
-          unitPrice: unitPrice,
+          unitPrice,
           discount: 0,
           lineTotal: calculateLineTotal(item),
           grade: part?.grade || "A",
@@ -1235,7 +1274,8 @@ export const SalesInvoice = () => {
           subtotal,
           overallDiscount: discount,
           tax: calculateTax(),
-          taxPercentage: taxType === "With GST" ? getCurrentGstRate() : undefined,
+          taxPercentage:
+            taxType === "With GST" ? getCurrentGstRate() : undefined,
           grandTotal,
           accountId: selectedBankAccount || selectedCashAccount || undefined,
           bankAccountId: selectedBankAccount || undefined,
@@ -1270,7 +1310,8 @@ export const SalesInvoice = () => {
           subtotal,
           overallDiscount: discount,
           tax: calculateTax(),
-          taxPercentage: taxType === "With GST" ? getCurrentGstRate() : undefined,
+          taxPercentage:
+            taxType === "With GST" ? getCurrentGstRate() : undefined,
           grandTotal,
           paidAmount:
             selectedBankAccount || selectedCashAccount
@@ -1343,7 +1384,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
-        taxPercentage: inv.taxPercentage != null ? inv.taxPercentage : undefined,
+        taxPercentage:
+          inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -1479,17 +1521,30 @@ export const SalesInvoice = () => {
             id: item.id,
             selectedPartId: item.partId,
             qty: item.orderedQty,
-            selectedPriceType: "A", // Defaulting to A, not tracked in backend natively
+            // Restore unitPrice and infer selectedPriceType based on part prices
+            unitPrice: item.unitPrice,
+            selectedPriceType: (() => {
+              const part = item.Part;
+              const u = item.unitPrice;
+              if (!part || u == null) return undefined;
+              if (part.priceA != null && Math.abs(u - part.priceA) < 0.01)
+                return "A";
+              if (part.priceB != null && Math.abs(u - part.priceB) < 0.01)
+                return "B";
+              if (part.priceM != null && Math.abs(u - part.priceM) < 0.01)
+                return "M";
+              return undefined;
+            })(),
             useUnlocatedStock: item.useUnlocatedStock || false,
             selectedLocationId:
               item.InvoiceRackShelf?.[0]?.rackId &&
-                item.InvoiceRackShelf?.[0]?.shelfId
+              item.InvoiceRackShelf?.[0]?.shelfId
                 ? item.Part?.PartRackShelf?.find(
-                  (prs: any) =>
-                    prs.storeId === item.InvoiceRackShelf?.[0]?.storeId &&
-                    prs.rackId === item.InvoiceRackShelf[0].rackId &&
-                    prs.shelfId === item.InvoiceRackShelf[0].shelfId,
-                )?.id || ""
+                    (prs: any) =>
+                      prs.storeId === item.InvoiceRackShelf?.[0]?.storeId &&
+                      prs.rackId === item.InvoiceRackShelf[0].rackId &&
+                      prs.shelfId === item.InvoiceRackShelf[0].shelfId,
+                  )?.id || ""
                 : "",
             selectedLocationIds: (item.InvoiceRackShelf || [])
               .map((irs: any) => {
@@ -1581,11 +1636,20 @@ export const SalesInvoice = () => {
   };
 
   // Handle customer created in the CustomerFormDialog
-  const handleCustomerCreated = async (created: { id: string; name: string; priceType: string | null }) => {
+  const handleCustomerCreated = async (created: {
+    id: string;
+    name: string;
+    priceType: string | null;
+  }) => {
     // Refresh customers list
     try {
-      const customersResponse = await apiClient.getCustomers({ status: "active", limit: 1000 });
-      const customersData = Array.isArray(customersResponse) ? customersResponse : customersResponse.data || [];
+      const customersResponse = await apiClient.getCustomers({
+        status: "active",
+        limit: 1000,
+      });
+      const customersData = Array.isArray(customersResponse)
+        ? customersResponse
+        : customersResponse.data || [];
       if (Array.isArray(customersData)) {
         const formattedCustomers: Customer[] = customersData
           .filter((c: any) => !c.name.toLowerCase().includes("demo"))
@@ -1601,7 +1665,9 @@ export const SalesInvoice = () => {
           }));
         setCustomers(formattedCustomers);
       }
-    } catch { /* ignore refresh error */ }
+    } catch {
+      /* ignore refresh error */
+    }
 
     // Auto-select the newly created customer
     setSelectedCustomerId(created.id);
@@ -1609,7 +1675,11 @@ export const SalesInvoice = () => {
     const pt = (created.priceType as "A" | "B" | "M" | null) || null;
     setCustomerPriceType(pt);
     if (pt) {
-      setInlineItems((prev) => prev.map((item) => item.selectedPartId ? { ...item, selectedPriceType: pt } : item));
+      setInlineItems((prev) =>
+        prev.map((item) =>
+          item.selectedPartId ? { ...item, selectedPriceType: pt } : item,
+        ),
+      );
     }
   };
 
@@ -1635,11 +1705,14 @@ export const SalesInvoice = () => {
 
     setRecordingPayment(true);
     try {
-      const response = await apiClient.post(`/sales/invoices/${selectedInvoice.id}/payment`, {
-        amount: paymentForm.amount,
-        accountId: paymentForm.accountId,
-        paymentDate: paymentForm.paymentDate,
-      });
+      const response = await apiClient.post(
+        `/sales/invoices/${selectedInvoice.id}/payment`,
+        {
+          amount: paymentForm.amount,
+          accountId: paymentForm.accountId,
+          paymentDate: paymentForm.paymentDate,
+        },
+      );
 
       if (response.error) {
         toast({
@@ -1695,7 +1768,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
-        taxPercentage: inv.taxPercentage != null ? inv.taxPercentage : undefined,
+        taxPercentage:
+          inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -1820,7 +1894,10 @@ export const SalesInvoice = () => {
         (inv) => inv.id === selectedInvoice.id,
       );
       if (updatedInvoice) {
-        setSelectedInvoice({ ...updatedInvoice, items: updatedInvoice.items || [] });
+        setSelectedInvoice({
+          ...updatedInvoice,
+          items: updatedInvoice.items || [],
+        });
       }
     } catch (error: any) {
       toast({
@@ -1861,23 +1938,29 @@ export const SalesInvoice = () => {
     setReversing(true);
     try {
       // Create a single bulk reverse request
-      const reverseItems = itemsToReverse.map(item => ({
+      const reverseItems = itemsToReverse.map((item) => ({
         invoiceItemId: item.id,
         quantity: reverseQuantities[item.id],
       }));
 
       // Use the apiClient to make authenticated request
-      const response = await apiClient.bulkReverseInvoiceItems(selectedInvoice.id, {
-        items: reverseItems,
-        reason: `Bulk reverse - Invoice ${selectedInvoice.invoiceNo}`,
-      });
+      const response = await apiClient.bulkReverseInvoiceItems(
+        selectedInvoice.id,
+        {
+          items: reverseItems,
+          reason: `Bulk reverse - Invoice ${selectedInvoice.invoiceNo}`,
+        },
+      );
 
       if (response.error) {
-        throw new Error(response.error || 'Failed to reverse items');
+        throw new Error(response.error || "Failed to reverse items");
       }
 
-      const totalReversed = itemsToReverse.reduce((sum, item) => sum + (reverseQuantities[item.id] || 0), 0);
-      const voucherNumber = (response as any).voucherNumber || 'N/A';
+      const totalReversed = itemsToReverse.reduce(
+        (sum, item) => sum + (reverseQuantities[item.id] || 0),
+        0,
+      );
+      const voucherNumber = (response as any).voucherNumber || "N/A";
       toast({
         title: "Quantity Reversed",
         description: `Successfully reversed ${totalReversed} units from ${itemsToReverse.length} items back to stock. Voucher ${voucherNumber} created.`,
@@ -1925,7 +2008,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
-        taxPercentage: inv.taxPercentage != null ? inv.taxPercentage : undefined,
+        taxPercentage:
+          inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -1936,10 +2020,11 @@ export const SalesInvoice = () => {
             challanNo: log.challanNo,
             deliveryDate: log.deliveryDate,
             deliveredBy: log.deliveredBy || "",
-            items: log.items?.map((item: any) => ({
-              invoiceItemId: item.invoiceItemId,
-              quantity: item.quantity,
-            })) || [],
+            items:
+              log.items?.map((item: any) => ({
+                invoiceItemId: item.invoiceItemId,
+                quantity: item.quantity,
+              })) || [],
           })) || [],
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
@@ -2218,7 +2303,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
-        taxPercentage: inv.taxPercentage != null ? inv.taxPercentage : undefined,
+        taxPercentage:
+          inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -2700,7 +2786,9 @@ export const SalesInvoice = () => {
             onClick={refreshPartsData}
             title="Refresh Stock Data"
             disabled={partsLoading}
-            className={partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"}
+            className={
+              partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
+            }
           >
             <RefreshCw className="w-4 h-4" />
           </Button>
@@ -2731,7 +2819,9 @@ export const SalesInvoice = () => {
                     <p className="text-2xl font-bold text-foreground">
                       {totalInvoices}
                     </p>
-                    <p className="text-xs text-muted-foreground">Total Invoices</p>
+                    <p className="text-xs text-muted-foreground">
+                      Total Invoices
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -2868,7 +2958,9 @@ export const SalesInvoice = () => {
               </h3>
               <div className="flex flex-wrap gap-3 items-start">
                 <div className="space-y-1.5 w-40">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Sale Type</Label>
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Sale Type
+                  </Label>
                   <Select
                     value={newInvoice.customerType}
                     onValueChange={(v) => {
@@ -2885,8 +2977,12 @@ export const SalesInvoice = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="registered">Party Sale (Credit)</SelectItem>
-                      <SelectItem value="walking">Cash Sale (Walk-in)</SelectItem>
+                      <SelectItem value="registered">
+                        Party Sale (Credit)
+                      </SelectItem>
+                      <SelectItem value="walking">
+                        Cash Sale (Walk-in)
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -2894,7 +2990,9 @@ export const SalesInvoice = () => {
                 {/* Customer Name Input - Only show for Cash Sale (walking) */}
                 {newInvoice.customerType === "walking" && (
                   <div className="space-y-1.5 w-56">
-                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Customer Name</Label>
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      Customer Name
+                    </Label>
                     <Input
                       placeholder=""
                       value={newInvoice.customerName || ""}
@@ -2912,7 +3010,9 @@ export const SalesInvoice = () => {
                 {/* Customer Dropdown - Only show for Party Sale (registered) */}
                 {newInvoice.customerType === "registered" && (
                   <div className="space-y-1.5 w-85">
-                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Select Customer</Label>
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      Select Customer
+                    </Label>
                     <div className="flex gap-2">
                       <SearchableSelect
                         options={customers.map((customer) => ({
@@ -2924,12 +3024,16 @@ export const SalesInvoice = () => {
                         value={selectedCustomerId || ""}
                         onValueChange={(value) => {
                           setSelectedCustomerId(value);
-                          const customer = customers.find((c) => c.id === value);
+                          const customer = customers.find(
+                            (c) => c.id === value,
+                          );
                           if (customer) {
                             setSelectedCustomerName(customer.name);
                             const pt = customer.priceType || null;
                             setCustomerPriceType(pt);
-                            setSelectedCustomerCategory(customer.category || null);
+                            setSelectedCustomerCategory(
+                              customer.category || null,
+                            );
                             // Auto-apply price type to all existing inline items
                             if (pt) {
                               setInlineItems((prev) =>
@@ -2986,7 +3090,8 @@ export const SalesInvoice = () => {
                                 Credit Limit:
                               </span>
                               <span className="font-bold">
-                                {customer.creditLimit && customer.creditLimit > 0
+                                {customer.creditLimit &&
+                                customer.creditLimit > 0
                                   ? `Rs ${customer.creditLimit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : "Unlimited"}
                               </span>
@@ -3003,6 +3108,19 @@ export const SalesInvoice = () => {
                               >
                                 (EDIT)
                               </Button>
+                              <label className="flex items-center gap-1 ml-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="h-3 w-3"
+                                  checked={overrideCreditLimit}
+                                  onChange={(e) =>
+                                    setOverrideCreditLimit(e.target.checked)
+                                  }
+                                />
+                                <span className="text-[10px] text-amber-700 font-semibold">
+                                  Allow over credit limit
+                                </span>
+                              </label>
                             </div>
                           </div>
                         );
@@ -3011,7 +3129,9 @@ export const SalesInvoice = () => {
                 )}
 
                 <div className="space-y-1.5 w-36">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Tax Type</Label>
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Tax Type
+                  </Label>
                   <Select value={taxType} onValueChange={setTaxType}>
                     <SelectTrigger className="h-9 text-sm">
                       <SelectValue />
@@ -3025,7 +3145,9 @@ export const SalesInvoice = () => {
 
                 {taxType === "With GST" && (
                   <div className="space-y-1.5 w-44">
-                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">GST Percentage</Label>
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      GST Percentage
+                    </Label>
                     {newInvoice.customerType === "walking" ? (
                       /* Walk-in (Cash Sale): Show only Custom Input, no buttons/dropdown */
                       <div className="flex-1">
@@ -3034,65 +3156,70 @@ export const SalesInvoice = () => {
                           step="0.01"
                           placeholder=""
                           value={customGstPercentage}
-                          onChange={(e) => setCustomGstPercentage(e.target.value)}
+                          onChange={(e) =>
+                            setCustomGstPercentage(e.target.value)
+                          }
                           className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
-                    ) : (
-                      /* Registered (Party Sale): Toggle between Preset and Custom */
-                      !useCustomGst ? (
-                        <div className="flex gap-3">
-                          <Select value={gstPercentage.toString()} onValueChange={(value) => {
+                    ) : /* Registered (Party Sale): Toggle between Preset and Custom */
+                    !useCustomGst ? (
+                      <div className="flex gap-3">
+                        <Select
+                          value={gstPercentage.toString()}
+                          onValueChange={(value) => {
                             setGstPercentage(parseFloat(value) || 0);
                             setUseCustomGst(false);
-                          }}>
-                            <SelectTrigger className="flex-1 h-9 text-sm">
-                              <SelectValue placeholder="Select GST %" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="18">18%</SelectItem>
-                              <SelectItem value="22">22%</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              setUseCustomGst(true);
-                              if (gstPercentage > 0) {
-                                setCustomGstPercentage(gstPercentage.toString());
-                              }
-                            }}
-                            className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
-                          >
-                            Custom
-                          </Button>
+                          }}
+                        >
+                          <SelectTrigger className="flex-1 h-9 text-sm">
+                            <SelectValue placeholder="Select GST %" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="18">18%</SelectItem>
+                            <SelectItem value="22">22%</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setUseCustomGst(true);
+                            if (gstPercentage > 0) {
+                              setCustomGstPercentage(gstPercentage.toString());
+                            }
+                          }}
+                          className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                        >
+                          Custom
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder=""
+                            value={customGstPercentage}
+                            onChange={(e) =>
+                              setCustomGstPercentage(e.target.value)
+                            }
+                            className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                         </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder=""
-                              value={customGstPercentage}
-                              onChange={(e) => setCustomGstPercentage(e.target.value)}
-                              className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            />
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              setUseCustomGst(false);
-                              setCustomGstPercentage("");
-                            }}
-                            className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
-                          >
-                            Preset
-                          </Button>
-                        </div>
-                      )
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setUseCustomGst(false);
+                            setCustomGstPercentage("");
+                          }}
+                          className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                        >
+                          Preset
+                        </Button>
+                      </div>
                     )}
                     <p className="text-xs font-medium text-muted-foreground mt-1">
                       GST Amount: Rs {calculateTax().toLocaleString()}
@@ -3101,7 +3228,9 @@ export const SalesInvoice = () => {
                 )}
 
                 <div className="space-y-1.5 w-56">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Delivered To</Label>
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Delivered To
+                  </Label>
                   <Input
                     placeholder=""
                     value={deliveredTo}
@@ -3112,7 +3241,9 @@ export const SalesInvoice = () => {
 
                 {/* Invoice Date */}
                 <div className="space-y-1.5 w-56">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Invoice Date</Label>
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Invoice Date
+                  </Label>
                   <Input
                     type="date"
                     value={invoiceDate}
@@ -3135,26 +3266,56 @@ export const SalesInvoice = () => {
                   <Table>
                     <TableHeader className="hidden md:table-header-group bg-muted/50">
                       <TableRow className="border-b">
-                        <TableHead className="w-[380px] font-bold text-foreground">Part Details</TableHead>
-                        <TableHead className="w-[140px] font-bold text-foreground">Rack</TableHead>
-                        <TableHead className="w-[140px] font-bold text-foreground">Shelf</TableHead>
-                        <TableHead className="w-[100px] text-center font-bold text-foreground">In Stock</TableHead>
-                        <TableHead className="w-[100px] text-center font-bold text-foreground">Reserved</TableHead>
-                        <TableHead className="w-[100px] text-center font-bold text-foreground">Available</TableHead>
-                        <TableHead className="w-[110px] text-center font-bold text-foreground">Qty</TableHead>
-                        <TableHead className="w-[110px] text-center font-bold text-foreground">Price A</TableHead>
-                        <TableHead className="w-[110px] text-center font-bold text-foreground">Price B</TableHead>
-                        <TableHead className="w-[110px] text-center font-bold text-foreground">Total</TableHead>
-                        <TableHead className="w-[60px] text-center font-bold text-foreground">Action</TableHead>
+                        <TableHead className="w-[380px] font-bold text-foreground">
+                          Part Details
+                        </TableHead>
+                        <TableHead className="w-[140px] font-bold text-foreground">
+                          Rack
+                        </TableHead>
+                        <TableHead className="w-[140px] font-bold text-foreground">
+                          Shelf
+                        </TableHead>
+                        <TableHead
+                          className="w-[100px] text-center font-bold text-foreground select-none"
+                          onClick={() => setShowLastSaleInfo((prev) => !prev)}
+                        >
+                          In Stock
+                        </TableHead>
+                        <TableHead className="w-[100px] text-center font-bold text-foreground">
+                          Reserved
+                        </TableHead>
+                        <TableHead className="w-[100px] text-center font-bold text-foreground">
+                          Available
+                        </TableHead>
+                        <TableHead className="w-[110px] text-center font-bold text-foreground">
+                          Qty
+                        </TableHead>
+                        <TableHead className="w-[110px] text-center font-bold text-foreground">
+                          Assoc. Prices
+                        </TableHead>
+                        <TableHead className="w-[110px] text-center font-bold text-foreground">
+                          Price
+                        </TableHead>
+                        <TableHead className="w-[110px] text-center font-bold text-foreground">
+                          Total
+                        </TableHead>
+                        <TableHead className="w-[60px] text-center font-bold text-foreground">
+                          Action
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {inlineItems.map((item) => {
                         const part = getPartForItem(item.selectedPartId);
                         return (
-                          <TableRow key={item.id} className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-4 md:space-y-0 relative">
+                          <TableRow
+                            key={item.id}
+                            className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-4 md:space-y-0 relative"
+                          >
                             <TableCell className="md:table-cell block p-0 md:p-4 align-middle">
-                              <span className="md:hidden text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">Part Details</span>
+                              <span className="md:hidden text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
+                                Part Details
+                              </span>
                               <div className="space-y-2">
                                 <div className="relative">
                                   <Input
@@ -3185,14 +3346,20 @@ export const SalesInvoice = () => {
                                             selectedPart.masterPartNo || "";
                                           const description =
                                             selectedPart.description || "";
-                                          const brandName = selectedPart.brands?.[0]?.name || "";
-                                          const partLabel = masterPartNo && masterPartNo !== partNo
-                                            ? `${masterPartNo} | ${partNo}`
-                                            : partNo;
+                                          const brandName =
+                                            selectedPart.brands?.[0]?.name ||
+                                            "";
+                                          const partLabel =
+                                            masterPartNo &&
+                                            masterPartNo !== partNo
+                                              ? `${masterPartNo} | ${partNo}`
+                                              : partNo;
                                           const baseLabel = description
                                             ? `${partLabel} - ${description}`
                                             : partLabel;
-                                          return brandName ? `${baseLabel} (${brandName})` : baseLabel;
+                                          return brandName
+                                            ? `${baseLabel} (${brandName})`
+                                            : baseLabel;
                                         }
 
                                         // Fallback if parts didn't load yet but we have data from Edit
@@ -3288,8 +3455,14 @@ export const SalesInvoice = () => {
                                       }));
 
                                       // Clear existing debounce timer for this item
-                                      if (partsSearchDebounceRef.current[item.id]) {
-                                        clearTimeout(partsSearchDebounceRef.current[item.id]);
+                                      if (
+                                        partsSearchDebounceRef.current[item.id]
+                                      ) {
+                                        clearTimeout(
+                                          partsSearchDebounceRef.current[
+                                            item.id
+                                          ],
+                                        );
                                       }
 
                                       // Server-side search with debounce
@@ -3321,29 +3494,29 @@ export const SalesInvoice = () => {
                                             item.id
                                           ]
                                             ? parts.filter(
-                                              (p) =>
-                                                p.partNo
-                                                  .toLowerCase()
-                                                  .includes(
-                                                    partsSearchTerm[
-                                                      item.id
-                                                    ].toLowerCase(),
-                                                  ) ||
-                                                p.description
-                                                  .toLowerCase()
-                                                  .includes(
-                                                    partsSearchTerm[
-                                                      item.id
-                                                    ].toLowerCase(),
-                                                  ) ||
-                                                p.category
-                                                  .toLowerCase()
-                                                  .includes(
-                                                    partsSearchTerm[
-                                                      item.id
-                                                    ].toLowerCase(),
-                                                  ),
-                                            )
+                                                (p) =>
+                                                  p.partNo
+                                                    .toLowerCase()
+                                                    .includes(
+                                                      partsSearchTerm[
+                                                        item.id
+                                                      ].toLowerCase(),
+                                                    ) ||
+                                                  p.description
+                                                    .toLowerCase()
+                                                    .includes(
+                                                      partsSearchTerm[
+                                                        item.id
+                                                      ].toLowerCase(),
+                                                    ) ||
+                                                  p.category
+                                                    .toLowerCase()
+                                                    .includes(
+                                                      partsSearchTerm[
+                                                        item.id
+                                                      ].toLowerCase(),
+                                                    ),
+                                              )
                                             : parts;
                                           if (filteredParts.length > 0) {
                                             handleUpdateInlineItem(
@@ -3418,10 +3591,46 @@ export const SalesInvoice = () => {
                                     }}
                                     className="w-full"
                                   />
+                                  {showLastSaleInfo &&
+                                    item.selectedPartId && (
+                                      <div className="mt-1 text-[10px] text-muted-foreground flex items-center gap-1">
+                                        {part &&
+                                        (part.lastSalePrice ||
+                                          part.lastSaleQty ||
+                                          part.lastSaleCustomerName) ? (
+                                          <>
+                                            <span className="font-semibold">
+                                              Last sold:
+                                            </span>
+                                            <span>
+                                              {part.lastSaleQty
+                                                ? `${part.lastSaleQty} pcs`
+                                                : ""}
+                                              {part.lastSaleQty &&
+                                              (part.lastSalePrice ||
+                                                part.lastSaleCustomerName)
+                                                ? " "
+                                                : ""}
+                                              {part.lastSalePrice
+                                                ? `@ Rs ${part.lastSalePrice.toFixed(2)}`
+                                                : ""}
+                                              {part.lastSaleCustomerName
+                                                ? ` to ${part.lastSaleCustomerName}`
+                                                : ""}
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <span>No last sale info</span>
+                                        )}
+                                      </div>
+                                    )}
                                   {item.selectedPartId && (
                                     <div className="flex flex-wrap gap-2 mt-1">
                                       {part?.brands?.[0]?.name && (
-                                        <Badge variant="secondary" className="px-1 py-0 h-4 text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-black hover:bg-primary/20 transition-colors">
+                                        <Badge
+                                          variant="secondary"
+                                          className="px-1 py-0 h-4 text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-black hover:bg-primary/20 transition-colors"
+                                        >
                                           {part.brands[0].name}
                                         </Badge>
                                       )}
@@ -3468,45 +3677,46 @@ export const SalesInvoice = () => {
                                               // Filter parts client-side for instant results while typing
                                               const filteredParts = searchValue
                                                 ? parts.filter(
-                                                  (p) =>
-                                                    p.partNo
-                                                      .toLowerCase()
-                                                      .includes(
-                                                        searchValue.toLowerCase(),
-                                                      ) ||
-                                                    (p.masterPartNo &&
-                                                      p.masterPartNo
+                                                    (p) =>
+                                                      p.partNo
                                                         .toLowerCase()
                                                         .includes(
                                                           searchValue.toLowerCase(),
+                                                        ) ||
+                                                      (p.masterPartNo &&
+                                                        p.masterPartNo
+                                                          .toLowerCase()
+                                                          .includes(
+                                                            searchValue.toLowerCase(),
+                                                          )) ||
+                                                      p.description
+                                                        .toLowerCase()
+                                                        .includes(
+                                                          searchValue.toLowerCase(),
+                                                        ) ||
+                                                      p.category
+                                                        .toLowerCase()
+                                                        .includes(
+                                                          searchValue.toLowerCase(),
+                                                        ) ||
+                                                      (p.machineModels &&
+                                                        p.machineModels.some(
+                                                          (m) =>
+                                                            m.name
+                                                              .toLowerCase()
+                                                              .includes(
+                                                                searchValue.toLowerCase(),
+                                                              ),
                                                         )) ||
-                                                    p.description
-                                                      .toLowerCase()
-                                                      .includes(
-                                                        searchValue.toLowerCase(),
-                                                      ) ||
-                                                    p.category
-                                                      .toLowerCase()
-                                                      .includes(
-                                                        searchValue.toLowerCase(),
-                                                      ) ||
-                                                    (p.machineModels &&
-                                                      p.machineModels.some((m) =>
-                                                        m.name
-                                                          .toLowerCase()
-                                                          .includes(
-                                                            searchValue.toLowerCase(),
-                                                          ),
-                                                      )) ||
-                                                    (p.brands &&
-                                                      p.brands.some((b) =>
-                                                        b.name
-                                                          .toLowerCase()
-                                                          .includes(
-                                                            searchValue.toLowerCase(),
-                                                          ),
-                                                      )),
-                                                )
+                                                      (p.brands &&
+                                                        p.brands.some((b) =>
+                                                          b.name
+                                                            .toLowerCase()
+                                                            .includes(
+                                                              searchValue.toLowerCase(),
+                                                            ),
+                                                        )),
+                                                  )
                                                 : parts; // Show all parts when no search term
 
                                               return filteredParts.length >
@@ -3561,15 +3771,25 @@ export const SalesInvoice = () => {
                                                     >
                                                       <div className="flex items-center justify-between gap-2">
                                                         <div className="font-medium">
-                                                          {p.masterPartNo && p.masterPartNo !== p.partNo
+                                                          {p.masterPartNo &&
+                                                          p.masterPartNo !==
+                                                            p.partNo
                                                             ? `${p.masterPartNo} | ${p.partNo}`
                                                             : p.partNo}
                                                         </div>
-                                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${(p.availableQty ?? p.stockQty ?? 0) > 0
-                                                          ? "bg-green-100 text-green-700"
-                                                          : "bg-red-100 text-red-600"
-                                                          }`}>
-                                                          {p.availableQty ?? p.stockQty ?? 0} pcs
+                                                        <span
+                                                          className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                                                            (p.availableQty ??
+                                                              p.stockQty ??
+                                                              0) > 0
+                                                              ? "bg-green-100 text-green-700"
+                                                              : "bg-red-100 text-red-600"
+                                                          }`}
+                                                        >
+                                                          {p.availableQty ??
+                                                            p.stockQty ??
+                                                            0}{" "}
+                                                          pcs
                                                         </span>
                                                       </div>
                                                       <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
@@ -3582,18 +3802,38 @@ export const SalesInvoice = () => {
                                                         </div>
                                                       )}
                                                       <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                                                        {p.brands && p.brands.length > 0 && (
-                                                          <div className="text-[10px] uppercase font-semibold text-black tracking-wider">
-                                                            {p.brands.map((b) => b.name).join(", ")}
-                                                          </div>
-                                                        )}
-                                                        {(p.priceA !== null || p.priceB !== null) && (
+                                                        {p.brands &&
+                                                          p.brands.length >
+                                                            0 && (
+                                                            <div className="text-[10px] uppercase font-semibold text-black tracking-wider">
+                                                              {p.brands
+                                                                .map(
+                                                                  (b) => b.name,
+                                                                )
+                                                                .join(", ")}
+                                                            </div>
+                                                          )}
+                                                        {(p.priceA !== null ||
+                                                          p.priceB !==
+                                                            null) && (
                                                           <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600">
-                                                            {p.priceA !== null && (
-                                                              <span className="bg-blue-50 px-1 rounded border border-blue-100 italic">A: {Number(p.priceA).toLocaleString()}</span>
+                                                            {p.priceA !==
+                                                              null && (
+                                                              <span className="bg-blue-50 px-1 rounded border border-blue-100 italic">
+                                                                A:{" "}
+                                                                {Number(
+                                                                  p.priceA,
+                                                                ).toLocaleString()}
+                                                              </span>
                                                             )}
-                                                            {p.priceB !== null && (
-                                                              <span className="bg-indigo-50 px-1 rounded border border-indigo-100 italic">B: {Number(p.priceB).toLocaleString()}</span>
+                                                            {p.priceB !==
+                                                              null && (
+                                                              <span className="bg-indigo-50 px-1 rounded border border-indigo-100 italic">
+                                                                B:{" "}
+                                                                {Number(
+                                                                  p.priceB,
+                                                                ).toLocaleString()}
+                                                              </span>
                                                             )}
                                                           </div>
                                                         )}
@@ -3626,22 +3866,42 @@ export const SalesInvoice = () => {
                             {/* Column 2: Rack (Mobile Groups Rack+Shelf) */}
                             <TableCell className="md:table-cell block p-0 md:p-4 align-middle">
                               <div className="md:hidden">
-                                <span className="text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">Storage Info</span>
+                                <span className="text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
+                                  Storage Info
+                                </span>
                                 <div className="grid grid-cols-2 gap-3">
                                   <div className="space-y-1">
-                                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Rack</span>
+                                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">
+                                      Rack
+                                    </span>
                                     {/* Rack Content (Mobile) */}
                                     {item.selectedPartId ? (
                                       <ScrollArea className="h-[60px] border rounded-md">
                                         <div className="p-1 space-y-0.5">
                                           {(() => {
-                                            const allLocations = (partLocations[item.selectedPartId] || part?.locations || []).filter((l: any) => l.quantity !== 0);
+                                            const allLocations = (
+                                              partLocations[
+                                                item.selectedPartId
+                                              ] ||
+                                              part?.locations ||
+                                              []
+                                            ).filter(
+                                              (l: any) => l.quantity !== 0,
+                                            );
                                             const flatLocations = [];
                                             const locMap = new Map();
                                             allLocations.forEach((loc) => {
                                               const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
                                               if (!locMap.has(key)) {
-                                                const entry = { id: key, rackCode: loc.rackCode || "No Rack", shelfNo: loc.shelfNo || "No Shelf", ids: [loc.id], quantity: loc.quantity };
+                                                const entry = {
+                                                  id: key,
+                                                  rackCode:
+                                                    loc.rackCode || "No Rack",
+                                                  shelfNo:
+                                                    loc.shelfNo || "No Shelf",
+                                                  ids: [loc.id],
+                                                  quantity: loc.quantity,
+                                                };
                                                 locMap.set(key, entry);
                                                 flatLocations.push(entry);
                                               } else {
@@ -3650,41 +3910,109 @@ export const SalesInvoice = () => {
                                                 entry.quantity += loc.quantity;
                                               }
                                             });
-                                            if (flatLocations.length === 0) return <div className="text-[10px] text-muted-foreground italic py-1">No Rack Info</div>;
-                                            return flatLocations.map((loc) => {
-                                              const isChecked = loc.ids.every((id) => (item.selectedLocationIds || []).includes(id));
+                                            if (flatLocations.length === 0)
                                               return (
-                                                <div key={loc.id} className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors" onClick={(e) => {
-                                                  e.preventDefault();
-                                                  const currentIds = [...(item.selectedLocationIds || [])];
-                                                  let nextIds = isChecked ? currentIds.filter((id) => !loc.ids.includes(id)) : [...currentIds, ...loc.ids.filter(id => !currentIds.includes(id))];
-                                                  handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
-                                                  handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
-                                                }}>
-                                                  <Checkbox checked={isChecked} className="h-3 w-3" />
-                                                  <span className="text-[10px] font-medium truncate leading-none">{loc.rackCode}</span>
+                                                <div className="text-[10px] text-muted-foreground italic py-1">
+                                                  No Rack Info
+                                                </div>
+                                              );
+                                            return flatLocations.map((loc) => {
+                                              const isChecked = loc.ids.every(
+                                                (id) =>
+                                                  (
+                                                    item.selectedLocationIds ||
+                                                    []
+                                                  ).includes(id),
+                                              );
+                                              return (
+                                                <div
+                                                  key={loc.id}
+                                                  className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
+                                                  onClick={(e) => {
+                                                    e.preventDefault();
+                                                    const currentIds = [
+                                                      ...(item.selectedLocationIds ||
+                                                        []),
+                                                    ];
+                                                    let nextIds = isChecked
+                                                      ? currentIds.filter(
+                                                          (id) =>
+                                                            !loc.ids.includes(
+                                                              id,
+                                                            ),
+                                                        )
+                                                      : [
+                                                          ...currentIds,
+                                                          ...loc.ids.filter(
+                                                            (id) =>
+                                                              !currentIds.includes(
+                                                                id,
+                                                              ),
+                                                          ),
+                                                        ];
+                                                    handleUpdateInlineItem(
+                                                      item.id,
+                                                      "selectedLocationIds",
+                                                      nextIds,
+                                                    );
+                                                    handleUpdateInlineItem(
+                                                      item.id,
+                                                      "selectedLocationId",
+                                                      nextIds[0] || "",
+                                                    );
+                                                  }}
+                                                >
+                                                  <Checkbox
+                                                    checked={isChecked}
+                                                    className="h-3 w-3"
+                                                  />
+                                                  <span className="text-[10px] font-medium truncate leading-none">
+                                                    {loc.rackCode}
+                                                  </span>
                                                 </div>
                                               );
                                             });
                                           })()}
                                         </div>
                                       </ScrollArea>
-                                    ) : <div className="text-center text-muted-foreground">-</div>}
+                                    ) : (
+                                      <div className="text-center text-muted-foreground">
+                                        -
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="space-y-1">
-                                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Shelf</span>
+                                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">
+                                      Shelf
+                                    </span>
                                     {/* Shelf Content (Mobile) */}
                                     {item.selectedPartId ? (
                                       <ScrollArea className="h-[60px] border rounded-md">
                                         <div className="p-1 space-y-0.5">
                                           {(() => {
-                                            const allLocations = (partLocations[item.selectedPartId] || part?.locations || []).filter((l: any) => l.quantity !== 0);
+                                            const allLocations = (
+                                              partLocations[
+                                                item.selectedPartId
+                                              ] ||
+                                              part?.locations ||
+                                              []
+                                            ).filter(
+                                              (l: any) => l.quantity !== 0,
+                                            );
                                             const flatLocations = [];
                                             const locMap = new Map();
                                             allLocations.forEach((loc) => {
                                               const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
                                               if (!locMap.has(key)) {
-                                                const entry = { id: key, rackCode: loc.rackCode || "No Rack", shelfNo: loc.shelfNo || "No Shelf", ids: [loc.id], quantity: loc.quantity };
+                                                const entry = {
+                                                  id: key,
+                                                  rackCode:
+                                                    loc.rackCode || "No Rack",
+                                                  shelfNo:
+                                                    loc.shelfNo || "No Shelf",
+                                                  ids: [loc.id],
+                                                  quantity: loc.quantity,
+                                                };
                                                 locMap.set(key, entry);
                                                 flatLocations.push(entry);
                                               } else {
@@ -3693,21 +4021,72 @@ export const SalesInvoice = () => {
                                                 entry.quantity += loc.quantity;
                                               }
                                             });
-                                            if (flatLocations.length === 0) return <div className="text-[10px] text-muted-foreground italic py-1">No Shelf Info</div>;
-                                            return flatLocations.map((loc) => {
-                                              const isChecked = loc.ids.every((id) => (item.selectedLocationIds || []).includes(id));
+                                            if (flatLocations.length === 0)
                                               return (
-                                                <div key={loc.id} className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors" onClick={(e) => {
-                                                  e.preventDefault();
-                                                  const currentIds = [...(item.selectedLocationIds || [])];
-                                                  let nextIds = isChecked ? currentIds.filter((id) => !loc.ids.includes(id)) : [...currentIds, ...loc.ids.filter(id => !currentIds.includes(id))];
-                                                  handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
-                                                  handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
-                                                }}>
-                                                  <Checkbox checked={isChecked} className="h-3 w-3" />
+                                                <div className="text-[10px] text-muted-foreground italic py-1">
+                                                  No Shelf Info
+                                                </div>
+                                              );
+                                            return flatLocations.map((loc) => {
+                                              const isChecked = loc.ids.every(
+                                                (id) =>
+                                                  (
+                                                    item.selectedLocationIds ||
+                                                    []
+                                                  ).includes(id),
+                                              );
+                                              return (
+                                                <div
+                                                  key={loc.id}
+                                                  className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
+                                                  onClick={(e) => {
+                                                    e.preventDefault();
+                                                    const currentIds = [
+                                                      ...(item.selectedLocationIds ||
+                                                        []),
+                                                    ];
+                                                    let nextIds = isChecked
+                                                      ? currentIds.filter(
+                                                          (id) =>
+                                                            !loc.ids.includes(
+                                                              id,
+                                                            ),
+                                                        )
+                                                      : [
+                                                          ...currentIds,
+                                                          ...loc.ids.filter(
+                                                            (id) =>
+                                                              !currentIds.includes(
+                                                                id,
+                                                              ),
+                                                          ),
+                                                        ];
+                                                    handleUpdateInlineItem(
+                                                      item.id,
+                                                      "selectedLocationIds",
+                                                      nextIds,
+                                                    );
+                                                    handleUpdateInlineItem(
+                                                      item.id,
+                                                      "selectedLocationId",
+                                                      nextIds[0] || "",
+                                                    );
+                                                  }}
+                                                >
+                                                  <Checkbox
+                                                    checked={isChecked}
+                                                    className="h-3 w-3"
+                                                  />
                                                   <div className="flex-1 flex justify-between items-center gap-1 overflow-hidden">
-                                                    <span className="text-[10px] truncate leading-none">{loc.shelfNo}</span>
-                                                    <Badge variant="secondary" className="px-1 text-[9px] h-3.5 leading-none">{loc.quantity}</Badge>
+                                                    <span className="text-[10px] truncate leading-none">
+                                                      {loc.shelfNo}
+                                                    </span>
+                                                    <Badge
+                                                      variant="secondary"
+                                                      className="px-1 text-[9px] h-3.5 leading-none"
+                                                    >
+                                                      {loc.quantity}
+                                                    </Badge>
                                                   </div>
                                                 </div>
                                               );
@@ -3715,7 +4094,11 @@ export const SalesInvoice = () => {
                                           })()}
                                         </div>
                                       </ScrollArea>
-                                    ) : <div className="text-center text-muted-foreground">-</div>}
+                                    ) : (
+                                      <div className="text-center text-muted-foreground">
+                                        -
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -3725,13 +4108,23 @@ export const SalesInvoice = () => {
                                   <ScrollArea className="h-[60px] border rounded-md">
                                     <div className="p-1 space-y-0.5">
                                       {(() => {
-                                        const allLocations = (partLocations[item.selectedPartId] || part?.locations || []).filter((l: any) => l.quantity !== 0);
+                                        const allLocations = (
+                                          partLocations[item.selectedPartId] ||
+                                          part?.locations ||
+                                          []
+                                        ).filter((l: any) => l.quantity !== 0);
                                         const flatLocations = [];
                                         const locMap = new Map();
                                         allLocations.forEach((loc) => {
                                           const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
                                           if (!locMap.has(key)) {
-                                            const entry = { id: key, rackCode: loc.rackCode || "No Rack", ids: [loc.id], quantity: loc.quantity };
+                                            const entry = {
+                                              id: key,
+                                              rackCode:
+                                                loc.rackCode || "No Rack",
+                                              ids: [loc.id],
+                                              quantity: loc.quantity,
+                                            };
                                             locMap.set(key, entry);
                                             flatLocations.push(entry);
                                           } else {
@@ -3740,19 +4133,62 @@ export const SalesInvoice = () => {
                                             entry.quantity += loc.quantity;
                                           }
                                         });
-                                        if (flatLocations.length === 0) return <div className="text-[10px] text-muted-foreground italic py-1 text-center">No Rack</div>;
-                                        return flatLocations.map((loc) => {
-                                          const isChecked = loc.ids.every((id) => (item.selectedLocationIds || []).includes(id));
+                                        if (flatLocations.length === 0)
                                           return (
-                                            <div key={loc.id} className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors" onClick={(e) => {
-                                              e.preventDefault();
-                                              const currentIds = [...(item.selectedLocationIds || [])];
-                                              let nextIds = isChecked ? currentIds.filter((id) => !loc.ids.includes(id)) : [...currentIds, ...loc.ids.filter(id => !currentIds.includes(id))];
-                                              handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
-                                              handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
-                                            }}>
-                                              <Checkbox checked={isChecked} className="h-3 w-3" />
-                                              <span className="text-[10px] font-medium truncate leading-none">{loc.rackCode}</span>
+                                            <div className="text-[10px] text-muted-foreground italic py-1 text-center">
+                                              No Rack
+                                            </div>
+                                          );
+                                        return flatLocations.map((loc) => {
+                                          const isChecked = loc.ids.every(
+                                            (id) =>
+                                              (
+                                                item.selectedLocationIds || []
+                                              ).includes(id),
+                                          );
+                                          return (
+                                            <div
+                                              key={loc.id}
+                                              className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
+                                              onClick={(e) => {
+                                                e.preventDefault();
+                                                const currentIds = [
+                                                  ...(item.selectedLocationIds ||
+                                                    []),
+                                                ];
+                                                let nextIds = isChecked
+                                                  ? currentIds.filter(
+                                                      (id) =>
+                                                        !loc.ids.includes(id),
+                                                    )
+                                                  : [
+                                                      ...currentIds,
+                                                      ...loc.ids.filter(
+                                                        (id) =>
+                                                          !currentIds.includes(
+                                                            id,
+                                                          ),
+                                                      ),
+                                                    ];
+                                                handleUpdateInlineItem(
+                                                  item.id,
+                                                  "selectedLocationIds",
+                                                  nextIds,
+                                                );
+                                                handleUpdateInlineItem(
+                                                  item.id,
+                                                  "selectedLocationId",
+                                                  nextIds[0] || "",
+                                                );
+                                              }}
+                                            >
+                                              <Checkbox
+                                                checked={isChecked}
+                                                className="h-3 w-3"
+                                              />
+                                              <span className="text-[10px] font-medium truncate leading-none">
+                                                {loc.rackCode}
+                                              </span>
                                             </div>
                                           );
                                         });
@@ -3760,7 +4196,9 @@ export const SalesInvoice = () => {
                                     </div>
                                   </ScrollArea>
                                 ) : (
-                                  <div className="text-center text-muted-foreground">-</div>
+                                  <div className="text-center text-muted-foreground">
+                                    -
+                                  </div>
                                 )}
                               </div>
                             </TableCell>
@@ -3771,13 +4209,22 @@ export const SalesInvoice = () => {
                                 <ScrollArea className="h-[60px] border rounded-md">
                                   <div className="p-1 space-y-0.5">
                                     {(() => {
-                                      const allLocations = (partLocations[item.selectedPartId] || part?.locations || []).filter((l: any) => l.quantity !== 0);
+                                      const allLocations = (
+                                        partLocations[item.selectedPartId] ||
+                                        part?.locations ||
+                                        []
+                                      ).filter((l: any) => l.quantity !== 0);
                                       const flatLocations = [];
                                       const locMap = new Map();
                                       allLocations.forEach((loc) => {
                                         const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
                                         if (!locMap.has(key)) {
-                                          const entry = { id: key, shelfNo: loc.shelfNo || "No Shelf", ids: [loc.id], quantity: loc.quantity };
+                                          const entry = {
+                                            id: key,
+                                            shelfNo: loc.shelfNo || "No Shelf",
+                                            ids: [loc.id],
+                                            quantity: loc.quantity,
+                                          };
                                           locMap.set(key, entry);
                                           flatLocations.push(entry);
                                         } else {
@@ -3786,21 +4233,68 @@ export const SalesInvoice = () => {
                                           entry.quantity += loc.quantity;
                                         }
                                       });
-                                      if (flatLocations.length === 0) return <div className="text-[10px] text-muted-foreground italic py-1 text-center">No Shelf</div>;
-                                      return flatLocations.map((loc) => {
-                                        const isChecked = loc.ids.every((id) => (item.selectedLocationIds || []).includes(id));
+                                      if (flatLocations.length === 0)
                                         return (
-                                          <div key={loc.id} className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors" onClick={(e) => {
-                                            e.preventDefault();
-                                            const currentIds = [...(item.selectedLocationIds || [])];
-                                            let nextIds = isChecked ? currentIds.filter((id) => !loc.ids.includes(id)) : [...currentIds, ...loc.ids.filter(id => !currentIds.includes(id))];
-                                            handleUpdateInlineItem(item.id, "selectedLocationIds", nextIds);
-                                            handleUpdateInlineItem(item.id, "selectedLocationId", nextIds[0] || "");
-                                          }}>
-                                            <Checkbox checked={isChecked} className="h-3 w-3" />
+                                          <div className="text-[10px] text-muted-foreground italic py-1 text-center">
+                                            No Shelf
+                                          </div>
+                                        );
+                                      return flatLocations.map((loc) => {
+                                        const isChecked = loc.ids.every((id) =>
+                                          (
+                                            item.selectedLocationIds || []
+                                          ).includes(id),
+                                        );
+                                        return (
+                                          <div
+                                            key={loc.id}
+                                            className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              const currentIds = [
+                                                ...(item.selectedLocationIds ||
+                                                  []),
+                                              ];
+                                              let nextIds = isChecked
+                                                ? currentIds.filter(
+                                                    (id) =>
+                                                      !loc.ids.includes(id),
+                                                  )
+                                                : [
+                                                    ...currentIds,
+                                                    ...loc.ids.filter(
+                                                      (id) =>
+                                                        !currentIds.includes(
+                                                          id,
+                                                        ),
+                                                    ),
+                                                  ];
+                                              handleUpdateInlineItem(
+                                                item.id,
+                                                "selectedLocationIds",
+                                                nextIds,
+                                              );
+                                              handleUpdateInlineItem(
+                                                item.id,
+                                                "selectedLocationId",
+                                                nextIds[0] || "",
+                                              );
+                                            }}
+                                          >
+                                            <Checkbox
+                                              checked={isChecked}
+                                              className="h-3 w-3"
+                                            />
                                             <div className="flex-1 flex justify-between items-center gap-1 overflow-hidden">
-                                              <span className="text-[10px] truncate leading-none">{loc.shelfNo}</span>
-                                              <Badge variant="secondary" className="px-1 text-[9px] h-3.5 leading-none">{loc.quantity}</Badge>
+                                              <span className="text-[10px] truncate leading-none">
+                                                {loc.shelfNo}
+                                              </span>
+                                              <Badge
+                                                variant="secondary"
+                                                className="px-1 text-[9px] h-3.5 leading-none"
+                                              >
+                                                {loc.quantity}
+                                              </Badge>
                                             </div>
                                           </div>
                                         );
@@ -3808,23 +4302,42 @@ export const SalesInvoice = () => {
                                     })()}
                                   </div>
                                 </ScrollArea>
-                              ) : <div className="text-center text-muted-foreground">-</div>}
+                              ) : (
+                                <div className="text-center text-muted-foreground">
+                                  -
+                                </div>
+                              )}
                             </TableCell>
 
                             {/* Column 4: In Stock (Desktop ONLY, Mobile combined in section below) */}
                             <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
-                                const stockBalance = partStockBalances[item.selectedPartId];
-                                const currentStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
-                                const avgCost = stockBalance?.avg_cost ?? (part?.price || 0);
-                                const isLoading = loadingStock[item.selectedPartId];
+                                const stockBalance =
+                                  partStockBalances[item.selectedPartId];
+                                const currentStock =
+                                  stockBalance?.current_stock ??
+                                  (part?.stockQty || 0);
+                                const avgCost =
+                                  stockBalance?.avg_cost ?? (part?.price || 0);
+                                const isLoading =
+                                  loadingStock[item.selectedPartId];
                                 return (
                                   <div className="flex flex-col items-center justify-center">
                                     <div className="flex items-center gap-1.5">
-                                      <span className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}>{isLoading ? "..." : currentStock}</span>
-                                      {part?.id && <Package className="w-3.5 h-3.5 text-muted-foreground" />}
+                                      <span
+                                        className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}
+                                      >
+                                        {isLoading ? "..." : currentStock}
+                                      </span>
+                                      {part?.id && (
+                                        <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                                      )}
                                     </div>
-                                    <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap">Cost: {avgCost.toFixed(2)}</span>
+                                    {showLastSaleInfo && (
+                                      <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap">
+                                        Cost: {avgCost.toFixed(2)}
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               })()}
@@ -3833,56 +4346,134 @@ export const SalesInvoice = () => {
                             {/* Column 5: Reserved (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
-                                const stockBalance = partStockBalances[item.selectedPartId];
-                                const reservedStock = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
-                                const isLoading = loadingStock[item.selectedPartId];
-                                return <span className="text-sm font-semibold text-orange-600">{isLoading ? "..." : reservedStock}</span>;
+                                const stockBalance =
+                                  partStockBalances[item.selectedPartId];
+                                const reservedStock =
+                                  stockBalance?.reserved_stock ??
+                                  (part?.reservedQty || 0);
+                                const isLoading =
+                                  loadingStock[item.selectedPartId];
+                                return (
+                                  <span className="text-sm font-semibold text-orange-600">
+                                    {isLoading ? "..." : reservedStock}
+                                  </span>
+                                );
                               })()}
                             </TableCell>
 
                             {/* Column 6: Available (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
-                                const stockBalance = partStockBalances[item.selectedPartId];
-                                const inStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
-                                const reserved = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
-                                const available = stockBalance ? Math.max(0, inStock - reserved) : Math.max(0, (part?.availableQty ?? 0));
-                                const isLoading = loadingStock[item.selectedPartId];
-                                return isLoading ? <span className="text-xs text-muted-foreground">...</span> : <Badge variant={available > 0 ? "default" : "destructive"} className="px-2 py-0.5 font-bold h-fit">{available}</Badge>;
+                                const stockBalance =
+                                  partStockBalances[item.selectedPartId];
+                                const inStock =
+                                  stockBalance?.current_stock ??
+                                  (part?.stockQty || 0);
+                                const reserved =
+                                  stockBalance?.reserved_stock ??
+                                  (part?.reservedQty || 0);
+                                const available = stockBalance
+                                  ? Math.max(0, inStock - reserved)
+                                  : Math.max(0, part?.availableQty ?? 0);
+                                const isLoading =
+                                  loadingStock[item.selectedPartId];
+                                return isLoading ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    ...
+                                  </span>
+                                ) : (
+                                  <Badge
+                                    variant={
+                                      available > 0 ? "default" : "destructive"
+                                    }
+                                    className="px-2 py-0.5 font-bold h-fit"
+                                  >
+                                    {available}
+                                  </Badge>
+                                );
                               })()}
                             </TableCell>
 
                             {/* Mobile Section: Stock Status (Hidden on Desktop) */}
                             <TableCell className="md:hidden block p-0 align-middle">
-                              <span className="text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">Stock Status</span>
+                              <span className="text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
+                                Stock Status
+                              </span>
                               <div className="grid grid-cols-3 gap-2">
                                 <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
-                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">In Stock</span>
+                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">
+                                    In Stock
+                                  </span>
                                   {(() => {
-                                    const stockBalance = partStockBalances[item.selectedPartId];
-                                    const currentStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
-                                    const isLoading = loadingStock[item.selectedPartId];
-                                    return <span className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}>{isLoading ? "..." : currentStock}</span>;
+                                    const stockBalance =
+                                      partStockBalances[item.selectedPartId];
+                                    const currentStock =
+                                      stockBalance?.current_stock ??
+                                      (part?.stockQty || 0);
+                                    const isLoading =
+                                      loadingStock[item.selectedPartId];
+                                    return (
+                                      <span
+                                        className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}
+                                      >
+                                        {isLoading ? "..." : currentStock}
+                                      </span>
+                                    );
                                   })()}
                                 </div>
                                 <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
-                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">Reserved</span>
+                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">
+                                    Reserved
+                                  </span>
                                   {(() => {
-                                    const stockBalance = partStockBalances[item.selectedPartId];
-                                    const reservedStock = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
-                                    const isLoading = loadingStock[item.selectedPartId];
-                                    return <span className="text-sm font-semibold text-orange-600">{isLoading ? "..." : reservedStock}</span>;
+                                    const stockBalance =
+                                      partStockBalances[item.selectedPartId];
+                                    const reservedStock =
+                                      stockBalance?.reserved_stock ??
+                                      (part?.reservedQty || 0);
+                                    const isLoading =
+                                      loadingStock[item.selectedPartId];
+                                    return (
+                                      <span className="text-sm font-semibold text-orange-600">
+                                        {isLoading ? "..." : reservedStock}
+                                      </span>
+                                    );
                                   })()}
                                 </div>
                                 <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
-                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">Available</span>
+                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">
+                                    Available
+                                  </span>
                                   {(() => {
-                                    const stockBalance = partStockBalances[item.selectedPartId];
-                                    const inStock = stockBalance?.current_stock ?? (part?.stockQty || 0);
-                                    const reserved = stockBalance?.reserved_stock ?? (part?.reservedQty || 0);
-                                    const available = stockBalance ? Math.max(0, inStock - reserved) : Math.max(0, (part?.availableQty ?? 0));
-                                    const isLoading = loadingStock[item.selectedPartId];
-                                    return isLoading ? <span className="text-xs text-muted-foreground">...</span> : <Badge variant={available > 0 ? "default" : "destructive"} className="px-2 py-0.5 font-bold h-fit">{available}</Badge>;
+                                    const stockBalance =
+                                      partStockBalances[item.selectedPartId];
+                                    const inStock =
+                                      stockBalance?.current_stock ??
+                                      (part?.stockQty || 0);
+                                    const reserved =
+                                      stockBalance?.reserved_stock ??
+                                      (part?.reservedQty || 0);
+                                    const available = stockBalance
+                                      ? Math.max(0, inStock - reserved)
+                                      : Math.max(0, part?.availableQty ?? 0);
+                                    const isLoading =
+                                      loadingStock[item.selectedPartId];
+                                    return isLoading ? (
+                                      <span className="text-xs text-muted-foreground">
+                                        ...
+                                      </span>
+                                    ) : (
+                                      <Badge
+                                        variant={
+                                          available > 0
+                                            ? "default"
+                                            : "destructive"
+                                        }
+                                        className="px-2 py-0.5 font-bold h-fit"
+                                      >
+                                        {available}
+                                      </Badge>
+                                    );
                                   })()}
                                 </div>
                               </div>
@@ -3892,62 +4483,172 @@ export const SalesInvoice = () => {
                             <TableCell className="hidden md:table-cell align-middle">
                               <div className="flex flex-col items-center justify-center">
                                 <Input
-                                  type="number" min={0} value={item.qty || ""}
+                                  type="number"
+                                  min={0}
+                                  value={item.qty || ""}
                                   onChange={(e) => {
                                     const val = parseInt(e.target.value) || 0;
-                                    const currentStock = (part?.id ? partStockBalances[part.id] : null)?.available_stock ?? (part?.availableQty || 0);
-                                    if (val > currentStock && currentStock >= 0) {
-                                      toast({ title: "Insufficient Stock", description: `Cannot enter ${val}. Available stock is only ${currentStock}.`, variant: "destructive" });
-                                      handleUpdateInlineItem(item.id, "qty", currentStock);
-                                    } else handleUpdateInlineItem(item.id, "qty", val);
+                                    const currentStock =
+                                      (part?.id
+                                        ? partStockBalances[part.id]
+                                        : null
+                                      )?.available_stock ??
+                                      (part?.availableQty || 0);
+                                    if (
+                                      val > currentStock &&
+                                      currentStock >= 0
+                                    ) {
+                                      toast({
+                                        title: "Insufficient Stock",
+                                        description: `Cannot enter ${val}. Available stock is only ${currentStock}.`,
+                                        variant: "destructive",
+                                      });
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "qty",
+                                        currentStock,
+                                      );
+                                    } else
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "qty",
+                                        val,
+                                      );
                                   }}
-                                  className="w-16 h-8 text-center font-bold" placeholder="0"
+                                  className="w-16 h-8 text-center font-bold"
+                                  placeholder="0"
                                 />
-                                {item.qty === 0 && item.selectedPartId && <p className="text-destructive text-[9px] font-semibold">Required</p>}
+                                {item.qty === 0 && item.selectedPartId && (
+                                  <p className="text-destructive text-[9px] font-semibold">
+                                    Required
+                                  </p>
+                                )}
                               </div>
                             </TableCell>
 
-                            {/* Column 8: Price A (Desktop ONLY) */}
+                            {/* Column 8: Assoc. Prices (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-middle">
                               {(() => {
                                 const priceAValue =
-                                  item.priceA ?? (part?.priceA ?? null);
-                                const isSelected = item.selectedPriceType === "A";
-                                return priceAValue != null ? (
-                                  <Button variant={isSelected ? "default" : "outline"} size="sm" className="w-full text-xs" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "A")}>
-                                    {priceAValue.toFixed(0)}
-                                  </Button>
-                                ) : <span className="text-xs text-muted-foreground">-</span>;
+                                  item.priceA ?? part?.priceA ?? null;
+                                const priceBValue =
+                                  item.priceB ?? part?.priceB ?? null;
+
+                                if (priceAValue == null && priceBValue == null) {
+                                  return (
+                                    <span className="text-xs text-muted-foreground">
+                                      -
+                                    </span>
+                                  );
+                                }
+
+                                return (
+                                  <div className="flex flex-col gap-1 items-stretch">
+                                    {priceAValue != null && (
+                                      <Button
+                                        variant={
+                                          item.selectedPriceType === "A"
+                                            ? "default"
+                                            : "outline"
+                                        }
+                                        size="sm"
+                                        className="w-full text-xs"
+                                        onClick={() => {
+                                          handleUpdateInlineItem(
+                                            item.id,
+                                            "selectedPriceType",
+                                            "A",
+                                          );
+                                          handleUpdateInlineItem(
+                                            item.id,
+                                            "unitPrice",
+                                            priceAValue,
+                                          );
+                                        }}
+                                      >
+                                        {priceAValue.toFixed(0)}
+                                      </Button>
+                                    )}
+                                    {priceBValue != null && (
+                                      <Button
+                                        variant={
+                                          item.selectedPriceType === "B"
+                                            ? "default"
+                                            : "outline"
+                                        }
+                                        size="sm"
+                                        className="w-full text-xs"
+                                        onClick={() => {
+                                          handleUpdateInlineItem(
+                                            item.id,
+                                            "selectedPriceType",
+                                            "B",
+                                          );
+                                          handleUpdateInlineItem(
+                                            item.id,
+                                            "unitPrice",
+                                            priceBValue,
+                                          );
+                                        }}
+                                      >
+                                        {priceBValue.toFixed(0)}
+                                      </Button>
+                                    )}
+                                  </div>
+                                );
                               })()}
                             </TableCell>
 
-                            {/* Column 9: Price B (Desktop ONLY) */}
+                            {/* Column 9: Editable Price (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-middle">
-                              {(() => {
-                                const priceBValue =
-                                  item.priceB ?? (part?.priceB ?? null);
-                                const isSelected = item.selectedPriceType === "B";
-                                return priceBValue != null ? (
-                                  <Button variant={isSelected ? "default" : "outline"} size="sm" className="w-full text-xs" onClick={() => handleUpdateInlineItem(item.id, "selectedPriceType", "B")}>
-                                    {priceBValue.toFixed(0)}
-                                  </Button>
-                                ) : <span className="text-xs text-muted-foreground">-</span>;
-                              })()}
+                              <Input
+                                type="number"
+                                min={0}
+                                value={item.unitPrice ?? ""}
+                                onChange={(e) =>
+                                  handleUpdateInlineItem(
+                                    item.id,
+                                    "unitPrice",
+                                    e.target.value === ""
+                                      ? undefined
+                                      : parseFloat(e.target.value) || 0,
+                                  )
+                                }
+                                className="w-24 text-center h-8"
+                              />
                             </TableCell>
 
                             {/* Mobile Section: Qty & Price (Hidden on Desktop) */}
                             <TableCell className="md:hidden block p-0 align-middle">
-                              <span className="text-xs font-bold text-muted-foreground block mb-2 uppercase tracking-wider">Quantity & Price</span>
+                              <span className="text-xs font-bold text-muted-foreground block mb-2 uppercase tracking-wider">
+                                Quantity & Price
+                              </span>
                               <div className="grid grid-cols-3 gap-2 items-center">
                                 <div className="space-y-1">
-                                  <span className="text-[9px] text-muted-foreground uppercase">Qty</span>
-                                  <Input type="number" min={0} value={item.qty || ""} onChange={(e) => handleUpdateInlineItem(item.id, "qty", parseInt(e.target.value) || 0)} className="h-8 text-center font-bold" />
+                                  <span className="text-[9px] text-muted-foreground uppercase">
+                                    Qty
+                                  </span>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={item.qty || ""}
+                                    onChange={(e) =>
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "qty",
+                                        parseInt(e.target.value) || 0,
+                                      )
+                                    }
+                                    className="h-8 text-center font-bold"
+                                  />
                                 </div>
                                 <div className="space-y-1">
-                                  <span className="text-[9px] text-muted-foreground uppercase">Price A</span>
+                                  <span className="text-[9px] text-muted-foreground uppercase">
+                                    Price A
+                                  </span>
                                   {(() => {
                                     const val =
-                                      item.priceA ?? (part?.priceA ?? null);
+                                      item.priceA ?? part?.priceA ?? null;
                                     return val != null ? (
                                       <Button
                                         variant={
@@ -3975,10 +4676,12 @@ export const SalesInvoice = () => {
                                   })()}
                                 </div>
                                 <div className="space-y-1">
-                                  <span className="text-[9px] text-muted-foreground uppercase">Price B</span>
+                                  <span className="text-[9px] text-muted-foreground uppercase">
+                                    Price B
+                                  </span>
                                   {(() => {
                                     const val =
-                                      item.priceB ?? (part?.priceB ?? null);
+                                      item.priceB ?? part?.priceB ?? null;
                                     return val != null ? (
                                       <Button
                                         variant={
@@ -4011,15 +4714,33 @@ export const SalesInvoice = () => {
                             {/* Column 10: Total */}
                             <TableCell className="md:table-cell block p-0 md:p-4 md:text-center align-middle font-bold">
                               <div className="flex md:flex-col justify-between items-center bg-primary/5 p-3 md:p-0 rounded border border-primary/10 md:border-0 md:bg-transparent">
-                                <span className="md:hidden text-xs font-bold text-primary uppercase">Total</span>
-                                <span className="text-lg md:text-base text-primary">Rs {calculateLineTotal(item).toLocaleString()}</span>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive md:hidden" onClick={() => handleRemoveInlineItem(item.id)}><Trash2 className="w-4 h-4" /></Button>
+                                <span className="md:hidden text-xs font-bold text-primary uppercase">
+                                  Total
+                                </span>
+                                <span className="text-lg md:text-base text-primary">
+                                  Rs {calculateLineTotal(item).toLocaleString()}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive md:hidden"
+                                  onClick={() =>
+                                    handleRemoveInlineItem(item.id)
+                                  }
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
                               </div>
                             </TableCell>
 
                             {/* Column 11: Action (Desktop Only) */}
                             <TableCell className="hidden md:table-cell align-middle text-center">
-                              <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10" onClick={() => handleRemoveInlineItem(item.id)}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 text-destructive hover:bg-destructive/10"
+                                onClick={() => handleRemoveInlineItem(item.id)}
+                              >
                                 <Trash2 className="w-5 h-5" />
                               </Button>
                             </TableCell>
@@ -4083,7 +4804,9 @@ export const SalesInvoice = () => {
                             {account.code
                               ? `${account.code} - ${account.name}`
                               : account.name}{" "}
-                            {account.type && account.type !== "General" && account.type !== "Current Assets"
+                            {account.type &&
+                            account.type !== "General" &&
+                            account.type !== "Current Assets"
                               ? `(${account.type})`
                               : ""}
                           </SelectItem>
@@ -4147,7 +4870,9 @@ export const SalesInvoice = () => {
                             {account.code
                               ? `${account.code} - ${account.name}`
                               : account.name}{" "}
-                            {account.type && account.type !== "General" && account.type !== "Current Assets"
+                            {account.type &&
+                            account.type !== "General" &&
+                            account.type !== "Current Assets"
                               ? `(${account.type})`
                               : ""}
                           </SelectItem>
@@ -4219,7 +4944,9 @@ export const SalesInvoice = () => {
                     </div>
                     <div className="flex justify-between font-bold text-green-600">
                       <span>Total after GST:</span>
-                      <span>Rs {calculateTotalAfterGst().toLocaleString()}</span>
+                      <span>
+                        Rs {calculateTotalAfterGst().toLocaleString()}
+                      </span>
                     </div>
                   </>
                 )}
@@ -4235,7 +4962,9 @@ export const SalesInvoice = () => {
                 </div>
                 <div className="flex justify-between border-t pt-2 font-bold text-lg">
                   <span>Grand Total:</span>
-                  <span className="text-green-600">Rs {calculateAmountAfterDiscount().toLocaleString()}</span>
+                  <span className="text-green-600">
+                    Rs {calculateAmountAfterDiscount().toLocaleString()}
+                  </span>
                 </div>
                 <div className="flex justify-between text-green-600">
                   <span>Received:</span>
@@ -4264,10 +4993,17 @@ export const SalesInvoice = () => {
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
-              <Button variant="outline" onClick={resetForm} className="w-full sm:w-auto order-2 sm:order-1">
+              <Button
+                variant="outline"
+                onClick={resetForm}
+                className="w-full sm:w-auto order-2 sm:order-1"
+              >
                 Cancel
               </Button>
-              <Button onClick={handleSaveInvoice} className="w-full sm:w-auto order-1 sm:order-2">
+              <Button
+                onClick={handleSaveInvoice}
+                className="w-full sm:w-auto order-1 sm:order-2"
+              >
                 <FileText className="w-4 h-4 mr-2" />
                 {editingInvoiceId ? "Save Changes" : "Create Invoice"}
               </Button>
@@ -4304,78 +5040,109 @@ export const SalesInvoice = () => {
                   </TableHeader>
                   <TableBody>
                     {filteredInvoices.map((inv) => (
-                      <TableRow key={inv.id} className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-3 md:space-y-0 relative">
+                      <TableRow
+                        key={inv.id}
+                        className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-3 md:space-y-0 relative"
+                      >
                         <TableCell className="md:table-cell font-bold md:font-medium p-0 md:p-4 block">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Invoice #</span>
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Invoice #
+                          </span>
                           {inv.invoiceNo}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Date</span>
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Date
+                          </span>
                           {inv.invoiceDate}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Customer</span>
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Customer
+                          </span>
                           {inv.customerName}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Type</span>
-                          <Badge variant="outline" className="text-[10px] md:text-xs">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Type
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] md:text-xs"
+                          >
                             {inv.customerType === "walking"
                               ? "Cash Sale"
                               : "Party Sale"}
                           </Badge>
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-right">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Tax %</span>
-                          {inv.taxPercentage != null && Number(inv.taxPercentage) > 0
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Tax %
+                          </span>
+                          {inv.taxPercentage != null &&
+                          Number(inv.taxPercentage) > 0
                             ? `${Number(inv.taxPercentage)}%`
                             : "-"}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-right font-medium">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Total</span>
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Total
+                          </span>
                           Rs {inv.grandTotal.toLocaleString()}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-right">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Paid</span>
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Paid
+                          </span>
                           Rs {inv.paidAmount.toLocaleString()}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Delivery</span>
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Delivery
+                          </span>
                           {getStatusBadge(inv.status)}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">Payment</span>
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Payment
+                          </span>
                           {getPaymentBadge(inv.paymentStatus)}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center pt-2 md:pt-4 border-t md:border-t-0">
                           <div className="flex items-center md:justify-center gap-1">
                             {/* Record Payment */}
-                            {inv.paymentStatus !== "paid" && inv.status !== "pending" && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
-                                onClick={() => {
-                                  setSelectedInvoice(inv);
-                                  setPaymentForm({
-                                    amount: inv.grandTotal - inv.paidAmount,
-                                    accountId: inv.accountId || "",
-                                    paymentDate: new Date().toISOString().split("T")[0],
-                                  });
-                                  setShowPaymentDialog(true);
-                                }}
-                                title="Record Payment"
-                              >
-                                <DollarSign className="w-4 h-4" />
-                              </Button>
-                            )}
+                            {inv.paymentStatus !== "paid" &&
+                              inv.status !== "pending" && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                  onClick={() => {
+                                    setSelectedInvoice(inv);
+                                    setPaymentForm({
+                                      amount: inv.grandTotal - inv.paidAmount,
+                                      accountId: inv.accountId || "",
+                                      paymentDate: new Date()
+                                        .toISOString()
+                                        .split("T")[0],
+                                    });
+                                    setShowPaymentDialog(true);
+                                  }}
+                                  title="Record Payment"
+                                >
+                                  <DollarSign className="w-4 h-4" />
+                                </Button>
+                              )}
                             {/* View */}
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-muted-foreground hover:text-foreground"
                               onClick={() => {
-                                setSelectedInvoice({ ...inv, items: inv.items || [] });
+                                setSelectedInvoice({
+                                  ...inv,
+                                  items: inv.items || [],
+                                });
                                 setShowViewInvoice(true);
                               }}
                             >
@@ -4384,21 +5151,21 @@ export const SalesInvoice = () => {
                             {/* Approve — pending or on_hold */}
                             {(inv.status === "pending" ||
                               inv.status === "on_hold") && (
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
-                                  onClick={() =>
-                                    handleUpdateStatus(inv, "approved")
-                                  }
-                                  disabled={approvingInvoice === inv.id}
-                                >
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  {approvingInvoice === inv.id
-                                    ? "Approving..."
-                                    : "Approve"}
-                                </Button>
-                              )}
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
+                                onClick={() =>
+                                  handleUpdateStatus(inv, "approved")
+                                }
+                                disabled={approvingInvoice === inv.id}
+                              >
+                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                                {approvingInvoice === inv.id
+                                  ? "Approving..."
+                                  : "Approve"}
+                              </Button>
+                            )}
                             {/* Print */}
                             <Button
                               variant="ghost"
@@ -4427,8 +5194,11 @@ export const SalesInvoice = () => {
                             )}
                             {/* Reverse Stock - for approved or partially delivered party sale (registered) only; not for cash sale */}
                             {inv.customerType === "registered" &&
-                              (inv.status === "approved" || inv.status === "partially_delivered") &&
-                              inv.items?.some((item) => (item.pendingQty || 0) > 0) && (
+                              (inv.status === "approved" ||
+                                inv.status === "partially_delivered") &&
+                              inv.items?.some(
+                                (item) => (item.pendingQty || 0) > 0,
+                              ) && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -4436,16 +5206,26 @@ export const SalesInvoice = () => {
                                   onClick={() => {
                                     // Show all items that still have pending (undelivered) quantity
                                     const itemsToProcess = inv.items?.filter(
-                                      (item) => (item.pendingQty || 0) > 0
+                                      (item) => (item.pendingQty || 0) > 0,
                                     );
 
-                                    if (itemsToProcess && itemsToProcess.length > 0) {
-                                      setSelectedInvoice({ ...inv, items: inv.items || [] });
+                                    if (
+                                      itemsToProcess &&
+                                      itemsToProcess.length > 0
+                                    ) {
+                                      setSelectedInvoice({
+                                        ...inv,
+                                        items: inv.items || [],
+                                      });
                                       setItemsToReverse(itemsToProcess);
                                       // Initialize reverse quantities to the full pending amount
-                                      const initialQtys: Record<string, number> = {};
+                                      const initialQtys: Record<
+                                        string,
+                                        number
+                                      > = {};
                                       itemsToProcess.forEach((item) => {
-                                        initialQtys[item.id] = item.pendingQty || 0;
+                                        initialQtys[item.id] =
+                                          item.pendingQty || 0;
                                       });
                                       setReverseQuantities(initialQtys);
                                       setShowReverseDialog(true);
@@ -4498,8 +5278,7 @@ export const SalesInvoice = () => {
             )}
           </CardContent>
         </Card>
-      )
-      }
+      )}
 
       {/* View Invoice Dialog */}
       <Dialog open={showViewInvoice} onOpenChange={setShowViewInvoice}>
@@ -4586,35 +5365,45 @@ export const SalesInvoice = () => {
                             {item.reversedQty || 0}
                           </TableCell>
                           <TableCell className="text-center">
-                            {item.unitPrice ? item.unitPrice.toFixed(2) : "0.00"}
+                            {item.unitPrice
+                              ? item.unitPrice.toFixed(2)
+                              : "0.00"}
                           </TableCell>
                           <TableCell className="text-right">
                             Rs {item.lineTotal.toFixed(2)}
                           </TableCell>
                           <TableCell className="text-center">
                             {selectedInvoice.customerType === "registered" &&
-                              (item.pendingQty || 0) - (item.reversedQty || 0) > 0 && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                                onClick={() => {
-                                  // Set only this item for reversal
-                                  setItemsToReverse([item]);
-                                  setReverseQuantities({ [item.id]: (item.pendingQty || 0) - (item.reversedQty || 0) });
-                                  setShowReverseDialog(true);
-                                }}
-                                title="Reverse undelivered quantity to stock"
-                              >
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            )}
+                              (item.pendingQty || 0) - (item.reversedQty || 0) >
+                                0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                  onClick={() => {
+                                    // Set only this item for reversal
+                                    setItemsToReverse([item]);
+                                    setReverseQuantities({
+                                      [item.id]:
+                                        (item.pendingQty || 0) -
+                                        (item.reversedQty || 0),
+                                    });
+                                    setShowReverseDialog(true);
+                                  }}
+                                  title="Reverse undelivered quantity to stock"
+                                >
+                                  <RotateCcw className="h-4 w-4" />
+                                </Button>
+                              )}
                           </TableCell>
                         </TableRow>
-                      ))) : (
+                      ))
+                    ) : (
                       <TableRow>
                         <TableCell colSpan={9} className="text-center py-4">
-                          <p className="text-muted-foreground">No items found for this invoice</p>
+                          <p className="text-muted-foreground">
+                            No items found for this invoice
+                          </p>
                         </TableCell>
                       </TableRow>
                     )}
@@ -4670,20 +5459,40 @@ export const SalesInvoice = () => {
               {/* Payment Summary */}
               <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg border">
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Total Amount</p>
-                  <p className="text-lg font-bold">Rs {selectedInvoice.grandTotal.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">
+                    Total Amount
+                  </p>
+                  <p className="text-lg font-bold">
+                    Rs {selectedInvoice.grandTotal.toLocaleString()}
+                  </p>
                 </div>
                 <div className="space-y-1 text-right">
-                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Discount</p>
-                  <p className="text-lg font-bold text-orange-600">- Rs {(selectedInvoice.overallDiscount || 0).toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">
+                    Discount
+                  </p>
+                  <p className="text-lg font-bold text-orange-600">
+                    - Rs{" "}
+                    {(selectedInvoice.overallDiscount || 0).toLocaleString()}
+                  </p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Paid So Far</p>
-                  <p className="text-lg font-bold text-green-600">Rs {selectedInvoice.paidAmount.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">
+                    Paid So Far
+                  </p>
+                  <p className="text-lg font-bold text-green-600">
+                    Rs {selectedInvoice.paidAmount.toLocaleString()}
+                  </p>
                 </div>
                 <div className="space-y-1 text-right">
-                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Remaining</p>
-                  <p className="text-xl font-black text-primary">Rs {(selectedInvoice.grandTotal - selectedInvoice.paidAmount).toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">
+                    Remaining
+                  </p>
+                  <p className="text-xl font-black text-primary">
+                    Rs{" "}
+                    {(
+                      selectedInvoice.grandTotal - selectedInvoice.paidAmount
+                    ).toLocaleString()}
+                  </p>
                 </div>
               </div>
 
@@ -4695,7 +5504,12 @@ export const SalesInvoice = () => {
                     <Input
                       type="date"
                       value={paymentForm.paymentDate}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, paymentDate: e.target.value })}
+                      onChange={(e) =>
+                        setPaymentForm({
+                          ...paymentForm,
+                          paymentDate: e.target.value,
+                        })
+                      }
                     />
                   </div>
                   <div className="space-y-2">
@@ -4703,9 +5517,16 @@ export const SalesInvoice = () => {
                     <Input
                       type="number"
                       value={paymentForm.amount || ""}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })}
+                      onChange={(e) =>
+                        setPaymentForm({
+                          ...paymentForm,
+                          amount: Number(e.target.value),
+                        })
+                      }
                       className="font-bold text-primary"
-                      max={selectedInvoice.grandTotal - selectedInvoice.paidAmount}
+                      max={
+                        selectedInvoice.grandTotal - selectedInvoice.paidAmount
+                      }
                     />
                   </div>
                 </div>
@@ -4714,19 +5535,29 @@ export const SalesInvoice = () => {
                   <Label>Select Account (Bank/Cash)</Label>
                   <Select
                     value={paymentForm.accountId}
-                    onValueChange={(val) => setPaymentForm({ ...paymentForm, accountId: val })}
+                    onValueChange={(val) =>
+                      setPaymentForm({ ...paymentForm, accountId: val })
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select account..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <div className="p-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/50">Cash Accounts</div>
-                      {cashAccounts.map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.name} ({acc.code || 'No Code'})</SelectItem>
+                      <div className="p-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/50">
+                        Cash Accounts
+                      </div>
+                      {cashAccounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.name} ({acc.code || "No Code"})
+                        </SelectItem>
                       ))}
-                      <div className="p-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/50 mt-1">Bank Accounts</div>
-                      {bankAccounts.map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.name} ({acc.code || 'Bank'})</SelectItem>
+                      <div className="p-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/50 mt-1">
+                        Bank Accounts
+                      </div>
+                      {bankAccounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.name} ({acc.code || "Bank"})
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -4736,7 +5567,11 @@ export const SalesInvoice = () => {
           )}
 
           <DialogFooter className="mt-2">
-            <Button variant="outline" onClick={() => setShowPaymentDialog(false)} disabled={recordingPayment}>
+            <Button
+              variant="outline"
+              onClick={() => setShowPaymentDialog(false)}
+              disabled={recordingPayment}
+            >
               Cancel
             </Button>
             <Button
@@ -4758,18 +5593,16 @@ export const SalesInvoice = () => {
       </Dialog>
 
       {/* Delivery Log */}
-      {
-        selectedInvoice && (
-          <InvoiceDeliveryLog
-            open={showDeliveryLog}
-            onOpenChange={setShowDeliveryLog}
-            invoiceNo={selectedInvoice.invoiceNo}
-            items={selectedInvoice.items || []}
-            deliveryLog={selectedInvoice.deliveryLog}
-            onRecordDelivery={handleRecordDelivery}
-          />
-        )
-      }
+      {selectedInvoice && (
+        <InvoiceDeliveryLog
+          open={showDeliveryLog}
+          onOpenChange={setShowDeliveryLog}
+          invoiceNo={selectedInvoice.invoiceNo}
+          items={selectedInvoice.items || []}
+          deliveryLog={selectedInvoice.deliveryLog}
+          onRecordDelivery={handleRecordDelivery}
+        />
+      )}
 
       {/* Hold Dialog */}
       <Dialog
@@ -4861,10 +5694,10 @@ export const SalesInvoice = () => {
                                       parseInt(e.target.value) || 0,
                                       loc.quantity,
                                       totalTarget -
-                                      (totalSelected -
-                                        (holdLocationQtys[item.id]?.[
-                                          locKey
-                                        ] || 0)),
+                                        (totalSelected -
+                                          (holdLocationQtys[item.id]?.[
+                                            locKey
+                                          ] || 0)),
                                     );
                                     setHoldLocationQtys((prev) => ({
                                       ...prev,
@@ -5008,12 +5841,15 @@ export const SalesInvoice = () => {
                                     </span>
                                   </div>
                                   <div className="flex gap-1 items-center">
-                                    <span className="opacity-70">In Stock:</span>
+                                    <span className="opacity-70">
+                                      In Stock:
+                                    </span>
                                     <span
-                                      className={`font-bold ${loc.quantity > 0
-                                        ? "text-blue-600"
-                                        : "text-destructive"
-                                        }`}
+                                      className={`font-bold ${
+                                        loc.quantity > 0
+                                          ? "text-blue-600"
+                                          : "text-destructive"
+                                      }`}
                                     >
                                       {loc.quantity}
                                     </span>
@@ -5049,9 +5885,12 @@ export const SalesInvoice = () => {
                         />
                       </div>
                     </div>
-                  ))) : (
+                  ))
+                ) : (
                   <div className="text-center py-4">
-                    <p className="text-muted-foreground">No items found for this invoice</p>
+                    <p className="text-muted-foreground">
+                      No items found for this invoice
+                    </p>
                   </div>
                 )}
               </div>
@@ -5289,13 +6128,22 @@ export const SalesInvoice = () => {
               {itemsToReverse.length > 0 && (
                 <div className="space-y-4">
                   <p>
-                    Are you sure you want to reverse back the remaining qty of {itemsToReverse.length} item(s)?
+                    Are you sure you want to reverse back the remaining qty of{" "}
+                    {itemsToReverse.length} item(s)?
                   </p>
                   <div className="text-sm bg-muted p-3 rounded max-h-40 overflow-y-auto">
-                    {itemsToReverse.map(item => (
-                      <div key={item.id} className="mb-2 pb-2 border-b last:border-0">
-                        <p><strong>Part:</strong> {item.partNo}</p>
-                        <p><strong>Pending Qty:</strong> {item.pendingQty || 0} units</p>
+                    {itemsToReverse.map((item) => (
+                      <div
+                        key={item.id}
+                        className="mb-2 pb-2 border-b last:border-0"
+                      >
+                        <p>
+                          <strong>Part:</strong> {item.partNo}
+                        </p>
+                        <p>
+                          <strong>Pending Qty:</strong> {item.pendingQty || 0}{" "}
+                          units
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -5323,6 +6171,6 @@ export const SalesInvoice = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div >
+    </div>
   );
 };
