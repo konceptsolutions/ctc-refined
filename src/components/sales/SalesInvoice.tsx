@@ -79,6 +79,7 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
+import { printDeliveryChallan } from "@/lib/printDeliveryChallan";
 import {
   Invoice,
   InvoiceItem,
@@ -283,6 +284,22 @@ export const SalesInvoice = () => {
 
   // View Invoice
   const [showViewInvoice, setShowViewInvoice] = useState(false);
+  const invoicePrintColumns = [
+    { id: "sr", label: "Sr#" },
+    { id: "partNo", label: "Part No." },
+    { id: "altPartNo", label: "Alt. Part No." },
+    { id: "description", label: "Description" },
+    { id: "brand", label: "Brand" },
+    { id: "uom", label: "UOM" },
+    { id: "qty", label: "Qty" },
+    { id: "price", label: "Price" },
+    { id: "amount", label: "Amount" },
+  ] as const;
+  const [selectedInvoicePrintColumns, setSelectedInvoicePrintColumns] =
+    useState<string[]>(invoicePrintColumns.map((c) => c.id));
+  const [showInvoicePrintColumnsDialog, setShowInvoicePrintColumnsDialog] =
+    useState(false);
+  const [invoiceForPrint, setInvoiceForPrint] = useState<Invoice | null>(null);
 
   // Hold Dialog
   const [showHoldDialog, setShowHoldDialog] = useState(false);
@@ -353,7 +370,7 @@ export const SalesInvoice = () => {
   ).length;
 
   // Add new inline item row
-  const handleAddNewItem = () => {
+  const handleAddNewItem = useCallback((openDropdown = false) => {
     const newItem: InlineItemRow = {
       id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       selectedPartId: "",
@@ -366,7 +383,27 @@ export const SalesInvoice = () => {
     };
     // Add new item at the top (first position), existing items move down
     setInlineItems([newItem, ...inlineItems]);
-  };
+    if (openDropdown) {
+      setShowPartsDropdown((prev) => ({ ...prev, [newItem.id]: true }));
+      setPartsSearchTerm((prev) => ({ ...prev, [newItem.id]: "" }));
+      setTimeout(() => {
+        inputRefs.current[newItem.id]?.focus();
+      }, 50);
+    }
+  }, [inlineItems]);
+
+  useEffect(() => {
+    const onShortcut = (e: KeyboardEvent) => {
+      if (!showNewInvoice) return;
+      if (e.altKey && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        handleAddNewItem(true);
+      }
+    };
+
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [showNewInvoice, handleAddNewItem]);
 
   // Helper to derive unit price from selected price type + part data
   const getDerivedUnitPrice = (item: InlineItemRow, part: PartItem | null) => {
@@ -827,6 +864,8 @@ export const SalesInvoice = () => {
               id: c.id,
               name: c.name,
               type: c.type || "registered",
+              address: c.address || "",
+              area: c.area || null,
               balance: c.balance || 0,
               creditLimit: c.creditLimit || 0,
               creditDays: c.creditDays || 0,
@@ -2698,6 +2737,491 @@ export const SalesInvoice = () => {
     }
   };
 
+  const handlePrintInvoice = (invoice: Invoice, columns?: string[]) => {
+    const invoiceMeta = invoice as any;
+    const enabledColumns = new Set(columns || selectedInvoicePrintColumns);
+    const include = (id: string) => enabledColumns.has(id);
+    const visibleColumnCount = Math.max(
+      1,
+      invoicePrintColumns.filter((c) => include(c.id)).length,
+    );
+    const numberToWords = (num: number): string => {
+      const ones = [
+        "",
+        "One",
+        "Two",
+        "Three",
+        "Four",
+        "Five",
+        "Six",
+        "Seven",
+        "Eight",
+        "Nine",
+        "Ten",
+        "Eleven",
+        "Twelve",
+        "Thirteen",
+        "Fourteen",
+        "Fifteen",
+        "Sixteen",
+        "Seventeen",
+        "Eighteen",
+        "Nineteen",
+      ];
+      const tens = [
+        "",
+        "",
+        "Twenty",
+        "Thirty",
+        "Forty",
+        "Fifty",
+        "Sixty",
+        "Seventy",
+        "Eighty",
+        "Ninety",
+      ];
+      if (!Number.isFinite(num) || num <= 0) return "Zero";
+
+      const convertLessThanThousand = (n: number): string => {
+        if (n === 0) return "";
+        if (n < 20) return ones[n];
+        if (n < 100)
+          return (
+            tens[Math.floor(n / 10)] + (n % 10 !== 0 ? ` ${ones[n % 10]}` : "")
+          );
+        return (
+          `${ones[Math.floor(n / 100)]} Hundred` +
+          (n % 100 !== 0 ? ` ${convertLessThanThousand(n % 100)}` : "")
+        );
+      };
+
+      const whole = Math.floor(num);
+      if (whole >= 10000000) {
+        const crore = Math.floor(whole / 10000000);
+        const rem = whole % 10000000;
+        return (
+          `${convertLessThanThousand(crore)} Crore` +
+          (rem > 0 ? ` ${numberToWords(rem)}` : "")
+        );
+      }
+      if (whole >= 100000) {
+        const lakh = Math.floor(whole / 100000);
+        const rem = whole % 100000;
+        return (
+          `${convertLessThanThousand(lakh)} Lakh` +
+          (rem > 0 ? ` ${numberToWords(rem)}` : "")
+        );
+      }
+      if (whole >= 1000) {
+        const thousand = Math.floor(whole / 1000);
+        const rem = whole % 1000;
+        return (
+          `${convertLessThanThousand(thousand)} Thousand` +
+          (rem > 0 ? ` ${convertLessThanThousand(rem)}` : "")
+        );
+      }
+      return convertLessThanThousand(whole);
+    };
+    const esc = (v: any) =>
+      String(v ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    const dateText = invoice.invoiceDate
+      ? new Date(invoice.invoiceDate).toLocaleDateString()
+      : "";
+    const printDateTime = new Date().toLocaleString();
+    const getPrintedBy = () => {
+      try {
+        const token = localStorage.getItem("authToken");
+        if (!token) return "Unknown User";
+        const parts = token.split(".");
+        if (parts.length < 2) return "Unknown User";
+        const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        return (
+          payload?.name ||
+          payload?.username ||
+          payload?.fullName ||
+          payload?.userName ||
+          payload?.email ||
+          payload?.sub ||
+          "Unknown User"
+        );
+      } catch {
+        return "Unknown User";
+      }
+    };
+    const printedBy = getPrintedBy();
+    const matchedCustomer = customers.find(
+      (c) =>
+        c.id === invoice.customerId ||
+        c.name?.trim().toLowerCase() === invoice.customerName?.trim().toLowerCase(),
+    );
+    const addressParts = String(matchedCustomer?.address || "")
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const formattedAddressHtml = addressParts.length
+      ? addressParts.map((part) => esc(part)).join(",<br/>")
+      : "";
+    const areaText = matchedCustomer?.area ? esc(matchedCustomer.area) : "";
+    const totalQty =
+      invoice.items?.reduce((sum, i) => sum + (i.orderedQty || 0), 0) || 0;
+    const baseTotal = Number(
+      invoice.subtotal ??
+        invoice.items?.reduce((sum, i) => sum + Number(i.lineTotal || 0), 0) ??
+        0,
+    );
+    const discountAmount = Number(invoice.overallDiscount || 0);
+    const taxAmount = Number(invoice.tax || 0);
+    const taxPercentageStored = Number(
+      invoice.taxPercentage ?? invoiceMeta.taxPercentage ?? 0,
+    );
+    const currentAmount = Number(invoice.grandTotal || 0);
+    const invoiceDue = Math.max(
+      0,
+      Number(invoice.grandTotal || 0) - Number(invoice.paidAmount || 0),
+    );
+    // Prefer explicit previous balance from backend if present; fallback from
+    // customer current balance by subtracting this invoice's due amount.
+    const explicitPrevBalance = Number(invoiceMeta.previousBalance ?? NaN);
+    const customerCurrentBalanceFromInvoice = Number(
+      invoiceMeta.customerBalance ?? NaN,
+    );
+    const customerCurrentBalanceFromState = Number(
+      customers.find(
+        (c) =>
+          c.id === invoice.customerId ||
+          c.name?.trim().toLowerCase() ===
+            invoice.customerName?.trim().toLowerCase(),
+      )?.balance ?? NaN,
+    );
+    const customerCurrentBalance = Number.isFinite(
+      customerCurrentBalanceFromInvoice,
+    )
+      ? customerCurrentBalanceFromInvoice
+      : customerCurrentBalanceFromState;
+    const balBf = Number.isFinite(explicitPrevBalance)
+      ? Math.max(0, explicitPrevBalance)
+      : Number.isFinite(customerCurrentBalance)
+        ? Math.max(0, customerCurrentBalance - invoiceDue)
+        : 0;
+    const totalReceivable = balBf + currentAmount;
+    const currentAmountWords = numberToWords(currentAmount);
+    const linesBeforeCurrentAmount =
+      (discountAmount > 0 ? 1 : 0) + (taxAmount > 0 ? 1 : 0);
+    const amountWordsOffsetPx = linesBeforeCurrentAmount * 22;
+
+    const rows =
+      invoice.items?.length
+        ? invoice.items
+            .map(
+              (item, idx) => `
+                <tr>
+                  ${include("sr") ? `<td class="c">${idx + 1}</td>` : ""}
+                  ${include("partNo") ? `<td>${esc(item.partNo)}</td>` : ""}
+                  ${include("altPartNo") ? `<td>${esc(item.partNo || "")}</td>` : ""}
+                  ${include("description") ? `<td>${esc(item.description)}</td>` : ""}
+                  ${include("brand") ? `<td>${esc(item.brand || "")}</td>` : ""}
+                  ${include("uom") ? `<td class="c">NOS</td>` : ""}
+                  ${include("qty") ? `<td class="c">${item.orderedQty || 0}</td>` : ""}
+                  ${include("price") ? `<td class="r">${(item.unitPrice || 0).toLocaleString()}</td>` : ""}
+                  ${include("amount") ? `<td class="r">${(item.lineTotal || 0).toLocaleString()}</td>` : ""}
+                </tr>`,
+            )
+            .join("")
+        : `<tr><td colspan="${visibleColumnCount}" class="c">No items</td></tr>`;
+
+    const printHTML = `
+      <html>
+        <head>
+          <title>Invoice ${esc(invoice.invoiceNo)}</title>
+          <style>
+            @page { size: A5 landscape; margin: 8mm; }
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; font-size: 11px; color: #000; margin: 0; }
+            .page { width: 100%; }
+            .row { display: flex; justify-content: space-between; align-items: flex-start; }
+            .mt-8 { margin-top: 8px; }
+            .muted { color: #444; }
+            .title { font-weight: bold; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+            th, td { border: 1px solid #444; padding: 3px 4px; font-size: 10px; vertical-align: top; }
+            th { text-align: left; background: #f5f5f5; }
+            .c { text-align: center; }
+            .r { text-align: right; }
+            .totals { width: 42%; margin-left: auto; margin-top: 0; }
+            .totals td { border: none; border-bottom: 1px solid #aaa; }
+            .totals tr:last-child td { border-bottom: 2px solid #000; font-weight: bold; }
+            .amount-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
+            .amount-words { flex: 1; font-size: 11px; padding-top: 2px; }
+            .notes { margin-top: 10px; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <div class="row">
+              <div>
+                <div class="title">${esc(invoice.customerName || "Walk-in Customer")}</div>
+                ${
+                  invoice.customerType === "registered" && formattedAddressHtml
+                    ? `<div class="muted">${formattedAddressHtml}</div>`
+                    : ""
+                }
+                ${
+                  invoice.customerType === "registered" && areaText
+                    ? `<div class="muted">${areaText}</div>`
+                    : ""
+                }
+              </div>
+              <div class="r">
+                <div>Print: ${esc(printDateTime)}</div>
+                <div>Page 1 of 1</div>
+                <div>${esc(invoice.invoiceNo)}</div>
+                <div>Date: ${esc(dateText)}</div>
+                <div>User: ${esc(printedBy)}</div>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  ${include("sr") ? '<th class="c">Sr#</th>' : ""}
+                  ${include("partNo") ? "<th>Part No.</th>" : ""}
+                  ${include("altPartNo") ? "<th>Alt. Part No.</th>" : ""}
+                  ${include("description") ? "<th>Description</th>" : ""}
+                  ${include("brand") ? "<th>Brand</th>" : ""}
+                  ${include("uom") ? '<th class="c">UOM</th>' : ""}
+                  ${include("qty") ? '<th class="c">Qty</th>' : ""}
+                  ${include("price") ? '<th class="r">Price</th>' : ""}
+                  ${include("amount") ? '<th class="r">Amount</th>' : ""}
+                </tr>
+              </thead>
+              <tbody>
+                ${rows}
+                <tr>
+                  ${
+                    include("qty")
+                      ? `<td colspan="${Math.max(
+                          1,
+                          (include("sr") ? 1 : 0) +
+                            (include("partNo") ? 1 : 0) +
+                            (include("altPartNo") ? 1 : 0) +
+                            (include("description") ? 1 : 0) +
+                            (include("brand") ? 1 : 0) +
+                            (include("uom") ? 1 : 0),
+                        )}" class="r"><b>Total</b></td>
+                         <td class="c"><b>${totalQty}</b></td>`
+                      : `<td colspan="${Math.max(
+                          1,
+                          (include("sr") ? 1 : 0) +
+                            (include("partNo") ? 1 : 0) +
+                            (include("altPartNo") ? 1 : 0) +
+                            (include("description") ? 1 : 0) +
+                            (include("brand") ? 1 : 0) +
+                            (include("uom") ? 1 : 0),
+                        )}" class="r"><b>Total</b></td>`
+                  }
+                  ${include("price") ? "<td></td>" : ""}
+                  ${
+                    include("amount")
+                      ? `<td class="r"><b>${baseTotal.toLocaleString()}</b></td>`
+                      : ""
+                  }
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="amount-row">
+              <div class="amount-words" style="margin-top:${amountWordsOffsetPx}px;"><b>Rupees:-</b> (${esc(currentAmountWords)} Only.)</div>
+              <table class="totals">
+                ${
+                  discountAmount > 0
+                    ? `<tr><td>Discount</td><td class="r">- ${discountAmount.toLocaleString()}</td></tr>`
+                    : ""
+                }
+                ${
+                  taxAmount > 0
+                    ? `<tr><td>GST ${taxPercentageStored > 0 ? `@ ${taxPercentageStored}%` : ""}</td><td class="r">${taxAmount.toLocaleString()}</td></tr>`
+                    : ""
+                }
+                <tr><td>Current Amount</td><td class="r">${currentAmount.toLocaleString()}</td></tr>
+                <tr><td>Bal. B/F</td><td class="r">${balBf.toLocaleString()}</td></tr>
+                <tr><td>Total Receivable</td><td class="r">${totalReceivable.toLocaleString()}</td></tr>
+              </table>
+            </div>
+
+            <div class="notes">
+              <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || "-")}</div>
+              <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || "-")}</div>
+              <div style="margin-top:8px;">
+                <b>Note:-</b> All manufacturer's Names, Numbers, Symbols and Descriptions are used for reference only.
+                Document invalid without authorised signature and stamp.
+              </div>
+              <div style="margin-top:6px;">
+                Parts sold may be Exchanged/returned same day only.
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    // Use hidden iframe printing to avoid opening a separate tab/window.
+    const printFrame = document.createElement("iframe");
+    printFrame.style.position = "fixed";
+    printFrame.style.right = "0";
+    printFrame.style.bottom = "0";
+    printFrame.style.width = "0";
+    printFrame.style.height = "0";
+    printFrame.style.border = "0";
+    printFrame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(printFrame);
+
+    const cleanup = () => {
+      setTimeout(() => {
+        if (document.body.contains(printFrame)) {
+          document.body.removeChild(printFrame);
+        }
+        window.focus();
+      }, 200);
+    };
+
+    printFrame.onload = () => {
+      const frameWindow = printFrame.contentWindow;
+      if (!frameWindow) {
+        cleanup();
+        return;
+      }
+      frameWindow.onafterprint = cleanup;
+      setTimeout(() => {
+        frameWindow.focus();
+        frameWindow.print();
+      }, 100);
+      // Fallback for browsers that don't fire onafterprint reliably.
+      setTimeout(cleanup, 3000);
+    };
+
+    printFrame.srcdoc = printHTML;
+  };
+
+  const handlePrintDeliveryChallan = async (invoice: Invoice) => {
+    try {
+      const response = (await apiClient.getSalesInvoice(invoice.id)) as any;
+      const fullInvoice = response?.data || response;
+      const rawItems = fullInvoice?.SalesInvoiceItem || [];
+
+      const getPrintedBy = () => {
+        try {
+          const token = localStorage.getItem("authToken");
+          if (!token) return "Unknown User";
+          const parts = token.split(".");
+          if (parts.length < 2) return "Unknown User";
+          const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+          const payload = JSON.parse(atob(padded));
+          return (
+            payload?.name ||
+            payload?.username ||
+            payload?.fullName ||
+            payload?.userName ||
+            payload?.email ||
+            payload?.sub ||
+            "Unknown User"
+          );
+        } catch {
+          return "Unknown User";
+        }
+      };
+
+      const challanNo = `CH-${fullInvoice?.invoiceNo || invoice.invoiceNo}`;
+      const challanItems = (rawItems as any[]).map((item) => {
+        const selectedLocations = Array.isArray(item.InvoiceRackShelf)
+          ? item.InvoiceRackShelf
+          : [];
+        const locationText = selectedLocations.length
+          ? selectedLocations
+              .map((loc: any) => {
+                const rack =
+                  loc?.Rack?.code ||
+                  loc?.Rack?.codeNo ||
+                  loc?.Rack?.rackCode ||
+                  loc?.rackCode ||
+                  "-";
+                const shelf =
+                  loc?.Shelf?.shelfNo || loc?.Shelf?.name || loc?.shelfNo || "-";
+                return `${rack}-${shelf}`;
+              })
+              .join(", ")
+          : "-";
+
+        return {
+          partNo: item.partNo || "-",
+          ssPartNo: item?.Part?.masterPartNo || item.partNo || "-",
+          description: item.description || "",
+          brand: item.brand || item?.Part?.Brand?.name || "",
+          uom: "NOS",
+          qty: Number(item.orderedQty || 0),
+          deliveredQty: Number(item.deliveredQty || 0),
+          pendingQty: Number(item.pendingQty || 0),
+          location: locationText,
+          weight: Number(item?.Part?.weight || 0),
+        };
+      });
+
+      printDeliveryChallan({
+        challanNo,
+        invoiceNo: fullInvoice?.invoiceNo || invoice.invoiceNo,
+        invoiceDate: fullInvoice?.invoiceDate || invoice.invoiceDate,
+        customerName: fullInvoice?.customerName || invoice.customerName,
+        deliveredTo: fullInvoice?.deliveredTo || "",
+        status: fullInvoice?.status || invoice.status,
+        userName: getPrintedBy(),
+        items: challanItems,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to print delivery challan",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openSalesInvoicePrintDialog = async (invoice: Invoice) => {
+    try {
+      const resp = (await apiClient.getSalesInvoice(invoice.id)) as any;
+      const fullInv = resp?.data || resp;
+      setInvoiceForPrint({
+        ...invoice,
+        taxPercentage:
+          fullInv?.taxPercentage != null
+            ? Number(fullInv.taxPercentage)
+            : invoice.taxPercentage,
+        tax: fullInv?.tax != null ? Number(fullInv.tax) : invoice.tax,
+        subtotal:
+          fullInv?.subtotal != null ? Number(fullInv.subtotal) : invoice.subtotal,
+        grandTotal:
+          fullInv?.grandTotal != null
+            ? Number(fullInv.grandTotal)
+            : invoice.grandTotal,
+        overallDiscount:
+          fullInv?.overallDiscount != null
+            ? Number(fullInv.overallDiscount)
+            : invoice.overallDiscount,
+      });
+    } catch {
+      setInvoiceForPrint(invoice);
+    } finally {
+      setShowInvoicePrintColumnsDialog(true);
+    }
+  };
+
   const getStatusLabel = (status: InvoiceStatus): string => {
     const labels: Record<InvoiceStatus, string> = {
       pending: "Pending",
@@ -2710,6 +3234,21 @@ export const SalesInvoice = () => {
       fully_delivered: "Fully Delivered",
     };
     return labels[status] ?? status;
+  };
+
+  const formatInvoiceDateDisplay = (value?: string) => {
+    if (!value) return "-";
+    const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (ymdMatch) {
+      const [, y, m, d] = ymdMatch;
+      return `${d}/${m}/${y.slice(-2)}`;
+    }
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return value;
+    const day = String(dt.getDate()).padStart(2, "0");
+    const month = String(dt.getMonth() + 1).padStart(2, "0");
+    const year = String(dt.getFullYear()).slice(-2);
+    return `${day}/${month}/${year}`;
   };
 
   const getStatusBadge = (status: InvoiceStatus | string) => {
@@ -3256,10 +3795,18 @@ export const SalesInvoice = () => {
 
             {/* Items Section - Inline Table Like Reference */}
             <div className="space-y-3">
-              <Button onClick={handleAddNewItem} className="gap-2 bg-primary">
-                <Plus className="w-4 h-4" />
-                Add New Item
-              </Button>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={() => handleAddNewItem()}
+                  className="gap-2 bg-primary"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add New Item
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Shortcut: <span className="font-semibold">Alt + Z</span>
+                </span>
+              </div>
 
               {inlineItems.length > 0 && (
                 <div className="border rounded-lg overflow-x-auto shadow-sm">
@@ -5054,7 +5601,7 @@ export const SalesInvoice = () => {
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
                             Date
                           </span>
-                          {inv.invoiceDate}
+                          {formatInvoiceDateDisplay(inv.invoiceDate)}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
@@ -5138,12 +5685,83 @@ export const SalesInvoice = () => {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                              onClick={() => {
-                                setSelectedInvoice({
-                                  ...inv,
-                                  items: inv.items || [],
-                                });
-                                setShowViewInvoice(true);
+                              onClick={async () => {
+                                try {
+                                  const resp = (await apiClient.getSalesInvoice(
+                                    inv.id,
+                                  )) as any;
+                                  const fullInv = resp?.data || resp;
+                                  const fullItems = Array.isArray(
+                                    fullInv?.SalesInvoiceItem,
+                                  )
+                                    ? fullInv.SalesInvoiceItem
+                                    : inv.items || [];
+
+                                  const mappedItems: InvoiceItem[] = fullItems.map(
+                                    (item: any) => {
+                                      const selectedRackCodes = (
+                                        item.InvoiceRackShelf || []
+                                      )
+                                        .map(
+                                          (irs: any) =>
+                                            irs?.Rack?.code ||
+                                            irs?.Rack?.codeNo ||
+                                            "",
+                                        )
+                                        .filter(Boolean);
+                                      const selectedShelfNos = (
+                                        item.InvoiceRackShelf || []
+                                      )
+                                        .map(
+                                          (irs: any) =>
+                                            irs?.Shelf?.shelfNo ||
+                                            irs?.Shelf?.name ||
+                                            "",
+                                        )
+                                        .filter(Boolean);
+
+                                      return {
+                                        id: item.id,
+                                        partId: item.partId,
+                                        partNo: item.partNo,
+                                        description: item.description || "",
+                                        orderedQty: Number(item.orderedQty || 0),
+                                        deliveredQty: Number(
+                                          item.deliveredQty || 0,
+                                        ),
+                                        pendingQty: Number(item.pendingQty || 0),
+                                        reversedQty: Math.max(
+                                          0,
+                                          Number(item.orderedQty || 0) -
+                                            Number(item.deliveredQty || 0) -
+                                            Number(item.pendingQty || 0),
+                                        ),
+                                        unitPrice: Number(item.unitPrice || 0),
+                                        discount: Number(item.discount || 0),
+                                        discountType: "percent",
+                                        lineTotal: Number(item.lineTotal || 0),
+                                        grade: (item.grade || "A") as ItemGrade,
+                                        brand: item.brand,
+                                        rackCode: selectedRackCodes.join(", "),
+                                        shelfNo: selectedShelfNos.join(", "),
+                                      };
+                                    },
+                                  );
+
+                                  setSelectedInvoice({
+                                    ...inv,
+                                    invoiceDate:
+                                      fullInv?.invoiceDate || inv.invoiceDate,
+                                    items: mappedItems,
+                                  });
+                                } catch {
+                                  setSelectedInvoice({
+                                    ...inv,
+                                    items: inv.items || [],
+                                  });
+                                } finally {
+                                  setShowViewInvoice(true);
+                                }
                               }}
                             >
                               <Eye className="w-4 h-4" />
@@ -5167,19 +5785,32 @@ export const SalesInvoice = () => {
                               </Button>
                             )}
                             {/* Print */}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                              onClick={() => {
-                                toast({
-                                  title: "Printing",
-                                  description: `Printing invoice ${inv.invoiceNo}`,
-                                });
-                              }}
-                            >
-                              <Printer className="w-4 h-4" />
-                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  title="Print"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    openSalesInvoicePrintDialog(inv)
+                                  }
+                                >
+                                  Print Sales Invoice
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handlePrintDeliveryChallan(inv)}
+                                >
+                                  Print Delivery Challan
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                             {/* Edit (Pending only) */}
                             {inv.status === "pending" && (
                               <Button
@@ -5282,7 +5913,7 @@ export const SalesInvoice = () => {
 
       {/* View Invoice Dialog */}
       <Dialog open={showViewInvoice} onOpenChange={setShowViewInvoice}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-primary" />
@@ -5295,7 +5926,9 @@ export const SalesInvoice = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">Date</p>
-                  <p className="font-medium">{selectedInvoice.invoiceDate}</p>
+                  <p className="font-medium">
+                    {formatInvoiceDateDisplay(selectedInvoice.invoiceDate)}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Customer</p>
@@ -5333,6 +5966,7 @@ export const SalesInvoice = () => {
                     <TableRow>
                       <TableHead>Part No</TableHead>
                       <TableHead>Description</TableHead>
+                      <TableHead>Rack/Shelf</TableHead>
                       <TableHead className="text-center">Ordered</TableHead>
                       <TableHead className="text-center">Delivered</TableHead>
                       <TableHead className="text-center">Pending</TableHead>
@@ -5351,6 +5985,11 @@ export const SalesInvoice = () => {
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {item.description}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {item.rackCode || item.shelfNo
+                              ? `${item.rackCode || "-"} / ${item.shelfNo || "-"}`
+                              : "-"}
                           </TableCell>
                           <TableCell className="text-center">
                             {item.orderedQty}
@@ -5400,7 +6039,7 @@ export const SalesInvoice = () => {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-4">
+                        <TableCell colSpan={10} className="text-center py-4">
                           <p className="text-muted-foreground">
                             No items found for this invoice
                           </p>
@@ -5419,6 +6058,28 @@ export const SalesInvoice = () => {
                   {getPaymentBadge(selectedInvoice.paymentStatus)}
                 </div>
                 <div className="text-right">
+                  <p className="text-sm text-muted-foreground">Sub Total</p>
+                  <p className="text-base font-semibold">
+                    Rs {(selectedInvoice.subtotal || 0).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Discount</p>
+                  <p className="text-base font-semibold text-orange-600">
+                    Rs {(selectedInvoice.overallDiscount || 0).toLocaleString()}
+                  </p>
+                  {Number(selectedInvoice.tax || 0) > 0 && (
+                    <>
+                      <p className="text-sm text-muted-foreground">
+                        GST
+                        {selectedInvoice.taxPercentage != null &&
+                        Number(selectedInvoice.taxPercentage) > 0
+                          ? ` @ ${Number(selectedInvoice.taxPercentage)}%`
+                          : ""}
+                      </p>
+                      <p className="text-base font-semibold">
+                        Rs {Number(selectedInvoice.tax || 0).toLocaleString()}
+                      </p>
+                    </>
+                  )}
                   <p className="text-sm text-muted-foreground">Grand Total</p>
                   <p className="text-2xl font-bold text-primary">
                     Rs {selectedInvoice.grandTotal.toLocaleString()}
@@ -5434,13 +6095,76 @@ export const SalesInvoice = () => {
                   <Download className="w-4 h-4 mr-2" />
                   Download
                 </Button>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    selectedInvoice &&
+                    openSalesInvoicePrintDialog(selectedInvoice)
+                  }
+                >
                   <Printer className="w-4 h-4 mr-2" />
-                  Print
+                  Print Invoice
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    selectedInvoice &&
+                    handlePrintDeliveryChallan(selectedInvoice)
+                  }
+                >
+                  <Printer className="w-4 h-4 mr-2" />
+                  Print Challan
                 </Button>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showInvoicePrintColumnsDialog}
+        onOpenChange={setShowInvoicePrintColumnsDialog}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Print Column Selection</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {invoicePrintColumns.map((col) => (
+              <div key={col.id} className="flex items-center gap-2">
+                <Checkbox
+                  checked={selectedInvoicePrintColumns.includes(col.id)}
+                  onCheckedChange={(checked) => {
+                    setSelectedInvoicePrintColumns((prev) => {
+                      if (checked) return Array.from(new Set([...prev, col.id]));
+                      const next = prev.filter((id) => id !== col.id);
+                      return next.length > 0 ? next : [col.id];
+                    });
+                  }}
+                />
+                <Label>{col.label}</Label>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowInvoicePrintColumnsDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!invoiceForPrint) return;
+                handlePrintInvoice(invoiceForPrint, selectedInvoicePrintColumns);
+                setShowInvoicePrintColumnsDialog(false);
+              }}
+            >
+              Print
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

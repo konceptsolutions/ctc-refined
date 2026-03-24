@@ -24,6 +24,7 @@ export interface Customer {
   type: CustomerType;
   phone?: string;
   address?: string;
+  area?: string | null;
   balance?: number;
   creditLimit?: number;
   creditDays?: number;

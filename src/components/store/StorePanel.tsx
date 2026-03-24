@@ -70,6 +70,7 @@ import { StoreEditPO } from "./StoreEditPO";
 import { StoreEditSalesInvoice } from "./StoreEditSalesInvoice";
 import { StoreLocationAssign } from "./StoreLocationAssign";
 import { StoreAdjustedItem } from "./StoreAdjustedItem";
+import { printDeliveryChallan } from "@/lib/printDeliveryChallan";
 
 interface DirectPurchaseOrderItem {
   id: string;
@@ -493,7 +494,12 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             customerName: invoice.customerName || invoice.customer_name,
             status: invoice.status || "pending",
             grandTotal: invoice.grandTotal || invoice.grand_total || 0,
-            items_count: invoice.items?.length || 0,
+            items_count:
+              Number(invoice.items_count) ||
+              (Array.isArray(invoice.SalesInvoiceItem)
+                ? invoice.SalesInvoiceItem.length
+                : 0) ||
+              (Array.isArray(invoice.items) ? invoice.items.length : 0),
             deliveredTo: invoice.deliveredTo || invoice.delivered_to,
             createdAt: invoice.createdAt || invoice.created_at,
             customerType: invoice.customerType || 'walking',
@@ -571,6 +577,88 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       }
     } catch (error: any) {
       toast.error("Failed to load invoice details");
+    }
+  };
+
+  const handlePrintDeliveryChallan = async (order: StockOutOrder) => {
+    try {
+      const response = await apiClient.getSalesInvoice(order.id);
+      const invoiceData: any = response.data || response;
+      if (!invoiceData) {
+        toast.error("Failed to load invoice details for challan");
+        return;
+      }
+
+      const getPrintedBy = () => {
+        try {
+          const token = localStorage.getItem("authToken");
+          if (!token) return "Unknown User";
+          const parts = token.split(".");
+          if (parts.length < 2) return "Unknown User";
+          const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+          const payload = JSON.parse(atob(padded));
+          return (
+            payload?.name ||
+            payload?.username ||
+            payload?.fullName ||
+            payload?.userName ||
+            payload?.email ||
+            payload?.sub ||
+            "Unknown User"
+          );
+        } catch {
+          return "Unknown User";
+        }
+      };
+
+      const rawItems = invoiceData.SalesInvoiceItem || invoiceData.items || [];
+      const challanItems = rawItems.map((item: any) => {
+        const selectedLocations = Array.isArray(item.InvoiceRackShelf)
+          ? item.InvoiceRackShelf
+          : [];
+        const location = selectedLocations.length
+          ? selectedLocations
+              .map((loc: any) => {
+                const rack =
+                  loc?.Rack?.code ||
+                  loc?.Rack?.codeNo ||
+                  loc?.Rack?.rackCode ||
+                  loc?.rackCode ||
+                  "-";
+                const shelf =
+                  loc?.Shelf?.shelfNo || loc?.Shelf?.name || loc?.shelfNo || "-";
+                return `${rack}-${shelf}`;
+              })
+              .join(", ")
+          : "-";
+
+        return {
+          partNo: item.partNo || "-",
+          ssPartNo: item?.Part?.masterPartNo || item.partNo || "-",
+          description: item.description || "",
+          brand: item.brand || item?.Part?.Brand?.name || "",
+          uom: "NOS",
+          qty: Number(item.orderedQty || item.ordered_qty || 0),
+          deliveredQty: Number(item.deliveredQty || item.delivered_qty || 0),
+          pendingQty: Number(item.pendingQty || item.pending_qty || 0),
+          location,
+          weight: Number(item?.Part?.weight || 0),
+        };
+      });
+
+      printDeliveryChallan({
+        challanNo: `CH-${invoiceData.invoiceNo || order.invoiceNo}`,
+        invoiceNo: invoiceData.invoiceNo || order.invoiceNo,
+        invoiceDate: invoiceData.invoiceDate || order.invoiceDate,
+        customerName: invoiceData.customerName || order.customerName,
+        deliveredTo: invoiceData.deliveredTo || order.deliveredTo || "-",
+        status: invoiceData.status || order.status,
+        userName: getPrintedBy(),
+        items: challanItems,
+      });
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to print delivery challan");
     }
   };
 
@@ -1693,14 +1781,33 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
                                   <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      handlePrintDeliveryChallan(invoice)
+                                    }
+                                    title="Print Delivery Challan"
+                                  >
+                                    <Printer className="w-4 h-4 mr-1" />
+                                    Challan
+                                  </Button>
+                                  <Button
                                     variant="default"
                                     size="sm"
                                     onClick={() => handlePrintStockOutReceipt(invoice)}
                                     title="Confirm Stock Out"
-                                    disabled={invoice.status === "fully_delivered" || invoice.status === "reversed" || invoice.status === "partially_reversed" || invoice.status === "cancelled"}
+                                    disabled={
+                                      invoice.status === "pending" ||
+                                      invoice.status === "fully_delivered" ||
+                                      invoice.status === "reversed" ||
+                                      invoice.status === "partially_reversed" ||
+                                      invoice.status === "cancelled"
+                                    }
                                   >
-                                    <Printer className="w-4 h-4 mr-1" />
-                                    {invoice.status === "fully_delivered" 
+                                    <ArrowDownCircle className="w-4 h-4 mr-1" />
+                                    {invoice.status === "pending"
+                                      ? "Pending"
+                                      : invoice.status === "fully_delivered" 
                                       ? "Delivered" 
                                       : invoice.status === "reversed" || invoice.status === "partially_reversed"
                                         ? "Reversed"
