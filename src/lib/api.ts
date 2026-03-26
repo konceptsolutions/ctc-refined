@@ -2970,6 +2970,7 @@ class ApiClient {
       invoiceDate?: string;
       customerId?: string;
       customerType?: string;
+      term?: string;
       salesPerson?: string;
       accountId?: string;
       deliveredTo?: string;
@@ -3037,6 +3038,7 @@ class ApiClient {
 
   async createSalesInvoice(data: {
     invoiceDate: string;
+    term?: string;
     customerId?: string;
     customerName: string;
     customerType?: string;
@@ -3190,6 +3192,7 @@ class ApiClient {
     id: string,
     data: {
       invoiceDate?: string;
+      term?: string;
       customerName?: string;
       customerId?: string;
       deliveredTo?: string;

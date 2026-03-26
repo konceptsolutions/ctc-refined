@@ -189,6 +189,11 @@ export const SalesInvoice = () => {
   >({});
   const [loadingStock, setLoadingStock] = useState<Record<string, boolean>>({});
 
+  // Loading state for per-part machine models (fetched on demand).
+  const [loadingModels, setLoadingModels] = useState<
+    Record<string, boolean>
+  >({});
+
   // Accurate locations for parts (fetched on demand or refreshed)
   const [partLocations, setPartLocations] = useState<Record<string, any[]>>({});
   const [loadingLocations, setLoadingLocations] = useState<
@@ -255,6 +260,7 @@ export const SalesInvoice = () => {
   const [invoiceDate, setInvoiceDate] = useState(
     new Date().toISOString().split("T")[0],
   );
+  const [term, setTerm] = useState("");
 
   // Delivery Log
   const [showDeliveryLog, setShowDeliveryLog] = useState(false);
@@ -494,6 +500,8 @@ export const SalesInvoice = () => {
               // Fetch accurate stock balance and locations for this part
               fetchPartStockBalance(value);
               fetchPartLocations(value);
+              // Fetch machine models for this part so "In Stock" toggle can show them
+              fetchPartModels(value);
 
               // Auto-select first location if available in the cached part data
               if (part.locations && part.locations.length > 0) {
@@ -548,6 +556,60 @@ export const SalesInvoice = () => {
       setLoadingStock((prev) => ({ ...prev, [partId]: false }));
     }
   }, [partStockBalances]);
+
+  // Fetch machine models for a selected part.
+  // Your `/parts` list endpoint doesn't include `models`, but `/parts/:id` does.
+  const fetchPartModels = useCallback(
+    async (partId: string, force = false) => {
+      if (!partId) return;
+
+      const existingInParts = parts.find((p) => p.id === partId);
+      const existingInMap = selectedPartsMap[partId];
+      const existingModels =
+        existingInMap?.machineModels ?? existingInParts?.machineModels;
+
+      if (!force && existingModels && existingModels.length > 0) {
+        return;
+      }
+
+      setLoadingModels((prev) => ({ ...prev, [partId]: true }));
+      try {
+        const response = (await apiClient.getPart(partId)) as any;
+        const raw = response?.data ?? response;
+        const rawModels = Array.isArray(raw?.models) ? raw.models : [];
+
+        const machineModels = rawModels
+          .map((m: any) => {
+            const required = Number(
+              m.qty_used ?? m.qtyUsed ?? m.requiredQty ?? 0,
+            );
+            return {
+              id: String(m.id ?? `${partId}-${m.name}`),
+              name: String(m.name ?? ""),
+              requiredQty:
+                Number.isFinite(required) && required > 0 ? required : undefined,
+            };
+          })
+          .filter((mm: any) => mm.name);
+
+        setParts((prev) =>
+          prev.map((p) => (p.id === partId ? { ...p, machineModels } : p)),
+        );
+        setSelectedPartsMap((prev) => ({
+          ...prev,
+          [partId]: {
+            ...(prev[partId] || (existingInMap as any) || (existingInParts as any)),
+            machineModels,
+          },
+        }));
+      } catch (error) {
+        console.error("Failed to fetch part models:", error);
+      } finally {
+        setLoadingModels((prev) => ({ ...prev, [partId]: false }));
+      }
+    },
+    [parts, selectedPartsMap, setParts, setSelectedPartsMap],
+  );
 
   // Remove inline item
   const handleRemoveInlineItem = (id: string) => {
@@ -632,6 +694,19 @@ export const SalesInvoice = () => {
                 ? [{ id: p.brand_id || "", name: p.brand_name }]
                 : [],
               locations: p.locations || [],
+              machineModels: Array.isArray(p.models)
+                ? p.models
+                    .map((m: any) => {
+                      const required =
+                        Number(m.qty_used ?? m.qtyUsed ?? m.requiredQty ?? 0);
+                      return {
+                        id: String(m.id ?? `${p.id}-${m.name}`),
+                        name: String(m.name ?? ""),
+                        requiredQty: Number.isFinite(required) && required > 0 ? required : undefined,
+                      };
+                    })
+                    .filter((mm: any) => mm.name)
+                : [],
               unlocatedStock: p.unlocated_stock || 0,
             };
           })
@@ -772,6 +847,7 @@ export const SalesInvoice = () => {
             id: inv.id,
             invoiceNo: inv.invoiceNo,
             invoiceDate: inv.invoiceDate,
+            term: inv.term ?? null,
             customerType: inv.customerType as CustomerType,
             customerId: inv.customerId,
             customerName: inv.customerName,
@@ -1086,6 +1162,15 @@ export const SalesInvoice = () => {
       : receivedAmount;
   };
 
+  const getWalkinTermLabel = () => {
+    const hasBank = bankAmount > 0;
+    const hasCash = cashAmount > 0;
+    if (hasBank && !hasCash) return "online";
+    if (hasCash && !hasBank) return "cash";
+    if (hasBank && hasCash) return "cash+online";
+    return "";
+  };
+
   // Create or update invoice
   const handleSaveInvoice = async () => {
     if (
@@ -1301,10 +1386,19 @@ export const SalesInvoice = () => {
               : "Walk-in Customer"; // Cash Sale fallback
 
       let response;
+      const resolvedTerm =
+        newInvoice.customerType === "registered"
+          ? term.trim() || undefined
+          : selectedBankAccount && bankAmount > 0
+            ? "online"
+            : selectedCashAccount && cashAmount > 0
+              ? "cash"
+              : undefined;
       if (editingInvoiceId) {
         // UPDATE Existing Invoice
         response = await apiClient.updateSalesInvoice(editingInvoiceId, {
           invoiceDate: invoiceDate,
+          term: resolvedTerm,
           customerId: selectedCustomerId || undefined,
           customerName: customerName,
           deliveredTo: deliveredTo || undefined,
@@ -1332,6 +1426,7 @@ export const SalesInvoice = () => {
         // CREATE New Invoice
         response = await apiClient.createSalesInvoice({
           invoiceDate: invoiceDate,
+          term: resolvedTerm,
           customerId: selectedCustomerId || undefined,
           customerName: customerName,
           customerType: newInvoice.customerType as CustomerType,
@@ -1397,6 +1492,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -1478,6 +1574,7 @@ export const SalesInvoice = () => {
     setUseCustomGst(false);
     setDeliveredTo("");
     setRemarks("");
+    setTerm("");
     setInvoiceDate(new Date().toISOString().split("T")[0]); // Reset to today when starting a new invoice
     setSelectedCustomerId("");
     setSelectedCustomerName("");
@@ -1508,6 +1605,7 @@ export const SalesInvoice = () => {
           ? invDate.slice(0, 10)
           : new Date(invDate).toISOString().split("T")[0],
       );
+      setTerm(String(fullInvoice.term ?? invoice.term ?? ""));
       // Restore customer price type when editing
       const editCustomer = customers.find((c) => c.id === invoice.customerId);
       setCustomerPriceType(editCustomer?.priceType || null);
@@ -1630,6 +1728,7 @@ export const SalesInvoice = () => {
         if (item.selectedPartId) {
           fetchPartStockBalance(item.selectedPartId);
           fetchPartLocations(item.selectedPartId);
+          fetchPartModels(item.selectedPartId);
         }
       });
 
@@ -1781,6 +1880,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -1882,6 +1982,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -2021,6 +2122,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -2142,6 +2244,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -2228,6 +2331,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items:
           inv.SalesInvoiceItem?.map((item: any) => ({
@@ -2317,6 +2421,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -2410,6 +2515,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -2501,6 +2607,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -2589,6 +2696,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -2686,6 +2794,7 @@ export const SalesInvoice = () => {
         customerType: inv.customerType as CustomerType,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        term: inv.term ?? null,
         salesPerson: inv.salesPerson || "Admin",
         items: inv.SalesInvoiceItem?.map((item: any) => ({
           id: item.id,
@@ -2984,6 +3093,12 @@ export const SalesInvoice = () => {
                 <div>Page 1 of 1</div>
                 <div>${esc(invoice.invoiceNo)}</div>
                 <div>Date: ${esc(dateText)}</div>
+                ${
+                  invoice.customerType === "registered" &&
+                  String(invoice.term || "").trim()
+                    ? `<div>Credit for ${esc(String(invoice.term || "").trim())} days</div>`
+                    : ""
+                }
                 <div>User: ${esc(printedBy)}</div>
               </div>
             </div>
@@ -3790,6 +3905,37 @@ export const SalesInvoice = () => {
                     className="bg-background border-primary/20 h-9 text-sm"
                   />
                 </div>
+
+                <div className="space-y-1.5 w-56">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Term
+                  </Label>
+                  <Input
+                    type={newInvoice.customerType === "registered" ? "number" : "text"}
+                    min={0}
+                    placeholder={
+                      newInvoice.customerType === "registered"
+                        ? "Days"
+                        : "Auto (Cash / Online)"
+                    }
+                    value={
+                      newInvoice.customerType === "registered"
+                        ? term
+                        : selectedBankAccount && bankAmount > 0
+                          ? "online"
+                          : selectedCashAccount && cashAmount > 0
+                            ? "cash"
+                            : ""
+                    }
+                    onChange={(e) => {
+                      if (newInvoice.customerType === "registered") {
+                        setTerm(e.target.value);
+                      }
+                    }}
+                    readOnly={newInvoice.customerType !== "registered"}
+                    className="bg-background border-primary/20 h-9 text-sm"
+                  />
+                </div>
               </div>
             </div>
 
@@ -4140,35 +4286,66 @@ export const SalesInvoice = () => {
                                   />
                                   {showLastSaleInfo &&
                                     item.selectedPartId && (
-                                      <div className="mt-1 text-[10px] text-muted-foreground flex items-center gap-1">
-                                        {part &&
-                                        (part.lastSalePrice ||
-                                          part.lastSaleQty ||
-                                          part.lastSaleCustomerName) ? (
-                                          <>
-                                            <span className="font-semibold">
-                                              Last sold:
-                                            </span>
+                                      <div className="mt-1 text-[10px] text-muted-foreground flex flex-col gap-1.5">
+                                        <div className="flex items-center gap-1">
+                                          {part &&
+                                          (part.lastSalePrice ||
+                                            part.lastSaleQty ||
+                                            part.lastSaleCustomerName) ? (
+                                            <>
+                                              <span className="font-semibold">
+                                                Last sold:
+                                              </span>
+                                              <span>
+                                                {part.lastSaleQty
+                                                  ? `${part.lastSaleQty} pcs`
+                                                  : ""}
+                                                {part.lastSaleQty &&
+                                                (part.lastSalePrice ||
+                                                  part.lastSaleCustomerName)
+                                                  ? " "
+                                                  : ""}
+                                                {part.lastSalePrice
+                                                  ? `@ Rs ${part.lastSalePrice.toFixed(2)}`
+                                                  : ""}
+                                                {part.lastSaleCustomerName
+                                                  ? ` to ${part.lastSaleCustomerName}`
+                                                  : ""}
+                                              </span>
+                                            </>
+                                          ) : (
+                                            <span>No last sale info</span>
+                                          )}
+                                        </div>
+
+                                        <div>
+                                          {part?.machineModels &&
+                                          part.machineModels.length > 0 ? (
+                                            <div className="flex flex-wrap gap-2">
+                                              {part.machineModels.map((m) => (
+                                                <span
+                                                  key={m.id}
+                                                  className="inline-flex items-center gap-1 px-1 py-0.5 rounded bg-muted/30 border border-border/60"
+                                                >
+                                                  <span className="font-semibold">
+                                                    {m.name}
+                                                  </span>
+                                                  {m.requiredQty ? (
+                                                    <span className="text-muted-foreground/80">
+                                                      (Req: {m.requiredQty} pcs)
+                                                    </span>
+                                                  ) : null}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          ) : (
                                             <span>
-                                              {part.lastSaleQty
-                                                ? `${part.lastSaleQty} pcs`
-                                                : ""}
-                                              {part.lastSaleQty &&
-                                              (part.lastSalePrice ||
-                                                part.lastSaleCustomerName)
-                                                ? " "
-                                                : ""}
-                                              {part.lastSalePrice
-                                                ? `@ Rs ${part.lastSalePrice.toFixed(2)}`
-                                                : ""}
-                                              {part.lastSaleCustomerName
-                                                ? ` to ${part.lastSaleCustomerName}`
-                                                : ""}
+                                              {loadingModels[item.selectedPartId]
+                                                ? "Loading models..."
+                                                : "No machine models"}
                                             </span>
-                                          </>
-                                        ) : (
-                                          <span>No last sale info</span>
-                                        )}
+                                          )}
+                                        </div>
                                       </div>
                                     )}
                                   {item.selectedPartId && (
@@ -4881,7 +5058,7 @@ export const SalesInvoice = () => {
                                       )}
                                     </div>
                                     {showLastSaleInfo && (
-                                      <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap">
+                                      <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap mt-1">
                                         Cost: {avgCost.toFixed(2)}
                                       </span>
                                     )}
@@ -5575,6 +5752,7 @@ export const SalesInvoice = () => {
                     <TableRow>
                       <TableHead>Invoice #</TableHead>
                       <TableHead>Date</TableHead>
+                      <TableHead>Term</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Tax %</TableHead>
@@ -5602,6 +5780,12 @@ export const SalesInvoice = () => {
                             Date
                           </span>
                           {formatInvoiceDateDisplay(inv.invoiceDate)}
+                        </TableCell>
+                        <TableCell className="md:table-cell block p-0 md:p-4">
+                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                            Term
+                          </span>
+                          {inv.term || "-"}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
@@ -5896,7 +6080,7 @@ export const SalesInvoice = () => {
                     {filteredInvoices.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={9}
+                          colSpan={11}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No invoices found

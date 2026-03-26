@@ -610,6 +610,7 @@ model SalesInvoice {
   id               String             @id @default(uuid())
   invoiceNo        String             @unique
   invoiceDate      DateTime
+  term             String?
   customerId       String?
   customerName     String
   customerType     String

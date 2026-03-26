@@ -344,7 +344,21 @@ router.get("/", async (req: Request, res: Response) => {
         ls.last_sale_qty,
         ls.last_sale_price,
         ls.last_sale_customer,
-        ls.last_sale_date
+        ls.last_sale_date,
+        COALESCE(
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id', m.id,
+                'name', m.name,
+                'qty_used', m."qtyUsed"
+              )
+            )
+            FROM "Model" m
+            WHERE m."partId" = p.id
+          ),
+          '[]'::json
+        ) as models
         ${showLocations ? ", COALESCE(loc.locations, '[]'::jsonb) as locations, (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock" : ""}
         ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
       FROM "Part" p
@@ -462,6 +476,7 @@ router.get("/", async (req: Request, res: Response) => {
         lastSalePrice: parseFloat(part.last_sale_price) || 0,
         lastSaleCustomerName: part.last_sale_customer || "",
         lastSaleDate: part.last_sale_date || null,
+        models: part.models || [],
         // Only include images for small result sets
         image_p1: skipImages ? null : part.imageP1 || part.imagep1,
         image_p2: skipImages ? null : part.imageP2 || part.imagep2,

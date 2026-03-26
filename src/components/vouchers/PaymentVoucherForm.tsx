@@ -23,6 +23,9 @@ interface PaymentVoucherFormProps {
 
 export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, onAddAccount, onSave }: PaymentVoucherFormProps) => {
   const { toast } = useToast();
+  const cashBankValues = new Set(cashBankAccounts.map((a) => a.value));
+  // PV: Account Dr must NOT include cash/bank accounts.
+  const paymentDrOptions = accounts.filter((a) => !cashBankValues.has(a.value));
   const [paidTo, setPaidTo] = useState("");
   // Initialize date in YYYY-MM-DD format for date input
   const getTodayDate = () => {
@@ -173,7 +176,7 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
           <div key={entry.id} className="grid grid-cols-12 gap-4 items-center">
             <div className="col-span-4">
               <SearchableSelect
-                options={accounts}
+                options={paymentDrOptions}
                 value={entry.accountDr}
                 onValueChange={(v) => updateEntry(entry.id, "accountDr", v)}
                 placeholder="Select..."

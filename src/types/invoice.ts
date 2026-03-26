@@ -127,6 +127,7 @@ export interface Invoice {
   id: string;
   invoiceNo: string;
   invoiceDate: string;
+  term?: string | null;
   customerType: CustomerType;
   customerId: string;
   customerName: string;

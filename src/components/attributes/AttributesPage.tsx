@@ -334,65 +334,25 @@ function ApplicationDialogForm({
   onClose,
   onSubmit,
   editingApplication,
-  masterParts,
-  masterPartsLoading,
   initialName = "",
-  initialMasterPartNo = "",
   initialStatus = "Active",
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (
-    name: string,
-    masterPartNo: string,
-    status: "Active" | "Inactive",
-  ) => void;
+  onSubmit: (name: string, status: "Active" | "Inactive") => void;
   editingApplication: Application | null;
-  masterParts: string[];
-  masterPartsLoading: boolean;
   initialName?: string;
-  initialMasterPartNo?: string;
   initialStatus?: "Active" | "Inactive";
 }) {
   const [name, setName] = useState(initialName);
-  const [masterPartNo, setMasterPartNo] = useState(initialMasterPartNo);
   const [status, setStatus] = useState<"Active" | "Inactive">(initialStatus);
-  const [masterPartFilter, setMasterPartFilter] = useState("");
-  const [masterPartOpen, setMasterPartOpen] = useState(false);
-  const masterPartContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
       setName(initialName);
-      setMasterPartNo(initialMasterPartNo);
       setStatus(initialStatus);
     }
-  }, [initialName, initialMasterPartNo, initialStatus, open]);
-
-  useEffect(() => {
-    if (!masterPartOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        masterPartContainerRef.current &&
-        !masterPartContainerRef.current.contains(e.target as Node)
-      ) {
-        setMasterPartOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [masterPartOpen]);
-
-  const filteredMasterParts = useMemo(() => {
-    const q = (masterPartFilter || "").trim().toLowerCase();
-    if (!q) return masterParts;
-    return masterParts.filter((mp) => (mp || "").toLowerCase().includes(q));
-  }, [masterParts, masterPartFilter]);
-
-  const visibleMasterParts = useMemo(
-    () => filteredMasterParts.slice(0, MAX_MASTER_PART_OPTIONS_RENDERED),
-    [filteredMasterParts],
-  );
+  }, [initialName, initialStatus, open]);
 
   if (!open) return null;
 
@@ -410,80 +370,6 @@ function ApplicationDialogForm({
           autoFocus
           data-preserve-case="true"
         />
-      </div>
-      <div>
-        <label className="block text-sm text-muted-foreground mb-1.5">
-          Master Part Number *
-        </label>
-        {masterPartsLoading ? (
-          <div className="flex h-9 items-center rounded-md border border-input bg-muted/30 px-3 text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Loading master parts...
-          </div>
-        ) : (
-          <div ref={masterPartContainerRef} className="relative">
-            <div className="relative flex">
-              <Input
-                value={masterPartOpen ? masterPartFilter : masterPartNo}
-                onChange={(e) => {
-                  setMasterPartFilter(e.target.value);
-                  setMasterPartOpen(true);
-                }}
-                onFocus={() => {
-                  setMasterPartOpen(true);
-                  setMasterPartFilter(masterPartNo);
-                }}
-                placeholder="Type or select master part number"
-                className="h-9 pr-9"
-                data-preserve-case="true"
-              />
-              <button
-                type="button"
-                onClick={() => setMasterPartOpen((o) => !o)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-            </div>
-            {masterPartOpen && (
-              <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-60 overflow-auto">
-                {visibleMasterParts.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                    {masterPartFilter ? "No matches" : "Type to search"}
-                  </div>
-                ) : (
-                  visibleMasterParts.map((mp) => (
-                    <button
-                      key={mp}
-                      type="button"
-                      onClick={() => {
-                        setMasterPartNo(mp);
-                        setMasterPartFilter("");
-                        setMasterPartOpen(false);
-                      }}
-                      className={cn(
-                        "w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors",
-                        masterPartNo === mp && "bg-primary/10 text-primary",
-                      )}
-                    >
-                      {mp}
-                    </button>
-                  ))
-                )}
-                {filteredMasterParts.length >
-                  MAX_MASTER_PART_OPTIONS_RENDERED && (
-                  <div className="px-3 py-1.5 text-xs text-muted-foreground border-t border-border">
-                    Showing first {MAX_MASTER_PART_OPTIONS_RENDERED} of{" "}
-                    {filteredMasterParts.length}...
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        <p className="text-xs text-muted-foreground mt-1">
-          Application is linked to this master part.
-        </p>
       </div>
       <div>
         <label className="block text-sm text-muted-foreground mb-1.5">
@@ -506,7 +392,7 @@ function ApplicationDialogForm({
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={() => onSubmit(name, masterPartNo, status)}>
+        <Button onClick={() => onSubmit(name, status)}>
           {editingApplication ? "Update" : "Add"}
         </Button>
       </div>
@@ -1028,11 +914,9 @@ export const AttributesPage = () => {
 
   const handleAddApplication = async (
     name: string,
-    masterPartNo: string,
     status: "Active" | "Inactive",
   ) => {
     const trimmedName = name.trim();
-    const trimmedMasterPartNo = masterPartNo.trim();
 
     if (!trimmedName) {
       toast({
@@ -1042,27 +926,15 @@ export const AttributesPage = () => {
       });
       return;
     }
-    if (!trimmedMasterPartNo) {
-      toast({
-        title: "Error",
-        description: "Master Part Number is required",
-        variant: "destructive",
-      });
-      return;
-    }
-    // Prevent duplicate: same name + same master part already in list
+    // Prevent duplicate by application name
     if (!editingApplication) {
       const existing = applications.find(
-        (a) =>
-          a.name.toLowerCase() === trimmedName.toLowerCase() &&
-          (a.masterPartNo ?? "").trim().toLowerCase() ===
-            trimmedMasterPartNo.toLowerCase(),
+        (a) => a.name.toLowerCase() === trimmedName.toLowerCase(),
       );
       if (existing) {
         toast({
           title: "Duplicate application",
-          description:
-            "An application with this name and master part number already exists.",
+          description: "An application with this name already exists.",
           variant: "destructive",
         });
         return;
@@ -1075,7 +947,6 @@ export const AttributesPage = () => {
           editingApplication.id,
           {
             name: trimmedName,
-            master_part_no: trimmedMasterPartNo,
             status: status,
             subcategory_id: "",
           },
@@ -1112,7 +983,6 @@ export const AttributesPage = () => {
       } else {
         const response = await apiClient.createApplication({
           name: trimmedName,
-          master_part_no: trimmedMasterPartNo,
           status: status,
           subcategory_id: "",
         });
@@ -1448,20 +1318,10 @@ export const AttributesPage = () => {
   };
 
   const toggleApplicationStatus = async (application: Application) => {
-    if (!application.masterPartNo) {
-      toast({
-        title: "Error",
-        description:
-          "Master Part Number is required. Edit the application to set it.",
-        variant: "destructive",
-      });
-      return;
-    }
     const newStatus = application.status === "Active" ? "Inactive" : "Active";
     try {
       const response = await apiClient.updateApplication(application.id, {
         name: application.name,
-        master_part_no: application.masterPartNo,
         status: newStatus,
       });
       if (response.error) {
@@ -1950,10 +1810,7 @@ export const AttributesPage = () => {
             onClose={resetApplicationForm}
             onSubmit={handleAddApplication}
             editingApplication={editingApplication}
-            masterParts={masterParts}
-            masterPartsLoading={masterPartsLoading}
             initialName={newApplicationName}
-            initialMasterPartNo={newApplicationMasterPartNo}
             initialStatus={newApplicationStatus}
           />
         </DialogContent>

@@ -131,9 +131,13 @@ export const VoucherManagement = () => {
   const cashBankAccounts = useMemo(() => {
     return rawAccounts
       .filter((acc: any) => {
-        const subgroupCode = acc.subgroup?.code || "";
-        // Include Cash (101), Bank (102), and marketable securities/other related (103)
-        return subgroupCode === "101" || subgroupCode === "102" || subgroupCode === "103";
+        const subgroupCode = acc.subgroup?.code ?? acc.Subgroup?.code ?? "";
+
+        // IMPORTANT: For voucher DR/CR cash&bank dropdown, we must only use
+        // the CASH (subgroup 101) and BANK (subgroup 102) subgroups.
+        // Do NOT fallback using account code prefixes, otherwise you may
+        // accidentally include non-cash accounts.
+        return subgroupCode === "103" || subgroupCode === "102";
       })
       .map((acc: any) => ({
         value: acc.id,
@@ -377,13 +381,18 @@ export const VoucherManagement = () => {
 
     const voucherDate = convertDateToISO(data.date);
 
+    // Payment/Receipt forms send `entries`.
+    // Older/other flows may send `VoucherEntry`.
+    const paymentReceiptEntries =
+      (data.VoucherEntry ?? data.entries ?? []) as any[];
+
     if (data.type === "payment") {
       // Convert Payment Voucher data
-      const entries: VoucherEntry[] = data.VoucherEntry.map((entry: any) => ({
+      const entries: VoucherEntry[] = paymentReceiptEntries.map((entry: any) => ({
         id: entry.id,
-        account: entry.accountDr,
+        account: entry.accountDr ?? entry.account,
         description: entry.description || "",
-        debit: entry.drAmount || 0,
+        debit: entry.drAmount ?? entry.debit ?? 0,
         credit: 0,
       }));
       // Add the Cr account entry
@@ -410,12 +419,12 @@ export const VoucherManagement = () => {
       };
     } else if (data.type === "receipt") {
       // Convert Receipt Voucher data
-      const entries: VoucherEntry[] = data.VoucherEntry.map((entry: any) => ({
+      const entries: VoucherEntry[] = paymentReceiptEntries.map((entry: any) => ({
         id: entry.id,
-        account: entry.accountCr,
+        account: entry.accountCr ?? entry.account,
         description: entry.description || "",
         debit: 0,
-        credit: entry.crAmount || 0,
+        credit: entry.crAmount ?? entry.credit ?? 0,
       }));
       // Add the Dr account entry
       entries.unshift({

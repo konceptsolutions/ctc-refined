@@ -15,24 +15,21 @@ import {
 } from "lucide-react";
 
 // Sales sub-modules
-import { CustomerPriceStructures } from "@/components/sales/CustomerPriceStructures";
 import { SalesInquiry } from "@/components/sales/SalesInquiry";
 import { SalesQuotation } from "@/components/sales/SalesQuotation";
 import { SalesInvoice } from "@/components/sales/SalesInvoice";
 import { SalesReturns } from "@/components/sales/SalesReturns";
 import { DistributorAging } from "@/components/sales/DistributorAging";
 import { ReceivableReminders } from "@/components/sales/ReceivableReminders";
-import { DeliveryChallan } from "@/components/sales/DeliveryChallan";
 
 type SalesTab =
   | "inquiry"
-  | "price-structures"
   | "quotation"
   | "invoice"
   | "returns"
   | "distributor-aging"
   | "receivable-reminders"
-  | "delivery-challan";
+  ;
 
 interface TabConfig {
   id: SalesTab;
@@ -46,8 +43,6 @@ const tabs: TabConfig[] = [
   { id: "quotation", label: "Quotation", icon: FileText, description: "Create & manage quotations" },
   { id: "invoice", label: "Invoice", icon: Receipt, description: "Sales invoices with stock reserve" },
   { id: "returns", label: "Returns", icon: RotateCcw, description: "Process returns" },
-  { id: "delivery-challan", label: "Delivery", icon: Truck, description: "Dispatch & confirmation" },
-  { id: "price-structures", label: "Pricing", icon: DollarSign, description: "Retail / Wholesale / Market pricing" },
   { id: "distributor-aging", label: "Aging Report", icon: Clock, description: "Aging report analysis" },
   { id: "receivable-reminders", label: "Receivables", icon: Bell, description: "Reminders & rescheduling" },
 ];
@@ -71,8 +66,6 @@ const Sales = () => {
     switch (activeTab) {
       case "inquiry":
         return <SalesInquiry />;
-      case "price-structures":
-        return <CustomerPriceStructures />;
       case "quotation":
         return <SalesQuotation />;
       case "invoice":
@@ -83,8 +76,6 @@ const Sales = () => {
         return <DistributorAging />;
       case "receivable-reminders":
         return <ReceivableReminders />;
-      case "delivery-challan":
-        return <DeliveryChallan />;
       default:
         return <SalesInquiry />;
     }

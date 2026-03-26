@@ -24,6 +24,9 @@ interface ReceiptVoucherFormProps {
 
 export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, onAddAccount, onSave, generateVoucherNo }: ReceiptVoucherFormProps) => {
   const { toast } = useToast();
+  const cashBankValues = new Set(cashBankAccounts.map((a) => a.value));
+  // RV: Account Cr must NOT include cash/bank accounts.
+  const receiptCrOptions = accounts.filter((a) => !cashBankValues.has(a.value));
   const [receivedFrom, setReceivedFrom] = useState("");
   const [voucherNo, setVoucherNo] = useState(generateVoucherNo());
   // Initialize date in YYYY-MM-DD format for date input
@@ -187,7 +190,7 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
           <div key={entry.id} className="grid grid-cols-12 gap-4 items-center">
             <div className="col-span-4">
               <SearchableSelect
-                options={accounts}
+                options={receiptCrOptions}
                 value={entry.accountCr}
                 onValueChange={(v) => updateEntry(entry.id, "accountCr", v)}
                 placeholder="Select..."

@@ -207,7 +207,11 @@ export const PartEntryForm = ({
   const fetchApplications = async (subcategoryId?: string, search?: string) => {
     setApplicationsLoading(true);
     try {
-      const res: any = await apiClient.getApplications(subcategoryId, search);
+      const res: any = await apiClient.getApplications(
+        subcategoryId,
+        undefined,
+        search,
+      );
       const raw = Array.isArray(res)
         ? res
         : Array.isArray(res?.data)
@@ -369,26 +373,17 @@ export const PartEntryForm = ({
     }
   }, [showBrandDropdown, brandSearch]);
 
-  // Fetch applications when application dropdown is open (scoped to selected subcategory)
+  // Fetch applications when application dropdown is open (independent of subcategory/master part)
   useEffect(() => {
     if (!showApplicationDropdown) return;
 
     const query = formData.application?.trim() || "";
     const timeoutId = setTimeout(() => {
-      fetchApplications(
-        subCategoryId || undefined,
-        query.length > 0 ? query : undefined,
-      );
+      fetchApplications(undefined, query.length > 0 ? query : undefined);
     }, 200);
 
     return () => clearTimeout(timeoutId);
-  }, [showApplicationDropdown, subCategoryId, formData.application]);
-
-  // Clear applications when subcategory changes
-  useEffect(() => {
-    setApplications([]);
-    setApplicationHighlightedIndex(-1);
-  }, [subCategoryId]);
+  }, [showApplicationDropdown, formData.application]);
 
   // ============================================
   // MASTER PART NO SEARCH
@@ -3062,7 +3057,6 @@ export const PartEntryForm = ({
                           setFormData((prev) => ({
                             ...prev,
                             subCategory: "",
-                            application: "",
                           }));
                         } else if (
                           categoryHighlightedIndex === filtered.length &&
@@ -3077,7 +3071,6 @@ export const PartEntryForm = ({
                           setFormData((prev) => ({
                             ...prev,
                             subCategory: "",
-                            application: "",
                           }));
                         }
                       } else if (e.key === "Escape") {
@@ -3167,7 +3160,6 @@ export const PartEntryForm = ({
                                   setFormData((prev) => ({
                                     ...prev,
                                     subCategory: "",
-                                    application: "",
                                   }));
                                 }}
                                 className={cn(
@@ -3197,7 +3189,6 @@ export const PartEntryForm = ({
                                 setFormData((prev) => ({
                                   ...prev,
                                   subCategory: "",
-                                  application: "",
                                 }));
                               }}
                               className={cn(
@@ -3321,7 +3312,6 @@ export const PartEntryForm = ({
                           setSubcategorySearch(selectedSubcategory.name);
                           setShowSubcategoryDropdown(false);
                           setSubcategoryHighlightedIndex(-1);
-                          setFormData((prev) => ({ ...prev, application: "" }));
                           setTimeout(() => {
                             applicationInputRef.current?.focus();
                           }, 50);
@@ -3335,7 +3325,6 @@ export const PartEntryForm = ({
                           setSubcategorySearch(newValue);
                           setShowSubcategoryDropdown(false);
                           setSubcategoryHighlightedIndex(-1);
-                          setFormData((prev) => ({ ...prev, application: "" }));
                           setTimeout(() => {
                             applicationInputRef.current?.focus();
                           }, 50);
@@ -3437,10 +3426,6 @@ export const PartEntryForm = ({
                                   setSubcategorySearch(subcategory.name);
                                   setShowSubcategoryDropdown(false);
                                   setSubcategoryHighlightedIndex(-1);
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    application: "",
-                                  }));
                                   setTimeout(() => {
                                     applicationInputRef.current?.focus();
                                   }, 50);
@@ -3470,10 +3455,6 @@ export const PartEntryForm = ({
                                 setSubcategorySearch(newValue);
                                 setShowSubcategoryDropdown(false);
                                 setSubcategoryHighlightedIndex(-1);
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  application: "",
-                                }));
                                 setTimeout(() => {
                                   applicationInputRef.current?.focus();
                                 }, 50);
@@ -3642,15 +3623,22 @@ export const PartEntryForm = ({
                         const filtered = applications.filter(
                           (a) => !query || a.name.toLowerCase().includes(query),
                         );
+                        const rawTyped = formData.application?.trim() || "";
+                        const exactMatch = filtered.some(
+                          (a) => a.name.toLowerCase() === rawTyped.toLowerCase(),
+                        );
+                        const showAddNew = rawTyped.length > 0 && !exactMatch;
 
                         if (filtered.length === 0) {
-                          return (
-                            <div className="px-4 py-3 text-sm text-muted-foreground">
-                              {query
-                                ? "No applications found matching your search"
-                                : "No applications available"}
-                            </div>
-                          );
+                          if (!showAddNew) {
+                            return (
+                              <div className="px-4 py-3 text-sm text-muted-foreground">
+                                {query
+                                  ? "No applications found matching your search"
+                                  : "No applications available"}
+                              </div>
+                            );
+                          }
                         }
 
                         return (
@@ -3679,6 +3667,57 @@ export const PartEntryForm = ({
                                 {app.name}
                               </button>
                             ))}
+                            {showAddNew && (
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const newName = rawTyped;
+                                  if (!newName) return;
+                                  try {
+                                    const resp: any =
+                                      await apiClient.createApplication({
+                                        name: newName,
+                                      });
+                                    const created =
+                                      resp?.data?.data || resp?.data || resp;
+                                    if (created?.name) {
+                                      handleInputChange(
+                                        "application",
+                                        String(created.name),
+                                      );
+                                    } else {
+                                      handleInputChange("application", newName);
+                                    }
+                                    await fetchApplications(
+                                      undefined,
+                                      String(created?.name || newName),
+                                    );
+                                    setShowApplicationDropdown(false);
+                                    setApplicationHighlightedIndex(-1);
+                                    toast({
+                                      title: "Application added",
+                                      description: `"${created?.name || newName}" created successfully.`,
+                                    });
+                                  } catch (error: any) {
+                                    toast({
+                                      title: "Error",
+                                      description:
+                                        error?.error ||
+                                        error?.message ||
+                                        "Failed to create application",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                }}
+                                className="w-full text-left px-4 py-3 text-sm hover:bg-muted transition-colors border-t border-border bg-muted/30"
+                              >
+                                <span className="text-primary font-medium">
+                                  Add new:{" "}
+                                </span>
+                                <span>{rawTyped}</span>
+                              </button>
+                            )}
                           </>
                         );
                       })()

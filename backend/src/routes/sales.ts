@@ -919,6 +919,7 @@ router.post(
         invoiceDate,
         customerId,
         customerType,
+        term,
         salesPerson,
         accountId,
         deliveredTo,
@@ -988,16 +989,21 @@ router.post(
       const overallDiscount = discount || 0;
       const taxAmount = tax || 0;
       const grandTotal = subtotal - overallDiscount + taxAmount;
+      const normalizedCustomerType = customerType || "registered";
+      const resolvedTerm =
+        normalizedCustomerType === "registered"
+          ? String(term ?? "").trim() || null
+          : null;
 
       // Create invoice
-      const invoice = await prisma.salesInvoice.create({
-        data: {
+      const invoiceCreateData: any = {
           id: crypto.randomUUID(),
           invoiceNo,
           invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
           customerId: customerId || null,
           customerName: quotation.customerName,
-          customerType: customerType || "registered",
+          customerType: normalizedCustomerType,
+          term: resolvedTerm,
           salesPerson: salesPerson || "Admin",
           subtotal,
           overallDiscount,
@@ -1033,7 +1039,10 @@ router.post(
               brand: item.Part.Brand?.name || "",
             })),
           },
-        },
+        };
+
+      const invoice = await prisma.salesInvoice.create({
+        data: invoiceCreateData,
         include: {
           SalesInvoiceItem: {
             include: {
@@ -1424,6 +1433,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
       customerId,
       customerName,
       customerType,
+      term,
       salesPerson,
       accountId,
       bankAccountId,
@@ -1440,6 +1450,18 @@ router.post("/invoices", async (req: Request, res: Response) => {
       grandTotal,
       paidAmount,
     } = req.body;
+
+    const normalizedCustomerType = customerType || "registered";
+    const parsedBankAmount = Number(bankAmount || 0);
+    const parsedCashAmount = Number(cashAmount || 0);
+    const resolvedTerm =
+      normalizedCustomerType === "registered"
+        ? String(term ?? "").trim() || null
+        : parsedBankAmount > 0
+          ? "online"
+          : parsedCashAmount > 0
+            ? "cash"
+            : null;
 
     // Check stock availability
     for (const item of items) {
@@ -1488,7 +1510,8 @@ router.post("/invoices", async (req: Request, res: Response) => {
         invoiceDate: new Date(invoiceDate),
         customerId: customerId || null,
         customerName,
-        customerType: customerType || "registered",
+        customerType: normalizedCustomerType,
+        term: resolvedTerm,
         salesPerson: salesPerson || "Admin",
         accountId: finalAccountId || null,
         subtotal: subtotal || 0,
@@ -2386,6 +2409,7 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
       invoiceDate,
       customerName,
       customerId,
+      term,
       deliveredTo,
       remarks,
       items,
@@ -2457,6 +2481,9 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
     if (remarks !== undefined) {
       updateData.remarks = remarks;
     }
+    if (term !== undefined) {
+      updateData.term = String(term ?? "").trim() || null;
+    }
     if (overallDiscount !== undefined) {
       updateData.overallDiscount = overallDiscount;
     }
@@ -2485,6 +2512,18 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
 
     if (paidAmount !== undefined) {
       updateData.paidAmount = paidAmount;
+    }
+
+    // For walking customer invoices, always store payment term as cash/online
+    if (existingInvoice.customerType === "walking") {
+      const parsedBankAmount = Number(bankAmount || 0);
+      const parsedCashAmount = Number(cashAmount || 0);
+      updateData.term =
+        parsedBankAmount > 0
+          ? "online"
+          : parsedCashAmount > 0
+            ? "cash"
+            : (existingInvoice as any).term || null;
     }
 
     // Recalculate payment status if relevant fields changed
