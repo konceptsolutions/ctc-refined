@@ -2271,6 +2271,26 @@ class ApiClient {
     );
   }
 
+  async getCustomerAgingOverdueInvoices(params?: {
+    from_date?: string;
+    to_date?: string;
+    search?: string;
+    sort_by?: "due_date" | "due_amount" | "invoice_date";
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/reports/analytics/customer-aging-overdue${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
   async getSupplierPerformance(params?: {
     from_date?: string;
     to_date?: string;

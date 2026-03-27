@@ -969,6 +969,81 @@ router.get('/analytics/customer-aging', async (req: Request, res: Response) => {
   }
 });
 
+// Overdue invoices by term date (unpaid/partial)
+router.get('/analytics/customer-aging-overdue', async (req: Request, res: Response) => {
+  try {
+    const { from_date, to_date, search, sort_by } = req.query;
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    const invoices = await prisma.salesInvoice.findMany({
+      where: {
+        status: { not: 'cancelled' },
+        paymentStatus: { not: 'paid' },
+        term: { not: null },
+      },
+      include: {
+        Customer: true,
+      },
+      orderBy: {
+        invoiceDate: 'asc',
+      },
+    });
+
+    const fromDate = from_date ? new Date(String(from_date)) : null;
+    const toDate = to_date ? new Date(String(to_date)) : null;
+    if (toDate) toDate.setHours(23, 59, 59, 999);
+    const searchText = String(search || '').trim().toLowerCase();
+
+    const rows = invoices
+      .map((inv) => {
+        const rawTerm = String(inv.term || '').trim();
+        const termDays = parseInt(rawTerm, 10);
+        if (!Number.isFinite(termDays) || termDays <= 0) return null;
+
+        const dueDate = new Date(inv.invoiceDate);
+        dueDate.setDate(dueDate.getDate() + termDays);
+
+        const dueAmount = Math.max(0, Number(inv.grandTotal || 0) - Number(inv.paidAmount || 0));
+        if (dueAmount <= 0) return null;
+        if (dueDate > today) return null;
+
+        if (fromDate && dueDate < fromDate) return null;
+        if (toDate && dueDate > toDate) return null;
+
+        const customerName = inv.customerName || inv.Customer?.name || 'Unknown';
+        if (searchText) {
+          const haystack = `${customerName} ${inv.invoiceNo}`.toLowerCase();
+          if (!haystack.includes(searchText)) return null;
+        }
+
+        return {
+          id: inv.id,
+          customer: customerName,
+          invoice_no: inv.invoiceNo,
+          invoice_date: inv.invoiceDate,
+          term: rawTerm,
+          due_date: dueDate,
+          due_amount: dueAmount,
+          payment_status: inv.paymentStatus,
+        };
+      })
+      .filter(Boolean) as any[];
+
+    if (sort_by === 'due_amount') {
+      rows.sort((a, b) => b.due_amount - a.due_amount);
+    } else if (sort_by === 'invoice_date') {
+      rows.sort((a, b) => new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime());
+    } else {
+      rows.sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+    }
+
+    res.json({ data: rows });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Supplier Performance
 router.get('/analytics/supplier-performance', async (req: Request, res: Response) => {
   try {

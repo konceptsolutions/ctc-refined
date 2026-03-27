@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,11 +37,13 @@ import { Search, Bell, Calendar as CalendarIcon, CreditCard, Download, X } from 
 import { toast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import apiClient from "@/lib/api";
 
 interface Receivable {
   id: string;
   invoiceNo: string;
   invoiceDate: string;
+  term: string;
   customerName: string;
   customerCode: string;
   balance: number;
@@ -58,6 +60,7 @@ const mockReceivables: Receivable[] = [];
 
 export const ReceivableReminders = () => {
   const [receivables, setReceivables] = useState<Receivable[]>(mockReceivables);
+  const [loadingReceivables, setLoadingReceivables] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
@@ -94,12 +97,89 @@ export const ReceivableReminders = () => {
   });
 
   // Calculate summary stats
-  const totalReceivables = receivables.length;
-  const totalAmount = receivables.reduce((sum, r) => sum + r.balance, 0);
-  const overdueCount = receivables.filter((r) => r.status === "overdue" || r.daysOverdue > 0).length;
-  const overdueAmount = receivables.filter((r) => r.daysOverdue > 0).reduce((sum, r) => sum + r.balance, 0);
-  const pendingReminders = receivables.filter((r) => r.remindersSent > 0 && r.status !== "pending").length;
-  const promisedCount = receivables.filter((r) => r.promisedPayments > 0).length;
+  // Total invoice amount = received + remaining for all invoices
+  const totalInvoiceAmount = receivables.reduce(
+    (sum, r) => sum + Number(r.paidAmount || 0) + Number(r.balance || 0),
+    0,
+  );
+  const totalReceivedAmount = receivables.reduce(
+    (sum, r) => sum + Number(r.paidAmount || 0),
+    0,
+  );
+  const overdueCount = receivables.filter(
+    (r) => r.status === "overdue" || r.daysOverdue > 0,
+  ).length;
+  // Remaining overdue amount only
+  const overdueAmount = receivables
+    .filter((r) => r.status === "overdue" || r.daysOverdue > 0)
+    .reduce((sum, r) => sum + Number(r.balance || 0), 0);
+
+  useEffect(() => {
+    const fetchReceivables = async () => {
+      try {
+        setLoadingReceivables(true);
+        const response = await apiClient.getSalesInvoices();
+        const invoices = Array.isArray(response) ? response : ((response as any)?.data || []);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const mapped: Receivable[] = invoices.map((inv: any) => {
+          const invoiceDateObj = new Date(inv.invoiceDate);
+          const rawTerm = String(inv.term || "").trim();
+          const termDays = parseInt(rawTerm, 10);
+
+          const dueDateObj = new Date(invoiceDateObj);
+          if (Number.isFinite(termDays) && termDays > 0) {
+            dueDateObj.setDate(dueDateObj.getDate() + termDays);
+          }
+
+          const remaining = Math.max(
+            0,
+            Number(inv.grandTotal || 0) - Number(inv.paidAmount || 0),
+          );
+
+          const dueAt = new Date(dueDateObj);
+          dueAt.setHours(0, 0, 0, 0);
+          const daysOverdue =
+            remaining > 0 && dueAt < today
+              ? Math.floor((today.getTime() - dueAt.getTime()) / (1000 * 60 * 60 * 24))
+              : 0;
+
+          const status: Receivable["status"] =
+            remaining <= 0 ? "pending" : daysOverdue > 0 ? "overdue" : "pending";
+
+          return {
+            id: inv.id,
+            invoiceNo: inv.invoiceNo || "-",
+            invoiceDate: format(invoiceDateObj, "dd/MM/yyyy"),
+            term: rawTerm || "-",
+            customerName: inv.customerName || "Walk-in Customer",
+            customerCode: inv.customerId || "-",
+            balance: remaining,
+            paidAmount: Number(inv.paidAmount || 0),
+            dueDate: format(dueDateObj, "dd/MM/yyyy"),
+            originalDueDate: format(dueDateObj, "dd/MM/yyyy"),
+            daysOverdue,
+            remindersSent: 0,
+            promisedPayments: 0,
+            status,
+          };
+        });
+
+        setReceivables(mapped);
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to load receivables",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingReceivables(false);
+      }
+    };
+
+    fetchReceivables();
+  }, []);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -215,11 +295,12 @@ export const ReceivableReminders = () => {
   };
 
   const handleExport = () => {
-    const headers = ["Invoice", "Customer", "Code", "Due Date", "Balance", "Paid", "Days Overdue", "Reminders", "Status"];
+    const headers = ["Invoice", "Customer", "Code", "Term", "Due Date", "Balance", "Paid", "Days Overdue", "Reminders", "Status"];
     const rows = filteredReceivables.map((item) => [
       item.invoiceNo,
       item.customerName,
       item.customerCode,
+      item.term,
       item.dueDate,
       item.balance,
       item.paidAmount,
@@ -282,41 +363,29 @@ export const ReceivableReminders = () => {
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="bg-[#1e3a5f] border-0">
           <CardContent className="p-4 text-center">
-            <p className="text-xs text-white/70 mb-1">Total Receivables</p>
-            <p className="text-xl font-bold text-white">{totalReceivables}</p>
+            <p className="text-xs text-white/70 mb-1">Total Amount</p>
+            <p className="text-xl font-bold text-white">{formatCurrency(totalInvoiceAmount)}</p>
           </CardContent>
         </Card>
         <Card className="bg-blue-500 border-0">
           <CardContent className="p-4 text-center">
-            <p className="text-xs text-white/70 mb-1">Total Amount</p>
-            <p className="text-xl font-bold text-white">{formatCurrency(totalAmount)}</p>
+            <p className="text-xs text-white/70 mb-1">Total Received</p>
+            <p className="text-xl font-bold text-white">{formatCurrency(totalReceivedAmount)}</p>
           </CardContent>
         </Card>
         <Card className="bg-orange-400 border-0">
           <CardContent className="p-4 text-center">
-            <p className="text-xs text-white/70 mb-1">Overdue</p>
+            <p className="text-xs text-white/70 mb-1">Overdue Invoices</p>
             <p className="text-xl font-bold text-white">{overdueCount}</p>
           </CardContent>
         </Card>
         <Card className="bg-red-500 border-0">
           <CardContent className="p-4 text-center">
-            <p className="text-xs text-white/70 mb-1">Overdue Amount</p>
+            <p className="text-xs text-white/70 mb-1">Remaining Amount</p>
             <p className="text-xl font-bold text-white">{formatCurrency(overdueAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-green-500 border-0">
-          <CardContent className="p-4 text-center">
-            <p className="text-xs text-white/70 mb-1">Pending Reminders</p>
-            <p className="text-xl font-bold text-white">{pendingReminders}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-yellow-500 border-0">
-          <CardContent className="p-4 text-center">
-            <p className="text-xs text-white/70 mb-1">Promised</p>
-            <p className="text-xl font-bold text-white">{promisedCount}</p>
           </CardContent>
         </Card>
       </div>
@@ -373,6 +442,7 @@ export const ReceivableReminders = () => {
                   </TableHead>
                   <TableHead className="font-semibold">Invoice</TableHead>
                   <TableHead className="font-semibold">Customer</TableHead>
+                  <TableHead className="font-semibold">Term</TableHead>
                   <TableHead className="font-semibold">Due Date</TableHead>
                   <TableHead className="text-right font-semibold">Balance</TableHead>
                   <TableHead className="text-center font-semibold text-orange-600">Days Overdue</TableHead>
@@ -402,6 +472,7 @@ export const ReceivableReminders = () => {
                         <p className="text-xs text-muted-foreground">{item.customerCode}</p>
                       </div>
                     </TableCell>
+                    <TableCell>{item.term}</TableCell>
                     <TableCell>
                       <div>
                         <p className={cn("font-medium", item.daysOverdue > 0 ? "text-red-600" : "text-foreground")}>
@@ -478,6 +549,13 @@ export const ReceivableReminders = () => {
                     </TableCell>
                   </TableRow>
                 ))}
+                {!loadingReceivables && filteredReceivables.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                      No receivable invoices found.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>

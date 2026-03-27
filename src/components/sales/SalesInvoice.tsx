@@ -1171,6 +1171,15 @@ export const SalesInvoice = () => {
     return "";
   };
 
+  const formatTermDisplay = (inv: any) => {
+    const raw = String(inv?.term || "").trim();
+    if (!raw) return "-";
+    if (inv?.customerType === "registered") {
+      return `${raw} days credit`;
+    }
+    return raw;
+  };
+
   // Create or update invoice
   const handleSaveInvoice = async () => {
     if (
@@ -3074,6 +3083,10 @@ export const SalesInvoice = () => {
         </head>
         <body>
           <div class="page">
+            <div style="text-align: center; margin-bottom: 6px;">
+              <div style="font-weight: bold; font-size: 14px;">CRYSTAL TRADING COMPANY</div>
+              <div style="font-size: 12px; color: #444; margin-top: 1px;">Sale Invoice</div>
+            </div>
             <div class="row">
               <div>
                 <div class="title">${esc(invoice.customerName || "Walk-in Customer")}</div>
@@ -3094,9 +3107,10 @@ export const SalesInvoice = () => {
                 <div>${esc(invoice.invoiceNo)}</div>
                 <div>Date: ${esc(dateText)}</div>
                 ${
-                  invoice.customerType === "registered" &&
                   String(invoice.term || "").trim()
-                    ? `<div>Credit for ${esc(String(invoice.term || "").trim())} days</div>`
+                    ? invoice.customerType === "registered"
+                      ? `<div>Term: credit for ${esc(String(invoice.term || "").trim())} days</div>`
+                      : `<div>Term: ${esc(String(invoice.term || "").trim())}</div>`
                     : ""
                 }
                 <div>User: ${esc(printedBy)}</div>
@@ -5785,7 +5799,7 @@ export const SalesInvoice = () => {
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
                             Term
                           </span>
-                          {inv.term || "-"}
+                          {formatTermDisplay(inv)}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
