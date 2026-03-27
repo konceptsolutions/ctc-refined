@@ -120,10 +120,15 @@ export const ReceivableReminders = () => {
         setLoadingReceivables(true);
         const response = await apiClient.getSalesInvoices();
         const invoices = Array.isArray(response) ? response : ((response as any)?.data || []);
+        const approvedInvoices = invoices.filter((inv: any) =>
+          ["approved", "partially_delivered", "fully_delivered"].includes(
+            String(inv?.status || "").toLowerCase(),
+          ),
+        );
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        const mapped: Receivable[] = invoices.map((inv: any) => {
+        const mapped: Receivable[] = approvedInvoices.map((inv: any) => {
           const invoiceDateObj = new Date(inv.invoiceDate);
           const rawTerm = String(inv.term || "").trim();
           const termDays = parseInt(rawTerm, 10);
