@@ -148,6 +148,7 @@ interface ItemsListViewProps {
   }[];
   applicationOptions?: { value: string; label: string }[];
   brandOptions?: { value: string; label: string }[];
+  descriptionOptions?: { value: string; label: string }[];
   masterPartOptions?: { value: string; label: string }[];
 }
 
@@ -181,6 +182,7 @@ export const ItemsListView = ({
   subcategoryOptions = [],
   applicationOptions = [],
   brandOptions = [],
+  descriptionOptions = [],
   masterPartOptions = [],
 }: ItemsListViewProps) => {
   const { toast } = useToast();
@@ -372,11 +374,12 @@ export const ItemsListView = ({
     ).map((val) => ({ value: val, label: val }));
   }, [items, brandOptions]);
 
-  const descriptionOptions = useMemo(() => {
+  const finalDescriptionOptions = useMemo(() => {
+    if (descriptionOptions.length > 0) return descriptionOptions;
     return Array.from(
       new Set(items.map((item) => item.description).filter(Boolean)),
     ).map((val) => ({ value: val, label: val }));
-  }, [items]);
+  }, [items, descriptionOptions]);
 
   // Debounced filter update function
   const updateFilter = (key: keyof SearchFilters, value: string) => {
@@ -1301,7 +1304,7 @@ export const ItemsListView = ({
                     Description
                   </label>
                   <SearchableSelect
-                    options={descriptionOptions}
+                    options={finalDescriptionOptions}
                     placeholder="Filter by Description..."
                     value={localInputValues.description}
                     onValueChange={(value) =>

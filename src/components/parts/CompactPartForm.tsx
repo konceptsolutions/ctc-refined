@@ -45,6 +45,11 @@ interface PartFormData {
   remarks: string;
 }
 
+interface ModelQuantityRow {
+  model: string;
+  qty: number | "";
+}
+
 const initialFormData: PartFormData = {
   masterPartNo: "",
   partNo: "",
@@ -94,6 +99,7 @@ export const CompactPartForm = ({
   const [imageP1, setImageP1] = useState<string | null>(null);
   const [imageP2, setImageP2] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [modelQuantities, setModelQuantities] = useState<ModelQuantityRow[]>([]);
   const isEditing = !!editItem;
 
   // Track if we're in "new mode" (creating new item, not editing)
@@ -527,6 +533,16 @@ export const CompactPartForm = ({
             // Images
             setImageP1(part.image_p1 || null);
             setImageP2(part.image_p2 || null);
+            setModelQuantities(
+              Array.isArray(part.models)
+                ? part.models
+                    .map((m: any) => ({
+                      model: String(m?.name || "").trim(),
+                      qty: Number(m?.qty_used || 1),
+                    }))
+                    .filter((m: ModelQuantityRow) => m.model !== "")
+                : [],
+            );
           }
         } catch (error: any) {
           toast({
@@ -542,6 +558,7 @@ export const CompactPartForm = ({
         setFormData(initialFormData);
         setImageP1(null);
         setImageP2(null);
+        setModelQuantities([]);
         setIsNewMode(true);
       }
     };
@@ -1059,6 +1076,12 @@ export const CompactPartForm = ({
       masterPartNo: finalMasterPartNo,
       imageP1,
       imageP2,
+      modelQuantities: modelQuantities
+        .map((mq) => ({
+          model: String(mq.model || "").trim(),
+          qty: Number(mq.qty === "" ? 1 : mq.qty),
+        }))
+        .filter((mq) => mq.model !== ""),
     };
 
     onSave(finalFormData, isEditing, editItem?.id);
@@ -1113,6 +1136,16 @@ export const CompactPartForm = ({
             });
             setImageP1(part.image_p1 || null);
             setImageP2(part.image_p2 || null);
+            setModelQuantities(
+              Array.isArray(part.models)
+                ? part.models
+                    .map((m: any) => ({
+                      model: String(m?.name || "").trim(),
+                      qty: Number(m?.qty_used || 1),
+                    }))
+                    .filter((m: ModelQuantityRow) => m.model !== "")
+                : [],
+            );
           }
         } catch (error) {
         } finally {
@@ -1154,6 +1187,7 @@ export const CompactPartForm = ({
       });
       setImageP1(null);
       setImageP2(null);
+      setModelQuantities([]);
 
       // Reset all search states
       setMasterPartSearch("");
@@ -1226,7 +1260,17 @@ export const CompactPartForm = ({
   }
 
   return (
-    <div className="h-full flex flex-col bg-card rounded-lg border border-border overflow-hidden">
+    <div className="h-full flex flex-col bg-card rounded-lg border border-border overflow-hidden relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute top-2 right-2 h-7 w-7 z-10"
+        onClick={onCancel}
+        aria-label="Close form"
+        title="Close"
+      >
+        <X className="w-4 h-4" />
+      </Button>
       {/* Scrollable Form Content */}
       <div className="flex-1 overflow-auto p-4">
         {/* Part Information Section */}
@@ -2181,11 +2225,101 @@ export const CompactPartForm = ({
             className="text-xs min-h-[40px] resize-none"
           />
         </div>
+
+        {/* Models & Quantities */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[10px] text-foreground font-bold">
+              Models & Qty Used
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 text-[10px] px-2"
+              onClick={() =>
+                setModelQuantities((prev) => [...prev, { model: "", qty: 1 }])
+              }
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              Add Model
+            </Button>
+          </div>
+
+          {modelQuantities.length === 0 ? (
+            <div className="text-[10px] text-muted-foreground border border-dashed border-border rounded p-2">
+              No models added.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {modelQuantities.map((row, index) => (
+                <div key={`model-row-${index}`} className="grid grid-cols-12 gap-2 items-center">
+                  <Input
+                    value={row.model}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setModelQuantities((prev) =>
+                        prev.map((r, i) => (i === index ? { ...r, model: value } : r)),
+                      );
+                    }}
+                    placeholder="Model name"
+                    className="h-7 text-xs col-span-8"
+                  />
+                  <Input
+                    type="number"
+                    min={1}
+                    value={row.qty}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === "") {
+                        setModelQuantities((prev) =>
+                          prev.map((r, i) => (i === index ? { ...r, qty: "" } : r)),
+                        );
+                        return;
+                      }
+                      const qty = Math.max(1, Number(value));
+                      setModelQuantities((prev) =>
+                        prev.map((r, i) => (i === index ? { ...r, qty } : r)),
+                      );
+                    }}
+                    onBlur={() => {
+                      setModelQuantities((prev) =>
+                        prev.map((r, i) =>
+                          i === index ? { ...r, qty: r.qty === "" ? 1 : Math.max(1, Number(r.qty)) } : r,
+                        ),
+                      );
+                    }}
+                    className="h-7 text-xs col-span-3"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 col-span-1"
+                    onClick={() =>
+                      setModelQuantities((prev) => prev.filter((_, i) => i !== index))
+                    }
+                    aria-label="Remove model row"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Fixed Save Button */}
       <div className="p-4 border-t border-border bg-card">
         <div className="flex justify-center gap-2">
+          <Button
+            variant="outline"
+            className="h-8 text-xs px-4"
+            onClick={onCancel}
+          >
+            Close
+          </Button>
           <Button className="gap-1.5 h-8 text-xs px-6" onClick={handleSave}>
             {isEditing ? (
               <Save className="w-3.5 h-3.5" />

@@ -37,6 +37,9 @@ export const ItemsListPage = ({
   const [brandOptions, setBrandOptions] = useState<
     { value: string; label: string }[]
   >([]);
+  const [descriptionOptions, setDescriptionOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
   const [masterPartOptions, setMasterPartOptions] = useState<
     { value: string; label: string }[]
   >([]);
@@ -92,12 +95,13 @@ export const ItemsListPage = ({
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const [cats, subs, apps, brands, mParts] = await Promise.all([
+        const [cats, subs, apps, brands, mParts, partsForDescriptions] = await Promise.all([
           apiClient.getAllCategories?.(),
           apiClient.getAllSubcategories?.(undefined, "all"),
           apiClient.getAllApplications?.(),
           apiClient.getAllBrands?.(),
           apiClient.getMasterParts?.(),
+          apiClient.getPartEntryList?.({ limit: "all", page: 1 }),
         ]);
 
         const catData = Array.isArray(cats?.data) ? cats.data : Array.isArray(cats) ? cats : [];
@@ -146,6 +150,20 @@ export const ItemsListPage = ({
           if (val && val.trim()) uniqueMasterParts.add(val.trim());
         });
         setMasterPartOptions(Array.from(uniqueMasterParts).map((mp) => ({ value: mp, label: mp })));
+
+        const partRows = Array.isArray((partsForDescriptions as any)?.data)
+          ? (partsForDescriptions as any).data
+          : [];
+        const uniqueDescriptions = new Set<string>();
+        partRows.forEach((p: any) => {
+          const desc = String(p?.description || "").trim();
+          if (desc && desc !== "null" && desc !== "undefined") {
+            uniqueDescriptions.add(desc);
+          }
+        });
+        setDescriptionOptions(
+          Array.from(uniqueDescriptions).map((d) => ({ value: d, label: d })),
+        );
       } catch (err) { }
     };
     fetchDropdowns();
@@ -615,6 +633,7 @@ export const ItemsListPage = ({
       subcategoryOptions={subcategoryOptions}
       applicationOptions={applicationOptions}
       brandOptions={brandOptions}
+      descriptionOptions={descriptionOptions}
       masterPartOptions={masterPartOptions}
       onFiltersChange={(filters) => {
         setSearchFilters(filters);
@@ -797,6 +816,15 @@ export const ItemsListPage = ({
                 ? partData.origin.trim()
                 : null,
             status: partData.status === "A" ? "active" : "inactive",
+            models:
+              partData.modelQuantities
+                ?.filter(
+                  (mq: any) => mq && mq.model && String(mq.model).trim() !== "",
+                )
+                .map((mq: any) => ({
+                  name: String(mq.model).trim(),
+                  qty_used: Number(mq.qty || 1),
+                })) || [],
           };
 
           // Handle images - if updating, explicitly set to null if not provided to clear them
