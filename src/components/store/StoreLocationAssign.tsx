@@ -86,8 +86,8 @@ export const StoreLocationAssign = ({
       order.items.forEach((item) => {
         if (item.rackId && item.shelfId) {
           initialLocations[item.id] = {
-            rackId: item.rackId,
-            shelfId: item.shelfId,
+            rackId: item.rackId != null ? String(item.rackId) : "",
+            shelfId: item.shelfId != null ? String(item.shelfId) : "",
           };
         }
       });
@@ -115,13 +115,13 @@ export const StoreLocationAssign = ({
       if (Array.isArray(resolvedRacksData)) {
         setRacks(
           resolvedRacksData.map((r: any) => ({
-            id: r.id,
+            id: r.id != null ? String(r.id) : "",
             codeNo: r.codeNo || r.code_no,
             storeId: r.storeId || r.store_id,
             shelves: (r.shelves || []).map((s: any) => ({
-              id: s.id,
+              id: s.id != null ? String(s.id) : "",
               shelfNo: s.shelfNo || s.shelf_no,
-              rackId: s.rackId || s.rack_id,
+              rackId: s.rackId || s.rack_id ? String(s.rackId || s.rack_id) : "",
             })),
           }))
         );
@@ -133,8 +133,8 @@ export const StoreLocationAssign = ({
     }
   };
 
-  const getShelvesForRack = (rackId: string): Shelf[] => {
-    const rack = racks.find((r) => r.id === rackId);
+  const getShelvesForRack = (rackId: string | number): Shelf[] => {
+    const rack = racks.find((r) => String(r.id) === String(rackId));
     return rack?.shelves || [];
   };
 

@@ -157,7 +157,18 @@ export const DirectPurchaseOrder = () => {
 
   // API data state
   const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
-  const [parts, setParts] = useState<{ id: string; partNo: string; description: string; brand: string; uom: string; price: number; weight: number }[]>([]);
+  const [parts, setParts] = useState<
+    {
+      id: string;
+      partNo: string; // Part No (part_no)
+      masterPartNo: string; // Master Part No (master_part_no)
+      description: string;
+      brand: string;
+      uom: string;
+      price: number;
+      weight: number;
+    }[]
+  >([]);
   const [brands, setBrands] = useState<{ id: string; value: string; label: string }[]>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; value: string; label: string }[]>([]);
   const [accounts, setAccounts] = useState<{ id: string; value: string; label: string }[]>([]);
@@ -247,13 +258,15 @@ export const DirectPurchaseOrder = () => {
   // Fetch parts
   const fetchParts = async () => {
     try {
-      const response = await apiClient.getParts({ page: 1, limit: 1000, status: 'active' }) as any;
+      // Load ALL active parts so the dropdown can show everything
+      const response = await apiClient.getParts({ page: 1, limit: "all", status: "active" }) as any;
       const partsData = response.data || response;
       if (Array.isArray(partsData)) {
         setParts(partsData.map((p: any) => ({
           id: p.id,
-          partNo: p.master_part_no || p.masterPartNo || p.part_no || p.partNo,
-          description: p.description || p.master_part_no || p.masterPartNo || '',
+          partNo: p.part_no || p.partNo || p.master_part_no || p.masterPartNo || '',
+          masterPartNo: p.master_part_no || p.masterPartNo || '',
+          description: p.description || '',
           brand: p.brand_name || p.brand?.name || null,
           uom: p.uom || 'pcs',
           price: p.price_a || p.priceA || p.cost || 0,
@@ -1774,8 +1787,11 @@ export const DirectPurchaseOrder = () => {
                     className="w-full gap-2"
                     onClick={() => {
                       // Store part number in localStorage for Pricing & Costing page to pick up
-                      if (selectedPart.partNo) {
-                        localStorage.setItem('pricingCostingSearchPartNo', selectedPart.partNo);
+                      if (selectedPart.masterPartNo || selectedPart.partNo) {
+                        localStorage.setItem(
+                          'pricingCostingSearchPartNo',
+                          selectedPart.masterPartNo || selectedPart.partNo,
+                        );
                       }
                       // Navigate to Pricing & Costing page
                       navigate('/pricing-costing');
@@ -1809,7 +1825,14 @@ export const DirectPurchaseOrder = () => {
               </h1>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={handleBackToList} className="shrink-0 lg:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleBackToList}
+            className="shrink-0"
+            aria-label="Close form"
+            title="Close"
+          >
             <X className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         </div>
@@ -1928,8 +1951,18 @@ export const DirectPurchaseOrder = () => {
                                   <SearchableSelect
                                     options={parts.map(p => ({
                                       value: p.id,
-                                      label: p.partNo,
-                                      description: p.description,
+                                      label: [p.partNo, p.masterPartNo && p.masterPartNo !== p.partNo ? p.masterPartNo : null]
+                                        .filter(Boolean)
+                                        .join(" / "),
+                                      description: [
+                                        p.description || null,
+                                        p.brand ? `Brand: ${p.brand}` : null,
+                                        p.masterPartNo && p.masterPartNo !== p.partNo
+                                          ? `Master: ${p.masterPartNo}`
+                                          : null,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" | "),
                                     }))}
                                     value={item.partId}
                                     onValueChange={(value) => handleUpdateItem(item.id, "partId", value)}
