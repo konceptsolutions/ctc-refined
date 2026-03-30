@@ -175,6 +175,10 @@ export const DirectPurchaseOrder = () => {
   const [payableAccounts, setPayableAccounts] = useState<{ id: string; value: string; label: string }[]>([]);
   const [expenseTypes, setExpenseTypes] = useState<{ id: string; name: string; code?: string }[]>([]);
 
+  // Temporary UI toggle: hide expenses-related UI in Direct Purchase form.
+  // (Backend/state calculations remain unchanged.)
+  const SHOW_EXPENSES_UI = false;
+
   // History sidebar state
   const [selectedPartForHistory, setSelectedPartForHistory] = useState<string | null>(null);
   const [partHistory, setPartHistory] = useState<{
@@ -344,20 +348,16 @@ export const DirectPurchaseOrder = () => {
           const status = (acc.status || '').toLowerCase();
           if (status !== 'active') return false;
 
-          // Filter for Cash (101) and Bank (102, 103) accounts
-          const subgroupCode = acc.subgroup?.code || '';
-          const subgroupName = (acc.subgroup?.name || '').toLowerCase();
-          const accountName = (acc.name || '').toLowerCase();
+          const subgroupName = (
+            acc.subgroup?.name ??
+            acc.subGroup?.name ??
+            acc.Subgroup?.name ??
+            ""
+          ).toLowerCase();
 
-          // Check by subgroup code
-          const isCash = subgroupCode === '101';
-          const isBank = subgroupCode === '102' || subgroupCode === '103' || subgroupCode === '108';
-
-          // Also check by names as fallback
-          const isCashByName = subgroupName.includes('cash') || accountName.includes('cash');
-          const isBankByName = subgroupName.includes('bank') || accountName.includes('bank');
-
-          return isCash || isBank || isCashByName || isBankByName;
+          // Strict requirement: only show Cash/Bank *subgroup* accounts.
+          // (Do not include by code prefix.)
+          return subgroupName.includes("cash") || subgroupName.includes("bank");
         })
         .map((acc: any) => ({
           id: acc.id,
@@ -384,20 +384,15 @@ export const DirectPurchaseOrder = () => {
           const status = (acc.status || '').toLowerCase();
           if (status !== 'active') return false;
 
-          // Filter for Cash (101) and Bank (102, 103) accounts
-          const subgroupCode = acc.subgroup?.code || '';
-          const subgroupName = (acc.subgroup?.name || '').toLowerCase();
-          const accountName = (acc.name || '').toLowerCase();
+          const subgroupName = (
+            acc.subgroup?.name ??
+            acc.subGroup?.name ??
+            acc.Subgroup?.name ??
+            ""
+          ).toLowerCase();
 
-          // Check by subgroup code
-          const isCash = subgroupCode === '101';
-          const isBank = subgroupCode === '102' || subgroupCode === '103' || subgroupCode === '108';
-
-          // Also check by names as fallback
-          const isCashByName = subgroupName.includes('cash') || accountName.includes('cash');
-          const isBankByName = subgroupName.includes('bank') || accountName.includes('bank');
-
-          return isCash || isBank || isCashByName || isBankByName;
+          // Strict requirement: only show Cash/Bank *subgroup* accounts.
+          return subgroupName.includes("cash") || subgroupName.includes("bank");
         })
         .map((acc: any) => ({
           id: acc.id,
@@ -1624,16 +1619,18 @@ export const DirectPurchaseOrder = () => {
                                 </Button>
                               </ActionButtonTooltip>
                             )}
-                            <ActionButtonTooltip label="Edit" variant="edit">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleEdit(order)}
-                                className="h-8 w-8"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </ActionButtonTooltip>
+                            {order.status !== "Completed" && order.status !== "Received" && (
+                              <ActionButtonTooltip label="Edit" variant="edit">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleEdit(order)}
+                                  className="h-8 w-8"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </ActionButtonTooltip>
+                            )}
                             {order.status !== "Completed" && order.status !== "Received" && (
                               <ActionButtonTooltip label="Delete" variant="delete">
                                 <Button
@@ -1936,7 +1933,6 @@ export const DirectPurchaseOrder = () => {
                             <TableHead className="w-28 sm:w-32">Purchase Price</TableHead>
 
                             <TableHead className="w-20 text-right">Weight (kg)</TableHead>
-                            <TableHead className="w-28 text-right">Dist. Expense</TableHead>
                             <TableHead className="text-right min-w-[100px]">Total Amount</TableHead>
                             <TableHead className="w-12"></TableHead>
                           </TableRow>
@@ -1996,11 +1992,6 @@ export const DirectPurchaseOrder = () => {
                                 <TableCell className="text-right text-xs text-muted-foreground">
                                   {item.weight > 0 ? `${item.weight} kg` : "-"}
                                 </TableCell>
-                                <TableCell className="text-right text-xs text-primary">
-                                  {calculateDistributedExpenses[index] > 0
-                                    ? `Rs ${calculateDistributedExpenses[index].toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                    : "-"}
-                                </TableCell>
                                 <TableCell className="text-right font-medium">
                                   {(() => {
                                     const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
@@ -2032,122 +2023,140 @@ export const DirectPurchaseOrder = () => {
               </CardContent>
             </Card>
 
-            {/* Expense Section */}
-            <Card className="mb-6">
-              <CardHeader className="py-3">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <CardTitle className="text-base font-medium">Expenses</CardTitle>
-                  <Button onClick={handleAddExpense} variant="outline" size="sm" className="w-full sm:w-auto">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Expense
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {formExpenses.length === 0 ? (
-                  <div className="text-center py-4 text-muted-foreground">
-                    <p className="text-sm">No expenses added yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="hidden sm:grid grid-cols-12 gap-2 text-sm font-medium text-muted-foreground pb-2 border-b">
-                      <div className="col-span-12 sm:col-span-3">Expense Type</div>
-                      <div className="col-span-12 sm:col-span-3">Payable Account</div>
-                      <div className="col-span-12 sm:col-span-3">Description</div>
-                      <div className="col-span-12 sm:col-span-2 text-right">Amount</div>
-                      <div className="col-span-12 sm:col-span-1"></div>
+            {SHOW_EXPENSES_UI && (
+              <>
+                {/* Expense Section */}
+                <Card className="mb-6">
+                  <CardHeader className="py-3">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <CardTitle className="text-base font-medium">Expenses</CardTitle>
+                      <Button onClick={handleAddExpense} variant="outline" size="sm" className="w-full sm:w-auto">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Expense
+                      </Button>
                     </div>
-                    {formExpenses.map((expense) => (
-                      <div key={expense.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-2 items-start sm:items-center p-2 sm:p-0 border sm:border-0 rounded-lg sm:rounded-none">
-                        <div className="col-span-12 sm:col-span-3">
-                          <Select
-                            value={expense.expenseType}
-                            onValueChange={(value) => handleUpdateExpense(expense.id, "expenseType", value)}
+                  </CardHeader>
+                  <CardContent>
+                    {formExpenses.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground">
+                        <p className="text-sm">No expenses added yet</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="hidden sm:grid grid-cols-12 gap-2 text-sm font-medium text-muted-foreground pb-2 border-b">
+                          <div className="col-span-12 sm:col-span-3">Expense Type</div>
+                          <div className="col-span-12 sm:col-span-3">Payable Account</div>
+                          <div className="col-span-12 sm:col-span-3">Description</div>
+                          <div className="col-span-12 sm:col-span-2 text-right">Amount</div>
+                          <div className="col-span-12 sm:col-span-1"></div>
+                        </div>
+                        {formExpenses.map((expense) => (
+                          <div
+                            key={expense.id}
+                            className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-2 items-start sm:items-center p-2 sm:p-0 border sm:border-0 rounded-lg sm:rounded-none"
                           >
-                            <SelectTrigger className={!expense.expenseType ? "border-orange-500" : ""}>
-                              <SelectValue placeholder="Select expense type..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {expenseTypes.length > 0 ? (
-                                expenseTypes.map((type) => (
-                                  <SelectItem key={type.id} value={type.name}>
-                                    {type.name}
-                                  </SelectItem>
-                                ))
-                              ) : (
-                                <SelectItem value="NO_EXPENSE_TYPES" disabled>
-                                  No expense types available. Please create expense types first.
-                                </SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="col-span-12 sm:col-span-3">
-                          <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">Payable Account</Label>
-                          <Select
-                            value={expense.payableAccount}
-                            onValueChange={(value) => handleUpdateExpense(expense.id, "payableAccount", value)}
-                          >
-                            <SelectTrigger className={!expense.payableAccount ? "border-orange-500" : ""}>
-                              <SelectValue placeholder="Select payable account..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {payableAccounts.length > 0 ? (
-                                payableAccounts.map((account) => (
-                                  <SelectItem key={account.id} value={account.value || account.id}>
-                                    {account.label}
-                                  </SelectItem>
-                                ))
-                              ) : (
-                                <SelectItem value="NO_ACCOUNTS_AVAILABLE" disabled>No accounts available</SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="col-span-12 sm:col-span-3">
-                          <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">Description</Label>
-                          <Input
-                            value={expense.description}
-                            onChange={(e) => handleUpdateExpense(expense.id, "description", e.target.value)}
-                            placeholder="Enter description..."
-                          />
-                        </div>
-                        <div className="col-span-12 sm:col-span-2">
-                          <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">Amount</Label>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={expense.amount || ""}
-                            onChange={(e) => {
-                              const value = e.target.value === "" ? 0 : parseFloat(e.target.value) || 0;
-                              handleUpdateExpense(expense.id, "amount", value);
-                            }}
-                            className={cn("text-right", expense.amount <= 0 && "border-orange-500")}
-                            placeholder="0.00"
-                          />
-                        </div>
-                        <div className="col-span-12 sm:col-span-1 flex justify-center sm:justify-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveExpense(expense.id)}
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
+                            <div className="col-span-12 sm:col-span-3">
+                              <Select
+                                value={expense.expenseType}
+                                onValueChange={(value) =>
+                                  handleUpdateExpense(expense.id, "expenseType", value)
+                                }
+                              >
+                                <SelectTrigger className={!expense.expenseType ? "border-orange-500" : ""}>
+                                  <SelectValue placeholder="Select expense type..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {expenseTypes.length > 0 ? (
+                                    expenseTypes.map((type) => (
+                                      <SelectItem key={type.id} value={type.name}>
+                                        {type.name}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <SelectItem value="NO_EXPENSE_TYPES" disabled>
+                                      No expense types available. Please create expense types first.
+                                    </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="col-span-12 sm:col-span-3">
+                              <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">
+                                Payable Account
+                              </Label>
+                              <Select
+                                value={expense.payableAccount}
+                                onValueChange={(value) =>
+                                  handleUpdateExpense(expense.id, "payableAccount", value)
+                                }
+                              >
+                                <SelectTrigger className={!expense.payableAccount ? "border-orange-500" : ""}>
+                                  <SelectValue placeholder="Select payable account..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {payableAccounts.length > 0 ? (
+                                    payableAccounts.map((account) => (
+                                      <SelectItem key={account.id} value={account.value || account.id}>
+                                        {account.label}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <SelectItem value="NO_ACCOUNTS_AVAILABLE" disabled>
+                                      No accounts available
+                                    </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="col-span-12 sm:col-span-3">
+                              <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">
+                                Description
+                              </Label>
+                              <Input
+                                value={expense.description}
+                                onChange={(e) => handleUpdateExpense(expense.id, "description", e.target.value)}
+                                placeholder="Enter description..."
+                              />
+                            </div>
+                            <div className="col-span-12 sm:col-span-2">
+                              <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">Amount</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={expense.amount || ""}
+                                onChange={(e) => {
+                                  const value = e.target.value === "" ? 0 : parseFloat(e.target.value) || 0;
+                                  handleUpdateExpense(expense.id, "amount", value);
+                                }}
+                                className={cn("text-right", expense.amount <= 0 && "border-orange-500")}
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <div className="col-span-12 sm:col-span-1 flex justify-center sm:justify-center">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveExpense(expense.id)}
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex justify-end pt-2 border-t mt-2">
+                          <div className="text-sm font-medium">
+                            Total Expenses:{" "}
+                            <span className="text-primary">{calculateTotalExpenses().toLocaleString("en-PK")}</span>
+                          </div>
                         </div>
                       </div>
-                    ))}
-                    <div className="flex justify-end pt-2 border-t mt-2">
-                      <div className="text-sm font-medium">
-                        Total Expenses: <span className="text-primary">{calculateTotalExpenses().toLocaleString("en-PK")}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
             {/* Account and Total */}
             <div className="flex flex-col sm:flex-row justify-end items-stretch sm:items-start gap-4 mb-6">
@@ -2166,9 +2175,11 @@ export const DirectPurchaseOrder = () => {
                 <Input value={calculateItemsTotal().toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} disabled className="w-full sm:w-40 text-right bg-muted" />
                 <Label>Grand Total</Label>
                 <Input value={calculateTotal().toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} disabled className="w-full sm:w-40 text-right bg-muted font-semibold" />
-                <p className="text-xs text-muted-foreground">
-                  Expenses: {calculateTotalExpenses().toLocaleString("en-PK")}
-                </p>
+                {SHOW_EXPENSES_UI && (
+                  <p className="text-xs text-muted-foreground">
+                    Expenses: {calculateTotalExpenses().toLocaleString("en-PK")}
+                  </p>
+                )}
               </div>
             </div>
 

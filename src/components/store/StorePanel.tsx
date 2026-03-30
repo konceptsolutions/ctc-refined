@@ -1680,6 +1680,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                         size="sm"
                                         onClick={() => handleEditDPO(order)}
                                         title="Edit Order"
+                                        disabled={order.status === "Received"}
+                                        className={order.status === "Received" ? "opacity-50 cursor-not-allowed" : undefined}
                                       >
                                         <Edit className="w-4 h-4" />
                                       </Button>
