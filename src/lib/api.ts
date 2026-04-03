@@ -3113,6 +3113,7 @@ class ApiClient {
       items: Array<{
         invoiceItemId: string;
         quantity: number;
+        partRackShelfId?: string;
       }>;
     },
   ) {

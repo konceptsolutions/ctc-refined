@@ -24,6 +24,10 @@ router.get("/general-journal", async (req: Request, res: Response) => {
     const where: any = {
       Voucher: {
         status: "posted",
+        OR: [
+          { isCleared: null },
+          { isCleared: { not: 0 } }
+        ]
       },
     };
 
@@ -214,6 +218,10 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
           where: {
             Voucher: {
               status: "posted",
+              OR: [
+                { isCleared: null },
+                { isCleared: { not: 0 } }
+              ],
               ...(from_date || to_date
                 ? {
                   date: {
@@ -398,6 +406,10 @@ router.get("/public-income-statement", async (req: Request, res: Response) => {
         where: {
           Voucher: {
             status: "posted",
+            OR: [
+              { isCleared: null },
+              { isCleared: { not: 0 } }
+            ],
             ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
           },
         },
@@ -538,6 +550,10 @@ router.get("/income-statement", async (req: Request, res: Response) => {
         where: {
           Voucher: {
             status: "posted",
+            OR: [
+              { isCleared: null },
+              { isCleared: { not: 0 } }
+            ],
             ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
           },
         },
@@ -746,6 +762,10 @@ router.get("/ledgers", async (req: Request, res: Response) => {
             accountId: acc.id,
             Voucher: {
               status: "posted",
+              OR: [
+                { isCleared: null },
+                { isCleared: { not: 0 } }
+              ],
               date: { lt: fromDateObj },
             },
           },
@@ -795,6 +815,10 @@ router.get("/ledgers", async (req: Request, res: Response) => {
           accountId: acc.id,
           Voucher: {
             status: "posted",
+            OR: [
+              { isCleared: null },
+              { isCleared: { not: 0 } }
+            ],
             ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
           },
         },

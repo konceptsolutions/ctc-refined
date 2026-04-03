@@ -676,27 +676,30 @@ router.post(
         },
       });
 
-      // Update account balances using proper accounting logic
-      for (const line of entry.VoucherEntry) {
-        if (!line.Account) continue;
-        const accountType = line.Account.Subgroup.MainGroup.type;
-        const balanceChange = calculateBalanceChange(
-          line.debit,
-          line.credit,
-          accountType,
-        );
+        // Update account balances using proper accounting logic
+        // ONLY if the voucher is cleared (isCleared is null or not 0)
+        if (entry.isCleared === null || entry.isCleared !== 0) {
+          for (const line of entry.VoucherEntry) {
+            if (!line.Account) continue;
+            const accountType = line.Account.Subgroup.MainGroup.type;
+            const balanceChange = calculateBalanceChange(
+              line.debit,
+              line.credit,
+              accountType,
+            );
 
-        if (line.accountId) {
-          await prisma.account.update({
-            where: { id: line.accountId },
-            data: {
-              currentBalance: {
-                increment: balanceChange,
-              },
-            },
-          });
+            if (line.accountId) {
+              await prisma.account.update({
+                where: { id: line.accountId },
+                data: {
+                  currentBalance: {
+                    increment: balanceChange,
+                  },
+                },
+              });
+            }
+          }
         }
-      }
 
       res.json({ data: updatedEntry });
     } catch (error: any) {
@@ -719,7 +722,11 @@ router.get("/general-journal", async (req: Request, res: Response) => {
 
     // Build where clause for Vouchers
     const VoucherWhere: any = {
-      status: "posted", // Only show posted Vouchers
+      status: "posted",
+      OR: [
+        { isCleared: null },
+        { isCleared: { not: 0 } }
+      ],
     };
 
     // Date range filter
@@ -867,9 +874,13 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
         VoucherEntry: {
           where: {
             Voucher: {
-              status: "posted",
-              ...(dateFrom && { date: { gte: new Date(dateFrom as string) } }),
-              ...(dateTo && { date: { lte: new Date(dateTo as string) } }),
+               status: "posted",
+               OR: [
+                 { isCleared: null },
+                 { isCleared: { not: 0 } }
+               ],
+               ...(dateFrom && { date: { gte: new Date(dateFrom as string) } }),
+               ...(dateTo && { date: { lte: new Date(dateTo as string) } }),
             },
           },
           include: {
@@ -972,8 +983,12 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
         VoucherEntry: {
           where: {
             Voucher: {
-              status: "posted",
-              ...VoucherDateFilter,
+               status: "posted",
+               OR: [
+                 { isCleared: null },
+                 { isCleared: { not: 0 } }
+               ],
+               ...VoucherDateFilter,
             },
           },
         },
@@ -1073,6 +1088,10 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
     const allVouchersList = await prisma.voucher.findMany({
       where: {
         status: "posted",
+        OR: [
+          { isCleared: null },
+          { isCleared: { not: 0 } }
+        ],
         ...(Object.keys(dateFilterForValidation).length > 0 && {
           date: dateFilterForValidation,
         }),
@@ -1128,6 +1147,10 @@ router.get("/income-statement", async (req: Request, res: Response) => {
         where: {
           Voucher: {
             status: "posted",
+            OR: [
+              { isCleared: null },
+              { isCleared: { not: 0 } }
+            ],
             ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
           },
         },
@@ -1253,7 +1276,11 @@ router.post("/recalculate-balances", async (req: Request, res: Response) => {
         VoucherEntry: {
           where: {
             Voucher: {
-              status: "posted",
+                status: "posted",
+              OR: [
+                { isCleared: null },
+                { isCleared: { not: 0 } }
+              ],
             },
           },
         },
@@ -1346,6 +1373,10 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
         where: {
           Voucher: {
             status: "posted",
+            OR: [
+              { isCleared: null },
+              { isCleared: { not: 0 } }
+            ],
             date: { lte: asOfDate },
           },
         },

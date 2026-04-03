@@ -127,7 +127,7 @@ export const StoreAdjustedItem = ({
             id: r.id,
             codeNo: r.codeNo || r.code_no,
             storeId: r.storeId || r.store_id,
-            shelves: (r.shelves || []).map((s: any) => ({
+            shelves: (r.shelves || r.Shelf || []).map((s: any) => ({
               id: s.id,
               shelfNo: s.shelfNo || s.shelf_no,
               rackId: s.rackId || s.rack_id,

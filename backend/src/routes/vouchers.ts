@@ -131,6 +131,8 @@ router.get('/', async (req: Request, res: Response) => {
       cashBankAccount: voucher.cashBankAccount || '',
       chequeNumber: voucher.chequeNumber || undefined,
       chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
+      checkClearDate: voucher.checkClearDate ? voucher.checkClearDate.toISOString().split('T')[0] : undefined,
+      isCleared: voucher.isCleared,
       entries: voucher.VoucherEntry.map(entry => ({
         id: entry.id,
         account: entry.accountId || entry.accountName,
@@ -199,6 +201,8 @@ router.get('/:id', async (req: Request, res: Response) => {
         cashBankAccount: voucher.cashBankAccount || '',
         chequeNumber: voucher.chequeNumber || undefined,
         chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
+        checkClearDate: voucher.checkClearDate ? voucher.checkClearDate.toISOString().split('T')[0] : undefined,
+        isCleared: voucher.isCleared,
         entries: voucher.VoucherEntry.map((entry) => ({
           id: entry.id,
           account: entry.accountId || entry.accountName,
@@ -233,6 +237,8 @@ router.post('/', async (req: Request, res: Response) => {
       cashBankAccount,
       chequeNumber,
       chequeDate,
+      checkClearDate,
+      isCleared,
       entries,
       totalDebit,
       totalCredit,
@@ -267,6 +273,10 @@ router.post('/', async (req: Request, res: Response) => {
         cashBankAccount: cashBankAccount || null,
         chequeNumber: chequeNumber || null,
         chequeDate: chequeDate ? new Date(chequeDate) : null,
+        checkClearDate: checkClearDate ? new Date(checkClearDate) : null,
+        isCleared: (isCleared !== undefined && isCleared !== null && isCleared !== "") 
+          ? parseInt(isCleared) 
+          : (String(chequeNumber || "").trim() || String(chequeDate || "").trim()) ? 0 : null,
         totalDebit: calculatedDebit,
         totalCredit: calculatedCredit,
         status,
@@ -291,6 +301,45 @@ router.post('/', async (req: Request, res: Response) => {
         },
       },
     });
+
+    // Update account balances if the voucher is created as 'posted' and is NOT uncleared
+    if (voucher.status === "posted" && (voucher.isCleared === null || (voucher.isCleared !== undefined && voucher.isCleared !== 0))) {
+      // Re-fetch with full account context for balance updates
+      const fullVoucher = await prisma.voucher.findUnique({
+        where: { id: voucher.id },
+        include: {
+          VoucherEntry: {
+            include: {
+              Account: {
+                include: {
+                  Subgroup: {
+                    include: { MainGroup: true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (fullVoucher) {
+        for (const entry of fullVoucher.VoucherEntry) {
+          if (!entry.accountId || !entry.Account) continue;
+          
+          const accountType = entry.Account.Subgroup.MainGroup.type.toLowerCase();
+          let balanceChange = (["asset", "expense", "cost"].includes(accountType))
+            ? (entry.debit || 0) - (entry.credit || 0)
+            : (entry.credit || 0) - (entry.debit || 0);
+
+          if (balanceChange !== 0) {
+            await prisma.account.update({
+              where: { id: entry.accountId },
+              data: { currentBalance: { increment: balanceChange } }
+            });
+          }
+        }
+      }
+    }
 
     res.status(201).json({
       data: {
@@ -333,6 +382,8 @@ router.put('/:id', async (req: Request, res: Response) => {
       cashBankAccount,
       chequeNumber,
       chequeDate,
+      checkClearDate,
+      isCleared,
       entries,
       status,
       approvedBy,
@@ -442,13 +493,14 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Voucher status cannot be changed because it is system generated. Edit the source transaction (e.g. Adjustment) instead.' });
     }
 
+    let updatedVoucher;
     // If entries are provided, validate and update
     if (entries && Array.isArray(entries)) {
       const calculatedDebit = entries.reduce((sum: number, e: any) => sum + (e.debit || 0), 0);
       const calculatedCredit = entries.reduce((sum: number, e: any) => sum + (e.credit || 0), 0);
 
       if (Math.abs(calculatedDebit - calculatedCredit) > 0.01) {
-        return res.status(400).json({ error: 'Total debit must equal total credit' });
+        return res.status(400).json({ error: "Total debit must equal total credit" });
       }
 
       // Delete existing entries and create new ones
@@ -456,7 +508,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         where: { voucherId: id },
       });
 
-      await prisma.voucher.update({
+      updatedVoucher = await prisma.voucher.update({
         where: { id },
         data: {
           ...(type && { type }),
@@ -465,20 +517,27 @@ router.put('/:id', async (req: Request, res: Response) => {
           ...(cashBankAccount !== undefined && { cashBankAccount: cashBankAccount || null }),
           ...(chequeNumber !== undefined && { chequeNumber: chequeNumber || null }),
           ...(chequeDate !== undefined && { chequeDate: chequeDate ? new Date(chequeDate) : null }),
+          ...(checkClearDate !== undefined && { checkClearDate: checkClearDate ? new Date(checkClearDate) : null }),
+          ...(isCleared !== undefined && isCleared !== null && isCleared !== "" 
+            ? { isCleared: parseInt(isCleared) } 
+            : (chequeNumber !== undefined || chequeDate !== undefined) && (String(chequeNumber || "").trim() || String(chequeDate || "").trim()) 
+              ? { isCleared: 0 } 
+              : {}
+          ),
           totalDebit: calculatedDebit,
           totalCredit: calculatedCredit,
           ...(status && { status }),
-          ...(status === 'posted' && approvedBy && {
+          ...(status === "posted" && approvedBy && {
             approvedBy,
             approvedAt: new Date(),
           }),
-          // Clear approvedBy and approvedAt when changing from posted to draft
-          ...(status === 'draft' && {
+          ...(status === "draft" && {
             approvedBy: null,
             approvedAt: null,
           }),
           ...(storeId !== undefined && { storeId: storeId || null }),
         },
+        include: { VoucherEntry: true }
       });
 
       // Create new voucher entries
@@ -487,7 +546,7 @@ router.put('/:id', async (req: Request, res: Response) => {
           id: `ve_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}`,
           voucherId: id,
           accountId: entry.accountId || null,
-          accountName: entry.account || entry.accountName || 'Account',
+          accountName: entry.account || entry.accountName || "Account",
           description: entry.description || null,
           debit: entry.debit || 0,
           credit: entry.credit || 0,
@@ -496,7 +555,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       });
     } else {
       // Update voucher fields only
-      await prisma.voucher.update({
+      updatedVoucher = await prisma.voucher.update({
         where: { id },
         data: {
           ...(type && { type }),
@@ -505,42 +564,87 @@ router.put('/:id', async (req: Request, res: Response) => {
           ...(cashBankAccount !== undefined && { cashBankAccount: cashBankAccount || null }),
           ...(chequeNumber !== undefined && { chequeNumber: chequeNumber || null }),
           ...(chequeDate !== undefined && { chequeDate: chequeDate ? new Date(chequeDate) : null }),
+          ...(checkClearDate !== undefined && { checkClearDate: checkClearDate ? new Date(checkClearDate) : null }),
+          ...(isCleared !== undefined && isCleared !== null && isCleared !== "" 
+            ? { isCleared: parseInt(isCleared) } 
+            : (chequeNumber !== undefined || chequeDate !== undefined) && (String(chequeNumber || "").trim() || String(chequeDate || "").trim()) 
+              ? { isCleared: 0 } 
+              : {}
+          ),
           ...(status && { status }),
-          ...(status === 'posted' && approvedBy && {
+          ...(status === "posted" && approvedBy && {
             approvedBy,
             approvedAt: new Date(),
           }),
-          // Clear approvedBy and approvedAt when changing from posted to draft
-          ...(status === 'draft' && {
+          ...(status === "draft" && {
             approvedBy: null,
             approvedAt: null,
           }),
           ...(storeId !== undefined && { storeId: storeId || null }),
         },
+        include: { VoucherEntry: true }
       });
     }
 
-    const updatedVoucher = await prisma.voucher.findUnique({
-      where: { id },
-      include: {
-        VoucherEntry: {
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
+    // After update, sync balances if clearance status changed for a POSTED voucher
+    if (updatedVoucher && updatedVoucher.status === "posted") {
+      const oldIsCleared = (existingVoucher as any).isCleared;
+      const newIsCleared = updatedVoucher.isCleared;
+
+      const becameCleared = (oldIsCleared === 0 && (newIsCleared === null || newIsCleared !== 0));
+      const becameUncleared = ((oldIsCleared === null || oldIsCleared !== 0) && newIsCleared === 0);
+
+      if (becameCleared || becameUncleared) {
+        const fullVoucher = await prisma.voucher.findUnique({
+          where: { id },
+          include: {
+            VoucherEntry: {
+              include: {
+                Account: {
+                  include: {
+                    Subgroup: {
+                      include: { MainGroup: true }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        if (fullVoucher) {
+          for (const entry of fullVoucher.VoucherEntry) {
+            if (!entry.accountId || !entry.Account) continue;
+            const accountType = entry.Account.Subgroup.MainGroup.type.toLowerCase();
+            let balanceChange = (["asset", "expense", "cost"].includes(accountType))
+              ? (entry.debit || 0) - (entry.credit || 0)
+              : (entry.credit || 0) - (entry.debit || 0);
+
+            if (becameUncleared) balanceChange = -balanceChange;
+
+            if (balanceChange !== 0) {
+              await prisma.account.update({
+                where: { id: entry.accountId },
+                data: { currentBalance: { increment: balanceChange } }
+              });
+            }
+          }
+        }
+      }
+    }
 
     res.json({
       data: {
         id: updatedVoucher!.id,
         voucherNumber: updatedVoucher!.voucherNumber,
         type: updatedVoucher!.type,
-        date: updatedVoucher!.date.toISOString().split('T')[0],
-        narration: updatedVoucher!.narration || '',
-        cashBankAccount: updatedVoucher!.cashBankAccount || '',
+        date: updatedVoucher!.date.toISOString().split("T")[0],
+        narration: updatedVoucher!.narration || "",
+        cashBankAccount: updatedVoucher!.cashBankAccount || "",
         VoucherEntry: updatedVoucher!.VoucherEntry.map((entry) => ({
           id: entry.id,
           account: entry.accountName,
-          description: entry.description || '',
+          description: entry.description || "",
           debit: entry.debit,
           credit: entry.credit,
         })),
@@ -589,7 +693,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // If voucher is posted, reverse account balances before deletion
-    if (voucher.status === 'posted' && voucher.VoucherEntry.length > 0) {
+    // ONLY if it was cleared (isCleared is null or not 0)
+    if (voucher.status === 'posted' && voucher.VoucherEntry.length > 0 && (voucher.isCleared === null || voucher.isCleared !== 0)) {
 
       for (const entry of voucher.VoucherEntry) {
         if (!entry.accountId || !entry.Account) {

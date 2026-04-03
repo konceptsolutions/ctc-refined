@@ -2791,65 +2791,126 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
           },
         });
 
-        const reservations = await tx.stockReservation.findMany({
-          where: {
-            invoiceId: id,
-            partId: invoiceItem.partId,
-            status: "reserved",
-          },
-          orderBy: { reservedAt: "asc" },
-        });
+        const reservationWhere = {
+          invoiceId: id,
+          partId: invoiceItem.partId,
+          status: "reserved",
+        };
 
-        let remainingQty = qtyToDeliver;
-        for (const reservation of reservations) {
-          if (remainingQty <= 0) break;
-          const moveQty = Math.min(reservation.quantity, remainingQty);
-          await tx.stockReservation.update({
-            where: { id: reservation.id },
-            data: { status: "out" },
+        // Stock out from a specific PartRackShelf row (e.g. chosen on store stock-out form)
+        if (item.partRackShelfId) {
+          const prs = await tx.partRackShelf.findUnique({
+            where: { id: String(item.partRackShelfId) },
           });
-
-          // Deduct from PartRackShelf when delivery is recorded (stock goes out here, not on approve)
-          const prs = await tx.partRackShelf.findFirst({
-            where: {
+          if (!prs || prs.partId !== invoiceItem.partId) {
+            throw new Error("Invalid rack/shelf location for this line item.");
+          }
+          if (Number(prs.quantity) < qtyToDeliver) {
+            throw new Error(
+              `Insufficient stock at selected location (available ${prs.quantity}, requested ${qtyToDeliver}).`,
+            );
+          }
+          await tx.partRackShelf.update({
+            where: { id: prs.id },
+            data: { quantity: { decrement: qtyToDeliver } },
+          });
+          await tx.stockMovement.create({
+            data: {
+              id: `sm_${Date.now()}_${invoiceItem.id}_${prs.id}`,
               partId: invoiceItem.partId,
-              storeId: reservation.storeId,
-              rackId: reservation.rackId,
-              shelfId: reservation.shelfId,
-            },
+              type: "out",
+              quantity: qtyToDeliver,
+              storeId: prs.storeId,
+              rackId: prs.rackId,
+              shelfId: prs.shelfId,
+              referenceType: "sales_invoice",
+              referenceId: id,
+              notes: `Delivery - Invoice ${invoice.invoiceNo} (stock out)`,
+            } as any,
           });
-          if (prs) {
-            await tx.partRackShelf.update({
-              where: { id: prs.id },
-              data: { quantity: { decrement: moveQty } },
+
+          let left = qtyToDeliver;
+          const reservationsExplicit = await tx.stockReservation.findMany({
+            where: reservationWhere,
+            orderBy: { reservedAt: "asc" },
+          });
+          for (const reservation of reservationsExplicit) {
+            if (left <= 0) break;
+            const take = Math.min(reservation.quantity, left);
+            left -= take;
+            if (take === reservation.quantity) {
+              await tx.stockReservation.update({
+                where: { id: reservation.id },
+                data: { status: "out" },
+              });
+            } else {
+              await tx.stockReservation.update({
+                where: { id: reservation.id },
+                data: { quantity: reservation.quantity - take },
+              });
+            }
+          }
+          if (left > 0) {
+            throw new Error(
+              "Could not align delivery with reserved quantity; refresh and try again.",
+            );
+          }
+        } else {
+          const reservations = await tx.stockReservation.findMany({
+            where: reservationWhere,
+            orderBy: { reservedAt: "asc" },
+          });
+
+          let remainingQty = qtyToDeliver;
+          for (const reservation of reservations) {
+            if (remainingQty <= 0) break;
+            const moveQty = Math.min(reservation.quantity, remainingQty);
+            await tx.stockReservation.update({
+              where: { id: reservation.id },
+              data: { status: "out" },
             });
-          } else {
-            await tx.partRackShelf.create({
-              data: {
+
+            const prs = await tx.partRackShelf.findFirst({
+              where: {
                 partId: invoiceItem.partId,
                 storeId: reservation.storeId,
                 rackId: reservation.rackId,
                 shelfId: reservation.shelfId,
-                quantity: -moveQty,
               },
             });
-          }
+            if (prs) {
+              await tx.partRackShelf.update({
+                where: { id: prs.id },
+                data: { quantity: { decrement: moveQty } },
+              });
+            } else {
+              await tx.partRackShelf.create({
+                data: {
+                  partId: invoiceItem.partId,
+                  storeId: reservation.storeId,
+                  rackId: reservation.rackId,
+                  shelfId: reservation.shelfId,
+                  quantity: -moveQty,
+                },
+              });
+            }
 
-          await tx.stockMovement.create({
-            data: {
-              id: `sm_${Date.now()}_${reservation.id}`,
-              partId: invoiceItem.partId,
-              type: "out",
-              quantity: moveQty,
-              storeId: reservation.storeId,
-              rackId: reservation.rackId,
-              shelfId: reservation.shelfId,
-              referenceType: "sales_invoice",
-              referenceId: id,
-              notes: `Delivery - Invoice ${invoice.invoiceNo}`,
-            } as any,
-          });
-          remainingQty -= moveQty;
+            await tx.stockMovement.create({
+              data: {
+                id: `sm_${Date.now()}_${reservation.id}`,
+                partId: invoiceItem.partId,
+                type: "out",
+                quantity: moveQty,
+                storeId: reservation.storeId,
+                rackId: reservation.rackId,
+                shelfId: reservation.shelfId,
+                referenceType: "sales_invoice",
+                referenceId: id,
+                notes: `Delivery - Invoice ${invoice.invoiceNo}`,
+              } as any,
+            });
+            remainingQty -= moveQty;
+          }
         }
       }
 

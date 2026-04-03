@@ -36,6 +36,8 @@ export interface Voucher {
   cashBankAccount: string;
   chequeNumber?: string;
   chequeDate?: string;
+  checkClearDate?: string;
+  isCleared?: number;
   VoucherEntry?: VoucherEntry[];
   entries?: VoucherEntry[];
   totalDebit: number;
@@ -546,6 +548,8 @@ export const VoucherManagement = () => {
         date: newVoucher.date,
         narration: newVoucher.narration,
         cashBankAccount: newVoucher.cashBankAccount,
+        chequeNumber: data.chequeNumber,
+        chequeDate: data.chequeDate ? convertDateToISO(data.chequeDate) : undefined,
         entries: apiEntries,
         status: newVoucher.status,
         createdBy: 'User',
@@ -599,6 +603,10 @@ export const VoucherManagement = () => {
         narration: updatedVoucher.narration,
         cashBankAccount: updatedVoucher.cashBankAccount,
         status: updatedVoucher.status,
+        chequeNumber: updatedVoucher.chequeNumber || null,
+        chequeDate: updatedVoucher.chequeDate ? convertDateToISO(updatedVoucher.chequeDate) : null,
+        checkClearDate: updatedVoucher.checkClearDate ? convertDateToISO(updatedVoucher.checkClearDate) : null,
+        isCleared: (updatedVoucher.isCleared !== undefined && updatedVoucher.isCleared !== null) ? parseInt(String(updatedVoucher.isCleared)) : null,
       };
 
       // ONLY include entries if they exist and are not empty

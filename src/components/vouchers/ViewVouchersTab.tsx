@@ -29,6 +29,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -94,9 +96,18 @@ export const ViewVouchersTab = ({
   const [editEntries, setEditEntries] = useState<Voucher["entries"]>([]);
   const [editNarration, setEditNarration] = useState("");
   const [editDate, setEditDate] = useState("");
+  const [editCheckClearDate, setEditCheckClearDate] = useState("");
+  const [editChequeNumber, setEditChequeNumber] = useState("");
+  const [editChequeDate, setEditChequeDate] = useState("");
+  const [editIsCleared, setEditIsCleared] = useState<number | null>(null);
 
   // View dialog (read-only)
   const [viewingVoucher, setViewingVoucher] = useState<Voucher | null>(null);
+
+  // New state for clearance dialog
+  const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
+  const [voucherToClear, setVoucherToClear] = useState<Voucher | null>(null);
+  const [clearanceDate, setClearanceDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Debug the viewingVoucher state
   useEffect(() => {
@@ -506,6 +517,45 @@ export const ViewVouchersTab = ({
 
     setEditNarration(voucher.narration || "");
     setEditDate(editDateValue);
+    
+    // Set new fields
+    let checkClearDateValue = "";
+    if (voucher.checkClearDate) {
+      try {
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(voucher.checkClearDate)) {
+          const [day, month, year] = voucher.checkClearDate.split('/');
+          checkClearDateValue = `${year}-${month}-${day}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(voucher.checkClearDate)) {
+          checkClearDateValue = voucher.checkClearDate;
+        } else {
+          const date = new Date(voucher.checkClearDate);
+          if (!isNaN(date.getTime())) {
+            checkClearDateValue = date.toISOString().split('T')[0];
+          }
+        }
+      } catch { }
+    }
+    setEditCheckClearDate(checkClearDateValue);
+    setEditChequeNumber(voucher.chequeNumber || "");
+    
+    let editChequeDateValue = "";
+    if (voucher.chequeDate) {
+      try {
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(voucher.chequeDate)) {
+          const [day, month, year] = voucher.chequeDate.split('/');
+          editChequeDateValue = `${year}-${month}-${day}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(voucher.chequeDate)) {
+          editChequeDateValue = voucher.chequeDate;
+        } else {
+          const date = new Date(voucher.chequeDate);
+          if (!isNaN(date.getTime())) {
+            editChequeDateValue = date.toISOString().split('T')[0];
+          }
+        }
+      } catch { }
+    }
+    setEditChequeDate(editChequeDateValue);
+    setEditIsCleared(voucher.isCleared !== undefined && voucher.isCleared !== null ? Number(voucher.isCleared) : null);
 
     // Ensure all entries have the expected fields for the edit form
     const mappedEntries = (voucher.entries || []).map(entry => ({
@@ -588,6 +638,10 @@ export const ViewVouchersTab = ({
       ...editingVoucher,
       narration: editNarration,
       date: finalDate,
+      checkClearDate: editCheckClearDate || undefined,
+      chequeNumber: editChequeNumber || undefined,
+      chequeDate: editChequeDate || undefined,
+      isCleared: editIsCleared !== null ? editIsCleared : undefined,
       entries: editEntries,
       totalDebit,
       totalCredit,
@@ -595,6 +649,31 @@ export const ViewVouchersTab = ({
 
     setEditingVoucher(null);
     toast({ title: "Success", description: "Voucher updated successfully" });
+  };
+
+  const handleOpenClearDialog = (voucher: Voucher) => {
+    setVoucherToClear(voucher);
+    setClearanceDate(new Date().toISOString().split('T')[0]);
+    setIsClearDialogOpen(true);
+  };
+
+  const handleConfirmClearance = async () => {
+    if (!voucherToClear) return;
+
+    try {
+      // Use the existing handleUpdateVoucher logic via the onUpdateVoucher callback
+      onUpdateVoucher({
+        ...voucherToClear,
+        isCleared: 1, // 1 = Cleared (Recieve)
+        checkClearDate: clearanceDate,
+      });
+
+      setIsClearDialogOpen(false);
+      setVoucherToClear(null);
+      toast({ title: "Success", description: "Voucher marked as cleared (Recieve)" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to clear voucher", variant: "destructive" });
+    }
   };
 
   const handleDelete = async (voucher: Voucher) => {
@@ -937,6 +1016,8 @@ export const ViewVouchersTab = ({
                 <TableHead className="font-semibold text-primary">Voucher no</TableHead>
                 <TableHead className="font-semibold text-primary">Voucher Name</TableHead>
                 <TableHead className="font-semibold text-primary">Date</TableHead>
+                <TableHead className="font-semibold text-primary">Clear Date</TableHead>
+                <TableHead className="font-semibold text-primary">Is Cleared</TableHead>
                 <TableHead className="font-semibold text-primary">Amount</TableHead>
                 <TableHead className="font-semibold text-primary">Status</TableHead>
                 <TableHead className="font-semibold text-primary">Actions</TableHead>
@@ -945,7 +1026,7 @@ export const ViewVouchersTab = ({
             <TableBody>
               {paginatedVouchers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     No vouchers found
                   </TableCell>
                 </TableRow>
@@ -962,10 +1043,24 @@ export const ViewVouchersTab = ({
                     </TableCell>
                     <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                     <TableCell className="text-primary font-medium">
-                      {voucher.voucherNumber}
+                      <div>
+                        {voucher.voucherNumber}
+                        {voucher.isCleared === 0 && (
+                          <div 
+                            className="text-[10px] text-blue-600 hover:underline cursor-pointer mt-1 font-normal"
+                            onClick={() => handleOpenClearDialog(voucher)}
+                          >
+                            Update
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-primary">{voucher.narration || "-"}</TableCell>
                     <TableCell>{formatDisplayDate(voucher.date)}</TableCell>
+                    <TableCell>{formatDisplayDate(voucher.checkClearDate || "")}</TableCell>
+                    <TableCell>
+                      {voucher.isCleared === 1 ? "Cleared" : voucher.isCleared === 2 ? "Returned" : voucher.isCleared === 0 ? "Pending" : "-"}
+                    </TableCell>
                     <TableCell className="font-medium">{formatAmount(voucher.totalDebit)}</TableCell>
                     <TableCell>{getStatusBadge(voucher.status)}</TableCell>
                     <TableCell>
@@ -1135,6 +1230,47 @@ export const ViewVouchersTab = ({
                   value={editDate}
                   onChange={(e) => setEditDate(e.target.value)}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Check Clear Date</Label>
+                <Input
+                  type="date"
+                  value={editCheckClearDate}
+                  onChange={(e) => setEditCheckClearDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Cheque Number</Label>
+                <Input
+                  placeholder="Cheque Number"
+                  value={editChequeNumber}
+                  onChange={(e) => setEditChequeNumber(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Cheque Date</Label>
+                <Input
+                  type="date"
+                  value={editChequeDate}
+                  onChange={(e) => setEditChequeDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Is Cleared Status</Label>
+                <Select 
+                  value={editIsCleared === null ? "none" : String(editIsCleared)} 
+                  onValueChange={(val) => setEditIsCleared(val === "none" ? null : parseInt(val))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None (-)</SelectItem>
+                    <SelectItem value="0">Pending (0)</SelectItem>
+                    <SelectItem value="1">Cleared (1)</SelectItem>
+                    <SelectItem value="2">Returned (2)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -1320,6 +1456,19 @@ export const ViewVouchersTab = ({
                     <p className="font-medium">{formatDisplayDate(viewingVoucher.chequeDate)}</p>
                   </div>
                 )}
+                {viewingVoucher.checkClearDate && (
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Clear Date</p>
+                    <p className="font-medium">{formatDisplayDate(viewingVoucher.checkClearDate)}</p>
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Is Cleared Status</p>
+                  <p className="font-medium">
+                    {viewingVoucher.isCleared === 1 ? "Cleared" : viewingVoucher.isCleared === 2 ? "Returned" : viewingVoucher.isCleared === 0 ? "Pending" : "-"} 
+                    {viewingVoucher.isCleared !== null && viewingVoucher.isCleared !== undefined ? ` (${viewingVoucher.isCleared})` : ""}
+                  </p>
+                </div>
               </div>
               {viewingVoucher.narration && (
                 <div className="space-y-1">
@@ -1377,6 +1526,35 @@ export const ViewVouchersTab = ({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update Cheque Clearance</DialogTitle>
+            <DialogDescription>
+              Set the date when the cheque for voucher {voucherToClear?.voucherNumber} was cleared.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="clear-date">Cheque Cleared Date</Label>
+              <Input
+                id="clear-date"
+                type="date"
+                value={clearanceDate}
+                onChange={(e) => setClearanceDate(e.target.value)}
+              />
+            </div>
+            <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-700">
+              This will change the status from <strong>Pending</strong> to <strong>Recieve</strong> (Cleared) 
+               and update account balances in the ledger and balance sheet.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsClearDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleConfirmClearance}>Confirm Receive</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

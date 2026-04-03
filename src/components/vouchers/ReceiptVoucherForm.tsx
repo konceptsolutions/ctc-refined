@@ -40,6 +40,8 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
 
   const [date, setDate] = useState(getTodayDate());
   const [drAccount, setDrAccount] = useState("");
+  const [chequeNumber, setChequeNumber] = useState("");
+  const [chequeDate, setChequeDate] = useState("");
   const [entries, setEntries] = useState<VoucherEntry[]>([
     { id: "1", accountCr: "", description: "", crAmount: 0 }
   ]);
@@ -93,13 +95,17 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
       date,
       drAccount,
       entries,
-      totalAmount
+      totalAmount,
+      chequeNumber,
+      chequeDate
     });
 
     // Reset form
     setReceivedFrom("");
     setVoucherNo(generateVoucherNo());
     setDrAccount("");
+    setChequeNumber("");
+    setChequeDate("");
     setEntries([{ id: "1", accountCr: "", description: "", crAmount: 0 }]);
     toast({ title: "Success", description: "Receipt Voucher saved successfully" });
   };
@@ -155,6 +161,28 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
               className="h-11 bg-muted/30"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Cheque Info */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="relative">
+          <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Cheque Number</Label>
+          <Input
+            placeholder="Cheque Number"
+            value={chequeNumber}
+            onChange={(e) => setChequeNumber(e.target.value)}
+            className="h-11"
+          />
+        </div>
+        <div className="relative">
+          <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Cheque Date</Label>
+          <Input
+            type="date"
+            value={chequeDate}
+            onChange={(e) => setChequeDate(e.target.value)}
+            className="h-11"
+          />
         </div>
       </div>
 

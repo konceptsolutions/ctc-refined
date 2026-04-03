@@ -15,13 +15,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Truck } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 
 interface SalesInvoiceItem {
   id: string;
+  partId: string;
   partNo: string;
   description: string;
   orderedQty: number;
@@ -29,6 +37,12 @@ interface SalesInvoiceItem {
   unitPrice: number;
   avgCost?: number;
   lineTotal: number;
+}
+
+interface PartLocationOption {
+  id: string;
+  label: string;
+  quantity: number;
 }
 
 interface SalesInvoice {
@@ -59,8 +73,19 @@ export const StoreSalesInvoiceReceipt = ({
   const [deliveryQuantities, setDeliveryQuantities] = useState<{
     [itemId: string]: number;
   }>({});
+  const [partLocationsByPartId, setPartLocationsByPartId] = useState<
+    Record<string, PartLocationOption[]>
+  >({});
+  const [selectedPrsByItemId, setSelectedPrsByItemId] = useState<
+    Record<string, string>
+  >({});
+  const [partStockInfo, setPartStockInfo] = useState<
+    Record<string, { current_stock: number } | null>
+  >({});
+  const [loadingPartStock, setLoadingPartStock] = useState<
+    Record<string, boolean>
+  >({});
 
-  // Initialise delivery quantities when dialog opens
   useEffect(() => {
     if (open && invoice.items) {
       const initial: { [itemId: string]: number } = {};
@@ -69,14 +94,143 @@ export const StoreSalesInvoiceReceipt = ({
         initial[item.id] = pending > 0 ? pending : 0;
       });
       setDeliveryQuantities(initial);
+      setSelectedPrsByItemId({});
+      setPartStockInfo({});
+      setLoadingPartStock({});
     }
   }, [open, invoice.items]);
 
+  useEffect(() => {
+    if (!open || !invoice.items?.length) return;
+    let cancelled = false;
+    (async () => {
+      const partIds = Array.from(
+        new Set(invoice.items!.map((i) => String(i.partId || "")).filter(Boolean)),
+      );
+      const entries: [string, PartLocationOption[]][] = await Promise.all(
+        partIds.map(async (pid) => {
+          try {
+            const res = await apiClient.getPartLocations(pid);
+            const data = Array.isArray((res as any).data)
+              ? (res as any).data
+              : [];
+            const locs: PartLocationOption[] = data
+              .filter(
+                (l: any) =>
+                  !l.isUnlocated && l.id && (l.rackId || l.shelfId),
+              )
+              .map((l: any) => ({
+                id: String(l.id),
+                quantity: Number(l.quantity) || 0,
+                label: `${l.store || "—"} · ${l.rack || l.rack_code || "—"} / ${l.shelf || l.shelf_no || "—"} (${Number(l.quantity) || 0})`,
+              }));
+            return [pid, locs] as [string, PartLocationOption[]];
+          } catch {
+            return [pid, []] as [string, PartLocationOption[]];
+          }
+        }),
+      );
+      if (!cancelled) {
+        setPartLocationsByPartId(Object.fromEntries(entries));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, invoice.id, invoice.items]);
+
+  useEffect(() => {
+    if (!open || !invoice.items?.length) return;
+    let cancelled = false;
+    const partIds = Array.from(
+      new Set(invoice.items.map((i) => String(i.partId || "")).filter(Boolean)),
+    );
+    partIds.forEach((pid) => {
+      setLoadingPartStock((p) => ({ ...p, [pid]: true }));
+    });
+    void (async () => {
+      await Promise.all(
+        partIds.map(async (pid) => {
+          try {
+            const res = (await apiClient.getPartCostLookup(pid)) as {
+              data?: { current_stock?: number };
+              current_stock?: number;
+              error?: string;
+            };
+            if (cancelled) return;
+            if (res.error) {
+              setPartStockInfo((p) => ({ ...p, [pid]: null }));
+              return;
+            }
+            const raw = res.data ?? res;
+            const current = Number(
+              (raw as { current_stock?: number })?.current_stock,
+            );
+            setPartStockInfo((p) => ({
+              ...p,
+              [pid]:
+                Number.isFinite(current) && current >= 0
+                  ? { current_stock: current }
+                  : null,
+            }));
+          } catch {
+            if (!cancelled) {
+              setPartStockInfo((p) => ({ ...p, [pid]: null }));
+            }
+          } finally {
+            if (!cancelled) {
+              setLoadingPartStock((p) => ({ ...p, [pid]: false }));
+            }
+          }
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, invoice.id, invoice.items]);
+
+  const getMaxStockOutQtyForItem = useCallback(
+    (item: SalesInvoiceItem): number => {
+      const pendingQty = Math.max(0, item.orderedQty - item.deliveredQty);
+      const stock = partStockInfo[String(item.partId)];
+      const prsId = selectedPrsByItemId[item.id];
+      const opts = partLocationsByPartId[String(item.partId)] || [];
+      const opt = prsId ? opts.find((o) => o.id === prsId) : undefined;
+      let max = pendingQty;
+      if (stock && typeof stock.current_stock === "number") {
+        max = Math.min(max, stock.current_stock);
+      }
+      if (opt) {
+        max = Math.min(max, opt.quantity);
+      }
+      return Math.max(0, max);
+    },
+    [partStockInfo, selectedPrsByItemId, partLocationsByPartId],
+  );
+
+  useEffect(() => {
+    if (!open || !invoice.items?.length) return;
+    setDeliveryQuantities((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const item of invoice.items!) {
+        const max = getMaxStockOutQtyForItem(item);
+        const cur = next[item.id] ?? 0;
+        if (cur > max) {
+          next[item.id] = max;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [open, invoice.items, getMaxStockOutQtyForItem]);
+
   const handleQuantityChange = (itemId: string, value: string) => {
-    const qty = parseInt(value) || 0;
+    const qty = parseInt(value, 10) || 0;
     const item = invoice.items?.find((i) => i.id === itemId);
     if (item) {
-      const maxQty = item.orderedQty - item.deliveredQty;
+      const maxQty = getMaxStockOutQtyForItem(item);
       setDeliveryQuantities((prev) => ({
         ...prev,
         [itemId]: Math.max(0, Math.min(qty, maxQty)),
@@ -93,17 +247,41 @@ export const StoreSalesInvoiceReceipt = ({
     try {
       setIsConfirming(true);
 
-      const deliveryItems = (invoice.items || [])
-        .filter((item) => getDeliveryQty(item.id) > 0)
-        .map((item) => ({
-          invoiceItemId: item.id,
-          quantity: getDeliveryQty(item.id),
-        }));
+      const itemsWithQty = (invoice.items || []).filter(
+        (item) => getDeliveryQty(item.id) > 0,
+      );
 
-      if (deliveryItems.length === 0) {
+      if (itemsWithQty.length === 0) {
         toast.error("Please enter a delivery quantity for at least one item.");
         return;
       }
+
+      for (const item of itemsWithQty) {
+        const prsId = selectedPrsByItemId[item.id];
+        if (!prsId) {
+          toast.error(
+            `Select rack/shelf location for ${item.partNo || "line item"}.`,
+          );
+          return;
+        }
+        const opts = partLocationsByPartId[String(item.partId)] || [];
+        const opt = opts.find((o) => o.id === prsId);
+        const allowed = getMaxStockOutQtyForItem(item);
+        if (getDeliveryQty(item.id) > allowed) {
+          toast.error(
+            opt && getDeliveryQty(item.id) > opt.quantity
+              ? `Stock out qty for ${item.partNo} exceeds quantity at the selected location (${opt.quantity}).`
+              : `Stock out qty for ${item.partNo} cannot exceed in-stock quantity or pending amount.`,
+          );
+          return;
+        }
+      }
+
+      const deliveryItems = itemsWithQty.map((item) => ({
+        invoiceItemId: item.id,
+        quantity: getDeliveryQty(item.id),
+        partRackShelfId: selectedPrsByItemId[item.id],
+      }));
 
       const response = await apiClient.recordDelivery(invoice.id, {
         challanNo: `CH-${invoice.invoiceNo}-${Date.now()}`,
@@ -147,29 +325,34 @@ export const StoreSalesInvoiceReceipt = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Truck className="w-5 h-5 text-primary" />
             Record Stock Out — {invoice.invoiceNo}
           </DialogTitle>
           <DialogDescription>
-            Enter the stock out quantity for each item. Leave 0 for items not
-            yet processed.
+            Enter stock out quantity and choose the rack/shelf to deduct from for
+            each line.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Items Table */}
-        <div className="rounded-md border overflow-hidden">
+        <div className="rounded-md border overflow-hidden overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="font-semibold">Item</TableHead>
-                <TableHead className="text-center w-[80px] font-semibold">
-                  Qty
+                <TableHead className="font-semibold min-w-[140px]">Item</TableHead>
+                <TableHead className="text-center w-[72px] font-semibold">
+                  Ordered
                 </TableHead>
-                <TableHead className="text-center w-[120px] font-semibold">
-                  Stock Out Qty
+                <TableHead className="text-center w-[88px] font-semibold">
+                  In stock
+                </TableHead>
+                <TableHead className="min-w-[220px] font-semibold">
+                  Rack / shelf (stock)
+                </TableHead>
+                <TableHead className="text-center w-[100px] font-semibold">
+                  Stock out qty
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -178,12 +361,17 @@ export const StoreSalesInvoiceReceipt = ({
                 invoice.items.map((item) => {
                   const pendingQty = item.orderedQty - item.deliveredQty;
                   const isFullyDelivered = pendingQty <= 0;
+                  const locOptions =
+                    partLocationsByPartId[String(item.partId)] || [];
+                  const partIdStr = String(item.partId);
+                  const stockRow = partStockInfo[partIdStr];
+                  const stockLoading = loadingPartStock[partIdStr];
+                  const maxOutQty = getMaxStockOutQtyForItem(item);
                   return (
                     <TableRow
                       key={item.id}
                       className={isFullyDelivered ? "opacity-50" : ""}
                     >
-                      {/* Item */}
                       <TableCell className="align-middle">
                         <p className="font-medium text-sm">{item.partNo}</p>
                         {item.description && (
@@ -193,22 +381,77 @@ export const StoreSalesInvoiceReceipt = ({
                         )}
                       </TableCell>
 
-                      {/* Qty (ordered) */}
                       <TableCell className="text-center align-middle font-medium">
                         {item.orderedQty}
                       </TableCell>
 
-                      {/* Stock Out Qty – editable */}
+                      <TableCell className="text-center align-middle">
+                        {isFullyDelivered ? (
+                          <span className="text-sm text-muted-foreground">
+                            —
+                          </span>
+                        ) : stockLoading ? (
+                          <span className="text-xs text-muted-foreground">
+                            …
+                          </span>
+                        ) : stockRow ? (
+                          <span className="text-sm font-semibold tabular-nums">
+                            {stockRow.current_stock}
+                          </span>
+                        ) : (
+                          <span
+                            className="text-xs text-muted-foreground"
+                            title="Could not load stock balance"
+                          >
+                            —
+                          </span>
+                        )}
+                      </TableCell>
+
+                      <TableCell className="align-middle">
+                        {isFullyDelivered ? (
+                          <span className="text-sm text-muted-foreground">
+                            —
+                          </span>
+                        ) : locOptions.length === 0 ? (
+                          <span className="text-xs text-amber-700">
+                            No located stock for this part — add stock to a
+                            rack/shelf first.
+                          </span>
+                        ) : (
+                          <Select
+                            value={selectedPrsByItemId[item.id] || ""}
+                            onValueChange={(v) =>
+                              setSelectedPrsByItemId((prev) => ({
+                                ...prev,
+                                [item.id]: v,
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-full max-w-[320px]">
+                              <SelectValue placeholder="Select location" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {locOptions.map((opt) => (
+                                <SelectItem key={opt.id} value={opt.id}>
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </TableCell>
+
                       <TableCell className="text-center align-middle">
                         {isFullyDelivered ? (
                           <span className="text-green-600 text-sm font-medium">
-                            Stock Out
+                            Done
                           </span>
                         ) : (
                           <Input
                             type="number"
                             min={0}
-                            max={pendingQty}
+                            max={maxOutQty}
                             value={getDeliveryQty(item.id)}
                             onChange={(e) =>
                               handleQuantityChange(item.id, e.target.value)
@@ -223,7 +466,7 @@ export const StoreSalesInvoiceReceipt = ({
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={4}
+                    colSpan={5}
                     className="text-center text-muted-foreground py-8"
                   >
                     No items found for this invoice.
@@ -234,7 +477,6 @@ export const StoreSalesInvoiceReceipt = ({
           </Table>
         </div>
 
-        {/* Footer Actions */}
         <div className="flex justify-end gap-3 pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel

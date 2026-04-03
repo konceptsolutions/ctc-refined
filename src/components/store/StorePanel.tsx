@@ -86,6 +86,8 @@ interface DirectPurchaseOrderItem {
   shelfId?: string;
   rackCode?: string;
   shelfNo?: string;
+  rackStoreId?: string | null;
+  rackStoreName?: string | null;
 }
 
 interface DirectPurchaseOrder {
@@ -393,6 +395,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
               shelfId: item.shelf_id || item.shelfId || null,
               rackCode: item.rack_name || (item.rack?.codeNo) || null,
               shelfNo: item.shelf_name || (item.shelf?.shelfNo) || null,
+              rackStoreId: item.rack_store_id || item.rackStoreId || null,
+              rackStoreName: item.rack_store_name || item.rackStoreName || null,
             }))
             : [],
         };
@@ -564,6 +568,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           ...order,
           items: rawItems.map((item: any) => ({
             id: item.id,
+            partId: item.partId || item.part_id || "",
             partNo: item.partNo || item.part_no,
             description: item.description || "",
             orderedQty: item.orderedQty || item.ordered_qty || 0,

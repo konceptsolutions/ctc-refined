@@ -514,23 +514,14 @@ export const DirectPurchaseOrder = () => {
     fetchBankCashAccounts();
   }, []);
 
-  // Filter and sort orders (client-side for search) - most recent first
+  // Filter and sort orders (client-side for search) — DPO serial (dpo number) descending
   const filteredOrders = useMemo(() => {
     return [...orders].sort((a, b) => {
-      // Handle date parsing with fallback
+      const byDpo = (b.dpoNo || "").localeCompare(a.dpoNo || "", undefined, { numeric: true, sensitivity: "base" });
+      if (byDpo !== 0) return byDpo;
       const dateA = a.date ? new Date(a.date).getTime() : 0;
       const dateB = b.date ? new Date(b.date).getTime() : 0;
-
-      // If dates are invalid, push to end
-      if (isNaN(dateA)) return 1;
-      if (isNaN(dateB)) return -1;
-
-      // Sort by date descending (newest first)
-      if (dateB !== dateA) {
-        return dateB - dateA;
-      }
-
-      // If dates are equal, sort by ID descending (newer IDs first)
+      if (dateB !== dateA) return dateB - dateA;
       return (b.id || "").localeCompare(a.id || "");
     });
   }, [orders]);
@@ -790,8 +781,11 @@ export const DirectPurchaseOrder = () => {
     }
   };
 
-  // Fetch part history
-  const fetchPartHistory = async (partId: string) => {
+  // Fetch part history (optional itemRowId: apply last purchase / catalog price to that line)
+  const fetchPartHistory = async (
+    partId: string,
+    itemRowId?: string | null,
+  ) => {
     if (!partId) {
       setPartHistory(null);
       return;
@@ -804,6 +798,7 @@ export const DirectPurchaseOrder = () => {
       let partPriceA: number | null = null;
       let partPriceB: number | null = null;
       let partPriceM: number | null = null;
+      let partCatalogPurchase: number | null = null;
 
       try {
         const partResponse = await apiClient.getPart(partId) as any;
@@ -811,6 +806,16 @@ export const DirectPurchaseOrder = () => {
           partPriceA = partResponse.price_a ?? partResponse.priceA ?? null;
           partPriceB = partResponse.price_b ?? partResponse.priceB ?? null;
           partPriceM = partResponse.price_m ?? partResponse.priceM ?? null;
+          const pp =
+            partResponse.purchase_price ??
+            partResponse.purchasePrice ??
+            null;
+          const co = partResponse.cost ?? null;
+          if (pp != null && Number(pp) > 0) {
+            partCatalogPurchase = Number(pp);
+          } else if (co != null && Number(co) > 0) {
+            partCatalogPurchase = Number(co);
+          }
         }
       } catch (error: any) {
         // Don't throw - just continue without part prices
@@ -940,6 +945,26 @@ export const DirectPurchaseOrder = () => {
         lastPurchaseDate,
         lastPurchaseDpoNo,
       });
+
+      const suggestPurchase: number | null =
+        lastPurchasePrice !== null && lastPurchasePrice !== undefined
+          ? Number(lastPurchasePrice)
+          : partCatalogPurchase;
+
+      if (
+        itemRowId &&
+        suggestPurchase !== null &&
+        !Number.isNaN(suggestPurchase)
+      ) {
+        setFormItems((prev) =>
+          prev.map((row) => {
+            if (row.id !== itemRowId || row.partId !== partId) {
+              return row;
+            }
+            return { ...row, purchasePrice: suggestPurchase };
+          }),
+        );
+      }
     } catch (error: any) {
       // Set all values to null to show N/A in the UI
       setPartHistory({
@@ -962,42 +987,46 @@ export const DirectPurchaseOrder = () => {
         if (item.id === id) {
           const updated = { ...item, [field]: value };
 
-          // When part is selected, also set its weight
+          // When part is selected, also set its weight and clear purchase price so last price can apply
           if (field === "partId" && typeof value === "string") {
-            const selectedPart = parts.find(p => p.id === value);
-            if (selectedPart) {
-              updated.weight = selectedPart.weight || 0;
+            if (value) {
+              updated.purchasePrice = "";
+              const selectedPart = parts.find((p) => p.id === value);
+              if (selectedPart) {
+                updated.weight = selectedPart.weight || 0;
+              }
+            } else {
+              updated.purchasePrice = "";
+              updated.weight = 0;
+              setSelectedPartForHistory(null);
+              setPartHistory(null);
             }
           }
 
-          // Update brand information when part is selected (but don't auto-fill prices)
+          // Update brand information when part is selected; fetch history and suggested purchase price
           if (field === "partId") {
-            // Fetch part details to get brand information
             if (typeof value === "string" && value) {
-              apiClient.getPart(value)
+              apiClient
+                .getPart(value)
                 .then((partResponse) => {
                   const part = partResponse as any;
-                  // Check if response has error (like 502 Bad Gateway)
                   if (part?.error) {
-                    return; // Exit early if there's an error
+                    return;
                   }
                   if (part) {
-                    // Update the parts array with brand information if missing
                     setParts((currentParts) =>
                       currentParts.map((p) => {
                         if (p.id === value && !p.brand && part.brand_name) {
                           return { ...p, brand: part.brand_name };
                         }
                         return p;
-                      })
+                      }),
                     );
                   }
                 })
-                .catch((error: any) => {
-                  // Don't throw - just log and continue
-                });
+                .catch(() => {});
               setSelectedPartForHistory(value);
-              fetchPartHistory(value);
+              void fetchPartHistory(value, id);
             }
           }
           return updated;

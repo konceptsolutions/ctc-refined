@@ -92,6 +92,14 @@ import {
 } from "@/types/invoice";
 
 // Interface for inline item row
+interface RecentSaleInvoiceLine {
+  invoiceNo: string;
+  invoiceDate?: string;
+  customerName: string;
+  qty: number | null;
+  unitPrice: number | null;
+}
+
 interface InlineItemRow {
   id: string;
   selectedPartId: string;
@@ -149,6 +157,12 @@ export const SalesInvoice = () => {
   const [updatingCreditLimit, setUpdatingCreditLimit] = useState(false);
   const [overrideCreditLimit, setOverrideCreditLimit] = useState(false);
   const [showLastSaleInfo, setShowLastSaleInfo] = useState(false);
+  const [recentSalesByPartId, setRecentSalesByPartId] = useState<
+    Record<string, RecentSaleInvoiceLine[]>
+  >({});
+  const [loadingRecentSalesByPartId, setLoadingRecentSalesByPartId] = useState<
+    Record<string, boolean>
+  >({});
 
   // Inline items state - matching reference design
   const [inlineItems, setInlineItems] = useState<InlineItemRow[]>([]);
@@ -437,20 +451,6 @@ export const SalesInvoice = () => {
         if (item.id === id) {
           let updated: InlineItemRow = { ...item, [field]: value };
 
-          // Cross-field logic for location selection vs unlocated stock
-          if (field === "useUnlocatedStock" && value === true) {
-            updated.selectedRackId = "";
-            updated.selectedLocationId = "";
-            updated.selectedLocationIds = [];
-          } else if (
-            (field === "selectedRackId" ||
-              field === "selectedLocationId" ||
-              field === "selectedLocationIds") &&
-            value
-          ) {
-            updated.useUnlocatedStock = false;
-          }
-
           // If part changed, set prices from part data and fetch stock balance
           if (field === "selectedPartId" && value) {
             const part = parts.find((p) => p.id === value);
@@ -492,25 +492,14 @@ export const SalesInvoice = () => {
               // Set unit price based on selected price type
               updated.unitPrice = getDerivedUnitPrice(updated, part);
 
-              // Reset selections for new part
+              // Rack/shelf is selected at stock-out (Store), not on the invoice
               updated.selectedLocationIds = [];
               updated.selectedLocationId = "";
+              updated.selectedRackId = "";
               updated.useUnlocatedStock = false;
 
-              // Fetch accurate stock balance and locations for this part
               fetchPartStockBalance(value);
-              fetchPartLocations(value);
-              // Fetch machine models for this part so "In Stock" toggle can show them
               fetchPartModels(value);
-
-              // Auto-select first location if available in the cached part data
-              if (part.locations && part.locations.length > 0) {
-                const firstLoc = part.locations[0];
-                updated.selectedLocationId = firstLoc.id;
-                updated.selectedLocationIds = [firstLoc.id];
-              } else if (part.unlocatedStock && part.unlocatedStock > 0) {
-                updated.useUnlocatedStock = true;
-              }
             }
           }
 
@@ -765,6 +754,118 @@ export const SalesInvoice = () => {
       });
     };
   }, []);
+
+  const lastSalePartIdsFingerprint = inlineItems
+    .map((inline) => inline.selectedPartId)
+    .filter(Boolean)
+    .sort()
+    .join("|");
+
+  useEffect(() => {
+    if (!showNewInvoice || !showLastSaleInfo) {
+      return;
+    }
+
+    const partIds = lastSalePartIdsFingerprint
+      ? Array.from(
+          new Set(lastSalePartIdsFingerprint.split("|").filter(Boolean)),
+        )
+      : [];
+
+    setRecentSalesByPartId((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        if (!partIds.includes(k)) {
+          delete next[k];
+        }
+      }
+      return next;
+    });
+
+    if (partIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    partIds.forEach((partId) => {
+      setLoadingRecentSalesByPartId((p) => ({ ...p, [partId]: true }));
+    });
+
+    void (async () => {
+      await Promise.all(
+        partIds.map(async (partId) => {
+          try {
+            const response = await apiClient.getSalesInvoicesByPart(partId, {
+              page: 1,
+              limit: 8,
+            });
+            if (cancelled) {
+              return;
+            }
+            if ((response as { error?: string }).error) {
+              setRecentSalesByPartId((p) => ({ ...p, [partId]: [] }));
+              return;
+            }
+            const invoiceData = Array.isArray(response)
+              ? response
+              : ((response as { data?: unknown[] }).data || []);
+            const filtered = (invoiceData as { id: string }[]).filter(
+              (inv) => inv.id !== editingInvoiceId,
+            );
+            const top3: RecentSaleInvoiceLine[] = filtered
+              .slice(0, 3)
+              .map((inv: Record<string, unknown>) => {
+                const item = inv.item as
+                  | {
+                    ordered_qty?: number;
+                    unit_price?: number;
+                  }
+                  | null
+                  | undefined;
+                return {
+                  invoiceNo: String(inv.invoice_no ?? ""),
+                  invoiceDate:
+                    inv.invoice_date != null
+                      ? String(inv.invoice_date)
+                      : undefined,
+                  customerName: String(inv.customer_name ?? ""),
+                  qty:
+                    item?.ordered_qty != null
+                      ? Number(item.ordered_qty)
+                      : null,
+                  unitPrice:
+                    item?.unit_price != null
+                      ? Number(item.unit_price)
+                      : null,
+                };
+              });
+            setRecentSalesByPartId((p) => ({ ...p, [partId]: top3 }));
+          } catch {
+            if (!cancelled) {
+              setRecentSalesByPartId((p) => ({ ...p, [partId]: [] }));
+            }
+          } finally {
+            if (!cancelled) {
+              setLoadingRecentSalesByPartId((p) => ({
+                ...p,
+                [partId]: false,
+              }));
+            }
+          }
+        }),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showNewInvoice,
+    showLastSaleInfo,
+    lastSalePartIdsFingerprint,
+    editingInvoiceId,
+  ]);
 
   // Update dropdown position on scroll
   useEffect(() => {
@@ -1274,7 +1375,7 @@ export const SalesInvoice = () => {
       }
     }
 
-    // Validate stock and location requirements
+    // Validate stock (rack/shelf is chosen at stock-out in Store, not on the invoice)
     for (const item of inlineItems) {
       if (!item.selectedPartId || item.qty <= 0) continue;
 
@@ -1285,20 +1386,6 @@ export const SalesInvoice = () => {
         ? `${part.partNo} - ${part.description}`
         : part.partNo;
 
-      // 1. Require a location selection or explicit unlocated flag
-      if (
-        !item.useUnlocatedStock &&
-        (!item.selectedLocationIds || item.selectedLocationIds.length === 0)
-      ) {
-        toast({
-          title: "Location Required",
-          description: `Please select a Rack/Shelf location or check 'Unlocated Stock' for ${partNoDesc}.`,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // 2. Validate quantity against available total stock
       const stockBalance = partStockBalances[part.id];
       const currentStock = stockBalance?.available_stock ?? part.availableQty;
       if (item.qty > currentStock) {
@@ -1308,49 +1395,6 @@ export const SalesInvoice = () => {
           variant: "destructive",
         });
         return;
-      }
-
-      // 3. Validate quantity against specifically selected locations
-      if (
-        !item.useUnlocatedStock &&
-        item.selectedLocationIds &&
-        item.selectedLocationIds.length > 0
-      ) {
-        let selectedStockTotal = 0;
-        const selectedLocsText = [];
-        for (const locId of item.selectedLocationIds) {
-          // Check our newly added partLocations state first (accurate real-time), then fallback to parts list locations
-          const loc = (partLocations[part.id] || part.locations || []).find(
-            (l: any) => l.id === locId,
-          );
-          if (loc) {
-            selectedStockTotal += loc.quantity;
-            selectedLocsText.push(
-              `${loc.rackCode || "No Rack"}-${loc.shelfNo || "No Shelf"}`,
-            );
-          }
-        }
-
-        if (item.qty > selectedStockTotal) {
-          toast({
-            title: "Location Stock Exceeded",
-            description: `Entered quantity (${item.qty}) for ${partNoDesc} exceeds the available stock in selected locations (${selectedLocsText.join(", ")}) which is ${selectedStockTotal}.`,
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-
-      // 4. Validate quantity against unlocated stock if fully unlocated
-      if (item.useUnlocatedStock) {
-        if (item.qty > (part.unlocatedStock || 0)) {
-          toast({
-            title: "Unlocated Stock Exceeded",
-            description: `Entered quantity (${item.qty}) for ${partNoDesc} exceeds available unlocated stock (${part.unlocatedStock || 0}).`,
-            variant: "destructive",
-          });
-          return;
-        }
       }
     }
 
@@ -1375,9 +1419,7 @@ export const SalesInvoice = () => {
           lineTotal: calculateLineTotal(item),
           grade: part?.grade || "A",
           brand: part?.brands[0]?.name || "",
-          selectedLocationId: item.selectedLocationId,
-          selectedLocationIds: item.selectedLocationIds,
-          useUnlocatedStock: item.useUnlocatedStock,
+          useUnlocatedStock: false,
         };
       });
 
@@ -1681,28 +1723,10 @@ export const SalesInvoice = () => {
                 return "M";
               return undefined;
             })(),
-            useUnlocatedStock: item.useUnlocatedStock || false,
-            selectedLocationId:
-              item.InvoiceRackShelf?.[0]?.rackId &&
-              item.InvoiceRackShelf?.[0]?.shelfId
-                ? item.Part?.PartRackShelf?.find(
-                    (prs: any) =>
-                      prs.storeId === item.InvoiceRackShelf?.[0]?.storeId &&
-                      prs.rackId === item.InvoiceRackShelf[0].rackId &&
-                      prs.shelfId === item.InvoiceRackShelf[0].shelfId,
-                  )?.id || ""
-                : "",
-            selectedLocationIds: (item.InvoiceRackShelf || [])
-              .map((irs: any) => {
-                return item.Part?.PartRackShelf?.find(
-                  (prs: any) =>
-                    prs.storeId === irs.storeId &&
-                    prs.rackId === irs.rackId &&
-                    prs.shelfId === irs.shelfId,
-                )?.id;
-              })
-              .filter(Boolean),
-            selectedRackId: item.InvoiceRackShelf?.[0]?.rackId || "",
+            useUnlocatedStock: false,
+            selectedLocationId: "",
+            selectedLocationIds: [],
+            selectedRackId: "",
             partNoFallback: item.Part?.partNo || item.partNo || "",
             descriptionFallback:
               item.Part?.description || item.description || "",
@@ -1732,11 +1756,9 @@ export const SalesInvoice = () => {
       }
 
       setInlineItems(convertedItems);
-      // Fetch stock balances and locations for the loaded items so rack/shelf show correctly
       convertedItems.forEach((item: any) => {
         if (item.selectedPartId) {
           fetchPartStockBalance(item.selectedPartId);
-          fetchPartLocations(item.selectedPartId);
           fetchPartModels(item.selectedPartId);
         }
       });
@@ -3895,18 +3917,6 @@ export const SalesInvoice = () => {
                   </div>
                 )}
 
-                <div className="space-y-1.5 w-56">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Delivered To
-                  </Label>
-                  <Input
-                    placeholder=""
-                    value={deliveredTo}
-                    onChange={(e) => setDeliveredTo(e.target.value)}
-                    className="h-9 text-sm"
-                  />
-                </div>
-
                 {/* Invoice Date */}
                 <div className="space-y-1.5 w-56">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
@@ -3916,37 +3926,6 @@ export const SalesInvoice = () => {
                     type="date"
                     value={invoiceDate}
                     onChange={(e) => setInvoiceDate(e.target.value)}
-                    className="bg-background border-primary/20 h-9 text-sm"
-                  />
-                </div>
-
-                <div className="space-y-1.5 w-56">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Term
-                  </Label>
-                  <Input
-                    type={newInvoice.customerType === "registered" ? "number" : "text"}
-                    min={0}
-                    placeholder={
-                      newInvoice.customerType === "registered"
-                        ? "Days"
-                        : "Auto (Cash / Online)"
-                    }
-                    value={
-                      newInvoice.customerType === "registered"
-                        ? term
-                        : selectedBankAccount && bankAmount > 0
-                          ? "online"
-                          : selectedCashAccount && cashAmount > 0
-                            ? "cash"
-                            : ""
-                    }
-                    onChange={(e) => {
-                      if (newInvoice.customerType === "registered") {
-                        setTerm(e.target.value);
-                      }
-                    }}
-                    readOnly={newInvoice.customerType !== "registered"}
                     className="bg-background border-primary/20 h-9 text-sm"
                   />
                 </div>
@@ -3975,12 +3954,6 @@ export const SalesInvoice = () => {
                       <TableRow className="border-b">
                         <TableHead className="w-[380px] font-bold text-foreground">
                           Part Details
-                        </TableHead>
-                        <TableHead className="w-[140px] font-bold text-foreground">
-                          Rack
-                        </TableHead>
-                        <TableHead className="w-[140px] font-bold text-foreground">
-                          Shelf
                         </TableHead>
                         <TableHead
                           className="w-[100px] text-center font-bold text-foreground select-none"
@@ -4301,15 +4274,46 @@ export const SalesInvoice = () => {
                                   {showLastSaleInfo &&
                                     item.selectedPartId && (
                                       <div className="mt-1 text-[10px] text-muted-foreground flex flex-col gap-1.5">
-                                        <div className="flex items-center gap-1">
-                                          {part &&
-                                          (part.lastSalePrice ||
-                                            part.lastSaleQty ||
-                                            part.lastSaleCustomerName) ? (
-                                            <>
-                                              <span className="font-semibold">
-                                                Last sold:
-                                              </span>
+                                        <div className="flex flex-col gap-1">
+                                          <span className="font-semibold">
+                                            Last 3 sales (invoices)
+                                          </span>
+                                          {loadingRecentSalesByPartId[
+                                            item.selectedPartId
+                                          ] ? (
+                                            <span>Loading…</span>
+                                          ) : (recentSalesByPartId[
+                                                item.selectedPartId
+                                              ]?.length ?? 0) > 0 ? (
+                                            <ul className="list-none space-y-0.5 m-0 p-0">
+                                              {recentSalesByPartId[
+                                                item.selectedPartId
+                                              ]!.map((row, idx) => (
+                                                <li
+                                                  key={`${row.invoiceNo}-${idx}`}
+                                                >
+                                                  #{row.invoiceNo} ·{" "}
+                                                  {formatInvoiceDateDisplay(
+                                                    row.invoiceDate,
+                                                  )}
+                                                  {row.qty != null
+                                                    ? ` · ${row.qty} pcs`
+                                                    : ""}
+                                                  {row.unitPrice != null
+                                                    ? ` @ Rs ${row.unitPrice.toFixed(2)}`
+                                                    : ""}
+                                                  {row.customerName
+                                                    ? ` · ${row.customerName}`
+                                                    : ""}
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          ) : part &&
+                                            (part.lastSalePrice ||
+                                              part.lastSaleQty ||
+                                              part.lastSaleCustomerName) ? (
+                                            <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                                              <span>Summary:</span>
                                               <span>
                                                 {part.lastSaleQty
                                                   ? `${part.lastSaleQty} pcs`
@@ -4323,12 +4327,15 @@ export const SalesInvoice = () => {
                                                   ? `@ Rs ${part.lastSalePrice.toFixed(2)}`
                                                   : ""}
                                                 {part.lastSaleCustomerName
-                                                  ? ` to ${part.lastSaleCustomerName}`
+                                                  ? ` · ${part.lastSaleCustomerName}`
                                                   : ""}
                                               </span>
-                                            </>
+                                            </div>
                                           ) : (
-                                            <span>No last sale info</span>
+                                            <span>
+                                              No sales invoices on record for
+                                              this part
+                                            </span>
                                           )}
                                         </div>
 
@@ -4599,452 +4606,6 @@ export const SalesInvoice = () => {
                                   </p>
                                 )}
                               </div>
-                            </TableCell>
-
-                            {/* Column 2: Rack (Mobile Groups Rack+Shelf) */}
-                            <TableCell className="md:table-cell block p-0 md:p-4 align-middle">
-                              <div className="md:hidden">
-                                <span className="text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
-                                  Storage Info
-                                </span>
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-1">
-                                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">
-                                      Rack
-                                    </span>
-                                    {/* Rack Content (Mobile) */}
-                                    {item.selectedPartId ? (
-                                      <ScrollArea className="h-[60px] border rounded-md">
-                                        <div className="p-1 space-y-0.5">
-                                          {(() => {
-                                            const allLocations = (
-                                              partLocations[
-                                                item.selectedPartId
-                                              ] ||
-                                              part?.locations ||
-                                              []
-                                            ).filter(
-                                              (l: any) => l.quantity !== 0,
-                                            );
-                                            const flatLocations = [];
-                                            const locMap = new Map();
-                                            allLocations.forEach((loc) => {
-                                              const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
-                                              if (!locMap.has(key)) {
-                                                const entry = {
-                                                  id: key,
-                                                  rackCode:
-                                                    loc.rackCode || "No Rack",
-                                                  shelfNo:
-                                                    loc.shelfNo || "No Shelf",
-                                                  ids: [loc.id],
-                                                  quantity: loc.quantity,
-                                                };
-                                                locMap.set(key, entry);
-                                                flatLocations.push(entry);
-                                              } else {
-                                                const entry = locMap.get(key);
-                                                entry.ids.push(loc.id);
-                                                entry.quantity += loc.quantity;
-                                              }
-                                            });
-                                            if (flatLocations.length === 0)
-                                              return (
-                                                <div className="text-[10px] text-muted-foreground italic py-1">
-                                                  No Rack Info
-                                                </div>
-                                              );
-                                            return flatLocations.map((loc) => {
-                                              const isChecked = loc.ids.every(
-                                                (id) =>
-                                                  (
-                                                    item.selectedLocationIds ||
-                                                    []
-                                                  ).includes(id),
-                                              );
-                                              return (
-                                                <div
-                                                  key={loc.id}
-                                                  className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
-                                                  onClick={(e) => {
-                                                    e.preventDefault();
-                                                    const currentIds = [
-                                                      ...(item.selectedLocationIds ||
-                                                        []),
-                                                    ];
-                                                    let nextIds = isChecked
-                                                      ? currentIds.filter(
-                                                          (id) =>
-                                                            !loc.ids.includes(
-                                                              id,
-                                                            ),
-                                                        )
-                                                      : [
-                                                          ...currentIds,
-                                                          ...loc.ids.filter(
-                                                            (id) =>
-                                                              !currentIds.includes(
-                                                                id,
-                                                              ),
-                                                          ),
-                                                        ];
-                                                    handleUpdateInlineItem(
-                                                      item.id,
-                                                      "selectedLocationIds",
-                                                      nextIds,
-                                                    );
-                                                    handleUpdateInlineItem(
-                                                      item.id,
-                                                      "selectedLocationId",
-                                                      nextIds[0] || "",
-                                                    );
-                                                  }}
-                                                >
-                                                  <Checkbox
-                                                    checked={isChecked}
-                                                    className="h-3 w-3"
-                                                  />
-                                                  <span className="text-[10px] font-medium truncate leading-none">
-                                                    {loc.rackCode}
-                                                  </span>
-                                                </div>
-                                              );
-                                            });
-                                          })()}
-                                        </div>
-                                      </ScrollArea>
-                                    ) : (
-                                      <div className="text-center text-muted-foreground">
-                                        -
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="space-y-1">
-                                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">
-                                      Shelf
-                                    </span>
-                                    {/* Shelf Content (Mobile) */}
-                                    {item.selectedPartId ? (
-                                      <ScrollArea className="h-[60px] border rounded-md">
-                                        <div className="p-1 space-y-0.5">
-                                          {(() => {
-                                            const allLocations = (
-                                              partLocations[
-                                                item.selectedPartId
-                                              ] ||
-                                              part?.locations ||
-                                              []
-                                            ).filter(
-                                              (l: any) => l.quantity !== 0,
-                                            );
-                                            const flatLocations = [];
-                                            const locMap = new Map();
-                                            allLocations.forEach((loc) => {
-                                              const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
-                                              if (!locMap.has(key)) {
-                                                const entry = {
-                                                  id: key,
-                                                  rackCode:
-                                                    loc.rackCode || "No Rack",
-                                                  shelfNo:
-                                                    loc.shelfNo || "No Shelf",
-                                                  ids: [loc.id],
-                                                  quantity: loc.quantity,
-                                                };
-                                                locMap.set(key, entry);
-                                                flatLocations.push(entry);
-                                              } else {
-                                                const entry = locMap.get(key);
-                                                entry.ids.push(loc.id);
-                                                entry.quantity += loc.quantity;
-                                              }
-                                            });
-                                            if (flatLocations.length === 0)
-                                              return (
-                                                <div className="text-[10px] text-muted-foreground italic py-1">
-                                                  No Shelf Info
-                                                </div>
-                                              );
-                                            return flatLocations.map((loc) => {
-                                              const isChecked = loc.ids.every(
-                                                (id) =>
-                                                  (
-                                                    item.selectedLocationIds ||
-                                                    []
-                                                  ).includes(id),
-                                              );
-                                              return (
-                                                <div
-                                                  key={loc.id}
-                                                  className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
-                                                  onClick={(e) => {
-                                                    e.preventDefault();
-                                                    const currentIds = [
-                                                      ...(item.selectedLocationIds ||
-                                                        []),
-                                                    ];
-                                                    let nextIds = isChecked
-                                                      ? currentIds.filter(
-                                                          (id) =>
-                                                            !loc.ids.includes(
-                                                              id,
-                                                            ),
-                                                        )
-                                                      : [
-                                                          ...currentIds,
-                                                          ...loc.ids.filter(
-                                                            (id) =>
-                                                              !currentIds.includes(
-                                                                id,
-                                                              ),
-                                                          ),
-                                                        ];
-                                                    handleUpdateInlineItem(
-                                                      item.id,
-                                                      "selectedLocationIds",
-                                                      nextIds,
-                                                    );
-                                                    handleUpdateInlineItem(
-                                                      item.id,
-                                                      "selectedLocationId",
-                                                      nextIds[0] || "",
-                                                    );
-                                                  }}
-                                                >
-                                                  <Checkbox
-                                                    checked={isChecked}
-                                                    className="h-3 w-3"
-                                                  />
-                                                  <div className="flex-1 flex justify-between items-center gap-1 overflow-hidden">
-                                                    <span className="text-[10px] truncate leading-none">
-                                                      {loc.shelfNo}
-                                                    </span>
-                                                    <Badge
-                                                      variant="secondary"
-                                                      className="px-1 text-[9px] h-3.5 leading-none"
-                                                    >
-                                                      {loc.quantity}
-                                                    </Badge>
-                                                  </div>
-                                                </div>
-                                              );
-                                            });
-                                          })()}
-                                        </div>
-                                      </ScrollArea>
-                                    ) : (
-                                      <div className="text-center text-muted-foreground">
-                                        -
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="hidden md:block">
-                                {/* Rack Content (Desktop) */}
-                                {item.selectedPartId ? (
-                                  <ScrollArea className="h-[60px] border rounded-md">
-                                    <div className="p-1 space-y-0.5">
-                                      {(() => {
-                                        const allLocations = (
-                                          partLocations[item.selectedPartId] ||
-                                          part?.locations ||
-                                          []
-                                        ).filter((l: any) => l.quantity !== 0);
-                                        const flatLocations = [];
-                                        const locMap = new Map();
-                                        allLocations.forEach((loc) => {
-                                          const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
-                                          if (!locMap.has(key)) {
-                                            const entry = {
-                                              id: key,
-                                              rackCode:
-                                                loc.rackCode || "No Rack",
-                                              ids: [loc.id],
-                                              quantity: loc.quantity,
-                                            };
-                                            locMap.set(key, entry);
-                                            flatLocations.push(entry);
-                                          } else {
-                                            const entry = locMap.get(key);
-                                            entry.ids.push(loc.id);
-                                            entry.quantity += loc.quantity;
-                                          }
-                                        });
-                                        if (flatLocations.length === 0)
-                                          return (
-                                            <div className="text-[10px] text-muted-foreground italic py-1 text-center">
-                                              No Rack
-                                            </div>
-                                          );
-                                        return flatLocations.map((loc) => {
-                                          const isChecked = loc.ids.every(
-                                            (id) =>
-                                              (
-                                                item.selectedLocationIds || []
-                                              ).includes(id),
-                                          );
-                                          return (
-                                            <div
-                                              key={loc.id}
-                                              className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
-                                              onClick={(e) => {
-                                                e.preventDefault();
-                                                const currentIds = [
-                                                  ...(item.selectedLocationIds ||
-                                                    []),
-                                                ];
-                                                let nextIds = isChecked
-                                                  ? currentIds.filter(
-                                                      (id) =>
-                                                        !loc.ids.includes(id),
-                                                    )
-                                                  : [
-                                                      ...currentIds,
-                                                      ...loc.ids.filter(
-                                                        (id) =>
-                                                          !currentIds.includes(
-                                                            id,
-                                                          ),
-                                                      ),
-                                                    ];
-                                                handleUpdateInlineItem(
-                                                  item.id,
-                                                  "selectedLocationIds",
-                                                  nextIds,
-                                                );
-                                                handleUpdateInlineItem(
-                                                  item.id,
-                                                  "selectedLocationId",
-                                                  nextIds[0] || "",
-                                                );
-                                              }}
-                                            >
-                                              <Checkbox
-                                                checked={isChecked}
-                                                className="h-3 w-3"
-                                              />
-                                              <span className="text-[10px] font-medium truncate leading-none">
-                                                {loc.rackCode}
-                                              </span>
-                                            </div>
-                                          );
-                                        });
-                                      })()}
-                                    </div>
-                                  </ScrollArea>
-                                ) : (
-                                  <div className="text-center text-muted-foreground">
-                                    -
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-
-                            {/* Column 3: Shelf (Desktop Only, Hidden Mobile) */}
-                            <TableCell className="hidden md:table-cell align-middle">
-                              {item.selectedPartId ? (
-                                <ScrollArea className="h-[60px] border rounded-md">
-                                  <div className="p-1 space-y-0.5">
-                                    {(() => {
-                                      const allLocations = (
-                                        partLocations[item.selectedPartId] ||
-                                        part?.locations ||
-                                        []
-                                      ).filter((l: any) => l.quantity !== 0);
-                                      const flatLocations = [];
-                                      const locMap = new Map();
-                                      allLocations.forEach((loc) => {
-                                        const key = `${loc.rackId || "none"}-${loc.shelfNo || "none"}`;
-                                        if (!locMap.has(key)) {
-                                          const entry = {
-                                            id: key,
-                                            shelfNo: loc.shelfNo || "No Shelf",
-                                            ids: [loc.id],
-                                            quantity: loc.quantity,
-                                          };
-                                          locMap.set(key, entry);
-                                          flatLocations.push(entry);
-                                        } else {
-                                          const entry = locMap.get(key);
-                                          entry.ids.push(loc.id);
-                                          entry.quantity += loc.quantity;
-                                        }
-                                      });
-                                      if (flatLocations.length === 0)
-                                        return (
-                                          <div className="text-[10px] text-muted-foreground italic py-1 text-center">
-                                            No Shelf
-                                          </div>
-                                        );
-                                      return flatLocations.map((loc) => {
-                                        const isChecked = loc.ids.every((id) =>
-                                          (
-                                            item.selectedLocationIds || []
-                                          ).includes(id),
-                                        );
-                                        return (
-                                          <div
-                                            key={loc.id}
-                                            className="flex items-center space-x-2 p-1 hover:bg-accent/50 rounded cursor-pointer transition-colors"
-                                            onClick={(e) => {
-                                              e.preventDefault();
-                                              const currentIds = [
-                                                ...(item.selectedLocationIds ||
-                                                  []),
-                                              ];
-                                              let nextIds = isChecked
-                                                ? currentIds.filter(
-                                                    (id) =>
-                                                      !loc.ids.includes(id),
-                                                  )
-                                                : [
-                                                    ...currentIds,
-                                                    ...loc.ids.filter(
-                                                      (id) =>
-                                                        !currentIds.includes(
-                                                          id,
-                                                        ),
-                                                    ),
-                                                  ];
-                                              handleUpdateInlineItem(
-                                                item.id,
-                                                "selectedLocationIds",
-                                                nextIds,
-                                              );
-                                              handleUpdateInlineItem(
-                                                item.id,
-                                                "selectedLocationId",
-                                                nextIds[0] || "",
-                                              );
-                                            }}
-                                          >
-                                            <Checkbox
-                                              checked={isChecked}
-                                              className="h-3 w-3"
-                                            />
-                                            <div className="flex-1 flex justify-between items-center gap-1 overflow-hidden">
-                                              <span className="text-[10px] truncate leading-none">
-                                                {loc.shelfNo}
-                                              </span>
-                                              <Badge
-                                                variant="secondary"
-                                                className="px-1 text-[9px] h-3.5 leading-none"
-                                              >
-                                                {loc.quantity}
-                                              </Badge>
-                                            </div>
-                                          </div>
-                                        );
-                                      });
-                                    })()}
-                                  </div>
-                                </ScrollArea>
-                              ) : (
-                                <div className="text-center text-muted-foreground">
-                                  -
-                                </div>
-                              )}
                             </TableCell>
 
                             {/* Column 4: In Stock (Desktop ONLY, Mobile combined in section below) */}
@@ -5725,6 +5286,58 @@ export const SalesInvoice = () => {
                   <span className="text-xl font-bold text-primary">
                     Rs {calculateDueAmount().toLocaleString()}
                   </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Term & delivered to — end of invoice (before save) */}
+            <div className="rounded-lg border border-primary/15 bg-primary/5 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-primary/80 mb-3">
+                Term and delivery
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Term
+                  </Label>
+                  <Input
+                    type={
+                      newInvoice.customerType === "registered" ? "number" : "text"
+                    }
+                    min={0}
+                    placeholder={
+                      newInvoice.customerType === "registered"
+                        ? "Days"
+                        : "Auto (Cash / Online)"
+                    }
+                    value={
+                      newInvoice.customerType === "registered"
+                        ? term
+                        : selectedBankAccount && bankAmount > 0
+                          ? "online"
+                          : selectedCashAccount && cashAmount > 0
+                            ? "cash"
+                            : ""
+                    }
+                    onChange={(e) => {
+                      if (newInvoice.customerType === "registered") {
+                        setTerm(e.target.value);
+                      }
+                    }}
+                    readOnly={newInvoice.customerType !== "registered"}
+                    className="h-9 text-sm bg-background"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Delivered To
+                  </Label>
+                  <Input
+                    placeholder="Delivery address or party"
+                    value={deliveredTo}
+                    onChange={(e) => setDeliveredTo(e.target.value)}
+                    className="h-9 text-sm bg-background"
+                  />
                 </div>
               </div>
             </div>

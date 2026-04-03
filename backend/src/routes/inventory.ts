@@ -7301,9 +7301,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
           },
           DirectPurchaseOrderExpense: true,
         },
-        orderBy: {
-          date: "desc",
-        },
+        orderBy: [{ dpoNumber: "desc" }, { createdAt: "desc" }],
         skip,
         take: limitNum,
       }),
@@ -7405,7 +7403,11 @@ router.get(
                   Category: true,
                 },
               },
-              Rack: true,
+              Rack: {
+                include: {
+                  Store: true,
+                },
+              },
               Shelf: true,
             },
           },
@@ -7471,6 +7473,8 @@ router.get(
               : null,
           rack_id: item.rackId,
           rack_name: item.Rack?.codeNo || null,
+          rack_store_id: item.Rack?.storeId || null,
+          rack_store_name: item.Rack?.Store?.name || null,
           shelf_id: item.shelfId,
           shelf_name: item.Shelf?.shelfNo || null,
         })),

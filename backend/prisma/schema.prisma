@@ -997,6 +997,8 @@ model Voucher {
   cashBankAccount                             String?
   chequeNumber                                String?
   chequeDate                                  DateTime?
+  checkClearDate                              DateTime?
+  isCleared                                   Int?
   totalDebit                                  Float          @default(0)
   totalCredit                                 Float          @default(0)
   status                                      String         @default("draft")
