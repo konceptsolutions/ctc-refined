@@ -115,15 +115,24 @@ export const StoreSalesInvoiceReceipt = ({
               ? (res as any).data
               : [];
             const locs: PartLocationOption[] = data
-              .filter(
-                (l: any) =>
-                  !l.isUnlocated && l.id && (l.rackId || l.shelfId),
-              )
-              .map((l: any) => ({
-                id: String(l.id),
-                quantity: Number(l.quantity) || 0,
-                label: `${l.store || "—"} · ${l.rack || l.rack_code || "—"} / ${l.shelf || l.shelf_no || "—"} (${Number(l.quantity) || 0})`,
-              }));
+              .filter((l: any) => {
+                if (!l.id || Number(l.quantity) <= 0) return false;
+                // Located rows, real unlocated PartRackShelf (null rack/shelf), or synthetic "unallocated-*" bucket
+                return Boolean(l.isUnlocated || l.rackId || l.shelfId);
+              })
+              .map((l: any) => {
+                const qty = Number(l.quantity) || 0;
+                const idStr = String(l.id);
+                let label: string;
+                if (idStr.startsWith("unallocated-")) {
+                  label = `${l.store || "—"} · Not on shelf (movement vs locations) (${qty})`;
+                } else if (l.isUnlocated) {
+                  label = `${l.store || "—"} · Unlocated (no rack/shelf) (${qty})`;
+                } else {
+                  label = `${l.store || "—"} · ${l.rack || l.rack_code || "—"} / ${l.shelf || l.shelf_no || "—"} (${qty})`;
+                }
+                return { id: idStr, quantity: qty, label };
+              });
             return [pid, locs] as [string, PartLocationOption[]];
           } catch {
             return [pid, []] as [string, PartLocationOption[]];
@@ -332,8 +341,8 @@ export const StoreSalesInvoiceReceipt = ({
             Record Stock Out — {invoice.invoiceNo}
           </DialogTitle>
           <DialogDescription>
-            Enter stock out quantity and choose the rack/shelf to deduct from for
-            each line.
+            Enter stock out quantity and choose where to deduct from — located
+            stock (rack/shelf) or unlocated stock for that store when applicable.
           </DialogDescription>
         </DialogHeader>
 
@@ -349,7 +358,7 @@ export const StoreSalesInvoiceReceipt = ({
                   In stock
                 </TableHead>
                 <TableHead className="min-w-[220px] font-semibold">
-                  Rack / shelf (stock)
+                  Location (stock)
                 </TableHead>
                 <TableHead className="text-center w-[100px] font-semibold">
                   Stock out qty
@@ -415,8 +424,9 @@ export const StoreSalesInvoiceReceipt = ({
                           </span>
                         ) : locOptions.length === 0 ? (
                           <span className="text-xs text-amber-700">
-                            No located stock for this part — add stock to a
-                            rack/shelf first.
+                            No stock buckets for this part (including unlocated).
+                            Assign stock to a store/location in inventory if totals
+                            show stock but nothing appears here.
                           </span>
                         ) : (
                           <Select

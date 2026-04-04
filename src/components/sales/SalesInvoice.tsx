@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
@@ -76,7 +76,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import { printDeliveryChallan } from "@/lib/printDeliveryChallan";
@@ -122,7 +125,30 @@ export const SalesInvoice = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterCustomerType, setFilterCustomerType] = useState<string>("all");
+  const [filterPartId, setFilterPartId] = useState("");
+  const [filterBrandId, setFilterBrandId] = useState("");
+  const [filterBrands, setFilterBrands] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+
+  const salesInvoicesQueryParams = useMemo(
+    () => ({
+      status: filterStatus !== "all" ? filterStatus : undefined,
+      customerType:
+        filterCustomerType !== "all" ? filterCustomerType : undefined,
+      search: searchTerm.trim() || undefined,
+      partId: filterPartId.trim() || undefined,
+      brandId: filterBrandId.trim() || undefined,
+    }),
+    [
+      filterStatus,
+      filterCustomerType,
+      searchTerm,
+      filterPartId,
+      filterBrandId,
+    ],
+  );
   const [approvingInvoice, setApprovingInvoice] = useState<string | null>(null);
 
   // New / Edit Invoice State
@@ -917,17 +943,80 @@ export const SalesInvoice = () => {
     }
   }, [showPartsDropdown]);
 
+  const brandFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "", label: "All brands" },
+      ...filterBrands.map((b) => ({
+        value: b.id,
+        label: b.name,
+      })),
+    ],
+    [filterBrands],
+  );
+
+  const itemFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "", label: "All items" },
+      ...parts.map((p) => {
+        const master = (p.masterPartNo || "").trim();
+        const partNo = (p.partNo || "").trim();
+        const label =
+          master && partNo
+            ? `Part no: ${partNo} · Master: ${master}`
+            : partNo || master || p.id;
+        const brandName = p.brands?.[0]?.name?.trim();
+        const descParts = [brandName, p.description?.trim()].filter(Boolean);
+        return {
+          value: p.id,
+          label,
+          description: descParts.length ? descParts.join(" · ") : undefined,
+        };
+      }),
+    ],
+    [parts],
+  );
+
+  useEffect(() => {
+    if (!showNewInvoice) {
+      void fetchParts("", false);
+    }
+  }, [showNewInvoice]);
+
+  useEffect(() => {
+    if (showNewInvoice) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = (await apiClient.getAllBrands(undefined, "active")) as
+          | { id: string; name: string }[]
+          | { data?: { id: string; name: string }[] };
+        const raw = Array.isArray(res) ? res : res?.data;
+        const list = Array.isArray(raw)
+          ? raw.map((b: any) => ({
+              id: String(b.id),
+              name: String(b.name || ""),
+            }))
+          : [];
+        if (!cancelled) {
+          setFilterBrands(list.filter((b) => b.id && b.name));
+        }
+      } catch {
+        if (!cancelled) setFilterBrands([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showNewInvoice]);
+
   // Fetch invoices from backend
   useEffect(() => {
     const fetchInvoices = async () => {
       setLoadingInvoices(true);
       try {
-        const response = (await apiClient.getSalesInvoices({
-          status: filterStatus !== "all" ? filterStatus : undefined,
-          customerType:
-            filterCustomerType !== "all" ? filterCustomerType : undefined,
-          search: searchTerm || undefined,
-        })) as any;
+        const response = (await apiClient.getSalesInvoices(
+          salesInvoicesQueryParams,
+        )) as any;
 
         if (response.error) {
           toast({
@@ -1017,7 +1106,7 @@ export const SalesInvoice = () => {
     };
 
     fetchInvoices();
-  }, [filterStatus, filterCustomerType, searchTerm]);
+  }, [salesInvoicesQueryParams]);
 
   // Fetch customers from API
   useEffect(() => {
@@ -1520,8 +1609,8 @@ export const SalesInvoice = () => {
         newInvoice.customerType === "registered" ? "Party Sale" : "Cash Sale";
       const message =
         newInvoice.customerType === "registered"
-          ? `Invoice ${editingInvoiceId ? "updated" : "created"}. Stock reserved. Approve when ready to reduce stock.`
-          : `Invoice ${editingInvoiceId ? "updated" : "created"}. Stock reserved. Confirm delivery to complete.`;
+          ? `Invoice ${editingInvoiceId ? "updated" : "created"}. Stock will be reserved when you approve the invoice.`
+          : `Invoice ${editingInvoiceId ? "updated" : "created"}. Stock will be reserved when you approve; confirm delivery to complete.`;
 
       toast({
         title: `Invoice ${editingInvoiceId ? "Updated" : "Created"}`,
@@ -1532,7 +1621,9 @@ export const SalesInvoice = () => {
       refreshPartsData();
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse.data || [];
@@ -1900,7 +1991,9 @@ export const SalesInvoice = () => {
       setShowPaymentDialog(false);
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse.data || [];
@@ -2002,7 +2095,9 @@ export const SalesInvoice = () => {
       refreshPartsData();
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse.data || [];
@@ -2142,7 +2237,9 @@ export const SalesInvoice = () => {
       setReverseQuantities({});
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse.data || [];
@@ -2260,11 +2357,9 @@ export const SalesInvoice = () => {
       refreshPartsData();
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices({
-        status: filterStatus !== "all" ? filterStatus : undefined,
-        customerType:
-          filterCustomerType !== "all" ? filterCustomerType : undefined,
-      });
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse.data || [];
@@ -2351,7 +2446,9 @@ export const SalesInvoice = () => {
       refreshPartsData();
 
       // Refresh invoices
-      const response = await apiClient.getSalesInvoices();
+      const response = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(response)
         ? response
         : response.data || [];
@@ -2441,7 +2538,9 @@ export const SalesInvoice = () => {
       refreshPartsData();
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse.data || [];
@@ -2535,7 +2634,9 @@ export const SalesInvoice = () => {
       });
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse?.data || [];
@@ -2627,7 +2728,9 @@ export const SalesInvoice = () => {
         description: `Invoice ${invoiceToDelete.invoiceNo} has been permanently removed.`,
       });
 
-      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse?.data || [];
@@ -2716,7 +2819,9 @@ export const SalesInvoice = () => {
       });
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices();
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse.data || [];
@@ -2809,12 +2914,9 @@ export const SalesInvoice = () => {
       });
 
       // Refresh invoices
-      const invoicesResponse = await apiClient.getSalesInvoices({
-        status: filterStatus !== "all" ? filterStatus : undefined,
-        customerType:
-          filterCustomerType !== "all" ? filterCustomerType : undefined,
-        search: searchTerm || undefined,
-      });
+      const invoicesResponse = await apiClient.getSalesInvoices(
+        salesInvoicesQueryParams,
+      );
       const invoicesData: any = Array.isArray(invoicesResponse)
         ? invoicesResponse
         : invoicesResponse.data || [];
@@ -3583,14 +3685,39 @@ export const SalesInvoice = () => {
           {/* Filters */}
           <Card>
             <CardContent className="p-4">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4">
+                <div className="relative flex-1 min-w-[200px]">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     placeholder="Search by invoice number or customer..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10"
+                  />
+                </div>
+                <div className="w-full sm:w-56 space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    Brand
+                  </Label>
+                  <SearchableSelect
+                    options={brandFilterOptions}
+                    value={filterBrandId}
+                    onValueChange={setFilterBrandId}
+                    placeholder="All brands"
+                    className="w-full"
+                  />
+                </div>
+                <div className="w-full sm:min-w-[280px] sm:max-w-md space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    Item (part no · master)
+                  </Label>
+                  <SearchableSelect
+                    options={itemFilterOptions}
+                    value={filterPartId}
+                    onValueChange={setFilterPartId}
+                    placeholder="All items"
+                    className="w-full"
+                    disabled={partsLoading && parts.length === 0}
                   />
                 </div>
                 <Select

@@ -560,6 +560,10 @@ router.get("/movements", async (req: Request, res: Response) => {
         where: {
           partId: { in: partIds },
           status: "reserved",
+          OR: [
+            { invoiceId: null },
+            { SalesInvoice: { is: { status: { not: "cancelled" } } } },
+          ],
         },
       });
 
@@ -1247,6 +1251,10 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
       where: {
         partId,
         status: "reserved",
+        OR: [
+          { invoiceId: null },
+          { SalesInvoice: { is: { status: { not: "cancelled" } } } },
+        ],
       },
       _sum: {
         quantity: true,
@@ -1672,6 +1680,10 @@ router.get("/balances", async (req: Request, res: Response) => {
       where: {
         partId: { in: partIds },
         status: "reserved",
+        OR: [
+          { invoiceId: null },
+          { SalesInvoice: { is: { status: { not: "cancelled" } } } },
+        ],
       },
       select: {
         partId: true,
@@ -1865,6 +1877,10 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
       where: {
         partId,
         status: "reserved",
+        OR: [
+          { invoiceId: null },
+          { SalesInvoice: { is: { status: { not: "cancelled" } } } },
+        ],
       },
       _sum: {
         quantity: true,

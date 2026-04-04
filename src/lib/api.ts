@@ -3016,6 +3016,10 @@ class ApiClient {
     paymentStatus?: string;
     customerType?: string;
     search?: string;
+    /** Only invoices that include a line for this part */
+    partId?: string;
+    /** Only invoices that include a line whose part belongs to this brand */
+    brandId?: string;
   }) {
     const queryParams = new URLSearchParams();
     if (params) {

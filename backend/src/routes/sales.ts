@@ -57,6 +57,10 @@ async function getReservedQuantity(partId: string): Promise<number> {
       where: {
         partId,
         status: "reserved",
+        OR: [
+          { invoiceId: null },
+          { SalesInvoice: { is: { status: { not: "cancelled" } } } },
+        ],
       },
     });
 
@@ -1052,18 +1056,7 @@ router.post(
         },
       });
 
-      // Create stock reservations for ALL invoices (stock is reserved but not reduced yet)
-      for (const item of invoice.SalesInvoiceItem) {
-        await prisma.stockReservation.create({
-          data: {
-            id: crypto.randomUUID(),
-            invoiceId: invoice.id,
-            partId: item.partId,
-            quantity: item.orderedQty,
-            status: "reserved",
-          },
-        });
-      }
+      // Stock is reserved when the invoice is approved (not while pending)
 
       // Determine initial status - default to pending
       let initialStatus = "pending";
@@ -1191,7 +1184,8 @@ router.post(
 router.get("/invoices", async (req: Request, res: Response) => {
   try {
     console.log("GET /invoices query:", req.query);
-    const { status, paymentStatus, customerType, search } = req.query;
+    const { status, paymentStatus, customerType, search, partId, brandId } =
+      req.query;
     const where: any = {};
 
     if (status && status !== "all") {
@@ -1206,15 +1200,33 @@ router.get("/invoices", async (req: Request, res: Response) => {
       where.customerType = customerType;
     }
 
+    const andExtra: any[] = [];
     if (search) {
-      where.AND = [
-        {
-          OR: [
-            { invoiceNo: { contains: search as string } },
-            { customerName: { contains: search as string } },
-          ],
+      andExtra.push({
+        OR: [
+          { invoiceNo: { contains: search as string } },
+          { customerName: { contains: search as string } },
+        ],
+      });
+    }
+    const pid = partId && String(partId).trim() ? String(partId).trim() : "";
+    const bid =
+      brandId && String(brandId).trim() ? String(brandId).trim() : "";
+    if (pid) {
+      const lineWhere: any = { partId: pid };
+      if (bid) {
+        lineWhere.Part = { brandId: bid };
+      }
+      andExtra.push({ SalesInvoiceItem: { some: lineWhere } });
+    } else if (bid) {
+      andExtra.push({
+        SalesInvoiceItem: {
+          some: { Part: { brandId: bid } },
         },
-      ];
+      });
+    }
+    if (andExtra.length) {
+      where.AND = andExtra;
     }
 
     // Fetch all invoices (we'll filter out "Demo" customers in memory since SQLite doesn't support case-insensitive mode)
@@ -1619,39 +1631,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
       },
     });
 
-    // Create stock reservations for ALL invoices (stock is reserved but not reduced yet)
-    // Pass location info if available
-    for (const item of (invoice as any).SalesInvoiceItem) {
-      if (item.InvoiceRackShelf && item.InvoiceRackShelf.length > 0) {
-        for (const loc of item.InvoiceRackShelf) {
-          await prisma.stockReservation.create({
-            data: {
-              invoiceId: invoice.id,
-              partId: item.partId,
-              quantity: loc.quantity,
-              status: "reserved",
-              storeId: loc.storeId,
-              rackId: loc.rackId,
-              shelfId: loc.shelfId,
-              useUnlocatedStock: false,
-            } as any,
-          });
-        }
-      } else {
-        await prisma.stockReservation.create({
-          data: {
-            invoiceId: invoice.id,
-            partId: item.partId,
-            quantity: item.orderedQty,
-            status: "reserved",
-            storeId: null,
-            rackId: null,
-            shelfId: null,
-            useUnlocatedStock: !!item.useUnlocatedStock,
-          } as any,
-        });
-      }
-    }
+    // Stock is reserved when the invoice is approved (not while pending)
 
     // Determine initial status - default to pending
     let initialStatus = "pending";
@@ -2631,35 +2611,39 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
           data: itemData,
         });
 
-        // Create new stock reservations
-        if (invoiceRackShelves.length > 0) {
-          for (const loc of invoiceRackShelves) {
+        // Recreate reservations only after the invoice is approved (not while pending)
+        if (
+          ["approved", "partially_delivered"].includes(existingInvoice.status)
+        ) {
+          if (invoiceRackShelves.length > 0) {
+            for (const loc of invoiceRackShelves) {
+              await prisma.stockReservation.create({
+                data: {
+                  invoiceId: id,
+                  partId: item.partId,
+                  quantity: loc.quantity,
+                  status: "reserved",
+                  storeId: loc.storeId,
+                  rackId: loc.rackId,
+                  shelfId: loc.shelfId,
+                  useUnlocatedStock: false,
+                } as any,
+              });
+            }
+          } else {
             await prisma.stockReservation.create({
               data: {
                 invoiceId: id,
                 partId: item.partId,
-                quantity: loc.quantity,
+                quantity: item.orderedQty,
                 status: "reserved",
-                storeId: loc.storeId,
-                rackId: loc.rackId,
-                shelfId: loc.shelfId,
-                useUnlocatedStock: false,
+                storeId: null,
+                rackId: null,
+                shelfId: null,
+                useUnlocatedStock: !!item.useUnlocatedStock,
               } as any,
             });
           }
-        } else {
-          await prisma.stockReservation.create({
-            data: {
-              invoiceId: id,
-              partId: item.partId,
-              quantity: item.orderedQty,
-              status: "reserved",
-              storeId: null,
-              rackId: null,
-              shelfId: null,
-              useUnlocatedStock: !!item.useUnlocatedStock,
-            } as any,
-          });
         }
       }
 
@@ -2720,6 +2704,115 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
   }
 });
 
+/** Movement total minus PartRackShelf sum — same idea as inventory GET /part-locations unallocated row. */
+async function getPartUnallocatedExcessQty(
+  tx: Prisma.TransactionClient,
+  partId: string,
+): Promise<number> {
+  const prsAgg = await tx.partRackShelf.aggregate({
+    where: { partId },
+    _sum: { quantity: true },
+  });
+  const assigned = prsAgg._sum.quantity || 0;
+  const smIn = await tx.stockMovement.aggregate({
+    where: { partId, type: "in" },
+    _sum: { quantity: true },
+  });
+  const smOut = await tx.stockMovement.aggregate({
+    where: { partId, type: "out" },
+    _sum: { quantity: true },
+  });
+  const actual =
+    (smIn._sum.quantity || 0) - (smOut._sum.quantity || 0);
+  return actual - assigned;
+}
+
+async function consumeReservationsForDelivery(
+  tx: Prisma.TransactionClient,
+  reservationWhere: { invoiceId: string; partId: string; status: string },
+  qtyToDeliver: number,
+): Promise<void> {
+  let left = qtyToDeliver;
+  const reservationsExplicit = await tx.stockReservation.findMany({
+    where: reservationWhere,
+    orderBy: { reservedAt: "asc" },
+  });
+  for (const reservation of reservationsExplicit) {
+    if (left <= 0) break;
+    const take = Math.min(reservation.quantity, left);
+    left -= take;
+    if (take === reservation.quantity) {
+      await tx.stockReservation.update({
+        where: { id: reservation.id },
+        data: { status: "out" },
+      });
+    } else {
+      await tx.stockReservation.update({
+        where: { id: reservation.id },
+        data: { quantity: reservation.quantity - take },
+      });
+    }
+  }
+  if (left > 0) {
+    throw new Error(
+      "Could not align delivery with reserved quantity; refresh and try again.",
+    );
+  }
+}
+
+/** Create StockReservation rows from invoice lines (InvoiceRackShelf split or single line). Call when invoice is approved, not when still pending. */
+async function createInvoiceStockReservationsCore(
+  db: Prisma.TransactionClient,
+  invoiceId: string,
+): Promise<void> {
+  const invoice = await db.salesInvoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      SalesInvoiceItem: {
+        include: { InvoiceRackShelf: true },
+      },
+    },
+  });
+  if (!invoice) {
+    throw new Error("Invoice not found");
+  }
+
+  for (const item of invoice.SalesInvoiceItem) {
+    const irs = item.InvoiceRackShelf;
+    if (irs && irs.length > 0) {
+      for (const loc of irs) {
+        const q = Number(loc.quantity) || 0;
+        if (q <= 0) continue;
+        await db.stockReservation.create({
+          data: {
+            invoiceId,
+            partId: item.partId,
+            quantity: q,
+            status: "reserved",
+            storeId: loc.storeId,
+            rackId: loc.rackId,
+            shelfId: loc.shelfId,
+            useUnlocatedStock: false,
+          } as any,
+        });
+      }
+    } else {
+      await db.stockReservation.create({
+        data: {
+          invoiceId,
+          partId: item.partId,
+          quantity: item.orderedQty,
+          status: "reserved",
+          storeId: null,
+          rackId: null,
+          shelfId: null,
+          useUnlocatedStock: !!item.useUnlocatedStock,
+        } as any,
+      });
+    }
+  }
+}
+
 // Record delivery - Only for Part Sell (walking) invoices
 router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
   try {
@@ -2745,7 +2838,28 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
           .json({ error: `Invalid item ID: ${item.invoiceItemId}` });
     }
 
+    const reservedBeforeDelivery = await prisma.stockReservation.count({
+      where: { invoiceId: id, status: "reserved" },
+    });
+    if (
+      reservedBeforeDelivery === 0 &&
+      invoice.customerType === "registered" &&
+      invoice.status === "pending"
+    ) {
+      return res.status(400).json({
+        error:
+          "Approve the invoice before recording delivery (Party Sale). Stock is reserved on approval.",
+      });
+    }
+
     await prisma.$transaction(async (tx) => {
+      const reservedInTx = await tx.stockReservation.count({
+        where: { invoiceId: id, status: "reserved" },
+      });
+      if (reservedInTx === 0) {
+        await createInvoiceStockReservationsCore(tx, id);
+      }
+
       // Create delivery log
       const deliveryLog = await tx.deliveryLog.create({
         data: {
@@ -2799,60 +2913,75 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
 
         // Stock out from a specific PartRackShelf row (e.g. chosen on store stock-out form)
         if (item.partRackShelfId) {
-          const prs = await tx.partRackShelf.findUnique({
-            where: { id: String(item.partRackShelfId) },
-          });
-          if (!prs || prs.partId !== invoiceItem.partId) {
-            throw new Error("Invalid rack/shelf location for this line item.");
-          }
-          if (Number(prs.quantity) < qtyToDeliver) {
-            throw new Error(
-              `Insufficient stock at selected location (available ${prs.quantity}, requested ${qtyToDeliver}).`,
-            );
-          }
-          await tx.partRackShelf.update({
-            where: { id: prs.id },
-            data: { quantity: { decrement: qtyToDeliver } },
-          });
-          await tx.stockMovement.create({
-            data: {
-              id: `sm_${Date.now()}_${invoiceItem.id}_${prs.id}`,
-              partId: invoiceItem.partId,
-              type: "out",
-              quantity: qtyToDeliver,
-              storeId: prs.storeId,
-              rackId: prs.rackId,
-              shelfId: prs.shelfId,
-              referenceType: "sales_invoice",
-              referenceId: id,
-              notes: `Delivery - Invoice ${invoice.invoiceNo} (stock out)`,
-            } as any,
-          });
-
-          let left = qtyToDeliver;
-          const reservationsExplicit = await tx.stockReservation.findMany({
-            where: reservationWhere,
-            orderBy: { reservedAt: "asc" },
-          });
-          for (const reservation of reservationsExplicit) {
-            if (left <= 0) break;
-            const take = Math.min(reservation.quantity, left);
-            left -= take;
-            if (take === reservation.quantity) {
-              await tx.stockReservation.update({
-                where: { id: reservation.id },
-                data: { status: "out" },
-              });
-            } else {
-              await tx.stockReservation.update({
-                where: { id: reservation.id },
-                data: { quantity: reservation.quantity - take },
-              });
+          const prsIdStr = String(item.partRackShelfId);
+          const unallocPrefix = "unallocated-";
+          if (prsIdStr.startsWith(unallocPrefix)) {
+            const embeddedPartId = prsIdStr.slice(unallocPrefix.length);
+            if (embeddedPartId !== invoiceItem.partId) {
+              throw new Error("Invalid rack/shelf location for this line item.");
             }
-          }
-          if (left > 0) {
-            throw new Error(
-              "Could not align delivery with reserved quantity; refresh and try again.",
+            const unallocAvail = await getPartUnallocatedExcessQty(
+              tx,
+              invoiceItem.partId,
+            );
+            if (qtyToDeliver > unallocAvail) {
+              throw new Error(
+                `Insufficient unallocated stock (available ${unallocAvail}, requested ${qtyToDeliver}).`,
+              );
+            }
+            await tx.stockMovement.create({
+              data: {
+                id: `sm_${Date.now()}_${invoiceItem.id}_unalloc`,
+                partId: invoiceItem.partId,
+                type: "out",
+                quantity: qtyToDeliver,
+                storeId: null,
+                rackId: null,
+                shelfId: null,
+                referenceType: "sales_invoice",
+                referenceId: id,
+                notes: `Delivery - Invoice ${invoice.invoiceNo} (unallocated stock out)`,
+              } as any,
+            });
+            await consumeReservationsForDelivery(
+              tx,
+              reservationWhere,
+              qtyToDeliver,
+            );
+          } else {
+            const prs = await tx.partRackShelf.findUnique({
+              where: { id: prsIdStr },
+            });
+            if (!prs || prs.partId !== invoiceItem.partId) {
+              throw new Error("Invalid rack/shelf location for this line item.");
+            }
+            if (Number(prs.quantity) < qtyToDeliver) {
+              throw new Error(
+                `Insufficient stock at selected location (available ${prs.quantity}, requested ${qtyToDeliver}).`,
+              );
+            }
+            await tx.partRackShelf.update({
+              where: { id: prs.id },
+              data: { quantity: { decrement: qtyToDeliver } },
+            });
+            await tx.stockMovement.create({
+              data: {
+                id: `sm_${Date.now()}_${invoiceItem.id}_${prs.id}`,
+                partId: invoiceItem.partId,
+                type: "out",
+                quantity: qtyToDeliver,
+                storeId: prs.storeId,
+                rackId: prs.rackId,
+                shelfId: prs.shelfId,
+                referenceType: "sales_invoice",
+                referenceId: id,
+                notes: `Delivery - Invoice ${invoice.invoiceNo} (stock out)`,
+              } as any,
+            });
+            await consumeReservationsForDelivery(
+              tx,
+              reservationWhere,
+              qtyToDeliver,
             );
           }
         } else {
@@ -3426,6 +3555,15 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
     const prevStatusIsPreApproval = preApprovalStatuses.includes(prevStatus);
 
     if (targetStatusIsPostApproval && prevStatusIsPreApproval) {
+      const reservedCount = await prisma.stockReservation.count({
+        where: { invoiceId: id, status: "reserved" },
+      });
+      if (reservedCount === 0) {
+        await prisma.$transaction(async (tx) => {
+          await createInvoiceStockReservationsCore(tx, id);
+        });
+      }
+
       const existingOut = await prisma.stockMovement.findFirst({
         where: { referenceType: "sales_invoice", referenceId: id, type: "out" },
       });
@@ -3953,6 +4091,16 @@ router.post("/invoices/:id/cancel", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
+    // Release stock reservations so cancelled invoices no longer block available qty
+    // (leave status "out" rows as-is — they reflect stock that already left on delivery)
+    await prisma.stockReservation.updateMany({
+      where: {
+        invoiceId: id,
+        status: { in: ["reserved", "partial"] },
+      },
+      data: { status: "released", releasedAt: new Date() },
+    });
+
     // Update invoice status
     await prisma.salesInvoice.update({
       where: { id },
@@ -3984,9 +4132,14 @@ router.delete(
       // For now, let's skip the deletedAt check and proceed with the soft delete
       // We'll implement a basic version that just marks as cancelled
 
-      // Start transaction for stock reversal
       await prisma.$transaction(async (tx) => {
-        // Soft delete the invoice - mark as cancelled
+        await tx.stockReservation.updateMany({
+          where: {
+            invoiceId: id,
+            status: { in: ["reserved", "partial"] },
+          },
+          data: { status: "released", releasedAt: new Date() },
+        });
         await tx.salesInvoice.update({
           where: { id },
           data: {
