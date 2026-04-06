@@ -16,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiClient } from "@/lib/api";
@@ -501,7 +500,7 @@ export const StoreLocationAssign = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(1200px,calc(100vw-2rem))] max-w-7xl max-h-[90vh] flex flex-col overflow-hidden p-6 sm:p-6">
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <MapPin className="w-5 h-5" />
             Assign Locations - {order.dpo_no}
@@ -517,7 +516,7 @@ export const StoreLocationAssign = ({
             ) : null}
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="max-h-[calc(90vh-180px)] min-h-0 w-full overflow-x-auto pr-2">
+        <div className="min-h-0 max-h-[min(70vh,calc(90vh-13rem))] w-full overflow-y-auto overflow-x-auto pr-1 [scrollbar-gutter:stable]">
           {fetchingRacks ? (
             <div className="text-center py-8 text-muted-foreground">
               Loading racks and shelves...
@@ -736,8 +735,8 @@ export const StoreLocationAssign = ({
               </CardContent>
             </Card>
           )}
-        </ScrollArea>
-        <DialogFooter>
+        </div>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
