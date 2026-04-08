@@ -78,6 +78,8 @@ interface SalesReturn {
   returnDate: string;
   customerName: string;
   remarks: string;
+  subtotal: number;
+  gst: number;
   totalAmount: number;
   discount: number;
   amountAfterDiscount: number;
@@ -134,6 +136,8 @@ function mapApiSalesReturn(row: any): SalesReturn {
     remarks: row.reason != null && String(row.reason).trim() !== ""
       ? String(row.reason)
       : "—",
+    subtotal,
+    gst: tax,
     totalAmount: grossBeforeDeduction,
     discount: deduction,
     amountAfterDiscount: net,
@@ -556,10 +560,11 @@ export const SalesReturns = () => {
                   </div>
                 </div>
                 <div class="totals-box">
-                  <p><span class="total-label">Total</span> <span class="total-value">PKR ${selectedReturn.totalAmount.toLocaleString()}/-</span></p>
-                  <p><span class="total-label">Discount</span> <span class="total-value">${selectedReturn.discount}</span></p>
-                  <p class="grand-total"><span class="total-label">Total</span> <span class="total-value">PKR ${selectedReturn.amountAfterDiscount.toLocaleString()}/-</span></p>
-                  <p class="grand-total"><span class="total-label">Total After GST</span> <span class="total-value">PKR ${selectedReturn.amountAfterDiscount.toLocaleString()}/-</span></p>
+                  <p><span class="total-label">Subtotal</span> <span class="total-value">PKR ${selectedReturn.subtotal.toLocaleString()}/-</span></p>
+                  <p><span class="total-label">GST</span> <span class="total-value">PKR ${selectedReturn.gst.toLocaleString()}/-</span></p>
+                  <p><span class="total-label">Total Amount</span> <span class="total-value">PKR ${selectedReturn.totalAmount.toLocaleString()}/-</span></p>
+                  <p><span class="total-label">Discount</span> <span class="total-value">PKR ${selectedReturn.discount.toLocaleString()}/-</span></p>
+                  <p class="grand-total"><span class="total-label">Total After Discount</span> <span class="total-value">PKR ${selectedReturn.amountAfterDiscount.toLocaleString()}/-</span></p>
                 </div>
               </div>
 
@@ -925,8 +930,10 @@ export const SalesReturns = () => {
 
               {/* Totals */}
               <div className="flex flex-col items-end gap-1 text-xs">
+                <p>Subtotal:<span className="font-semibold ml-2">PKR {selectedReturn.subtotal.toLocaleString()}</span></p>
+                <p>GST:<span className="font-semibold ml-2">PKR {selectedReturn.gst.toLocaleString()}</span></p>
                 <p>Total Amount:<span className="font-semibold ml-2">PKR {selectedReturn.totalAmount.toLocaleString()}</span></p>
-                <p>Discount:<span className="font-semibold ml-2">PKR {selectedReturn.discount}</span></p>
+                <p>Discount:<span className="font-semibold ml-2">PKR {selectedReturn.discount.toLocaleString()}</span></p>
                 <p>Total After Discount:<span className="font-semibold ml-2">PKR {selectedReturn.amountAfterDiscount.toLocaleString()}</span></p>
               </div>
             </div>
