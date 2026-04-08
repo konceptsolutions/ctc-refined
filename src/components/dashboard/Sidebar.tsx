@@ -23,6 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { getUserRole, isStoreUserRole } from "@/utils/auth";
 
 interface SidebarItemProps {
   Icon: LucideIcon;
@@ -89,6 +90,10 @@ export const Sidebar = () => {
     // { Icon: BarChart3, path: "/reports", label: "Reports" },
     // { Icon: Settings, path: "/settings", label: "Settings" },
   ];
+  const isStoreUser = getUserRole() === "store" || isStoreUserRole();
+  const visibleMenuItems = isStoreUser
+    ? menuItems.filter((item) => item.path === "/inventory" || item.path === "/store")
+    : menuItems;
 
   return (
     <aside className="w-16 bg-card border-r border-border flex flex-col items-center py-4 h-screen fixed left-0 top-0 z-50">
@@ -100,7 +105,7 @@ export const Sidebar = () => {
       {/* Navigation Items - Centered */}
       <nav className="flex-1 flex flex-col items-center justify-center gap-0.5">
         <TooltipProvider delayDuration={200}>
-          {menuItems.map((item, index) => (
+          {visibleMenuItems.map((item, index) => (
             <div
               key={index}
               className="h-11 w-16 flex items-center justify-center"

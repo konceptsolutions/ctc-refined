@@ -6,7 +6,6 @@ import { StorePanel } from "@/components/store/StorePanel";
 import { RackAndShelf } from "@/components/inventory/RackAndShelf";
 import { cn } from "@/lib/utils";
 import { Package, Archive } from "lucide-react";
-import { getUserRole } from "@/utils/auth";
 
 type StoreTab = "orders" | "rack-shelf";
 
@@ -26,13 +25,6 @@ const Store = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
   const [storeName, setStoreName] = useState<string>("");
-  const [userRole, setUserRole] = useState<'admin' | 'store' | null>(null);
-
-  // Get user role from auth utility
-  useEffect(() => {
-    const role = getUserRole();
-    setUserRole(role);
-  }, []);
 
   const activeTab: StoreTab = tabs.some((t) => t.id === tab)
     ? (tab as StoreTab)
@@ -42,9 +34,6 @@ const Store = () => {
   useEffect(() => {
     if (!tab) navigate("/store/orders", { replace: true });
   }, [tab, navigate]);
-
-  // Check if user is a store manager (hide sidebar for store managers)
-  const isStoreManager = userRole === "store";
 
   const handleTabChange = (tabId: StoreTab) => navigate(`/store/${tabId}`);
 
@@ -61,9 +50,9 @@ const Store = () => {
 
   return (
     <div className="h-screen flex bg-background overflow-hidden">
-      {!isStoreManager && <Sidebar />}
+      <Sidebar />
 
-      <div className={cn("flex-1 flex flex-col overflow-hidden", !isStoreManager && "ml-16")}>
+      <div className={cn("flex-1 flex flex-col overflow-hidden", "ml-16")}>
         <StoreHeader storeName={storeName} />
 
         {/* Horizontal Scrollable Tab Navigation */}

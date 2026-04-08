@@ -16,16 +16,31 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // Find user by email
-        const user = await prisma.user.findUnique({
-            where: { email },
-        });
+        // Find user by email with role name via roleId foreign key.
+        const users = await prisma.$queryRaw<Array<{
+            id: string;
+            name: string;
+            email: string;
+            password: string | null;
+            status: string;
+            role: string;
+        }>>`
+            SELECT u.id, u.name, u.email, u.password, u.status, r.name AS role
+            FROM "User" u
+            JOIN "Role" r ON r.id = u."roleId"
+            WHERE u.email = ${email}
+            LIMIT 1
+        `;
+        const user = users[0];
 
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         // Compare password
+        if (!user.password) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -45,10 +60,11 @@ router.post('/login', async (req, res) => {
         );
 
         // Update last login
-        await prisma.user.update({
-            where: { id: user.id },
-            data: { lastLogin: new Date().toISOString() },
-        });
+        await prisma.$executeRaw`
+            UPDATE "User"
+            SET "lastLogin" = ${new Date().toISOString()}, "updatedAt" = NOW()
+            WHERE id = ${user.id}
+        `;
 
         // Log activity
         await logActivity({

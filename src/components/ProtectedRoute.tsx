@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { isAuthenticated } from '@/utils/auth';
+import { isAuthenticated, getUserRole, isStoreUserRole } from '@/utils/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -26,6 +26,16 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   if (!authenticated) {
     // Redirect to login with return URL
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  const isStoreUser = getUserRole() === 'store' || isStoreUserRole();
+  if (isStoreUser) {
+    const path = location.pathname;
+    const allowedForStoreUser =
+      path.startsWith('/store') || path === '/inventory/current-stock';
+    if (!allowedForStoreUser) {
+      return <Navigate to="/inventory/current-stock" replace />;
+    }
   }
 
   return <>{children}</>;

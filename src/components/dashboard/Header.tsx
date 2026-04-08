@@ -3,6 +3,7 @@ import { Search, Package, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { GlobalSearch } from "./GlobalSearch";
+import { getTokenUserName } from "@/utils/auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +16,8 @@ import {
 export const Header = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const navigate = useNavigate();
+  const userName = getTokenUserName() || "User";
+  const avatarLetter = userName.charAt(0).toUpperCase();
 
   const handleLogout = () => {
     import("@/utils/auth").then((auth) => {
@@ -31,7 +34,7 @@ export const Header = () => {
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <Package className="w-4 h-4 text-primary-foreground" />
           </div>
-          <span className="font-semibold text-foreground">Admin-CTC</span>
+          <span className="font-semibold text-foreground">{userName}</span>
         </div>
 
         {/* Right Side - Actions */}
@@ -51,8 +54,8 @@ export const Header = () => {
           <DropdownMenu>
             <DropdownMenuTrigger className="focus:outline-none">
               <div className="flex items-center gap-2 hover:bg-muted p-1 px-2 rounded-lg transition-colors cursor-pointer">
-                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">T</div>
-                <span className="text-sm text-foreground hidden sm:block">Admin-CTC</span>
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">{avatarLetter}</div>
+                <span className="text-sm text-foreground hidden sm:block">{userName}</span>
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">

@@ -35,6 +35,7 @@ import { DPOReturn } from "@/components/inventory/DPOReturn";
 import { CurrentStock } from "@/components/inventory/CurrentStock";
 
 import { StoreManagementTab } from "@/components/settings/StoreManagementTab";
+import { getUserRole, isStoreUserRole } from "@/utils/auth";
 
 type InventoryTab =
   | "dashboard"
@@ -77,15 +78,25 @@ const tabs: TabConfig[] = [
 const Inventory = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
+  const isStoreUser = getUserRole() === "store" || isStoreUserRole();
+  const availableTabs = isStoreUser
+    ? tabs.filter((t) => t.id === "current-stock")
+    : tabs;
 
-  const activeTab: InventoryTab = tabs.some((t) => t.id === tab)
+  const activeTab: InventoryTab = availableTabs.some((t) => t.id === tab)
     ? (tab as InventoryTab)
-    : "dashboard";
+    : (isStoreUser ? "current-stock" : "dashboard");
 
   // Ensure /inventory redirects to the default dedicated page.
   useEffect(() => {
+    if (isStoreUser) {
+      if (tab !== "current-stock") {
+        navigate("/inventory/current-stock", { replace: true });
+      }
+      return;
+    }
     if (!tab) navigate("/inventory/dashboard", { replace: true });
-  }, [tab, navigate]);
+  }, [tab, navigate, isStoreUser]);
 
   const handleTabChange = (tabId: InventoryTab) => navigate(`/inventory/${tabId}`);
 
@@ -134,7 +145,7 @@ const Inventory = () => {
         <div className="bg-card border-b border-border">
           <div className="px-4 py-2 overflow-x-auto scrollbar-hide">
             <div className="flex items-center gap-2 min-w-max">
-              {tabs.map((tab) => {
+              {availableTabs.map((tab) => {
                 const Icon = tab.icon;
                 return (
                   <button

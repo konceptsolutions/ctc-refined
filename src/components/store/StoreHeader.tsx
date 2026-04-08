@@ -2,6 +2,7 @@ import { Package, LogOut } from "lucide-react";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
+import { getTokenUserName } from "@/utils/auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +18,8 @@ interface StoreHeaderProps {
 
 export const StoreHeader = ({ storeName }: StoreHeaderProps) => {
   const navigate = useNavigate();
+  const userName = getTokenUserName() || "User";
+  const avatarLetter = userName.charAt(0).toUpperCase();
 
   const handleLogout = () => {
     import("@/utils/auth").then((auth) => {
@@ -33,7 +36,7 @@ export const StoreHeader = ({ storeName }: StoreHeaderProps) => {
           <Package className="w-5 h-5 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="font-semibold text-foreground text-base md:text-lg">Admin-CTC</h1>
+          <h1 className="font-semibold text-foreground text-base md:text-lg">{userName}</h1>
           {storeName && (
             <p className="text-xs text-muted-foreground hidden sm:block">Store: {storeName}</p>
           )}
@@ -54,8 +57,8 @@ export const StoreHeader = ({ storeName }: StoreHeaderProps) => {
         <DropdownMenu>
           <DropdownMenuTrigger className="focus:outline-none">
             <div className="flex items-center gap-2 hover:bg-muted p-1 px-2 rounded-lg transition-colors cursor-pointer">
-              <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">T</div>
-              <span className="text-sm text-foreground hidden md:block">Admin-CTC</span>
+              <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">{avatarLetter}</div>
+              <span className="text-sm text-foreground hidden md:block">{userName}</span>
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

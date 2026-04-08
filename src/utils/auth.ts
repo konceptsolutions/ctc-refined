@@ -13,6 +13,18 @@ export interface AuthData {
   token: string;
 }
 
+const decodeJwtPayload = (token: string): Record<string, any> | null => {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Save authentication data with 24-hour expiration
  */
@@ -80,6 +92,27 @@ export const getUserRole = (): 'admin' | 'store' | null => {
   // Fallback to old storage method for backward compatibility
   const role = localStorage.getItem('userRole');
   return (role === 'admin' || role === 'store') ? role : null;
+};
+
+export const getTokenRoleName = (): string | null => {
+  const token = localStorage.getItem('authToken');
+  if (!token) return null;
+  const payload = decodeJwtPayload(token);
+  const role = payload?.role;
+  return typeof role === 'string' ? role : null;
+};
+
+export const isStoreUserRole = (): boolean => {
+  const roleName = getTokenRoleName()?.trim().toLowerCase();
+  return roleName === 'store user';
+};
+
+export const getTokenUserName = (): string | null => {
+  const token = localStorage.getItem('authToken');
+  if (!token) return null;
+  const payload = decodeJwtPayload(token);
+  const name = payload?.name;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
 };
 
 /**

@@ -55,12 +55,14 @@ const Login = () => {
 
             // Save authentication with the token from backend
             if (response.token) {
-                saveAuth(role, response.token);
-                toast.success(`Login Successful - ${role === 'admin' ? 'Administrator' : 'Store'} Access Granted`);
+                const backendRoleName = (response.user?.role || "").toString().trim().toLowerCase();
+                const effectiveRole: 'admin' | 'store' = backendRoleName === "store user" ? "store" : "admin";
+                saveAuth(effectiveRole, response.token);
+                toast.success(`Login Successful - ${effectiveRole === 'admin' ? 'Administrator' : 'Store'} Access Granted`);
 
                 // Redirect
-                if (role === 'store') {
-                    navigate("/store", { replace: true });
+                if (effectiveRole === 'store') {
+                    navigate("/inventory/current-stock", { replace: true });
                 } else {
                     const from = (location.state as any)?.from?.pathname || "/";
                     navigate(from === "/login" ? "/" : from, { replace: true });
