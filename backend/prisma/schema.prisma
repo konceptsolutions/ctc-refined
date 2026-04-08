@@ -8,25 +8,26 @@ datasource db {
 }
 
 model Account {
-  id             String         @id @default(uuid())
-  subgroupId     String
-  code           String         @unique
-  name           String
-  description    String?
-  accountType    String         @default("regular")
-  openingBalance Float          @default(0)
-  currentBalance Float          @default(0)
-  status         String         @default("Active")
-  canDelete      Boolean        @default(true)
-  supplierId     String?
-  customerId     String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  Customer       Customer?      @relation(fields: [customerId], references: [id])
-  Subgroup       Subgroup       @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
-  Supplier       Supplier?      @relation(fields: [supplierId], references: [id])
-  SalesInvoice   SalesInvoice[]
-  VoucherEntry   VoucherEntry[]
+  id                  String         @id @default(uuid())
+  subgroupId          String
+  code                String         @unique
+  name                String
+  description         String?
+  accountType         String         @default("regular")
+  openingBalance      Float          @default(0)
+  currentBalance      Float          @default(0)
+  status              String         @default("Active")
+  canDelete           Boolean        @default(true)
+  supplierId          String?
+  customerId          String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  Customer            Customer?      @relation(fields: [customerId], references: [id])
+  Subgroup            Subgroup       @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
+  Supplier            Supplier?      @relation(fields: [supplierId], references: [id])
+  SalesInvoice        SalesInvoice[]
+  SalesReturnPayments SalesReturn[]  @relation("SalesReturnPaymentAccount")
+  VoucherEntry        VoucherEntry[]
 }
 
 model ActivityLog {
@@ -243,6 +244,8 @@ model DirectPurchaseOrder {
   account                    String?
   description                String?
   status                     String                       @default("Completed")
+  /// Supplier / trade discount applied to line items subtotal only (not expenses)
+  discount                   Float                        @default(0)
   totalAmount                Float                        @default(0)
   createdAt                  DateTime                     @default(now())
   updatedAt                  DateTime                     @updatedAt
@@ -714,22 +717,30 @@ model SalesQuotationItem {
 }
 
 model SalesReturn {
-  id              String            @id @default(uuid())
-  returnNumber    String            @unique
-  salesInvoiceId  String
-  returnDate      DateTime
-  reason          String?
-  status          String            @default("pending")
-  totalAmount     Float             @default(0)
-  createdBy       String?
-  approvedBy      String?
-  approvedAt      DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  customerId      String?
-  Customer        Customer?         @relation(fields: [customerId], references: [id])
-  SalesInvoice    SalesInvoice      @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
-  SalesReturnItem SalesReturnItem[]
+  id               String            @id @default(uuid())
+  returnNumber     String            @unique
+  salesInvoiceId   String
+  returnDate       DateTime
+  reason           String?
+  status           String            @default("pending")
+  subtotal         Float             @default(0)
+  tax              Float             @default(0)
+  taxPercentage    Float             @default(0)
+  deduction        Float             @default(0)
+  totalAmount      Float             @default(0)
+  paymentAccountId String?
+  paidAmount       Float             @default(0)
+  createdBy        String?
+  approvedBy       String?
+  approvedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  customerId       String?
+  Customer         Customer?         @relation(fields: [customerId], references: [id])
+  PaymentAccount   Account?          @relation("SalesReturnPaymentAccount", fields: [paymentAccountId], references: [id])
+  SalesInvoice     SalesInvoice      @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  SalesReturnItem  SalesReturnItem[]
+  Voucher          Voucher[]
 
   @@index([returnDate])
   @@index([salesInvoiceId])
@@ -1012,11 +1023,15 @@ model Voucher {
   storeId                                     String?
   adjustmentId                                String?
   salesInvoiceId                              String?
+  salesReturnId                               String?
   Adjustment_Adjustment_voucherIdToVoucher    Adjustment[]   @relation("Adjustment_voucherIdToVoucher")
   Adjustment_Voucher_adjustmentIdToAdjustment Adjustment?    @relation("Voucher_adjustmentIdToAdjustment", fields: [adjustmentId], references: [id])
   SalesInvoice                                SalesInvoice?  @relation(fields: [salesInvoiceId], references: [id])
+  SalesReturn                                 SalesReturn?     @relation(fields: [salesReturnId], references: [id], onDelete: SetNull)
   Store                                       Store?         @relation(fields: [storeId], references: [id])
   VoucherEntry                                VoucherEntry[]
+
+  @@index([salesReturnId])
 }
 
 model VoucherEntry {

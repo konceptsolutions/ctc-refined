@@ -711,6 +711,10 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   };
 
   const handleAssignLocation = async (order: DirectPurchaseOrder) => {
+    if (order.status !== "Received") {
+      toast.info("Assign Location is available after order is received");
+      return;
+    }
     try {
       // Fetch full order details
       const fullOrder = await fetchOrderDetails(order.id);
@@ -1475,6 +1479,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                             size="sm"
                                             onClick={() => handleAssignLocation(row.raw as DirectPurchaseOrder)}
                                             title="Assign Location"
+                                            disabled={(row.raw as DirectPurchaseOrder).status !== "Received"}
+                                            className={(row.raw as DirectPurchaseOrder).status !== "Received" ? "opacity-50 cursor-not-allowed" : undefined}
                                           >
                                             <MapPin className="w-4 h-4" />
                                           </Button>
@@ -1695,6 +1701,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                         size="sm"
                                         onClick={() => handleAssignLocation(order)}
                                         title="Assign Location"
+                                        disabled={order.status !== "Received"}
+                                        className={order.status !== "Received" ? "opacity-50 cursor-not-allowed" : undefined}
                                       >
                                         <MapPin className="w-4 h-4" />
                                       </Button>

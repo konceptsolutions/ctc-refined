@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
   TableBody,
@@ -27,6 +25,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -68,6 +67,7 @@ import {
   Circle,
   Ban,
   RotateCcw,
+  Undo2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -92,7 +92,201 @@ import {
   Customer,
   DeliveryLogEntry,
   ItemGrade,
+  PaymentStatus,
 } from "@/types/invoice";
+
+function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] {
+  if (!Array.isArray(fullItems)) return [];
+  return fullItems.map((item: any) => {
+    const selectedRackCodes = (item.InvoiceRackShelf || [])
+      .map((irs: any) => irs?.Rack?.code || irs?.Rack?.codeNo || "")
+      .filter(Boolean);
+    const selectedShelfNos = (item.InvoiceRackShelf || [])
+      .map((irs: any) => irs?.Shelf?.shelfNo || irs?.Shelf?.name || "")
+      .filter(Boolean);
+    return {
+      id: item.id,
+      partId: item.partId,
+      partNo: item.partNo,
+      description: item.description || "",
+      orderedQty: Number(item.orderedQty || 0),
+      deliveredQty: Number(item.deliveredQty || 0),
+      pendingQty: Number(item.pendingQty || 0),
+      reversedQty: Math.max(
+        0,
+        Number(item.orderedQty || 0) -
+          Number(item.deliveredQty || 0) -
+          Number(item.pendingQty || 0),
+      ),
+      unitPrice: Number(item.unitPrice || 0),
+      discount: Number(item.discount || 0),
+      discountType: "percent" as const,
+      lineTotal: Number(item.lineTotal || 0),
+      grade: (item.grade || "A") as ItemGrade,
+      brand: item.brand,
+      rackCode: selectedRackCodes.join(", "),
+      shelfNo: selectedShelfNos.join(", "),
+    };
+  });
+}
+
+function aggregateReturnedQtyByPartId(salesReturns: any[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!Array.isArray(salesReturns)) return out;
+  for (const sr of salesReturns) {
+    const retItems = sr?.SalesReturnItem;
+    if (!Array.isArray(retItems)) continue;
+    for (const ri of retItems) {
+      const pid = ri.partId;
+      if (!pid) continue;
+      out[pid] = (out[pid] || 0) + Number(ri.returnQuantity || 0);
+    }
+  }
+  return out;
+}
+
+function validateSaleReturnByPart(
+  items: InvoiceItem[],
+  qtyByItemId: Record<string, number>,
+  returnedByPartId: Record<string, number>,
+): string | null {
+  const deliveredByPart: Record<string, number> = {};
+  const returnSumByPart: Record<string, number> = {};
+  for (const item of items) {
+    deliveredByPart[item.partId] =
+      (deliveredByPart[item.partId] || 0) + Number(item.deliveredQty || 0);
+    const q = qtyByItemId[item.id] || 0;
+    if (q > 0) {
+      returnSumByPart[item.partId] = (returnSumByPart[item.partId] || 0) + q;
+    }
+  }
+  for (const partId of Object.keys(returnSumByPart)) {
+    const max =
+      (deliveredByPart[partId] || 0) - (returnedByPartId[partId] || 0);
+    if (returnSumByPart[partId] > max) {
+      return `Returns exceed delivered quantity still available for one or more parts (remaining ${max} for at least one part).`;
+    }
+  }
+  for (const item of items) {
+    const q = qtyByItemId[item.id] || 0;
+    if (q > Number(item.deliveredQty || 0)) {
+      return `Return quantity cannot exceed delivered quantity on line ${item.partNo}.`;
+    }
+  }
+  return null;
+}
+
+function effectiveReturnQtyFromDraft(
+  draftVal: string | undefined,
+  lineCap: number,
+): number {
+  const raw = (draftVal ?? "").trim();
+  let n = parseInt(raw, 10);
+  if (Number.isNaN(n) || n < 0) return 0;
+  const cap = Number(lineCap) || 0;
+  return Math.min(n, cap);
+}
+
+/**
+ * Remaining returnable qty per part = sum(delivered on invoice lines for part) − qty
+ * already returned (pending/completed/approved returns). Then walk lines in order
+ * so each line's cap is min(line delivered, pool left) — correct when multiple lines
+ * share the same part.
+ */
+function computeSaleReturnQtyByItemId(
+  items: InvoiceItem[],
+  draft: Record<string, string>,
+  returnedByPartId: Record<string, number>,
+): Record<string, number> {
+  const deliveredByPart: Record<string, number> = {};
+  for (const it of items) {
+    deliveredByPart[it.partId] =
+      (deliveredByPart[it.partId] || 0) + Number(it.deliveredQty || 0);
+  }
+  const poolByPart: Record<string, number> = {};
+  for (const pid of Object.keys(deliveredByPart)) {
+    poolByPart[pid] = Math.max(
+      0,
+      deliveredByPart[pid] - (returnedByPartId[pid] || 0),
+    );
+  }
+  const out: Record<string, number> = {};
+  for (const it of items) {
+    const lineMax = Number(it.deliveredQty) || 0;
+    const pool = poolByPart[it.partId] ?? 0;
+    const cap = Math.min(lineMax, pool);
+    const q = effectiveReturnQtyFromDraft(draft[it.id], cap);
+    out[it.id] = q;
+    poolByPart[it.partId] = pool - q;
+  }
+  return out;
+}
+
+/** Max return qty allowed on this line given draft on earlier lines (same invoice order). */
+function lineReturnableCapForDraft(
+  item: InvoiceItem,
+  items: InvoiceItem[],
+  draft: Record<string, string>,
+  returnedByPartId: Record<string, number>,
+): number {
+  const deliveredByPart: Record<string, number> = {};
+  for (const it of items) {
+    deliveredByPart[it.partId] =
+      (deliveredByPart[it.partId] || 0) + Number(it.deliveredQty || 0);
+  }
+  const poolByPart: Record<string, number> = {};
+  for (const pid of Object.keys(deliveredByPart)) {
+    poolByPart[pid] = Math.max(
+      0,
+      deliveredByPart[pid] - (returnedByPartId[pid] || 0),
+    );
+  }
+  const lineMax = Number(item.deliveredQty) || 0;
+  for (const it of items) {
+    const pool = poolByPart[it.partId] ?? 0;
+    if (it.id === item.id) {
+      return Math.min(lineMax, Math.max(0, pool));
+    }
+    const cap = Math.min(Number(it.deliveredQty) || 0, pool);
+    const q = effectiveReturnQtyFromDraft(draft[it.id], cap);
+    poolByPart[it.partId] = pool - q;
+  }
+  return 0;
+}
+
+/** Parse draft strings to numeric qty per line (clamped to delivered minus already returned). */
+function parseSaleReturnDraftToQuantities(
+  items: InvoiceItem[],
+  draft: Record<string, string>,
+  returnedByPartId: Record<string, number>,
+): Record<string, number> {
+  return computeSaleReturnQtyByItemId(items, draft, returnedByPartId);
+}
+
+function invoiceHasTaxForList(inv: Invoice): boolean {
+  const pct = inv.taxPercentage != null ? Number(inv.taxPercentage) : 0;
+  const taxAmt = Number(inv.tax) || 0;
+  return pct > 0 || taxAmt > 0;
+}
+
+function invoiceHasOverallDiscountForList(inv: Invoice): boolean {
+  return Number(inv.overallDiscount) > 0;
+}
+
+/** No GST and no invoice-level discount */
+function invoiceIsSimpleForList(inv: Invoice): boolean {
+  return !invoiceHasTaxForList(inv) && !invoiceHasOverallDiscountForList(inv);
+}
+
+function parseSaleReturnDeductionDraft(val: string | undefined): number {
+  const t = String(val ?? "")
+    .trim()
+    .replace(/,/g, "");
+  if (t === "") return 0;
+  const n = parseFloat(t);
+  if (Number.isNaN(n) || n < 0) return 0;
+  return n;
+}
 
 // Interface for inline item row
 interface RecentSaleInvoiceLine {
@@ -124,6 +318,7 @@ export const SalesInvoice = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterInvoiceKind, setFilterInvoiceKind] = useState<string>("all");
   const [filterCustomerType, setFilterCustomerType] = useState<string>("all");
   const [filterPartId, setFilterPartId] = useState("");
   const [filterBrandId, setFilterBrandId] = useState("");
@@ -272,9 +467,6 @@ export const SalesInvoice = () => {
     }
   }, []);
 
-  // Navigation
-  const navigate = useNavigate();
-
   // Accounts for payment - Separate Bank and Cash
   const [bankAccounts, setBankAccounts] = useState<
     { id: string; name: string; type: string; code?: string }[]
@@ -383,25 +575,194 @@ export const SalesInvoice = () => {
   >({});
   const [reversing, setReversing] = useState(false);
 
-  // Filter invoices (only by search term, status and customerType are filtered by API)
-  // Also exclude invoices with demo customers. Always sort by invoice no descending (newest first).
-  const filteredInvoices = invoices
-    .filter((inv) => {
-      // Exclude invoices with demo customers (case-insensitive)
-      if (inv.customerName.toLowerCase().includes("demo")) {
-        return false;
-      }
+  const [showSaleReturnDialog, setShowSaleReturnDialog] = useState(false);
+  const [saleReturnInvoice, setSaleReturnInvoice] = useState<Invoice | null>(null);
+  const [saleReturnReturnedByPartId, setSaleReturnReturnedByPartId] = useState<
+    Record<string, number>
+  >({});
+  /** Digit-only strings while typing; clamp to delivered qty on blur and when parsing for submit. */
+  const [saleReturnQtyDraft, setSaleReturnQtyDraft] = useState<
+    Record<string, string>
+  >({});
+  const [saleReturnReason, setSaleReturnReason] = useState("");
+  const [saleReturnDate, setSaleReturnDate] = useState(() =>
+    new Date().toISOString().split("T")[0],
+  );
+  const [saleReturnDeductionDraft, setSaleReturnDeductionDraft] = useState("");
+  const [saleReturnDeductionTouched, setSaleReturnDeductionTouched] =
+    useState(false);
+  const [saleReturnPaymentAccountId, setSaleReturnPaymentAccountId] =
+    useState("");
+  const [saleReturnRefundPaidDraft, setSaleReturnRefundPaidDraft] =
+    useState("");
+  const [saleReturnRefundPaidTouched, setSaleReturnRefundPaidTouched] =
+    useState(false);
+  const [loadingSaleReturn, setLoadingSaleReturn] = useState(false);
+  const [submittingSaleReturn, setSubmittingSaleReturn] = useState(false);
+  const [invoiceListRefreshTick, setInvoiceListRefreshTick] = useState(0);
 
-      if (!searchTerm) return true;
-      return (
-        inv.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inv.customerName.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    })
-    .slice()
-    .sort((a, b) =>
-      b.invoiceNo.localeCompare(a.invoiceNo, undefined, { numeric: true }),
+  /** Return form: subtotal at line unit prices, GST at invoice rate, total incl. tax */
+  const saleReturnMoney = useMemo(() => {
+    if (!saleReturnInvoice) {
+      return {
+        subtotalExclTax: 0,
+        gstPct: 0,
+        taxAmount: 0,
+        totalInclTax: 0,
+        isTaxInvoice: false,
+      };
+    }
+    const qtyById = computeSaleReturnQtyByItemId(
+      saleReturnInvoice.items,
+      saleReturnQtyDraft,
+      saleReturnReturnedByPartId,
     );
+    const subtotalExclTax = saleReturnInvoice.items.reduce(
+      (sum, it) => sum + (qtyById[it.id] || 0) * it.unitPrice,
+      0,
+    );
+    const gstPct = Number(saleReturnInvoice.taxPercentage) || 0;
+    const isTaxInvoice = gstPct > 0;
+    const rawTax = isTaxInvoice ? (subtotalExclTax * gstPct) / 100 : 0;
+    const taxAmount = Math.round(rawTax * 100) / 100;
+    const totalInclTax = Math.round((subtotalExclTax + taxAmount) * 100) / 100;
+    return {
+      subtotalExclTax,
+      gstPct,
+      taxAmount,
+      totalInclTax,
+      isTaxInvoice,
+    };
+  }, [
+    saleReturnInvoice,
+    saleReturnQtyDraft,
+    saleReturnReturnedByPartId,
+  ]);
+
+  const saleReturnNet = useMemo(() => {
+    if (!saleReturnInvoice) {
+      return {
+        baseBeforeDeduction: 0,
+        deduction: 0,
+        net: 0,
+        showDeductionRow: false,
+        maxDeduction: 0,
+      };
+    }
+    const hasDisc = Number(saleReturnInvoice.overallDiscount) > 0;
+    const baseBeforeDeduction = saleReturnMoney.isTaxInvoice
+      ? saleReturnMoney.totalInclTax
+      : saleReturnMoney.subtotalExclTax;
+    const maxDeduction = Math.max(
+      0,
+      Math.round(baseBeforeDeduction * 100) / 100,
+    );
+    let deduction = parseSaleReturnDeductionDraft(saleReturnDeductionDraft);
+    if (deduction > maxDeduction) deduction = maxDeduction;
+    const net = Math.max(
+      0,
+      Math.round((maxDeduction - deduction) * 100) / 100,
+    );
+    return {
+      baseBeforeDeduction,
+      deduction,
+      net,
+      showDeductionRow: hasDisc,
+      maxDeduction,
+    };
+  }, [saleReturnInvoice, saleReturnMoney, saleReturnDeductionDraft]);
+
+  useEffect(() => {
+    if (!showSaleReturnDialog || !saleReturnInvoice) return;
+    const invDisc = Number(saleReturnInvoice.overallDiscount) || 0;
+    if (invDisc <= 0) {
+      setSaleReturnDeductionDraft("");
+      return;
+    }
+    if (saleReturnDeductionTouched) return;
+
+    const invSub = Number(saleReturnInvoice.subtotal) || 0;
+    const retSub = saleReturnMoney.subtotalExclTax;
+    const suggested =
+      invSub > 0
+        ? Math.round(((invDisc * retSub) / invSub) * 100) / 100
+        : 0;
+    const cap = saleReturnMoney.isTaxInvoice
+      ? saleReturnMoney.totalInclTax
+      : saleReturnMoney.subtotalExclTax;
+    const clamped = Math.min(
+      Math.max(0, suggested),
+      Math.max(0, Math.round(cap * 100) / 100),
+    );
+    setSaleReturnDeductionDraft(clamped > 0 ? String(clamped) : "");
+  }, [
+    showSaleReturnDialog,
+    saleReturnInvoice,
+    saleReturnMoney.subtotalExclTax,
+    saleReturnMoney.totalInclTax,
+    saleReturnMoney.isTaxInvoice,
+    saleReturnDeductionTouched,
+  ]);
+
+  useEffect(() => {
+    if (!showSaleReturnDialog || !saleReturnInvoice) return;
+    const net = saleReturnNet.net;
+    const draft =
+      net > 0 ? String(Math.round(net * 100) / 100) : "";
+    if (saleReturnInvoice.customerType === "walking") {
+      setSaleReturnRefundPaidDraft(draft);
+      return;
+    }
+    // Registered / party sale: never auto-fill "Amount to pay"; user enters it (optional).
+    if (!saleReturnRefundPaidTouched && net <= 0) {
+      setSaleReturnRefundPaidDraft("");
+    }
+  }, [
+    showSaleReturnDialog,
+    saleReturnInvoice,
+    saleReturnNet.net,
+    saleReturnRefundPaidTouched,
+  ]);
+
+  // Filter invoices: search + demo filter client-side; status/customer/part/brand via API.
+  // Invoice kind (simple / with tax / with discount) is client-side on loaded rows.
+  const filteredInvoices = useMemo(() => {
+    return invoices
+      .filter((inv) => {
+        if (inv.customerName.toLowerCase().includes("demo")) {
+          return false;
+        }
+
+        if (searchTerm) {
+          const q = searchTerm.toLowerCase();
+          if (
+            !inv.invoiceNo.toLowerCase().includes(q) &&
+            !inv.customerName.toLowerCase().includes(q)
+          ) {
+            return false;
+          }
+        }
+
+        if (filterInvoiceKind === "simple" && !invoiceIsSimpleForList(inv)) {
+          return false;
+        }
+        if (filterInvoiceKind === "with_tax" && !invoiceHasTaxForList(inv)) {
+          return false;
+        }
+        if (
+          filterInvoiceKind === "with_discount" &&
+          !invoiceHasOverallDiscountForList(inv)
+        ) {
+          return false;
+        }
+
+        return true;
+      })
+      .slice()
+      .sort((a, b) =>
+        b.invoiceNo.localeCompare(a.invoiceNo, undefined, { numeric: true }),
+      );
+  }, [invoices, searchTerm, filterInvoiceKind]);
 
   // Calculate totals
   const totalInvoices = invoices.length;
@@ -1069,6 +1430,8 @@ export const SalesInvoice = () => {
             overallDiscount: inv.overallDiscount || 0,
             overallDiscountType: "fixed" as const,
             tax: inv.tax || 0,
+            taxPercentage:
+              inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
             grandTotal: inv.grandTotal,
             paidAmount: inv.paidAmount || 0,
             status: inv.status as InvoiceStatus,
@@ -1106,7 +1469,7 @@ export const SalesInvoice = () => {
     };
 
     fetchInvoices();
-  }, [salesInvoicesQueryParams]);
+  }, [salesInvoicesQueryParams, invoiceListRefreshTick]);
 
   // Fetch customers from API
   useEffect(() => {
@@ -2135,6 +2498,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage:
+          inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -2321,6 +2686,185 @@ export const SalesInvoice = () => {
     }
   };
 
+  const openSaleReturnDialog = async (inv: Invoice) => {
+    setShowSaleReturnDialog(true);
+    setLoadingSaleReturn(true);
+    setSaleReturnInvoice(null);
+    try {
+      const resp = (await apiClient.getSalesInvoice(inv.id)) as any;
+      const fullInv = resp?.data || resp;
+      if (!fullInv?.id) throw new Error("Invalid invoice response");
+      const fullItems = Array.isArray(fullInv.SalesInvoiceItem)
+        ? fullInv.SalesInvoiceItem
+        : [];
+      const mappedItems = mapApiSalesInvoiceItemsToInvoiceItems(fullItems);
+      const returnedByPart = aggregateReturnedQtyByPartId(fullInv.SalesReturn);
+      setSaleReturnReturnedByPartId(returnedByPart);
+      setSaleReturnDeductionTouched(false);
+      setSaleReturnDeductionDraft("");
+      setSaleReturnRefundPaidTouched(false);
+      setSaleReturnRefundPaidDraft("");
+      setSaleReturnPaymentAccountId("");
+      const merged: Invoice = {
+        ...inv,
+        invoiceDate: fullInv.invoiceDate || inv.invoiceDate,
+        term: fullInv.term ?? inv.term,
+        customerName: fullInv.customerName || inv.customerName,
+        customerId: fullInv.customerId || inv.customerId,
+        customerType: (fullInv.customerType || inv.customerType) as CustomerType,
+        subtotal: Number(fullInv.subtotal ?? inv.subtotal),
+        overallDiscount: Number(fullInv.overallDiscount ?? inv.overallDiscount),
+        tax: Number(fullInv.tax ?? inv.tax),
+        taxPercentage: fullInv.taxPercentage ?? inv.taxPercentage,
+        grandTotal: Number(fullInv.grandTotal ?? inv.grandTotal),
+        paidAmount: Number(fullInv.paidAmount ?? inv.paidAmount),
+        status: (fullInv.status || inv.status) as InvoiceStatus,
+        paymentStatus: (fullInv.paymentStatus || inv.paymentStatus) as PaymentStatus,
+        items: mappedItems,
+      };
+      setSaleReturnInvoice(merged);
+      const draft: Record<string, string> = {};
+      mappedItems.forEach((item) => {
+        draft[item.id] = "";
+      });
+      setSaleReturnQtyDraft(draft);
+      setSaleReturnReason("");
+      setSaleReturnDate(new Date().toISOString().split("T")[0]);
+    } catch (e: any) {
+      toast({
+        title: "Error",
+        description: e?.message || "Failed to load invoice for return.",
+        variant: "destructive",
+      });
+      setShowSaleReturnDialog(false);
+    } finally {
+      setLoadingSaleReturn(false);
+    }
+  };
+
+  const handleSubmitSaleReturn = async () => {
+    if (!saleReturnInvoice) return;
+    const qtyByItemId = parseSaleReturnDraftToQuantities(
+      saleReturnInvoice.items,
+      saleReturnQtyDraft,
+      saleReturnReturnedByPartId,
+    );
+    const err = validateSaleReturnByPart(
+      saleReturnInvoice.items,
+      qtyByItemId,
+      saleReturnReturnedByPartId,
+    );
+    if (err) {
+      toast({
+        title: "Invalid quantities",
+        description: err,
+        variant: "destructive",
+      });
+      return;
+    }
+    const items: { part_id: string; return_quantity: number }[] = [];
+    for (const line of saleReturnInvoice.items) {
+      const q = qtyByItemId[line.id] ?? 0;
+      if (q > 0) items.push({ part_id: line.partId, return_quantity: q });
+    }
+    if (items.length === 0) {
+      toast({
+        title: "Nothing to return",
+        description: "Enter a return quantity for at least one line.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const isWalkingReturn = saleReturnInvoice.customerType === "walking";
+    const netCap = Math.round(saleReturnNet.net * 100) / 100;
+    let refundPaid = 0;
+    if (isWalkingReturn) {
+      if (netCap > 0) {
+        if (!saleReturnPaymentAccountId) {
+          toast({
+            title: "Payment account",
+            description:
+              "Select the cash or bank account to refund the walk-in customer.",
+            variant: "destructive",
+          });
+          return;
+        }
+        refundPaid = netCap;
+      }
+    } else {
+      refundPaid = parseSaleReturnDeductionDraft(saleReturnRefundPaidDraft);
+      refundPaid = Math.max(0, Math.min(refundPaid, netCap));
+      if (refundPaid > 0 && !saleReturnPaymentAccountId) {
+        toast({
+          title: "Payment account",
+          description:
+            "Select the cash or bank account to pay the refund, or clear the paid amount.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (refundPaid <= 0 && saleReturnPaymentAccountId) {
+        toast({
+          title: "Paid amount",
+          description:
+            "Enter the amount to pay the customer or clear the payment account.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    setSubmittingSaleReturn(true);
+    try {
+      const payload: Parameters<typeof apiClient.createSalesReturn>[0] = {
+        invoice_id: saleReturnInvoice.id,
+        return_date: saleReturnDate,
+        reason: saleReturnReason.trim() || undefined,
+        items,
+      };
+      if (Number(saleReturnInvoice.overallDiscount) > 0) {
+        payload.deduction = saleReturnNet.deduction;
+      }
+      if (refundPaid > 0 && saleReturnPaymentAccountId) {
+        payload.paid_amount = refundPaid;
+        payload.payment_account_id = saleReturnPaymentAccountId;
+      }
+      const response = await apiClient.createSalesReturn(payload);
+      if (response.error) {
+        toast({
+          title: "Error",
+          description: response.error,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Sales return created",
+        description:
+          (response as any)?.message ||
+          "Return is saved as pending. Approve it from Sales Returns.",
+      });
+      setShowSaleReturnDialog(false);
+      setSaleReturnInvoice(null);
+      setSaleReturnQtyDraft({});
+      setSaleReturnReturnedByPartId({});
+      setSaleReturnReason("");
+      setSaleReturnDeductionDraft("");
+      setSaleReturnDeductionTouched(false);
+      setSaleReturnRefundPaidDraft("");
+      setSaleReturnRefundPaidTouched(false);
+      setSaleReturnPaymentAccountId("");
+      setInvoiceListRefreshTick((t) => t + 1);
+    } catch (e: any) {
+      toast({
+        title: "Error",
+        description: e?.message || "Failed to create sales return.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingSaleReturn(false);
+    }
+  };
+
   // Approve Cash Sale Invoice
   const handleApproveInvoice = async (invoice: Invoice) => {
     if (invoice.customerType !== "registered") {
@@ -2395,6 +2939,8 @@ export const SalesInvoice = () => {
         subtotal: inv.subtotal || 0,
         overallDiscount: inv.overallDiscount || 0,
         tax: inv.tax || 0,
+        taxPercentage:
+          inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal || 0,
         paidAmount: inv.paidAmount || 0,
         status: inv.status || "pending",
@@ -2485,6 +3031,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage:
+          inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -2674,6 +3222,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage:
+          inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -2768,6 +3318,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage:
+          inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -2854,6 +3406,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage:
+          inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -2949,6 +3503,8 @@ export const SalesInvoice = () => {
         overallDiscount: inv.overallDiscount || 0,
         overallDiscountType: "fixed" as const,
         tax: inv.tax || 0,
+        taxPercentage:
+          inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
         status: inv.status as InvoiceStatus,
@@ -3745,6 +4301,20 @@ export const SalesInvoice = () => {
                       Partially Delivered
                     </SelectItem>
                     <SelectItem value="delivered">Delivered</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={filterInvoiceKind}
+                  onValueChange={setFilterInvoiceKind}
+                >
+                  <SelectTrigger className="w-full sm:w-[11.5rem]">
+                    <SelectValue placeholder="Invoice type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All invoices</SelectItem>
+                    <SelectItem value="simple">Simple (no tax, no discount)</SelectItem>
+                    <SelectItem value="with_tax">With tax (GST)</SelectItem>
+                    <SelectItem value="with_discount">With discount</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -5749,6 +6319,21 @@ export const SalesInvoice = () => {
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
+                            {/* Sale return once approved or in any delivery-complete state; reverse undelivered stock is the orange icon */}
+                            {(inv.status === "approved" ||
+                              inv.status === "partially_delivered" ||
+                              inv.status === "delivered" ||
+                              inv.status === "fully_delivered") && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-violet-600 hover:text-violet-700 hover:bg-violet-50"
+                                title="Sale return"
+                                onClick={() => void openSaleReturnDialog(inv)}
+                              >
+                                <Undo2 className="w-4 h-4" />
+                              </Button>
+                            )}
                             {/* Edit (Pending only) */}
                             {inv.status === "pending" && (
                               <Button
@@ -6775,6 +7360,474 @@ export const SalesInvoice = () => {
               {updatingCreditLimit ? "Saving..." : "Save Limit"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sale return — delivered qty only */}
+      <Dialog
+        open={showSaleReturnDialog}
+        onOpenChange={(open) => {
+          setShowSaleReturnDialog(open);
+          if (!open) {
+            setSaleReturnInvoice(null);
+            setSaleReturnQtyDraft({});
+            setSaleReturnReturnedByPartId({});
+            setSaleReturnReason("");
+            setSaleReturnDeductionDraft("");
+            setSaleReturnDeductionTouched(false);
+            setSaleReturnRefundPaidDraft("");
+            setSaleReturnRefundPaidTouched(false);
+            setSaleReturnPaymentAccountId("");
+          }
+        }}
+      >
+        <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col gap-0 overflow-hidden p-6 sm:max-w-5xl">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Undo2 className="w-5 h-5 text-violet-600" />
+              Sale return
+              {saleReturnInvoice?.invoiceNo
+                ? ` — ${saleReturnInvoice.invoiceNo}`
+                : ""}
+            </DialogTitle>
+            <DialogDescription>
+              Return only up to what was delivered, minus any quantity already returned on prior
+              sale returns for this invoice (see Returned (part)). Undelivered / pending qty cannot
+              be returned here.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingSaleReturn || !saleReturnInvoice ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              {loadingSaleReturn ? "Loading invoice…" : ""}
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
+              <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Customer</p>
+                  <p className="font-medium">{saleReturnInvoice.customerName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Invoice date</p>
+                  <p className="font-medium">
+                    {formatInvoiceDateDisplay(saleReturnInvoice.invoiceDate)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Type</p>
+                  <Badge variant="outline">
+                    {saleReturnInvoice.customerType === "walking"
+                      ? "Cash Sale"
+                      : "Party Sale"}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  {getStatusBadge(saleReturnInvoice.status)}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Grand total</p>
+                  <p className="font-medium">
+                    Rs {saleReturnInvoice.grandTotal.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Paid</p>
+                  <p className="font-medium">
+                    Rs {saleReturnInvoice.paidAmount.toLocaleString()}
+                  </p>
+                </div>
+                {Number(saleReturnInvoice.overallDiscount) > 0 ? (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Invoice discount</p>
+                    <p className="font-medium">
+                      Rs{" "}
+                      {Number(saleReturnInvoice.overallDiscount).toLocaleString()}
+                    </p>
+                  </div>
+                ) : null}
+                {saleReturnMoney.isTaxInvoice ? (
+                  <div>
+                    <p className="text-xs text-muted-foreground">GST on invoice</p>
+                    <p className="font-medium">
+                      {saleReturnMoney.gstPct}% tax · Rs{" "}
+                      {Number(saleReturnInvoice.tax || 0).toLocaleString()}
+                    </p>
+                  </div>
+                ) : null}
+                <div className="col-span-2 sm:col-span-2">
+                  <Label className="text-xs text-muted-foreground">Return date</Label>
+                  <Input
+                    type="date"
+                    className="mt-1 max-w-[200px]"
+                    value={saleReturnDate}
+                    onChange={(e) => setSaleReturnDate(e.target.value)}
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-4">
+                  <Label className="text-xs text-muted-foreground">Reason (optional)</Label>
+                  <Textarea
+                    className="mt-1 min-h-[72px] resize-y"
+                    placeholder="Reason for return…"
+                    value={saleReturnReason}
+                    onChange={(e) => setSaleReturnReason(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="w-full min-w-0 overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b">
+                    <TableRow>
+                      <TableHead>Part no</TableHead>
+                      <TableHead className="min-w-[160px]">Description</TableHead>
+                      <TableHead className="text-right">Ordered</TableHead>
+                      <TableHead className="text-right">Delivered</TableHead>
+                      <TableHead className="text-right">Returned (part)</TableHead>
+                      <TableHead className="text-right">Unit price</TableHead>
+                      <TableHead className="text-right w-[120px]">Return qty</TableHead>
+                      <TableHead className="text-right">
+                        Line {saleReturnMoney.isTaxInvoice ? "(excl. tax)" : "return"}
+                      </TableHead>
+                      {saleReturnMoney.isTaxInvoice ? (
+                        <TableHead className="text-right">Line GST</TableHead>
+                      ) : null}
+                      {saleReturnMoney.isTaxInvoice ? (
+                        <TableHead className="text-right">Line (incl. tax)</TableHead>
+                      ) : null}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {saleReturnInvoice.items.map((item) => {
+                      const retSoFar = saleReturnReturnedByPartId[item.partId] || 0;
+                      const lineCap = lineReturnableCapForDraft(
+                        item,
+                        saleReturnInvoice.items,
+                        saleReturnQtyDraft,
+                        saleReturnReturnedByPartId,
+                      );
+                      const delivered = Number(item.deliveredQty) || 0;
+                      const rq = effectiveReturnQtyFromDraft(
+                        saleReturnQtyDraft[item.id],
+                        lineCap,
+                      );
+                      const lineExcl = rq * item.unitPrice;
+                      const gstPct = saleReturnMoney.gstPct;
+                      const lineGst =
+                        saleReturnMoney.isTaxInvoice && rq > 0
+                          ? Math.round(((lineExcl * gstPct) / 100) * 100) / 100
+                          : 0;
+                      const lineIncl =
+                        saleReturnMoney.isTaxInvoice && rq > 0
+                          ? Math.round((lineExcl + lineGst) * 100) / 100
+                          : lineExcl;
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium">{item.partNo}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {item.description || "—"}
+                          </TableCell>
+                          <TableCell className="text-right">{item.orderedQty}</TableCell>
+                          <TableCell className="text-right">{item.deliveredQty}</TableCell>
+                          <TableCell className="text-right text-xs">{retSoFar}</TableCell>
+                          <TableCell className="text-right">
+                            Rs {item.unitPrice.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              className="h-8 w-24 text-right ml-auto"
+                              disabled={lineCap <= 0}
+                              value={
+                                lineCap <= 0
+                                  ? ""
+                                  : (saleReturnQtyDraft[item.id] ?? "")
+                              }
+                              placeholder={lineCap <= 0 ? "—" : "0"}
+                              title={
+                                lineCap <= 0 && delivered > 0
+                                  ? "Nothing left to return on this line (already fully returned vs delivered)."
+                                  : lineCap > 0
+                                    ? `Max return qty this time: ${lineCap} (delivered ${delivered}, already returned ${retSoFar} on this part)`
+                                    : undefined
+                              }
+                              onChange={(e) => {
+                                const onlyDigits = e.target.value.replace(/\D/g, "");
+                                setSaleReturnQtyDraft((prev) => ({
+                                  ...prev,
+                                  [item.id]: onlyDigits,
+                                }));
+                              }}
+                              onBlur={() => {
+                                setSaleReturnQtyDraft((prev) => {
+                                  const t = prev[item.id] ?? "";
+                                  if (t === "") return prev;
+                                  let n = parseInt(t, 10);
+                                  if (Number.isNaN(n) || n < 0) {
+                                    return { ...prev, [item.id]: "" };
+                                  }
+                                  const capNow = lineReturnableCapForDraft(
+                                    item,
+                                    saleReturnInvoice.items,
+                                    prev,
+                                    saleReturnReturnedByPartId,
+                                  );
+                                  n = Math.min(n, capNow);
+                                  return { ...prev, [item.id]: n === 0 ? "" : String(n) };
+                                });
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right text-sm">
+                            {rq > 0 ? `Rs ${lineExcl.toLocaleString()}` : "—"}
+                          </TableCell>
+                          {saleReturnMoney.isTaxInvoice ? (
+                            <TableCell className="text-right text-sm">
+                              {rq > 0 ? `Rs ${lineGst.toLocaleString()}` : "—"}
+                            </TableCell>
+                          ) : null}
+                          {saleReturnMoney.isTaxInvoice ? (
+                            <TableCell className="text-right text-sm font-medium">
+                              {rq > 0 ? `Rs ${lineIncl.toLocaleString()}` : "—"}
+                            </TableCell>
+                          ) : null}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="space-y-2 rounded-md border bg-muted/30 px-3 py-3 text-sm shrink-0">
+                {saleReturnMoney.isTaxInvoice ? (
+                  <>
+                    <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                      <span className="text-muted-foreground">
+                        Return subtotal (excl. tax)
+                      </span>
+                      <span className="font-medium tabular-nums text-foreground">
+                        Rs {saleReturnMoney.subtotalExclTax.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                      <span className="text-muted-foreground">
+                        GST @ {saleReturnMoney.gstPct}%
+                      </span>
+                      <span className="font-medium tabular-nums text-foreground">
+                        Rs {saleReturnMoney.taxAmount.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-border pt-2 font-semibold">
+                      <span>Return total (incl. tax, before deduction)</span>
+                      <span className="tabular-nums">
+                        Rs {saleReturnMoney.totalInclTax.toLocaleString()}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                    <span className="text-muted-foreground">
+                      Return amount
+                      {saleReturnNet.showDeductionRow ? " (before deduction)" : ""}
+                    </span>
+                    <span className="font-semibold tabular-nums text-foreground">
+                      Rs {saleReturnMoney.subtotalExclTax.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+
+                {saleReturnNet.showDeductionRow ? (
+                  <>
+                    <div className="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
+                      <Label
+                        htmlFor="sale-return-deduction"
+                        className="text-muted-foreground shrink-0"
+                      >
+                        Deduction (invoice discount)
+                      </Label>
+                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <Input
+                          id="sale-return-deduction"
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          className="h-9 w-36 text-right tabular-nums"
+                          placeholder="0"
+                          value={saleReturnDeductionDraft}
+                          onChange={(e) => {
+                            let v = e.target.value.replace(/[^\d.]/g, "");
+                            const dot = v.indexOf(".");
+                            if (dot !== -1) {
+                              v =
+                                v.slice(0, dot + 1) +
+                                v.slice(dot + 1).replace(/\./g, "");
+                            }
+                            setSaleReturnDeductionDraft(v);
+                            setSaleReturnDeductionTouched(true);
+                          }}
+                          onBlur={() => {
+                            const base = saleReturnMoney.isTaxInvoice
+                              ? saleReturnMoney.totalInclTax
+                              : saleReturnMoney.subtotalExclTax;
+                            const cap = Math.max(
+                              0,
+                              Math.round(base * 100) / 100,
+                            );
+                            let d = parseSaleReturnDeductionDraft(
+                              saleReturnDeductionDraft,
+                            );
+                            if (d > cap) d = cap;
+                            setSaleReturnDeductionDraft(
+                              d > 0 ? String(d) : "",
+                            );
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          Max Rs {saleReturnNet.maxDeduction.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-border pt-2 text-base font-semibold">
+                      <span>Net return total</span>
+                      <span className="tabular-nums">
+                        Rs {saleReturnNet.net.toLocaleString()}
+                      </span>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
+              <div className="space-y-3 rounded-md border bg-muted/20 px-3 py-3 text-sm shrink-0">
+                <p className="font-medium text-foreground">
+                  {saleReturnInvoice.customerType === "walking"
+                    ? "Refund to customer (walk-in)"
+                    : "Refund to customer (on approve)"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {saleReturnInvoice.customerType === "walking"
+                    ? saleReturnNet.net > 0
+                      ? "Amount to pay matches the net return (after tax and discount when applicable). Choose the cash or bank account to refund from."
+                      : "Add return quantities to see the refund amount."
+                    : `Enter an amount to pay only if you want a refund on approve, up to the net return (Rs ${saleReturnNet.net.toLocaleString()}). Leave blank for no payment on this return.`}
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="sale-return-pay-account">
+                    Cash / bank account
+                    {saleReturnInvoice.customerType === "walking" &&
+                    saleReturnNet.net > 0
+                      ? " (required)"
+                      : ""}
+                  </Label>
+                  <Select
+                    value={saleReturnPaymentAccountId || undefined}
+                    onValueChange={(v) => {
+                      setSaleReturnPaymentAccountId(v);
+                    }}
+                    disabled={
+                      loadingAccounts ||
+                      (saleReturnInvoice.customerType === "walking" &&
+                        saleReturnNet.net <= 0)
+                    }
+                  >
+                    <SelectTrigger id="sale-return-pay-account">
+                      <SelectValue
+                        placeholder={
+                          saleReturnInvoice.customerType === "walking"
+                            ? saleReturnNet.net > 0
+                              ? "Select cash or bank…"
+                              : "—"
+                            : "Optional — select if paying customer now"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <div className="p-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/50">
+                        Cash
+                      </div>
+                      {cashAccounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.name} ({acc.code || "—"})
+                        </SelectItem>
+                      ))}
+                      <div className="mt-1 p-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/50">
+                        Bank
+                      </div>
+                      {bankAccounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.name} ({acc.code || "Bank"})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sale-return-paid-amt">Amount to pay</Label>
+                  <Input
+                    id="sale-return-paid-amt"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    readOnly={saleReturnInvoice.customerType === "walking"}
+                    className={
+                      saleReturnInvoice.customerType === "walking"
+                        ? "h-9 max-w-[11rem] cursor-default bg-muted/50 text-right tabular-nums"
+                        : "h-9 max-w-[11rem] text-right tabular-nums"
+                    }
+                    placeholder="0"
+                    value={saleReturnRefundPaidDraft}
+                    onChange={(e) => {
+                      if (saleReturnInvoice.customerType === "walking") return;
+                      let v = e.target.value.replace(/[^\d.]/g, "");
+                      const dot = v.indexOf(".");
+                      if (dot !== -1) {
+                        v =
+                          v.slice(0, dot + 1) +
+                          v.slice(dot + 1).replace(/\./g, "");
+                      }
+                      setSaleReturnRefundPaidDraft(v);
+                      setSaleReturnRefundPaidTouched(true);
+                    }}
+                    onBlur={() => {
+                      if (saleReturnInvoice.customerType === "walking") return;
+                      const cap = Math.max(
+                        0,
+                        Math.round(saleReturnNet.net * 100) / 100,
+                      );
+                      let p = parseSaleReturnDeductionDraft(
+                        saleReturnRefundPaidDraft,
+                      );
+                      if (p > cap) p = cap;
+                      setSaleReturnRefundPaidDraft(p > 0 ? String(p) : "");
+                    }}
+                  />
+                </div>
+              </div>
+              </div>
+
+              <DialogFooter className="shrink-0 gap-2 border-t border-border bg-background pt-4 mt-0 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={submittingSaleReturn}
+                  onClick={() => setShowSaleReturnDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-violet-600 hover:bg-violet-700"
+                  disabled={submittingSaleReturn}
+                  onClick={() => void handleSubmitSaleReturn()}
+                >
+                  {submittingSaleReturn ? "Saving…" : "Create return"}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

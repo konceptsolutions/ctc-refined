@@ -1433,6 +1433,8 @@ class ApiClient {
     account?: string;
     description?: string;
     status?: string;
+    /** Discount on items subtotal only (not applied to expense lines) */
+    discount?: number;
     items: Array<{
       part_id: string;
       quantity: number;
@@ -1468,6 +1470,7 @@ class ApiClient {
       account?: string;
       description?: string;
       status?: string;
+      discount?: number;
       items?: Array<{
         part_id: string;
         quantity: number;
@@ -3288,6 +3291,89 @@ class ApiClient {
         invoiceId,
         ...data,
       }),
+    });
+  }
+
+  async getSalesReturns(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+    invoice_id?: string;
+    customer_id?: string;
+    from_date?: string;
+    to_date?: string;
+  }) {
+    const q = new URLSearchParams();
+    if (params?.status) q.set("status", params.status);
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.limit != null) q.set("limit", String(params.limit));
+    if (params?.invoice_id) q.set("invoice_id", params.invoice_id);
+    if (params?.customer_id) q.set("customer_id", params.customer_id);
+    if (params?.from_date) q.set("from_date", params.from_date);
+    if (params?.to_date) q.set("to_date", params.to_date);
+    const qs = q.toString();
+    return this.request<{
+      data?: unknown[];
+      pagination?: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+      };
+    }>(`/sales-returns${qs ? `?${qs}` : ""}`);
+  }
+
+  async deleteSalesReturn(id: string) {
+    return this.request<{ message?: string }>(`/sales-returns/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async approveSalesReturn(
+    id: string,
+    body?: { approved_by?: string },
+  ) {
+    return this.request<{ message?: string; salesReturn?: unknown }>(
+      `/sales-returns/${id}/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify(body ?? {}),
+      },
+    );
+  }
+
+  async rejectSalesReturn(
+    id: string,
+    body?: { rejected_by?: string; rejection_reason?: string },
+  ) {
+    return this.request<{ message?: string; salesReturn?: unknown }>(
+      `/sales-returns/${id}/reject`,
+      {
+        method: "POST",
+        body: JSON.stringify(body ?? {}),
+      },
+    );
+  }
+
+  async createSalesReturn(data: {
+    invoice_id: string;
+    return_date: string;
+    reason?: string;
+    created_by?: string;
+    /** Overall-discount deduction applied after tax on the return total (invoice must have discount) */
+    deduction?: number;
+    /** Cash/bank to refund from. Required for walk-in when net return > 0 (paid amount must equal net). Optional for party sale (<= net). */
+    payment_account_id?: string;
+    /** Walk-in: must equal net return. Party sale: amount to pay on approve if using payment_account_id. */
+    paid_amount?: number;
+    items: Array<{ part_id: string; return_quantity: number }>;
+  }) {
+    return this.request<{
+      message?: string;
+      salesReturn?: unknown;
+    }>("/sales-returns", {
+      method: "POST",
+      body: JSON.stringify(data),
     });
   }
 

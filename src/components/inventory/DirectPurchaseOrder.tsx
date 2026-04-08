@@ -82,6 +82,8 @@ interface DirectPurchaseOrder {
   date: string; // Raw date for sorting
   description: string;
   grandTotal: number;
+  /** Supplier discount on items subtotal only */
+  discount?: number;
   status: "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled" | "Received";
   items: DirectPurchaseOrderItem[];
   account: string;
@@ -143,6 +145,7 @@ export const DirectPurchaseOrder = () => {
   const [formRequestDate, setFormRequestDate] = useState<Date>(new Date());
   const [formDescription, setFormDescription] = useState("");
   const [formAccount, setFormAccount] = useState("");
+  const [formDiscount, setFormDiscount] = useState<number | "">("");
   const [formItems, setFormItems] = useState<OrderItemForm[]>([]);
   const [formExpenses, setFormExpenses] = useState<ExpenseForm[]>([]);
 
@@ -235,6 +238,7 @@ export const DirectPurchaseOrder = () => {
         date: o.date, // Raw date for sorting
         description: o.description || "",
         grandTotal: o.total_amount || 0,
+        discount: Number(o.discount) || 0,
         status: o.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
         items: [],
         account: o.account || "",
@@ -548,6 +552,7 @@ export const DirectPurchaseOrder = () => {
     setFormRequestDate(new Date());
     setFormDescription("");
     setFormAccount("");
+    setFormDiscount("");
     setFormItems([]);
     setFormExpenses([]);
     setSelectedPartForHistory(null);
@@ -576,6 +581,12 @@ export const DirectPurchaseOrder = () => {
       setFormStore(dpo.store_id || "");
       setFormSupplier(dpo.supplier_id || "");
       setFormDescription(dpo.description || "");
+      const dDisc = dpo.discount;
+      setFormDiscount(
+        dDisc !== undefined && dDisc !== null && Number(dDisc) > 0
+          ? Number(dDisc)
+          : "",
+      );
 
       // Find account ID if account is provided (could be name or ID)
       // Ensure we send Account ID for bank/cash accounts
@@ -687,6 +698,7 @@ export const DirectPurchaseOrder = () => {
         date: dpo.date, // Raw date for sorting
         description: dpo.description || "",
         grandTotal: dpo.total_amount || 0,
+        discount: Number(dpo.discount) || 0,
         status: dpo.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
         account: dpo.account || "",
         items: (dpo.items || []).map((item: any) => ({
@@ -1091,9 +1103,14 @@ export const DirectPurchaseOrder = () => {
     return formItems.map(item => distributedExpenses[item.id] || 0);
   }, [formItems, formExpenses]);
 
-  // Calculate grand total (items + expenses)
+  // Grand total: items − discount (capped at items) + expenses
   const calculateTotal = () => {
-    return calculateItemsTotal() + calculateTotalExpenses();
+    const itemsSub = calculateItemsTotal();
+    let disc =
+      formDiscount === "" ? 0 : Number(formDiscount);
+    if (!Number.isFinite(disc) || disc < 0) disc = 0;
+    disc = Math.min(disc, itemsSub);
+    return Math.round((itemsSub - disc + calculateTotalExpenses()) * 100) / 100;
   };
 
   // Add expense
@@ -1168,6 +1185,17 @@ export const DirectPurchaseOrder = () => {
       // Store current part ID for history refresh
       const currentPartId = selectedPartForHistory;
 
+      const itemsSubtotal = validItems.reduce((sum, item) => {
+        const qty = typeof item.quantity === "number" ? item.quantity : 0;
+        const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
+        return sum + qty * price;
+      }, 0);
+      let discountVal =
+        formDiscount === "" ? 0 : Number(formDiscount);
+      if (!Number.isFinite(discountVal) || discountVal < 0) discountVal = 0;
+      discountVal = Math.min(discountVal, itemsSubtotal);
+      discountVal = Math.round(discountVal * 100) / 100;
+
       const dpoData = {
         dpo_number: viewMode === "edit" && selectedOrder ? selectedOrder.dpoNo : (formItems.length > 0 ? generateDpoNo() : undefined),
         date: format(formRequestDate, "yyyy-MM-dd"),
@@ -1176,6 +1204,7 @@ export const DirectPurchaseOrder = () => {
         account: formAccount || undefined, // Send Account ID (bank/cash account ID)
         description: formDescription || undefined,
         status: "Order Receivable Pending",
+        discount: discountVal,
         items: validItems.map((item) => {
           const qty = typeof item.quantity === "number" ? item.quantity : 0;
           const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
@@ -1333,6 +1362,7 @@ export const DirectPurchaseOrder = () => {
             date: dpo.date, // Raw date for sorting
             description: dpo.description || "",
             grandTotal: dpo.total_amount || 0,
+            discount: Number(dpo.discount) || 0,
             status: dpo.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
             account: dpo.account || "",
             items: (dpo.items || []).map((item: any) => ({
@@ -1391,6 +1421,7 @@ export const DirectPurchaseOrder = () => {
             date: dpo.date, // Raw date for sorting
             description: dpo.description || "",
             grandTotal: dpo.total_amount || 0,
+            discount: Number(dpo.discount) || 0,
             status: dpo.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
             account: dpo.account || "",
             items: (dpo.items || []).map((item: any) => ({
@@ -2202,6 +2233,34 @@ export const DirectPurchaseOrder = () => {
               <div className="space-y-2">
                 <Label>Items Total</Label>
                 <Input value={calculateItemsTotal().toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} disabled className="w-full sm:w-40 text-right bg-muted" />
+                <Label>Discount (on items)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="w-full sm:w-40 text-right"
+                  placeholder="0"
+                  value={formDiscount === "" ? "" : formDiscount}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") {
+                      setFormDiscount("");
+                      return;
+                    }
+                    const n = parseFloat(v);
+                    setFormDiscount(Number.isFinite(n) ? n : "");
+                  }}
+                  onBlur={() => {
+                    const cap = calculateItemsTotal();
+                    let d = formDiscount === "" ? 0 : Number(formDiscount);
+                    if (!Number.isFinite(d) || d < 0) d = 0;
+                    d = Math.min(d, cap);
+                    setFormDiscount(d === 0 ? "" : Math.round(d * 100) / 100);
+                  }}
+                />
+                <p className="text-[10px] text-muted-foreground max-w-[10rem]">
+                  Max {calculateItemsTotal().toLocaleString("en-PK")} (items only)
+                </p>
                 <Label>Grand Total</Label>
                 <Input value={calculateTotal().toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} disabled className="w-full sm:w-40 text-right bg-muted font-semibold" />
                 {SHOW_EXPENSES_UI && (
@@ -2328,14 +2387,36 @@ export const DirectPurchaseOrder = () => {
                 </div>
               </div>
 
-              {/* Fixed Grand Total at bottom */}
+              {/* Totals: items subtotal, discount, grand total */}
               <div className="px-6 py-4 bg-muted/10 border-t">
                 <div className="flex justify-end">
-                  <div className="text-right">
-                    <p className="text-muted-foreground text-sm uppercase font-semibold">Grand Total</p>
-                    <p className="text-2xl font-bold text-primary">
-                      {selectedOrder.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
-                    </p>
+                  <div className="text-right space-y-1 min-w-[280px]">
+                    <div className="flex justify-between gap-8 text-sm">
+                      <span className="text-muted-foreground">Items subtotal</span>
+                      <span className="font-medium tabular-nums">
+                        {selectedOrder.items
+                          .reduce((s, i) => s + (Number(i.amount) || 0), 0)
+                          .toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                      </span>
+                    </div>
+                    {(selectedOrder.discount ?? 0) > 0 && (
+                      <div className="flex justify-between gap-8 text-sm">
+                        <span className="text-muted-foreground">Discount (on items)</span>
+                        <span className="font-medium tabular-nums text-destructive">
+                          -
+                          {(selectedOrder.discount ?? 0).toLocaleString("en-PK", {
+                            style: "currency",
+                            currency: "PKR",
+                          })}
+                        </span>
+                      </div>
+                    )}
+                    <div className="pt-2 mt-1 border-t border-border/60">
+                      <p className="text-muted-foreground text-sm uppercase font-semibold">Grand total</p>
+                      <p className="text-2xl font-bold text-primary tabular-nums">
+                        {selectedOrder.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2584,7 +2665,29 @@ export const DirectPurchaseOrder = () => {
             <div className="space-y-4">
               <div className="bg-muted/30 p-3 rounded-lg text-sm space-y-1">
                 <p><span className="text-muted-foreground">DPO No:</span> {selectedOrder.dpoNo}</p>
-                <p><span className="text-muted-foreground">Grand Total:</span> <span className="font-semibold">{selectedOrder.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}</span></p>
+                <p>
+                  <span className="text-muted-foreground">Items subtotal:</span>{" "}
+                  <span className="font-medium tabular-nums">
+                    {selectedOrder.items
+                      .reduce((s, i) => s + (Number(i.amount) || 0), 0)
+                      .toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                  </span>
+                </p>
+                {(selectedOrder.discount ?? 0) > 0 && (
+                  <p>
+                    <span className="text-muted-foreground">Discount (on items):</span>{" "}
+                    <span className="font-medium tabular-nums text-destructive">
+                      -
+                      {(selectedOrder.discount ?? 0).toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                    </span>
+                  </p>
+                )}
+                <p>
+                  <span className="text-muted-foreground">Grand total:</span>{" "}
+                  <span className="font-semibold tabular-nums">
+                    {selectedOrder.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                  </span>
+                </p>
               </div>
 
               <div className="space-y-2">

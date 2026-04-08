@@ -1302,6 +1302,14 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
         },
         Receivable: true,
         SalesQuotation: true,
+        SalesReturn: {
+          where: { status: { in: ["pending", "approved", "completed"] } },
+          include: {
+            SalesReturnItem: {
+              select: { partId: true, returnQuantity: true },
+            },
+          },
+        },
       },
     });
 

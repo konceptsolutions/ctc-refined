@@ -7342,6 +7342,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
           account: dpo.account,
           description: dpo.description,
           status: dpo.status,
+          discount: dpo.discount ?? 0,
           total_amount: dpo.totalAmount,
           items_count: dpo.DirectPurchaseOrderItem.length,
           total_quantity: total_quantity,
@@ -7461,6 +7462,7 @@ router.get(
         account: order.account,
         description: order.description,
         status: order.status,
+        discount: order.discount ?? 0,
         total_amount: order.totalAmount,
         items: order.DirectPurchaseOrderItem.map((item) => ({
           id: item.id,
@@ -7523,6 +7525,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       status,
       items,
       expenses,
+      discount: discountBody,
     } = req.body || {};
 
     if (!date || !items || !Array.isArray(items) || items.length === 0) {
@@ -7570,7 +7573,16 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
         (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
         0,
       );
-      const totalAmount = itemsTotal + expensesTotal;
+      let discountVal =
+        discountBody !== undefined && discountBody !== null
+          ? Number(discountBody)
+          : 0;
+      if (!Number.isFinite(discountVal) || discountVal < 0) discountVal = 0;
+      discountVal = Math.min(discountVal, itemsTotal);
+      discountVal = Math.round(discountVal * 100) / 100;
+      const netItems = Math.round((itemsTotal - discountVal) * 100) / 100;
+      const totalAmount =
+        Math.round((netItems + expensesTotal) * 100) / 100;
 
       const dpoId = crypto.randomUUID();
       const newOrder = await tx.directPurchaseOrder.create({
@@ -7583,6 +7595,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
           account: account || null,
           description: description || null,
           status: status || "Completed",
+          discount: discountVal,
           totalAmount: totalAmount,
           DirectPurchaseOrderItem: {
             create: items.map((item: any) => ({
@@ -7758,12 +7771,16 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
               : 1;
             const jvNumber = `JV${String(jvNum).padStart(4, "0")}`;
 
+            const goodsJvDesc =
+              discountVal > 0.001
+                ? `DPO: ${dpo_number} Inventory Added (items ${itemsTotal}, discount ${discountVal})`
+                : `DPO: ${dpo_number} Inventory Added`;
             const voucherEntries = [
               {
                 id: crypto.randomUUID(),
                 accountId: inventoryAccount.id,
                 accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-                description: `DPO: ${dpo_number} Inventory Added`,
+                description: goodsJvDesc,
                 debit: itemsTotal,
                 credit: 0,
                 sortOrder: 0,
@@ -7778,6 +7795,45 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                 sortOrder: 1,
               },
             ];
+
+            if (discountVal > 0.001) {
+              const inventoryDiscountAccount = await tx.account.findFirst({
+                where: {
+                  status: "Active",
+                  OR: [
+                    { code: "901002" },
+                    { name: { contains: "Cost Inventory Discount" } },
+                    { name: { contains: "Inventory Discount" } },
+                    { name: { contains: "Cost Inventory (Discount" } },
+                    { name: { contains: "Inventory (Discount" } },
+                  ],
+                },
+              });
+              if (inventoryDiscountAccount) {
+                voucherEntries.push({
+                  id: crypto.randomUUID(),
+                  accountId: mainPayableAccount.id,
+                  accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
+                  description: `DPO: ${dpo_number} Discount Adjustment`,
+                  debit: discountVal,
+                  credit: 0,
+                  sortOrder: voucherEntries.length,
+                });
+                voucherEntries.push({
+                  id: crypto.randomUUID(),
+                  accountId: inventoryDiscountAccount.id,
+                  accountName: `${inventoryDiscountAccount.code}-${inventoryDiscountAccount.name}`,
+                  description: `DPO: ${dpo_number} Discount Adjustment`,
+                  debit: 0,
+                  credit: discountVal,
+                  sortOrder: voucherEntries.length,
+                });
+              } else {
+                voucherCreationStatus.errors.push(
+                  "Cost Inventory Discount account not found; discount JV adjustment skipped.",
+                );
+              }
+            }
 
             if (expenses && expenses.length > 0) {
               for (const exp of expenses) {
@@ -7815,8 +7871,8 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                 date: new Date(date),
                 narration:
                   supplier?.companyName || supplier?.name || "Supplier",
-                totalDebit: totalAmount,
-                totalCredit: totalAmount,
+                totalDebit: Math.round((itemsTotal + expensesTotal) * 100) / 100,
+                totalCredit: Math.round((itemsTotal + expensesTotal) * 100) / 100,
                 status: "posted",
                 createdBy: "System",
                 approvedBy: "System",
@@ -7846,7 +7902,8 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
             voucherCreationStatus.jvNumber = jvNumber;
           }
 
-          if (account && itemsTotal > 0 && mainPayableAccount) {
+          // PV settles full document total (net items after discount + expenses)
+          if (account && totalAmount > 0 && mainPayableAccount) {
             const cashBankAccount = await tx.account.findUnique({
               where: { id: account },
             });
@@ -7869,8 +7926,8 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                   narration:
                     supplier?.companyName || supplier?.name || "Supplier",
                   cashBankAccount: cashBankAccount.name,
-                  totalDebit: itemsTotal,
-                  totalCredit: itemsTotal,
+                  totalDebit: totalAmount,
+                  totalCredit: totalAmount,
                   status: "posted",
                   createdBy: "System",
                   approvedBy: "System",
@@ -7882,7 +7939,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                         accountId: mainPayableAccount.id,
                         accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
                         description: `Payment for DPO ${dpo_number}`,
-                        debit: itemsTotal,
+                        debit: totalAmount,
                         credit: 0,
                         sortOrder: 0,
                       },
@@ -7892,7 +7949,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                         accountName: `${cashBankAccount.code}-${cashBankAccount.name}`,
                         description: `Payment via ${cashBankAccount.name}`,
                         debit: 0,
-                        credit: itemsTotal,
+                        credit: totalAmount,
                         sortOrder: 1,
                       },
                     ],
@@ -7902,11 +7959,11 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
 
               await tx.account.update({
                 where: { id: mainPayableAccount.id },
-                data: { currentBalance: { decrement: itemsTotal } },
+                data: { currentBalance: { decrement: totalAmount } },
               });
               await tx.account.update({
                 where: { id: cashBankAccount.id },
-                data: { currentBalance: { decrement: itemsTotal } },
+                data: { currentBalance: { decrement: totalAmount } },
               });
               voucherCreationStatus.pvCreated = true;
               voucherCreationStatus.pvNumber = pvNumber;
@@ -7943,6 +8000,7 @@ router.put(
         status,
         items,
         expenses,
+        discount: discountBody,
       } = req.body || {};
 
       const existingOrder = await prisma.directPurchaseOrder.findUnique({
@@ -7959,29 +8017,51 @@ router.put(
           .json({ error: "Direct Purchase Order not found" });
       }
 
-      // Calculate totals
-      const itemsTotal = items
-        ? items.reduce((sum: number, item: any) => {
+      // Calculate totals (items + expenses − discount on items only)
+      let itemsTotal = 0;
+      if (items && Array.isArray(items)) {
+        itemsTotal = items.reduce((sum: number, item: any) => {
           const qty = Number(item.quantity) || 0;
           const rate = Number(
             item.unit_cost ??
-            item.unitCost ??
-            item.purchase_price ??
-            item.unit_price ??
-            item.unitPrice ??
-            0,
+              item.unitCost ??
+              item.purchase_price ??
+              item.unit_price ??
+              item.unitPrice ??
+              0,
           );
           return sum + (Number(item.amount) || qty * rate);
-        }, 0)
-        : existingOrder.totalAmount;
+        }, 0);
+      } else {
+        itemsTotal = existingOrder.DirectPurchaseOrderItem.reduce(
+          (s, i) => s + (Number(i.amount) || 0),
+          0,
+        );
+      }
 
-      const expensesTotal = expenses
-        ? expenses.reduce(
+      let expensesTotal = 0;
+      if (expenses && Array.isArray(expenses)) {
+        expensesTotal = expenses.reduce(
           (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
           0,
-        )
-        : 0;
-      const totalAmount = itemsTotal + expensesTotal;
+        );
+      } else {
+        expensesTotal = existingOrder.DirectPurchaseOrderExpense.reduce(
+          (s, e) => s + (Number(e.amount) || 0),
+          0,
+        );
+      }
+
+      let discountVal =
+        discountBody !== undefined && discountBody !== null
+          ? Number(discountBody)
+          : Number(existingOrder.discount) || 0;
+      if (!Number.isFinite(discountVal) || discountVal < 0) discountVal = 0;
+      discountVal = Math.min(discountVal, itemsTotal);
+      discountVal = Math.round(discountVal * 100) / 100;
+      const netItems = Math.round((itemsTotal - discountVal) * 100) / 100;
+      const totalAmount =
+        Math.round((netItems + expensesTotal) * 100) / 100;
 
       const order = await prisma.$transaction(async (tx) => {
         // 1. Update DPO Header
@@ -8001,6 +8081,7 @@ router.put(
                 ? description
                 : existingOrder.description,
             status: status || existingOrder.status,
+            discount: discountVal,
             totalAmount,
             updatedAt: new Date(),
           },
@@ -8207,12 +8288,16 @@ router.put(
               : 1;
             const voucherNumber = `JV${String(jvNum).padStart(4, "0")}`;
 
+            const goodsJvDescUpd =
+              discountVal > 0.001
+                ? `DPO: ${updated.dpoNumber} Inventory Added (items ${itemsTotal}, discount ${discountVal})`
+                : `DPO: ${updated.dpoNumber} Inventory Added`;
             const voucherEntries = [
               {
                 id: crypto.randomUUID(),
                 accountId: inventoryAccount.id,
                 accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-                description: `DPO: ${updated.dpoNumber} Inventory Added`,
+                description: goodsJvDescUpd,
                 debit: itemsTotal,
                 credit: 0,
                 sortOrder: 0,
@@ -8227,6 +8312,45 @@ router.put(
                 sortOrder: 1,
               },
             ];
+
+            if (discountVal > 0.001) {
+              const inventoryDiscountAccount = await tx.account.findFirst({
+                where: {
+                  status: "Active",
+                  OR: [
+                    { code: "901002" },
+                    { name: { contains: "Cost Inventory Discount" } },
+                    { name: { contains: "Inventory Discount" } },
+                    { name: { contains: "Cost Inventory (Discount" } },
+                    { name: { contains: "Inventory (Discount" } },
+                  ],
+                },
+              });
+              if (inventoryDiscountAccount) {
+                voucherEntries.push({
+                  id: crypto.randomUUID(),
+                  accountId: mainPayableAccount.id,
+                  accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
+                  description: `DPO: ${updated.dpoNumber} Discount Adjustment`,
+                  debit: discountVal,
+                  credit: 0,
+                  sortOrder: voucherEntries.length,
+                });
+                voucherEntries.push({
+                  id: crypto.randomUUID(),
+                  accountId: inventoryDiscountAccount.id,
+                  accountName: `${inventoryDiscountAccount.code}-${inventoryDiscountAccount.name}`,
+                  description: `DPO: ${updated.dpoNumber} Discount Adjustment`,
+                  debit: 0,
+                  credit: discountVal,
+                  sortOrder: voucherEntries.length,
+                });
+              } else {
+                console.warn(
+                  "Cost Inventory Discount account not found; discount JV adjustment skipped.",
+                );
+              }
+            }
 
             if (expenses) {
               for (const exp of expenses) {
@@ -8264,8 +8388,8 @@ router.put(
                 date: new Date(date || updated.date),
                 narration:
                   supplier?.companyName || supplier?.name || "Supplier",
-                totalDebit: totalAmount,
-                totalCredit: totalAmount,
+                totalDebit: Math.round((itemsTotal + expensesTotal) * 100) / 100,
+                totalCredit: Math.round((itemsTotal + expensesTotal) * 100) / 100,
                 status: "posted",
                 createdBy: "System",
                 approvedBy: "System",
@@ -8293,7 +8417,7 @@ router.put(
             }
 
             const paymentAccountId = account || updated.account;
-            if (paymentAccountId && itemsTotal > 0) {
+            if (paymentAccountId && totalAmount > 0) {
               const cashBankAccount = await tx.account.findUnique({
                 where: { id: paymentAccountId },
               });
@@ -8319,8 +8443,8 @@ router.put(
                     narration:
                       supplier?.companyName || supplier?.name || "Supplier",
                     cashBankAccount: cashBankAccount.name,
-                    totalDebit: itemsTotal,
-                    totalCredit: itemsTotal,
+                    totalDebit: totalAmount,
+                    totalCredit: totalAmount,
                     status: "posted",
                     createdBy: "System",
                     approvedBy: "System",
@@ -8332,7 +8456,7 @@ router.put(
                           accountId: mainPayableAccount.id,
                           accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
                           description: `Payment for DPO ${updated.dpoNumber}`,
-                          debit: itemsTotal,
+                          debit: totalAmount,
                           credit: 0,
                           sortOrder: 0,
                         },
@@ -8342,7 +8466,7 @@ router.put(
                           accountName: `${cashBankAccount.code}-${cashBankAccount.name}`,
                           description: `Payment for DPO ${updated.dpoNumber}`,
                           debit: 0,
-                          credit: itemsTotal,
+                          credit: totalAmount,
                           sortOrder: 1,
                         },
                       ],
@@ -8352,11 +8476,11 @@ router.put(
 
                 await tx.account.update({
                   where: { id: mainPayableAccount.id },
-                  data: { currentBalance: { decrement: itemsTotal } },
+                  data: { currentBalance: { decrement: totalAmount } },
                 });
                 await tx.account.update({
                   where: { id: cashBankAccount.id },
-                  data: { currentBalance: { decrement: itemsTotal } },
+                  data: { currentBalance: { decrement: totalAmount } },
                 });
               }
             }

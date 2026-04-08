@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,9 +51,13 @@ import {
   FileText,
   Printer,
   X,
+  CheckCircle2,
+  Ban,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import { Textarea } from "@/components/ui/textarea";
+import { getUserRole } from "@/utils/auth";
 
 interface ReturnItem {
   id: string;
@@ -73,7 +77,6 @@ interface SalesReturn {
   invoiceNo: string;
   returnDate: string;
   customerName: string;
-  store: string;
   remarks: string;
   totalAmount: number;
   discount: number;
@@ -81,6 +84,66 @@ interface SalesReturn {
   saleType: string;
   items: ReturnItem[];
   originalInvoiceNo?: string;
+  /** Server status: pending | completed | rejected */
+  status?: string;
+}
+
+/** Map Prisma/API sales return row to list UI model */
+function mapApiSalesReturn(row: any): SalesReturn {
+  const inv = row.SalesInvoice || {};
+  const items: ReturnItem[] = (row.SalesReturnItem || []).map((it: any) => {
+    const p = it.Part || {};
+    const uom = String(p.uom || "pcs").trim() || "pcs";
+    return {
+      id: String(it.id),
+      partNo: String(p.partNo || "").trim(),
+      itemName: String(p.description || "").trim() || "—",
+      brand: "",
+      model: "",
+      uom,
+      returnQty: Number(it.returnQuantity) || 0,
+      avgCost: Number(it.avgCost) || 0,
+      price: Number(it.originalSalePrice) || 0,
+      total: Number(it.amount) || 0,
+    };
+  });
+
+  const subtotal = Number(row.subtotal) || 0;
+  const tax = Number(row.tax) || 0;
+  const deduction = Number(row.deduction) || 0;
+  const net = Number(row.totalAmount) || 0;
+  const grossBeforeDeduction = Math.round((subtotal + tax) * 100) / 100;
+
+  let returnDate = "";
+  if (row.returnDate) {
+    try {
+      returnDate = new Date(row.returnDate).toLocaleDateString();
+    } catch {
+      returnDate = String(row.returnDate);
+    }
+  }
+
+  const saleType =
+    inv.customerType === "walking" ? "Walk-in" : "Sale";
+
+  return {
+    id: String(row.id),
+    invoiceNo: String(row.returnNumber || "").trim() || String(row.id),
+    returnDate,
+    customerName: String(inv.customerName || "").trim() || "—",
+    remarks: row.reason != null && String(row.reason).trim() !== ""
+      ? String(row.reason)
+      : "—",
+    totalAmount: grossBeforeDeduction,
+    discount: deduction,
+    amountAfterDiscount: net,
+    saleType,
+    items,
+    originalInvoiceNo: inv.invoiceNo
+      ? String(inv.invoiceNo)
+      : undefined,
+    status: row.status != null ? String(row.status) : undefined,
+  };
 }
 
 export const SalesReturns = () => {
@@ -99,44 +162,58 @@ export const SalesReturns = () => {
   // Dialog states
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isApproveConfirmOpen, setIsApproveConfirmOpen] = useState(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [isOriginalInvoiceOpen, setIsOriginalInvoiceOpen] = useState(false);
   const [selectedReturn, setSelectedReturn] = useState<SalesReturn | null>(null);
   const [returnToDelete, setReturnToDelete] = useState<SalesReturn | null>(null);
+  const [returnToApprove, setReturnToApprove] = useState<SalesReturn | null>(null);
+  const [returnToReject, setReturnToReject] = useState<SalesReturn | null>(null);
+  const [rejectReasonDraft, setRejectReasonDraft] = useState("");
+  const [actionSubmittingId, setActionSubmittingId] = useState<string | null>(
+    null,
+  );
 
   // Simple pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const totalPages = Math.ceil(returns.length / itemsPerPage);
 
-  // Fetch returns from database/localStorage
-  useEffect(() => {
-    const fetchReturns = async () => {
-      setLoadingReturns(true);
-      try {
-        // TODO: Replace with API call when endpoint is available
-        // const response = await apiClient.getSalesReturns();
-        // if (response.data) {
-        //   setReturns(response.data);
-        // }
+  const approverLabel = () => {
+    const role = getUserRole();
+    return role ? `Role: ${role}` : "Web user";
+  };
 
-        // For now, use localStorage
-        const storedReturns = localStorage.getItem('salesReturns');
-        if (storedReturns) {
-          setReturns(JSON.parse(storedReturns));
-        }
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: "Failed to load sales returns",
-          variant: "destructive",
-        });
-      } finally {
-        setLoadingReturns(false);
+  const loadReturns = useCallback(async () => {
+    setLoadingReturns(true);
+    try {
+      const res = (await apiClient.getSalesReturns({
+        page: 1,
+        limit: 2000,
+      })) as { data?: unknown[]; error?: string };
+
+      if (res && typeof res === "object" && res.error) {
+        throw new Error(res.error);
       }
-    };
 
-    fetchReturns();
+      const raw = res?.data;
+      const list = Array.isArray(raw) ? raw : [];
+      setReturns(list.map(mapApiSalesReturn));
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to load sales returns",
+        variant: "destructive",
+      });
+      setReturns([]);
+    } finally {
+      setLoadingReturns(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadReturns();
+  }, [loadReturns]);
 
   // Fetch parts/items from database for filters
   useEffect(() => {
@@ -189,13 +266,6 @@ export const SalesReturns = () => {
     setAvailableCustomers(uniqueCustomers);
   }, [returns]);
 
-  // Save returns to localStorage (temporary until API is ready)
-  useEffect(() => {
-    if (returns.length > 0) {
-      localStorage.setItem('salesReturns', JSON.stringify(returns));
-    }
-  }, [returns]);
-
   const filteredReturns = returns.filter((item) => {
     const matchesItemType = !filterItemType || filterItemType === "all";
     const matchesItem = !filterItem || filterItem === "all" ||
@@ -246,31 +316,126 @@ export const SalesReturns = () => {
   };
 
   const handleConfirmDelete = async () => {
-    if (returnToDelete) {
-      // TODO: Add API call when endpoint is available
-      // try {
-      //   const response = await apiClient.deleteSalesReturn(returnToDelete.id);
-      //   if (response.error) {
-      //     throw new Error(response.error);
-      //   }
-      // } catch (error: any) {
-      //   toast({
-      //     title: "Error",
-      //     description: error.message || "Failed to delete return",
-      //     variant: "destructive",
-      //   });
-      //   return;
-      // }
+    if (!returnToDelete) {
+      setIsDeleteConfirmOpen(false);
+      return;
+    }
 
-      setReturns(returns.filter((r) => r.id !== returnToDelete.id));
-      setSelectedReturns(selectedReturns.filter(id => id !== returnToDelete.id));
+    const id = returnToDelete.id;
+    const label = returnToDelete.invoiceNo;
+
+    try {
+      const res = (await apiClient.deleteSalesReturn(id)) as {
+        error?: string;
+        message?: string;
+      };
+      if (res && typeof res === "object" && res.error) {
+        throw new Error(res.error);
+      }
+
+      setReturns((prev) => prev.filter((r) => r.id !== id));
+      setSelectedReturns((prev) => prev.filter((x) => x !== id));
       toast({
         title: "Return Deleted",
-        description: `Return Invoice ${returnToDelete.invoiceNo} has been deleted successfully.`,
+        description: `Return ${label} has been deleted successfully.`,
       });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to delete return",
+        variant: "destructive",
+      });
+    } finally {
       setReturnToDelete(null);
+      setIsDeleteConfirmOpen(false);
     }
-    setIsDeleteConfirmOpen(false);
+  };
+
+  const handleApproveClick = (returnItem: SalesReturn) => {
+    setReturnToApprove(returnItem);
+    setIsApproveConfirmOpen(true);
+  };
+
+  const handleConfirmApprove = async () => {
+    if (!returnToApprove) {
+      setIsApproveConfirmOpen(false);
+      return;
+    }
+    const id = returnToApprove.id;
+    const label = returnToApprove.invoiceNo;
+    setActionSubmittingId(id);
+    try {
+      const res = (await apiClient.approveSalesReturn(id, {
+        approved_by: approverLabel(),
+      })) as { error?: string; message?: string };
+      if (res && typeof res === "object" && res.error) {
+        throw new Error(res.error);
+      }
+      toast({
+        title: "Return approved",
+        description:
+          res?.message ||
+          `Return ${label} completed. Stock and vouchers have been posted.`,
+      });
+      setSelectedReturn((prev) =>
+        prev?.id === id ? { ...prev, status: "completed" } : prev,
+      );
+      await loadReturns();
+    } catch (error: any) {
+      toast({
+        title: "Approve failed",
+        description: error?.message || "Could not approve this return.",
+        variant: "destructive",
+      });
+    } finally {
+      setActionSubmittingId(null);
+      setReturnToApprove(null);
+      setIsApproveConfirmOpen(false);
+    }
+  };
+
+  const handleRejectClick = (returnItem: SalesReturn) => {
+    setReturnToReject(returnItem);
+    setRejectReasonDraft("");
+    setIsRejectDialogOpen(true);
+  };
+
+  const handleConfirmReject = async () => {
+    if (!returnToReject) {
+      setIsRejectDialogOpen(false);
+      return;
+    }
+    const id = returnToReject.id;
+    const label = returnToReject.invoiceNo;
+    setActionSubmittingId(id);
+    try {
+      const res = (await apiClient.rejectSalesReturn(id, {
+        rejected_by: approverLabel(),
+        rejection_reason: rejectReasonDraft.trim() || undefined,
+      })) as { error?: string; message?: string };
+      if (res && typeof res === "object" && res.error) {
+        throw new Error(res.error);
+      }
+      toast({
+        title: "Return rejected",
+        description: res?.message || `Return ${label} was rejected.`,
+      });
+      setSelectedReturn((prev) =>
+        prev?.id === id ? { ...prev, status: "rejected" } : prev,
+      );
+      await loadReturns();
+    } catch (error: any) {
+      toast({
+        title: "Reject failed",
+        description: error?.message || "Could not reject this return.",
+        variant: "destructive",
+      });
+    } finally {
+      setActionSubmittingId(null);
+      setReturnToReject(null);
+      setRejectReasonDraft("");
+      setIsRejectDialogOpen(false);
+    }
   };
 
   const handleViewOriginalInvoice = (returnItem: SalesReturn) => {
@@ -384,9 +549,6 @@ export const SalesReturns = () => {
 
               <div class="totals-section">
                 <div class="left-section">
-                  <div class="delivery-note">
-                    <p><strong>Delivered To:</strong> ${selectedReturn.store}</p>
-                  </div>
                   <div class="note-section">
                     <p><strong>NOTE:</strong> All manufacturer's Names, Numbers, Symbols and Descriptions are used for reference.</p>
                     <p>Document invalid without authorised signature and stamp.</p>
@@ -526,8 +688,8 @@ export const SalesReturns = () => {
                   <TableHead className="text-xs font-semibold">Invoice No</TableHead>
                   <TableHead className="text-xs font-semibold">Return Date</TableHead>
                   <TableHead className="text-xs font-semibold">Customer Name</TableHead>
-                  <TableHead className="text-xs font-semibold">Store</TableHead>
                   <TableHead className="text-xs font-semibold">Remarks</TableHead>
+                  <TableHead className="text-xs font-semibold">Status</TableHead>
                   <TableHead className="text-xs font-semibold">Total Amount</TableHead>
                   <TableHead className="text-xs font-semibold">Discount</TableHead>
                   <TableHead className="text-xs font-semibold">Amount After Discount</TableHead>
@@ -562,13 +724,15 @@ export const SalesReturns = () => {
                       <TableCell className="text-xs font-medium">{returnItem.invoiceNo}</TableCell>
                       <TableCell className="text-xs">{returnItem.returnDate}</TableCell>
                       <TableCell className="text-xs">{returnItem.customerName}</TableCell>
-                      <TableCell className="text-xs">{returnItem.store}</TableCell>
                       <TableCell className="text-xs">{returnItem.remarks || "-"}</TableCell>
+                      <TableCell className="text-xs capitalize">
+                        {returnItem.status || "—"}
+                      </TableCell>
                       <TableCell className="text-xs">{returnItem.totalAmount.toLocaleString()}</TableCell>
                       <TableCell className="text-xs">{returnItem.discount}</TableCell>
                       <TableCell className="text-xs">{returnItem.amountAfterDiscount.toLocaleString()}</TableCell>
                       <TableCell>
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex flex-wrap items-center justify-center gap-1">
                           <ActionButtonTooltip label="View" variant="view">
                             <Button
                               variant="ghost"
@@ -579,17 +743,52 @@ export const SalesReturns = () => {
                               <Eye className="w-4 h-4" />
                             </Button>
                           </ActionButtonTooltip>
-                          <ActionButtonTooltip label="Delete" variant="delete">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 gap-1 text-xs text-destructive"
-                              onClick={() => handleDeleteClick(returnItem)}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              Delete
-                            </Button>
-                          </ActionButtonTooltip>
+                          {returnItem.status === "pending" && (
+                            <>
+                              <ActionButtonTooltip
+                                label="Approve return"
+                                variant="view"
+                              >
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 gap-1 text-xs border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+                                  disabled={actionSubmittingId === returnItem.id}
+                                  onClick={() => handleApproveClick(returnItem)}
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Approve
+                                </Button>
+                              </ActionButtonTooltip>
+                              <ActionButtonTooltip
+                                label="Reject return"
+                                variant="more"
+                              >
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 gap-1 text-xs"
+                                  disabled={actionSubmittingId === returnItem.id}
+                                  onClick={() => handleRejectClick(returnItem)}
+                                >
+                                  <Ban className="w-3 h-3" />
+                                  Reject
+                                </Button>
+                              </ActionButtonTooltip>
+                              <ActionButtonTooltip label="Delete" variant="delete">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 gap-1 text-xs text-destructive"
+                                  disabled={actionSubmittingId === returnItem.id}
+                                  onClick={() => handleDeleteClick(returnItem)}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  Delete
+                                </Button>
+                              </ActionButtonTooltip>
+                            </>
+                          )}
                           <DropdownMenu>
                             <ActionButtonTooltip label="More Actions" variant="more">
                               <DropdownMenuTrigger asChild>
@@ -665,14 +864,10 @@ export const SalesReturns = () => {
           {selectedReturn && (
             <div className="space-y-4" id="return-print-content">
               {/* Invoice Details Header */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-xs p-4 border rounded-lg bg-muted/20">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 text-xs p-4 border rounded-lg bg-muted/20">
                 <div>
                   <p className="text-muted-foreground">Return Date:</p>
                   <p className="font-medium">{selectedReturn.returnDate}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Shop:</p>
-                  <p className="font-medium">{selectedReturn.store}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Invoice No:</p>
@@ -738,7 +933,7 @@ export const SalesReturns = () => {
           )}
 
           {/* Dialog Footer */}
-          <div className="flex items-center justify-between pt-4 border-t">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t">
             <Button
               variant="ghost"
               onClick={() => setIsViewOpen(false)}
@@ -747,13 +942,44 @@ export const SalesReturns = () => {
               <X className="w-4 h-4" />
               Close
             </Button>
-            <Button
-              onClick={handlePrint}
-              className="gap-2 bg-primary text-primary-foreground text-xs"
-            >
-              <Printer className="w-4 h-4" />
-              PRINT
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedReturn?.status === "pending" && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    disabled={actionSubmittingId === selectedReturn.id}
+                    onClick={() =>
+                      selectedReturn && handleRejectClick(selectedReturn)
+                    }
+                  >
+                    <Ban className="w-3 h-3 mr-1" />
+                    Reject
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                    disabled={actionSubmittingId === selectedReturn.id}
+                    onClick={() =>
+                      selectedReturn && handleApproveClick(selectedReturn)
+                    }
+                  >
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Approve
+                  </Button>
+                </>
+              )}
+              <Button
+                onClick={handlePrint}
+                className="gap-2 bg-primary text-primary-foreground text-xs"
+              >
+                <Printer className="w-4 h-4" />
+                PRINT
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -814,6 +1040,94 @@ export const SalesReturns = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog
+        open={isApproveConfirmOpen}
+        onOpenChange={(open) => {
+          setIsApproveConfirmOpen(open);
+          if (!open) setReturnToApprove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve sales return?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will post stock movements, restore rack/shelf quantities where
+              applicable, and create the accounting vouchers for return{" "}
+              <span className="font-semibold">{returnToApprove?.invoiceNo}</span>.
+              This cannot be undone from this screen.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!actionSubmittingId}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!actionSubmittingId}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmApprove();
+              }}
+            >
+              {actionSubmittingId ? "Working…" : "Approve"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={isRejectDialogOpen}
+        onOpenChange={(open) => {
+          setIsRejectDialogOpen(open);
+          if (!open) {
+            setReturnToReject(null);
+            setRejectReasonDraft("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject return</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Reject{" "}
+            <span className="font-medium text-foreground">
+              {returnToReject?.invoiceNo}
+            </span>
+            ? It will be marked rejected (no stock or voucher posting).
+          </p>
+          <div className="space-y-1">
+            <Label className="text-xs">Reason (optional)</Label>
+            <Textarea
+              value={rejectReasonDraft}
+              onChange={(e) => setRejectReasonDraft(e.target.value)}
+              className="text-xs min-h-[80px]"
+              placeholder="Optional note for audit…"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!!actionSubmittingId}
+              onClick={() => setIsRejectDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              disabled={!!actionSubmittingId}
+              onClick={() => void handleConfirmReject()}
+            >
+              {actionSubmittingId ? "Working…" : "Reject return"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
