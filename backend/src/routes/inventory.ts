@@ -833,46 +833,66 @@ router.post("/update-location", async (req: Request, res: Response) => {
     const qtyVal = parseInt(quantity);
     const qtyChange = type === "in" ? qtyVal : -qtyVal;
 
-    // User Requirement: "i want it will genrate new row of entry... do not update number 30 to 60"
-    // ALWAYS create a NEW entry for every location assignment action.
-    // This creates multiple rows for the same Part+Location combination.
+    const storeKey = store_id || null;
+    const rackKey = rack_id ?? null;
+    const shelfKey = shelf_id ?? null;
 
-    if (qtyChange < 0) {
-      // For reducing stock ("out"), we usually want to deduct from existing.
-      // But user says "genrate new entry".
-      // If we add a negative row (-30), the SUM will be correct (60 - 30 = 30).
-      // So we just create the negative row.
-      // However, we should check if total stock in that location allows it?
-      // User requirement: "stock will not go in nagitive like -5 it will stop at zero 0"
-      // To enforce this with multiple rows, we must SUM them first.
+    const existingSum = await prisma.partRackShelf.aggregate({
+      where: {
+        partId: part_id,
+        storeId: storeKey,
+        rackId: rackKey,
+        shelfId: shelfKey,
+      },
+      _sum: { quantity: true },
+    });
 
-      const existingSum = await prisma.partRackShelf.aggregate({
-        where: {
-          partId: part_id,
-          storeId: store_id || null,
-          rackId: rack_id || null,
-          shelfId: shelf_id || null,
-        },
-        _sum: { quantity: true },
+    const totalCurrent = existingSum._sum.quantity || 0;
+    if (totalCurrent + qtyChange < 0) {
+      return res.status(400).json({
+        error: `Insufficient stock in this location. Current Total: ${totalCurrent}`,
       });
+    }
 
-      const totalCurrent = existingSum._sum.quantity || 0;
-      if (totalCurrent + qtyChange < 0) {
+    // PartRackShelf is unique on (partId, storeId, rackId, shelfId): upsert one row per cell.
+    const existingEntry = await prisma.partRackShelf.findFirst({
+      where: {
+        partId: part_id,
+        storeId: storeKey,
+        rackId: rackKey,
+        shelfId: shelfKey,
+      },
+    });
+
+    let record;
+    if (existingEntry) {
+      const updated = await prisma.partRackShelf.update({
+        where: { id: existingEntry.id },
+        data: { quantity: { increment: qtyChange } },
+      });
+      if (updated.quantity <= 0) {
+        await prisma.partRackShelf.delete({ where: { id: existingEntry.id } });
+        record = { ...updated, quantity: 0 };
+      } else {
+        record = updated;
+      }
+    } else {
+      if (qtyChange < 0) {
         return res.status(400).json({
           error: `Insufficient stock in this location. Current Total: ${totalCurrent}`,
         });
       }
+      record = await prisma.partRackShelf.create({
+        data: {
+          id: randomUUID(),
+          partId: part_id,
+          storeId: storeKey,
+          rackId: rackKey,
+          shelfId: shelfKey,
+          quantity: qtyChange,
+        } as any,
+      });
     }
-
-    const record = await prisma.partRackShelf.create({
-      data: {
-        partId: part_id,
-        storeId: store_id || null,
-        rackId: rack_id || null,
-        shelfId: shelf_id || null,
-        quantity: qtyChange,
-      },
-    });
 
     res.status(201).json({
       message: "Location updated successfully (PartRackShelf only)",
@@ -914,8 +934,12 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
       const sourceStoreId = source?.store_id || null;
       const sourceRackId = source?.rack_id || null;
       const sourceShelfId = source?.shelf_id || null;
+      const sourceIsUnallocated =
+        sourceStoreId === null &&
+        sourceRackId === null &&
+        sourceShelfId === null;
 
-      // Calculate total available in source
+      // Calculate physical stock available in the exact source row, if any.
       const sourceStock = await tx.partRackShelf.aggregate({
         where: {
           partId: part_id,
@@ -926,7 +950,34 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
         _sum: { quantity: true },
       });
 
-      const available = sourceStock._sum.quantity || 0;
+      const physicalSourceQty = sourceStock._sum.quantity || 0;
+      let available = physicalSourceQty;
+
+      // "Unallocated" in the UI can be a virtual row derived from movements,
+      // so it may not exist in PartRackShelf at all.
+      if (sourceIsUnallocated) {
+        const [assignedStock, smIn, smOut] = await Promise.all([
+          tx.partRackShelf.aggregate({
+            where: { partId: part_id },
+            _sum: { quantity: true },
+          }),
+          tx.stockMovement.aggregate({
+            where: { partId: part_id, type: "in" },
+            _sum: { quantity: true },
+          }),
+          tx.stockMovement.aggregate({
+            where: { partId: part_id, type: "out" },
+            _sum: { quantity: true },
+          }),
+        ]);
+
+        const totalAssigned = assignedStock._sum.quantity || 0;
+        const totalActualStock =
+          (smIn._sum.quantity || 0) - (smOut._sum.quantity || 0);
+        const derivedUnallocated = totalActualStock - totalAssigned;
+
+        available = physicalSourceQty + Math.max(derivedUnallocated, 0);
+      }
 
       if (available < qtyVal) {
         throw new Error(
@@ -945,21 +996,27 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
         },
       });
 
-      if (!sourceEntry) {
+      if (!sourceEntry && !sourceIsUnallocated) {
         // Should have been caught by aggregate check, but just in case
         throw new Error(`Source location entry not found.`);
       }
 
-      const updatedSource = await tx.partRackShelf.update({
-        where: { id: sourceEntry.id },
-        data: { quantity: { decrement: qtyVal } },
-      });
-
-      // If quantity becomes 0 or less, delete the entry to keep the location list clean
-      if (updatedSource.quantity <= 0) {
-        await tx.partRackShelf.delete({
+      // Only decrement a physical PartRackShelf source row when it exists.
+      // For virtual unallocated stock there is no source row to decrement;
+      // adding to the target location reduces the derived unallocated balance.
+      if (sourceEntry) {
+        const decrementQty = Math.min(sourceEntry.quantity, qtyVal);
+        const updatedSource = await tx.partRackShelf.update({
           where: { id: sourceEntry.id },
+          data: { quantity: { decrement: decrementQty } },
         });
+
+        // If quantity becomes 0 or less, delete the entry to keep the location list clean
+        if (updatedSource.quantity <= 0) {
+          await tx.partRackShelf.delete({
+            where: { id: sourceEntry.id },
+          });
+        }
       }
 
       // 3. Increment Target Stock (Upsert PartRackShelf)

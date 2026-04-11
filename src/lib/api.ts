@@ -168,9 +168,11 @@ class ApiClient {
       if (!response.ok) {
         // Handle specific error codes
         if (response.status === 413) {
-          throw new Error(
+          const err = new Error(
             "Request Entity Too Large: The image or data you are trying to upload is too large. Please compress images before uploading or reduce the data size.",
           );
+          (err as any).response = { status: response.status };
+          throw err;
         }
 
         if (isJson) {
@@ -193,9 +195,11 @@ class ApiClient {
         } else {
           // If not JSON, it's probably an HTML error page
           const text = await response.text();
-          throw new Error(
+          const err = new Error(
             `HTTP error! status: ${response.status}. Server returned HTML instead of JSON. This usually means the backend is not running or the API endpoint is incorrect.`,
           );
+          (err as any).response = { status: response.status };
+          throw err;
         }
       }
 
@@ -203,18 +207,26 @@ class ApiClient {
         // If response is not JSON, it's probably an HTML page (404, etc.)
         const text = await response.text();
         if (text.trim().startsWith("<!")) {
-          throw new Error(
+          const err = new Error(
             "Server returned HTML instead of JSON. The backend API may not be running or the endpoint is incorrect.",
           );
+          (err as any).response = { status: response.status };
+          throw err;
         }
-        throw new Error(
+        const err = new Error(
           "Invalid response format: expected JSON but received " + contentType,
         );
+        (err as any).response = { status: response.status };
+        throw err;
       }
 
       const data = await response.json();
       return data;
     } catch (error: any) {
+      // HTTP error path above attaches .response so callers using try/catch see failures
+      if (error?.response != null) {
+        throw error;
+      }
       const msg = error.message || "";
       if (msg.includes("redirect")) {
         return { error: msg };

@@ -544,8 +544,7 @@ export const CurrentStock = () => {
         setEditSourceLocation(null);
       }
 
-      // Refresh data
-      // fetchStockData(); // Main table
+      await fetchStockData();
 
       // Refresh Dialog Data
       const response = await apiClient.getPartLocations(editingItem.part_id);
