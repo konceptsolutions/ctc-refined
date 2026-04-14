@@ -182,8 +182,8 @@ class ApiClient {
           // Create error object that preserves all error details
           const error = new Error(
             errorData.error ||
-            errorData.message ||
-            `HTTP error! status: ${response.status}`,
+              errorData.message ||
+              `HTTP error! status: ${response.status}`,
           );
           (error as any).response = {
             data: errorData,
@@ -299,11 +299,7 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (
-          value !== undefined &&
-          value !== null &&
-          value !== ""
-        ) {
+        if (value !== undefined && value !== null && value !== "") {
           queryParams.append(key, String(value));
         }
       });
@@ -341,11 +337,7 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (
-          value !== undefined &&
-          value !== null &&
-          value !== ""
-        ) {
+        if (value !== undefined && value !== null && value !== "") {
           queryParams.append(key, String(value));
         }
       });
@@ -3271,7 +3263,7 @@ class ApiClient {
   }
 
   async getUndeliveredStockAlerts() {
-    return this.request('/sales/invoices/undelivered-alerts');
+    return this.request("/sales/invoices/undelivered-alerts");
   }
 
   async reverseInvoiceItem(
@@ -3282,7 +3274,7 @@ class ApiClient {
     },
   ) {
     return this.request(`/sales/invoices/items/${itemId}/reverse`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -3298,7 +3290,7 @@ class ApiClient {
     },
   ) {
     return this.request(`/sales/invoices/bulk-reverse`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({
         invoiceId,
         ...data,
@@ -3341,10 +3333,7 @@ class ApiClient {
     });
   }
 
-  async approveSalesReturn(
-    id: string,
-    body?: { approved_by?: string },
-  ) {
+  async approveSalesReturn(id: string, body?: { approved_by?: string }) {
     return this.request<{ message?: string; salesReturn?: unknown }>(
       `/sales-returns/${id}/approve`,
       {

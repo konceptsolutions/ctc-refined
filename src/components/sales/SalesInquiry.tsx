@@ -136,12 +136,9 @@ export const SalesInquiry = () => {
   const printRef = useRef<HTMLDivElement>(null);
 
   // Part lookup state with dropdowns
-  const [masterPartSearch, setMasterPartSearch] = useState("");
-  const [selectedMasterPart, setSelectedMasterPart] = useState<string | null>(null);
-  const [partNoSearch, setPartNoSearch] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
   const [selectedPart, setSelectedPart] = useState<PartDetail | null>(null);
-  const [showMasterDropdown, setShowMasterDropdown] = useState(false);
-  const [showPartDropdown, setShowPartDropdown] = useState(false);
+  const [showItemDropdown, setShowItemDropdown] = useState(false);
   const [loadingPartDetails, setLoadingPartDetails] = useState(false);
   const [purchaseOrderHistory, setPurchaseOrderHistory] = useState<any[]>([]);
   const [loadingPOHistory, setLoadingPOHistory] = useState(false);
@@ -156,14 +153,19 @@ export const SalesInquiry = () => {
   const [partModels, setPartModels] = useState<any[]>([]);
   const [loadingPartModels, setLoadingPartModels] = useState(false);
 
-  const masterDropdownRef = useRef<HTMLDivElement>(null);
-  const partDropdownRef = useRef<HTMLDivElement>(null);
+  const itemDropdownRef = useRef<HTMLDivElement>(null);
 
   const [partsData, setPartsData] = useState<PartDetail[]>([]);
   const [loadingParts, setLoadingParts] = useState(false);
   const [partIdMap, setPartIdMap] = useState<Record<string, string>>({});
   const [rackMap, setRackMap] = useState<Record<string, string>>({});
   const [searchResults, setSearchResults] = useState<PartDetail[]>([]);
+
+  const resolveSelectedPartId = (part: PartDetail | null): string | null => {
+    if (!part) return null;
+    if (part.id) return part.id;
+    return partIdMap[part.partNo] || null;
+  };
 
   // Correctly transform parts based on project convention (Swapped)
   const transformPart = (p: any, rackMapData: Record<string, string>, stockMapData: Record<string, number>): PartDetail => {
@@ -267,9 +269,9 @@ export const SalesInquiry = () => {
     fetchParts();
   }, []);
 
-  // Debounced search for Part No
+  // Debounced search for Item
   useEffect(() => {
-    if (!partNoSearch || partNoSearch.length < 2) {
+    if (!itemSearch || itemSearch.length < 2) {
       setSearchResults([]);
       return;
     }
@@ -278,7 +280,7 @@ export const SalesInquiry = () => {
       setLoadingParts(true);
       try {
         const response: any = await apiClient.getParts({
-          search: partNoSearch,
+          search: itemSearch,
           limit: 50,
           status: 'active'
         });
@@ -294,7 +296,7 @@ export const SalesInquiry = () => {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [partNoSearch]);
+  }, [itemSearch]);
 
   // Fetch inquiries from backend
   useEffect(() => {
@@ -329,14 +331,14 @@ export const SalesInquiry = () => {
   // Fetch purchase order history when a part is selected
   useEffect(() => {
     const fetchPOHistory = async () => {
-      if (!selectedPart || !partIdMap[selectedPart.partNo]) {
+      const partId = resolveSelectedPartId(selectedPart);
+      if (!partId) {
         setPurchaseOrderHistory([]);
         return;
       }
 
       setLoadingPOHistory(true);
       try {
-        const partId = partIdMap[selectedPart.partNo];
         const response = await apiClient.getPurchaseOrdersByPart(partId, {
           page: 1,
           limit: 100,
@@ -363,14 +365,14 @@ export const SalesInquiry = () => {
   // Fetch sales invoice history when a part is selected
   useEffect(() => {
     const fetchSalesInvoiceHistory = async () => {
-      if (!selectedPart || !partIdMap[selectedPart.partNo]) {
+      const partId = resolveSelectedPartId(selectedPart);
+      if (!partId) {
         setSalesInvoiceHistory([]);
         return;
       }
 
       setLoadingSalesInvoiceHistory(true);
       try {
-        const partId = partIdMap[selectedPart.partNo];
         const response = await apiClient.getSalesInvoicesByPart(partId, {
           page: 1,
           limit: 100,
@@ -396,14 +398,14 @@ export const SalesInquiry = () => {
   // Fetch direct purchase order history when a part is selected
   useEffect(() => {
     const fetchDpoHistory = async () => {
-      if (!selectedPart || !partIdMap[selectedPart.partNo]) {
+      const partId = resolveSelectedPartId(selectedPart);
+      if (!partId) {
         setDpoHistory([]);
         return;
       }
 
       setLoadingDpoHistory(true);
       try {
-        const partId = partIdMap[selectedPart.partNo];
         const response = await apiClient.getDirectPurchaseOrdersByPart(partId, {
           page: 1,
           limit: 50,
@@ -509,18 +511,7 @@ export const SalesInquiry = () => {
     fetchDpoHistory();
   }, [selectedPart, partIdMap]);
 
-  // Get unique master part numbers from database
-  const masterPartNumbers = useMemo(() => {
-    const uniqueMasters = [...new Set(partsData.map((item) => item.masterPart))].filter(Boolean);
-    if (masterPartSearch) {
-      return uniqueMasters.filter((master) =>
-        master.toLowerCase().includes(masterPartSearch.toLowerCase())
-      );
-    }
-    return uniqueMasters;
-  }, [masterPartSearch, partsData]);
-
-  // Filter parts based on search and selected master part
+  // Filter parts based on item search
   const filteredParts = useMemo(() => {
     // Combine local data and search results
     const combined = [...partsData];
@@ -531,51 +522,57 @@ export const SalesInquiry = () => {
     });
 
     let filtered = combined;
-    if (selectedMasterPart) {
-      filtered = filtered.filter((item) => item.masterPart === selectedMasterPart);
-    }
+    if (itemSearch) {
+      const searchLower = itemSearch.toLowerCase();
 
-    if (partNoSearch) {
-      const searchLower = partNoSearch.toLowerCase();
-
-      // STRICT FILTERING: Only show items where Part No or Master Part includes the search
-      // This ensures unrelated descriptions/brands don't cause false positives
       filtered = filtered.filter((item) => {
         const pNo = item.partNo.toLowerCase();
         const mNo = item.masterPart.toLowerCase();
+        const description = item.description.toLowerCase();
+        const category = item.category.toLowerCase();
+        const subCategory = item.subCategory.toLowerCase();
+        const application = (item.application || "").toLowerCase();
+        const brand = item.brand.toLowerCase();
 
-        return pNo.includes(searchLower) || mNo.includes(searchLower);
+        return (
+          pNo.includes(searchLower) ||
+          mNo.includes(searchLower) ||
+          description.includes(searchLower) ||
+          category.includes(searchLower) ||
+          subCategory.includes(searchLower) ||
+          application.includes(searchLower) ||
+          brand.includes(searchLower)
+        );
       });
 
-      // Prioritize exact partNo matches followed by startsWith
+      // Prioritize exact partNo/master matches followed by startsWith
       filtered = [...filtered].sort((a, b) => {
         const aNo = a.partNo.toLowerCase();
         const bNo = b.partNo.toLowerCase();
+        const aMaster = a.masterPart.toLowerCase();
+        const bMaster = b.masterPart.toLowerCase();
 
-        const aExact = aNo === searchLower;
-        const bExact = bNo === searchLower;
+        const aExact = aNo === searchLower || aMaster === searchLower;
+        const bExact = bNo === searchLower || bMaster === searchLower;
         if (aExact && !bExact) return -1;
         if (!aExact && bExact) return 1;
 
-        const aStarts = aNo.startsWith(searchLower);
-        const bStarts = bNo.startsWith(searchLower);
+        const aStarts = aNo.startsWith(searchLower) || aMaster.startsWith(searchLower);
+        const bStarts = bNo.startsWith(searchLower) || bMaster.startsWith(searchLower);
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
 
         return 0;
       });
     }
-    return filtered.slice(0, 100);
-  }, [selectedMasterPart, partNoSearch, partsData, searchResults]);
+    return filtered.slice(0, 150);
+  }, [itemSearch, partsData, searchResults]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (masterDropdownRef.current && !masterDropdownRef.current.contains(event.target as Node)) {
-        setShowMasterDropdown(false);
-      }
-      if (partDropdownRef.current && !partDropdownRef.current.contains(event.target as Node)) {
-        setShowPartDropdown(false);
+      if (itemDropdownRef.current && !itemDropdownRef.current.contains(event.target as Node)) {
+        setShowItemDropdown(false);
       }
     };
 
@@ -583,24 +580,19 @@ export const SalesInquiry = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSelectMasterPart = (master: string) => {
-    setSelectedMasterPart(master);
-    setMasterPartSearch(master);
-    setShowMasterDropdown(false);
-    // Reset part selection when master changes
-    setSelectedPart(null);
-    setPartNoSearch("");
+  const getItemLabel = (part: PartDetail) => {
+    const leftPart =
+      part.masterPart && part.masterPart !== part.partNo
+        ? `${part.masterPart} | ${part.partNo}`
+        : part.partNo;
+    const baseLabel = part.description ? `${leftPart} - ${part.description}` : leftPart;
+    return part.brand && part.brand !== "N/A" ? `${baseLabel} (${part.brand})` : baseLabel;
   };
 
   const handleSelectPart = async (part: PartDetail) => {
     setSelectedPart(part);
-    setPartNoSearch(part.partNo);
-    // Auto-fill master part field when part is selected
-    if (part.masterPart) {
-      setMasterPartSearch(part.masterPart);
-      setSelectedMasterPart(part.masterPart);
-    }
-    setShowPartDropdown(false);
+    setItemSearch(getItemLabel(part));
+    setShowItemDropdown(false);
 
     // Fetch full part details if we have the ID
     if (part.id) {
@@ -632,15 +624,6 @@ export const SalesInquiry = () => {
           return num % 1 === 0 ? String(num) : num.toFixed(2);
         };
 
-        // Get master part number from API response
-        const masterPartFromAPI = String((p as any).master_part_no || (p as any).masterPart || part.masterPart || '').trim();
-
-        // Update master part fields with API data
-        if (masterPartFromAPI) {
-          setMasterPartSearch(masterPartFromAPI);
-          setSelectedMasterPart(masterPartFromAPI);
-        }
-
         // Update selected part with full details
         const fullPartDetails: PartDetail = {
           id: (p as any).id,
@@ -666,6 +649,7 @@ export const SalesInquiry = () => {
         };
 
         setSelectedPart(fullPartDetails);
+        setItemSearch(getItemLabel(fullPartDetails));
       } catch (error: any) {
         // Keep the selected part from list if API fails
       } finally {
@@ -675,11 +659,10 @@ export const SalesInquiry = () => {
   };
 
   const handleClearSearch = () => {
-    setMasterPartSearch("");
-    setSelectedMasterPart(null);
-    setPartNoSearch("");
+    setItemSearch("");
     setSelectedPart(null);
     setPartModels([]);
+    setShowItemDropdown(false);
   };
 
   const handleRefreshParts = async () => {
@@ -880,8 +863,8 @@ export const SalesInquiry = () => {
       });
 
       // Refresh purchase order history
-      if (selectedPart && partIdMap[selectedPart.partNo]) {
-        const partId = partIdMap[selectedPart.partNo];
+      const partId = resolveSelectedPartId(selectedPart);
+      if (partId) {
         const response = await apiClient.getPurchaseOrdersByPart(partId, {
           page: 1,
           limit: 100,
@@ -1030,9 +1013,7 @@ export const SalesInquiry = () => {
 
     setInquiryItems([...inquiryItems, newItem]);
     setSelectedPart(null);
-    setPartNoSearch("");
-    setSelectedMasterPart(null);
-    setMasterPartSearch("");
+    setItemSearch("");
 
     toast({
       title: "Item Added",
@@ -1527,9 +1508,7 @@ export const SalesInquiry = () => {
                 });
                 setInquiryItems([]);
                 setSelectedPart(null);
-                setPartNoSearch("");
-                setSelectedMasterPart(null);
-                setMasterPartSearch("");
+                setItemSearch("");
               }}>
                 Cancel
               </Button>
@@ -1550,7 +1529,7 @@ export const SalesInquiry = () => {
                 <Package className="h-5 w-5 text-primary" />
                 <CardTitle className="text-lg font-semibold">Part Inquiry Lookup</CardTitle>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">Search for part details using Master Part or Part Number</p>
+              <p className="text-sm text-muted-foreground mt-1">Search for part details using Item filter</p>
             </div>
             <Button
               variant="outline"
@@ -1565,76 +1544,19 @@ export const SalesInquiry = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Search Fields with Dropdowns */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-            {/* Master Part Dropdown */}
-            <div ref={masterDropdownRef} className="relative space-y-2">
-              <Label className="text-sm font-medium">Master Part #</Label>
+          {/* Item Filter with Dropdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+            <div ref={itemDropdownRef} className="relative space-y-2">
+              <Label className="text-sm font-medium">Item</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search master part..."
-                  value={masterPartSearch}
+                  placeholder="Search by part no, master, description, category..."
+                  value={itemSearch}
                   onChange={(e) => {
-                    setMasterPartSearch(e.target.value);
-                    setShowMasterDropdown(true);
-                    if (e.target.value !== selectedMasterPart) {
-                      setSelectedMasterPart(null);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && masterPartNumbers.length === 1) {
-                      handleSelectMasterPart(masterPartNumbers[0]);
-                    }
-                  }}
-                  onFocus={() => setShowMasterDropdown(true)}
-                  className={cn(
-                    "pl-10",
-                    showMasterDropdown && "ring-2 ring-primary border-primary"
-                  )}
-                />
-              </div>
-              {/* Master Part Dropdown */}
-              {showMasterDropdown && (
-                <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
-                  {loadingParts ? (
-                    <div className="px-4 py-3 text-sm text-muted-foreground text-center">
-                      Loading master parts...
-                    </div>
-                  ) : masterPartNumbers.length > 0 ? (
-                    masterPartNumbers.map((master) => (
-                      <button
-                        key={master}
-                        onClick={() => handleSelectMasterPart(master)}
-                        className={cn(
-                          "w-full text-left px-4 py-3 text-sm hover:bg-muted transition-colors border-b border-border last:border-b-0",
-                          selectedMasterPart === master && "bg-muted"
-                        )}
-                      >
-                        {master}
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-4 py-3 text-sm text-muted-foreground">
-                      {masterPartSearch ? "No master part numbers found matching your search" : "No master part numbers available"}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Part No Dropdown */}
-            <div ref={partDropdownRef} className="relative space-y-2">
-              <Label className="text-sm font-medium">Part No/SSP#</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by part number, description..."
-                  value={partNoSearch}
-                  onChange={(e) => {
-                    setPartNoSearch(e.target.value);
-                    setShowPartDropdown(true);
-                    if (e.target.value !== selectedPart?.partNo) {
+                    setItemSearch(e.target.value);
+                    setShowItemDropdown(true);
+                    if (selectedPart && e.target.value !== getItemLabel(selectedPart)) {
                       setSelectedPart(null);
                     }
                   }}
@@ -1643,40 +1565,98 @@ export const SalesInquiry = () => {
                       handleSelectPart(filteredParts[0]);
                     }
                   }}
-                  onFocus={() => setShowPartDropdown(true)}
+                  onFocus={() => setShowItemDropdown(true)}
                   className={cn(
-                    "pl-10",
-                    showPartDropdown && "ring-2 ring-primary border-primary"
+                    "pl-10 pr-10",
+                    showItemDropdown && "ring-2 ring-primary border-primary"
                   )}
                 />
+                {(itemSearch || selectedPart) && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleClearSearch();
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    aria-label="Clear selected item"
+                    title="Clear selected item"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-              {/* Part Dropdown */}
-              {showPartDropdown && (
+              {showItemDropdown && (
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-80 overflow-auto">
                   {loadingParts ? (
                     <div className="px-4 py-3 text-sm text-muted-foreground text-center">
-                      Loading parts...
+                      Loading items...
                     </div>
                   ) : filteredParts.length > 0 ? (
-                    filteredParts.map((part) => (
+                    filteredParts.map((part) => {
+                      const availableQty = part.quantity ?? 0;
+                      const brandLabel = part.brand && part.brand !== "N/A" ? part.brand : "";
+                      const showMasterAndPart = part.masterPart && part.masterPart !== part.partNo;
+                      return (
                       <button
                         key={part.id}
                         onClick={() => handleSelectPart(part)}
                         className={cn(
                           "w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b border-border last:border-b-0",
-                          selectedPart?.partNo === part.partNo && "bg-muted"
+                          selectedPart?.id === part.id && "bg-muted"
                         )}
                       >
-                        <p className="font-medium text-foreground text-sm">{part.partNo}</p>
-                        <p className="text-sm text-muted-foreground">{part.description}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Brand: {part.brand} &nbsp;&nbsp; Master: {part.masterPart}
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-medium text-foreground text-sm">
+                            {showMasterAndPart
+                              ? `${part.masterPart} | ${part.partNo}`
+                              : part.partNo}
+                          </p>
+                          <span
+                            className={cn(
+                              "text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0",
+                              availableQty > 0
+                                ? "bg-green-100 text-green-700"
+                                : "bg-red-100 text-red-600"
+                            )}
+                          >
+                            {availableQty} pcs
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {part.description || "No description available"}
                         </p>
+                        {(part.category || part.subCategory) && (
+                          <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+                            {[part.category, part.subCategory].filter(Boolean).join(" / ")}
+                          </p>
+                        )}
+                        <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                          {brandLabel && (
+                            <div className="text-[10px] uppercase font-semibold text-black tracking-wider">
+                              {brandLabel}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600">
+                            {part.priceA !== "" && (
+                              <span className="bg-blue-50 px-1 rounded border border-blue-100 italic">
+                                A: {Number(part.priceA || 0).toLocaleString()}
+                              </span>
+                            )}
+                            {part.priceB !== "" && (
+                              <span className="bg-indigo-50 px-1 rounded border border-indigo-100 italic">
+                                B: {Number(part.priceB || 0).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </button>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="px-4 py-3 text-sm text-muted-foreground">
-                      {partNoSearch ? "No parts found matching your search" : "No parts available"}
+                      {itemSearch ? "No items found matching your search" : "No items available"}
                     </div>
                   )}
                 </div>

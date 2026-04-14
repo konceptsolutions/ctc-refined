@@ -350,7 +350,7 @@ export const SalesInvoice = () => {
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [newInvoice, setNewInvoice] = useState<Partial<Invoice>>({
-    customerType: "walking", // Default to "walking" to show customer dropdown
+    customerType: "registered", // Default to Party Sale
     items: [],
     overallDiscount: 0,
     overallDiscountType: "percent",
@@ -377,7 +377,7 @@ export const SalesInvoice = () => {
   const [editingCreditLimit, setEditingCreditLimit] = useState<number>(0);
   const [updatingCreditLimit, setUpdatingCreditLimit] = useState(false);
   const [overrideCreditLimit, setOverrideCreditLimit] = useState(false);
-  const [showLastSaleInfo, setShowLastSaleInfo] = useState(false);
+  const [showLastSaleInfo, setShowLastSaleInfo] = useState(true);
   const [recentSalesByPartId, setRecentSalesByPartId] = useState<
     Record<string, RecentSaleInvoiceLine[]>
   >({});
@@ -811,6 +811,13 @@ export const SalesInvoice = () => {
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
   }, [showNewInvoice, handleAddNewItem]);
+
+  // Keep item detail helpers visible by default whenever invoice form opens.
+  useEffect(() => {
+    if (showNewInvoice) {
+      setShowLastSaleInfo(true);
+    }
+  }, [showNewInvoice]);
 
   // Helper to derive unit price from selected price type + part data
   const getDerivedUnitPrice = (item: InlineItemRow, part: PartItem | null) => {
@@ -1747,14 +1754,21 @@ export const SalesInvoice = () => {
       return;
     }
 
-    // Check if all items have a selected price type
+    // Check if all items have either a selected price type OR a manual unit price.
+    // This allows editing older/custom-priced invoices where unit price may not
+    // exactly match Price A/B/M.
     const itemsWithoutPrice = inlineItems.filter(
-      (i) => i.selectedPartId && i.qty > 0 && !i.selectedPriceType,
+      (i) =>
+        i.selectedPartId &&
+        i.qty > 0 &&
+        !i.selectedPriceType &&
+        (i.unitPrice == null || Number.isNaN(Number(i.unitPrice))),
     );
     if (itemsWithoutPrice.length > 0) {
       toast({
         title: "Error",
-        description: "Please select a price (Price A, B, or M) for all items",
+        description:
+          "Please select Price A/B/M or enter a valid unit price for all items",
         variant: "destructive",
       });
       return;
@@ -2061,7 +2075,7 @@ export const SalesInvoice = () => {
     setEditingInvoiceId(null);
     setShowNewInvoice(false);
     setNewInvoice({
-      customerType: "walking", // Default to "walking" to show customer dropdown
+      customerType: "registered", // Default to Party Sale
       items: [],
       overallDiscount: 0,
       overallDiscountType: "percent",

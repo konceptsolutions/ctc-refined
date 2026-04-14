@@ -194,15 +194,15 @@ router.get("/dashboard", async (req: Request, res: Response) => {
     const allPartMovements =
       partIds.length > 0
         ? await prisma.stockMovement.findMany({
-          where: {
-            partId: { in: partIds },
-          },
-          select: {
-            partId: true,
-            quantity: true,
-            type: true,
-          },
-        })
+            where: {
+              partId: { in: partIds },
+            },
+            select: {
+              partId: true,
+              quantity: true,
+              type: true,
+            },
+          })
         : [];
 
     // Group movements by part
@@ -2731,7 +2731,15 @@ router.get("/adjustments", async (req: Request, res: Response) => {
       limit = "50",
     } = req.query;
 
-    console.log("Adjustments API called with params:", { from_date, to_date, status, search, part_id, page, limit });
+    console.log("Adjustments API called with params:", {
+      from_date,
+      to_date,
+      status,
+      search,
+      part_id,
+      page,
+      limit,
+    });
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
@@ -2849,7 +2857,9 @@ router.get("/adjustments", async (req: Request, res: Response) => {
       },
     });
 
-    console.log(`Found ${adjustmentsData.length} adjustments matching criteria`);
+    console.log(
+      `Found ${adjustmentsData.length} adjustments matching criteria`,
+    );
     console.log("Sample adjustment data:", adjustmentsData[0]);
 
     const adjustments = adjustmentsData.map((adj: any) => {
@@ -2936,12 +2946,15 @@ router.post("/adjustments", async (req: Request, res: Response) => {
         .map((item: any) => {
           const part = partMap.get(item.part_id);
           const partInfo = part
-            ? `${part.partNo}/${part.description || ""}/${(part as any).Brand?.name || ""
-            }/${part.partNo}`
+            ? `${part.partNo}/${part.description || ""}/${
+                (part as any).Brand?.name || ""
+              }/${part.partNo}`
             : `Part ${item.part_id}`;
-          return `Item: ${partInfo} is ${add_inventory !== false ? "added" : "remove"
-            } from Adjust Inventory, Qty:${item.quantity}, Rate: ${parseFloat(item.cost) || 0
-            }`;
+          return `Item: ${partInfo} is ${
+            add_inventory !== false ? "added" : "remove"
+          } from Adjust Inventory, Qty:${item.quantity}, Rate: ${
+            parseFloat(item.cost) || 0
+          }`;
         })
         .join("; ");
 
@@ -3572,7 +3585,7 @@ router.get("/adjustments/by-store", async (req: Request, res: Response) => {
 router.get("/adjustment-parts", async (req: Request, res: Response) => {
   try {
     console.log("Fetching parts that are in adjustments");
-    
+
     // Get unique part IDs from all AdjustmentItem records
     const adjustmentItems = await prisma.adjustmentItem.findMany({
       where: {
@@ -3583,7 +3596,7 @@ router.get("/adjustment-parts", async (req: Request, res: Response) => {
       select: {
         partId: true,
       },
-      distinct: ['partId'],
+      distinct: ["partId"],
     });
 
     const partIds = adjustmentItems.map((item: any) => item.partId);
@@ -3600,14 +3613,14 @@ router.get("/adjustment-parts", async (req: Request, res: Response) => {
         Brand: true,
       },
       orderBy: {
-        partNo: 'asc',
+        partNo: "asc",
       },
     });
 
     const result = parts.map((part: any) => ({
       id: part.id,
       partNo: part.partNo,
-      brand: part.Brand?.name || '',
+      brand: part.Brand?.name || "",
       description: part.description,
     }));
 
@@ -3650,13 +3663,13 @@ router.get("/adjustments/:id", async (req: Request, res: Response) => {
     // Fetch voucher separately
     const voucher = adjustment.voucherId
       ? await prisma.voucher.findUnique({
-        where: { id: adjustment.voucherId },
-        select: {
-          id: true,
-          voucherNumber: true,
-          status: true,
-        },
-      })
+          where: { id: adjustment.voucherId },
+          select: {
+            id: true,
+            voucherNumber: true,
+            status: true,
+          },
+        })
       : null;
 
     res.json({
@@ -3716,10 +3729,10 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
     // Calculate total amount
     const totalAmount = items
       ? items.reduce((sum: number, item: any) => {
-        const cost = item.cost || 0;
-        const qty = item.quantity || 0;
-        return sum + cost * qty;
-      }, 0)
+          const cost = item.cost || 0;
+          const qty = item.quantity || 0;
+          return sum + cost * qty;
+        }, 0)
       : existingAdjustment.totalAmount;
 
     // Use a transaction for the entire update process
@@ -4430,23 +4443,23 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
     // Fetch voucher separately
     const voucher = adjustment?.voucherId
       ? await prisma.voucher.findUnique({
-        where: { id: adjustment.voucherId },
-        include: {
-          VoucherEntry: {
-            include: {
-              Account: {
-                include: {
-                  Subgroup: {
-                    include: {
-                      MainGroup: true,
+          where: { id: adjustment.voucherId },
+          include: {
+            VoucherEntry: {
+              include: {
+                Account: {
+                  include: {
+                    Subgroup: {
+                      include: {
+                        MainGroup: true,
+                      },
                     },
                   },
                 },
               },
             },
           },
-        },
-      })
+        })
       : null;
 
     if (adjustment) {
@@ -4571,8 +4584,8 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
         const accountType = entry.Account.Subgroup.MainGroup.type.toLowerCase();
         const balanceChange =
           accountType === "asset" ||
-            accountType === "expense" ||
-            accountType === "cost"
+          accountType === "expense" ||
+          accountType === "cost"
             ? entry.debit - entry.credit
             : entry.credit - entry.debit;
 
@@ -4769,13 +4782,13 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
     // Fetch voucher separately
     const updatedVoucherInfo = updatedAdjustment.voucherId
       ? await prisma.voucher.findUnique({
-        where: { id: updatedAdjustment.voucherId },
-        select: {
-          id: true,
-          voucherNumber: true,
-          status: true,
-        },
-      })
+          where: { id: updatedAdjustment.voucherId },
+          select: {
+            id: true,
+            voucherNumber: true,
+            status: true,
+          },
+        })
       : null;
 
     updatedAdjustment.voucher = updatedVoucherInfo;
@@ -5049,8 +5062,8 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
     const suppliers =
       supplierIds.length > 0
         ? await prisma.supplier.findMany({
-          where: { id: { in: supplierIds as string[] } },
-        })
+            where: { id: { in: supplierIds as string[] } },
+          })
         : [];
     const supplierMap = new Map(
       suppliers.map((s) => [s.id, s.companyName || s.name || "N/A"]),
@@ -5164,8 +5177,8 @@ router.get(
       const suppliers =
         supplierIds.length > 0
           ? await prisma.supplier.findMany({
-            where: { id: { in: supplierIds as string[] } },
-          })
+              where: { id: { in: supplierIds as string[] } },
+            })
           : [];
       const supplierMap = new Map(
         suppliers.map((s) => [s.id, s.companyName || s.name || "N/A"]),
@@ -5191,17 +5204,17 @@ router.get(
             total_amount: po.totalAmount,
             item: itemForPart
               ? {
-                id: itemForPart.id,
-                part_id: itemForPart.partId,
-                part_no: itemForPart.Part.partNo,
-                part_description: itemForPart.Part.description,
-                brand: itemForPart.Part.Brand?.name || "",
-                quantity: itemForPart.quantity,
-                unit_cost: itemForPart.unitCost,
-                total_cost: itemForPart.totalCost,
-                received_qty: itemForPart.receivedQty,
-                notes: itemForPart.notes,
-              }
+                  id: itemForPart.id,
+                  part_id: itemForPart.partId,
+                  part_no: itemForPart.Part.partNo,
+                  part_description: itemForPart.Part.description,
+                  brand: itemForPart.Part.Brand?.name || "",
+                  quantity: itemForPart.quantity,
+                  unit_cost: itemForPart.unitCost,
+                  total_cost: itemForPart.totalCost,
+                  received_qty: itemForPart.receivedQty,
+                  notes: itemForPart.notes,
+                }
               : null,
             created_at: po.createdAt,
           };
@@ -5951,8 +5964,8 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
                 // Liabilities, Equity, Revenue: increase with credit, decrease with debit
                 const balanceChange =
                   accountType === "asset" ||
-                    accountType === "expense" ||
-                    accountType === "cost"
+                  accountType === "expense" ||
+                  accountType === "cost"
                     ? line.debit - line.credit
                     : line.credit - line.debit;
 
@@ -6816,7 +6829,7 @@ router.get("/multi-dimensional-report", async (req: Request, res: Response) => {
       const avgCost =
         group.costs.length > 0
           ? group.costs.reduce((sum, cost) => sum + cost, 0) /
-          group.costs.length
+            group.costs.length
           : 0;
 
       return {
@@ -7426,22 +7439,22 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
             shelfId: item.shelfId,
             rack: item.Rack
               ? {
-                id: item.Rack.id,
-                codeNo: item.Rack.codeNo,
-              }
+                  id: item.Rack.id,
+                  codeNo: item.Rack.codeNo,
+                }
               : null,
             shelf: item.Shelf
               ? {
-                id: item.Shelf.id,
-                shelfNo: item.Shelf.shelfNo,
-              }
+                  id: item.Shelf.id,
+                  shelfNo: item.Shelf.shelfNo,
+                }
               : null,
             part: item.Part
               ? {
-                id: item.Part.id,
-                partNo: item.Part.partNo,
-                description: item.Part.description,
-              }
+                  id: item.Part.id,
+                  partNo: item.Part.partNo,
+                  description: item.Part.description,
+                }
               : null,
           })),
         };
@@ -7617,11 +7630,11 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
         const qty = Number(item.quantity) || 0;
         const rate = Number(
           item.unit_cost ??
-          item.unitCost ??
-          item.purchase_price ??
-          item.unit_price ??
-          item.unitPrice ??
-          0,
+            item.unitCost ??
+            item.purchase_price ??
+            item.unit_price ??
+            item.unitPrice ??
+            0,
         );
         return sum + (Number(item.amount) || qty * rate);
       }, 0);
@@ -7638,8 +7651,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       discountVal = Math.min(discountVal, itemsTotal);
       discountVal = Math.round(discountVal * 100) / 100;
       const netItems = Math.round((itemsTotal - discountVal) * 100) / 100;
-      const totalAmount =
-        Math.round((netItems + expensesTotal) * 100) / 100;
+      const totalAmount = Math.round((netItems + expensesTotal) * 100) / 100;
 
       const dpoId = crypto.randomUUID();
       const newOrder = await tx.directPurchaseOrder.create({
@@ -7661,24 +7673,24 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
               quantity: Number(item.quantity) || 0,
               purchasePrice: Number(
                 item.unit_cost ??
-                item.unitCost ??
-                item.purchase_price ??
-                item.unit_price ??
-                item.unitPrice ??
-                0,
-              ),
-              salePrice: Number(item.sale_price || item.salePrice || 0),
-              amount:
-                Number(item.amount) ||
-                Number(item.quantity) *
-                Number(
-                  item.unit_cost ??
                   item.unitCost ??
                   item.purchase_price ??
                   item.unit_price ??
                   item.unitPrice ??
                   0,
-                ),
+              ),
+              salePrice: Number(item.sale_price || item.salePrice || 0),
+              amount:
+                Number(item.amount) ||
+                Number(item.quantity) *
+                  Number(
+                    item.unit_cost ??
+                      item.unitCost ??
+                      item.purchase_price ??
+                      item.unit_price ??
+                      item.unitPrice ??
+                      0,
+                  ),
               priceA: item.price_a != null ? Number(item.price_a) : null,
               priceB: item.price_b != null ? Number(item.price_b) : null,
               priceM: item.price_m != null ? Number(item.price_m) : null,
@@ -7712,11 +7724,11 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
         const partId = item.part_id;
         const rate = Number(
           item.unit_cost ??
-          item.unitCost ??
-          item.purchase_price ??
-          item.unit_price ??
-          item.unitPrice ??
-          0,
+            item.unitCost ??
+            item.purchase_price ??
+            item.unit_price ??
+            item.unitPrice ??
+            0,
         );
         if (partId && rate > 0) {
           await tx.part.update({
@@ -7733,11 +7745,11 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
           const qty = Number(item.quantity) || 0;
           const rate = Number(
             item.unit_cost ??
-            item.unitCost ??
-            item.purchase_price ??
-            item.unit_price ??
-            item.unitPrice ??
-            0,
+              item.unitCost ??
+              item.purchase_price ??
+              item.unit_price ??
+              item.unitPrice ??
+              0,
           );
 
           if (partId && rate > 0) {
@@ -7928,8 +7940,10 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                 date: new Date(date),
                 narration:
                   supplier?.companyName || supplier?.name || "Supplier",
-                totalDebit: Math.round((itemsTotal + expensesTotal) * 100) / 100,
-                totalCredit: Math.round((itemsTotal + expensesTotal) * 100) / 100,
+                totalDebit:
+                  Math.round((itemsTotal + expensesTotal) * 100) / 100,
+                totalCredit:
+                  Math.round((itemsTotal + expensesTotal) * 100) / 100,
                 status: "posted",
                 createdBy: "System",
                 approvedBy: "System",
@@ -8117,8 +8131,7 @@ router.put(
       discountVal = Math.min(discountVal, itemsTotal);
       discountVal = Math.round(discountVal * 100) / 100;
       const netItems = Math.round((itemsTotal - discountVal) * 100) / 100;
-      const totalAmount =
-        Math.round((netItems + expensesTotal) * 100) / 100;
+      const totalAmount = Math.round((netItems + expensesTotal) * 100) / 100;
 
       const order = await prisma.$transaction(async (tx) => {
         // 1. Update DPO Header
@@ -8157,24 +8170,24 @@ router.put(
               quantity: Number(item.quantity) || 0,
               purchasePrice: Number(
                 item.unit_cost ??
-                item.unitCost ??
-                item.purchase_price ??
-                item.unit_price ??
-                item.unitPrice ??
-                0,
-              ),
-              salePrice: Number(item.sale_price || item.salePrice || 0),
-              amount:
-                Number(item.amount) ||
-                Number(item.quantity) *
-                Number(
-                  item.unit_cost ??
                   item.unitCost ??
                   item.purchase_price ??
                   item.unit_price ??
                   item.unitPrice ??
                   0,
-                ),
+              ),
+              salePrice: Number(item.sale_price || item.salePrice || 0),
+              amount:
+                Number(item.amount) ||
+                Number(item.quantity) *
+                  Number(
+                    item.unit_cost ??
+                      item.unitCost ??
+                      item.purchase_price ??
+                      item.unit_price ??
+                      item.unitPrice ??
+                      0,
+                  ),
               priceA: item.price_a != null ? Number(item.price_a) : null,
               priceB: item.price_b != null ? Number(item.price_b) : null,
               priceM: item.price_m != null ? Number(item.price_m) : null,
@@ -8193,11 +8206,11 @@ router.put(
             const qty = Number(item.quantity) || 0;
             const rate = Number(
               item.unit_cost ??
-              item.unitCost ??
-              item.purchase_price ??
-              item.unit_price ??
-              item.unitPrice ??
-              0,
+                item.unitCost ??
+                item.purchase_price ??
+                item.unit_price ??
+                item.unitPrice ??
+                0,
             );
             if (partId && (qty > 0 || rate > 0)) {
               if (itemsByPart.has(partId)) {
@@ -8445,8 +8458,10 @@ router.put(
                 date: new Date(date || updated.date),
                 narration:
                   supplier?.companyName || supplier?.name || "Supplier",
-                totalDebit: Math.round((itemsTotal + expensesTotal) * 100) / 100,
-                totalCredit: Math.round((itemsTotal + expensesTotal) * 100) / 100,
+                totalDebit:
+                  Math.round((itemsTotal + expensesTotal) * 100) / 100,
+                totalCredit:
+                  Math.round((itemsTotal + expensesTotal) * 100) / 100,
                 status: "posted",
                 createdBy: "System",
                 approvedBy: "System",
