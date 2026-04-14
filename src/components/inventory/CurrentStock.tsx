@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -133,28 +133,7 @@ export const CurrentStock = () => {
       availableShelves: [],
     },
   ]);
-
-  // Fetch initial data
-  useEffect(() => {
-    fetchCategories();
-    fetchStores();
-    fetchParts();
-  }, []);
-
-  // Fetch stock data when filters change
-  useEffect(() => {
-    fetchStockData();
-  }, [selectedCategory, stockStatusFilter, currentPage, itemsPerPage]);
-
-  // Debounce search query
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      setCurrentPage(1);
-      fetchStockData();
-    }, 500);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
+  const searchQueryRef = useRef(searchQuery);
 
   const fetchCategories = async () => {
     try {
@@ -172,7 +151,7 @@ export const CurrentStock = () => {
     }
   };
 
-  const fetchStockData = async () => {
+  const fetchStockData = useCallback(async (searchTerm?: string) => {
     try {
       setLoading(true);
       const params: any = {
@@ -202,8 +181,9 @@ export const CurrentStock = () => {
         params.low_stock = true;
       }
 
-      if (searchQuery) {
-        params.search = searchQuery;
+      const effectiveSearch = ((searchTerm ?? searchQueryRef.current) || "").trim();
+      if (effectiveSearch) {
+        params.search = effectiveSearch;
       }
 
       const response = await apiClient.getPartRackShelfSummary(params);
@@ -226,13 +206,41 @@ export const CurrentStock = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, itemsPerPage, selectedCategory, stockStatusFilter]);
+
+  // Fetch initial data
+  useEffect(() => {
+    fetchCategories();
+    fetchStores();
+    fetchParts();
+  }, []);
+
+  useEffect(() => {
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
+
+  // Fetch stock data when filters change
+  useEffect(() => {
+    fetchStockData();
+  }, [fetchStockData]);
+
+  // Debounce search query
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setCurrentPage(1);
+      fetchStockData(searchQuery);
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, fetchStockData]);
 
   const fetchStores = async () => {
     try {
       const response = await apiClient.getStores();
       setStores((response as any).data || response || []);
-    } catch (error) {}
+    } catch (error) {
+      console.error("Failed to fetch stores:", error);
+    }
   };
 
   const fetchParts = async () => {
@@ -247,21 +255,27 @@ export const CurrentStock = () => {
           })),
         );
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error("Failed to fetch parts:", error);
+    }
   };
 
   const fetchRacks = async (storeId: string) => {
     try {
       const response = await apiClient.getRacks(storeId);
       setRacks((response as any).data || response || []);
-    } catch (error) {}
+    } catch (error) {
+      console.error("Failed to fetch racks:", error);
+    }
   };
 
   const fetchShelves = async (rackId: string) => {
     try {
       const response = await apiClient.getShelves(rackId);
       setShelves((response as any).data || response || []);
-    } catch (error) {}
+    } catch (error) {
+      console.error("Failed to fetch shelves:", error);
+    }
   };
 
   const processLocationData = (rawData: any[]) => {
@@ -645,7 +659,9 @@ export const CurrentStock = () => {
         }
         return updated;
       });
-    } catch (error) {}
+    } catch (error) {
+      console.error("Failed to fetch latest location:", error);
+    }
   };
 
   const handleUpdateBulkRow = async (
@@ -696,7 +712,7 @@ export const CurrentStock = () => {
     });
   };
 
-  const handleSaveBulk = async () => {
+  const handleSaveBulk = useCallback(async () => {
     const validRows = bulkRows.filter(
       (r) => r.partId && r.quantity && !isNaN(parseFloat(r.quantity)),
     );
@@ -754,7 +770,7 @@ export const CurrentStock = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [bulkRows, parts, fetchStockData]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -775,7 +791,7 @@ export const CurrentStock = () => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [bulkDialogOpen, loading, bulkRows]);
+  }, [bulkDialogOpen, loading, bulkRows, handleSaveBulk]);
 
   const formatCurrency = (value: number | null | undefined) => {
     if (value === null || value === undefined) return "-";
