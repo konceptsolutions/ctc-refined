@@ -4,6 +4,7 @@ import prisma from "../config/database";
 import { getCanonicalPartId } from "../services/partCanonical";
 
 const router = express.Router();
+const SALES_INVOICE_START_NO = 1641;
 
 async function getNextNumberForPrefix(args: {
   prefix: string;
@@ -31,6 +32,27 @@ async function getNextNumberForPrefix(args: {
   }
 
   return `${prefix}${String(max + 1).padStart(4, "0")}`;
+}
+
+async function getNextSalesInvoiceNo(currentYear: number): Promise<string> {
+  const prefix = `INV-${currentYear}-`;
+  const invoicePattern = new RegExp(`^INV-${currentYear}-(\\d+)$`);
+  const invoices = await prisma.salesInvoice.findMany({
+    where: { invoiceNo: { startsWith: prefix } },
+    select: { invoiceNo: true },
+  });
+
+  let maxNo = SALES_INVOICE_START_NO - 1;
+  for (const invoice of invoices) {
+    const match = invoice.invoiceNo.match(invoicePattern);
+    if (!match) continue;
+    const value = parseInt(match[1], 10);
+    if (!Number.isNaN(value)) {
+      maxNo = Math.max(maxNo, value);
+    }
+  }
+
+  return `INV-${currentYear}-${String(maxNo + 1).padStart(3, "0")}`;
 }
 
 // Helper function to calculate stock balance
@@ -967,26 +989,7 @@ router.post(
 
       // Generate robust invoice number (format: INV-YYYY-XXX)
       const currentYear = new Date(invoiceDate || new Date()).getFullYear();
-      const lastInvoice = await prisma.salesInvoice.findFirst({
-        where: {
-          invoiceNo: {
-            startsWith: `INV-${currentYear}-`,
-          },
-        },
-        orderBy: {
-          invoiceNo: "desc",
-        },
-      });
-
-      let nextNo = 1;
-      if (lastInvoice) {
-        const parts = lastInvoice.invoiceNo.split("-");
-        const lastNo = parseInt(parts[2]);
-        if (!isNaN(lastNo)) {
-          nextNo = lastNo + 1;
-        }
-      }
-      const invoiceNo = `INV-${currentYear}-${String(nextNo).padStart(3, "0")}`;
+      const invoiceNo = await getNextSalesInvoiceNo(currentYear);
 
       // Calculate totals
       const subtotal = quotation.totalAmount;
@@ -1498,26 +1501,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
 
     // Generate robust invoice number (format: INV-YYYY-XXX)
     const currentYear = new Date(invoiceDate || new Date()).getFullYear();
-    const lastInvoice = await prisma.salesInvoice.findFirst({
-      where: {
-        invoiceNo: {
-          startsWith: `INV-${currentYear}-`,
-        },
-      },
-      orderBy: {
-        invoiceNo: "desc",
-      },
-    });
-
-    let nextNo = 1;
-    if (lastInvoice) {
-      const parts = lastInvoice.invoiceNo.split("-");
-      const lastNo = parseInt(parts[2]);
-      if (!isNaN(lastNo)) {
-        nextNo = lastNo + 1;
-      }
-    }
-    const invoiceNo = `INV-${currentYear}-${String(nextNo).padStart(3, "0")}`;
+    const invoiceNo = await getNextSalesInvoiceNo(currentYear);
 
     // Determine which account ID to store (prefer bank, then cash, then legacy accountId)
     const finalAccountId = bankAccountId || cashAccountId || accountId;

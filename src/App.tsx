@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import Index from "./pages/Index";
 import Parts from "./pages/Parts";
@@ -11,6 +11,7 @@ import Attributes from "./pages/Attributes";
 import Models from "./pages/Models";
 import Inventory from "./pages/Inventory";
 import Sales from "./pages/Sales";
+import PurchaseImport from "./pages/PurchaseImport";
 import Manage from "./pages/Manage";
 import PricingCostingPage from "./pages/PricingCosting";
 import Reports from "./pages/Reports";
@@ -51,6 +52,9 @@ const App = () => (
             <Route path="/pricing-costing" element={<ProtectedRoute><PricingCostingPage /></ProtectedRoute>} />
             <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
             <Route path="/sales/:tab" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
+            <Route path="/sales/purchase-import" element={<ProtectedRoute><Navigate to="/purchase-import" replace /></ProtectedRoute>} />
+            <Route path="/purchase-import" element={<ProtectedRoute><PurchaseImport /></ProtectedRoute>} />
+            <Route path="/purchase-import/:tab" element={<ProtectedRoute><PurchaseImport /></ProtectedRoute>} />
             <Route path="/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
             <Route path="/manage/:tab" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />

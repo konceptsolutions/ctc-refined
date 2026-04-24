@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -20,6 +21,14 @@ interface ModelQuantity {
   id: string;
   model: string;
   qty: number;
+}
+
+interface KitItemRow {
+  id: string;
+  itemPartId: string;
+  itemPartNo: string;
+  itemDescription: string;
+  quantity: number | "";
 }
 
 interface PartFormData {
@@ -46,6 +55,7 @@ interface PartFormData {
   smc: string;
   size: string;
   remarks: string;
+  type: string;
 }
 
 const initialFormData: PartFormData = {
@@ -72,12 +82,14 @@ const initialFormData: PartFormData = {
   smc: "",
   size: "",
   remarks: "",
+  type: "single",
 };
 
 interface PartEntryFormProps {
   onSave: (
     part: PartFormData & {
       modelQuantities: ModelQuantity[];
+      kitItems: KitItemRow[];
       imageP1?: string | null;
       imageP2?: string | null;
     },
@@ -99,6 +111,16 @@ export const PartEntryForm = ({
   const [modelQuantities, setModelQuantities] = useState<ModelQuantity[]>([
     { id: "1", model: "", qty: 0 },
   ]);
+  const [kitItems, setKitItems] = useState<KitItemRow[]>([]);
+  const [singlePartOptions, setSinglePartOptions] = useState<
+    {
+      id: string;
+      masterPartNo: string;
+      partNo: string;
+      description: string;
+      brandName: string;
+    }[]
+  >([]);
   const [imageP1, setImageP1] = useState<string | null>(null);
   const [imageP2, setImageP2] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -363,6 +385,11 @@ export const PartEntryForm = ({
     fetchDropdownData();
   }, []);
 
+  const selectableSinglePartOptions = useMemo(
+    () => singlePartOptions.filter((option) => option.id !== selectedPart?.id),
+    [singlePartOptions, selectedPart?.id],
+  );
+
   // Refresh brands when dropdown is open and user is typing (to get newly added brands)
   useEffect(() => {
     if (showBrandDropdown && brandSearch.trim().length > 0) {
@@ -372,6 +399,57 @@ export const PartEntryForm = ({
       return () => clearTimeout(timeoutId);
     }
   }, [showBrandDropdown, brandSearch]);
+
+  useEffect(() => {
+    const fetchSingleTypeParts = async () => {
+      try {
+        const response: any = await apiClient.getPartEntryList({
+          limit: "all",
+          page: 1,
+        });
+        const rows = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response)
+            ? response
+            : [];
+
+        const singles = rows
+          .filter((row: any) => (row?.type || "single") === "single")
+          .map((row: any) => ({
+            id: String(row.id || ""),
+            masterPartNo: String(row.master_part_no || "").trim(),
+            partNo: String(row.part_no || "").trim(),
+            description: String(row.description || "").trim(),
+            brandName: String(row.brand_name || "").trim(),
+          }))
+          .filter((row: { id: string; partNo: string }) => row.id && row.partNo);
+
+        setSinglePartOptions(singles);
+      } catch {
+        setSinglePartOptions([]);
+      }
+    };
+
+    fetchSingleTypeParts();
+  }, []);
+
+  useEffect(() => {
+    if (formData.type === "kit") {
+      setKitItems((prev) =>
+        prev.length > 0
+          ? prev
+          : [
+              {
+                id: `kit-row-${Date.now()}`,
+                itemPartId: "",
+                itemPartNo: "",
+                itemDescription: "",
+                quantity: 1,
+              },
+            ],
+      );
+    }
+  }, [formData.type]);
 
   // Fetch applications when application dropdown is open (independent of subcategory/master part)
   useEffect(() => {
@@ -789,6 +867,7 @@ export const PartEntryForm = ({
               origin: part.origin ? String(part.origin).trim() : "",
               grade: part.grade || "B",
               remarks: part.remarks || "",
+              type: part.type || "single",
             });
 
             // Validate prices after loading
@@ -827,6 +906,19 @@ export const PartEntryForm = ({
             } else {
               setModelQuantities([{ id: "1", model: "", qty: 0 }]);
             }
+            if (Array.isArray(part.kit_items)) {
+              setKitItems(
+                part.kit_items.map((row: any, index: number) => ({
+                  id: `kit-item-${index}-${Date.now()}`,
+                  itemPartId: String(row.item_part_id || "").trim(),
+                  itemPartNo: String(row.item_part_no || "").trim(),
+                  itemDescription: String(row.item_description || "").trim(),
+                  quantity: Math.max(1, Number(row.quantity || 1)),
+                })),
+              );
+            } else {
+              setKitItems([]);
+            }
             setIsEditing(true);
             setIsAddingNew(false); // Clear adding new mode when editing existing part
             prevSelectedPartId.current = selectedPart.id;
@@ -860,6 +952,7 @@ export const PartEntryForm = ({
           setImageP1(null);
           setImageP2(null);
           setModelQuantities([{ id: "1", model: "", qty: 0 }]);
+          setKitItems([]);
           setIsEditing(true);
           setIsAddingNew(false); // Clear adding new mode when editing existing part
           prevSelectedPartId.current = selectedPart.id;
@@ -871,6 +964,7 @@ export const PartEntryForm = ({
       setImageP1(null);
       setImageP2(null);
       setIsEditing(false);
+      setKitItems([]);
     }
   }, [selectedPart]);
 
@@ -1147,6 +1241,7 @@ export const PartEntryForm = ({
           smc: fullPart.smc || prev.smc || "",
           size: fullPart.size || prev.size || "",
           remarks: fullPart.remarks || prev.remarks || "",
+          type: fullPart.type || prev.type || "single",
         }));
 
         setMasterPartSearch(masterPartNoValue);
@@ -1203,6 +1298,19 @@ export const PartEntryForm = ({
         } else {
           setModelQuantities([{ id: "1", model: "", qty: 0 }]);
         }
+        if (Array.isArray(fullPart.kit_items)) {
+          setKitItems(
+            fullPart.kit_items.map((row: any, index: number) => ({
+              id: `kit-item-${index}-${Date.now()}`,
+              itemPartId: String(row.item_part_id || "").trim(),
+              itemPartNo: String(row.item_part_no || "").trim(),
+              itemDescription: String(row.item_description || "").trim(),
+              quantity: Math.max(1, Number(row.quantity || 1)),
+            })),
+          );
+        } else {
+          setKitItems([]);
+        }
 
         setIsEditing(true);
 
@@ -1220,6 +1328,7 @@ export const PartEntryForm = ({
     setMasterPartSearch(fallback.masterPartNo);
     setPartSearch(fallback.partNo);
     setModelQuantities([{ id: "1", model: "", qty: 0 }]);
+    setKitItems([]);
 
     return fallback;
   };
@@ -1242,6 +1351,52 @@ export const PartEntryForm = ({
   ) => {
     setModelQuantities((prev) =>
       prev.map((m) => (m.id === id ? { ...m, [field]: value } : m)),
+    );
+  };
+
+  const handleAddKitItem = () => {
+    setKitItems((prev) => [
+      ...prev,
+      {
+        id: `kit-row-${Date.now()}`,
+        itemPartId: "",
+        itemPartNo: "",
+        itemDescription: "",
+        quantity: 1,
+      },
+    ]);
+  };
+
+  const handleRemoveKitItem = (id: string) => {
+    setKitItems((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const handleKitItemPartChange = (id: string, itemPartId: string) => {
+    const part = singlePartOptions.find((row) => row.id === itemPartId);
+    setKitItems((prev) =>
+      prev.map((row) =>
+        row.id === id
+          ? {
+            ...row,
+            itemPartId,
+            itemPartNo: part?.partNo || "",
+            itemDescription: part?.description || "",
+          }
+          : row,
+      ),
+    );
+  };
+
+  const handleKitItemQtyChange = (id: string, qty: number | "") => {
+    setKitItems((prev) =>
+      prev.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              quantity: qty === "" ? "" : Math.max(1, Number(qty)),
+            }
+          : row,
+      ),
     );
   };
 
@@ -1300,7 +1455,17 @@ export const PartEntryForm = ({
       return;
     }
 
-    onSave({ ...formData, modelQuantities, imageP1, imageP2 });
+    const preparedKitItems =
+      formData.type === "kit"
+        ? kitItems
+          .filter((row) => row.itemPartId)
+          .map((row) => ({
+            ...row,
+            quantity: Math.max(1, Number(row.quantity || 1)),
+          }))
+        : [];
+
+    onSave({ ...formData, modelQuantities, kitItems: preparedKitItems, imageP1, imageP2 });
 
     // Notify parent component about selected part number
     const partNo = formData.partNo.trim();
@@ -1310,6 +1475,7 @@ export const PartEntryForm = ({
 
     setFormData(initialFormData);
     setModelQuantities([{ id: "1", model: "", qty: 0 }]);
+    setKitItems([]);
     setImageP1(null);
     setImageP2(null);
     setIsEditing(false);
@@ -1343,6 +1509,7 @@ export const PartEntryForm = ({
 
     // Reset Models section
     setModelQuantities([{ id: "1", model: "", qty: 0 }]);
+    setKitItems([]);
 
     // Reset images
     setImageP1(null);
@@ -1450,6 +1617,7 @@ export const PartEntryForm = ({
 
     // Reset Models section
     setModelQuantities([{ id: "1", model: "", qty: 0 }]);
+    setKitItems([]);
 
     // Reset auto-fill flag
     setMasterPartAutoFilled(false);
@@ -4180,6 +4348,115 @@ export const PartEntryForm = ({
               />
             </div>
 
+            <div className="mb-4">
+              <label className="block text-xs text-foreground mb-1 font-bold">
+                Type
+              </label>
+              <Select
+                value={formData.type || "single"}
+                onValueChange={(value) => handleInputChange("type", value)}
+              >
+                <SelectTrigger className="h-8 text-xs border-2 border-input focus-visible:border">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Single</SelectItem>
+                  <SelectItem value="kit">Kit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {formData.type === "kit" && (
+              <div className="mb-4 border border-border rounded-md p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold text-foreground">Kit Items</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    onClick={handleAddKitItem}
+                  >
+                    Add Item
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  {kitItems.length === 0 ? (
+                    <div className="text-[11px] text-muted-foreground border border-dashed rounded p-2">
+                      No single items selected for this kit.
+                    </div>
+                  ) : (
+                    kitItems.map((row) => (
+                      <div key={row.id} className="space-y-1 border rounded p-2">
+                        {(() => {
+                          const selectedOption = selectableSinglePartOptions.find(
+                            (option) => option.id === row.itemPartId,
+                          );
+                          const limitedOptions = selectableSinglePartOptions.slice(0, 200);
+                          const optionsToRender =
+                            selectedOption &&
+                            !limitedOptions.some((option) => option.id === selectedOption.id)
+                              ? [selectedOption, ...limitedOptions]
+                              : limitedOptions;
+
+                          return (
+                            <SearchableSelect
+                              options={optionsToRender.map((option) => ({
+                                value: option.id,
+                                label: `MP: ${option.masterPartNo || "-"} | Part: ${option.partNo}`,
+                                description: `Desc: ${option.description || "-"} | Brand: ${option.brandName || "-"}`,
+                              }))}
+                              value={row.itemPartId}
+                              onValueChange={(value) =>
+                                handleKitItemPartChange(row.id, value)
+                              }
+                              placeholder="Search single type item"
+                              className="h-8 text-xs"
+                            />
+                          );
+                        })()}
+                        {selectableSinglePartOptions.length > 200 && (
+                          <p className="text-[10px] text-muted-foreground">
+                            Showing first 200 items. Type part no in filter fields above to narrow list.
+                          </p>
+                        )}
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={row.quantity}
+                            onChange={(e) =>
+                              handleKitItemQtyChange(
+                                row.id,
+                                e.target.value === "" ? "" : parseInt(e.target.value, 10),
+                              )
+                            }
+                            onBlur={() =>
+                              handleKitItemQtyChange(
+                                row.id,
+                                row.quantity === "" ? 1 : Number(row.quantity),
+                              )
+                            }
+                            className="h-8 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs text-destructive border-destructive"
+                            onClick={() => handleRemoveKitItem(row.id)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <Button
                 className="flex-1 gap-1.5 h-8 text-xs"
@@ -4200,7 +4477,7 @@ export const PartEntryForm = ({
         </div>
       </div>
 
-      {/* Right Panel - Model and Quantity */}
+      {/* Right Panel - Model and Quantity / Kit Items */}
       <div className="w-72 bg-card rounded-lg border border-border p-3">
         <div className="flex items-center justify-end mb-3">
           <Button

@@ -59,6 +59,7 @@ import {
 interface PriceItem {
   id: string;
   partNo: string;
+  partNoAlt?: string;
   description: string;
   category: string;
   subcategory?: string; // Sub category field
@@ -660,6 +661,7 @@ export const PricingCosting = () => {
           return {
             id: item.id,
             partNo: partNoValue,
+            partNoAlt: (item.part_no || "").trim(),
             description: item.description || "",
             category: item.category_name || item.category || "Uncategorized",
             subcategory: item.subcategory_name || item.subcategory || "",
@@ -674,7 +676,9 @@ export const PricingCosting = () => {
             newPriceB: "", // No auto-fill - empty by default
             priceM: priceM ?? 0, // Display value - show 0 if null
             newPriceM: "", // No auto-fill - empty by default
-            quantity: item.qty || 0,
+            quantity: Number(
+              item.qty ?? item.stock ?? item.current_stock ?? 0,
+            ),
             selected: false,
             modified: false,
             lastUpdated: existingLastUpdated, // Preserve lastUpdated info from existing items or localStorage
@@ -864,12 +868,13 @@ export const PricingCosting = () => {
     (sum, item) => sum + item.priceA * item.quantity,
     0,
   );
-  const totalCost = items.reduce(
-    (sum, item) => sum + item.cost * item.quantity,
+  const totalAvgValue = items.reduce(
+    (sum, item) => sum + item.avgPrice * item.quantity,
     0,
   );
-  const potentialProfit = totalStockValue - totalCost;
-  const profitMargin = totalCost > 0 ? (potentialProfit / totalCost) * 100 : 0;
+  const potentialProfit = totalStockValue - totalAvgValue;
+  const profitMargin =
+    totalAvgValue > 0 ? (potentialProfit / totalAvgValue) * 100 : 0;
 
   const itemsWithPrice = items.filter((item) => item.priceA > 0);
   const avgMargin =
@@ -1043,6 +1048,95 @@ export const PricingCosting = () => {
 
     return sorted;
   }, [filteredItems, sortOrder]);
+
+  const profitabilityFilteredItems = useMemo(() => {
+    const searchLower = profitabilitySearch.trim().toLowerCase();
+
+    const filtered = items.filter((item) => {
+      const price = Number(item.priceA || 0);
+      const avgPrice = Number(item.avgPrice || 0);
+      const profit = price - avgPrice;
+      const margin = avgPrice > 0 ? ((price - avgPrice) / avgPrice) * 100 : null;
+
+      if (searchLower) {
+        const haystack = [
+          item.partNo,
+          item.partNoAlt || "",
+          item.description,
+          item.brand,
+          item.category,
+          item.subcategory || "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(searchLower)) return false;
+      }
+
+      if (profitabilityCategory !== "all" && item.category !== profitabilityCategory) {
+        return false;
+      }
+      if (
+        profitabilitySubCategory !== "all" &&
+        item.subcategory !== profitabilitySubCategory
+      ) {
+        return false;
+      }
+
+      if (profitabilityMarginFilter === "profit" && profit <= 0) return false;
+      if (profitabilityMarginFilter === "loss" && profit >= 0) return false;
+
+      if (profitabilityMinMargin) {
+        const min = parseFloat(profitabilityMinMargin);
+        if (!Number.isNaN(min) && (margin === null || margin < min)) return false;
+      }
+      if (profitabilityMaxMargin) {
+        const max = parseFloat(profitabilityMaxMargin);
+        if (!Number.isNaN(max) && (margin === null || margin > max)) return false;
+      }
+
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      const marginA =
+        a.cost > 0
+          ? ((Number(a.priceA || 0) - Number(a.cost || 0)) / Number(a.cost || 0)) *
+            100
+          : Number.NEGATIVE_INFINITY;
+      const marginB =
+        b.cost > 0
+          ? ((Number(b.priceA || 0) - Number(b.cost || 0)) / Number(b.cost || 0)) *
+            100
+          : Number.NEGATIVE_INFINITY;
+      return marginB - marginA;
+    });
+  }, [
+    items,
+    profitabilitySearch,
+    profitabilityCategory,
+    profitabilitySubCategory,
+    profitabilityMarginFilter,
+    profitabilityMinMargin,
+    profitabilityMaxMargin,
+  ]);
+
+  const profitabilityTotalPages = Math.max(
+    1,
+    Math.ceil(profitabilityFilteredItems.length / profitabilityItemsPerPage),
+  );
+  const profitabilityPaginatedItems = useMemo(() => {
+    const startIdx = (profitabilityPage - 1) * profitabilityItemsPerPage;
+    return profitabilityFilteredItems.slice(
+      startIdx,
+      startIdx + profitabilityItemsPerPage,
+    );
+  }, [profitabilityFilteredItems, profitabilityItemsPerPage, profitabilityPage]);
+
+  useEffect(() => {
+    if (profitabilityPage > profitabilityTotalPages) {
+      setProfitabilityPage(profitabilityTotalPages);
+    }
+  }, [profitabilityPage, profitabilityTotalPages]);
 
   // Pagination - show all items if showAllItems is true
   const totalPages = showAllItems
@@ -1429,8 +1523,8 @@ export const PricingCosting = () => {
       headers.join(","),
       ...items.map((item) => {
         const margin =
-          item.cost > 0
-            ? (((item.priceA - item.cost) / item.cost) * 100).toFixed(2)
+          item.avgPrice > 0
+            ? (((item.priceA - item.avgPrice) / item.avgPrice) * 100).toFixed(2)
             : "0";
         return [
           item.partNo,
@@ -2422,67 +2516,7 @@ export const PricingCosting = () => {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">Profitable Items</CardTitle>
                 <div className="text-sm text-muted-foreground">
-                  Showing{" "}
-                  {(() => {
-                    const filtered = items.filter((item) => {
-                      if (item.cost <= 0 || item.priceA <= 0) return false;
-                      const margin =
-                        ((item.priceA - item.cost) / item.cost) * 100;
-                      const profit = item.priceA - item.cost;
-
-                      // Search filter
-                      if (profitabilitySearch) {
-                        const searchLower = profitabilitySearch.toLowerCase();
-                        if (
-                          !item.partNo.toLowerCase().includes(searchLower) &&
-                          !item.description.toLowerCase().includes(searchLower)
-                        ) {
-                          return false;
-                        }
-                      }
-
-                      // Category filter
-                      if (
-                        profitabilityCategory !== "all" &&
-                        item.category !== profitabilityCategory
-                      ) {
-                        return false;
-                      }
-
-                      // Sub Category filter
-                      if (
-                        profitabilitySubCategory !== "all" &&
-                        item.subcategory !== profitabilitySubCategory
-                      ) {
-                        return false;
-                      }
-
-                      // Profit/Loss filter
-                      if (profitabilityMarginFilter === "profit" && profit < 0)
-                        return false;
-                      if (profitabilityMarginFilter === "loss" && profit >= 0)
-                        return false;
-
-                      // Min margin filter
-                      if (
-                        profitabilityMinMargin &&
-                        margin < parseFloat(profitabilityMinMargin)
-                      ) {
-                        return false;
-                      }
-
-                      // Max margin filter
-                      if (
-                        profitabilityMaxMargin &&
-                        margin > parseFloat(profitabilityMaxMargin)
-                      ) {
-                        return false;
-                      }
-
-                      return true;
-                    });
-                    return filtered.length;
-                  })()}{" "}
+                  Showing {profitabilityFilteredItems.length}{" "}
                   items
                 </div>
               </div>
@@ -2515,92 +2549,7 @@ export const PricingCosting = () => {
                     </TableRow>
                   ) : (
                     (() => {
-                      const filtered = items
-                        .filter((item) => {
-                          if (item.cost <= 0 || item.priceA <= 0) return false;
-                          const margin =
-                            ((item.priceA - item.cost) / item.cost) * 100;
-                          const profit = item.priceA - item.cost;
-
-                          // Search filter
-                          if (profitabilitySearch) {
-                            const searchLower =
-                              profitabilitySearch.toLowerCase();
-                            if (
-                              !item.partNo
-                                .toLowerCase()
-                                .includes(searchLower) &&
-                              !item.description
-                                .toLowerCase()
-                                .includes(searchLower)
-                            ) {
-                              return false;
-                            }
-                          }
-
-                          // Category filter
-                          if (
-                            profitabilityCategory !== "all" &&
-                            item.category !== profitabilityCategory
-                          ) {
-                            return false;
-                          }
-
-                          // Sub Category filter
-                          if (
-                            profitabilitySubCategory !== "all" &&
-                            item.subcategory !== profitabilitySubCategory
-                          ) {
-                            return false;
-                          }
-
-                          // Profit/Loss filter
-                          if (
-                            profitabilityMarginFilter === "profit" &&
-                            profit < 0
-                          )
-                            return false;
-                          if (
-                            profitabilityMarginFilter === "loss" &&
-                            profit >= 0
-                          )
-                            return false;
-
-                          // Min margin filter
-                          if (
-                            profitabilityMinMargin &&
-                            margin < parseFloat(profitabilityMinMargin)
-                          ) {
-                            return false;
-                          }
-
-                          // Max margin filter
-                          if (
-                            profitabilityMaxMargin &&
-                            margin > parseFloat(profitabilityMaxMargin)
-                          ) {
-                            return false;
-                          }
-
-                          return true;
-                        })
-                        .sort((a, b) => {
-                          const marginA = ((a.priceA - a.cost) / a.cost) * 100;
-                          const marginB = ((b.priceA - b.cost) / b.cost) * 100;
-                          return marginB - marginA;
-                        });
-
-                      const totalPages = Math.ceil(
-                        filtered.length / profitabilityItemsPerPage,
-                      );
-                      const startIdx =
-                        (profitabilityPage - 1) * profitabilityItemsPerPage;
-                      const paginated = filtered.slice(
-                        startIdx,
-                        startIdx + profitabilityItemsPerPage,
-                      );
-
-                      if (paginated.length === 0) {
+                      if (profitabilityPaginatedItems.length === 0) {
                         return (
                           <TableRow>
                             <TableCell
@@ -2613,10 +2562,12 @@ export const PricingCosting = () => {
                         );
                       }
 
-                      return paginated.map((item) => {
+                      return profitabilityPaginatedItems.map((item) => {
+                        const price = Number(item.priceA || 0);
+                        const avgPrice = Number(item.avgPrice || 0);
                         const margin =
-                          ((item.priceA - item.cost) / item.cost) * 100;
-                        const profit = item.priceA - item.cost;
+                          avgPrice > 0 ? ((price - avgPrice) / avgPrice) * 100 : null;
+                        const profit = price - avgPrice;
                         const isProfit = profit >= 0;
 
                         return (
@@ -2654,12 +2605,14 @@ export const PricingCosting = () => {
                             <TableCell className="text-right">
                               <Badge
                                 className={
-                                  isProfit
+                                  margin === null
+                                    ? "bg-muted text-muted-foreground"
+                                    : isProfit
                                     ? "bg-success text-success-foreground"
                                     : "bg-destructive text-destructive-foreground"
                                 }
                               >
-                                {margin.toFixed(1)}%
+                                {margin === null ? "N/A" : `${margin.toFixed(1)}%`}
                               </Badge>
                             </TableCell>
                             <TableCell
@@ -2677,66 +2630,12 @@ export const PricingCosting = () => {
 
               {/* Pagination */}
               {(() => {
-                const filtered = items.filter((item) => {
-                  if (item.cost <= 0 || item.priceA <= 0) return false;
-                  const margin = ((item.priceA - item.cost) / item.cost) * 100;
-                  const profit = item.priceA - item.cost;
-
-                  if (profitabilitySearch) {
-                    const searchLower = profitabilitySearch.toLowerCase();
-                    if (
-                      !item.partNo.toLowerCase().includes(searchLower) &&
-                      !item.description.toLowerCase().includes(searchLower)
-                    ) {
-                      return false;
-                    }
-                  }
-
-                  if (
-                    profitabilityCategory !== "all" &&
-                    item.category !== profitabilityCategory
-                  ) {
-                    return false;
-                  }
-
-                  if (
-                    profitabilitySubCategory !== "all" &&
-                    item.subcategory !== profitabilitySubCategory
-                  ) {
-                    return false;
-                  }
-
-                  if (profitabilityMarginFilter === "profit" && profit < 0)
-                    return false;
-                  if (profitabilityMarginFilter === "loss" && profit >= 0)
-                    return false;
-
-                  if (
-                    profitabilityMinMargin &&
-                    margin < parseFloat(profitabilityMinMargin)
-                  ) {
-                    return false;
-                  }
-
-                  if (
-                    profitabilityMaxMargin &&
-                    margin > parseFloat(profitabilityMaxMargin)
-                  ) {
-                    return false;
-                  }
-
-                  return true;
-                });
-                const totalPages = Math.ceil(
-                  filtered.length / profitabilityItemsPerPage,
-                );
-
-                if (totalPages <= 1) return null;
+                if (profitabilityTotalPages <= 1) return null;
 
                 return (
                   <div className="flex items-center justify-between mt-4">
                     <div className="text-sm text-muted-foreground">
-                      Page {profitabilityPage} of {totalPages}
+                      Page {profitabilityPage} of {profitabilityTotalPages}
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
@@ -2755,10 +2654,10 @@ export const PricingCosting = () => {
                         size="sm"
                         onClick={() =>
                           setProfitabilityPage((p) =>
-                            Math.min(totalPages, p + 1),
+                            Math.min(profitabilityTotalPages, p + 1),
                           )
                         }
-                        disabled={profitabilityPage === totalPages}
+                        disabled={profitabilityPage === profitabilityTotalPages}
                       >
                         Next
                         <ChevronRight className="h-4 w-4" />
@@ -2785,7 +2684,7 @@ export const PricingCosting = () => {
                     const categoryItems = items.filter(
                       (item) =>
                         item.category === category &&
-                        item.cost > 0 &&
+                        item.avgPrice > 0 &&
                         item.priceA > 0,
                     );
                     const avgMargin =
@@ -2793,13 +2692,13 @@ export const PricingCosting = () => {
                         ? categoryItems.reduce(
                           (sum, item) =>
                             sum +
-                            ((item.priceA - item.cost) / item.cost) * 100,
+                            ((item.priceA - item.avgPrice) / item.avgPrice) * 100,
                           0,
                         ) / categoryItems.length
                         : 0;
                     const totalProfit = categoryItems.reduce(
                       (sum, item) =>
-                        sum + (item.priceA - item.cost) * item.quantity,
+                        sum + (item.priceA - item.avgPrice) * item.quantity,
                       0,
                     );
 

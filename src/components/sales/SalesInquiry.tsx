@@ -41,13 +41,6 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Search, Eye, FileText, CalendarIcon, Package, ShoppingCart, Boxes, Settings2, Truck, Printer, RefreshCw, ArrowRight, X, Trash2, Info } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -110,6 +103,17 @@ interface PartDetail {
   quantity?: number; // Available stock quantity
 }
 
+interface ModelAssociationItem {
+  partId: string;
+  masterPart: string;
+  partNo: string;
+  description: string;
+  brand: string;
+  application?: string;
+  model: string;
+  quantity: number;
+}
+
 export const SalesInquiry = () => {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -152,6 +156,9 @@ export const SalesInquiry = () => {
   const [loadingRelatedKits, setLoadingRelatedKits] = useState(false);
   const [partModels, setPartModels] = useState<any[]>([]);
   const [loadingPartModels, setLoadingPartModels] = useState(false);
+  const [selectedModelName, setSelectedModelName] = useState("");
+  const [modelAssociations, setModelAssociations] = useState<ModelAssociationItem[]>([]);
+  const [loadingModelAssociations, setLoadingModelAssociations] = useState(false);
 
   const itemDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -190,6 +197,9 @@ export const SalesInquiry = () => {
       description: String(p.description || p.part_no || '').trim() || 'No description',
       category: String(p.category_name || p.category || '').trim() || 'N/A',
       subCategory: String(p.subcategory_name || p.subcategory || '').trim() || 'N/A',
+      application:
+        String(p.application_name || p.application?.name || p.application || "").trim() ||
+        "N/A",
       uom: String(p.uom || 'NOS').trim(),
       hsCode: String(p.hs_code || p.hsCode || '').trim() || 'N/A',
       weight: formatNumber(p.weight),
@@ -605,6 +615,17 @@ export const SalesInquiry = () => {
 
         const p = (partResponse as any).data || partResponse;
         const stockData = (stockResponse as any).data || stockResponse;
+        const normalizedFetchedQty = Number(
+          (stockData as any).available_stock ??
+            (stockData as any).available_quantity ??
+            (stockData as any).current_stock ??
+            (stockData as any).qty,
+        );
+        const fetchedQty = Number.isFinite(normalizedFetchedQty)
+          ? Math.max(0, normalizedFetchedQty)
+          : null;
+        const listQty = Math.max(0, Number(part.quantity || 0));
+        const bestQty = fetchedQty === null ? listQty : Math.max(fetchedQty, listQty);
 
         // Fetch and transform models as well
         const apiModels = p?.models || [];
@@ -633,6 +654,13 @@ export const SalesInquiry = () => {
           description: String((p as any).description || '').trim() || 'No description',
           category: String((p as any).category_name || (p as any).category || '').trim() || 'N/A',
           subCategory: String((p as any).subcategory_name || (p as any).subcategory || '').trim() || 'N/A',
+          application:
+            String(
+              (p as any).application_name ||
+              (p as any).application?.name ||
+              (p as any).application ||
+              "",
+            ).trim() || "N/A",
           uom: String((p as any).uom || 'NOS').trim(),
           hsCode: String((p as any).hs_code || (p as any).hsCode || '').trim() || 'N/A',
           weight: formatNumber((p as any).weight),
@@ -645,7 +673,7 @@ export const SalesInquiry = () => {
           status: ((p as any).status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
           rackNo: (rackMap[(p as any).id] && rackMap[(p as any).id] !== 'N/A') ? rackMap[(p as any).id] : 'N/A',
           reOrderLevel: formatNumber((p as any).reorder_level || (p as any).reorderLevel),
-          quantity: (stockData as any).current_stock !== undefined ? (stockData as any).current_stock : (part.quantity || 0),
+          quantity: bestQty,
         };
 
         setSelectedPart(fullPartDetails);
@@ -663,6 +691,36 @@ export const SalesInquiry = () => {
     setSelectedPart(null);
     setPartModels([]);
     setShowItemDropdown(false);
+  };
+
+  const handleModelAssociationClick = async (modelName: string) => {
+    const cleanModel = String(modelName || "").trim();
+    if (!cleanModel) return;
+    const selectedApplication = String(selectedPart?.application || "").trim();
+
+    setSelectedModelName(cleanModel);
+    setLoadingModelAssociations(true);
+    try {
+      const response = await apiClient.getPartsByModelAssociation(
+        cleanModel,
+        selectedApplication,
+      );
+      const data = Array.isArray((response as any)?.data)
+        ? (response as any).data
+        : Array.isArray(response)
+          ? response
+          : [];
+      setModelAssociations(data);
+    } catch {
+      setModelAssociations([]);
+      toast({
+        title: "Failed to load associations",
+        description: "Could not fetch part associations for selected model.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingModelAssociations(false);
+    }
   };
 
   const handleRefreshParts = async () => {
@@ -736,7 +794,9 @@ export const SalesInquiry = () => {
             description: String(p.description || p.part_no || '').trim() || 'No description',
             category: String(p.category_name || p.category || '').trim() || 'N/A',
             subCategory: String(p.subcategory_name || p.subcategory || '').trim() || 'N/A',
-            application: String(p.application_name || p.application || '').trim() || 'N/A',
+            application:
+              String(p.application_name || p.application?.name || p.application || '').trim() ||
+              'N/A',
             uom: String(p.uom || 'NOS').trim(),
             hsCode: String(p.hs_code || p.hsCode || '').trim() || 'N/A',
             weight: formatNumber(p.weight),
@@ -1747,10 +1807,16 @@ export const SalesInquiry = () => {
                       {selectedPart && partModels.length > 0 ? (
                         <div className="flex flex-col items-center gap-1.5 min-w-[120px]">
                           {partModels.map((m, idx) => (
-                            <div key={idx} className="flex items-center justify-between w-full px-2 py-1 rounded bg-muted/50 border border-border/50">
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => handleModelAssociationClick(m.name)}
+                              className="flex items-center justify-between w-full px-2 py-1 rounded bg-muted/50 border border-border/50 hover:bg-primary/10 hover:border-primary/40 transition-colors text-left"
+                              title="Click to view part association"
+                            >
                               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{m.name}</span>
                               <span className="font-bold text-primary text-sm">{m.qtyUsed}</span>
-                            </div>
+                            </button>
                           ))}
                         </div>
                       ) : (
@@ -1778,9 +1844,11 @@ export const SalesInquiry = () => {
             </div>
           </div>
 
-          {/* History Section (Fixed Tabs) */}
-          <Tabs defaultValue="last-sales-invoice" className="mt-6">
-            <TabsList className="grid w-full grid-cols-2">
+          {/* History + Part Association (same page layout) */}
+          <div className="mt-6 grid grid-cols-1 xl:grid-cols-5 gap-4">
+            <div className="xl:col-span-3">
+              <Tabs defaultValue="last-sales-invoice">
+                <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="last-sales-invoice" className="flex items-center gap-1.5 text-xs">
                 <FileText className="h-3.5 w-3.5" />
                 Last Sales Invoice
@@ -1789,7 +1857,7 @@ export const SalesInquiry = () => {
                 <Truck className="h-3.5 w-3.5" />
                 Last Direct PO
               </TabsTrigger>
-            </TabsList>
+                </TabsList>
 
             {/* Last Sales Invoice Tab */}
             <TabsContent value="last-sales-invoice" className="mt-4">
@@ -1916,7 +1984,69 @@ export const SalesInquiry = () => {
                 </Table>
               </div>
             </TabsContent>
-          </Tabs>
+              </Tabs>
+            </div>
+
+            <div className="xl:col-span-2 rounded-md border bg-card p-3 flex flex-col min-h-[420px]">
+              <div className="mb-2">
+                <div className="text-sm font-semibold">Part Association</div>
+                <div className="text-xs text-muted-foreground">
+                  Model: <span className="font-medium text-foreground">{selectedModelName || "Click a model in Quantity Used"}</span>
+                </div>
+              </div>
+              <div className="rounded-md border bg-card overflow-auto flex-1 min-h-0 max-h-[520px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="text-xs w-14">Item</TableHead>
+                      <TableHead className="text-xs min-w-[180px]">Part</TableHead>
+                      <TableHead className="text-xs">Description</TableHead>
+                      <TableHead className="text-xs">Brand</TableHead>
+                      <TableHead className="text-xs">Application</TableHead>
+                      <TableHead className="text-xs">Model</TableHead>
+                      <TableHead className="text-xs text-right">Quantity</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loadingModelAssociations ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
+                          <div className="flex items-center justify-center gap-2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                            Loading associations...
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : modelAssociations.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground italic">
+                          No associated items found for this model.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      modelAssociations.map((item, index) => (
+                        <TableRow key={`${item.partId}-${index}`} className="hover:bg-muted/20">
+                          <TableCell className="text-xs">{index + 1}</TableCell>
+                          <TableCell className="text-xs font-medium">
+                            {`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                          </TableCell>
+                          <TableCell className="text-xs">{item.description || "N/A"}</TableCell>
+                          <TableCell className="text-xs">{item.brand || "N/A"}</TableCell>
+                          <TableCell className="text-xs">
+                            {item.application || selectedPart?.application || "N/A"}
+                          </TableCell>
+                          <TableCell className="text-xs">{item.model || "N/A"}</TableCell>
+                          <TableCell className="text-xs text-right font-semibold">
+                            {Number(item.quantity || 0).toLocaleString("en-US")}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

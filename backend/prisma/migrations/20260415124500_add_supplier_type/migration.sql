@@ -1,0 +1,2 @@
+ALTER TABLE "Supplier"
+ADD COLUMN "type" TEXT NOT NULL DEFAULT 'local';

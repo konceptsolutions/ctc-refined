@@ -75,13 +75,13 @@ import { useToast } from "@/hooks/use-toast";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { CompactPartForm } from "./CompactPartForm";
-import { KitsList, Kit } from "./KitsList";
 
 export interface Item {
   id: string;
   masterPartNo: string;
   partNo: string;
   brand: string;
+  type?: string;
   description: string;
   category: string;
   subCategory: string;
@@ -99,12 +99,23 @@ export interface Item {
   weight?: string | number | null;
 }
 
+interface KitDetailRow {
+  itemPartId: string;
+  masterPartNo: string;
+  itemPartNo: string;
+  itemDescription: string;
+  brand: string;
+  qtyPerKit: number;
+  stock: number;
+}
+
 interface SearchFilters {
   search: string;
   master_part_no: string;
   part_no: string;
   brand_name: string;
   description: string;
+  part_type: string;
   category_name: string;
   subcategory_name: string;
   application_name: string;
@@ -130,6 +141,11 @@ interface ItemsListViewProps {
   onBulkDelete?: (
     itemIds: string[],
   ) => Promise<{ success: string[]; failed: string[] }>;
+  onBulkPartTypeChange?: (
+    itemIds: string[],
+    nextType: "single" | "kit",
+    quantity: number,
+  ) => Promise<void>;
   onItemsUpdate?: (updatedItems: Item[]) => void;
   onAddNew?: () => void;
   onStatusChange?: (item: Item, newStatus: "Active" | "Inactive") => void;
@@ -137,9 +153,7 @@ interface ItemsListViewProps {
   onCancelForm?: () => void;
   onSavePart?: (partData: any, isEdit: boolean, editItemId?: string) => void;
   editItem?: Item | null;
-  kits?: Kit[];
-  onDeleteKit?: (kit: Kit) => void;
-  onUpdateKit?: (kit: Kit) => void;
+  forcedEditType?: "single" | "kit" | null;
   categoryOptions?: { value: string; label: string }[];
   subcategoryOptions?: {
     value: string;
@@ -151,8 +165,6 @@ interface ItemsListViewProps {
   descriptionOptions?: { value: string; label: string }[];
   masterPartOptions?: { value: string; label: string }[];
 }
-
-type ListTab = "parts-list" | "kits-list";
 
 export const ItemsListView = ({
   items,
@@ -168,6 +180,7 @@ export const ItemsListView = ({
   onItemSelect,
   onDelete,
   onBulkDelete,
+  onBulkPartTypeChange,
   onItemsUpdate,
   onAddNew,
   onStatusChange,
@@ -175,9 +188,7 @@ export const ItemsListView = ({
   onCancelForm,
   onSavePart,
   editItem,
-  kits = [],
-  onDeleteKit,
-  onUpdateKit,
+  forcedEditType = null,
   categoryOptions = [],
   subcategoryOptions = [],
   applicationOptions = [],
@@ -186,7 +197,6 @@ export const ItemsListView = ({
   masterPartOptions = [],
 }: ItemsListViewProps) => {
   const { toast } = useToast();
-  const [listTab, setListTab] = useState<ListTab>("parts-list");
   const [pageJumpValue, setPageJumpValue] = useState<string>("");
   const [reserveStockDialogOpen, setReserveStockDialogOpen] = useState(false);
   const [selectedItemForReserve, setSelectedItemForReserve] =
@@ -200,6 +210,7 @@ export const ItemsListView = ({
     part_no: "",
     brand_name: "",
     description: "",
+    part_type: "all",
     category_name: "all",
     subcategory_name: "all",
     application_name: "all",
@@ -242,6 +253,17 @@ export const ItemsListView = ({
     useState<Item | null>(null);
   const [currentItemPrices, setCurrentItemPrices] = useState<any>(null);
   const [loadingPriceData, setLoadingPriceData] = useState(false);
+  const [makeKitDialogOpen, setMakeKitDialogOpen] = useState(false);
+  const [breakKitDialogOpen, setBreakKitDialogOpen] = useState(false);
+  const [selectedMakeKitItemId, setSelectedMakeKitItemId] = useState("");
+  const [selectedBreakKitItemId, setSelectedBreakKitItemId] = useState("");
+  const [kitDetailsLoading, setKitDetailsLoading] = useState(false);
+  const [makeKitQuantity, setMakeKitQuantity] = useState<number | "">(1);
+  const [breakKitQuantity, setBreakKitQuantity] = useState<number | "">(1);
+  const [makeKitRows, setMakeKitRows] = useState<KitDetailRow[]>([]);
+  const [breakKitRows, setBreakKitRows] = useState<KitDetailRow[]>([]);
+  const [makeKitCurrentStock, setMakeKitCurrentStock] = useState(0);
+  const [breakKitCurrentStock, setBreakKitCurrentStock] = useState(0);
 
   // Debounce timer ref for search
   const searchDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -280,15 +302,16 @@ export const ItemsListView = ({
 
   // Use provided dropdown options if available, otherwise derive from current items
   // Ensure uniqueness using Set
+  const useFilteredOptions = searchFilters.part_type !== "all";
   const categories =
-    categoryOptions.length > 0
+    !useFilteredOptions && categoryOptions.length > 0
       ? [...new Set(categoryOptions.map((opt) => opt.value))]
       : [...new Set(items.map((item) => item.category).filter(Boolean))];
 
   // Filter subcategories based on selected category
   const selectedCategory = searchFilters.category_name;
   let subCategories: string[];
-  if (subcategoryOptions.length > 0) {
+  if (!useFilteredOptions && subcategoryOptions.length > 0) {
     if (selectedCategory && selectedCategory !== "all") {
       // Filter subcategories to show ALL subcategories that belong to the selected category
       // Use categoryName from the API response, case-insensitive matching with normalization
@@ -332,7 +355,7 @@ export const ItemsListView = ({
   }
 
   const applications =
-    applicationOptions.length > 0
+    !useFilteredOptions && applicationOptions.length > 0
       ? applicationOptions.map((opt) => opt.value)
       : [
         ...new Set(
@@ -355,11 +378,11 @@ export const ItemsListView = ({
   // Options for search filters
   // Use passed options if available (for full list), otherwise derive from current items (fallback)
   const finalMasterPartOptions = useMemo(() => {
-    if (masterPartOptions.length > 0) return masterPartOptions;
+    if (!useFilteredOptions && masterPartOptions.length > 0) return masterPartOptions;
     return Array.from(
       new Set(items.map((item) => item.masterPartNo).filter(Boolean)),
     ).map((val) => ({ value: val, label: val }));
-  }, [items, masterPartOptions]);
+  }, [items, masterPartOptions, useFilteredOptions]);
 
   const partNoOptions = useMemo(() => {
     return Array.from(
@@ -368,40 +391,221 @@ export const ItemsListView = ({
   }, [items]);
 
   const finalBrandOptions = useMemo(() => {
-    if (brandOptions.length > 0) return brandOptions;
+    if (!useFilteredOptions && brandOptions.length > 0) return brandOptions;
     return Array.from(
       new Set(items.map((item) => item.brand).filter(Boolean)),
     ).map((val) => ({ value: val, label: val }));
-  }, [items, brandOptions]);
+  }, [items, brandOptions, useFilteredOptions]);
 
   const finalDescriptionOptions = useMemo(() => {
-    if (descriptionOptions.length > 0) return descriptionOptions;
+    if (!useFilteredOptions && descriptionOptions.length > 0)
+      return descriptionOptions;
     return Array.from(
       new Set(items.map((item) => item.description).filter(Boolean)),
     ).map((val) => ({ value: val, label: val }));
-  }, [items, descriptionOptions]);
+  }, [items, descriptionOptions, useFilteredOptions]);
+
+  const makeKitItemOptions = useMemo(
+    () =>
+      items
+        .filter((item) => (item.type || "single") === "kit")
+        .map((item) => ({
+          value: item.id,
+          label: item.partNo || item.masterPartNo || item.id,
+          description: `${item.masterPartNo || "-"} | ${item.description || "-"} | ${item.brand || "-"}`,
+        })),
+    [items],
+  );
+
+  const breakKitItemOptions = useMemo(
+    () =>
+      items
+        .filter((item) => (item.type || "single") === "kit")
+        .map((item) => ({
+          value: item.id,
+          label: item.partNo || item.masterPartNo || item.id,
+          description: `${item.masterPartNo || "-"} | ${item.description || "-"} | ${item.brand || "-"}`,
+        })),
+    [items],
+  );
+
+  const makeRequiredRows = useMemo(() => {
+    const qty =
+      makeKitQuantity === "" ? 0 : Math.max(1, Number(makeKitQuantity || 1));
+    return makeKitRows.map((row) => ({
+      ...row,
+      requiredQty: row.qtyPerKit * qty,
+      enoughStock: row.stock >= row.qtyPerKit * qty,
+    }));
+  }, [makeKitRows, makeKitQuantity]);
+
+  const makeKitHasInsufficientStock = useMemo(
+    () => makeRequiredRows.some((row) => !row.enoughStock),
+    [makeRequiredRows],
+  );
+
+  const makeKitValidationMessage = useMemo(() => {
+    if (!selectedMakeKitItemId) return "Please select a kit item.";
+    if (makeKitQuantity === "" || Number(makeKitQuantity) < 1)
+      return "Please enter a valid quantity to make.";
+    if (kitDetailsLoading) return "Loading associated items...";
+    if (makeRequiredRows.length === 0) return "No associated kit items found.";
+    if (makeKitHasInsufficientStock)
+      return "Cannot make kit: stock is less than required quantity for one or more items.";
+    return "";
+  }, [
+    selectedMakeKitItemId,
+    makeKitQuantity,
+    kitDetailsLoading,
+    makeRequiredRows,
+    makeKitHasInsufficientStock,
+  ]);
+
+  const breakReceiveRows = useMemo(() => {
+    const qty =
+      breakKitQuantity === "" ? 0 : Math.max(1, Number(breakKitQuantity || 1));
+    return breakKitRows.map((row) => ({
+      ...row,
+      receiveQty: row.qtyPerKit * qty,
+    }));
+  }, [breakKitRows, breakKitQuantity]);
+
+  const breakKitHasInsufficientStock = useMemo(() => {
+    const qty =
+      breakKitQuantity === "" ? 0 : Math.max(1, Number(breakKitQuantity || 1));
+    return selectedBreakKitItemId !== "" && qty > breakKitCurrentStock;
+  }, [selectedBreakKitItemId, breakKitQuantity, breakKitCurrentStock]);
+
+  const breakKitValidationMessage = useMemo(() => {
+    if (!selectedBreakKitItemId) return "Please select a kit item.";
+    if (breakKitQuantity === "" || Number(breakKitQuantity) < 1)
+      return "Please enter a valid quantity to break.";
+    if (kitDetailsLoading) return "Loading associated items...";
+    if (breakReceiveRows.length === 0) return "No associated kit items found.";
+    if (breakKitHasInsufficientStock)
+      return "Cannot break kit: quantity to break is greater than current kit stock.";
+    return "";
+  }, [
+    selectedBreakKitItemId,
+    breakKitQuantity,
+    kitDetailsLoading,
+    breakReceiveRows,
+    breakKitHasInsufficientStock,
+  ]);
+
+  const loadKitDetails = async (
+    kitPartId: string,
+    mode: "make" | "break",
+  ) => {
+    if (!kitPartId) return;
+    setKitDetailsLoading(true);
+    try {
+      const [partRes, entryRes] = await Promise.all([
+        apiClient.getPart(kitPartId),
+        apiClient.getPartEntryList({ page: 1, limit: "all" }),
+      ]);
+      const part = ((partRes as any)?.data || partRes) as any;
+      const partRows = Array.isArray((entryRes as any)?.data)
+        ? (entryRes as any).data
+        : Array.isArray(entryRes)
+          ? (entryRes as any)
+          : [];
+      const stockById = new Map<string, number>(
+        partRows.map((row: any) => [String(row.id || ""), Number(row.stock || 0)]),
+      );
+      const stockByPartNo = new Map<string, number>();
+      partRows.forEach((row: any) => {
+        const key = String(row.part_no || row.partNo || "").trim();
+        if (!key) return;
+        stockByPartNo.set(key, (stockByPartNo.get(key) || 0) + Number(row.stock || 0));
+      });
+      const partMetaById = new Map<
+        string,
+        { masterPartNo: string; partNo: string; brand: string }
+      >(
+        partRows.map((row: any) => [
+          String(row.id || ""),
+          {
+            masterPartNo: String(row.master_part_no || row.masterPartNo || "").trim(),
+            partNo: String(row.part_no || row.partNo || "").trim(),
+            brand: String(row.brand_name || row.brand || "").trim(),
+          },
+        ]),
+      );
+      const currentStock = Number(stockById.get(kitPartId) || 0);
+      const rows: KitDetailRow[] = Array.isArray(part?.kit_items)
+        ? part.kit_items
+            .map((row: any) => ({
+              itemPartId: String(row.item_part_id || "").trim(),
+              masterPartNo:
+                partMetaById.get(String(row.item_part_id || "").trim())
+                  ?.masterPartNo || "",
+              itemPartNo:
+                partMetaById.get(String(row.item_part_id || "").trim())?.partNo ||
+                String(row.item_part_no || "").trim(),
+              itemDescription: String(row.item_description || "").trim(),
+              brand:
+                partMetaById.get(String(row.item_part_id || "").trim())?.brand ||
+                "",
+              qtyPerKit: Math.max(1, Number(row.quantity || 1)),
+              stock: Number(
+                stockByPartNo.get(String(row.item_part_no || "").trim()) ??
+                  stockById.get(String(row.item_part_id || "")) ??
+                  0,
+              ),
+            }))
+            .filter((row: KitDetailRow) => row.itemPartId)
+        : [];
+
+      if (mode === "make") {
+        setMakeKitRows(rows);
+        setMakeKitCurrentStock(currentStock);
+      } else {
+        setBreakKitRows(rows);
+        setBreakKitCurrentStock(currentStock);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Failed to load kit details",
+        description: error?.message || "Could not fetch associated items",
+        variant: "destructive",
+      });
+      if (mode === "make") {
+        setMakeKitRows([]);
+        setMakeKitCurrentStock(0);
+      } else {
+        setBreakKitRows([]);
+        setBreakKitCurrentStock(0);
+      }
+    } finally {
+      setKitDetailsLoading(false);
+    }
+  };
 
   // Debounced filter update function
   const updateFilter = (key: keyof SearchFilters, value: string) => {
-    // Update local input value immediately for UI responsiveness
-    setLocalInputValues((prev) => ({ ...prev, [key]: value }));
-
     // Clear existing timer
     if (searchDebounceTimerRef.current) {
       clearTimeout(searchDebounceTimerRef.current);
     }
 
-    // Set new timer for debouncing (300ms delay)
-    searchDebounceTimerRef.current = setTimeout(() => {
-      const newFilters = { ...searchFilters, [key]: value };
-      setSearchFilters(newFilters);
-    }, 300);
+    // Update local input values first, then debounce using the latest merged filters
+    setLocalInputValues((prev) => {
+      const newFilters = { ...prev, [key]: value };
+      searchDebounceTimerRef.current = setTimeout(() => {
+        setSearchFilters(newFilters);
+      }, 300);
+      return newFilters;
+    });
   };
 
   // Immediate update for dropdowns (no debounce needed)
   const updateFilterImmediate = (key: keyof SearchFilters, value: string) => {
-    setLocalInputValues((prev) => ({ ...prev, [key]: value }));
-    setSearchFilters({ ...searchFilters, [key]: value });
+    setLocalInputValues((prev) => {
+      const newFilters = { ...prev, [key]: value };
+      setSearchFilters(newFilters);
+      return newFilters;
+    });
   };
 
   // Cleanup debounce timer on unmount
@@ -534,6 +738,82 @@ export const ItemsListView = ({
       : items;
   };
 
+  const formatExportDate = (dateValue: any) => {
+    if (!dateValue) return "";
+    const date = new Date(dateValue);
+    if (isNaN(date.getTime())) return String(dateValue);
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const fetchAllFilteredExportData = async (): Promise<Item[]> => {
+    // If user selected rows, export only selected rows from current grid.
+    if (selectedItems.length > 0) {
+      return getExportData();
+    }
+
+    const params: any = {
+      page: 1,
+      limit: "all",
+      include_locations: "false",
+    };
+
+    if (searchFilters.search) params.search = searchFilters.search;
+    if (searchFilters.master_part_no)
+      params.master_part_no = searchFilters.master_part_no;
+    if (searchFilters.part_no) params.part_no = searchFilters.part_no;
+    if (searchFilters.brand_name) params.brand_name = searchFilters.brand_name;
+    if (searchFilters.description) params.description = searchFilters.description;
+    if (searchFilters.part_type && searchFilters.part_type !== "all")
+      params.part_type = searchFilters.part_type;
+    if (searchFilters.category_name && searchFilters.category_name !== "all")
+      params.category_name = searchFilters.category_name;
+    if (
+      searchFilters.subcategory_name &&
+      searchFilters.subcategory_name !== "all"
+    )
+      params.subcategory_name = searchFilters.subcategory_name;
+    if (
+      searchFilters.application_name &&
+      searchFilters.application_name !== "all"
+    )
+      params.application_name = searchFilters.application_name;
+
+    const response = await apiClient.getParts(params);
+    const responseAny = response as any;
+    const responseData = responseAny?.data;
+    const partsData = Array.isArray(responseData)
+      ? responseData
+      : Array.isArray(responseData?.data)
+        ? responseData.data
+        : [];
+
+    return partsData.map((part: any) => {
+      const createdRaw = part.createdAt || part.created_at;
+      return {
+        id: part.id,
+        masterPartNo: part.master_part_no || part.masterPartNo || "",
+        partNo: part.part_no || part.partNo || "",
+        brand: part.brand_name || part.brand || "",
+        type: part.type || "single",
+        description: part.description || "",
+        category: part.category_name || part.category?.name || "",
+        subCategory: part.subcategory_name || part.subcategory?.name || "",
+        application: part.application_name || part.application?.name || "",
+        status: part.status === "inactive" ? "Inactive" : "Active",
+        images: [part.image_p1, part.image_p2, part.imageP1, part.imageP2].filter(
+          (img) => !!img,
+        ),
+        createdAt: formatExportDate(createdRaw),
+      } as Item;
+    });
+  };
+
   // Escape CSV values
   const escapeCSV = (value: any) => {
     if (value === null || value === undefined) return "";
@@ -639,8 +919,19 @@ export const ItemsListView = ({
   };
 
   // Export to Excel (XLSX format using CSV with .xlsx extension)
-  const handleExportExcel = () => {
-    const exportData = getExportData();
+  const handleExportExcel = async () => {
+    let exportData: Item[] = [];
+    try {
+      exportData = await fetchAllFilteredExportData();
+    } catch (error: any) {
+      toast({
+        title: "Export Failed",
+        description: error?.error || "Failed to fetch all records for Excel export",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const headers = [
       "ID",
       "Master Part No",
@@ -651,6 +942,7 @@ export const ItemsListView = ({
       "Sub Category",
       "Application",
       "Status",
+      "Created At",
       "Images",
     ];
     const excelData = exportData.map((item) => ({
@@ -663,6 +955,7 @@ export const ItemsListView = ({
       "Sub Category": item.subCategory || "",
       Application: item.application || "",
       Status: item.status || "",
+      "Created At": item.createdAt || "",
       Images: item.images.join(";") || "",
     }));
 
@@ -1104,6 +1397,143 @@ export const ItemsListView = ({
     });
   };
 
+  const handleBulkPartTypeChange = async (
+    itemId: string,
+    nextType: "single" | "kit",
+    quantity: number,
+  ): Promise<boolean> => {
+    if (!itemId) return false;
+    if (!onBulkPartTypeChange) {
+      toast({
+        title: "Action unavailable",
+        description: "Bulk part type update is not configured",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    try {
+      await onBulkPartTypeChange([itemId], nextType, quantity);
+      toast({
+        title: nextType === "kit" ? "Kit created" : "Kit broken",
+        description:
+          nextType === "kit"
+            ? "Make kit saved successfully"
+            : "Break kit saved successfully",
+      });
+      return true;
+    } catch (error: any) {
+      toast({
+        title: "Update failed",
+        description: error?.message || "Failed to update selected items",
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
+
+  const handleOpenMakeKitDialog = () => {
+    if (makeKitItemOptions.length === 0) {
+      toast({
+        title: "No kit items available",
+        description: "No kit item available to make",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSelectedMakeKitItemId("");
+    setMakeKitQuantity(1);
+    setMakeKitRows([]);
+    setMakeKitCurrentStock(0);
+    setMakeKitDialogOpen(true);
+  };
+
+  const handleOpenBreakKitDialog = () => {
+    if (breakKitItemOptions.length === 0) {
+      toast({
+        title: "No kit items available",
+        description: "No kit item available to break",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSelectedBreakKitItemId("");
+    setBreakKitQuantity(1);
+    setBreakKitRows([]);
+    setBreakKitCurrentStock(0);
+    setBreakKitDialogOpen(true);
+  };
+
+  const handleConfirmMakeKit = async () => {
+    if (!selectedMakeKitItemId) {
+      toast({
+        title: "Select item",
+        description: "Please select the item you want to make kit",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (makeRequiredRows.some((row) => !row.enoughStock)) {
+      toast({
+        title: "Insufficient stock",
+        description: "Some associated items do not have enough stock",
+        variant: "destructive",
+      });
+      return;
+    }
+    const qty =
+      makeKitQuantity === "" ? 1 : Math.max(1, Number(makeKitQuantity || 1));
+    const success = await handleBulkPartTypeChange(
+      selectedMakeKitItemId,
+      "kit",
+      qty,
+    );
+    if (success) {
+      setMakeKitDialogOpen(false);
+    }
+  };
+
+  const handleConfirmBreakKit = async () => {
+    if (!selectedBreakKitItemId) {
+      toast({
+        title: "Select item",
+        description: "Please select the kit item you want to break",
+        variant: "destructive",
+      });
+      return;
+    }
+    const qty =
+      breakKitQuantity === "" ? 0 : Math.max(1, Number(breakKitQuantity || 1));
+    if (breakKitCurrentStock < qty) {
+      toast({
+        title: "Insufficient kit stock",
+        description: "Kit stock is less than break quantity",
+        variant: "destructive",
+      });
+      return;
+    }
+    const success = await handleBulkPartTypeChange(
+      selectedBreakKitItemId,
+      "single",
+      qty,
+    );
+    if (success) {
+      setBreakKitDialogOpen(false);
+    }
+  };
+
+  const handleSelectMakeKitItem = async (itemId: string) => {
+    setSelectedMakeKitItemId(itemId);
+    if (!itemId) return;
+    await loadKitDetails(itemId, "make");
+  };
+
+  const handleSelectBreakKitItem = async (itemId: string) => {
+    setSelectedBreakKitItemId(itemId);
+    if (!itemId) return;
+    await loadKitDetails(itemId, "break");
+  };
+
   // Show compact form when showForm is true
   if (showForm) {
     return (
@@ -1114,6 +1544,7 @@ export const ItemsListView = ({
         }}
         onCancel={() => onCancelForm?.()}
         editItem={editItem}
+        forcedType={forcedEditType}
       />
     );
   }
@@ -1191,40 +1622,9 @@ export const ItemsListView = ({
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-border">
-        <button
-          onClick={() => setListTab("parts-list")}
-          className={cn(
-            "flex-1 py-2.5 text-xs font-medium transition-all relative text-center",
-            listTab === "parts-list"
-              ? "text-primary"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          Parts List
-          {listTab === "parts-list" && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-          )}
-        </button>
-        <button
-          onClick={() => setListTab("kits-list")}
-          className={cn(
-            "flex-1 py-2.5 text-xs font-medium transition-all relative text-center",
-            listTab === "kits-list"
-              ? "text-primary"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          Kits List
-          {listTab === "kits-list" && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-          )}
-        </button>
-      </div>
+      <div className="border-b border-border" />
 
-      {listTab === "parts-list" && (
-        <>
+      <>
           {/* Search & Filters Card */}
           <Card className="border-border">
             <CardHeader className="pb-3 pt-4 px-4">
@@ -1257,7 +1657,24 @@ export const ItemsListView = ({
             </CardHeader>
             <CardContent className="px-4 pb-4 space-y-3">
               {/* Filter Fields */}
-              <div className="grid grid-cols-7 gap-3">
+              <div className="grid grid-cols-8 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Part Type
+                  </label>
+                  <SearchableSelect
+                    options={[
+                      { value: "all", label: "All Types" },
+                      { value: "single", label: "Single" },
+                      { value: "kit", label: "Kit" },
+                    ]}
+                    value={localInputValues.part_type}
+                    onValueChange={(value) =>
+                      updateFilterImmediate("part_type", value)
+                    }
+                    placeholder="All Types"
+                  />
+                </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">
                     Master Part No
@@ -1380,6 +1797,7 @@ export const ItemsListView = ({
                 searchFilters.part_no ||
                 searchFilters.brand_name ||
                 searchFilters.description ||
+                searchFilters.part_type !== "all" ||
                 searchFilters.category_name !== "all" ||
                 searchFilters.subcategory_name !== "all" ||
                 searchFilters.application_name !== "all") && (
@@ -1395,6 +1813,7 @@ export const ItemsListView = ({
                           part_no: "",
                           brand_name: "",
                           description: "",
+                          part_type: "all",
                           category_name: "all",
                           subcategory_name: "all",
                           application_name: "all",
@@ -1414,6 +1833,25 @@ export const ItemsListView = ({
                 )}
             </CardContent>
           </Card>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-12 min-w-[140px] px-6 gap-2 text-base font-semibold border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-200 hover:text-emerald-900 transition-colors"
+              onClick={handleOpenMakeKitDialog}
+            >
+              Make Kit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-12 min-w-[140px] px-6 gap-2 text-base font-semibold border-red-200 bg-red-50 text-red-700 hover:bg-red-200 hover:text-red-900 transition-colors"
+              onClick={handleOpenBreakKitDialog}
+            >
+              Break Kit
+            </Button>
+          </div>
 
           {/* Parts List Card */}
           <Card className="border-border">
@@ -1527,6 +1965,7 @@ export const ItemsListView = ({
                                     master_part_no: "",
                                     part_no: item.partNo,
                                     description: "",
+                                    part_type: "all",
                                     category_name: "all",
                                     subcategory_name: "all",
                                     application_name: "all",
@@ -1565,6 +2004,7 @@ export const ItemsListView = ({
                                   master_part_no: item.masterPartNo,
                                   part_no: "",
                                   description: "",
+                                  part_type: "all",
                                   category_name: "all",
                                   subcategory_name: "all",
                                   application_name: "all",
@@ -1969,18 +2409,7 @@ export const ItemsListView = ({
               )}
             </CardContent>
           </Card>
-        </>
-      )}
-
-      {listTab === "kits-list" && (
-        <div>
-          <KitsList
-            kits={kits}
-            onDelete={onDeleteKit}
-            onUpdateKit={onUpdateKit}
-          />
-        </div>
-      )}
+      </>
 
       {/* Image Modal */}
       <Dialog open={imageModalOpen} onOpenChange={setImageModalOpen}>
@@ -2508,6 +2937,252 @@ export const ItemsListView = ({
                 selectedItemForReserve.reservedQuantity > 0
                 ? "Update"
                 : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={makeKitDialogOpen} onOpenChange={setMakeKitDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Make Kit</DialogTitle>
+            <DialogDescription>
+              Select the kit item you want to make.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-sm font-medium">Select Item</label>
+            <SearchableSelect
+              options={makeKitItemOptions}
+              value={selectedMakeKitItemId}
+              onValueChange={handleSelectMakeKitItem}
+              placeholder="Choose kit item to make"
+            />
+            <label className="text-sm font-medium pt-1 block">Quantity to Make</label>
+            <Input
+              type="number"
+              min={1}
+              value={makeKitQuantity}
+              onChange={(e) =>
+                setMakeKitQuantity(
+                  e.target.value === "" ? "" : Math.max(1, Number(e.target.value)),
+                )
+              }
+              onBlur={() =>
+                setMakeKitQuantity(
+                  makeKitQuantity === "" ? 1 : Math.max(1, Number(makeKitQuantity)),
+                )
+              }
+            />
+            {selectedMakeKitItemId && (
+              <p className="text-xs text-muted-foreground">
+                Current kit stock: <span className="font-semibold">{makeKitCurrentStock}</span>
+              </p>
+            )}
+            {kitDetailsLoading ? (
+              <div className="text-xs text-muted-foreground border rounded p-2">
+                Loading associated items...
+              </div>
+            ) : makeRequiredRows.length > 0 ? (
+              <div className="border rounded">
+                <div className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] font-semibold border-b bg-muted/40">
+                  <div className="col-span-3">Item</div>
+                  <div className="col-span-3">Description</div>
+                  <div className="col-span-1">Brand</div>
+                  <div className="col-span-2 text-right">Stock</div>
+                  <div className="col-span-1 text-right">Qty/Kit</div>
+                  <div className="col-span-2 text-right">Required</div>
+                </div>
+                <div className="max-h-44 overflow-y-auto">
+                  {makeRequiredRows.map((row) => (
+                    <div
+                      key={row.itemPartId}
+                      className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] border-b last:border-b-0"
+                    >
+                      <div className="col-span-3 font-medium">
+                        {`${row.masterPartNo || "-"} | ${row.itemPartNo || "-"}`}
+                      </div>
+                      <div className="col-span-3 truncate" title={row.itemDescription}>
+                        {row.itemDescription || "-"}
+                      </div>
+                      <div className="col-span-1 truncate" title={row.brand}>
+                        {row.brand || "-"}
+                      </div>
+                      <div className="col-span-2 text-right">{row.stock}</div>
+                      <div className="col-span-1 text-right">{row.qtyPerKit}</div>
+                      <div
+                        className={`col-span-2 text-right font-semibold ${row.enoughStock ? "text-emerald-700" : "text-red-700"}`}
+                      >
+                        {row.requiredQty}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : selectedMakeKitItemId ? (
+              <div className="text-xs text-muted-foreground border rounded p-2">
+                No associated kit items found.
+              </div>
+            ) : null}
+            {makeKitValidationMessage && (
+              <div
+                className={`text-xs rounded px-2 py-1 border ${
+                  makeKitHasInsufficientStock || makeRequiredRows.length === 0
+                    ? "text-red-700 border-red-200 bg-red-50"
+                    : "text-amber-700 border-amber-200 bg-amber-50"
+                }`}
+              >
+                {makeKitValidationMessage}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setMakeKitDialogOpen(false);
+                setSelectedMakeKitItemId("");
+                setMakeKitRows([]);
+                setMakeKitCurrentStock(0);
+                setMakeKitQuantity(1);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmMakeKit}
+              disabled={
+                !selectedMakeKitItemId ||
+                makeKitQuantity === "" ||
+                Number(makeKitQuantity) < 1 ||
+                kitDetailsLoading ||
+                makeRequiredRows.length === 0 ||
+                makeKitHasInsufficientStock
+              }
+            >
+              Make Kit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={breakKitDialogOpen} onOpenChange={setBreakKitDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Break Kit</DialogTitle>
+            <DialogDescription>
+              Select the kit item you want to break into single type.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-sm font-medium">Select Kit Item</label>
+            <SearchableSelect
+              options={breakKitItemOptions}
+              value={selectedBreakKitItemId}
+              onValueChange={handleSelectBreakKitItem}
+              placeholder="Choose kit item to break"
+            />
+            <label className="text-sm font-medium pt-1 block">Quantity to Break</label>
+            <Input
+              type="number"
+              min={1}
+              value={breakKitQuantity}
+              onChange={(e) =>
+                setBreakKitQuantity(
+                  e.target.value === "" ? "" : Math.max(1, Number(e.target.value)),
+                )
+              }
+              onBlur={() =>
+                setBreakKitQuantity(
+                  breakKitQuantity === "" ? 1 : Math.max(1, Number(breakKitQuantity)),
+                )
+              }
+            />
+            {selectedBreakKitItemId && (
+              <p className="text-xs text-muted-foreground">
+                Current kit stock: <span className="font-semibold">{breakKitCurrentStock}</span>
+              </p>
+            )}
+            {kitDetailsLoading ? (
+              <div className="text-xs text-muted-foreground border rounded p-2">
+                Loading associated items...
+              </div>
+            ) : breakReceiveRows.length > 0 ? (
+              <div className="border rounded">
+                <div className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] font-semibold border-b bg-muted/40">
+                  <div className="col-span-3">Item</div>
+                  <div className="col-span-3">Description</div>
+                  <div className="col-span-1">Brand</div>
+                  <div className="col-span-2 text-right">Stock</div>
+                  <div className="col-span-1 text-right">Qty/Kit</div>
+                  <div className="col-span-2 text-right">Receive</div>
+                </div>
+                <div className="max-h-44 overflow-y-auto">
+                  {breakReceiveRows.map((row) => (
+                    <div
+                      key={row.itemPartId}
+                      className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] border-b last:border-b-0"
+                    >
+                      <div className="col-span-3 font-medium">
+                        {`${row.masterPartNo || "-"} | ${row.itemPartNo || "-"}`}
+                      </div>
+                      <div className="col-span-3 truncate" title={row.itemDescription}>
+                        {row.itemDescription || "-"}
+                      </div>
+                      <div className="col-span-1 truncate" title={row.brand}>
+                        {row.brand || "-"}
+                      </div>
+                      <div className="col-span-2 text-right">{row.stock}</div>
+                      <div className="col-span-1 text-right">{row.qtyPerKit}</div>
+                      <div className="col-span-2 text-right font-semibold text-emerald-700">
+                        {row.receiveQty}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : selectedBreakKitItemId ? (
+              <div className="text-xs text-muted-foreground border rounded p-2">
+                No associated kit items found.
+              </div>
+            ) : null}
+            {breakKitValidationMessage && (
+              <div
+                className={`text-xs rounded px-2 py-1 border ${
+                  breakKitHasInsufficientStock || breakReceiveRows.length === 0
+                    ? "text-red-700 border-red-200 bg-red-50"
+                    : "text-amber-700 border-amber-200 bg-amber-50"
+                }`}
+              >
+                {breakKitValidationMessage}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBreakKitDialogOpen(false);
+                setSelectedBreakKitItemId("");
+                setBreakKitRows([]);
+                setBreakKitCurrentStock(0);
+                setBreakKitQuantity(1);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmBreakKit}
+              disabled={
+                !selectedBreakKitItemId ||
+                breakKitQuantity === "" ||
+                Number(breakKitQuantity) < 1 ||
+                kitDetailsLoading ||
+                breakReceiveRows.length === 0 ||
+                breakKitHasInsufficientStock
+              }
+            >
+              Break Kit
             </Button>
           </DialogFooter>
         </DialogContent>

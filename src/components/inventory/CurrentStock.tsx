@@ -68,6 +68,7 @@ export const CurrentStock = () => {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [stockStatusFilter, setStockStatusFilter] =
     useState<StockStatusFilter>("all");
+  const [stockAsOfDate, setStockAsOfDate] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [loading, setLoading] = useState(false);
@@ -159,6 +160,10 @@ export const CurrentStock = () => {
         limit: itemsPerPage,
       };
 
+      if (stockAsOfDate) {
+        params.stock_as_of_date = stockAsOfDate;
+      }
+
       if (selectedCategory !== "all") {
         // Find category by name
         const response = await apiClient.getCategories();
@@ -206,7 +211,7 @@ export const CurrentStock = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, itemsPerPage, selectedCategory, stockStatusFilter]);
+  }, [currentPage, itemsPerPage, selectedCategory, stockStatusFilter, stockAsOfDate]);
 
   // Fetch initial data
   useEffect(() => {
@@ -803,8 +808,59 @@ export const CurrentStock = () => {
     return value.toLocaleString("en-PK");
   };
 
-  const handleExport = () => {
-    // Create CSV content
+  const handleExport = async () => {
+    try {
+      const exportParams: any = {
+        page: 1,
+        limit: 100000,
+      };
+
+      if (selectedCategory !== "all") {
+        const response = await apiClient.getCategories();
+        const data = Array.isArray(response)
+          ? response
+          : (response as any).data || [];
+        const category = data.find(
+          (cat: any) => (cat.name || cat.category_name) === selectedCategory,
+        );
+        if (category) {
+          exportParams.category_id = category.id;
+        }
+      }
+
+      if (stockStatusFilter === "in_stock") {
+        exportParams.in_stock = true;
+      } else if (stockStatusFilter === "out_of_stock") {
+        exportParams.out_of_stock = true;
+      } else if (stockStatusFilter === "low_stock") {
+        exportParams.low_stock = true;
+      }
+
+      const effectiveSearch = (searchQueryRef.current || "").trim();
+      if (effectiveSearch) {
+        exportParams.search = effectiveSearch;
+      }
+
+      if (stockAsOfDate) {
+        exportParams.stock_as_of_date = stockAsOfDate;
+      }
+
+      const response = await apiClient.getPartRackShelfSummary(exportParams);
+      let exportData = ((response as any).data || []) as StockItem[];
+
+      // Keep behavior consistent with grid fallback filtering.
+      if (stockStatusFilter === "in_stock") {
+        exportData = exportData.filter((item) => (item.current_stock ?? 0) > 0);
+      } else if (stockStatusFilter === "out_of_stock") {
+        exportData = exportData.filter((item) => (item.current_stock ?? 0) <= 0);
+      }
+
+      const escapeCsv = (value: string | number | null | undefined) => {
+        const str = String(value ?? "");
+        return `"${str.replace(/"/g, '""')}"`;
+      };
+
+      // Create CSV content
     const headers = [
       "Part No",
       "Master Part No",
@@ -819,16 +875,16 @@ export const CurrentStock = () => {
 
     const csvRows = [
       headers.join(","),
-      ...stockData.map((item) =>
+        ...exportData.map((item) =>
         [
-          `"${item.part_no || ""}"`,
-          `"${item.master_part_no || ""}"`,
-          `"${item.brand || ""}"`,
-          `"${item.category || ""}"`,
-          `"${item.description || ""}"`,
-          `"${item.store || ""}"`,
-          `"${item.rack || ""}"`,
-          `"${item.shelf || ""}"`,
+            escapeCsv(item.part_no),
+            escapeCsv(item.master_part_no),
+            escapeCsv(item.brand),
+            escapeCsv(item.category),
+            escapeCsv(item.description),
+            escapeCsv(item.store),
+            escapeCsv(item.rack),
+            escapeCsv(item.shelf),
           item.current_stock || 0,
         ].join(","),
       ),
@@ -843,7 +899,10 @@ export const CurrentStock = () => {
     a.click();
     URL.revokeObjectURL(url);
 
-    toast.success("Stock data exported as CSV");
+      toast.success(`Exported ${exportData.length} records`);
+    } catch (error: any) {
+      toast.error(error?.error || "Failed to export stock data");
+    }
   };
 
   return (
@@ -928,9 +987,20 @@ export const CurrentStock = () => {
             </SelectContent>
           </Select>
 
+          <Input
+            type="date"
+            value={stockAsOfDate}
+            onChange={(e) => {
+              setStockAsOfDate(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-[170px]"
+          />
+
           {(searchQuery ||
             selectedCategory !== "all" ||
-            stockStatusFilter !== "all") && (
+            stockStatusFilter !== "all" ||
+            stockAsOfDate) && (
             <Button
               variant="ghost"
               size="sm"
@@ -938,6 +1008,7 @@ export const CurrentStock = () => {
                 setSearchQuery("");
                 setSelectedCategory("all");
                 setStockStatusFilter("all");
+                setStockAsOfDate("");
                 setCurrentPage(1);
               }}
               className="text-muted-foreground hover:text-foreground"

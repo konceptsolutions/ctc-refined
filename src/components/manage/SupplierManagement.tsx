@@ -52,6 +52,8 @@ export interface ContactPersonInfo {
 interface Supplier {
   id: string;
   code: string;
+  type: "local" | "international";
+  currencyName?: string | null;
   name: string | null;
   address: string | null;
   city: string | null;
@@ -82,6 +84,8 @@ interface Supplier {
 
 const emptySupplier: Omit<Supplier, "id"> = {
   code: "",
+  type: "local",
+  currencyName: "",
   name: "",
   address: "",
   city: "",
@@ -211,6 +215,13 @@ export const SupplierManagement = () => {
 
       (updated as any)[field] = value;
 
+      if (field === "type") {
+        const nextType = value as "local" | "international";
+        if (nextType !== "international") {
+          updated.currencyName = "";
+        }
+      }
+
       // Auto-generate Short Title when Name changes
       if (field === "name" && typeof value === "string") {
         const initials = value
@@ -269,6 +280,11 @@ export const SupplierManagement = () => {
       if (editingId) {
         const response = (await apiClient.updateSupplier(editingId, {
           code: formData.code,
+          type: formData.type,
+          currencyName:
+            formData.type === "international"
+              ? formData.currencyName || undefined
+              : "",
           name: formData.name || undefined,
           address: formData.address || undefined,
           city: formData.city || undefined,
@@ -316,6 +332,11 @@ export const SupplierManagement = () => {
       } else {
         // Don't send code field if it's empty - let backend auto-generate
         const supplierData: any = {
+          type: formData.type,
+          currencyName:
+            formData.type === "international"
+              ? formData.currencyName || undefined
+              : undefined,
           name: formData.name || undefined,
           address: formData.address || undefined,
           city: formData.city || undefined,
@@ -380,6 +401,8 @@ export const SupplierManagement = () => {
   const handleEdit = (supplier: Supplier) => {
     setFormData({
       code: supplier.code,
+      type: supplier.type || "local",
+      currencyName: supplier.currencyName || "",
       name: supplier.name || "",
       address: supplier.address || "",
       city: supplier.city || "",
@@ -554,6 +577,7 @@ export const SupplierManagement = () => {
                   <SelectItem value="name">Name</SelectItem>
                   <SelectItem value="email">Email</SelectItem>
                   <SelectItem value="phone">Phone</SelectItem>
+                  <SelectItem value="type">Type</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -598,6 +622,8 @@ export const SupplierManagement = () => {
                   <TableHead className="text-xs font-medium">
                     CONTACT NO
                   </TableHead>
+                  <TableHead className="text-xs font-medium">TYPE</TableHead>
+                  <TableHead className="text-xs font-medium">CURRENCY</TableHead>
                   <TableHead className="text-xs font-medium">STATUS</TableHead>
                   <TableHead className="text-xs font-medium">ACTIONS</TableHead>
                 </TableRow>
@@ -606,7 +632,7 @@ export const SupplierManagement = () => {
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={10}
                       className="text-center py-8 text-xs text-muted-foreground"
                     >
                       Loading...
@@ -615,7 +641,7 @@ export const SupplierManagement = () => {
                 ) : suppliers.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={10}
                       className="text-center py-8 text-xs text-muted-foreground"
                     >
                       No suppliers found
@@ -646,6 +672,12 @@ export const SupplierManagement = () => {
                       </TableCell>
                       <TableCell className="text-xs">
                         {supplier.phone || "-"}
+                      </TableCell>
+                      <TableCell className="text-xs capitalize">
+                        {supplier.type || "local"}
+                      </TableCell>
+                      <TableCell className="text-xs uppercase">
+                        {supplier.currencyName || "-"}
                       </TableCell>
                       <TableCell>
                         <button
@@ -1072,7 +1104,7 @@ export const SupplierManagement = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Opening Balance</Label>
                 <Input
@@ -1112,7 +1144,40 @@ export const SupplierManagement = () => {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Type</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={(v) =>
+                    handleInputChange("type", v as "local" | "international")
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">Local</SelectItem>
+                    <SelectItem value="international">International</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+
+            {formData.type === "international" && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Currency Name</Label>
+                  <Input
+                    placeholder="e.g. USD"
+                    value={formData.currencyName || ""}
+                    onChange={(e) =>
+                      handleInputChange("currencyName", e.target.value)
+                    }
+                    className="h-8 text-xs uppercase"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">

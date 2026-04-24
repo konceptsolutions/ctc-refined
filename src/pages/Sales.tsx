@@ -4,12 +4,10 @@ import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  DollarSign,
   FileText,
   RotateCcw,
   Clock,
   Bell,
-  Truck,
   MessageSquare,
   Receipt,
 } from "lucide-react";

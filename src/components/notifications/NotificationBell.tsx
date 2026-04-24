@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Bell, Check, CheckCheck, Trash2, Volume2, VolumeX, X, Info, CheckCircle, AlertTriangle, AlertCircle, BellRing, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNotifications, Notification } from '@/contexts/NotificationContext';
 import { useNavigate } from 'react-router-dom';
@@ -56,6 +55,18 @@ export const NotificationBell: React.FC = () => {
 
   const handleNotificationClick = (notification: Notification) => {
     markAsRead(notification.id);
+    const isStoreStockOutNotification =
+      String(notification.module || "").toLowerCase() === "store" &&
+      /stock out items/i.test(
+        `${notification.title || ""} ${notification.message || ""} ${notification.action?.label || ""}`,
+      );
+
+    if (isStoreStockOutNotification) {
+      navigate("/store/orders?type=stock-out");
+      setIsOpen(false);
+      return;
+    }
+
     if (notification.action?.path) {
       navigate(notification.action.path);
       setIsOpen(false);
@@ -183,7 +194,7 @@ export const NotificationBell: React.FC = () => {
         </div>
 
         {/* Notifications List */}
-        <ScrollArea className="max-h-[400px]">
+        <div className="max-h-[400px] overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <Bell className="h-10 w-10 text-muted-foreground/30 mb-3" />
@@ -249,7 +260,7 @@ export const NotificationBell: React.FC = () => {
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );

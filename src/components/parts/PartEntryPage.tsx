@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { PartEntryForm } from "@/components/parts/PartEntryForm";
-import { CreateKitForm } from "@/components/parts/CreateKitForm";
 import { PartsList, Part } from "@/components/parts/PartsList";
 import { KitsList, Kit } from "@/components/parts/KitsList";
 import { cn } from "@/lib/utils";
@@ -12,7 +11,6 @@ import {
 import { apiClient } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
-type LeftTab = "part-entry" | "create-kit";
 type RightTab = "parts-list" | "kits-list";
 
 interface PartEntryPageProps {
@@ -32,7 +30,6 @@ export const PartEntryPage = ({
   itemsPerPage,
   fetchItems,
 }: PartEntryPageProps) => {
-  const [leftTab, setLeftTab] = useState<LeftTab>("part-entry");
   const [rightTab, setRightTab] = useState<RightTab>("parts-list");
   const [selectedPart, setSelectedPart] = useState<Part | null>(null);
   const [parts, setParts] = useState<Part[]>([]);
@@ -62,6 +59,7 @@ export const PartEntryPage = ({
             id: p.id,
             partNo: (p.master_part_no || "").trim(),
             brand: p.brand_name || "-",
+            type: p.type || "single",
             uom: p.uom || "NOS",
             weight: p.weight ? String(p.weight) : "-",
             cost: p.cost ? parseFloat(p.cost) : null,
@@ -113,6 +111,7 @@ export const PartEntryPage = ({
         part_no: String(partData.masterPartNo || "").trim(),
         master_part_no: String(partData.partNo).trim(),
         brand_name: partData.brand || null,
+        type: partData.type || "single",
         description: partData.description || null,
         category_id: partData.categoryId || partData.category || null,
         subcategory_id: partData.subCategoryId || partData.subCategory || null,
@@ -142,6 +141,13 @@ export const PartEntryPage = ({
             .map((mq: any) => ({
               name: String(mq.model).trim(),
               qty_used: mq.qty || 1,
+            })) || [],
+        kit_items:
+          (partData.kitItems || [])
+            .filter((row: any) => row && row.itemPartId)
+            .map((row: any) => ({
+              item_part_id: String(row.itemPartId).trim(),
+              quantity: Number(row.quantity || 1),
             })) || [],
       };
 
@@ -173,6 +179,7 @@ export const PartEntryPage = ({
         partNo: (savedPart.master_part_no || "").trim(),
         masterPartNo: (savedPart.part_no || "").trim(),
         brand: savedPart.brand_name || savedPart.brand || "-",
+        type: savedPart.type || partData.type || "single",
         uom: savedPart.uom || "NOS",
         weight: savedPart.weight ? String(savedPart.weight) : "-",
         cost: savedPart.cost ? parseFloat(savedPart.cost) : null,
@@ -217,10 +224,6 @@ export const PartEntryPage = ({
     }
   };
 
-  const handleSaveKit = (kitData: any) => {
-    setKitRefreshTrigger((prev) => prev + 1);
-  };
-
   const handleDeleteKit = (kit: Kit) => {
     setKitRefreshTrigger((prev) => prev + 1);
   };
@@ -234,98 +237,60 @@ export const PartEntryPage = ({
       {/* Left Section - Forms */}
       <ResizablePanel defaultSize={60} minSize={20} maxSize={80}>
         <div className="h-full flex flex-col pr-3">
-          {/* Left Tabs */}
-          <div className="flex border-b border-border mb-3">
-            <button
-              onClick={() => {
-                setLeftTab("part-entry");
-                setRightTab("parts-list");
-              }}
-              className={cn(
-                "px-4 py-2 text-xs font-medium transition-all relative",
-                leftTab === "part-entry"
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Part Entry
-              {leftTab === "part-entry" && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setLeftTab("create-kit");
-                setRightTab("kits-list");
-              }}
-              className={cn(
-                "px-4 py-2 text-xs font-medium transition-all relative",
-                leftTab === "create-kit"
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Create Kit
-              {leftTab === "create-kit" && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-              )}
-            </button>
-          </div>
-
           {/* Form Content */}
           <div className="flex-1 overflow-auto">
-            {leftTab === "part-entry" ? (
-              <PartEntryForm
-                onSave={handleSavePart}
-                selectedPart={selectedPart}
-                onClearSelection={() => {
-                  setSelectedPart(null);
-                  setSelectedMasterPartNo(null);
+            <PartEntryForm
+              onSave={handleSavePart}
+              selectedPart={selectedPart}
+              onClearSelection={() => {
+                setSelectedPart(null);
+                setSelectedMasterPartNo(null);
 
-                  setSearchFilters((prev: any) => ({
-                    ...prev,
-                    master_part_no: "",
-                    part_no: "",
-                  }));
+                setSearchFilters((prev: any) => ({
+                  ...prev,
+                  master_part_no: "",
+                  part_no: "",
+                }));
 
-                  // Optimized: Fetch with smaller initial limit for faster response
-                  // The PartsList component handles pagination client-side, so we don't need all parts at once
-                  const fetchAllParts = async () => {
-                    setLoading(true);
-                    try {
-                      const response = await apiClient.getPartEntryList({
-                        limit: 500,
-                        page: 1,
-                      });
-                      const responseData = (response as any).data;
-                      if (responseData && Array.isArray(responseData)) {
-                        const transformedParts: Part[] = responseData.map(
-                          (p: any) => ({
-                            id: p.id,
-                            partNo: (p.master_part_no || "").trim(),
-                            brand: p.brand_name || "-",
-                            uom: p.uom || "NOS",
-                            weight: p.weight ? String(p.weight) : "-",
-                            cost: p.cost ? parseFloat(p.cost) : null,
-                            purchasePrice: null,
-                            avgCost: null,
-                            price: p.price_a ? parseFloat(p.price_a) : null,
-                            stock: p.stock || 0,
-                            reservedStock: p.reserved_stock || 0,
-                            masterPartNo: (p.part_no || "").trim(),
-                            modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
-                          }),
-                        );
-                        setParts(transformedParts);
-                      }
-                    } catch (error: any) {
-                    } finally {
-                      setLoading(false);
+                // Optimized: Fetch with smaller initial limit for faster response
+                // The PartsList component handles pagination client-side, so we don't need all parts at once
+                const fetchAllParts = async () => {
+                  setLoading(true);
+                  try {
+                    const response = await apiClient.getPartEntryList({
+                      limit: 500,
+                      page: 1,
+                    });
+                    const responseData = (response as any).data;
+                    if (responseData && Array.isArray(responseData)) {
+                      const transformedParts: Part[] = responseData.map(
+                        (p: any) => ({
+                          id: p.id,
+                          partNo: (p.master_part_no || "").trim(),
+                          brand: p.brand_name || "-",
+                          type: p.type || "single",
+                          uom: p.uom || "NOS",
+                          weight: p.weight ? String(p.weight) : "-",
+                          cost: p.cost ? parseFloat(p.cost) : null,
+                          purchasePrice: null,
+                          avgCost: null,
+                          price: p.price_a ? parseFloat(p.price_a) : null,
+                          stock: p.stock || 0,
+                          reservedStock: p.reserved_stock || 0,
+                          masterPartNo: (p.part_no || "").trim(),
+                          modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
+                        }),
+                      );
+                      setParts(transformedParts);
                     }
-                  };
-                  fetchAllParts();
-                }}
-                onPartSelected={(valueFromDropdown: string) => {
+                  } catch (error: any) {
+                  } finally {
+                    setLoading(false);
+                  }
+                };
+                fetchAllParts();
+              }}
+              onPartSelected={(valueFromDropdown: string) => {
                   // SWAPPED: "Master Part No" dropdown passes part_no values, so filter by part_no
                   setSelectedMasterPartNo(valueFromDropdown || null);
 
@@ -355,6 +320,7 @@ export const PartEntryPage = ({
                               id: p.id,
                               partNo: (p.master_part_no || "").trim(),
                               brand: p.brand_name || "-",
+                              type: p.type || "single",
                               uom: p.uom || "NOS",
                               weight: p.weight ? String(p.weight) : "-",
                               cost: p.cost ? parseFloat(p.cost) : null,
@@ -380,8 +346,8 @@ export const PartEntryPage = ({
 
                     fetchPartsByMasterPart();
                   }
-                }}
-                onPartNoSelected={(valueFromDropdown: string) => {
+              }}
+              onPartNoSelected={(valueFromDropdown: string) => {
                   // When Part No is selected, keep showing ALL family parts (don't filter to single part)
                   // The Parts List should continue showing the whole family based on Master Part No
                   if (valueFromDropdown && selectedMasterPartNo) {
@@ -425,6 +391,7 @@ export const PartEntryPage = ({
                                   id: p.id,
                                   partNo: (p.master_part_no || "").trim(),
                                   brand: p.brand_name || "-",
+                                  type: p.type || "single",
                                   uom: p.uom || "NOS",
                                   weight: p.weight ? String(p.weight) : "-",
                                   cost: p.cost ? parseFloat(p.cost) : null,
@@ -471,6 +438,7 @@ export const PartEntryPage = ({
                               id: p.id,
                               partNo: (p.master_part_no || "").trim(),
                               brand: p.brand_name || "-",
+                              type: p.type || "single",
                               uom: p.uom || "NOS",
                               weight: p.weight ? String(p.weight) : "-",
                               cost: p.cost ? parseFloat(p.cost) : null,
@@ -492,11 +460,8 @@ export const PartEntryPage = ({
 
                     fetchAllParts();
                   }
-                }}
-              />
-            ) : (
-              <CreateKitForm onSave={handleSaveKit} />
-            )}
+              }}
+            />
           </div>
         </div>
       </ResizablePanel>
@@ -548,7 +513,6 @@ export const PartEntryPage = ({
                 parts={parts}
                 onSelectPart={async (part) => {
                   setSelectedPart(part);
-                  setLeftTab("part-entry");
 
                   // Fetch family parts when a part is selected from the list
                   if (part.masterPartNo) {
@@ -568,6 +532,7 @@ export const PartEntryPage = ({
                             id: p.id,
                             partNo: (p.master_part_no || "").trim(),
                             brand: p.brand_name || "-",
+                            type: p.type || "single",
                             uom: p.uom || "NOS",
                             weight: p.weight ? String(p.weight) : "-",
                             cost: p.cost ? parseFloat(p.cost) : null,

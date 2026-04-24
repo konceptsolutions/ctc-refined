@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 
 const router = express.Router();
+const SALES_RETURN_START_NO = 97;
 
 async function getPartStockFromMovements(
   tx: Prisma.TransactionClient,
@@ -381,7 +382,7 @@ router.post('/', async (req: Request, res: Response) => {
         where: { salesInvoiceId: invoice_id },
         select: { returnNumber: true },
       });
-      let maxSeq = 0;
+      let maxSeq = SALES_RETURN_START_NO - 1;
       for (const row of existingForInvoice) {
         const rn = row.returnNumber;
         if (!rn || !rn.startsWith(prefix)) continue;

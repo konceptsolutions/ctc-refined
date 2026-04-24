@@ -5,6 +5,54 @@ import { randomUUID } from "crypto";
 const router = express.Router();
 const prisma = new PrismaClient();
 
+const normalizeCountry = (value: any) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const inferSupplierTypeFromCountry = (country: any): "local" | "international" => {
+  const normalizedCountry = normalizeCountry(country);
+  if (
+    normalizedCountry === "" ||
+    normalizedCountry === "pakistan" ||
+    normalizedCountry === "pk"
+  ) {
+    return "local";
+  }
+  return "international";
+};
+
+const inferCurrencyFromCountry = (country: any, type: "local" | "international") => {
+  if (type === "local") return "PKR";
+
+  const normalizedCountry = normalizeCountry(country);
+  const countryCurrencyMap: Record<string, string> = {
+    "united states": "USD",
+    usa: "USD",
+    us: "USD",
+    "saudi arabia": "SAR",
+    uae: "AED",
+    "united arab emirates": "AED",
+    china: "CNY",
+    india: "INR",
+    japan: "JPY",
+    uk: "GBP",
+    "united kingdom": "GBP",
+    germany: "EUR",
+    france: "EUR",
+    italy: "EUR",
+    spain: "EUR",
+    turkey: "TRY",
+    malaysia: "MYR",
+    thailand: "THB",
+    singapore: "SGD",
+    canada: "CAD",
+    australia: "AUD",
+  };
+
+  return countryCurrencyMap[normalizedCountry] || "USD";
+};
+
 // Generate next supplier code
 async function generateSupplierCode(): Promise<string> {
   try {
@@ -65,12 +113,16 @@ router.get("/", async (req, res) => {
           case "phone":
             where.phone = { contains: search as string };
             break;
+          case "type":
+            where.type = { contains: searchTerm };
+            break;
         }
       } else {
         where.OR = [
           { companyName: { contains: searchTerm } },
           { email: { contains: searchTerm } },
           { code: { contains: searchTerm } },
+          { type: { contains: searchTerm } },
           { phone: { contains: search as string } },
         ];
       }
@@ -167,6 +219,11 @@ router.post("/", async (req, res) => {
     const parsedOpeningBalance = openingBalance
       ? parseFloat(openingBalance)
       : 0;
+    const supplierType = inferSupplierTypeFromCountry(country);
+    const normalizedCurrencyName =
+      supplierType === "international"
+        ? inferCurrencyFromCountry(country, supplierType)
+        : "PKR";
 
     // Auto-generate supplier code if not provided or empty
     const supplierCode =
@@ -176,6 +233,8 @@ router.post("/", async (req, res) => {
       data: {
         id: randomUUID(),
         code: supplierCode,
+        type: supplierType,
+        currencyName: normalizedCurrencyName,
         name: name || null,
         companyName,
         address: address || null,
@@ -486,6 +545,11 @@ router.put("/:id", async (req, res) => {
     if (!oldSupplier) {
       return res.status(404).json({ error: "Supplier not found" });
     }
+
+    const effectiveCountry = country !== undefined ? country : oldSupplier.country;
+    const effectiveType = inferSupplierTypeFromCountry(effectiveCountry);
+    updateData.type = effectiveType;
+    updateData.currencyName = inferCurrencyFromCountry(effectiveCountry, effectiveType);
 
     const supplier = await prisma.supplier.update({
       where: { id: req.params.id },

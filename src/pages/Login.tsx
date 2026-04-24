@@ -6,6 +6,14 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Lock, Mail, Store, User, ArrowRight, ShieldCheck } from "lucide-react";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { saveAuth, isAuthenticated, getUserRole } from "@/utils/auth";
@@ -16,6 +24,13 @@ const Login = () => {
     const [adminPassword, setAdminPassword] = useState("");
     const [storeEmail, setStoreEmail] = useState("");
     const [storePassword, setStorePassword] = useState("");
+    const [activeRoleTab, setActiveRoleTab] = useState<"admin" | "store">("admin");
+    const [forgotDialogOpen, setForgotDialogOpen] = useState(false);
+    const [forgotIdentifier, setForgotIdentifier] = useState("");
+    const [forgotNewPassword, setForgotNewPassword] = useState("");
+    const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
+    const [forgotRole, setForgotRole] = useState<"admin" | "store">("admin");
+    const [forgotLoading, setForgotLoading] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -78,6 +93,60 @@ const Login = () => {
         }
     };
 
+    const openForgotPasswordDialog = (role: "admin" | "store") => {
+        setForgotRole(role);
+        setForgotIdentifier(role === "admin" ? adminEmail : storeEmail);
+        setForgotNewPassword("");
+        setForgotConfirmPassword("");
+        setForgotDialogOpen(true);
+    };
+
+    const handleForgotPassword = async () => {
+        const identifier = String(forgotIdentifier || "").trim();
+        const newPassword = String(forgotNewPassword || "");
+        const confirmPassword = String(forgotConfirmPassword || "");
+
+        if (!identifier || !newPassword || !confirmPassword) {
+            toast.error("Please fill all fields");
+            return;
+        }
+        if (newPassword.length < 6) {
+            toast.error("New password must be at least 6 characters");
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            toast.error("New password and confirm password do not match");
+            return;
+        }
+
+        setForgotLoading(true);
+        try {
+            const response: any = await apiClient.forgotPassword({
+                identifier,
+                newPassword,
+                role: forgotRole,
+            });
+            if (response?.error) {
+                throw new Error(response.error);
+            }
+
+            toast.success("Password updated successfully");
+            setForgotDialogOpen(false);
+
+            if (forgotRole === "admin") {
+                setAdminEmail(identifier);
+                setAdminPassword("");
+            } else {
+                setStoreEmail(identifier);
+                setStorePassword("");
+            }
+        } catch (error: any) {
+            toast.error(error?.message || "Failed to update password");
+        } finally {
+            setForgotLoading(false);
+        }
+    };
+
     return (
         <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden font-sans">
             {/* Background Image with Overlay */}
@@ -103,7 +172,11 @@ const Login = () => {
                 </div>
 
                 <Card className="border-white/10 shadow-3xl bg-slate-900/40 backdrop-blur-2xl backdrop-saturate-150 animate-slide-up overflow-hidden">
-                    <Tabs defaultValue="admin" className="w-full">
+                    <Tabs
+                        value={activeRoleTab}
+                        onValueChange={(value) => setActiveRoleTab(value as "admin" | "store")}
+                        className="w-full"
+                    >
                         <CardHeader className="pb-0 text-center">
                             <TabsList className="grid w-full grid-cols-2 mb-6 p-1 bg-slate-800/50 border border-white/5 rounded-xl">
                                 <TabsTrigger
@@ -149,7 +222,11 @@ const Login = () => {
                                     <div className="space-y-2.5">
                                         <div className="flex items-center justify-between ml-1">
                                             <Label htmlFor="admin-password" title="Password" className="text-slate-200">Password</Label>
-                                            <button type="button" className="text-xs text-primary hover:text-primary/80 transition-colors font-semibold">
+                                            <button
+                                                type="button"
+                                                onClick={() => openForgotPasswordDialog("admin")}
+                                                className="text-xs text-primary hover:text-primary/80 transition-colors font-semibold"
+                                            >
                                                 Forgot password?
                                             </button>
                                         </div>
@@ -209,7 +286,16 @@ const Login = () => {
                                         </div>
                                     </div>
                                     <div className="space-y-2.5">
-                                        <Label htmlFor="store-password" title="Access PIN" className="text-slate-200 ml-1">Access PIN</Label>
+                                        <div className="flex items-center justify-between ml-1">
+                                            <Label htmlFor="store-password" title="Access PIN" className="text-slate-200">Access PIN</Label>
+                                            <button
+                                                type="button"
+                                                onClick={() => openForgotPasswordDialog("store")}
+                                                className="text-xs text-primary hover:text-primary/80 transition-colors font-semibold"
+                                            >
+                                                Forgot password?
+                                            </button>
+                                        </div>
                                         <div className="relative group">
                                             <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400 transition-colors group-focus-within:text-primary" />
                                             <Input
@@ -248,6 +334,64 @@ const Login = () => {
                     </Tabs>
                 </Card>
             </div>
+
+            <Dialog open={forgotDialogOpen} onOpenChange={setForgotDialogOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Change password</DialogTitle>
+                        <DialogDescription>
+                            Enter your email/username and set a new password for{" "}
+                            {forgotRole === "admin" ? "Admin" : "Store"} login.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="forgot-identifier">Email or Username</Label>
+                            <Input
+                                id="forgot-identifier"
+                                value={forgotIdentifier}
+                                onChange={(e) => setForgotIdentifier(e.target.value)}
+                                placeholder="Enter email or username"
+                                disabled={forgotLoading}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="forgot-new-password">New Password</Label>
+                            <Input
+                                id="forgot-new-password"
+                                type="password"
+                                value={forgotNewPassword}
+                                onChange={(e) => setForgotNewPassword(e.target.value)}
+                                placeholder="Enter new password"
+                                disabled={forgotLoading}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="forgot-confirm-password">Confirm Password</Label>
+                            <Input
+                                id="forgot-confirm-password"
+                                type="password"
+                                value={forgotConfirmPassword}
+                                onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                                placeholder="Confirm new password"
+                                disabled={forgotLoading}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setForgotDialogOpen(false)}
+                            disabled={forgotLoading}
+                        >
+                            Cancel
+                        </Button>
+                        <Button onClick={handleForgotPassword} disabled={forgotLoading}>
+                            {forgotLoading ? "Updating..." : "Update Password"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <style dangerouslySetInnerHTML={{
                 __html: `

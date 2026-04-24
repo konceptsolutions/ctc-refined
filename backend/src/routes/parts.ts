@@ -10,6 +10,108 @@ import {
 
 const router = express.Router();
 
+const normalizePartType = (value: any): "single" | "kit" => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "kit" ? "kit" : "single";
+};
+
+const normalizeKitItemsPayload = (kitItems: any): { itemPartId: string; quantity: number }[] => {
+  if (!Array.isArray(kitItems)) return [];
+
+  const byPartId = new Map<string, number>();
+  kitItems.forEach((row: any) => {
+    const itemPartId = String(
+      row?.item_part_id || row?.itemPartId || row?.part_id || row?.partId || "",
+    ).trim();
+    const quantityValue = Number(row?.quantity || row?.qty || 0);
+    const quantity = Number.isFinite(quantityValue)
+      ? Math.max(1, Math.floor(quantityValue))
+      : 1;
+    if (!itemPartId) return;
+    byPartId.set(itemPartId, (byPartId.get(itemPartId) || 0) + quantity);
+  });
+
+  return Array.from(byPartId.entries()).map(([itemPartId, quantity]) => ({
+    itemPartId,
+    quantity,
+  }));
+};
+
+const buildKitItemsResponse = async (
+  kitItems: { partNo: string; partName: string; quantity: number; costPerUnit: number }[],
+) => {
+  const partNos = Array.from(
+    new Set(
+      kitItems
+        .map((row) => String(row?.partNo || "").trim())
+        .filter((value) => value !== ""),
+    ),
+  );
+
+  if (partNos.length === 0) return [];
+
+  const singleParts = await prisma.part.findMany({
+    where: {
+      partNo: { in: partNos },
+      type: "single",
+      status: "active",
+    },
+    select: {
+      id: true,
+      partNo: true,
+      description: true,
+      cost: true,
+    },
+  });
+
+  const singlePartByPartNo = new Map<string, (typeof singleParts)[number]>();
+  singleParts.forEach((part) => {
+    if (!singlePartByPartNo.has(part.partNo)) {
+      singlePartByPartNo.set(part.partNo, part);
+    }
+  });
+
+  return kitItems.map((row) => {
+    const linkedPart = singlePartByPartNo.get(row.partNo);
+    return {
+      item_part_id: linkedPart?.id || null,
+      item_part_no: row.partNo,
+      item_description: row.partName || linkedPart?.description || row.partNo,
+      quantity: row.quantity || 1,
+      cost_per_unit: row.costPerUnit ?? linkedPart?.cost ?? 0,
+    };
+  });
+};
+
+const getCurrentStockByPartIds = async (partIds: string[]) => {
+  const stockByPartId = new Map<string, number>();
+  if (!partIds.length) return stockByPartId;
+
+  partIds.forEach((id) => stockByPartId.set(id, 0));
+
+  const grouped = await prisma.stockMovement.groupBy({
+    by: ["partId", "type"],
+    where: {
+      partId: { in: partIds },
+      OR: [{ referenceType: null }, { referenceType: { not: "stock_reservation" } }],
+    },
+    _sum: { quantity: true },
+  });
+
+  grouped.forEach((row) => {
+    const current = stockByPartId.get(row.partId) || 0;
+    const qty = Number(row._sum.quantity || 0);
+    stockByPartId.set(
+      row.partId,
+      row.type === "in" ? current + qty : current - qty,
+    );
+  });
+
+  return stockByPartId;
+};
+
 // Dedicated API for Part Entry screen - Optimized for quick loading and accurate stock
 router.get("/part-entry-list", async (req: Request, res: Response) => {
   res.setHeader(
@@ -54,7 +156,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
 
     const sql = `
       SELECT 
-        p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, 
+        p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."type",
         p.uom, p.weight, p."updatedAt" as updated_at,
         mp."masterPartNo" as master_part_no,
         b."name" as brand_name,
@@ -174,6 +276,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
         master_part_no: p.master_part_no,
         brand_name: p.brand_name,
         description: p.description,
+        type: p.type || "single",
         uom: p.uom,
         weight: p.weight,
         cost: p.cost,
@@ -211,6 +314,7 @@ router.get("/", async (req: Request, res: Response) => {
       brand_name,
       application_id,
       application_name,
+      part_type,
       status,
       master_part_no,
       part_no,
@@ -301,6 +405,14 @@ router.get("/", async (req: Request, res: Response) => {
       params.push(application_name);
     }
 
+    if (part_type && part_type !== "all") {
+      const normalizedPartType = String(part_type).trim().toLowerCase();
+      if (normalizedPartType === "single" || normalizedPartType === "kit") {
+        conditions.push(`p."type" = $${paramIdx++}`);
+        params.push(normalizedPartType);
+      }
+    }
+
     if (master_part_no) {
       conditions.push(`mp."masterPartNo" ILIKE $${paramIdx++}`);
       params.push(`%${(master_part_no as string).trim()}%`);
@@ -330,7 +442,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     const sql = `
       SELECT 
-        p.id, p."partNo", p.description, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p."createdAt", p."updatedAt",
+        p.id, p."partNo", p."type", p.description, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p."createdAt", p."updatedAt",
         p."masterPartId", p."brandId", p."categoryId", p."subcategoryId", p."applicationId",
         p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceM",
         mp."masterPartNo" as master_part_no,
@@ -481,6 +593,7 @@ router.get("/", async (req: Request, res: Response) => {
         image_p1: skipImages ? null : part.imageP1 || part.imagep1,
         image_p2: skipImages ? null : part.imageP2 || part.imagep2,
         status: part.status,
+        type: part.type || "single",
         locations: part.locations || [],
         unlocated_stock: Math.max(0, parseInt(part.unlocated_stock) || 0),
         created_at: part.createdAt || part.createdat,
@@ -1071,6 +1184,7 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       image_p1: part.imageP1 || null,
       image_p2: part.imageP2 || null,
       status: part.status || "active",
+      type: (part as any).type || "single",
       remarks: (part as any).remarks || null,
       models: modelsToReturn.map((m: any) => ({
         id: m.id,
@@ -1080,6 +1194,58 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       created_at: part.createdAt,
       updated_at: part.updatedAt,
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all active parts using a specific model name
+router.get("/model-associations/:modelName", async (req: Request, res: Response) => {
+  try {
+    const modelName = decodeURIComponent(String(req.params.modelName || "")).trim();
+    const application = String(req.query.application || "").trim();
+    if (!modelName) {
+      return res.status(400).json({ error: "Model name is required" });
+    }
+
+    const modelRows = await prisma.model.findMany({
+      where: {
+        name: { equals: modelName, mode: "insensitive" },
+        Part: {
+          status: "active",
+          ...(application
+            ? {
+              Application: {
+                name: { equals: application, mode: "insensitive" },
+              },
+            }
+            : {}),
+        },
+      },
+      include: {
+        Part: {
+          include: {
+            MasterPart: true,
+            Brand: true,
+            Application: true,
+          },
+        },
+      },
+      orderBy: [{ qtyUsed: "desc" }, { createdAt: "desc" }],
+    });
+
+    const data = modelRows.map((row) => ({
+      partId: row.partId,
+      masterPart: row.Part?.MasterPart?.masterPartNo || "N/A",
+      partNo: row.Part?.partNo || "N/A",
+      description: row.Part?.description || "N/A",
+      brand: row.Part?.Brand?.name || "N/A",
+      application: row.Part?.Application?.name || application || "N/A",
+      model: row.name,
+      quantity: row.qtyUsed || 0,
+    }));
+
+    res.json({ data });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1099,6 +1265,7 @@ router.get("/:id", async (req: Request, res: Response) => {
         Subcategory: true,
         Application: true,
         Model: true,
+        KitItem: true,
       },
     });
 
@@ -1142,6 +1309,10 @@ router.get("/:id", async (req: Request, res: Response) => {
       else if (m.type === "out") currentStock -= qty;
     });
 
+    const kitItemsToReturn = await buildKitItemsResponse(
+      (part as any).KitItem || [],
+    );
+
     res.json({
       id: part.id,
       master_part_no: (part as any).MasterPart?.masterPartNo || null,
@@ -1177,12 +1348,14 @@ router.get("/:id", async (req: Request, res: Response) => {
       image_p1: part.imageP1 || null,
       image_p2: part.imageP2 || null,
       status: part.status || "active",
+      type: (part as any).type || "single",
       remarks: (part as any).remarks || null,
       models: modelsToReturn.map((m: any) => ({
         id: m.id,
         name: m.name,
         qty_used: m.qtyUsed,
       })),
+      kit_items: kitItemsToReturn,
       created_at: part.createdAt,
       updated_at: part.updatedAt,
     });
@@ -1213,10 +1386,12 @@ router.post("/", async (req: Request, res: Response) => {
       smc,
       size,
       origin,
+      type,
       image_p1,
       image_p2,
       status,
       models,
+      kit_items,
     } = req.body;
 
     // Validate required fields
@@ -1460,6 +1635,34 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
+    const normalizedPartType = normalizePartType(type);
+    const normalizedKitItems = normalizeKitItemsPayload(kit_items);
+    let validatedKitComponents: { id: string; partNo: string; description: string | null; cost: number | null }[] =
+      [];
+
+    if (normalizedPartType === "kit" && normalizedKitItems.length > 0) {
+      const componentPartIds = normalizedKitItems.map((row) => row.itemPartId);
+      validatedKitComponents = await prisma.part.findMany({
+        where: {
+          id: { in: componentPartIds },
+          type: "single",
+          status: "active",
+        },
+        select: {
+          id: true,
+          partNo: true,
+          description: true,
+          cost: true,
+        },
+      });
+
+      if (validatedKitComponents.length !== new Set(componentPartIds).size) {
+        return res
+          .status(400)
+          .json({ error: "Kit items must be active single-type parts" });
+      }
+    }
+
     // Prepare part data
     const partData: any = {
       id: randomUUID(),
@@ -1497,6 +1700,7 @@ router.post("/", async (req: Request, res: Response) => {
       smc: smc ? String(smc).trim() : null,
       size: size ? String(size).trim() : null,
       origin: origin ? String(origin).trim() : null,
+      type: normalizedPartType,
       imageP1: image_p1 ? String(image_p1).trim() : null,
       imageP2: image_p2 ? String(image_p2).trim() : null,
       status: (() => {
@@ -1524,9 +1728,36 @@ router.post("/", async (req: Request, res: Response) => {
       };
     }
 
-    // Create part with models
     const part = await prisma.part.create({
       data: partData,
+    });
+
+    if (normalizedPartType === "kit" && normalizedKitItems.length > 0) {
+      const componentById = new Map(
+        validatedKitComponents.map((row) => [row.id, row]),
+      );
+      await prisma.kitItem.createMany({
+        data: normalizedKitItems
+          .map((row) => {
+            const component = componentById.get(row.itemPartId);
+            if (!component) return null;
+            return {
+              id: randomUUID(),
+              partId: part.id,
+              partNo: component.partNo,
+              partName: component.description || component.partNo,
+              quantity: row.quantity,
+              costPerUnit: component.cost || 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            };
+          })
+          .filter(Boolean) as any[],
+      });
+    }
+
+    const partWithRelations = await prisma.part.findUnique({
+      where: { id: part.id },
       include: {
         MasterPart: true,
         Brand: true,
@@ -1534,14 +1765,16 @@ router.post("/", async (req: Request, res: Response) => {
         Subcategory: true,
         Application: true,
         Model: true,
+        KitItem: true,
       },
     });
 
-    const p = part as any;
+    const p = partWithRelations as any;
+    const createdKitItems = await buildKitItemsResponse((p.KitItem || []) as any[]);
     res.status(201).json({
-      id: part.id,
+      id: partWithRelations?.id,
       master_part_no: p.MasterPart?.masterPartNo || null,
-      part_no: part.partNo,
+      part_no: partWithRelations?.partNo,
       brand_name: p.Brand?.name || null,
       category_name: p.Category?.name || null,
       subcategory_name: p.Subcategory?.name || null,
@@ -1549,31 +1782,33 @@ router.post("/", async (req: Request, res: Response) => {
       application: p.Application
         ? { id: p.Application.id, name: p.Application.name }
         : null,
-      application_id: part.applicationId || null,
-      description: part.description,
-      hs_code: part.hsCode,
-      weight: part.weight,
-      reorder_level: part.reorderLevel,
-      uom: part.uom,
-      cost: part.cost,
-      purchasePrice: (part as any).purchasePrice,
-      avgCost: (part as any).avgCost,
-      price_a: part.priceA,
-      price_b: part.priceB,
-      price_m: part.priceM,
-      smc: part.smc,
-      size: part.size,
-      origin: part.origin || null,
-      image_p1: part.imageP1,
-      image_p2: part.imageP2,
-      status: part.status,
+      application_id: partWithRelations?.applicationId || null,
+      description: partWithRelations?.description,
+      hs_code: partWithRelations?.hsCode,
+      weight: partWithRelations?.weight,
+      reorder_level: partWithRelations?.reorderLevel,
+      uom: partWithRelations?.uom,
+      cost: partWithRelations?.cost,
+      purchasePrice: (partWithRelations as any)?.purchasePrice,
+      avgCost: (partWithRelations as any)?.avgCost,
+      price_a: partWithRelations?.priceA,
+      price_b: partWithRelations?.priceB,
+      price_m: partWithRelations?.priceM,
+      smc: partWithRelations?.smc,
+      size: partWithRelations?.size,
+      origin: partWithRelations?.origin || null,
+      image_p1: partWithRelations?.imageP1,
+      image_p2: partWithRelations?.imageP2,
+      status: partWithRelations?.status,
+      type: (partWithRelations as any)?.type || "single",
       models: (p.Model || []).map((m: any) => ({
         id: m.id,
         name: m.name,
         qty_used: m.qtyUsed,
       })),
-      created_at: part.createdAt,
-      updated_at: part.updatedAt,
+      kit_items: createdKitItems,
+      created_at: partWithRelations?.createdAt,
+      updated_at: partWithRelations?.updatedAt,
     });
   } catch (error: any) {
     // Handle specific Prisma errors
@@ -1614,6 +1849,425 @@ router.post("/", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/:id/make-kit", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const quantityRaw = Number(req.body?.quantity);
+    const quantity = Number.isFinite(quantityRaw)
+      ? Math.max(1, Math.floor(quantityRaw))
+      : 0;
+
+    if (quantity < 1) {
+      return res.status(400).json({ error: "Quantity must be at least 1" });
+    }
+
+    const kitPart = await prisma.part.findUnique({
+      where: { id },
+      include: { KitItem: true },
+    });
+
+    if (!kitPart) return res.status(404).json({ error: "Kit item not found" });
+    if ((kitPart.type || "single") !== "kit") {
+      return res.status(400).json({ error: "Selected item is not a kit" });
+    }
+    if (!kitPart.KitItem.length) {
+      return res
+        .status(400)
+        .json({ error: "No associated single items found for this kit" });
+    }
+
+    const perKitQtyByPartNo = new Map<string, number>();
+    for (const row of kitPart.KitItem) {
+      const componentPartNo = String(row.partNo || "").trim();
+      if (!componentPartNo) continue;
+      const perKitQty = Math.max(1, Number(row.quantity || 1));
+      perKitQtyByPartNo.set(
+        componentPartNo,
+        (perKitQtyByPartNo.get(componentPartNo) || 0) + perKitQty,
+      );
+    }
+
+    const componentPartNos = Array.from(perKitQtyByPartNo.keys());
+    const componentCandidates = await prisma.part.findMany({
+      where: {
+        partNo: { in: componentPartNos },
+        type: "single",
+        status: "active",
+      },
+      select: {
+        id: true,
+        partNo: true,
+        avgCost: true,
+        cost: true,
+        purchasePrice: true,
+      },
+    });
+
+    const stockByPartId = await getCurrentStockByPartIds([
+      id,
+      ...componentCandidates.map((row) => row.id),
+    ]);
+
+    const candidatesByPartNo = new Map<
+      string,
+      {
+        id: string;
+        partNo: string;
+        avgCost: number | null;
+        cost: number | null;
+        purchasePrice: number | null;
+        stock: number;
+      }[]
+    >();
+    for (const row of componentCandidates) {
+      const stock = Number(stockByPartId.get(row.id) || 0);
+      const arr = candidatesByPartNo.get(row.partNo) || [];
+      arr.push({
+        id: row.id,
+        partNo: row.partNo,
+        avgCost: row.avgCost,
+        cost: row.cost,
+        purchasePrice: row.purchasePrice,
+        stock,
+      });
+      candidatesByPartNo.set(row.partNo, arr);
+    }
+    candidatesByPartNo.forEach((arr) =>
+      arr.sort((a, b) => Number(b.stock || 0) - Number(a.stock || 0)),
+    );
+
+    const insufficientItems: Array<{
+      partNo: string;
+      stock: number;
+      requiredQty: number;
+      enoughStock: boolean;
+    }> = [];
+    const consumePlan: Array<{ partId: string; quantity: number; partNo: string }> = [];
+    let unitKitAvg = 0;
+
+    for (const [partNo, perKitQty] of perKitQtyByPartNo.entries()) {
+      const candidates = candidatesByPartNo.get(partNo) || [];
+      if (candidates.length === 0) {
+        return res.status(400).json({
+          error: `Associated item ${partNo} is missing or not active single type`,
+        });
+      }
+
+      const requiredQty = perKitQty * quantity;
+      const totalStock = candidates.reduce(
+        (sum, row) => sum + Math.max(0, Number(row.stock || 0)),
+        0,
+      );
+
+      const totalWeight = candidates.reduce((sum, row) => {
+        const available = Math.max(0, Number(row.stock || 0));
+        const avg = Number(row.avgCost ?? row.cost ?? row.purchasePrice ?? 0);
+        return sum + available * avg;
+      }, 0);
+      const fallbackAvg = Number(
+        candidates[0].avgCost ?? candidates[0].cost ?? candidates[0].purchasePrice ?? 0,
+      );
+      const componentAvg = totalStock > 0 ? totalWeight / totalStock : fallbackAvg;
+      unitKitAvg += componentAvg * perKitQty;
+
+      if (totalStock < requiredQty) {
+        insufficientItems.push({
+          partNo,
+          stock: totalStock,
+          requiredQty,
+          enoughStock: false,
+        });
+        continue;
+      }
+
+      let remaining = requiredQty;
+      for (const candidate of candidates) {
+        const available = Math.max(0, Number(candidate.stock || 0));
+        if (available <= 0 || remaining <= 0) continue;
+        const consume = Math.min(available, remaining);
+        consumePlan.push({
+          partId: candidate.id,
+          quantity: consume,
+          partNo,
+        });
+        remaining -= consume;
+      }
+    }
+
+    if (insufficientItems.length > 0) {
+      return res.status(400).json({
+        error: "Cannot make kit: stock is less than required quantity",
+        details: insufficientItems,
+      });
+    }
+
+    const currentKitStock = Number(stockByPartId.get(id) || 0);
+    const currentKitAvg = Number(
+      kitPart.avgCost ?? kitPart.cost ?? kitPart.purchasePrice ?? 0,
+    );
+    const denominator = currentKitStock + quantity;
+    const newKitAvg =
+      denominator > 0
+        ? (currentKitAvg * currentKitStock + unitKitAvg * quantity) / denominator
+        : unitKitAvg;
+
+    const operationId = randomUUID();
+
+    await prisma.$transaction(async (tx) => {
+      for (const movement of consumePlan) {
+        await tx.stockMovement.create({
+          data: {
+            id: randomUUID(),
+            partId: movement.partId,
+            type: "out",
+            quantity: movement.quantity,
+            referenceType: "kit_make",
+            referenceId: operationId,
+            notes: `Kit make for ${kitPart.partNo} x ${quantity} (component ${movement.partNo})`,
+            createdAt: new Date(),
+          } as any,
+        });
+      }
+
+      await tx.stockMovement.create({
+        data: {
+          id: randomUUID(),
+          partId: id,
+          type: "in",
+          quantity: quantity,
+          referenceType: "kit_make",
+          referenceId: operationId,
+          notes: `Kit made from associated items x ${quantity}`,
+          createdAt: new Date(),
+        } as any,
+      });
+
+      await tx.part.update({
+        where: { id },
+        data: { avgCost: newKitAvg },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: "Kit created successfully",
+      data: {
+        part_id: id,
+        quantity,
+        current_stock_before: currentKitStock,
+        avg_cost_before: currentKitAvg,
+        avg_cost_after: newKitAvg,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/:id/break-kit", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const quantityRaw = Number(req.body?.quantity);
+    const quantity = Number.isFinite(quantityRaw)
+      ? Math.max(1, Math.floor(quantityRaw))
+      : 0;
+
+    if (quantity < 1) {
+      return res.status(400).json({ error: "Quantity must be at least 1" });
+    }
+
+    const kitPart = await prisma.part.findUnique({
+      where: { id },
+      include: { KitItem: true },
+    });
+
+    if (!kitPart) return res.status(404).json({ error: "Kit item not found" });
+    if ((kitPart.type || "single") !== "kit") {
+      return res.status(400).json({ error: "Selected item is not a kit" });
+    }
+    if (!kitPart.KitItem.length) {
+      return res
+        .status(400)
+        .json({ error: "No associated single items found for this kit" });
+    }
+
+    const receiveByPartNo = new Map<string, number>();
+    for (const kitRow of kitPart.KitItem) {
+      const partNo = String(kitRow.partNo || "").trim();
+      if (!partNo) continue;
+      const perKitQty = Math.max(1, Number(kitRow.quantity || 1));
+      receiveByPartNo.set(
+        partNo,
+        (receiveByPartNo.get(partNo) || 0) + perKitQty * quantity,
+      );
+    }
+
+    const componentPartNos = Array.from(receiveByPartNo.keys());
+    const components = await prisma.part.findMany({
+      where: {
+        partNo: { in: componentPartNos },
+        type: "single",
+        status: "active",
+      },
+      select: {
+        id: true,
+        partNo: true,
+        avgCost: true,
+        cost: true,
+        purchasePrice: true,
+      },
+    });
+    const componentCandidatesByPartNo = new Map<
+      string,
+      {
+        id: string;
+        partNo: string;
+        avgCost: number | null;
+        cost: number | null;
+        purchasePrice: number | null;
+      }[]
+    >();
+    components.forEach((row) => {
+      const arr = componentCandidatesByPartNo.get(row.partNo) || [];
+      arr.push(row);
+      componentCandidatesByPartNo.set(row.partNo, arr);
+    });
+
+    const targetPartIdByPartNo = new Map<string, string>();
+    for (const partNo of componentPartNos) {
+      const canonicalId = await getCanonicalPartId(prisma as any, partNo);
+      const fallbackCandidate = (componentCandidatesByPartNo.get(partNo) || [])[0];
+      const targetPartId = canonicalId || fallbackCandidate?.id;
+      if (!targetPartId) {
+        return res.status(400).json({
+          error: `Associated item ${partNo} is missing or not active single type`,
+        });
+      }
+      targetPartIdByPartNo.set(partNo, targetPartId);
+    }
+
+    const stockByPartId = await getCurrentStockByPartIds([
+      id,
+      ...components.map((row) => row.id),
+    ]);
+    const currentKitStock = Number(stockByPartId.get(id) || 0);
+    if (currentKitStock < quantity) {
+      return res.status(400).json({
+        error: "Cannot break kit: kit stock is less than requested quantity",
+      });
+    }
+
+    const kitAvg = Number(kitPart.avgCost ?? kitPart.cost ?? kitPart.purchasePrice ?? 0);
+    const releasedKitValue = kitAvg * quantity;
+
+    const componentById = new Map(components.map((row) => [row.id, row]));
+    const breakRows = Array.from(receiveByPartNo.entries()).map(([partNo, receiveQty]) => {
+      const perKitQty = Math.max(1, receiveQty / quantity);
+      const targetPartId = targetPartIdByPartNo.get(partNo)!;
+      const targetPart = componentById.get(targetPartId);
+      const currentAvg = Number(
+        targetPart?.avgCost ?? targetPart?.cost ?? targetPart?.purchasePrice ?? 0,
+      );
+      const currentStock = Math.max(0, Number(stockByPartId.get(targetPartId) || 0));
+      return {
+        partNo,
+        targetPartId,
+        receiveQty,
+        perKitQty,
+        currentAvg,
+        currentStock,
+      };
+    });
+
+    const knownAvgRows = breakRows.filter((row) => row.currentAvg > 0);
+    const fallbackAvg =
+      knownAvgRows.length > 0
+        ? knownAvgRows.reduce((sum, row) => sum + row.currentAvg, 0) /
+          knownAvgRows.length
+        : 1;
+    const weightedRows = breakRows.map((row) => ({
+      ...row,
+      weightPerUnit: row.currentAvg > 0 ? row.currentAvg : fallbackAvg,
+    }));
+    let sumWeights = weightedRows.reduce(
+      (sum, row) => sum + row.weightPerUnit * row.perKitQty,
+      0,
+    );
+    const useQuantityOnlyWeights = sumWeights <= 0;
+    if (sumWeights <= 0) {
+      sumWeights = weightedRows.reduce((sum, row) => sum + row.perKitQty, 0);
+    }
+    const rowsWithAllocation = weightedRows.map((row) => {
+      const ratioWeight =
+        sumWeights > 0
+          ? useQuantityOnlyWeights
+            ? row.perKitQty
+            : row.weightPerUnit * row.perKitQty
+          : row.perKitQty;
+      const allocatedValue =
+        sumWeights > 0 ? (releasedKitValue * ratioWeight) / sumWeights : 0;
+      const nextStock = row.currentStock + row.receiveQty;
+      const nextAvg =
+        nextStock > 0
+          ? (row.currentAvg * row.currentStock + allocatedValue) / nextStock
+          : row.currentAvg;
+      return {
+        ...row,
+        allocatedValue,
+        nextAvg,
+      };
+    });
+
+    const operationId = randomUUID();
+    await prisma.$transaction(async (tx) => {
+      await tx.stockMovement.create({
+        data: {
+          id: randomUUID(),
+          partId: id,
+          type: "out",
+          quantity: quantity,
+          referenceType: "kit_break",
+          referenceId: operationId,
+          notes: `Kit break x ${quantity}`,
+          createdAt: new Date(),
+        } as any,
+      });
+
+      for (const row of rowsWithAllocation) {
+        await tx.stockMovement.create({
+          data: {
+            id: randomUUID(),
+            partId: row.targetPartId,
+            type: "in",
+            quantity: row.receiveQty,
+            referenceType: "kit_break",
+            referenceId: operationId,
+            notes: `Received from kit break ${kitPart.partNo} x ${quantity}`,
+            createdAt: new Date(),
+          } as any,
+        });
+
+        await tx.part.update({
+          where: { id: row.targetPartId },
+          data: { avgCost: row.nextAvg },
+        });
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: "Kit broken successfully",
+      data: {
+        part_id: id,
+        quantity,
+        current_stock_before: currentKitStock,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // Update part
 router.put("/:id", async (req: Request, res: Response) => {
   try {
@@ -1637,10 +2291,12 @@ router.put("/:id", async (req: Request, res: Response) => {
       smc,
       size,
       origin,
+      type,
       image_p1,
       image_p2,
       status,
       models,
+      kit_items,
     } = req.body;
 
     // Handle master part
@@ -1936,6 +2592,37 @@ router.put("/:id", async (req: Request, res: Response) => {
       }
     }
 
+    const normalizedKitItems = normalizeKitItemsPayload(kit_items);
+    let validatedKitComponents: {
+      id: string;
+      partNo: string;
+      description: string | null;
+      cost: number | null;
+    }[] = [];
+
+    if (Array.isArray(kit_items) && normalizedKitItems.length > 0) {
+      const componentPartIds = normalizedKitItems.map((row) => row.itemPartId);
+      validatedKitComponents = await prisma.part.findMany({
+        where: {
+          id: { in: componentPartIds },
+          type: "single",
+          status: "active",
+        },
+        select: {
+          id: true,
+          partNo: true,
+          description: true,
+          cost: true,
+        },
+      });
+
+      if (validatedKitComponents.length !== new Set(componentPartIds).size) {
+        return res
+          .status(400)
+          .json({ error: "Kit items must be active single-type parts" });
+      }
+    }
+
     // Delete existing models and create new ones
     if (models && Array.isArray(models)) {
       await prisma.model.deleteMany({
@@ -1978,6 +2665,7 @@ router.put("/:id", async (req: Request, res: Response) => {
     if ("smc" in req.body) updateData.smc = smc || null;
     if ("size" in req.body) updateData.size = size || null;
     if ("origin" in req.body) updateData.origin = origin || null;
+    if ("type" in req.body) updateData.type = normalizePartType(type);
     if ("status" in req.body) updateData.status = status || "active";
 
     // Handle images - explicitly set to null if provided as null/empty string, otherwise keep existing if not provided
@@ -1998,6 +2686,39 @@ router.put("/:id", async (req: Request, res: Response) => {
       };
     }
 
+    const nextType = ("type" in req.body
+      ? normalizePartType(type)
+      : undefined) as "single" | "kit" | undefined;
+
+    if (nextType === "single") {
+      await prisma.kitItem.deleteMany({ where: { partId: id } });
+    } else if (Array.isArray(kit_items)) {
+      await prisma.kitItem.deleteMany({ where: { partId: id } });
+      if (normalizedKitItems.length > 0) {
+        const componentById = new Map(
+          validatedKitComponents.map((row) => [row.id, row]),
+        );
+        await prisma.kitItem.createMany({
+          data: normalizedKitItems
+            .map((row) => {
+              const component = componentById.get(row.itemPartId);
+              if (!component) return null;
+              return {
+                id: randomUUID(),
+                partId: id,
+                partNo: component.partNo,
+                partName: component.description || component.partNo,
+                quantity: row.quantity,
+                costPerUnit: component.cost || 0,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              };
+            })
+            .filter(Boolean) as any[],
+        });
+      }
+    }
+
     // Update part
     const part = await prisma.part.update({
       where: { id },
@@ -2009,12 +2730,15 @@ router.put("/:id", async (req: Request, res: Response) => {
         Subcategory: true,
         Application: true,
         Model: true,
+        KitItem: true,
       },
     });
 
     // Debug log to verify application is included
 
     const p = part as any;
+    const updatedKitItems = await buildKitItemsResponse((p.KitItem || []) as any[]);
+
     res.json({
       id: part.id,
       // Step 1: Master Part No
@@ -2055,12 +2779,14 @@ router.put("/:id", async (req: Request, res: Response) => {
       image_p1: part.imageP1 || null,
       image_p2: part.imageP2 || null,
       status: part.status || "active",
+      type: (part as any).type || "single",
       remarks: (part as any).remarks || null,
       models: (p.Model || []).map((m: any) => ({
         id: m.id,
         name: m.name,
         qty_used: m.qtyUsed,
       })),
+      kit_items: updatedKitItems,
       created_at: part.createdAt,
       updated_at: part.updatedAt,
     });
@@ -2080,7 +2806,6 @@ router.delete("/:id", async (req: Request, res: Response) => {
       include: {
         _count: {
           select: {
-            KitItem: true,
             StockMovement: true,
             PurchaseOrderItem: true,
             DirectPurchaseOrderItem: true,
@@ -2095,37 +2820,6 @@ router.delete("/:id", async (req: Request, res: Response) => {
 
     if (!part) {
       return res.status(404).json({ error: "Part not found" });
-    }
-
-    // KitItem has onDelete: Restrict, so we need to check this first
-    if ((part as any)._count.KitItem > 0) {
-      // Get kit names that use this part
-      const kitItems = await prisma.kitItem.findMany({
-        where: { partId: id },
-        include: {
-          Kit: {
-            select: {
-              name: true,
-              badge: true,
-            },
-          },
-        },
-        take: 5, // Limit to first 5 for error message
-      });
-
-      const kitNames = kitItems
-        .map((ki: any) => ki.Kit.name || ki.Kit.badge)
-        .join(", ");
-      const moreKits =
-        (part as any)._count.KitItem > 5
-          ? ` and ${(part as any)._count.KitItem - 5} more`
-          : "";
-
-      return res.status(400).json({
-        error: `Cannot delete part because it is used in ${(part as any)._count.KitItem} kit(s)`,
-        details: `This part is used in the following kits: ${kitNames}${moreKits}. Please remove this part from all kits before deleting it.`,
-        kitCount: (part as any)._count.KitItem,
-      });
     }
 
     // Other relationships have onDelete: Cascade, but we can inform the user

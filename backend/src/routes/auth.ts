@@ -94,4 +94,75 @@ router.post('/login', async (req, res) => {
     }
 });
 
+router.post('/forgot-password', async (req, res) => {
+    try {
+        const { identifier, newPassword, role } = req.body || {};
+        const normalizedIdentifier = String(identifier || '').trim();
+        const normalizedRole = String(role || '').trim().toLowerCase();
+
+        if (!normalizedIdentifier || !newPassword) {
+            return res.status(400).json({ error: 'Identifier and new password are required' });
+        }
+        if (String(newPassword).length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+        }
+
+        const users = await prisma.$queryRaw<Array<{
+            id: string;
+            name: string;
+            email: string;
+            status: string;
+            role: string;
+        }>>`
+            SELECT u.id, u.name, u.email, u.status, r.name AS role
+            FROM "User" u
+            JOIN "Role" r ON r.id = u."roleId"
+            WHERE (
+                LOWER(u.email) = LOWER(${normalizedIdentifier})
+                OR LOWER(u.name) = LOWER(${normalizedIdentifier})
+            )
+            LIMIT 5
+        `;
+        const user = users.find((u) => {
+            const roleName = String(u.role || '').trim().toLowerCase();
+            if (normalizedRole === 'store') return roleName === 'store user';
+            if (normalizedRole === 'admin') return roleName !== 'store user';
+            return true;
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const userStatus = String(user.status || '').toLowerCase();
+        if (userStatus !== 'active') {
+            return res.status(403).json({ error: 'User account is deactivated' });
+        }
+
+        const hashedPassword = await bcrypt.hash(String(newPassword), 10);
+        await prisma.$executeRaw`
+            UPDATE "User"
+            SET "password" = ${hashedPassword}, "updatedAt" = NOW()
+            WHERE id = ${user.id}
+        `;
+
+        await logActivity({
+            user: user.name,
+            userRole: user.role,
+            action: 'Password Changed',
+            actionType: 'update',
+            module: 'Auth',
+            description: `Password changed using forgot-password for ${user.email}`,
+            ipAddress: getClientIp(req),
+            status: 'success',
+            details: { userId: user.id, email: user.email },
+        });
+
+        return res.json({ success: true, message: 'Password updated successfully' });
+    } catch (error: any) {
+        console.error('Forgot password error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 export default router;

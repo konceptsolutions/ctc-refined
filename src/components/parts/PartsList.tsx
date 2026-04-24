@@ -15,6 +15,7 @@ export interface Part {
   id: string;
   partNo: string;
   brand: string;
+  type?: string;
   uom: string;
   weight: string;
   cost: number | null;
@@ -96,6 +97,9 @@ export const PartsList = ({
                 Brand
               </TableHead>
               <TableHead className="font-bold text-foreground text-xs py-2">
+                Type
+              </TableHead>
+              <TableHead className="font-bold text-foreground text-xs py-2">
                 UOM
               </TableHead>
               <TableHead className="font-bold text-foreground text-xs py-2 text-right">
@@ -130,6 +134,9 @@ export const PartsList = ({
                 </TableCell>
                 <TableCell className="text-muted-foreground text-xs py-1.5">
                   {part.brand}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-xs py-1.5 capitalize">
+                  {part.type || "single"}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-xs py-1.5">
                   {part.uom}

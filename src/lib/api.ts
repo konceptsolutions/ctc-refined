@@ -289,6 +289,17 @@ class ApiClient {
     });
   }
 
+  async forgotPassword(data: {
+    identifier: string;
+    newPassword: string;
+    role?: "admin" | "store";
+  }) {
+    return this.request("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Parts API
   async getPartEntryList(params?: {
     search?: string;
@@ -362,6 +373,17 @@ class ApiClient {
     return this.request(`/parts/by-part-no?${params.toString()}`);
   }
 
+  async getPartsByModelAssociation(modelName: string, application?: string) {
+    const params = new URLSearchParams();
+    if (application?.trim()) params.set("application", application.trim());
+    const query = params.toString();
+    return this.request(
+      `/parts/model-associations/${encodeURIComponent(modelName)}${
+        query ? `?${query}` : ""
+      }`,
+    );
+  }
+
   async createPart(data: any) {
     return this.request("/parts", {
       method: "POST",
@@ -372,6 +394,20 @@ class ApiClient {
   async updatePart(id: string, data: any) {
     return this.request(`/parts/${id}`, {
       method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async makeKit(partId: string, data: { quantity: number }) {
+    return this.request(`/parts/${partId}/make-kit`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async breakKit(partId: string, data: { quantity: number }) {
+    return this.request(`/parts/${partId}/break-kit`, {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -843,6 +879,7 @@ class ApiClient {
     search?: string;
     category_id?: string;
     store_id?: string;
+    stock_as_of_date?: string;
     page?: number;
     limit?: number;
   }) {
@@ -1962,6 +1999,8 @@ class ApiClient {
 
   async createSupplier(data: {
     code?: string; // Optional - will be auto-generated if not provided
+    type?: "local" | "international";
+    currencyName?: string;
     name?: string;
     companyName: string;
     address?: string;
@@ -2001,6 +2040,8 @@ class ApiClient {
     id: string,
     data: {
       code?: string;
+      type?: "local" | "international";
+      currencyName?: string;
       name?: string;
       companyName?: string;
       address?: string;
@@ -2040,6 +2081,158 @@ class ApiClient {
   async deleteSupplier(id: string) {
     return this.request(`/suppliers/${id}`, {
       method: "DELETE",
+    });
+  }
+
+  // Purchase Import API
+  async getPurchaseImportPartDetails(partId: string) {
+    return this.request(`/purchase-import/part-details/${partId}`);
+  }
+
+  async createPurchaseImportRequest(data: {
+    supplierIds: string[];
+    consignee?: "ISB" | "KHI" | "Other";
+    notes?: string;
+    items: Array<{
+      partId: string;
+      demandQuantity: number;
+      weight: number;
+    }>;
+  }) {
+    return this.request("/purchase-import/requests", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getPurchaseImportRequests(params?: { page?: number; limit?: number }) {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/purchase-import/requests${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
+  async getPurchaseImportRequestById(requestId: string) {
+    return this.request(`/purchase-import/requests/${requestId}`);
+  }
+
+  async updatePurchaseImportRequest(
+    requestId: string,
+    data: {
+      supplierIds: string[];
+      consignee?: "ISB" | "KHI" | "Other";
+      notes?: string;
+      items: Array<{
+        partId: string;
+        demandQuantity: number;
+        weight: number;
+      }>;
+    },
+  ) {
+    return this.request(`/purchase-import/requests/${requestId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updatePurchaseImportRequestStatus(
+    requestId: string,
+    status: "pending" | "confirm",
+  ) {
+    return this.request(`/purchase-import/requests/${requestId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async getPurchaseQuotationContext(requestId: string) {
+    return this.request(`/purchase-import/requests/${requestId}/quotation-context`);
+  }
+
+  async createPurchaseQuotation(
+    requestId: string,
+    data: {
+      quotationDate: string;
+      revisedQuotationDate?: string;
+      quotationType?: "original" | "revised";
+      status?: string;
+      currency: string;
+      conversionRate: number;
+      items: Array<{
+        partId: string;
+        demandQuantity: number;
+        quotationQuantity: number;
+        shipDays: number;
+        fcRate: number;
+        weight: number;
+      }>;
+    },
+  ) {
+    return this.request(`/purchase-import/requests/${requestId}/quotations`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getPurchaseQuotations(params?: { page?: number; limit?: number }) {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/purchase-import/quotations${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
+  async getPurchaseQuotationById(quotationId: string) {
+    return this.request(`/purchase-import/quotations/${quotationId}`);
+  }
+
+  async updatePurchaseQuotationStatus(
+    quotationId: string,
+    status: "pending" | "confirm" | "revise",
+  ) {
+    return this.request(`/purchase-import/quotations/${quotationId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async revisePurchaseQuotation(
+    quotationId: string,
+    data: {
+      quotationDate: string;
+      revisedQuotationDate: string;
+      status?: "pending" | "confirm" | "revise";
+      currency: string;
+      conversionRate: number;
+      items: Array<{
+        partId: string;
+        demandQuantity: number;
+        quotationQuantity: number;
+        shipDays: number;
+        fcRate: number;
+        revisedFcRate: number;
+        weight: number;
+      }>;
+    },
+  ) {
+    return this.request(`/purchase-import/quotations/${quotationId}/revise`, {
+      method: "PUT",
+      body: JSON.stringify(data),
     });
   }
 

@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { apiClient } from "@/lib/api";
 import { useNotifications } from "@/contexts/NotificationContext";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +72,8 @@ import { StoreEditSalesInvoice } from "./StoreEditSalesInvoice";
 import { StoreLocationAssign } from "./StoreLocationAssign";
 import { StoreAdjustedItem } from "./StoreAdjustedItem";
 import { printDeliveryChallan } from "@/lib/printDeliveryChallan";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { getUserRole, isStoreUserRole } from "@/utils/auth";
 
 interface DirectPurchaseOrderItem {
   id: string;
@@ -168,17 +171,30 @@ interface StorePanelProps {
 
 export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const { addNotification } = useNotifications();
+  const [searchParams] = useSearchParams();
+  const isStoreOnlyUser = getUserRole() === "store" || isStoreUserRole();
   const [orders, setOrders] = useState<DirectPurchaseOrder[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [stockOutOrders, setStockOutOrders] = useState<StockOutOrder[]>([]);
   const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [partOptions, setPartOptions] = useState<Array<{
+    id: string;
+    partNo: string;
+    masterPartNo: string;
+    description: string;
+  }>>([]);
+  const [selectedAssociationPartId, setSelectedAssociationPartId] = useState("");
+  const [associationRows, setAssociationRows] = useState<Array<{ model: string; qtyUsed: number }>>([]);
+  const [associationLoading, setAssociationLoading] = useState(false);
+  const hasInitializedStockOutRef = useRef(false);
+  const notifiedApprovedInvoiceIdsRef = useRef<Set<string>>(new Set());
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState<"all" | "receiving" | "stock-out" | "adjusted">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "receiving" | "stock-out" | "adjusted" | "part-association">("all");
   const [receivingFilter, setReceivingFilter] = useState<"all" | "po" | "dpo">("all");
   const [loading, setLoading] = useState(false);
 
@@ -243,6 +259,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         setOrders([]);
         setPurchaseOrders([]);
         setStockOutOrders([]);
+      } else if (typeFilter === "part-association") {
+        setOrders([]);
+        setPurchaseOrders([]);
+        setStockOutOrders([]);
+        setAdjustments([]);
+        if (isStoreOnlyUser) {
+          fetchAssociationParts();
+        }
       } else {
         // All Orders - fetch everything (Receiving + Delivering + Adjusted)
         fetchPurchaseOrders();
@@ -250,8 +274,39 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchStockOutOrders();
         fetchAdjustments();
       }
+
+      // Store users should keep receiving approved-invoice notifications
+      // even when they are not currently on Stock Out Items.
+      if (isStoreOnlyUser && typeFilter !== "stock-out" && typeFilter !== "all") {
+        fetchStockOutOrders(true);
+      }
     }
   }, [selectedStoreId, statusFilter, typeFilter]);
+
+  // Support deep-linking to a specific filter, e.g. /store/orders?type=stock-out
+  useEffect(() => {
+    const requestedType = String(searchParams.get("type") || "")
+      .trim()
+      .toLowerCase();
+    if (!requestedType) return;
+
+    const allowedTypes = [
+      "all",
+      "receiving",
+      "stock-out",
+      "adjusted",
+      ...(isStoreOnlyUser ? ["part-association"] : []),
+    ] as const;
+
+    if (
+      (allowedTypes as readonly string[]).includes(requestedType) &&
+      requestedType !== typeFilter
+    ) {
+      setTypeFilter(
+        requestedType as "all" | "receiving" | "stock-out" | "adjusted" | "part-association",
+      );
+    }
+  }, [searchParams, typeFilter, isStoreOnlyUser]);
 
   // Poll for new orders every 30 seconds
   useEffect(() => {
@@ -266,16 +321,70 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchOrders(true);
       } else if (typeFilter === "adjusted") {
         fetchAdjustments(true);
+      } else if (typeFilter === "part-association") {
+        if (isStoreOnlyUser) fetchAssociationParts(true);
       } else {
         fetchPurchaseOrders(true);
         fetchOrders(true);
         fetchStockOutOrders(true);
         fetchAdjustments(true);
       }
+
+      if (isStoreOnlyUser && typeFilter !== "stock-out" && typeFilter !== "all") {
+        fetchStockOutOrders(true);
+      }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [selectedStoreId, typeFilter, statusFilter]);
+  }, [selectedStoreId, typeFilter, statusFilter, isStoreOnlyUser]);
+
+  const fetchAssociationParts = async (silent = false) => {
+    try {
+      if (!silent) setAssociationLoading(true);
+      const response = await apiClient.getPartEntryList({ limit: 10000, page: 1 });
+      const rawRows = Array.isArray((response as any)?.data)
+        ? (response as any).data
+        : Array.isArray(response)
+          ? response
+          : [];
+      const mapped = rawRows
+        .map((row: any) => ({
+          id: String(row.id || "").trim(),
+          partNo: String(row.part_no || row.partNo || "").trim(),
+          masterPartNo: String(row.master_part_no || row.masterPartNo || "").trim(),
+          description: String(row.description || "").trim(),
+        }))
+        .filter((row: any) => row.id && row.partNo);
+      setPartOptions(mapped);
+    } catch (error: any) {
+      if (!silent) toast.error(error?.error || "Failed to load items");
+    } finally {
+      if (!silent) setAssociationLoading(false);
+    }
+  };
+
+  const fetchPartAssociation = async (partId: string) => {
+    if (!partId) {
+      setAssociationRows([]);
+      return;
+    }
+    try {
+      setAssociationLoading(true);
+      const response = await apiClient.getPart(partId);
+      const partData = (response as any)?.data || response;
+      const models = Array.isArray(partData?.models) ? partData.models : [];
+      const rows = models.map((m: any) => ({
+        model: String(m?.name || "").trim() || "N/A",
+        qtyUsed: Number(m?.qty_used ?? m?.qtyUsed ?? 0) || 0,
+      }));
+      setAssociationRows(rows);
+    } catch (error: any) {
+      setAssociationRows([]);
+      toast.error(error?.error || "Failed to load model association");
+    } finally {
+      setAssociationLoading(false);
+    }
+  };
 
   const fetchStores = async () => {
     try {
@@ -508,8 +617,54 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             createdAt: invoice.createdAt || invoice.created_at,
             customerType: invoice.customerType || 'walking',
           }));
+
+        if (isStoreOnlyUser) {
+          const previousStatusById = new Map(
+            stockOutOrders.map((invoice) => [
+              invoice.id,
+              String(invoice.status || "").toLowerCase(),
+            ]),
+          );
+          const nowMs = Date.now();
+          const newlyApprovedInvoices = formattedInvoices.filter((invoice) => {
+            const currentStatus = String(invoice.status || "").toLowerCase();
+            if (currentStatus !== "approved") return false;
+            if (notifiedApprovedInvoiceIdsRef.current.has(invoice.id)) return false;
+            const previousStatus = previousStatusById.get(invoice.id);
+            if (previousStatus && previousStatus !== "approved") return true;
+            if (!previousStatus && !hasInitializedStockOutRef.current) {
+              const createdAtMs = invoice.createdAt
+                ? new Date(invoice.createdAt).getTime()
+                : NaN;
+              // On first fetch, only notify for recently approved invoices
+              // to avoid old-notification spam on page load.
+              if (!Number.isNaN(createdAtMs) && nowMs - createdAtMs <= 15 * 60 * 1000) {
+                return true;
+              }
+            }
+            if (!previousStatus && hasInitializedStockOutRef.current) return true;
+            return false;
+          });
+
+          newlyApprovedInvoices.forEach((invoice) => {
+            notifiedApprovedInvoiceIdsRef.current.add(invoice.id);
+            addNotification({
+              title: "New Invoice Approved",
+              message: `New invoice (${invoice.invoiceNo || "N/A"}) is created and approved. Refresh the page to view invoice in Stock Out Items.`,
+              type: "info",
+              module: "store",
+              action: {
+                label: "Open Stock Out Items",
+                path: "/store/orders?type=stock-out",
+              },
+            });
+          });
+        }
+
+        hasInitializedStockOutRef.current = true;
         setStockOutOrders(formattedInvoices);
       } else {
+        hasInitializedStockOutRef.current = true;
         setStockOutOrders([]);
       }
     } catch (error: any) {
@@ -1290,6 +1445,17 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   <Package className="w-4 h-4" />
                   Adjusted Items
                 </Button>
+                {isStoreOnlyUser && (
+                  <Button
+                    variant={typeFilter === "part-association" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setTypeFilter("part-association")}
+                    className="gap-2"
+                  >
+                    <Package className="w-4 h-4" />
+                    Part Association
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>
@@ -1307,6 +1473,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   ? "Stock Out Items"
                   : typeFilter === "adjusted"
                     ? "Adjusted Items"
+                    : typeFilter === "part-association"
+                      ? "Part Association"
                     : "All Orders"}
               {selectedStore && ` - ${selectedStore.name}`}
             </CardTitle>
@@ -1917,6 +2085,75 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       </Table>
                     </div>
                   )
+                )}
+
+                {/* Part Association - Store User only */}
+                {typeFilter === "part-association" && isStoreOnlyUser && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                      <div className="space-y-2">
+                        <Label>Select Item</Label>
+                        <SearchableSelect
+                          options={partOptions.map((part) => ({
+                            value: part.id,
+                            label: `${part.masterPartNo || "N/A"} | ${part.partNo}`,
+                            description: part.description || "No description",
+                          }))}
+                          value={selectedAssociationPartId}
+                          onValueChange={(value) => {
+                            setSelectedAssociationPartId(value);
+                            fetchPartAssociation(value);
+                          }}
+                          placeholder={
+                            associationLoading && partOptions.length === 0
+                              ? "Loading items..."
+                              : "Select item"
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Model</TableHead>
+                            <TableHead className="text-right">Quantity Used</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {!selectedAssociationPartId ? (
+                            <TableRow>
+                              <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
+                                Select an item to view model association.
+                              </TableCell>
+                            </TableRow>
+                          ) : associationLoading ? (
+                            <TableRow>
+                              <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
+                                Loading model association...
+                              </TableCell>
+                            </TableRow>
+                          ) : associationRows.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
+                                No model association found for this item.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            associationRows.map((row, idx) => (
+                              <TableRow key={`${row.model}-${idx}`}>
+                                <TableCell>{row.model}</TableCell>
+                                <TableCell className="text-right font-medium">
+                                  {row.qtyUsed.toLocaleString("en-US")}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
                 )}
 
               </>

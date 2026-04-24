@@ -78,6 +78,7 @@ interface DirectPurchaseOrder {
   id: string;
   dpoNo: string;
   store: string;
+  supplier?: string;
   requestDate: string;
   date: string; // Raw date for sorting
   description: string;
@@ -225,6 +226,7 @@ export const DirectPurchaseOrder = () => {
           return (
             order.dpo_no?.toLowerCase().includes(searchLower) ||
             order.store_name?.toLowerCase().includes(searchLower) ||
+            order.supplier_name?.toLowerCase().includes(searchLower) ||
             order.description?.toLowerCase().includes(searchLower)
           );
         });
@@ -234,6 +236,7 @@ export const DirectPurchaseOrder = () => {
         id: o.id,
         dpoNo: o.dpo_no,
         store: o.store_name || "N/A",
+        supplier: o.supplier_name || "N/A",
         requestDate: new Date(o.date).toLocaleDateString('en-GB'),
         date: o.date, // Raw date for sorting
         description: o.description || "",
@@ -694,6 +697,7 @@ export const DirectPurchaseOrder = () => {
         id: dpo.id,
         dpoNo: dpo.dpo_no,
         store: dpo.store_name || "N/A",
+        supplier: dpo.supplier_name || "N/A",
         requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
         date: dpo.date, // Raw date for sorting
         description: dpo.description || "",
@@ -1358,6 +1362,7 @@ export const DirectPurchaseOrder = () => {
             id: dpo.id,
             dpoNo: dpo.dpo_no,
             store: dpo.store_name || "N/A",
+            supplier: dpo.supplier_name || "N/A",
             requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
             date: dpo.date, // Raw date for sorting
             description: dpo.description || "",
@@ -1417,6 +1422,7 @@ export const DirectPurchaseOrder = () => {
             id: dpo.id,
             dpoNo: dpo.dpo_no,
             store: dpo.store_name || "N/A",
+            supplier: dpo.supplier_name || "N/A",
             requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
             date: dpo.date, // Raw date for sorting
             description: dpo.description || "",
@@ -1636,6 +1642,7 @@ export const DirectPurchaseOrder = () => {
                       <TableHead className="w-12">S.NO</TableHead>
                       <TableHead className="min-w-[120px]">DPO No.</TableHead>
                       <TableHead className="min-w-[100px]">Store</TableHead>
+                      <TableHead className="min-w-[140px]">Supplier</TableHead>
                       <TableHead className="min-w-[110px]">Request Date</TableHead>
                       <TableHead className="min-w-[150px]">Description</TableHead>
                       <TableHead className="text-right min-w-[120px]">Grand Total</TableHead>
@@ -1649,6 +1656,7 @@ export const DirectPurchaseOrder = () => {
                         <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                         <TableCell className="font-medium">{order.dpoNo}</TableCell>
                         <TableCell>{order.store}</TableCell>
+                        <TableCell>{order.supplier || "-"}</TableCell>
                         <TableCell>{order.requestDate}</TableCell>
                         <TableCell className="max-w-[200px] truncate">{order.description || "-"}</TableCell>
                         <TableCell className="text-right font-medium">
@@ -2320,6 +2328,10 @@ export const DirectPurchaseOrder = () => {
                   <div>
                     <Label className="text-muted-foreground">Store</Label>
                     <p className="font-medium">{selectedOrder.store}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Supplier</Label>
+                    <p className="font-medium">{selectedOrder.supplier || "-"}</p>
                   </div>
                   <div>
                     <Label className="text-muted-foreground">Request Date</Label>

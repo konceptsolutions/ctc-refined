@@ -399,6 +399,13 @@ export const SalesInvoice = () => {
   const [partsSearchTerm, setPartsSearchTerm] = useState<
     Record<string, string>
   >({});
+  const [partsModelFilter, setPartsModelFilter] = useState<string>("");
+  const [partsDescriptionFilter, setPartsDescriptionFilter] = useState<string>(
+    "",
+  );
+  const [partsApplicationFilter, setPartsApplicationFilter] = useState<string>(
+    "",
+  );
   const [showPartsDropdown, setShowPartsDropdown] = useState<
     Record<string, boolean>
   >({});
@@ -997,6 +1004,11 @@ export const SalesInvoice = () => {
   // Remove inline item
   const handleRemoveInlineItem = (id: string) => {
     setInlineItems((prev) => prev.filter((item) => item.id !== id));
+    setPartsSearchTerm((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   };
 
   // Debounce timer for parts search
@@ -1061,6 +1073,11 @@ export const SalesInvoice = () => {
               partNo: partNo, // Part No (Blue Block) - displayed in dropdown
               masterPartNo: masterPartNo, // Master Part No (Red Block) - stored but not displayed
               description: p.description || "",
+              application:
+                p.application_name ||
+                p.application?.name ||
+                p.application ||
+                "",
               category: p.category_name || "",
               price: p.price_a ?? p.cost ?? 0,
               priceA: p.price_a ?? null,
@@ -1103,6 +1120,172 @@ export const SalesInvoice = () => {
       if (!silent) setPartsLoading(false);
     }
   };
+
+  const getFilteredPartsForInlineRow = useCallback(
+    (
+      rowId: string,
+      options?: {
+        ignoreModel?: boolean;
+        ignoreDescription?: boolean;
+        ignoreApplication?: boolean;
+      },
+    ) => {
+      const searchValue = (partsSearchTerm[rowId] || "").trim().toLowerCase();
+      const selectedModel = partsModelFilter.trim().toLowerCase();
+      const selectedDescription = partsDescriptionFilter
+        .trim()
+        .toLowerCase();
+      const selectedApplication = partsApplicationFilter
+        .trim()
+        .toLowerCase();
+
+      return parts.filter((part) => {
+        const partNo = String(part.partNo || "").toLowerCase();
+        const masterPartNo = String(part.masterPartNo || "").toLowerCase();
+        const description = String(part.description || "").toLowerCase();
+        const category = String(part.category || "").toLowerCase();
+        const application = String(part.application || "").toLowerCase();
+        const modelNames = (part.machineModels || []).map((m) =>
+          String(m.name || "").toLowerCase(),
+        );
+        const brandNames = (part.brands || []).map((b) =>
+          String(b.name || "").toLowerCase(),
+        );
+
+        const matchesSearch =
+          !searchValue ||
+          partNo.includes(searchValue) ||
+          masterPartNo.includes(searchValue) ||
+          description.includes(searchValue) ||
+          category.includes(searchValue) ||
+          application.includes(searchValue) ||
+          modelNames.some((name) => name.includes(searchValue)) ||
+          brandNames.some((name) => name.includes(searchValue));
+
+        if (!matchesSearch) return false;
+
+        const matchesModel =
+          options?.ignoreModel ||
+          !selectedModel ||
+          modelNames.some((name) => name === selectedModel);
+        if (!matchesModel) return false;
+
+        const matchesDescription =
+          options?.ignoreDescription ||
+          !selectedDescription ||
+          description === selectedDescription;
+        if (!matchesDescription) return false;
+
+        const matchesApplication =
+          options?.ignoreApplication ||
+          !selectedApplication ||
+          application === selectedApplication;
+        if (!matchesApplication) return false;
+
+        return true;
+      });
+    },
+    [
+      parts,
+      partsSearchTerm,
+      partsModelFilter,
+      partsDescriptionFilter,
+      partsApplicationFilter,
+    ],
+  );
+
+  const addItemModelOptions = useMemo(() => {
+    const selectedDescription = partsDescriptionFilter.trim().toLowerCase();
+    const selectedApplication = partsApplicationFilter.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        parts
+          .filter((part) => {
+            const description = String(part.description || "").toLowerCase();
+            const application = String(part.application || "").toLowerCase();
+            return (
+              (!selectedDescription || description === selectedDescription) &&
+              (!selectedApplication || application === selectedApplication)
+            );
+          })
+          .flatMap((part) =>
+            (part.machineModels || [])
+              .map((model) => String(model.name || "").trim())
+              .filter(Boolean),
+          ),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [parts, partsDescriptionFilter, partsApplicationFilter]);
+
+  const addItemDescriptionOptions = useMemo(() => {
+    const selectedModel = partsModelFilter.trim().toLowerCase();
+    const selectedApplication = partsApplicationFilter.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        parts
+          .filter((part) => {
+            const application = String(part.application || "").toLowerCase();
+            const modelNames = (part.machineModels || []).map((m) =>
+              String(m.name || "").toLowerCase(),
+            );
+            return (
+              (!selectedModel ||
+                modelNames.some((name) => name === selectedModel)) &&
+              (!selectedApplication || application === selectedApplication)
+            );
+          })
+          .map((part) => String(part.description || "").trim())
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [parts, partsModelFilter, partsApplicationFilter]);
+
+  const addItemApplicationOptions = useMemo(() => {
+    const selectedModel = partsModelFilter.trim().toLowerCase();
+    const selectedDescription = partsDescriptionFilter.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        parts
+          .filter((part) => {
+            const description = String(part.description || "").toLowerCase();
+            const modelNames = (part.machineModels || []).map((m) =>
+              String(m.name || "").toLowerCase(),
+            );
+            return (
+              (!selectedModel ||
+                modelNames.some((name) => name === selectedModel)) &&
+              (!selectedDescription || description === selectedDescription)
+            );
+          })
+          .map((part) => String(part.application || "").trim())
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [parts, partsModelFilter, partsDescriptionFilter]);
+
+  const searchableModelFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "__all__", label: "All Models" },
+      ...addItemModelOptions.map((name) => ({ value: name, label: name })),
+    ],
+    [addItemModelOptions],
+  );
+
+  const searchableDescriptionFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "__all__", label: "All Descriptions" },
+      ...addItemDescriptionOptions.map((name) => ({ value: name, label: name })),
+    ],
+    [addItemDescriptionOptions],
+  );
+
+  const searchableApplicationFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "__all__", label: "All Applications" },
+      ...addItemApplicationOptions.map((name) => ({ value: name, label: name })),
+    ],
+    [addItemApplicationOptions],
+  );
 
   // Background stock polling (every 60 seconds)
   useEffect(() => {
@@ -4645,7 +4828,7 @@ export const SalesInvoice = () => {
 
             {/* Items Section - Inline Table Like Reference */}
             <div className="space-y-3">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <Button
                   onClick={() => handleAddNewItem()}
                   className="gap-2 bg-primary"
@@ -4656,6 +4839,35 @@ export const SalesInvoice = () => {
                 <span className="text-xs text-muted-foreground">
                   Shortcut: <span className="font-semibold">Alt + Z</span>
                 </span>
+                <div className="ml-0 md:ml-3 flex flex-wrap items-center gap-2">
+                  <SearchableSelect
+                    options={searchableModelFilterOptions}
+                    value={partsModelFilter || "__all__"}
+                    onValueChange={(value) =>
+                      setPartsModelFilter(value === "__all__" ? "" : value)
+                    }
+                    placeholder="Model"
+                    className="min-w-[180px]"
+                  />
+                  <SearchableSelect
+                    options={searchableDescriptionFilterOptions}
+                    value={partsDescriptionFilter || "__all__"}
+                    onValueChange={(value) =>
+                      setPartsDescriptionFilter(value === "__all__" ? "" : value)
+                    }
+                    placeholder="Description"
+                    className="min-w-[200px]"
+                  />
+                  <SearchableSelect
+                    options={searchableApplicationFilterOptions}
+                    value={partsApplicationFilter || "__all__"}
+                    onValueChange={(value) =>
+                      setPartsApplicationFilter(value === "__all__" ? "" : value)
+                    }
+                    placeholder="Application"
+                    className="min-w-[190px]"
+                  />
+                </div>
               </div>
 
               {inlineItems.length > 0 && (
@@ -4665,6 +4877,9 @@ export const SalesInvoice = () => {
                       <TableRow className="border-b">
                         <TableHead className="w-[380px] font-bold text-foreground">
                           Part Details
+                        </TableHead>
+                        <TableHead className="w-[130px] text-center font-bold text-foreground">
+                          Brand
                         </TableHead>
                         <TableHead
                           className="w-[100px] text-center font-bold text-foreground select-none"
@@ -4881,34 +5096,8 @@ export const SalesInvoice = () => {
                                         e.preventDefault();
                                         // Select first result if available
                                         if (parts.length > 0) {
-                                          const filteredParts = partsSearchTerm[
-                                            item.id
-                                          ]
-                                            ? parts.filter(
-                                                (p) =>
-                                                  p.partNo
-                                                    .toLowerCase()
-                                                    .includes(
-                                                      partsSearchTerm[
-                                                        item.id
-                                                      ].toLowerCase(),
-                                                    ) ||
-                                                  p.description
-                                                    .toLowerCase()
-                                                    .includes(
-                                                      partsSearchTerm[
-                                                        item.id
-                                                      ].toLowerCase(),
-                                                    ) ||
-                                                  p.category
-                                                    .toLowerCase()
-                                                    .includes(
-                                                      partsSearchTerm[
-                                                        item.id
-                                                      ].toLowerCase(),
-                                                    ),
-                                              )
-                                            : parts;
+                                          const filteredParts =
+                                            getFilteredPartsForInlineRow(item.id);
                                           if (filteredParts.length > 0) {
                                             handleUpdateInlineItem(
                                               item.id,
@@ -5128,52 +5317,10 @@ export const SalesInvoice = () => {
                                         ) : (
                                           <>
                                             {(() => {
-                                              const searchValue =
-                                                partsSearchTerm[item.id] || "";
-                                              // Filter parts client-side for instant results while typing
-                                              const filteredParts = searchValue
-                                                ? parts.filter(
-                                                    (p) =>
-                                                      p.partNo
-                                                        .toLowerCase()
-                                                        .includes(
-                                                          searchValue.toLowerCase(),
-                                                        ) ||
-                                                      (p.masterPartNo &&
-                                                        p.masterPartNo
-                                                          .toLowerCase()
-                                                          .includes(
-                                                            searchValue.toLowerCase(),
-                                                          )) ||
-                                                      p.description
-                                                        .toLowerCase()
-                                                        .includes(
-                                                          searchValue.toLowerCase(),
-                                                        ) ||
-                                                      p.category
-                                                        .toLowerCase()
-                                                        .includes(
-                                                          searchValue.toLowerCase(),
-                                                        ) ||
-                                                      (p.machineModels &&
-                                                        p.machineModels.some(
-                                                          (m) =>
-                                                            m.name
-                                                              .toLowerCase()
-                                                              .includes(
-                                                                searchValue.toLowerCase(),
-                                                              ),
-                                                        )) ||
-                                                      (p.brands &&
-                                                        p.brands.some((b) =>
-                                                          b.name
-                                                            .toLowerCase()
-                                                            .includes(
-                                                              searchValue.toLowerCase(),
-                                                            ),
-                                                        )),
-                                                  )
-                                                : parts; // Show all parts when no search term
+                                              const filteredParts =
+                                                getFilteredPartsForInlineRow(
+                                                  item.id,
+                                                );
 
                                               return filteredParts.length >
                                                 0 ? (
@@ -5257,6 +5404,11 @@ export const SalesInvoice = () => {
                                                           {p.category}
                                                         </div>
                                                       )}
+                                                      {p.application && (
+                                                        <div className="text-[11px] text-muted-foreground/80 mt-0.5">
+                                                          App: {p.application}
+                                                        </div>
+                                                      )}
                                                       <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                                                         {p.brands &&
                                                           p.brands.length >
@@ -5299,7 +5451,7 @@ export const SalesInvoice = () => {
                                                 </>
                                               ) : (
                                                 <div className="px-3 py-2 text-sm text-muted-foreground">
-                                                  {searchValue
+                                                  {(partsSearchTerm[item.id] || "").trim()
                                                     ? "No parts found matching your search"
                                                     : "No parts available"}
                                                 </div>
@@ -5317,6 +5469,13 @@ export const SalesInvoice = () => {
                                   </p>
                                 )}
                               </div>
+                            </TableCell>
+
+                            {/* Column 4: Brand (Desktop ONLY) */}
+                            <TableCell className="hidden md:table-cell text-center align-middle">
+                              <span className="text-xs font-medium text-foreground">
+                                {part?.brands?.[0]?.name || "-"}
+                              </span>
                             </TableCell>
 
                             {/* Column 4: In Stock (Desktop ONLY, Mobile combined in section below) */}
@@ -5745,14 +5904,26 @@ export const SalesInvoice = () => {
 
                             {/* Column 11: Action (Desktop Only) */}
                             <TableCell className="hidden md:table-cell align-middle text-center">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-9 w-9 text-destructive hover:bg-destructive/10"
-                                onClick={() => handleRemoveInlineItem(item.id)}
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </Button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-9 w-9 text-primary hover:bg-primary/10"
+                                  onClick={() => handleAddNewItem(true)}
+                                  title="Add New Item"
+                                >
+                                  <Plus className="w-5 h-5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-9 w-9 text-destructive hover:bg-destructive/10"
+                                  onClick={() => handleRemoveInlineItem(item.id)}
+                                  title="Remove Item"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );

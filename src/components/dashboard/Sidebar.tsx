@@ -12,6 +12,7 @@ import {
   BookOpen,
   ClipboardList,
   Store as StoreIcon,
+  Truck,
   BookMarked,
   LucideIcon
 } from "lucide-react";
@@ -81,6 +82,7 @@ export const Sidebar = () => {
     { Icon: StoreIcon, path: "/store", label: "Store" },
     { Icon: Calculator, path: "/pricing-costing", label: "Pricing & Costing" },
     { Icon: DollarSign, path: "/sales", label: "Sales & Distribution" },
+    { Icon: Truck, path: "/purchase-import", label: "Purchase Import" },
     { Icon: Receipt, path: "/expenses", label: "Expenses" },
     { Icon: BookOpen, path: "/accounting", label: "Accounting" },
     { Icon: ClipboardList, path: "/financial-statements", label: "Financial Statements" },

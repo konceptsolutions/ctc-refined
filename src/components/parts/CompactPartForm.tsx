@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -43,11 +44,20 @@ interface PartFormData {
   smc: string;
   size: string;
   remarks: string;
+  type: string;
 }
 
 interface ModelQuantityRow {
   model: string;
   qty: number | "";
+}
+
+interface KitItemRow {
+  id: string;
+  itemPartId: string;
+  itemPartNo: string;
+  itemDescription: string;
+  quantity: number | "";
 }
 
 const initialFormData: PartFormData = {
@@ -78,28 +88,47 @@ const initialFormData: PartFormData = {
   smc: "",
   size: "",
   remarks: "",
+  type: "single",
 };
 
 interface CompactPartFormProps {
   onSave: (
-    part: PartFormData & { imageP1?: string | null; imageP2?: string | null },
+    part: PartFormData & {
+      imageP1?: string | null;
+      imageP2?: string | null;
+      kitItems?: KitItemRow[];
+    },
     isEdit: boolean,
     editItemId?: string,
   ) => void;
   onCancel: () => void;
   editItem?: Item | null;
+  forcedType?: "single" | "kit" | null;
 }
 
 export const CompactPartForm = ({
   onSave,
   onCancel,
   editItem,
+  forcedType = null,
 }: CompactPartFormProps) => {
   const [formData, setFormData] = useState<PartFormData>(initialFormData);
   const [imageP1, setImageP1] = useState<string | null>(null);
   const [imageP2, setImageP2] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [modelQuantities, setModelQuantities] = useState<ModelQuantityRow[]>([]);
+  const [kitItems, setKitItems] = useState<KitItemRow[]>([]);
+  const [kitBuildQuantity, setKitBuildQuantity] = useState<number | "">(1);
+  const [singlePartOptions, setSinglePartOptions] = useState<
+    {
+      id: string;
+      masterPartNo: string;
+      partNo: string;
+      description: string;
+      brandName: string;
+      stock: number;
+    }[]
+  >([]);
   const isEditing = !!editItem;
 
   // Track if we're in "new mode" (creating new item, not editing)
@@ -337,6 +366,70 @@ export const CompactPartForm = ({
     fetchDropdownData();
   }, []);
 
+  useEffect(() => {
+    const fetchSingleTypeParts = async () => {
+      try {
+        const response: any = await apiClient.getPartEntryList({
+          limit: "all",
+          page: 1,
+        });
+        const rows = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response)
+            ? response
+            : [];
+
+        const singles = rows
+          .filter((row: any) => (row?.type || "single") === "single")
+          .map((row: any) => ({
+            id: String(row.id || ""),
+            masterPartNo: String(row.master_part_no || "").trim(),
+            partNo: String(row.part_no || "").trim(),
+            description: String(row.description || "").trim(),
+            brandName: String(row.brand_name || "").trim(),
+            stock: Number(row.stock || 0),
+          }))
+          .filter((row: { id: string; partNo: string }) => row.id && row.partNo);
+
+        setSinglePartOptions(singles);
+      } catch {
+        setSinglePartOptions([]);
+      }
+    };
+
+    fetchSingleTypeParts();
+  }, []);
+
+  const selectableSinglePartOptions = useMemo(
+    () => singlePartOptions.filter((option) => option.id !== editItem?.id),
+    [singlePartOptions, editItem?.id],
+  );
+
+  const kitItemRequirements = useMemo(() => {
+    const plannedQty =
+      kitBuildQuantity === "" ? 0 : Math.max(1, Number(kitBuildQuantity || 1));
+    return kitItems
+      .filter((row) => row.itemPartId)
+      .map((row) => {
+        const selected = singlePartOptions.find(
+          (option) => option.id === row.itemPartId,
+        );
+        const qtyPerKit =
+          row.quantity === "" ? 1 : Math.max(1, Number(row.quantity || 1));
+        const requiredQty = qtyPerKit * plannedQty;
+        const stock = Number(selected?.stock || 0);
+        return {
+          id: row.id,
+          partNo: selected?.partNo || row.itemPartNo || "-",
+          description: selected?.description || row.itemDescription || "-",
+          stock,
+          qtyPerKit,
+          requiredQty,
+          enoughStock: stock >= requiredQty,
+        };
+      });
+  }, [kitItems, kitBuildQuantity, singlePartOptions]);
+
   // Fetch subcategories when category changes
   useEffect(() => {
     if (formData.categoryId) {
@@ -486,6 +579,7 @@ export const CompactPartForm = ({
             const origin = part.origin ? String(part.origin).trim() : "";
             const status = part.status === "active" ? "A" : "N";
             const remarks = part.remarks || "";
+            const type = forcedType || part.type || "single";
 
             // Set form data step by step
             setFormData({
@@ -525,6 +619,7 @@ export const CompactPartForm = ({
               smc: smc,
               size: size,
               remarks: remarks,
+              type: type,
             });
 
             // Set master part search to show the value in the input
@@ -543,6 +638,18 @@ export const CompactPartForm = ({
                     .filter((m: ModelQuantityRow) => m.model !== "")
                 : [],
             );
+            setKitItems(
+              Array.isArray(part.kit_items)
+                ? part.kit_items.map((row: any, index: number) => ({
+                  id: `kit-item-${index}-${Date.now()}`,
+                  itemPartId: String(row.item_part_id || "").trim(),
+                  itemPartNo: String(row.item_part_no || "").trim(),
+                  itemDescription: String(row.item_description || "").trim(),
+                  quantity: Math.max(1, Number(row.quantity || 1)),
+                }))
+                : [],
+            );
+            setKitBuildQuantity(1);
           }
         } catch (error: any) {
           toast({
@@ -559,12 +666,14 @@ export const CompactPartForm = ({
         setImageP1(null);
         setImageP2(null);
         setModelQuantities([]);
+        setKitItems([]);
+        setKitBuildQuantity(1);
         setIsNewMode(true);
       }
     };
 
     loadPartData();
-  }, [editItem?.id, categories, subcategories, applications]);
+  }, [editItem?.id, categories, subcategories, applications, forcedType]);
 
   // Helper function to check if form has any meaningful data entered
   // Ignores default/empty values to properly detect if form is truly empty
@@ -1082,6 +1191,15 @@ export const CompactPartForm = ({
           qty: Number(mq.qty === "" ? 1 : mq.qty),
         }))
         .filter((mq) => mq.model !== ""),
+      kitItems:
+        formData.type === "kit"
+          ? kitItems
+              .filter((row) => row.itemPartId)
+              .map((row) => ({
+                ...row,
+                quantity: Number(row.quantity === "" ? 1 : row.quantity),
+              }))
+          : [],
     };
 
     onSave(finalFormData, isEditing, editItem?.id);
@@ -1133,6 +1251,7 @@ export const CompactPartForm = ({
               smc: part.smc || "",
               size: part.size || "",
               remarks: "",
+              type: part.type || "single",
             });
             setImageP1(part.image_p1 || null);
             setImageP2(part.image_p2 || null);
@@ -1144,6 +1263,17 @@ export const CompactPartForm = ({
                       qty: Number(m?.qty_used || 1),
                     }))
                     .filter((m: ModelQuantityRow) => m.model !== "")
+                : [],
+            );
+            setKitItems(
+              Array.isArray(part.kit_items)
+                ? part.kit_items.map((row: any, index: number) => ({
+                  id: `kit-item-${index}-${Date.now()}`,
+                  itemPartId: String(row.item_part_id || "").trim(),
+                  itemPartNo: String(row.item_part_no || "").trim(),
+                  itemDescription: String(row.item_description || "").trim(),
+                  quantity: Math.max(1, Number(row.quantity || 1)),
+                }))
                 : [],
             );
           }
@@ -1184,10 +1314,12 @@ export const CompactPartForm = ({
         smc: "",
         size: "",
         remarks: "",
+        type: "single",
       });
       setImageP1(null);
       setImageP2(null);
       setModelQuantities([]);
+      setKitItems([]);
 
       // Reset all search states
       setMasterPartSearch("");
@@ -1214,6 +1346,52 @@ export const CompactPartForm = ({
         masterPartInputRef.current.value = "";
       }
     }
+  };
+
+  const handleAddKitItem = () => {
+    setKitItems((prev) => [
+      ...prev,
+      {
+        id: `kit-row-${Date.now()}`,
+        itemPartId: "",
+        itemPartNo: "",
+        itemDescription: "",
+        quantity: 1,
+      },
+    ]);
+  };
+
+  const handleRemoveKitItem = (id: string) => {
+    setKitItems((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const handleKitItemPartChange = (id: string, itemPartId: string) => {
+    const selected = singlePartOptions.find((row) => row.id === itemPartId);
+    setKitItems((prev) =>
+      prev.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              itemPartId,
+              itemPartNo: selected?.partNo || "",
+              itemDescription: selected?.description || "",
+            }
+          : row,
+      ),
+    );
+  };
+
+  const handleKitItemQtyChange = (id: string, quantity: number | "") => {
+    setKitItems((prev) =>
+      prev.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              quantity: quantity === "" ? "" : Math.max(1, Number(quantity)),
+            }
+          : row,
+      ),
+    );
   };
 
   // Filter categories
@@ -2225,6 +2403,182 @@ export const CompactPartForm = ({
             className="text-xs min-h-[40px] resize-none"
           />
         </div>
+
+        <div className="mb-3">
+          <label className="block text-[10px] text-foreground mb-0.5 font-bold">
+            Type
+          </label>
+          <Select
+            value={formData.type || "single"}
+            onValueChange={(v) => handleInputChange("type", v)}
+          >
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue placeholder="Select Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="single" className="text-xs">
+                Single
+              </SelectItem>
+              <SelectItem value="kit" className="text-xs">
+                Kit
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {formData.type === "kit" && (
+          <div className="mb-3 border rounded p-2">
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[10px] text-foreground font-bold">
+                Kit Items (Single Type)
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] px-2"
+                onClick={handleAddKitItem}
+              >
+                Add Item
+              </Button>
+            </div>
+            <div className="mb-2 grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-6">
+                <label className="block text-[10px] text-muted-foreground mb-0.5 font-semibold">
+                  Quantity to Make
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={kitBuildQuantity}
+                  onChange={(e) =>
+                    setKitBuildQuantity(
+                      e.target.value === "" ? "" : Math.max(1, Number(e.target.value)),
+                    )
+                  }
+                  onBlur={() =>
+                    setKitBuildQuantity(
+                      kitBuildQuantity === "" ? 1 : Math.max(1, Number(kitBuildQuantity)),
+                    )
+                  }
+                  className="h-7 text-xs"
+                />
+              </div>
+              <div className="col-span-6 text-[10px] text-muted-foreground">
+                Select how many kits you want to create to see required component quantities.
+              </div>
+            </div>
+
+            {kitItems.length === 0 ? (
+              <div className="text-[10px] text-muted-foreground border border-dashed border-border rounded p-2">
+                No items added.
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {kitItems.map((row) => (
+                  <div key={row.id} className="grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-8">
+                      {(() => {
+                        const selectedOption = selectableSinglePartOptions.find(
+                          (option) => option.id === row.itemPartId,
+                        );
+                        const limitedOptions = selectableSinglePartOptions.slice(0, 200);
+                        const optionsToRender =
+                          selectedOption &&
+                          !limitedOptions.some(
+                            (option) => option.id === selectedOption.id,
+                          )
+                            ? [selectedOption, ...limitedOptions]
+                            : limitedOptions;
+
+                        return (
+                          <SearchableSelect
+                            options={optionsToRender.map((option) => ({
+                              value: option.id,
+                              label: `MP: ${option.masterPartNo || "-"} | Part: ${option.partNo}`,
+                              description: `Desc: ${option.description || "-"} | Brand: ${option.brandName || "-"}`,
+                            }))}
+                            value={row.itemPartId || undefined}
+                            onValueChange={(value) =>
+                              handleKitItemPartChange(row.id, value)
+                            }
+                            placeholder="Search single item"
+                            className="h-7 text-xs"
+                          />
+                        );
+                      })()}
+                      {selectableSinglePartOptions.length > 200 && (
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Showing first 200 items. Use list filters to narrow results.
+                        </p>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={row.quantity}
+                      onChange={(e) =>
+                        handleKitItemQtyChange(
+                          row.id,
+                          e.target.value === "" ? "" : Number(e.target.value),
+                        )
+                      }
+                      onBlur={() =>
+                        handleKitItemQtyChange(
+                          row.id,
+                          row.quantity === "" ? 1 : Number(row.quantity),
+                        )
+                      }
+                      className="h-7 text-xs col-span-3"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 col-span-1"
+                      onClick={() => handleRemoveKitItem(row.id)}
+                      aria-label="Remove kit item row"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {kitItemRequirements.length > 0 && (
+              <div className="mt-2 border rounded">
+                <div className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] font-semibold border-b bg-muted/40">
+                  <div className="col-span-3">Item</div>
+                  <div className="col-span-3">Description</div>
+                  <div className="col-span-2 text-right">Stock</div>
+                  <div className="col-span-2 text-right">Qty/Kit</div>
+                  <div className="col-span-2 text-right">Required</div>
+                </div>
+                <div className="max-h-36 overflow-y-auto">
+                  {kitItemRequirements.map((req) => (
+                    <div
+                      key={req.id}
+                      className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] border-b last:border-b-0"
+                    >
+                      <div className="col-span-3 font-medium">{req.partNo}</div>
+                      <div className="col-span-3 truncate" title={req.description}>
+                        {req.description}
+                      </div>
+                      <div className="col-span-2 text-right">{req.stock}</div>
+                      <div className="col-span-2 text-right">{req.qtyPerKit}</div>
+                      <div
+                        className={`col-span-2 text-right font-semibold ${req.enoughStock ? "text-emerald-700" : "text-red-700"}`}
+                      >
+                        {req.requiredQty}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Models & Quantities */}
         <div className="mb-3">

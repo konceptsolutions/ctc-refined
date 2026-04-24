@@ -1,0 +1,2 @@
+ALTER TABLE "Part"
+ADD COLUMN "type" TEXT NOT NULL DEFAULT 'single';

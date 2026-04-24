@@ -61,10 +61,12 @@ export const KitsList = ({
   const [kitToDelete, setKitToDelete] = useState<Kit | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Fetch kits from API
+  // Fetch kits from API only when parent does not provide kit data
   useEffect(() => {
-    fetchKits();
-  }, [refreshTrigger]);
+    if (!propKits) {
+      fetchKits();
+    }
+  }, [refreshTrigger, propKits]);
 
   // Update kits when propKits changes
   useEffect(() => {
@@ -157,7 +159,9 @@ export const KitsList = ({
   const handleSaveKit = async (updatedKit: Kit) => {
     onUpdateKit?.(updatedKit);
     setEditingKit(null);
-    await fetchKits(); // Refresh the list
+    if (!propKits) {
+      await fetchKits(); // Refresh the list
+    }
   };
 
   const handleCancelEdit = () => {

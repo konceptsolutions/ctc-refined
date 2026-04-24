@@ -1,21 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { ItemsListView, Item } from "@/components/parts/ItemsListView";
-import { KitsList, Kit } from "@/components/parts/KitsList";
 import { apiClient } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import { ReservedQuantityManager } from "@/utils/reservedQuantityManager";
 
 interface ItemsListPageProps {
-  kits: Kit[];
-  onDeleteKit: (kit: Kit) => void;
-  onUpdateKit: (updatedKit: Kit) => void;
   onPartsUpdate?: (parts: any[]) => void;
 }
 
 export const ItemsListPage = ({
-  kits,
-  onDeleteKit,
-  onUpdateKit,
   onPartsUpdate,
 }: ItemsListPageProps) => {
   const [showItemsForm, setShowItemsForm] = useState(false);
@@ -49,6 +42,7 @@ export const ItemsListPage = ({
     part_no: "",
     brand_name: "",
     description: "",
+    part_type: "all",
     category_name: "all",
     subcategory_name: "all",
     application_name: "all",
@@ -300,6 +294,7 @@ export const ItemsListPage = ({
       masterPartNo: p.master_part_no || "",
       partNo: p.part_no || "",
       brand: p.brand_name || "",
+      type: p.type || "single",
       description: p.description || "",
       category: p.category_name || p.category?.name || "",
       subCategory: p.subcategory_name || p.subcategory?.name || "",
@@ -469,6 +464,7 @@ export const ItemsListPage = ({
         activeFilters.search ||
         activeFilters.brand_name ||
         activeFilters.description ||
+        (activeFilters.part_type && activeFilters.part_type !== "all") ||
         (activeFilters.category_name && activeFilters.category_name !== 'all') ||
         (activeFilters.subcategory_name && activeFilters.subcategory_name !== 'all') ||
         (activeFilters.application_name && activeFilters.application_name !== 'all');
@@ -485,6 +481,8 @@ export const ItemsListPage = ({
         params.brand_name = activeFilters.brand_name;
       if (activeFilters.description)
         params.description = activeFilters.description;
+      if (activeFilters.part_type && activeFilters.part_type !== "all")
+        params.part_type = activeFilters.part_type;
       if (activeFilters.category_name && activeFilters.category_name !== "all")
         params.category_name = activeFilters.category_name;
       if (
@@ -723,6 +721,32 @@ export const ItemsListPage = ({
 
         return { success, failed };
       }}
+      onBulkPartTypeChange={async (
+        itemIds: string[],
+        nextType: "single" | "kit",
+        quantity: number,
+      ) => {
+        if (itemIds.length !== 1) return;
+        const targetId = itemIds[0];
+        try {
+          const qty = Math.max(1, Math.floor(Number(quantity || 1)));
+          const response =
+            nextType === "kit"
+              ? await apiClient.makeKit(targetId, { quantity: qty })
+              : await apiClient.breakKit(targetId, { quantity: qty });
+          if ((response as any)?.error) {
+            throw new Error((response as any).error);
+          }
+          await fetchItems(itemsPage, itemsPerPage, searchFilters);
+        } catch (error: any) {
+          toast({
+            title: "Update failed",
+            description: error?.message || "Failed to update item type",
+            variant: "destructive",
+          });
+          throw error;
+        }
+      }}
       onItemsUpdate={(updatedItems) => {
         setItems(updatedItems);
         setTotalItems(updatedItems.length);
@@ -793,6 +817,7 @@ export const ItemsListPage = ({
             master_part_no: masterPartNoValue,
             part_no: partData.partNo,
             brand_name: partData.brand || null,
+            type: partData.type || "single",
             description: partData.description || null,
             category_id: partData.categoryId || partData.category || null,
             subcategory_id:
@@ -824,6 +849,13 @@ export const ItemsListPage = ({
                 .map((mq: any) => ({
                   name: String(mq.model).trim(),
                   qty_used: Number(mq.qty || 1),
+                })) || [],
+            kit_items:
+              (partData.kitItems || [])
+                .filter((row: any) => row && row.itemPartId)
+                .map((row: any) => ({
+                  item_part_id: String(row.itemPartId).trim(),
+                  quantity: Number(row.quantity || 1),
                 })) || [],
           };
 
@@ -912,9 +944,6 @@ export const ItemsListPage = ({
         }
       }}
       editItem={editingItem}
-      kits={kits}
-      onDeleteKit={onDeleteKit}
-      onUpdateKit={onUpdateKit}
     />
   );
 };

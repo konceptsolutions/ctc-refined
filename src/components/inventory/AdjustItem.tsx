@@ -702,7 +702,7 @@ export const AdjustItem = () => {
   };
 
   const handleSave = async () => {
-    if (!store) {
+    if (addInventory && !store) {
       toast.error("Please select a store");
       return;
     }
@@ -733,7 +733,7 @@ export const AdjustItem = () => {
       const adjustmentData = {
         date: date,
         subject: subject || undefined,
-        store_id: store,
+        store_id: addInventory ? store : undefined,
         add_inventory: addInventory,
         notes: notes || undefined,
         items: validItems.map((item) => ({
@@ -1655,6 +1655,10 @@ export const AdjustItem = () => {
               disabled={view === "edit"}
               onCheckedChange={(checked) => {
                 setAddInventory(checked);
+                if (!checked) {
+                  // Remove mode should not use a selected store.
+                  setStore("");
+                }
                 // Refetch balance for all currently selected items to update Qty in Stock
                 // based on the new mode (Total vs Available)
                 adjustmentItems.forEach((item) => {
@@ -1711,7 +1715,11 @@ export const AdjustItem = () => {
           </div>
 
           {/* Top Row - Date, Subject, Store */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div
+            className={`grid grid-cols-1 gap-3 ${
+              addInventory ? "md:grid-cols-3" : "md:grid-cols-2"
+            }`}
+          >
             <div className="space-y-1">
               <Label className="text-xs">
                 Date <span className="text-destructive">*</span>
@@ -1732,20 +1740,22 @@ export const AdjustItem = () => {
                 className="h-8 text-xs"
               />
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">
-                Store <span className="text-destructive">*</span>
-              </Label>
-              <SearchableSelect
-                options={stores}
-                value={store}
-                onValueChange={setStore}
-                placeholder="Select store..."
-              />
-              {!store && (
-                <p className="text-[10px] text-destructive">Required</p>
-              )}
-            </div>
+            {addInventory && (
+              <div className="space-y-1">
+                <Label className="text-xs">
+                  Store <span className="text-destructive">*</span>
+                </Label>
+                <SearchableSelect
+                  options={stores}
+                  value={store}
+                  onValueChange={setStore}
+                  placeholder="Select store..."
+                />
+                {!store && (
+                  <p className="text-[10px] text-destructive">Required</p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Items Section */}

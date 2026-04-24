@@ -337,33 +337,6 @@ model ExpenseType {
   PostedExpense PostedExpense[]
 }
 
-model Kit {
-  id           String    @id @default(uuid())
-  badge        String    @unique
-  name         String
-  description  String?
-  sellingPrice Float     @default(0)
-  totalCost    Float     @default(0)
-  itemsCount   Int       @default(0)
-  status       String    @default("Active")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  KitItem      KitItem[]
-}
-
-model KitItem {
-  id          String   @id @default(uuid())
-  kitId       String
-  partId      String
-  partNo      String
-  partName    String
-  quantity    Int      @default(1)
-  costPerUnit Float
-  createdAt   DateTime @default(now())
-  Kit         Kit      @relation(fields: [kitId], references: [id], onDelete: Cascade)
-  Part        Part     @relation(fields: [partId], references: [id])
-}
-
 model LongCatSettings {
   id        String   @id @default(uuid())
   apiKey    String?
@@ -443,6 +416,7 @@ model Part {
   smc                           String?
   size                          String?
   origin                        String?
+  type                          String                          @default("single")
   imageP1                       String?
   imageP2                       String?
   status                        String                          @default("active")
@@ -461,6 +435,8 @@ model Part {
   PartRackShelf                 PartRackShelf[]
   PriceHistory                  PriceHistory[]
   PurchaseOrderItem             PurchaseOrderItem[]
+  PurchaseImportRequestItem     PurchaseImportRequestItem[]
+  PurchaseQuotationItem         PurchaseQuotationItem[]
   SalesInquiryItem              SalesInquiryItem[]
   SalesInvoiceItem              SalesInvoiceItem[]
   SalesQuotationItem            SalesQuotationItem[]
@@ -469,6 +445,113 @@ model Part {
   StockReservation              StockReservation[]
   StockVerificationItem         StockVerificationItem[]
   TransferItem                  TransferItem[]
+}
+
+model KitItem {
+  id          String   @id @default(uuid())
+  partId      String
+  partNo      String
+  partName    String
+  quantity    Int      @default(1)
+  costPerUnit Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Part        Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@index([partId])
+  @@index([createdAt])
+}
+
+model PurchaseImportRequest {
+  id                        String                      @id @default(uuid())
+  requestNo                 String                      @unique
+  batchId                   String
+  supplierId                String?
+  consignee                 String?
+  status                    String                      @default("pending")
+  notes                     String?
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime                    @updatedAt
+  Supplier                  Supplier?                   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  PurchaseImportRequestItem PurchaseImportRequestItem[]
+  PurchaseQuotation         PurchaseQuotation[]
+
+  @@index([batchId])
+  @@index([requestNo])
+  @@index([supplierId])
+  @@index([createdAt])
+}
+
+model PurchaseImportRequestItem {
+  id                      String                @id @default(uuid())
+  purchaseImportRequestId String
+  partId                  String
+  currentStock            Int                   @default(0)
+  demandQuantity          Int
+  weight                  Float                 @default(0)
+  totalWeight             Float                 @default(0)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  Part                    Part                  @relation(fields: [partId], references: [id], onDelete: Cascade)
+  PurchaseImportRequest   PurchaseImportRequest @relation(fields: [purchaseImportRequestId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseImportRequestId])
+  @@index([partId])
+  @@index([createdAt])
+}
+
+model PurchaseQuotation {
+  id                      String                 @id @default(uuid())
+  quotationNo             String                 @unique
+  purchaseImportRequestId String
+  supplierId              String
+  currency                String
+  conversionRate          Float                  @default(1)
+  fcTotal                 Float                  @default(0)
+  lcTotal                 Float                  @default(0)
+  fcRevisedTotal          Float                  @default(0)
+  lcRevisedTotal          Float                  @default(0)
+  quotationDate           DateTime
+  revisedQuotationDate    DateTime?
+  quotationType           String                 @default("original")
+  status                  String                 @default("pending")
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  PurchaseImportRequest   PurchaseImportRequest  @relation(fields: [purchaseImportRequestId], references: [id], onDelete: Cascade)
+  Supplier                Supplier               @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  PurchaseQuotationItem   PurchaseQuotationItem[]
+
+  @@index([purchaseImportRequestId])
+  @@index([supplierId])
+  @@index([quotationDate])
+  @@index([createdAt])
+}
+
+model PurchaseQuotationItem {
+  id                  String            @id @default(uuid())
+  purchaseQuotationId String
+  partId              String
+  demandQuantity      Int
+  quotationQuantity   Int
+  shipDays            Int               @default(0)
+  fcRate              Float             @default(0)
+  fcAmount            Float             @default(0)
+  lcRate              Float             @default(0)
+  lcAmount            Float             @default(0)
+  revisedFcRate       Float             @default(0)
+  revisedFcAmount     Float             @default(0)
+  revisedLcRate       Float             @default(0)
+  revisedLcAmount     Float             @default(0)
+  weight              Float             @default(0)
+  totalWeight         Float             @default(0)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  PurchaseQuotation   PurchaseQuotation @relation(fields: [purchaseQuotationId], references: [id], onDelete: Cascade)
+  Part                Part              @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseQuotationId])
+  @@index([partId])
+  @@index([createdAt])
 }
 
 model PostedExpense {
@@ -913,6 +996,8 @@ model Subgroup {
 model Supplier {
   id                        String                      @id @default(uuid())
   code                      String                      @unique
+  type                      String                      @default("local")
+  currencyName              String?
   name                      String?
   companyName               String?
   address                   String?
@@ -945,6 +1030,8 @@ model Supplier {
   DirectPurchaseOrder       DirectPurchaseOrder[]
   DirectPurchaseOrderReturn DirectPurchaseOrderReturn[]
   PurchaseOrder             PurchaseOrder[]
+  PurchaseImportRequest     PurchaseImportRequest[]
+  PurchaseQuotation         PurchaseQuotation[]
   StockMovement             StockMovement[]
   VoucherEntry              VoucherEntry[]
 }

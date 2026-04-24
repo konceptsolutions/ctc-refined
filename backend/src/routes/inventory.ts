@@ -13,6 +13,7 @@ import {
 import { getCanonicalPartId } from "../services/partCanonical";
 
 const router = express.Router();
+const DPO_START_NO = 113;
 
 // Get inventory dashboard stats
 router.post("/sync-part-rack-shelf", async (req: Request, res: Response) => {
@@ -111,7 +112,6 @@ router.get("/dashboard", async (req: Request, res: Response) => {
       activeParts,
       totalValue,
       categoriesCount,
-      activeKits,
       suppliersCount,
     ] = await Promise.all([
       prisma.part.count(),
@@ -125,9 +125,9 @@ router.get("/dashboard", async (req: Request, res: Response) => {
         },
       }),
       prisma.category.count({ where: { status: "active" } }),
-      prisma.kit.count({ where: { status: "Active" } }),
       prisma.supplier.count({ where: { status: "active" } }),
     ]);
+    const activeKits = 0;
 
     // Get total quantity from stock movements
     const totalQtyResult = await prisma.stockMovement.aggregate({
@@ -1410,6 +1410,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       search,
       category_id,
       store_id,
+      stock_as_of_date,
       page = "1",
       limit = "50",
     } = req.query;
@@ -1422,6 +1423,19 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
     let whereClause = "WHERE p.status = 'active'";
     let params: any[] = [];
     let paramIdx = 1;
+    let stockAsOfDate: Date | null = null;
+
+    if (stock_as_of_date) {
+      const stockDateStr = String(stock_as_of_date).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(stockDateStr)) {
+        stockAsOfDate = new Date(`${stockDateStr}T23:59:59.999Z`);
+      } else {
+        const parsed = new Date(stockDateStr);
+        if (!isNaN(parsed.getTime())) {
+          stockAsOfDate = parsed;
+        }
+      }
+    }
 
     if (category_id) {
       whereClause += ` AND p."categoryId" = $${paramIdx++}`;
@@ -1433,6 +1447,10 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       params.push(`%${search}%`);
       paramIdx++;
     }
+
+    const stockDateFilterClause = stockAsOfDate
+      ? `WHERE "createdAt" <= '${stockAsOfDate.toISOString()}'`
+      : "";
 
     const sql = `
       SELECT 
@@ -1457,6 +1475,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
           "partId",
           SUM(CASE WHEN type = 'in' THEN quantity ELSE -quantity END) as current_stock
         FROM "StockMovement"
+        ${stockDateFilterClause}
         GROUP BY "partId"
       ) sm_agg ON sm_agg."partId" = p.id
       LEFT JOIN LATERAL (
@@ -7373,6 +7392,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
         where,
         include: {
           Store: true,
+          Supplier: true,
           DirectPurchaseOrderItem: {
             include: {
               Part: {
@@ -7409,6 +7429,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
           store_id: dpo.storeId,
           store_name: dpo.Store?.name || null,
           supplier_id: dpo.supplierId,
+          supplier_name: dpo.Supplier?.name || null,
           account: dpo.account,
           description: dpo.description,
           status: dpo.status,
@@ -7482,6 +7503,7 @@ router.get(
         where: { id },
         include: {
           Store: true,
+          Supplier: true,
           DirectPurchaseOrderItem: {
             include: {
               Part: {
@@ -7529,6 +7551,7 @@ router.get(
         store_id: order.storeId,
         store_name: order.Store?.name || null,
         supplier_id: order.supplierId,
+        supplier_name: order.Supplier?.name || null,
         account: order.account,
         description: order.description,
         status: order.status,
@@ -7610,18 +7633,23 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       // Generate DPO number
       if (!dpo_number) {
         const year = new Date(date).getFullYear();
-        const lastDPO = await tx.directPurchaseOrder.findFirst({
+        const dposForYear = await tx.directPurchaseOrder.findMany({
           where: { dpoNumber: { startsWith: `DPO-${year}-` } },
-          orderBy: { dpoNumber: "desc" },
+          select: { dpoNumber: true },
         });
 
-        let nextNum = 1;
-        if (lastDPO) {
-          const match = lastDPO.dpoNumber.match(
-            new RegExp(`^DPO-${year}-(\\d+)$`),
-          );
-          if (match) nextNum = parseInt(match[1]) + 1;
+        let maxNum = DPO_START_NO - 1;
+        const pattern = new RegExp(`^DPO-${year}-(\\d+)$`);
+        for (const row of dposForYear) {
+          const match = row.dpoNumber.match(pattern);
+          if (!match) continue;
+          const parsed = parseInt(match[1], 10);
+          if (!Number.isNaN(parsed)) {
+            maxNum = Math.max(maxNum, parsed);
+          }
         }
+
+        const nextNum = maxNum + 1;
         dpo_number = `DPO-${year}-${String(nextNum).padStart(3, "0")}`;
       }
 

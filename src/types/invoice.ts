@@ -53,6 +53,7 @@ export interface PartItem {
   partNo: string; // Master Part No (Red Block) - displayed in dropdown
   masterPartNo?: string; // Part No (Blue Block) - stored but not displayed in dropdown
   description: string;
+  application?: string;
   price: number;
   priceA?: number;
   priceB?: number;
