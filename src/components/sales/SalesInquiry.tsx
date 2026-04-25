@@ -166,6 +166,7 @@ export const SalesInquiry = () => {
   const [loadingParts, setLoadingParts] = useState(false);
   const [partIdMap, setPartIdMap] = useState<Record<string, string>>({});
   const [rackMap, setRackMap] = useState<Record<string, string>>({});
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [searchResults, setSearchResults] = useState<PartDetail[]>([]);
 
   const resolveSelectedPartId = (part: PartDetail | null): string | null => {
@@ -256,6 +257,7 @@ export const SalesInquiry = () => {
           });
         }
         setRackMap(rackMapData);
+        setStockMap(stockMapData);
 
         const idMap: Record<string, string> = {};
         const transformedParts = partsDataArray
@@ -296,7 +298,7 @@ export const SalesInquiry = () => {
         });
 
         const data = Array.isArray(response) ? response : response?.data || [];
-        const transformed = data.map((p: any) => transformPart(p, rackMap, {}));
+        const transformed = data.map((p: any) => transformPart(p, rackMap, stockMap));
         setSearchResults(transformed);
       } catch (err) {
         console.error("Search failed", err);
@@ -306,7 +308,7 @@ export const SalesInquiry = () => {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [itemSearch]);
+  }, [itemSearch, rackMap, stockMap]);
 
   // Fetch inquiries from backend
   useEffect(() => {
@@ -766,6 +768,7 @@ export const SalesInquiry = () => {
         });
       }
       setRackMap(rackMapData);
+      setStockMap(stockMapData);
 
       // Create part ID map
       const idMap: Record<string, string> = {};
