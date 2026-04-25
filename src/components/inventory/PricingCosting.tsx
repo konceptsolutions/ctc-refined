@@ -187,6 +187,7 @@ export const PricingCosting = () => {
   const [historyPage, setHistoryPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
   const [showUpdatePopup, setShowUpdatePopup] = useState(false);
   const [selectedItemForUpdate, setSelectedItemForUpdate] =
     useState<PriceItem | null>(null);
@@ -1293,7 +1294,7 @@ export const PricingCosting = () => {
     }
 
     try {
-      setLoading(true);
+      setUpdatingItemId(item.id);
       const priceUpdates: any = {};
       const updatedAmounts: any = {};
 
@@ -1413,7 +1414,7 @@ export const PricingCosting = () => {
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setUpdatingItemId(null);
     }
   };
 
@@ -2148,13 +2149,16 @@ export const PricingCosting = () => {
                             </TableCell>
                             <TableCell className="text-center">
                               <Button
+                                type="button"
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleUpdateSingleItem(item)}
-                                disabled={!hasChanges || loading}
+                                disabled={
+                                  !hasChanges || loading || updatingItemId === item.id
+                                }
                                 className="gap-1"
                               >
-                                Update
+                                {updatingItemId === item.id ? "Updating..." : "Update"}
                               </Button>
                             </TableCell>
                             <TableCell className="text-center">
