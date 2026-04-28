@@ -1778,16 +1778,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       >
                                         <Edit className="w-4 h-4" />
                                       </Button>
-                                      {order.status !== "Received" && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleDeleteOrder(order)}
-                                          title="Delete Order"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                      )}
                                     </>
                                   )}
                                   <Button
@@ -1874,16 +1864,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       >
                                         <MapPin className="w-4 h-4" />
                                       </Button>
-                                      {order.status !== "Received" && order.status !== "Completed" && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleDeleteOrder(order)}
-                                          title="Delete Order"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                      )}
                                     </>
                                   )}
                                   <Button

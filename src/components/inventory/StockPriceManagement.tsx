@@ -59,7 +59,8 @@ export const StockPriceManagement = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [loading, setLoading] = useState(false);
+  const [partsLoading, setPartsLoading] = useState(false);
+  const [applyingChanges, setApplyingChanges] = useState(false);
   const [history, setHistory] = useState<UpdateHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -87,7 +88,7 @@ export const StockPriceManagement = () => {
 
   const fetchParts = async () => {
     try {
-      setLoading(true);
+      setPartsLoading(true);
       const params: any = {
         page: currentPage,
         limit: itemsPerPage,
@@ -127,7 +128,7 @@ export const StockPriceManagement = () => {
       toast.error('Failed to fetch parts');
       setItems([]);
     } finally {
-      setLoading(false);
+      setPartsLoading(false);
     }
   };
 
@@ -318,7 +319,7 @@ export const StockPriceManagement = () => {
     }
 
     try {
-      setLoading(true);
+      setApplyingChanges(true);
       
       // Update each modified item individually
       const updatePromises = modifiedItems.map(async (item) => {
@@ -345,7 +346,7 @@ export const StockPriceManagement = () => {
     } catch (error) {
       toast.error('Failed to apply changes');
     } finally {
-      setLoading(false);
+      setApplyingChanges(false);
     }
   };
 
@@ -540,9 +541,11 @@ export const StockPriceManagement = () => {
                   size="sm"
                   className="gap-1.5 bg-primary hover:bg-primary/90"
                   onClick={handleApplyChanges}
-                  disabled={modifiedCount === 0}
+                  disabled={modifiedCount === 0 || applyingChanges}
                 >
-                  Apply {modifiedCount} Changes
+                  {applyingChanges
+                    ? "Applying..."
+                    : `Apply ${modifiedCount} Changes`}
                 </Button>
               </div>
             </div>
@@ -601,7 +604,7 @@ export const StockPriceManagement = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading ? (
+                  {partsLoading ? (
                     <TableRow>
                       <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                         Loading parts...

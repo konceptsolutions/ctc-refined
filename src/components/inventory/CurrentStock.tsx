@@ -71,7 +71,8 @@ export const CurrentStock = () => {
   const [stockAsOfDate, setStockAsOfDate] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
-  const [loading, setLoading] = useState(false);
+  const [tableLoading, setTableLoading] = useState(false);
+  const [savingBulk, setSavingBulk] = useState(false);
   const [stockData, setStockData] = useState<StockItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [totalItems, setTotalItems] = useState(0);
@@ -154,7 +155,7 @@ export const CurrentStock = () => {
 
   const fetchStockData = useCallback(async (searchTerm?: string) => {
     try {
-      setLoading(true);
+      setTableLoading(true);
       const params: any = {
         page: currentPage,
         limit: itemsPerPage,
@@ -209,7 +210,7 @@ export const CurrentStock = () => {
       toast.error(error.error || "Failed to fetch stock data");
       setStockData([]);
     } finally {
-      setLoading(false);
+      setTableLoading(false);
     }
   }, [currentPage, itemsPerPage, selectedCategory, stockStatusFilter, stockAsOfDate]);
 
@@ -727,7 +728,7 @@ export const CurrentStock = () => {
     }
 
     try {
-      setLoading(true);
+      setSavingBulk(true);
       for (const row of validRows) {
         // Validation: Cannot move OUT more than current stock
         if (row.type === "out") {
@@ -738,7 +739,7 @@ export const CurrentStock = () => {
             toast.error(
               `Cannot remove ${qty} units of ${partLabel}. Only ${row.currentStock} units in total stock.`,
             );
-            setLoading(false);
+            setSavingBulk(false);
             return;
           }
         }
@@ -773,7 +774,7 @@ export const CurrentStock = () => {
     } catch (error: any) {
       toast.error(error.message || "Failed to save some items");
     } finally {
-      setLoading(false);
+      setSavingBulk(false);
     }
   }, [bulkRows, parts, fetchStockData]);
 
@@ -788,7 +789,7 @@ export const CurrentStock = () => {
         e.altKey &&
         (e.key === "s" || e.key === "S") &&
         bulkDialogOpen &&
-        !loading
+        !savingBulk
       ) {
         e.preventDefault();
         handleSaveBulk();
@@ -796,7 +797,7 @@ export const CurrentStock = () => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [bulkDialogOpen, loading, bulkRows, handleSaveBulk]);
+  }, [bulkDialogOpen, savingBulk, bulkRows, handleSaveBulk]);
 
   const formatCurrency = (value: number | null | undefined) => {
     if (value === null || value === undefined) return "-";
@@ -1039,7 +1040,7 @@ export const CurrentStock = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? (
+              {tableLoading ? (
                 <TableRow>
                   <TableCell colSpan={10} className="text-center py-8">
                     <div className="flex items-center justify-center">
@@ -1609,9 +1610,9 @@ export const CurrentStock = () => {
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               onClick={handleSaveBulk}
-              disabled={loading}
+              disabled={savingBulk}
             >
-              {loading ? "Saving..." : "Add Stock (Alt + S)"}
+              {savingBulk ? "Saving..." : "Add Stock (Alt + S)"}
             </Button>
           </DialogFooter>
         </DialogContent>

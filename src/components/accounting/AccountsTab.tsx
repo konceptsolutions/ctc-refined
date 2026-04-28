@@ -74,6 +74,7 @@ export const AccountsTab = () => {
   const [filterMainGroup, setFilterMainGroup] = useState<string>("all");
   const [filterSubGroup, setFilterSubGroup] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [pageSize, setPageSize] = useState("10");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -102,7 +103,12 @@ export const AccountsTab = () => {
   const filteredAccounts = accounts.filter((acc) => {
     // API already filters by mainGroup and subGroup, but we check status client-side for case-insensitive matching
     const matchesStatus = filterStatus === "all" || acc.status.toLowerCase() === filterStatus.toLowerCase();
-    return matchesStatus;
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const matchesSearch =
+      normalizedSearch === "" ||
+      acc.name.toLowerCase().includes(normalizedSearch) ||
+      acc.code.toLowerCase().includes(normalizedSearch);
+    return matchesStatus && matchesSearch;
   });
 
   const totalPages = Math.ceil(filteredAccounts.length / parseInt(pageSize)) || 1;
@@ -122,7 +128,7 @@ export const AccountsTab = () => {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterMainGroup, filterSubGroup, filterStatus, pageSize]);
+  }, [filterMainGroup, filterSubGroup, filterStatus, searchTerm, pageSize]);
 
   // Fetch main groups and subgroups on mount
   useEffect(() => {
@@ -714,7 +720,7 @@ export const AccountsTab = () => {
         </CardHeader>
         <CardContent>
           {/* Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Main Group</Label>
               <Select value={filterMainGroup} onValueChange={setFilterMainGroup}>
@@ -761,6 +767,14 @@ export const AccountsTab = () => {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">Search (Name / Code)</Label>
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Type account name or code"
+              />
             </div>
           </div>
 
