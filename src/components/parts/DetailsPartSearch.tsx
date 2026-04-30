@@ -451,8 +451,8 @@ export const DetailsPartSearch = () => {
                                     ) : (
                                         paginatedItems.map((item) => (
                                             <TableRow key={item.id} className="hover:bg-muted/30 transition-colors">
-                                                <TableCell className="px-2 py-1 text-xs font-medium border-r">{item.partNo}</TableCell>
-                                                <TableCell className="px-2 py-1 text-xs border-r">{item.altNo}</TableCell>
+                                                <TableCell className="px-2 py-1 text-xs font-medium border-r part-code-font font-mono">{item.partNo}</TableCell>
+                                                <TableCell className="px-2 py-1 text-xs border-r part-code-font font-mono">{item.altNo}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs border-r">{item.brand}</TableCell>
                                                 <TableCell className="px-2 py-1 text-[10px] border-r max-w-[150px] truncate uppercase">{item.description}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs text-center border-r font-bold">{item.stock}</TableCell>

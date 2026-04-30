@@ -64,8 +64,10 @@ interface PriceItem {
   category: string;
   subcategory?: string; // Sub category field
   brand: string;
+  modelNames?: string[];
   avgPrice: number;
   lastPurchasePrice: number;
+  lastSalePrice: number;
   cost: number;
   newCost: number | ""; // Allow empty string - no auto-fill
   priceA: number;
@@ -157,6 +159,7 @@ export const PricingCosting = () => {
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterSubCategory, setFilterSubCategory] = useState("all");
   const [filterBrand, setFilterBrand] = useState("all");
+  const [filterModel, setFilterModel] = useState("all");
   const [filterUpdateStatus, setFilterUpdateStatus] = useState<
     "all" | "updated" | "non-updated"
   >("all");
@@ -247,6 +250,19 @@ export const PricingCosting = () => {
   const fetchPartsAbortRef = useRef<AbortController | null>(null);
   const isInitialMount = useRef(true);
   const lastFetchParams = useRef<string>("");
+  const lastUpdatedByIdRef = useRef<Map<string, PriceItem["lastUpdated"]>>(
+    new Map(),
+  );
+
+  useEffect(() => {
+    const nextMap = new Map<string, PriceItem["lastUpdated"]>();
+    items.forEach((item) => {
+      if (item.lastUpdated) {
+        nextMap.set(item.id, item.lastUpdated);
+      }
+    });
+    lastUpdatedByIdRef.current = nextMap;
+  }, [items]);
 
   // Check for part number from DPO page on mount
   useEffect(() => {
@@ -290,6 +306,7 @@ export const PricingCosting = () => {
     filterCategory,
     filterSubCategory,
     filterBrand,
+    filterModel,
     filterUpdateStatus,
     filterZeroPrice,
     filterStartDate,
@@ -306,7 +323,7 @@ export const PricingCosting = () => {
       }
 
       // Create a key for current fetch parameters
-      const currentParams = `${activeTab}-${searchTerm}-${filterCategory}-${filterSubCategory}-${filterBrand}-${currentPage}`;
+      const currentParams = `${activeTab}-${searchTerm}-${filterCategory}-${filterSubCategory}-${filterBrand}-${filterModel}-${currentPage}`;
 
       // On initial mount, fetch immediately without debounce
       if (isInitialMount.current) {
@@ -340,6 +357,7 @@ export const PricingCosting = () => {
     filterCategory,
     filterSubCategory,
     filterBrand,
+    filterModel,
     currentPage,
   ]);
 
@@ -588,9 +606,7 @@ export const PricingCosting = () => {
 
       if (Array.isArray(data)) {
         // Preserve lastUpdated info from existing items - optimized with early return
-        const existingItemsMap = new Map(
-          items.map((item) => [item.id, item.lastUpdated]),
-        );
+        const existingItemsMap = lastUpdatedByIdRef.current;
 
         // Cache localStorage read - only check once per fetch
         let localStoragePriceUpdates: any = {};
@@ -607,22 +623,13 @@ export const PricingCosting = () => {
               if (!updateInfo?.timestamp) continue;
 
               const updateTime = new Date(updateInfo.timestamp).getTime();
-              const hoursSinceUpdate = (now - updateTime) / (1000 * 60 * 60);
-
-              // Only include if updated within last 24 hours
-              if (hoursSinceUpdate < 24) {
-                localStoragePriceUpdates[itemId] = {
-                  timestamp: updateInfo.timestamp,
-                  date:
-                    updateInfo.date ||
-                    new Date(updateTime).toLocaleDateString(),
-                  time:
-                    updateInfo.time ||
-                    new Date(updateTime).toLocaleTimeString(),
-                  amount: updateInfo.amount || {},
-                  previousPrice: updateInfo.previousPrice || {},
-                };
-              }
+              localStoragePriceUpdates[itemId] = {
+                timestamp: updateInfo.timestamp,
+                date: updateInfo.date || new Date(updateTime).toLocaleDateString(),
+                time: updateInfo.time || new Date(updateTime).toLocaleTimeString(),
+                amount: updateInfo.amount || {},
+                previousPrice: updateInfo.previousPrice || {},
+              };
             }
           }
         } catch (error) {
@@ -639,10 +646,41 @@ export const PricingCosting = () => {
           // Check existing items first, then API response, then localStorage
           let latestFromApi = null;
           if (item.lastUpdated?.timestamp) {
-            const updateTime = new Date(item.lastUpdated.timestamp).getTime();
-            const now = Date.now();
-            if ((now - updateTime) / (1000 * 60 * 60) < 24) {
-              latestFromApi = item.lastUpdated;
+            latestFromApi = item.lastUpdated;
+          } else {
+            const apiLastPriceField =
+              item.last_price_field || item.lastPriceField || null;
+            const apiLastUpdateValueRaw =
+              item.last_update_value ?? item.lastUpdateValue ?? null;
+            const apiLastUpdateAt =
+              item.last_update_at ||
+              item.lastUpdateAt ||
+              item.updated_at ||
+              item.updatedAt ||
+              null;
+            const hasApiPriceUpdate =
+              !!apiLastPriceField || apiLastUpdateValueRaw !== null;
+
+            if (hasApiPriceUpdate && apiLastUpdateAt) {
+              const updateTime = new Date(apiLastUpdateAt);
+              const normalizedField =
+                apiLastPriceField === "price_a"
+                  ? "priceA"
+                  : apiLastPriceField === "price_b"
+                    ? "priceB"
+                    : apiLastPriceField === "price_m"
+                      ? "priceM"
+                      : apiLastPriceField || "priceA";
+              const numericValue = Number(apiLastUpdateValueRaw);
+              latestFromApi = {
+                timestamp: updateTime.toISOString(),
+                date: updateTime.toLocaleDateString(),
+                time: updateTime.toLocaleTimeString(),
+                amount: Number.isFinite(numericValue)
+                  ? { [normalizedField]: numericValue }
+                  : {},
+                previousPrice: {},
+              };
             }
           }
 
@@ -651,24 +689,29 @@ export const PricingCosting = () => {
             latestFromApi ||
             localStoragePriceUpdates[item.id];
 
-          // SWAPPED: partNo shows master_part_no (actual Part No), not part_no (Master Part No)
-          // Get master_part_no directly from API response
-          const partNoValue = (
-            item.master_part_no ||
-            item.partNo ||
-            ""
+          const partNoValue = String(
+            item.partNo || item.part_no || item.partno || "",
+          ).trim();
+          const masterPartNoValue = String(
+            item.master_part_no || item.masterPartNo || item.masterpartno || "",
           ).trim();
 
           return {
             id: item.id,
             partNo: partNoValue,
-            partNoAlt: (item.part_no || "").trim(),
+            partNoAlt: masterPartNoValue,
             description: item.description || "",
             category: item.category_name || item.category || "Uncategorized",
             subcategory: item.subcategory_name || item.subcategory || "",
             brand: item.brand_name || item.brand || "Unknown",
+            modelNames: Array.isArray(item.models)
+              ? item.models
+                  .map((m: any) => String(m?.name || "").trim())
+                  .filter((name: string) => Boolean(name))
+              : [],
             avgPrice: item.avgCost ?? 0,
             lastPurchasePrice: item.purchasePrice ?? 0,
+            lastSalePrice: item.lastSalePrice ?? item.last_sale_price ?? 0,
             cost: item.cost || 0,
             newCost: "", // No auto-fill - empty by default
             priceA: item.price_a ?? item.priceA ?? 0,
@@ -929,20 +972,33 @@ export const PricingCosting = () => {
     return subs;
   }, [items]);
 
+  const models = useMemo(() => {
+    const modelSet = new Set<string>();
+    items.forEach((item) => {
+      (item.modelNames || []).forEach((name) => modelSet.add(name));
+    });
+    return ["all", ...Array.from(modelSet)];
+  }, [items]);
+
   // Filter items - memoized for performance
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       const partNoStr = String(item.partNo || "");
+      const partNoAltStr = String(item.partNoAlt || "");
       const descriptionStr = String(item.description || "");
       const searchTermStr = String(searchTerm || "");
       const matchesSearch =
         partNoStr.toLowerCase().includes(searchTermStr.toLowerCase()) ||
+        partNoAltStr.toLowerCase().includes(searchTermStr.toLowerCase()) ||
         descriptionStr.toLowerCase().includes(searchTermStr.toLowerCase());
       const matchesCategory =
         filterCategory === "all" || item.category === filterCategory;
       const matchesSubCategory =
         filterSubCategory === "all" || item.subcategory === filterSubCategory;
       const matchesBrand = filterBrand === "all" || item.brand === filterBrand;
+      const matchesModel =
+        filterModel === "all" ||
+        (item.modelNames || []).some((name) => name === filterModel);
       const matchesUpdateStatus =
         filterUpdateStatus === "all"
           ? true
@@ -1005,6 +1061,7 @@ export const PricingCosting = () => {
         matchesCategory &&
         matchesSubCategory &&
         matchesBrand &&
+        matchesModel &&
         matchesUpdateStatus &&
         matchesZeroPrice &&
         matchesDate
@@ -1016,6 +1073,7 @@ export const PricingCosting = () => {
     filterCategory,
     filterSubCategory,
     filterBrand,
+    filterModel,
     filterUpdateStatus,
     filterZeroPrice,
     filterStartDate,
@@ -1372,6 +1430,7 @@ export const PricingCosting = () => {
       };
 
       setItems((prev) => prev.map((i) => (i.id === item.id ? updatedItem : i)));
+      lastUpdatedByIdRef.current.set(item.id, updatedItem.lastUpdated);
 
       // Store price update info in localStorage for Items List page and to survive page refresh
       try {
@@ -1882,6 +1941,18 @@ export const PricingCosting = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                  <Select value={filterModel} onValueChange={setFilterModel}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="All Models" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model === "all" ? "All Models" : model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select
                     value={filterUpdateStatus}
                     onValueChange={(value: any) => setFilterUpdateStatus(value)}
@@ -1965,15 +2036,14 @@ export const PricingCosting = () => {
                           onCheckedChange={handleSelectAll}
                         />
                       </TableHead>
-                      <TableHead>PART NO</TableHead>
+                      <TableHead>PART / MASTER</TableHead>
                       <TableHead>DESCRIPTION</TableHead>
                       <TableHead>CATEGORY</TableHead>
                       <TableHead>BRAND</TableHead>
                       <TableHead className="text-right">AVG PRICE</TableHead>
                       <TableHead className="text-right">LAST PUR. PRICE</TableHead>
-                      <TableHead className="text-right">COST</TableHead>
-                      <TableHead className="text-center bg-primary/5">
-                        NEW COST
+                      <TableHead className="text-right">
+                        LAST SALE PRICE
                       </TableHead>
                       <TableHead className="text-right">PRICE A</TableHead>
                       <TableHead className="text-center bg-primary/5">
@@ -1994,7 +2064,7 @@ export const PricingCosting = () => {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={17} className="text-center py-8">
+                        <TableCell colSpan={16} className="text-center py-8">
                           <div className="flex items-center justify-center">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                             <span className="ml-2">Loading...</span>
@@ -2004,7 +2074,7 @@ export const PricingCosting = () => {
                     ) : paginatedItems.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={17}
+                          colSpan={16}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No pricing data found
@@ -2036,9 +2106,14 @@ export const PricingCosting = () => {
                                 }
                               />
                             </TableCell>
-                            <TableCell className="font-medium">
+                            <TableCell className="font-medium part-code-font font-mono">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span>{item.partNo}</span>
+                                {item.partNoAlt && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    / {item.partNoAlt}
+                                  </span>
+                                )}
                                 {item.createdAt && (
                                   <Badge
                                     variant="outline"
@@ -2062,24 +2137,8 @@ export const PricingCosting = () => {
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                               {formatCurrency(item.lastPurchasePrice)}
                             </TableCell>
-                            <TableCell className="text-right font-medium">
-                              {formatCurrency(item.cost)}
-                            </TableCell>
-                            <TableCell className="bg-primary/5">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={item.newCost === "" ? "" : item.newCost}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  handlePriceChange(
-                                    item.id,
-                                    "newCost",
-                                    val === "" ? "" : parseFloat(val) || 0,
-                                  );
-                                }}
-                                className="w-24 h-8 text-center"
-                              />
+                            <TableCell className="text-right text-muted-foreground whitespace-nowrap">
+                              {formatCurrency(item.lastSalePrice)}
                             </TableCell>
                             <TableCell className="text-right">
                               {formatCurrency(item.priceA)}
@@ -2166,17 +2225,22 @@ export const PricingCosting = () => {
                                 // Show badge if lastUpdated exists (item has been updated)
                                 if (item.lastUpdated) {
                                   return (
-                                    <Badge
-                                      variant="outline"
-                                      className="cursor-pointer bg-success/10 text-success border-success/30 hover:bg-success/20"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedPriceUpdateItem(item);
-                                        setShowPriceUpdateHistory(true);
-                                      }}
-                                    >
-                                      Price Updated
-                                    </Badge>
+                                    <div className="flex flex-col items-center gap-1">
+                                      <Badge
+                                        variant="outline"
+                                        className="cursor-pointer bg-success/10 text-success border-success/30 hover:bg-success/20"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedPriceUpdateItem(item);
+                                          setShowPriceUpdateHistory(true);
+                                        }}
+                                      >
+                                        Price Updated
+                                      </Badge>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {item.lastUpdated.date}
+                                      </span>
+                                    </div>
                                   );
                                 }
 
@@ -2201,17 +2265,22 @@ export const PricingCosting = () => {
 
                                     if (hasLocalAmount || hasLocalPrevious) {
                                       return (
-                                        <Badge
-                                          variant="outline"
-                                          className="cursor-pointer bg-success/10 text-success border-success/30 hover:bg-success/20"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedPriceUpdateItem(item);
-                                            setShowPriceUpdateHistory(true);
-                                          }}
-                                        >
-                                          Price Updated
-                                        </Badge>
+                                        <div className="flex flex-col items-center gap-1">
+                                          <Badge
+                                            variant="outline"
+                                            className="cursor-pointer bg-success/10 text-success border-success/30 hover:bg-success/20"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedPriceUpdateItem(item);
+                                              setShowPriceUpdateHistory(true);
+                                            }}
+                                          >
+                                            Price Updated
+                                          </Badge>
+                                          <span className="text-[10px] text-muted-foreground">
+                                            {localStorageData.date || "-"}
+                                          </span>
+                                        </div>
                                       );
                                     }
                                   }
@@ -2529,13 +2598,13 @@ export const PricingCosting = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Part No</TableHead>
+                    <TableHead>Part / Master</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Brand</TableHead>
                     <TableHead className="text-right">Avg Price</TableHead>
                     <TableHead className="text-right">Last Pur. Price</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
+                    <TableHead className="text-right">Last Sale Price</TableHead>
                     <TableHead className="text-right">Price</TableHead>
                     <TableHead className="text-right">Margin</TableHead>
                     <TableHead className="text-right">Profit/Unit</TableHead>
@@ -2576,9 +2645,14 @@ export const PricingCosting = () => {
 
                         return (
                           <TableRow key={item.id}>
-                            <TableCell className="font-medium">
+                            <TableCell className="font-medium part-code-font font-mono">
                               <div className="flex items-center gap-2 flex-wrap">
-                                {item.partNo}
+                                <span>{item.partNo}</span>
+                                {item.partNoAlt && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    / {item.partNoAlt}
+                                  </span>
+                                )}
                                 {item.createdAt && (
                                   <Badge
                                     variant="outline"
@@ -2600,8 +2674,8 @@ export const PricingCosting = () => {
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                               {formatCurrency(item.lastPurchasePrice)}
                             </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(item.cost)}
+                            <TableCell className="text-right text-muted-foreground whitespace-nowrap">
+                              {formatCurrency(item.lastSalePrice)}
                             </TableCell>
                             <TableCell className="text-right">
                               {formatCurrency(item.priceA)}

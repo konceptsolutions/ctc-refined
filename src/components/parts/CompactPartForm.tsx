@@ -185,6 +185,7 @@ export const CompactPartForm = ({
         let categoriesData: any[] = [];
         const catsResponse = catsRes as any;
         if (catsResponse?.error) {
+          // Ignore categories API wrapper errors; default empty list is used.
         } else if (Array.isArray(catsResponse)) {
           categoriesData = catsResponse;
         } else if (catsResponse?.data && Array.isArray(catsResponse.data)) {
@@ -197,6 +198,7 @@ export const CompactPartForm = ({
         const brandsResponse = brandsRes as any;
 
         if (Array.isArray(brandsResponse) && brandsResponse.length > 0) {
+          // Array payload is handled in branches below.
         }
 
         try {
@@ -272,6 +274,7 @@ export const CompactPartForm = ({
               setBrands([]);
             }
           } else {
+            // Unknown brands response shape.
           }
 
           // Set brands if we found any
@@ -345,6 +348,7 @@ export const CompactPartForm = ({
         // Handle master parts
         let masterPartsData: any[] = [];
         if ((masterPartsRes as any).error) {
+          // Ignore master parts response wrapper errors.
         } else if (Array.isArray(masterPartsRes)) {
           masterPartsData = masterPartsRes;
         } else if (
@@ -393,6 +397,7 @@ export const CompactPartForm = ({
 
         setSinglePartOptions(singles);
       } catch {
+        // Keep list empty when single-part preload fails.
         setSinglePartOptions([]);
       }
     };
@@ -439,7 +444,9 @@ export const CompactPartForm = ({
           if (res.data) {
             setSubcategories(Array.isArray(res.data) ? res.data : []);
           }
-        } catch (error) {}
+        } catch (error) {
+          // Ignore subcategory fetch errors; user can retry by reopening.
+        }
       };
       fetchSubcategories();
     } else {
@@ -463,7 +470,9 @@ export const CompactPartForm = ({
           if (res.data) {
             setApplications(Array.isArray(res.data) ? res.data : []);
           }
-        } catch (error) {}
+        } catch (error) {
+          // Ignore application fetch errors; user can retry by reopening.
+        }
       };
       fetchApplications();
     } else {
@@ -1278,6 +1287,7 @@ export const CompactPartForm = ({
             );
           }
         } catch (error) {
+          // Preserve current form values when full part fetch fails.
         } finally {
           setLoading(false);
         }
@@ -1438,7 +1448,7 @@ export const CompactPartForm = ({
   }
 
   return (
-    <div className="h-full flex flex-col bg-card rounded-lg border border-border overflow-hidden relative">
+    <div className="h-full w-full max-w-5xl mx-auto flex flex-col bg-card rounded-lg border border-border overflow-hidden relative">
       <Button
         variant="ghost"
         size="icon"
@@ -1450,7 +1460,7 @@ export const CompactPartForm = ({
         <X className="w-4 h-4" />
       </Button>
       {/* Scrollable Form Content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-3">
         {/* Part Information Section */}
         <div className="flex items-center gap-1.5 mb-3">
           <span className="text-primary text-xs">•</span>
@@ -1461,7 +1471,7 @@ export const CompactPartForm = ({
 
         {/* Row 1: Part No, Master Part, Brand */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-2">
-          <div>
+          <div className="order-2">
             <label className="block text-[10px] text-foreground mb-0.5 font-bold">
               Master Part No <span className="text-destructive">*</span>
             </label>
@@ -1469,10 +1479,10 @@ export const CompactPartForm = ({
               placeholder="Enter master part no"
               value={formData.partNo}
               onChange={(e) => handleInputChange("partNo", e.target.value)}
-              className="h-7 text-xs"
+              className="h-7 text-xs part-code-font font-mono"
             />
           </div>
-          <div ref={masterPartDropdownRef} className="relative">
+          <div ref={masterPartDropdownRef} className="relative order-1">
             <label className="block text-[10px] text-foreground mb-0.5 font-bold">
               Part No
             </label>
@@ -1494,7 +1504,7 @@ export const CompactPartForm = ({
                     });
                     setMasterPartSearch(value);
                   }}
-                  className="h-7 text-xs"
+                  className="h-7 text-xs part-code-font font-mono"
                 />
               ) : (
                 <Input
@@ -1526,6 +1536,7 @@ export const CompactPartForm = ({
                       setShowMasterPartDropdown(false);
                     }
                   }}
+                  className="h-7 text-xs part-code-font font-mono"
                   onBlur={(e) => {
                     // Don't close dropdown on blur if clicking within the dropdown area
                     setTimeout(() => {
@@ -1556,7 +1567,6 @@ export const CompactPartForm = ({
                     // Dropdown disabled for Part No field
                     // if (!disableDropdowns) setShowMasterPartDropdown(true);
                   }}
-                  className="h-7 text-xs"
                 />
               )}
               {/* Only show dropdown when NOT in new mode and search conditions are met */}
@@ -1628,7 +1638,7 @@ export const CompactPartForm = ({
                 )}
             </div>
           </div>
-          <div ref={brandDropdownRef} className="relative">
+          <div ref={brandDropdownRef} className="relative order-3">
             <label className="block text-[10px] text-foreground mb-0.5 font-bold">
               Brand
             </label>
@@ -1678,7 +1688,9 @@ export const CompactPartForm = ({
                       }));
 
                       setBrands(brandsData);
-                    } catch (error) {}
+                    } catch (error) {
+                      // Ignore brand refresh failure while opening dropdown.
+                    }
                   }
 
                   setShowBrandDropdown(true);
@@ -1715,7 +1727,9 @@ export const CompactPartForm = ({
                       }));
 
                       setBrands(brandsData);
-                    } catch (error) {}
+                    } catch (error) {
+                      // Ignore brand refresh failure while opening dropdown.
+                    }
                   }
 
                   setShowBrandDropdown(true);
@@ -2036,7 +2050,7 @@ export const CompactPartForm = ({
           </div>
           <div>
             <label className="block text-[10px] text-foreground mb-0.5 font-bold">
-              UOM (A-Z)
+              UOM 
             </label>
             <Select
               value={formData.uom}
@@ -2051,9 +2065,6 @@ export const CompactPartForm = ({
                 </SelectItem>
                 <SelectItem value="SET" className="text-xs">
                   SET
-                </SelectItem>
-                <SelectItem value="KG" className="text-xs">
-                  KG
                 </SelectItem>
                 <SelectItem value="LTR" className="text-xs">
                   LTR
@@ -2085,8 +2096,8 @@ export const CompactPartForm = ({
           </div>
         </div>
 
-        {/* Row 4: Re-Order Level, Cost */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+        {/* Row 4: Re-Order Level */}
+        <div className="grid grid-cols-1 gap-2 mb-2">
           <div>
             <label className="block text-[10px] text-foreground mb-0.5 font-bold">
               Re-Order Level
@@ -2097,18 +2108,6 @@ export const CompactPartForm = ({
               onChange={(e) =>
                 handleInputChange("reOrderLevel", e.target.value)
               }
-              className="h-7 text-xs"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] text-foreground mb-0.5 font-bold">
-              Cost
-            </label>
-            <Input
-              type="number"
-              step="0.01"
-              value={formData.cost}
-              onChange={(e) => handleInputChange("cost", e.target.value)}
               className="h-7 text-xs"
             />
           </div>
@@ -2665,7 +2664,7 @@ export const CompactPartForm = ({
       </div>
 
       {/* Fixed Save Button */}
-      <div className="p-4 border-t border-border bg-card">
+      <div className="p-3 border-t border-border bg-card">
         <div className="flex justify-center gap-2">
           <Button
             variant="outline"

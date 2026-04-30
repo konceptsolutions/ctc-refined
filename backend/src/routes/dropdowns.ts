@@ -406,17 +406,21 @@ router.get("/parts", async (req: Request, res: Response) => {
     const where: any = { status: "active" };
 
     if (master_part_no) {
-      where.masterPart = {
-        masterPartNo: master_part_no as string,
-      };
+      const trimmedMaster = String(master_part_no).trim();
+      where.OR = [
+        { MasterPart: { masterPartNo: trimmedMaster } },
+        { partNo: trimmedMaster },
+      ];
     }
 
     if (search) {
-      where.OR = [
+      const searchOr = [
         { partNo: { contains: search as string } },
         { description: { contains: search as string } },
         { brand: { name: { contains: search as string } } },
+        { MasterPart: { masterPartNo: { contains: search as string } } },
       ];
+      where.OR = where.OR ? [...where.OR, ...searchOr] : searchOr;
     }
 
     const parts = await prisma.part.findMany({

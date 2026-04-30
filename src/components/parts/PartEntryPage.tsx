@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { PartEntryForm } from "@/components/parts/PartEntryForm";
 import { PartsList, Part } from "@/components/parts/PartsList";
-import { KitsList, Kit } from "@/components/parts/KitsList";
 import { cn } from "@/lib/utils";
 import {
   ResizableHandle,
@@ -37,7 +36,7 @@ export const PartEntryPage = ({
     string | null
   >(null);
   const [loading, setLoading] = useState(false);
-  const [kitRefreshTrigger, setKitRefreshTrigger] = useState(0);
+  const [kitParts, setKitParts] = useState<Part[]>([]);
 
   // Fetch parts from API - only on initial load if no master part is selected
   useEffect(() => {
@@ -224,18 +223,52 @@ export const PartEntryPage = ({
     }
   };
 
-  const handleDeleteKit = (kit: Kit) => {
-    setKitRefreshTrigger((prev) => prev + 1);
-  };
+  useEffect(() => {
+    if (rightTab !== "kits-list") return;
 
-  const handleUpdateKit = (updatedKit: Kit) => {
-    setKitRefreshTrigger((prev) => prev + 1);
-  };
+    const fetchKitParts = async () => {
+      setLoading(true);
+      try {
+        const response = await apiClient.getPartEntryList({ limit: "all", page: 1 });
+        const responseData = (response as any).data;
+        if (responseData && Array.isArray(responseData)) {
+          const transformedKitParts: Part[] = responseData
+            .filter((p: any) => (p.type || "single") === "kit")
+            .map((p: any) => ({
+              id: p.id,
+              partNo: (p.master_part_no || "").trim(),
+              brand: p.brand_name || "-",
+              type: p.type || "single",
+              uom: p.uom || "NOS",
+              weight: p.weight ? String(p.weight) : "-",
+              cost: p.cost ? parseFloat(p.cost) : null,
+              purchasePrice: null,
+              avgCost: null,
+              price: p.price_a ? parseFloat(p.price_a) : null,
+              stock: p.stock || 0,
+              reservedStock: p.reserved_stock || 0,
+              masterPartNo: (p.part_no || "").trim(),
+              modelTotalQty:
+                p.model_total_qty != null ? p.model_total_qty : undefined,
+            }));
+          setKitParts(transformedKitParts);
+        } else {
+          setKitParts([]);
+        }
+      } catch (error: any) {
+        setKitParts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchKitParts();
+  }, [rightTab]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg">
       {/* Left Section - Forms */}
-      <ResizablePanel defaultSize={60} minSize={20} maxSize={80}>
+      <ResizablePanel defaultSize={70} minSize={25} maxSize={85}>
         <div className="h-full flex flex-col pr-3">
           {/* Form Content */}
           <div className="flex-1 overflow-auto">
@@ -472,7 +505,7 @@ export const PartEntryPage = ({
       />
 
       {/* Right Section - Lists */}
-      <ResizablePanel defaultSize={40} minSize={20} maxSize={80}>
+      <ResizablePanel defaultSize={30} minSize={15} maxSize={75}>
         <div className="h-full flex flex-col pl-3">
           {/* Right Tabs */}
           <div className="flex border-b border-border mb-3">
@@ -555,10 +588,52 @@ export const PartEntryPage = ({
                 }}
               />
             ) : (
-              <KitsList
-                refreshTrigger={kitRefreshTrigger}
-                onDelete={handleDeleteKit}
-                onUpdateKit={handleUpdateKit}
+              <PartsList
+                parts={kitParts}
+                onSelectPart={async (part) => {
+                  setSelectedPart(part);
+
+                  if (part.masterPartNo) {
+                    setSelectedMasterPartNo(part.masterPartNo);
+                    setLoading(true);
+                    try {
+                      const response = await apiClient.getPartEntryList({
+                        part_no: part.masterPartNo.trim(),
+                        limit: 10000,
+                      });
+
+                      const partsData = (response as any).data || [];
+
+                      if (partsData.length > 0) {
+                        const transformedParts: Part[] = partsData.map(
+                          (p: any) => ({
+                            id: p.id,
+                            partNo: (p.master_part_no || "").trim(),
+                            brand: p.brand_name || "-",
+                            type: p.type || "single",
+                            uom: p.uom || "NOS",
+                            weight: p.weight ? String(p.weight) : "-",
+                            cost: p.cost ? parseFloat(p.cost) : null,
+                            purchasePrice: null,
+                            avgCost: null,
+                            price: p.price_a ? parseFloat(p.price_a) : null,
+                            stock: p.stock || 0,
+                            reservedStock: p.reserved_stock || 0,
+                            masterPartNo: (p.part_no || "").trim(),
+                            modelTotalQty:
+                              p.model_total_qty != null
+                                ? p.model_total_qty
+                                : undefined,
+                          }),
+                        );
+                        setParts(transformedParts);
+                      }
+                    } catch (error: any) {
+                    } finally {
+                      setLoading(false);
+                    }
+                  }
+                }}
               />
             )}
           </div>

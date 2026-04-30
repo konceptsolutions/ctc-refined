@@ -1687,6 +1687,7 @@ export const ItemsListView = ({
                       updateFilter("master_part_no", value)
                     }
                     className="h-8 text-xs"
+                    aria-label="Master Part No"
                     data-preserve-case="true"
                   />
                 </div>
@@ -1700,6 +1701,7 @@ export const ItemsListView = ({
                     value={localInputValues.part_no}
                     onValueChange={(value) => updateFilter("part_no", value)}
                     className="h-8 text-xs"
+                    aria-label="Part No"
                     data-preserve-case="true"
                   />
                 </div>
@@ -1953,10 +1955,10 @@ export const ItemsListView = ({
                               onCheckedChange={() => handleSelectItem(item.id)}
                             />
                           </TableCell>
-                          <TableCell className="text-xs font-semibold">
+                          <TableCell className="text-xs font-semibold part-code-font font-mono">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span
-                                className="text-primary hover:underline cursor-pointer transition-colors"
+                                className="text-primary hover:underline cursor-pointer transition-colors part-code-font font-mono"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   const clearedFilters = {
@@ -1993,9 +1995,9 @@ export const ItemsListView = ({
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-xs font-medium">
+                          <TableCell className="text-xs font-medium part-code-font font-mono">
                             <span
-                              className="hover:text-primary hover:underline cursor-pointer transition-colors"
+                              className="hover:text-primary hover:underline cursor-pointer transition-colors part-code-font font-mono"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 const clearedFilters = {

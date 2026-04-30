@@ -85,6 +85,25 @@ const initialFormData: PartFormData = {
   type: "single",
 };
 
+const normalizeUomValue = (value: string | null | undefined): string => {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized || "NOS";
+};
+
+const normalizeAvgPriceValue = (source: any): string => {
+  const raw =
+    source?.avgCost ??
+    source?.avg_cost ??
+    source?.avgPrice ??
+    source?.avg_price ??
+    
+    
+    "";
+  if (raw === null || raw === undefined || raw === "") return "";
+  const value = Number(raw);
+  return Number.isFinite(value) ? value.toString() : String(raw);
+};
+
 interface PartEntryFormProps {
   onSave: (
     part: PartFormData & {
@@ -297,6 +316,7 @@ export const PartEntryForm = ({
 
       // Try multiple response structures
       if ((brandsResponse as any)?.error) {
+        // Ignore malformed brand response; fallback logic handles recovery.
       } else if (Array.isArray(brandsResponse)) {
         brandsData = normalizeBrands(brandsResponse);
       } else if (Array.isArray((brandsResponse as any)?.data)) {
@@ -311,6 +331,7 @@ export const PartEntryForm = ({
         if (possibleArray) {
           brandsData = normalizeBrands(possibleArray);
         } else {
+          // No usable array payload in response object.
         }
       }
 
@@ -338,11 +359,14 @@ export const PartEntryForm = ({
             }
           });
           brandsData = Array.from(unique.values());
-        } catch (fallbackErr) { }
+        } catch (fallbackErr) {
+          // Ignore fallback parsing errors; brand list remains empty.
+        }
       }
 
       setBrands(brandsData);
     } catch (error) {
+      // Keep UI responsive on dropdown fetch failures.
     } finally {
       setBrandsLoading(false);
     }
@@ -379,7 +403,9 @@ export const PartEntryForm = ({
             ? allSubsRes
             : [];
         setSubcategories(subsData);
-      } catch (error) { }
+      } catch (error) {
+        // Ignore dropdown bootstrap failures; fields can be loaded later.
+      }
     };
 
     fetchDropdownData();
@@ -739,6 +765,7 @@ export const PartEntryForm = ({
     formData.partNo,
     formData.masterPartNo,
     keepPartDropdownOpen,
+    showPartDropdown,
   ]);
 
   // Close dropdowns when clicking outside
@@ -836,12 +863,14 @@ export const PartEntryForm = ({
               masterPartNo: part.master_part_no || "",
               partNo: part.part_no || "",
               brand: part.brand_name || selectedPart.brand || "",
-              uom: part.uom || selectedPart.uom || "NOS",
+              uom: normalizeUomValue(part.uom || selectedPart.uom),
               cost: costValue,
               purchasePrice: part.purchasePrice
                 ? part.purchasePrice.toString()
                 : "",
-              avgCost: part.avgCost ? part.avgCost.toString() : "",
+              avgCost:
+                normalizeAvgPriceValue(part) ||
+                normalizeAvgPriceValue(selectedPart),
               priceA: priceAValue,
               priceB: priceBValue,
               priceM:
@@ -939,7 +968,9 @@ export const PartEntryForm = ({
             ...initialFormData,
             partNo: selectedPart.partNo,
             brand: selectedPart.brand || "",
-            uom: selectedPart.uom || "NOS",
+            uom: normalizeUomValue(selectedPart.uom),
+            avgCost:
+              normalizeAvgPriceValue(selectedPart),
             cost:
               selectedPart.cost && selectedPart.cost !== 0
                 ? selectedPart.cost.toString()
@@ -1078,7 +1109,7 @@ export const PartEntryForm = ({
 
   const handleInputChange = (field: keyof PartFormData, value: string) => {
     setFormData((prev) => {
-      let finalValue = value;
+      let finalValue = field === "uom" ? normalizeUomValue(value) : value;
 
       // Apply limit and formatting for cost and price fields
       if (field === "cost") {
@@ -1204,7 +1235,7 @@ export const PartEntryForm = ({
           subCategory: fullPart.subcategory_name || prev.subCategory || "",
           application: fullPart.application_name || prev.application || "",
           hsCode: fullPart.hs_code || prev.hsCode || "",
-          uom: fullPart.uom || prev.uom || "NOS",
+          uom: normalizeUomValue(fullPart.uom || prev.uom),
           weight: fullPart.weight !== null && fullPart.weight !== undefined
             ? formatWeightValue(fullPart.weight.toString())
             : prev.weight || "",
@@ -1212,6 +1243,8 @@ export const PartEntryForm = ({
             fullPart.reorder_level && fullPart.reorder_level !== 0
               ? fullPart.reorder_level.toString()
               : prev.reOrderLevel,
+          avgCost:
+            normalizeAvgPriceValue(fullPart),
           cost:
             fullPart.cost && fullPart.cost !== 0
               ? fullPart.cost.toString()
@@ -1316,7 +1349,9 @@ export const PartEntryForm = ({
 
         return { masterPartNo: masterPartNoValue, partNo: partNoValue };
       }
-    } catch (e) { }
+    } catch (e) {
+      // Fall back to lightweight option data when full part load fails.
+    }
 
     // Fallback
     setFormData((prev) => ({
@@ -1725,11 +1760,11 @@ export const PartEntryForm = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
               {/* ============================================ */}
               {/* MASTER PART NO DROPDOWN - shows master_part_no values ONLY */}
               {/* ============================================ */}
-              <div ref={masterPartDropdownRef} className="relative">
+              <div ref={masterPartDropdownRef} className="relative order-2">
                 <label className="block text-xs text-foreground mb-1 font-bold">
                   Master Part No
                 </label>
@@ -1937,7 +1972,7 @@ export const PartEntryForm = ({
                       }, 200);
                     }}
                     className={cn(
-                      "h-8 text-xs pl-10 border-input",
+                      "h-8 text-xs pl-10 border-input part-code-font font-mono",
                       !showMasterPartDropdown && "border-2",
                       showMasterPartDropdown &&
                       "ring-2 ring-primary border-primary",
@@ -2047,7 +2082,7 @@ export const PartEntryForm = ({
                                       "bg-primary/10 ring-2 ring-primary",
                                     )}
                                   >
-                                    <p className="font-medium text-foreground">
+                                    <p className="font-medium text-foreground font-mono">
                                       {opt.value}
                                     </p>
                                     <p className="text-xs text-muted-foreground truncate">
@@ -2125,7 +2160,7 @@ export const PartEntryForm = ({
               {/* ============================================ */}
               {/* PART NO DROPDOWN - shows part_no values ONLY */}
               {/* ============================================ */}
-              <div ref={partDropdownRef} className="relative">
+              <div ref={partDropdownRef} className="relative order-1">
                 <label className="block text-xs text-foreground mb-1 font-bold">
                   Part No <span className="text-destructive">*</span>
                 </label>
@@ -2487,7 +2522,7 @@ export const PartEntryForm = ({
                       }, 200);
                     }}
                     className={cn(
-                      "h-8 text-xs pl-10 border-input",
+                      "h-8 text-xs pl-10 border-input part-code-font font-mono",
                       !showPartDropdown && "border-2",
                       showPartDropdown && "ring-2 ring-primary border-primary",
                     )}
@@ -2671,7 +2706,7 @@ export const PartEntryForm = ({
                                       "bg-primary/10 ring-2 ring-primary",
                                     )}
                                   >
-                                    <p className="font-medium text-foreground text-sm">
+                                    <p className="font-medium text-foreground text-sm font-mono">
                                       {opt.value}
                                     </p>
                                     <p className="text-xs text-muted-foreground truncate">
@@ -2927,7 +2962,7 @@ export const PartEntryForm = ({
               </div>
 
               {/* Brand Dropdown */}
-              <div ref={brandDropdownRef} className="relative">
+              <div ref={brandDropdownRef} className="relative order-3">
                 <label className="block text-xs text-foreground mb-1 font-bold">
                   Brand
                 </label>
@@ -3653,7 +3688,10 @@ export const PartEntryForm = ({
                   </div>
                 )}
               </div>
-              <div ref={applicationDropdownRef} className="relative">
+              <div
+                ref={applicationDropdownRef}
+                className="relative md:col-span-2"
+              >
                 <label className="block text-xs text-foreground mb-1 font-bold">
                   Application
                 </label>
@@ -3770,7 +3808,7 @@ export const PartEntryForm = ({
                       }
                     }}
                     className={cn(
-                      "h-8 text-xs pl-10 border-input",
+                      "h-10 text-xs pl-10 border-input",
                       !showApplicationDropdown && "border-2",
                       showApplicationDropdown &&
                       "ring-2 ring-primary border-primary",
@@ -3918,7 +3956,7 @@ export const PartEntryForm = ({
               </div>
               <div>
                 <label className="block text-xs text-foreground mb-1 font-bold">
-                  UOM (A-Z)
+                  UOM 
                 </label>
                 <Select
                   value={formData.uom}
@@ -3934,14 +3972,14 @@ export const PartEntryForm = ({
                     <SelectItem value="SET" className="text-xs">
                       SET
                     </SelectItem>
-                    <SelectItem value="KG" className="text-xs">
-                      KG
-                    </SelectItem>
                     <SelectItem value="LTR" className="text-xs">
                       LTR
                     </SelectItem>
                     <SelectItem value="MTR" className="text-xs">
                       MTR
+                    </SelectItem>
+                    <SelectItem value="PCS" className="text-xs">
+                      PCS
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -3987,26 +4025,6 @@ export const PartEntryForm = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-              <div>
-                <label className="block text-xs text-foreground mb-1 font-bold">
-                  Cost
-                </label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  max={MAX_PRICE_LIMIT}
-                  value={formatNumericValue(formData.cost)}
-                  onChange={(e) => handleInputChange("cost", e.target.value)}
-                  className={cn(
-                    "h-8 text-xs",
-                    costError &&
-                    "border-destructive focus-visible:ring-destructive",
-                  )}
-                />
-                {costError && (
-                  <p className="text-xs text-destructive mt-1">{costError}</p>
-                )}
-              </div>
               {/* <div className="bg-muted/30 p-1 rounded-sm">
                 <label className="block text-[10px] text-muted-foreground mb-0.5 font-bold">
                   Purchase Price
@@ -4393,12 +4411,13 @@ export const PartEntryForm = ({
                           const selectedOption = selectableSinglePartOptions.find(
                             (option) => option.id === row.itemPartId,
                           );
-                          const limitedOptions = selectableSinglePartOptions.slice(0, 200);
                           const optionsToRender =
                             selectedOption &&
-                            !limitedOptions.some((option) => option.id === selectedOption.id)
-                              ? [selectedOption, ...limitedOptions]
-                              : limitedOptions;
+                            !selectableSinglePartOptions.some(
+                              (option) => option.id === selectedOption.id,
+                            )
+                              ? [selectedOption, ...selectableSinglePartOptions]
+                              : selectableSinglePartOptions;
 
                           return (
                             <SearchableSelect
@@ -4416,12 +4435,24 @@ export const PartEntryForm = ({
                             />
                           );
                         })()}
-                        {selectableSinglePartOptions.length > 200 && (
-                          <p className="text-[10px] text-muted-foreground">
-                            Showing first 200 items. Type part no in filter fields above to narrow list.
-                          </p>
-                        )}
                         <div className="flex gap-2 items-center">
+                          {(() => {
+                            const selectedOption = selectableSinglePartOptions.find(
+                              (option) => option.id === row.itemPartId,
+                            );
+                            const selectedDescription =
+                              selectedOption?.description || row.itemDescription || "-";
+                            const selectedBrand = selectedOption?.brandName || "-";
+
+                            return (
+                              <div className="min-w-0 flex-1 text-[11px] text-muted-foreground">
+                                <span className="font-medium text-foreground/90">
+                                  {selectedDescription}
+                                </span>
+                                <span className="ml-2">| Brand: {selectedBrand}</span>
+                              </div>
+                            );
+                          })()}
                           <Input
                             type="number"
                             min={1}
@@ -4438,7 +4469,7 @@ export const PartEntryForm = ({
                                 row.quantity === "" ? 1 : Number(row.quantity),
                               )
                             }
-                            className="h-8 text-xs"
+                            className="h-8 text-xs w-20"
                           />
                           <Button
                             type="button"
@@ -4459,7 +4490,7 @@ export const PartEntryForm = ({
 
             <div className="flex gap-3">
               <Button
-                className="flex-1 gap-1.5 h-8 text-xs"
+                className="gap-1.5 h-7 text-xs px-4 min-w-[140px]"
                 onClick={handleSave}
               >
                 <Plus className="w-3.5 h-3.5" />

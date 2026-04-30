@@ -71,6 +71,27 @@ export const SearchableSelect = ({
     );
   }, [options, searchQuery]);
 
+  const partCodeContext = React.useMemo(() => {
+    const hints = [
+      placeholder,
+      createLabel,
+      props.name,
+      props.id,
+      props["aria-label"],
+      className,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return (
+      hints.includes("part no") ||
+      hints.includes("part number") ||
+      hints.includes("master part") ||
+      hints.includes("master_part") ||
+      hints.includes("partno")
+    );
+  }, [placeholder, createLabel, props.name, props.id, props["aria-label"], className]);
+
   // Calculate dropdown position
   const updateDropdownPosition = React.useCallback(() => {
     if (containerRef.current) {
@@ -276,7 +297,7 @@ export const SearchableSelect = ({
           }}
           placeholder={placeholder}
           disabled={disabled}
-          className="pr-16 h-8 text-xs"
+          className={cn("pr-16 h-8 text-xs", partCodeContext && "part-code-font font-mono")}
           {...props}
         />
         <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
@@ -372,7 +393,7 @@ export const SearchableSelect = ({
                     )}
                   >
                     <div className="flex flex-col min-w-0">
-                      <span className="font-medium truncate">{option.label}</span>
+                      <span className={cn("font-medium truncate", partCodeContext && "part-code-font font-mono")}>{option.label}</span>
                       {option.description && (
                         <span className="text-[11px] text-muted-foreground truncate">
                           {option.description}

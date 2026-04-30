@@ -136,19 +136,25 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
     let paramIdx = 1;
 
     if (search) {
-      const searchStr = `%${(search as string).trim()}%`;
+      const rawSearch = String(search).trim();
+      const searchStr = `%${rawSearch}%`;
+      const normalizedSearch = rawSearch;
       conditions.push(`(
         p."partNo" ILIKE $${paramIdx} OR 
         p."description" ILIKE $${paramIdx} OR 
-        mp."masterPartNo" ILIKE $${paramIdx}
+        mp."masterPartNo" ILIKE $${paramIdx} OR
+        regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
+        regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
       )`);
       params.push(searchStr);
-      paramIdx++;
+      params.push(normalizedSearch);
+      paramIdx += 2;
     }
 
     if (part_no) {
-      conditions.push(`p."partNo" = $${paramIdx++}`);
-      params.push((part_no as string).trim());
+      conditions.push(`(p."partNo" ILIKE $${paramIdx} OR mp."masterPartNo" ILIKE $${paramIdx})`);
+      params.push(`%${(part_no as string).trim()}%`);
+      paramIdx++;
     }
 
     const whereClause =
@@ -338,6 +344,7 @@ router.get("/", async (req: Request, res: Response) => {
       const { update_mode } = req.query;
       const searchStr = (search as string).trim();
       const searchPattern = `%${searchStr}%`;
+      const normalizedSearchPattern = searchStr;
 
       if (update_mode === "group") {
         // Expand search to include all "family items" (parts sharing the same masterPartId)
@@ -345,6 +352,8 @@ router.get("/", async (req: Request, res: Response) => {
           p."partNo" ILIKE $${paramIdx} OR 
           p."description" ILIKE $${paramIdx} OR 
           mp."masterPartNo" ILIKE $${paramIdx} OR
+          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
+          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
           (p."masterPartId" IS NOT NULL AND p."masterPartId" IN (
               SELECT "masterPartId" FROM "Part" 
               WHERE "partNo" ILIKE $${paramIdx} AND "masterPartId" IS NOT NULL
@@ -358,11 +367,14 @@ router.get("/", async (req: Request, res: Response) => {
         conditions.push(`(
           p."partNo" ILIKE $${paramIdx} OR 
           p."description" ILIKE $${paramIdx} OR 
-          mp."masterPartNo" ILIKE $${paramIdx}
+          mp."masterPartNo" ILIKE $${paramIdx} OR
+          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
+          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
         )`);
       }
       params.push(searchPattern);
-      paramIdx++;
+      params.push(normalizedSearchPattern);
+      paramIdx += 2;
     }
 
     if (category_id) {
@@ -414,13 +426,15 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     if (master_part_no) {
-      conditions.push(`mp."masterPartNo" ILIKE $${paramIdx++}`);
+      conditions.push(`(mp."masterPartNo" ILIKE $${paramIdx} OR p."partNo" ILIKE $${paramIdx})`);
       params.push(`%${(master_part_no as string).trim()}%`);
+      paramIdx++;
     }
 
     if (part_no) {
-      conditions.push(`p."partNo" ILIKE $${paramIdx++}`);
+      conditions.push(`(p."partNo" ILIKE $${paramIdx} OR mp."masterPartNo" ILIKE $${paramIdx})`);
       params.push(`%${(part_no as string).trim()}%`);
+      paramIdx++;
     }
 
     if (description) {
@@ -641,6 +655,7 @@ router.get("/details-search", async (req: Request, res: Response) => {
     if (search) {
       const searchStr = (search as string).trim();
       const searchPattern = `%${searchStr}%`;
+      const normalizedSearchPattern = searchStr;
 
       if (update_mode === "group") {
         // Expand search to include all "family items" (parts sharing the same masterPartId)
@@ -648,6 +663,8 @@ router.get("/details-search", async (req: Request, res: Response) => {
           p."partNo" ILIKE $${paramIdx} OR 
           p."description" ILIKE $${paramIdx} OR 
           mp."masterPartNo" ILIKE $${paramIdx} OR
+          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
+          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
           (p."masterPartId" IS NOT NULL AND p."masterPartId" IN (
               SELECT "masterPartId" FROM "Part" 
               WHERE "partNo" ILIKE $${paramIdx} AND "masterPartId" IS NOT NULL
@@ -661,11 +678,14 @@ router.get("/details-search", async (req: Request, res: Response) => {
         conditions.push(`(
           p."partNo" ILIKE $${paramIdx} OR 
           p."description" ILIKE $${paramIdx} OR 
-          mp."masterPartNo" ILIKE $${paramIdx}
+          mp."masterPartNo" ILIKE $${paramIdx} OR
+          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
+          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
         )`);
       }
       params.push(searchPattern);
-      paramIdx++;
+      params.push(normalizedSearchPattern);
+      paramIdx += 2;
     }
 
     if (category_name && category_name !== "all") {
@@ -775,6 +795,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
       category_name,
       subcategory_name,
       brand_name,
+      status,
       model,
       page = "1",
       limit = "100",
@@ -784,19 +805,24 @@ router.get("/price-management", async (req: Request, res: Response) => {
     let limitNum = limit === "all" ? 100000 : parseInt(limit as string) || 1000;
     const offset = (pageNum - 1) * limitNum;
 
-    const conditions: string[] = [`p."status" = 'active'`];
+    const conditions: string[] = [];
     const params: any[] = [];
     let paramIdx = 1;
 
     if (search) {
-      const searchStr = `%${(search as string).trim()}%`;
+      const rawSearch = String(search).trim();
+      const searchStr = `%${rawSearch}%`;
+      const normalizedSearch = rawSearch;
       conditions.push(`(
         p."partNo" ILIKE $${paramIdx} OR 
         p."description" ILIKE $${paramIdx} OR 
-        mp."masterPartNo" ILIKE $${paramIdx}
+        mp."masterPartNo" ILIKE $${paramIdx} OR
+        regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
+        regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
       )`);
       params.push(searchStr);
-      paramIdx++;
+      params.push(normalizedSearch);
+      paramIdx += 2;
     }
 
     const catSearch = category_name || category;
@@ -815,6 +841,11 @@ router.get("/price-management", async (req: Request, res: Response) => {
       params.push(`%${(brand_name as string).trim()}%`);
     }
 
+    if (status && status !== "all") {
+      conditions.push(`p."status" = $${paramIdx++}`);
+      params.push(String(status).trim());
+    }
+
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -826,6 +857,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
         b."name" as brand_name,
         c."name" as category_name,
         sc."name" as subcategory_name,
+        ls.last_sale_price,
         COALESCE(st.stock, 0) as stock,
         COALESCE(st.reserved, 0) as reserved_stock,
         ph."updateValue" as last_update_value,
@@ -862,6 +894,15 @@ router.get("/price-management", async (req: Request, res: Response) => {
           FROM "PriceHistory"
           ORDER BY "partId", "createdAt" DESC
       ) ph ON p.id = ph."partId"
+      LEFT JOIN LATERAL (
+          SELECT
+            sii."unitPrice" as last_sale_price
+          FROM "SalesInvoiceItem" sii
+          JOIN "SalesInvoice" si ON sii."invoiceId" = si.id
+          WHERE sii."partId" = p.id
+          ORDER BY si."invoiceDate" DESC, sii."createdAt" DESC
+          LIMIT 1
+      ) ls ON true
       ${whereClause}
       ORDER BY p."updatedAt" DESC, p."partNo" ASC
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}
@@ -881,6 +922,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
       cost: parseFloat(p.cost) || 0,
       purchasePrice: parseFloat(p.purchasePrice || p.purchaseprice) || 0,
       avgCost: parseFloat(p.avgCost || p.avgcost) || 0,
+      lastSalePrice: parseFloat(p.last_sale_price || p.lastsaleprice) || 0,
       updated_at: p.updatedAt || p.updatedat,
       price_a: parseFloat(p.priceA || p.pricea) || 0,
       price_b: parseFloat(p.priceB || p.priceb) || 0,
@@ -1091,15 +1133,16 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "part_no or master_part_no is required" });
     }
 
-    const where: any = {};
-    if (part_no) where.partNo = part_no;
-    if (master_part_no) {
-      const mp = await prisma.masterPart.findFirst({
-        where: { masterPartNo: master_part_no },
-      });
-      if (!mp) return res.status(404).json({ error: "Part not found" });
-      where.masterPartId = mp.id;
-    }
+    const candidates = [part_no, master_part_no]
+      .map((v) => (v || "").trim())
+      .filter((v) => v.length > 0);
+
+    const where: any = {
+      OR: candidates.flatMap((value) => [
+        { partNo: value },
+        { MasterPart: { masterPartNo: value } },
+      ]),
+    };
 
     const part = await prisma.part.findFirst({
       where,
@@ -1175,6 +1218,8 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       qty: currentStock,
       stock: currentStock,
       cost: part.cost,
+      avg_cost: part.avgCost,
+      avgCost: part.avgCost,
       price_a: part.priceA || (part as any).pricea || null,
       price_b: part.priceB || (part as any).priceb || null,
       price_m: part.priceM || (part as any).pricem || null,

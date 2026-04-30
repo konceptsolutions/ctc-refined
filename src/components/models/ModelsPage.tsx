@@ -849,7 +849,7 @@ export const ModelsPage = () => {
               onKeyDown={handleUnifiedSearchKeyDown}
               onFocus={() => setShowUnifiedDropdown(true)}
               className={cn(
-                "pl-10 h-10",
+                "pl-10 h-10 part-code-font font-mono",
                 showUnifiedDropdown && "ring-2 ring-primary border-primary",
               )}
             />
@@ -884,7 +884,7 @@ export const ModelsPage = () => {
                           Model: {result.modelName}
                         </span>
                       </p>
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-sm text-muted-foreground mt-1 part-code-font font-mono">
                         Part No: {result.part.partNo}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -894,7 +894,7 @@ export const ModelsPage = () => {
                         {result.part.application &&
                           ` (${result.part.application})`}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-xs text-muted-foreground mt-1 part-code-font font-mono">
                         Master Part: {result.part.masterPartNo} &nbsp;&nbsp;
                         Brand: {result.part.brand}
                       </p>
@@ -932,13 +932,13 @@ export const ModelsPage = () => {
                         selectedPart?.id === part.id && "bg-muted",
                       )}
                     >
-                      <p className="font-medium text-foreground text-sm">
+                      <p className="font-medium text-foreground text-sm part-code-font font-mono">
                         {searchType === "master"
                           ? `Master Part: ${part.masterPartNo}`
                           : `Part No: ${part.partNo}`}
                       </p>
                       {searchType === "master" && (
-                        <p className="text-sm text-muted-foreground mt-1">
+                        <p className="text-sm text-muted-foreground mt-1 part-code-font font-mono">
                           Part No: {part.partNo}
                         </p>
                       )}
@@ -974,7 +974,7 @@ export const ModelsPage = () => {
               <div className="w-1 h-6 bg-primary rounded-full" />
               <div>
                 <h2 className="text-lg font-semibold text-foreground">
-                  Models for {selectedPart.partNo}
+                  Models for <span className="part-code-font font-mono">{selectedPart.partNo}</span>
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   {selectedPart.description}
