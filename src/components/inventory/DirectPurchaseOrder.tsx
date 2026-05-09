@@ -34,6 +34,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -77,6 +78,8 @@ interface DirectPurchaseOrderItem {
 interface DirectPurchaseOrder {
   id: string;
   dpoNo: string;
+  invoiceNo?: string;
+  invoiceDate?: string;
   store: string;
   supplier?: string;
   requestDate: string;
@@ -113,6 +116,16 @@ interface ExpenseForm {
   amount: number;
 }
 
+const DPO_FIXED_EXPENSE_ACCOUNT = "Local Purchase Freight";
+
+const createDefaultDpoExpense = (): ExpenseForm => ({
+  id: String(Date.now() + Math.random()),
+  expenseType: DPO_FIXED_EXPENSE_ACCOUNT,
+  payableAccount: DPO_FIXED_EXPENSE_ACCOUNT,
+  description: "",
+  amount: 0,
+});
+
 export const DirectPurchaseOrder = () => {
   const navigate = useNavigate();
 
@@ -144,6 +157,10 @@ export const DirectPurchaseOrder = () => {
   const [formStore, setFormStore] = useState("");
   const [formSupplier, setFormSupplier] = useState("");
   const [formRequestDate, setFormRequestDate] = useState<Date>(new Date());
+  const [formInvoiceNo, setFormInvoiceNo] = useState("");
+  const [formInvoiceDate, setFormInvoiceDate] = useState<Date | undefined>(
+    undefined,
+  );
   const [formDescription, setFormDescription] = useState("");
   const [formAccount, setFormAccount] = useState("");
   const [formDiscount, setFormDiscount] = useState<number | "">("");
@@ -179,12 +196,27 @@ export const DirectPurchaseOrder = () => {
   const [payableAccounts, setPayableAccounts] = useState<{ id: string; value: string; label: string }[]>([]);
   const [expenseTypes, setExpenseTypes] = useState<{ id: string; name: string; code?: string }[]>([]);
 
-  // Temporary UI toggle: hide expenses-related UI in Direct Purchase form.
-  // (Backend/state calculations remain unchanged.)
-  const SHOW_EXPENSES_UI = false;
+  const SHOW_EXPENSES_UI = true;
+
+  // Per-row baselines for the Part's stored Price A/Price B at the time the
+  // part was selected. Used to detect user edits and push back to the Part
+  // record via updatePartPrices when the user blurs the input.
+  const [rowPriceBaselines, setRowPriceBaselines] = useState<
+    Record<string, { priceA: number | null; priceB: number | null }>
+  >({});
+  const [savingRowPrice, setSavingRowPrice] = useState<Record<string, boolean>>(
+    {},
+  );
 
   // History sidebar state
   const [selectedPartForHistory, setSelectedPartForHistory] = useState<string | null>(null);
+  const [selectedHistoryRowId, setSelectedHistoryRowId] = useState<string | null>(
+    null,
+  );
+  const [historyBasePrices, setHistoryBasePrices] = useState<{
+    priceA: number | null;
+    priceB: number | null;
+  }>({ priceA: null, priceB: null });
   const [partHistory, setPartHistory] = useState<{
     priceA: number | null;
     priceB: number | null;
@@ -235,6 +267,10 @@ export const DirectPurchaseOrder = () => {
       setOrders(filteredData.map((o: any) => ({
         id: o.id,
         dpoNo: o.dpo_no,
+        invoiceNo: o.invoice_no || "",
+        invoiceDate: o.invoice_date
+          ? new Date(o.invoice_date).toLocaleDateString("en-GB")
+          : "",
         store: o.store_name || "N/A",
         supplier: o.supplier_name || "N/A",
         requestDate: new Date(o.date).toLocaleDateString('en-GB'),
@@ -263,6 +299,7 @@ export const DirectPurchaseOrder = () => {
         setStores(storesData.map((s: any) => ({ value: s.id, label: s.name })));
       }
     } catch (error: any) {
+      // Keep UI usable if stores request fails.
     }
   };
 
@@ -285,6 +322,7 @@ export const DirectPurchaseOrder = () => {
         })));
       }
     } catch (error: any) {
+      // Keep UI usable if parts request fails.
     }
   };
 
@@ -502,12 +540,14 @@ export const DirectPurchaseOrder = () => {
 
   useEffect(() => {
     fetchOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, itemsPerPage, statusFilter]);
 
   useEffect(() => {
     if (viewMode === "list") {
       fetchOrders();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm]);
 
   useEffect(() => {
@@ -553,13 +593,16 @@ export const DirectPurchaseOrder = () => {
     setFormStore("");
     setFormSupplier("");
     setFormRequestDate(new Date());
+    setFormInvoiceNo("");
+    setFormInvoiceDate(undefined);
     setFormDescription("");
     setFormAccount("");
     setFormDiscount("");
     setFormItems([]);
-    setFormExpenses([]);
+    setFormExpenses([createDefaultDpoExpense()]);
     setSelectedPartForHistory(null);
     setPartHistory(null);
+    setHistoryBasePrices({ priceA: null, priceB: null });
   };
 
   // Open create view
@@ -584,6 +627,8 @@ export const DirectPurchaseOrder = () => {
       setFormStore(dpo.store_id || "");
       setFormSupplier(dpo.supplier_id || "");
       setFormDescription(dpo.description || "");
+      setFormInvoiceNo(dpo.invoice_no || "");
+      setFormInvoiceDate(dpo.invoice_date ? new Date(dpo.invoice_date) : undefined);
       const dDisc = dpo.discount;
       setFormDiscount(
         dDisc !== undefined && dDisc !== null && Number(dDisc) > 0
@@ -618,14 +663,14 @@ export const DirectPurchaseOrder = () => {
       if (dpo.expenses && Array.isArray(dpo.expenses)) {
         const loadedExpenses: ExpenseForm[] = dpo.expenses.map((exp: any) => ({
           id: exp.id || String(Date.now() + Math.random()),
-          expenseType: exp.expense_type || exp.expenseType || "",
-          payableAccount: exp.payable_account || exp.payableAccount || "",
+          expenseType: DPO_FIXED_EXPENSE_ACCOUNT,
+          payableAccount: DPO_FIXED_EXPENSE_ACCOUNT,
           description: exp.description || "",
           amount: exp.amount || 0,
         }));
-        setFormExpenses(loadedExpenses);
+        setFormExpenses(loadedExpenses.length > 0 ? loadedExpenses : [createDefaultDpoExpense()]);
       } else {
-        setFormExpenses([]);
+        setFormExpenses([createDefaultDpoExpense()]);
       }
 
       // Load items with prices from DPO item (or fallback to part prices)
@@ -635,6 +680,7 @@ export const DirectPurchaseOrder = () => {
           let priceA = item.price_a !== undefined && item.price_a !== null ? item.price_a : null;
           let priceB = item.price_b !== undefined && item.price_b !== null ? item.price_b : null;
           let priceM = item.price_m !== undefined && item.price_m !== null ? item.price_m : null;
+          let weight = typeof item.weight === "number" ? item.weight : parseFloat(item.weight) || 0;
 
           // If DPO item doesn't have prices, fetch from part as fallback
           if ((priceA === null || priceB === null || priceM === null) && item.part_id) {
@@ -644,8 +690,18 @@ export const DirectPurchaseOrder = () => {
                 if (priceA === null) priceA = partResponse.price_a || null;
                 if (priceB === null) priceB = partResponse.price_b || null;
                 if (priceM === null) priceM = partResponse.price_m || null;
+                if (!weight || weight <= 0) weight = parseFloat(partResponse.weight) || 0;
               }
             } catch (error) {
+              // Ignore fallback errors and continue with available row values.
+            }
+          }
+
+          // If still missing, use weight from already loaded parts list
+          if ((!weight || weight <= 0) && item.part_id) {
+            const selectedPart = parts.find((p) => p.id === item.part_id);
+            if (selectedPart) {
+              weight = selectedPart.weight || 0;
             }
           }
 
@@ -657,21 +713,21 @@ export const DirectPurchaseOrder = () => {
             priceA: priceA !== null && priceA !== undefined ? priceA : "",
             priceB: priceB !== null && priceB !== undefined ? priceB : "",
             priceM: priceM !== null && priceM !== undefined ? priceM : "",
+            weight,
           };
         })
       );
 
       setFormItems(itemsWithDetails);
 
-      setFormExpenses(
-        (dpo.expenses || []).map((exp: any, idx: number) => ({
-          id: String(idx + 1),
-          expenseType: exp.expense_type,
-          payableAccount: exp.payable_account,
-          description: exp.description || "",
-          amount: exp.amount,
-        }))
-      );
+      const mappedExpenses = (dpo.expenses || []).map((exp: any, idx: number) => ({
+        id: String(idx + 1),
+        expenseType: DPO_FIXED_EXPENSE_ACCOUNT,
+        payableAccount: DPO_FIXED_EXPENSE_ACCOUNT,
+        description: exp.description || "",
+        amount: exp.amount,
+      }));
+      setFormExpenses(mappedExpenses.length > 0 ? mappedExpenses : [createDefaultDpoExpense()]);
 
       setViewMode("edit");
     } catch (error: any) {
@@ -696,6 +752,10 @@ export const DirectPurchaseOrder = () => {
       const viewOrder: DirectPurchaseOrder = {
         id: dpo.id,
         dpoNo: dpo.dpo_no,
+        invoiceNo: dpo.invoice_no || "",
+        invoiceDate: dpo.invoice_date
+          ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
+          : "",
         store: dpo.store_name || "N/A",
         supplier: dpo.supplier_name || "N/A",
         requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
@@ -752,7 +812,7 @@ export const DirectPurchaseOrder = () => {
         return;
       }
 
-      toast.success("Direct Purchase Order deleted successfully");
+      toast.success("Local Purchase Order deleted successfully");
 
       // Warning: Stock movements are not automatically reversed (backend issue)
       toast.warning("⚠️ Important: Please verify stock movements in Stock In/Out page. Associated stock entries may need manual review.", {
@@ -793,7 +853,9 @@ export const DirectPurchaseOrder = () => {
     // Clear history if the removed item was the one being viewed
     if (itemToRemove && itemToRemove.partId === selectedPartForHistory) {
       setSelectedPartForHistory(null);
+      setSelectedHistoryRowId(null);
       setPartHistory(null);
+      setHistoryBasePrices({ priceA: null, priceB: null });
     }
   };
 
@@ -801,6 +863,7 @@ export const DirectPurchaseOrder = () => {
   const fetchPartHistory = async (
     partId: string,
     itemRowId?: string | null,
+    shouldApplySuggestedPurchasePrice: boolean = true,
   ) => {
     if (!partId) {
       setPartHistory(null);
@@ -883,53 +946,22 @@ export const DirectPurchaseOrder = () => {
               if (partItem) {
                 foundDPO = true; // Mark that we found a DPO containing this part
 
-                // Get purchase price from this DPO item
+                // Get purchase price from this DPO item. Use the raw
+                // purchase price (NOT loaded with distributed expenses) so
+                // the auto-filled "Purchase Price" on the new DPO line
+                // matches what was actually paid per unit on the last DPO.
                 const purchasePrice = partItem.purchase_price ?? partItem.purchasePrice ?? null;
                 const orderDate = fullOrderResponse.date ?? order.date ?? null;
                 const orderDpoNo = fullOrderResponse.dpo_no ?? order.dpo_no ?? order.dpoNumber ?? null;
 
-                // Calculate Direct Purchase Cost Price including expenses
-                const itemQty = partItem.quantity ?? partItem.qty ?? 1;
-                const itemAmount = purchasePrice ? purchasePrice * itemQty : 0;
-
-                // Calculate total expenses for this DPO
-                const dpoExpenses = fullOrderResponse.expenses || [];
-                const totalExpenses = dpoExpenses.reduce((sum: number, exp: any) => {
-                  const amount = exp.amount || exp.expense_amount || 0;
-                  return sum + amount;
-                }, 0);
-
-                // Calculate distributed expense for this item (weighted by item amount)
-                const allItems = fullOrderResponse.items || [];
-                const totalItemsAmount = allItems.reduce((sum: number, item: any) => {
-                  const price = item.purchase_price ?? item.purchasePrice ?? 0;
-                  const qty = item.quantity ?? item.qty ?? 0;
-                  return sum + (price * qty);
-                }, 0);
-
-                const distributedExpense = totalItemsAmount > 0
-                  ? (itemAmount / totalItemsAmount) * totalExpenses
-                  : 0;
-
-                // Calculate cost per unit including distributed expenses
-                const costPerUnitWithExpenses = itemQty > 0
-                  ? (itemAmount + distributedExpense) / itemQty
-                  : purchasePrice;
-
-                // Update lastPurchasePrice and date from the most recent DPO containing this part
-                // This should be the first DPO we find (since sorted by date, most recent first)
+                // Update lastPurchasePrice from the most recent DPO containing
+                // this part. This is sorted by date desc, so the first match
+                // is the latest.
                 if (lastPurchasePrice === null && purchasePrice !== null && purchasePrice !== undefined) {
-                  // Use the cost per unit including expenses
-                  lastPurchasePrice = costPerUnitWithExpenses || purchasePrice;
+                  lastPurchasePrice = Number(purchasePrice);
                   lastPurchaseDate = orderDate;
                   lastPurchaseDpoNo = orderDpoNo;
-
-                  // Mark that we found a DPO for this part
                   foundDPO = true;
-
-                  // Debug: Log what we're getting from the API
-
-                  // Since we're sorted by date and this is the most recent DPO, we can break
                   break;
                 }
               }
@@ -947,12 +979,6 @@ export const DirectPurchaseOrder = () => {
 
       }
 
-      // Debug: Log final values being set (only if we have some data)
-      const hasAnyData = priceA !== null || priceB !== null || priceM !== null ||
-        lastPurchasePrice !== null || lastPurchaseDate !== null || lastPurchaseDpoNo !== null;
-      if (hasAnyData) {
-      }
-
       setPartHistory({
         priceA: priceA !== null && priceA !== undefined ? Number(priceA) : null,
         priceB: priceB !== null && priceB !== undefined ? Number(priceB) : null,
@@ -961,6 +987,40 @@ export const DirectPurchaseOrder = () => {
         lastPurchaseDate,
         lastPurchaseDpoNo,
       });
+      setHistoryBasePrices({
+        priceA: priceA !== null && priceA !== undefined ? Number(priceA) : null,
+        priceB: priceB !== null && priceB !== undefined ? Number(priceB) : null,
+      });
+
+      // Populate the row's inline Price A / Price B inputs with the values
+      // currently stored on the Part record, and remember those as the
+      // baseline so we can detect user edits later. Only fill in the row
+      // referenced by `itemRowId`; if the same part appears on another row
+      // it keeps whatever value the user typed there.
+      if (itemRowId) {
+        const numericPriceA =
+          priceA !== null && priceA !== undefined ? Number(priceA) : null;
+        const numericPriceB =
+          priceB !== null && priceB !== undefined ? Number(priceB) : null;
+        setFormItems((prev) =>
+          prev.map((row) =>
+            row.id === itemRowId
+              ? {
+                  ...row,
+                  priceA: numericPriceA ?? "",
+                  priceB: numericPriceB ?? "",
+                }
+              : row,
+          ),
+        );
+        setRowPriceBaselines((prev) => ({
+          ...prev,
+          [itemRowId]: {
+            priceA: numericPriceA,
+            priceB: numericPriceB,
+          },
+        }));
+      }
 
       const suggestPurchase: number | null =
         lastPurchasePrice !== null && lastPurchasePrice !== undefined
@@ -968,6 +1028,7 @@ export const DirectPurchaseOrder = () => {
           : partCatalogPurchase;
 
       if (
+        shouldApplySuggestedPurchasePrice &&
         itemRowId &&
         suggestPurchase !== null &&
         !Number.isNaN(suggestPurchase)
@@ -991,6 +1052,7 @@ export const DirectPurchaseOrder = () => {
         lastPurchaseDate: null,
         lastPurchaseDpoNo: null,
       });
+      setHistoryBasePrices({ priceA: null, priceB: null });
     } finally {
       setLoadingHistory(false);
     }
@@ -1015,13 +1077,16 @@ export const DirectPurchaseOrder = () => {
               updated.purchasePrice = "";
               updated.weight = 0;
               setSelectedPartForHistory(null);
+              setSelectedHistoryRowId(null);
               setPartHistory(null);
+              setHistoryBasePrices({ priceA: null, priceB: null });
             }
           }
 
           // Update brand information when part is selected; fetch history and suggested purchase price
           if (field === "partId") {
             if (typeof value === "string" && value) {
+              setSelectedHistoryRowId(id);
               apiClient
                 .getPart(value)
                 .then((partResponse) => {
@@ -1052,6 +1117,144 @@ export const DirectPurchaseOrder = () => {
     );
   };
 
+  const handleUpdatePriceFromHistory = (
+    field: "priceA" | "priceB",
+    value: string,
+  ) => {
+    const parsedValue = value === "" ? "" : Number(value);
+    const normalizedValue =
+      parsedValue === "" || Number.isNaN(parsedValue) ? "" : parsedValue;
+
+    setFormItems((prev) =>
+      prev.map((item) => {
+        if (selectedHistoryRowId) {
+          return item.id === selectedHistoryRowId
+            ? { ...item, [field]: normalizedValue }
+            : item;
+        }
+        if (selectedPartForHistory && item.partId === selectedPartForHistory) {
+          return { ...item, [field]: normalizedValue };
+        }
+        return item;
+      }),
+    );
+
+    setPartHistory((prev) => {
+      if (!prev) return prev;
+      const historyKey = field === "priceA" ? "priceA" : "priceB";
+      return {
+        ...prev,
+        [historyKey]:
+          normalizedValue === "" ? null : Number(normalizedValue),
+      };
+    });
+  };
+
+  const handleSelectHistoryRow = (item: OrderItemForm) => {
+    setSelectedHistoryRowId(item.id);
+    if (!item.partId) {
+      setSelectedPartForHistory(null);
+      setPartHistory(null);
+      setHistoryBasePrices({ priceA: null, priceB: null });
+      return;
+    }
+    setSelectedPartForHistory(item.partId);
+    // Row click should not overwrite purchase price in edit/create form.
+    void fetchPartHistory(item.partId, item.id, false);
+  };
+
+  // Push the row's current Price A / Price B back to the underlying Part
+  // record. Skips the call when nothing has changed since the part was
+  // loaded (compared against `rowPriceBaselines[rowId]`).
+  const handleSaveRowPrice = async (rowId: string) => {
+    const item = formItems.find((it) => it.id === rowId);
+    if (!item || !item.partId) return;
+    const baseline = rowPriceBaselines[rowId] || {
+      priceA: null,
+      priceB: null,
+    };
+    const currentA =
+      item.priceA === "" || item.priceA === null
+        ? null
+        : Number(item.priceA);
+    const currentB =
+      item.priceB === "" || item.priceB === null
+        ? null
+        : Number(item.priceB);
+    const aChanged = (currentA ?? null) !== (baseline.priceA ?? null);
+    const bChanged = (currentB ?? null) !== (baseline.priceB ?? null);
+    if (!aChanged && !bChanged) return;
+
+    setSavingRowPrice((prev) => ({ ...prev, [rowId]: true }));
+    try {
+      const payload: { priceA?: number; priceB?: number } = {};
+      if (aChanged && currentA !== null) payload.priceA = currentA;
+      if (bChanged && currentB !== null) payload.priceB = currentB;
+      if (Object.keys(payload).length === 0) return;
+
+      const response = (await apiClient.updatePartPrices(
+        item.partId,
+        payload,
+      )) as any;
+      if (response?.error) {
+        toast.error(response.error);
+        return;
+      }
+      setRowPriceBaselines((prev) => ({
+        ...prev,
+        [rowId]: { priceA: currentA, priceB: currentB },
+      }));
+      // Keep the History sidebar's mirror of these values in sync if it's
+      // still pointed at this part.
+      if (selectedPartForHistory && selectedPartForHistory === item.partId) {
+        setHistoryBasePrices({ priceA: currentA, priceB: currentB });
+        setPartHistory((prev) =>
+          prev ? { ...prev, priceA: currentA, priceB: currentB } : prev,
+        );
+      }
+      toast.success("Price updated");
+    } catch (error: any) {
+      toast.error(`Error updating prices: ${error?.message || error}`);
+    } finally {
+      setSavingRowPrice((prev) => {
+        const next = { ...prev };
+        delete next[rowId];
+        return next;
+      });
+    }
+  };
+
+  const handleSaveHistoryPrices = async () => {
+    if (!selectedPartForHistory || !partHistory) return;
+    try {
+      const payload: { priceA?: number; priceB?: number } = {};
+
+      if (partHistory.priceA !== null && partHistory.priceA !== undefined) {
+        payload.priceA = Number(partHistory.priceA);
+      }
+      if (partHistory.priceB !== null && partHistory.priceB !== undefined) {
+        payload.priceB = Number(partHistory.priceB);
+      }
+
+      const response = await apiClient.updatePartPrices(
+        selectedPartForHistory,
+        payload,
+      ) as any;
+      if (response?.error) {
+        toast.error(response.error);
+        return;
+      }
+
+      setHistoryBasePrices({
+        priceA: partHistory.priceA !== null ? Number(partHistory.priceA) : null,
+        priceB: partHistory.priceB !== null ? Number(partHistory.priceB) : null,
+      });
+      toast.success("Price updated successfully");
+    } catch (error: any) {
+      toast.error(`Error updating prices: ${error.message}`);
+    }
+  };
+
   // Calculate total
   // Calculate items total
   const calculateItemsTotal = () => {
@@ -1062,58 +1265,78 @@ export const DirectPurchaseOrder = () => {
     }, 0);
   };
 
+  // Per-line distribution weight = quantity × per-unit weight (kg). Items
+  // without a weight fall back to their quantity so they still get a share
+  // proportional to how many pieces they contribute. If neither weight nor
+  // quantity is available, the line gets a zero share (handled below).
+  const itemDistributionShares = useMemo(() => {
+    return formItems.map((item) => {
+      const qty = typeof item.quantity === "number" ? item.quantity : 0;
+      const unitWeight = typeof item.weight === "number" ? item.weight : 0;
+      if (qty <= 0) return 0;
+      return unitWeight > 0 ? qty * unitWeight : qty;
+    });
+  }, [formItems]);
+
   // Calculate total expenses
   const calculateTotalExpenses = () => {
     return formExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   };
 
-  // Calculate distributed expenses based on weight
+  // Distribute total expenses across items proportionally to qty × weight
+  // (or qty alone when weight is missing). Falls back to an equal split if
+  // every line has zero quantity.
   const calculateDistributedExpenses = useMemo(() => {
-    const totalExpenses = calculateTotalExpenses();
+    const totalExpenses = formExpenses.reduce((sum, expense) => sum + expense.amount, 0);
     if (totalExpenses === 0 || formItems.length === 0) {
       return formItems.map(() => 0);
     }
 
-    // Separate items with weight from items without weight
-    const itemsWithWeight = formItems.filter(item => item.weight > 0);
-    const itemsWithoutWeight = formItems.filter(item => item.weight === 0);
+    const totalShare = itemDistributionShares.reduce((sum, value) => sum + value, 0);
 
-    const totalWeight = itemsWithWeight.reduce((sum, item) => sum + item.weight, 0);
-
-    // If no items have weight, distribute equally
-    if (totalWeight === 0) {
+    if (totalShare <= 0) {
       const equalShare = totalExpenses / formItems.length;
       return formItems.map(() => equalShare);
     }
 
-    // Calculate weight-based distribution for items with weight
-    const weightBasedExpenses = itemsWithWeight.map(item => {
-      return (item.weight / totalWeight) * totalExpenses;
-    });
+    return itemDistributionShares.map((share) => (share / totalShare) * totalExpenses);
+  }, [formItems, formExpenses, itemDistributionShares]);
 
-    // If there are items without weight, distribute remaining equally
-    let distributedExpenses: { [key: string]: number } = {};
+  const itemPartTotals = useMemo(() => {
+    const totalExpenses = formExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
-    itemsWithWeight.forEach((item, index) => {
-      distributedExpenses[item.id] = weightBasedExpenses[index];
-    });
+    return formItems.reduce(
+      (acc, item, index) => {
+        const qty = typeof item.quantity === "number" ? item.quantity : 0;
+        const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
+        const unitWeight = typeof item.weight === "number" ? item.weight : 0;
+        const distributedExpense = calculateDistributedExpenses[index] || 0;
+        const expensePerUnit = qty > 0 ? distributedExpense / qty : 0;
+        const itemValue =
+          totalExpenses > 0
+            ? qty * (price + expensePerUnit)
+            : qty * price;
 
-    // Items without weight get equal share of remaining (if any)
-    const equalShare = itemsWithoutWeight.length > 0 ? 0 : 0;
-    itemsWithoutWeight.forEach(item => {
-      distributedExpenses[item.id] = equalShare;
-    });
-
-    return formItems.map(item => distributedExpenses[item.id] || 0);
-  }, [formItems, formExpenses]);
+        acc.totalQty += qty;
+        acc.totalWeight += unitWeight * qty;
+        acc.totalAmount += itemValue;
+        return acc;
+      },
+      { totalQty: 0, totalWeight: 0, totalAmount: 0 },
+    );
+  }, [formItems, formExpenses, calculateDistributedExpenses]);
 
   // Grand total: items − discount (capped at items) + expenses
+  const calculateDiscountAmount = (itemsSub: number) => {
+    let discountValue = formDiscount === "" ? 0 : Number(formDiscount);
+    if (!Number.isFinite(discountValue) || discountValue < 0) discountValue = 0;
+    discountValue = Math.min(discountValue, itemsSub);
+    return Math.round(discountValue * 100) / 100;
+  };
+
   const calculateTotal = () => {
     const itemsSub = calculateItemsTotal();
-    let disc =
-      formDiscount === "" ? 0 : Number(formDiscount);
-    if (!Number.isFinite(disc) || disc < 0) disc = 0;
-    disc = Math.min(disc, itemsSub);
+    const disc = calculateDiscountAmount(itemsSub);
     return Math.round((itemsSub - disc + calculateTotalExpenses()) * 100) / 100;
   };
 
@@ -1121,13 +1344,7 @@ export const DirectPurchaseOrder = () => {
   const handleAddExpense = () => {
     setFormExpenses((prev) => [
       ...prev,
-      {
-        id: String(Date.now()),
-        expenseType: "",
-        payableAccount: "",
-        description: "",
-        amount: 0,
-      },
+      createDefaultDpoExpense(),
     ]);
   };
 
@@ -1147,10 +1364,6 @@ export const DirectPurchaseOrder = () => {
 
   // Save order
   const handleSave = async () => {
-    if (!formStore) {
-      toast.error("Please select a store");
-      return;
-    }
     if (!formSupplier) {
       toast.error("Please select a supplier");
       return;
@@ -1169,17 +1382,14 @@ export const DirectPurchaseOrder = () => {
       return;
     }
 
-    // Validate expenses - if expense type or payable account is filled, both must be filled (amount can be 0 or empty)
-    const invalidExpenses = formExpenses.filter(
-      (exp) => {
-        const hasType = exp.expenseType && exp.expenseType.trim() !== "";
-        const hasAccount = exp.payableAccount && exp.payableAccount.trim() !== "";
-        // Invalid if only one field is filled (incomplete entry)
-        return (hasType && !hasAccount) || (!hasType && hasAccount);
-      }
-    );
+    // Validate expenses: description is required when amount > 0
+    const invalidExpenses = formExpenses.filter((exp) => {
+      const amount = Number(exp.amount) || 0;
+      const hasDescription = !!exp.description && exp.description.trim() !== "";
+      return amount > 0 && !hasDescription;
+    });
     if (invalidExpenses.length > 0) {
-      toast.error("Please fill all expense fields (Type and Payable Account) or remove incomplete expense rows");
+      toast.error("Please enter expense description when amount is greater than zero");
       return;
     }
 
@@ -1194,16 +1404,16 @@ export const DirectPurchaseOrder = () => {
         const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
         return sum + qty * price;
       }, 0);
-      let discountVal =
-        formDiscount === "" ? 0 : Number(formDiscount);
-      if (!Number.isFinite(discountVal) || discountVal < 0) discountVal = 0;
-      discountVal = Math.min(discountVal, itemsSubtotal);
-      discountVal = Math.round(discountVal * 100) / 100;
+      const discountVal = calculateDiscountAmount(itemsSubtotal);
 
       const dpoData = {
         dpo_number: viewMode === "edit" && selectedOrder ? selectedOrder.dpoNo : (formItems.length > 0 ? generateDpoNo() : undefined),
         date: format(formRequestDate, "yyyy-MM-dd"),
-        store_id: formStore,
+        invoice_no: formInvoiceNo || undefined,
+        invoice_date: formInvoiceDate
+          ? format(formInvoiceDate, "yyyy-MM-dd")
+          : undefined,
+        store_id: formStore || undefined,
         supplier_id: formSupplier || undefined,
         account: formAccount || undefined, // Send Account ID (bank/cash account ID)
         description: formDescription || undefined,
@@ -1213,24 +1423,14 @@ export const DirectPurchaseOrder = () => {
           const qty = typeof item.quantity === "number" ? item.quantity : 0;
           const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
 
-          // Properly handle price values - convert empty strings to null, preserve 0 values
-          const getPriceValue = (value: number | ""): number | null => {
-            if (value === "" || value === null || value === undefined) return null;
-            const numValue = typeof value === "number" ? value : parseFloat(String(value));
-            return isNaN(numValue) ? null : numValue;
-          };
-
-          const priceA = getPriceValue(item.priceA);
-          const priceB = getPriceValue(item.priceB);
-          const priceM = getPriceValue(item.priceM);
-
+          // Price A / Price B / Price M are persisted to the Part record by
+          // the inline blur handler (`handleSaveRowPrice`), so they are
+          // intentionally NOT included here to avoid a second write/snapshot
+          // on the DPO line item every time the form is saved.
           return {
             part_id: item.partId,
             quantity: qty,
             purchase_price: price,
-            price_a: priceA !== null ? priceA : undefined,
-            price_b: priceB !== null ? priceB : undefined,
-            price_m: priceM !== null ? priceM : undefined,
             amount: price * qty,
           };
         }),
@@ -1259,8 +1459,8 @@ export const DirectPurchaseOrder = () => {
       // Show simple success message
       // Vouchers (JV/PV) are only created when the store manager receives/approves the order
       const successMessage = viewMode === "edit"
-        ? "Direct Purchase Order updated successfully"
-        : "Direct Purchase Order created successfully";
+        ? "Local Purchase Order updated successfully"
+        : "Local Purchase Order created successfully";
       toast.success(successMessage);
 
       // Refresh history if a part was selected
@@ -1361,6 +1561,10 @@ export const DirectPurchaseOrder = () => {
           const viewOrder: DirectPurchaseOrder = {
             id: dpo.id,
             dpoNo: dpo.dpo_no,
+            invoiceNo: dpo.invoice_no || "",
+            invoiceDate: dpo.invoice_date
+              ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
+              : "",
             store: dpo.store_name || "N/A",
             supplier: dpo.supplier_name || "N/A",
             requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
@@ -1421,6 +1625,10 @@ export const DirectPurchaseOrder = () => {
           const viewOrder: DirectPurchaseOrder = {
             id: dpo.id,
             dpoNo: dpo.dpo_no,
+            invoiceNo: dpo.invoice_no || "",
+            invoiceDate: dpo.invoice_date
+              ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
+              : "",
             store: dpo.store_name || "N/A",
             supplier: dpo.supplier_name || "N/A",
             requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
@@ -1584,21 +1792,21 @@ export const DirectPurchaseOrder = () => {
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Direct Purchase Orders</h1>
-        <p className="text-muted-foreground text-sm">Manage direct purchase orders</p>
+        <h1 className="text-2xl font-bold text-foreground">Local Purchase Orders</h1>
+        <p className="text-muted-foreground text-sm">Manage local purchase orders</p>
       </div>
 
       {/* New Order Button */}
       <Button onClick={handleNewOrder} className="bg-orange-500 hover:bg-orange-600 text-white">
         <Plus className="w-4 h-4 mr-2" />
-        New Direct Purchase Order
+        New Local Purchase Order
       </Button>
 
       {/* Orders Card */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg font-semibold">
-            All Direct Purchase Orders ({filteredOrders.length})
+            All Local Purchase Orders ({filteredOrders.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1641,10 +1849,11 @@ export const DirectPurchaseOrder = () => {
                     <TableRow>
                       <TableHead className="w-12">S.NO</TableHead>
                       <TableHead className="min-w-[120px]">DPO No.</TableHead>
-                      <TableHead className="min-w-[100px]">Store</TableHead>
+                      <TableHead className="min-w-[120px]">Invoice No.</TableHead>
+                      <TableHead className="min-w-[110px]">Invoice Date</TableHead>
                       <TableHead className="min-w-[140px]">Supplier</TableHead>
                       <TableHead className="min-w-[110px]">Request Date</TableHead>
-                      <TableHead className="min-w-[150px]">Description</TableHead>
+                      <TableHead className="min-w-[150px]">Remarks</TableHead>
                       <TableHead className="text-right min-w-[120px]">Grand Total</TableHead>
                       <TableHead className="min-w-[140px]">Status</TableHead>
                       <TableHead className="text-center min-w-[120px]">Actions</TableHead>
@@ -1655,7 +1864,8 @@ export const DirectPurchaseOrder = () => {
                       <TableRow key={order.id}>
                         <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                         <TableCell className="font-medium">{order.dpoNo}</TableCell>
-                        <TableCell>{order.store}</TableCell>
+                        <TableCell>{order.invoiceNo || "-"}</TableCell>
+                        <TableCell>{order.invoiceDate || "-"}</TableCell>
                         <TableCell>{order.supplier || "-"}</TableCell>
                         <TableCell>{order.requestDate}</TableCell>
                         <TableCell className="max-w-[200px] truncate">{order.description || "-"}</TableCell>
@@ -1721,7 +1931,7 @@ export const DirectPurchaseOrder = () => {
             </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
-              No direct purchase orders found. Create one to get started.
+              No local purchase orders found. Create one to get started.
             </div>
           )}
 
@@ -1763,6 +1973,10 @@ export const DirectPurchaseOrder = () => {
   // Render history sidebar
   const renderHistorySidebar = () => {
     const selectedPart = selectedPartForHistory ? parts.find((p) => p.id === selectedPartForHistory) : null;
+    const hasHistoryPriceChanges =
+      !!partHistory &&
+      ((partHistory.priceA ?? null) !== (historyBasePrices.priceA ?? null) ||
+        (partHistory.priceB ?? null) !== (historyBasePrices.priceB ?? null));
 
     return (
       <Card className="w-full lg:w-80 h-fit lg:sticky lg:top-4">
@@ -1815,21 +2029,33 @@ export const DirectPurchaseOrder = () => {
                 {/* Price A */}
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Price A</Label>
-                  <p className="text-sm font-medium">
-                    {(partHistory.priceA !== null && partHistory.priceA !== undefined && !isNaN(Number(partHistory.priceA)))
-                      ? Number(partHistory.priceA).toLocaleString("en-PK", { style: "currency", currency: "PKR" })
-                      : "N/A"}
-                  </p>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={partHistory.priceA ?? ""}
+                    onChange={(e) =>
+                      handleUpdatePriceFromHistory("priceA", e.target.value)
+                    }
+                    placeholder="Enter Price A"
+                    className="h-8"
+                  />
                 </div>
 
                 {/* Price B */}
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Price B</Label>
-                  <p className="text-sm font-medium">
-                    {(partHistory.priceB !== null && partHistory.priceB !== undefined && !isNaN(Number(partHistory.priceB)))
-                      ? Number(partHistory.priceB).toLocaleString("en-PK", { style: "currency", currency: "PKR" })
-                      : "N/A"}
-                  </p>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={partHistory.priceB ?? ""}
+                    onChange={(e) =>
+                      handleUpdatePriceFromHistory("priceB", e.target.value)
+                    }
+                    placeholder="Enter Price B"
+                    className="h-8"
+                  />
                 </div>
 
                 {/* Price M */}
@@ -1843,27 +2069,18 @@ export const DirectPurchaseOrder = () => {
                 </div>
               </div>
 
-              {/* Edit Button */}
+              {/* Update Price Button */}
               {selectedPart && (
                 <div className="border-t pt-3">
                   <Button
                     variant="outline"
                     size="sm"
                     className="w-full gap-2"
-                    onClick={() => {
-                      // Store part number in localStorage for Pricing & Costing page to pick up
-                      if (selectedPart.masterPartNo || selectedPart.partNo) {
-                        localStorage.setItem(
-                          'pricingCostingSearchPartNo',
-                          selectedPart.masterPartNo || selectedPart.partNo,
-                        );
-                      }
-                      // Navigate to Pricing & Costing page
-                      navigate('/pricing-costing');
-                    }}
+                    onClick={handleSaveHistoryPrices}
+                    disabled={!hasHistoryPriceChanges}
                   >
                     <Edit className="w-4 h-4" />
-                    Edit Price
+                    Update Price
                   </Button>
                 </div>
               )}
@@ -1876,7 +2093,7 @@ export const DirectPurchaseOrder = () => {
 
   // Render create/edit view
   const renderCreateEditView = () => (
-    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+    <div className="flex flex-col gap-4">
       <div className="flex-1 space-y-4 min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
@@ -1886,7 +2103,7 @@ export const DirectPurchaseOrder = () => {
             </Button>
             <div className="min-w-0">
               <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
-                {viewMode === "edit" ? "Edit Direct Purchase Order" : "Add Direct Purchase Order"}
+                {viewMode === "edit" ? "Edit Local Purchase Order" : "Add Local Purchase Order"}
               </h1>
             </div>
           </div>
@@ -1941,6 +2158,41 @@ export const DirectPurchaseOrder = () => {
                 </Popover>
               </div>
               <div className="space-y-2">
+                <Label>Invoice No</Label>
+                <Input
+                  value={formInvoiceNo}
+                  onChange={(e) => setFormInvoiceNo(e.target.value)}
+                  placeholder="Enter invoice no..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Invoice Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !formInvoiceDate && "text-muted-foreground",
+                      )}
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      {formInvoiceDate
+                        ? format(formInvoiceDate, "MM/dd/yyyy")
+                        : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={formInvoiceDate}
+                      onSelect={(date) => setFormInvoiceDate(date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-2">
                 <Label>Supplier</Label>
                 <SearchableSelect
                   options={suppliers}
@@ -1950,21 +2202,11 @@ export const DirectPurchaseOrder = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Store</Label>
-                <SearchableSelect
-                  options={stores}
-                  value={formStore}
-                  onValueChange={setFormStore}
-                  placeholder="Select store..."
-                />
-                {!formStore && <p className="text-xs text-destructive">Required</p>}
-              </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
+                <Label>Remarks</Label>
                 <Input
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="Enter description..."
+                  placeholder="Enter remarks..."
                 />
               </div>
             </div>
@@ -1988,103 +2230,227 @@ export const DirectPurchaseOrder = () => {
                     <p className="text-sm">Click "Add New Item" to add items</p>
                   </div>
                 ) : (
-                  <div className="rounded-md border overflow-x-auto -mx-1 sm:mx-0">
-                    <div className="min-w-[800px] sm:min-w-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-12">#</TableHead>
-                            <TableHead className="min-w-[200px]">Part</TableHead>
-                            <TableHead className="min-w-[80px]">Brand</TableHead>
-                            <TableHead className="min-w-[60px]">UoM</TableHead>
-                            <TableHead className="w-20 sm:w-24">Qty</TableHead>
-                            <TableHead className="w-28 sm:w-32">Purchase Price</TableHead>
+                  <div className="space-y-3">
+                    <div className="rounded-md border overflow-x-auto -mx-1 sm:mx-0">
+                      <div className="min-w-[800px] sm:min-w-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-12">#</TableHead>
+                              <TableHead className="min-w-[200px]">Part</TableHead>
+                              <TableHead className="min-w-[80px]">Brand</TableHead>
+                              <TableHead className="min-w-[60px]">UoM</TableHead>
+                              <TableHead className="w-20 sm:w-24">Qty</TableHead>
+                              <TableHead className="w-28 sm:w-32">Purchase Price</TableHead>
+                              <TableHead className="w-24 sm:w-28">Price A</TableHead>
+                              <TableHead className="w-24 sm:w-28">Price B</TableHead>
+                              <TableHead className="w-20 text-right">Weight (kg)</TableHead>
+                              <TableHead className="text-right min-w-[100px]">Total Amount</TableHead>
+                              <TableHead className="text-right min-w-[100px]">EXP / unit</TableHead>
+                              <TableHead className="w-12"></TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {formItems.map((item, index) => {
+                              const selectedPart = parts.find((p) => p.id === item.partId);
+                              return (
+                                <TableRow
+                                  key={item.id}
+                                  onClick={() => handleSelectHistoryRow(item)}
+                                  className={cn(
+                                    "cursor-pointer",
+                                    selectedHistoryRowId === item.id && "bg-muted/40",
+                                  )}
+                                >
+                                  <TableCell>{index + 1}</TableCell>
+                                  <TableCell>
+                                    <SearchableSelect
+                                      options={parts.map(p => ({
+                                        value: p.id,
+                                        label: [p.partNo, p.masterPartNo && p.masterPartNo !== p.partNo ? p.masterPartNo : null]
+                                          .filter(Boolean)
+                                          .join(" / "),
+                                        description: [
+                                          p.description || null,
+                                          p.brand ? `Brand: ${p.brand}` : null,
+                                          p.masterPartNo && p.masterPartNo !== p.partNo
+                                            ? `Master: ${p.masterPartNo}`
+                                            : null,
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" | "),
+                                      }))}
+                                      value={item.partId}
+                                      onValueChange={(value) => handleUpdateItem(item.id, "partId", value)}
+                                      placeholder="Select part..."
+                                    />
+                                  </TableCell>
+                                  <TableCell>{selectedPart?.brand || "-"}</TableCell>
+                                  <TableCell>{selectedPart?.uom || "-"}</TableCell>
+                                  <TableCell>
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      value={item.quantity === "" ? "" : item.quantity}
+                                      onChange={(e) => handleUpdateItem(item.id, "quantity", e.target.value === "" ? "" : parseInt(e.target.value) || "")}
+                                      placeholder=""
+                                      className="w-full min-w-[60px]"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={item.purchasePrice === "" ? "" : item.purchasePrice}
+                                      onChange={(e) => handleUpdateItem(item.id, "purchasePrice", e.target.value === "" ? "" : parseFloat(e.target.value) || "")}
+                                      placeholder=""
+                                      className="w-full min-w-[100px]"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={item.priceA === "" ? "" : item.priceA}
+                                      onChange={(e) =>
+                                        handleUpdateItem(
+                                          item.id,
+                                          "priceA",
+                                          e.target.value === ""
+                                            ? ""
+                                            : parseFloat(e.target.value) || "",
+                                        )
+                                      }
+                                      onBlur={() => handleSaveRowPrice(item.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      placeholder="A"
+                                      disabled={!item.partId || !!savingRowPrice[item.id]}
+                                      className="w-full min-w-[80px]"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={item.priceB === "" ? "" : item.priceB}
+                                      onChange={(e) =>
+                                        handleUpdateItem(
+                                          item.id,
+                                          "priceB",
+                                          e.target.value === ""
+                                            ? ""
+                                            : parseFloat(e.target.value) || "",
+                                        )
+                                      }
+                                      onBlur={() => handleSaveRowPrice(item.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      placeholder="B"
+                                      disabled={!item.partId || !!savingRowPrice[item.id]}
+                                      className="w-full min-w-[80px]"
+                                    />
+                                  </TableCell>
 
-                            <TableHead className="w-20 text-right">Weight (kg)</TableHead>
-                            <TableHead className="text-right min-w-[100px]">Total Amount</TableHead>
-                            <TableHead className="w-12"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {formItems.map((item, index) => {
-                            const selectedPart = parts.find((p) => p.id === item.partId);
-                            return (
-                              <TableRow key={item.id}>
-                                <TableCell>{index + 1}</TableCell>
-                                <TableCell>
-                                  <SearchableSelect
-                                    options={parts.map(p => ({
-                                      value: p.id,
-                                      label: [p.partNo, p.masterPartNo && p.masterPartNo !== p.partNo ? p.masterPartNo : null]
-                                        .filter(Boolean)
-                                        .join(" / "),
-                                      description: [
-                                        p.description || null,
-                                        p.brand ? `Brand: ${p.brand}` : null,
-                                        p.masterPartNo && p.masterPartNo !== p.partNo
-                                          ? `Master: ${p.masterPartNo}`
-                                          : null,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" | "),
-                                    }))}
-                                    value={item.partId}
-                                    onValueChange={(value) => handleUpdateItem(item.id, "partId", value)}
-                                    placeholder="Select part..."
-                                  />
-                                </TableCell>
-                                <TableCell>{selectedPart?.brand || "-"}</TableCell>
-                                <TableCell>{selectedPart?.uom || "-"}</TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    value={item.quantity === "" ? "" : item.quantity}
-                                    onChange={(e) => handleUpdateItem(item.id, "quantity", e.target.value === "" ? "" : parseInt(e.target.value) || "")}
-                                    placeholder=""
-                                    className="w-full min-w-[60px]"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={item.purchasePrice === "" ? "" : item.purchasePrice}
-                                    onChange={(e) => handleUpdateItem(item.id, "purchasePrice", e.target.value === "" ? "" : parseFloat(e.target.value) || "")}
-                                    placeholder=""
-                                    className="w-full min-w-[100px]"
-                                  />
-                                </TableCell>
-
-                                <TableCell className="text-right text-xs text-muted-foreground">
-                                  {item.weight > 0 ? `${item.weight} kg` : "-"}
-                                </TableCell>
-                                <TableCell className="text-right font-medium">
-                                  {(() => {
-                                    const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
-                                    const qty = typeof item.quantity === "number" ? item.quantity : 0;
-                                    const itemAmount = price * qty;
+                                  <TableCell className="text-right text-xs text-muted-foreground">
+                                    {item.weight > 0 ? `${item.weight} kg` : "-"}
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium">
+                                    {(() => {
+                                      const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
+                                      const qty = typeof item.quantity === "number" ? item.quantity : 0;
                                     const distributedExpense = calculateDistributedExpenses[index] || 0;
-                                    const totalWithExpense = itemAmount + distributedExpense;
-                                    return totalWithExpense.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                                  })()}
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleRemoveItem(item.id)}
-                                    className="h-8 w-8 text-destructive hover:text-destructive"
-                                  >
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
+                                    const expensePerUnit = qty > 0 ? distributedExpense / qty : 0;
+                                    const totalExpenses = calculateTotalExpenses();
+                                    const itemValue =
+                                      totalExpenses > 0
+                                        ? qty * (price + expensePerUnit)
+                                        : qty * price;
+                                    return itemValue.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                    })()}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {(() => {
+                                      const qty = typeof item.quantity === "number" ? item.quantity : 0;
+                                      const distributedExpense = calculateDistributedExpenses[index] || 0;
+                                      const perPartExpense = qty > 0 ? distributedExpense / qty : 0;
+
+                                      return (
+                                        <span className="text-sm font-medium tabular-nums">
+                                          {perPartExpense.toLocaleString("en-PK", {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}
+                                        </span>
+                                      );
+                                    })()}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRemoveItem(item.id)}
+                                      className="h-8 w-8 text-destructive hover:text-destructive"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                          <TableFooter className="bg-muted/30">
+                            <TableRow className="hover:bg-transparent">
+                              {/* # */}
+                              <TableCell className="font-semibold text-xs uppercase text-muted-foreground">
+                                Totals
+                              </TableCell>
+                              {/* Part */}
+                              <TableCell />
+                              {/* Brand */}
+                              <TableCell />
+                              {/* UoM */}
+                              <TableCell />
+                              {/* Qty */}
+                              <TableCell className="font-semibold tabular-nums">
+                                {itemPartTotals.totalQty.toLocaleString("en-PK")}
+                              </TableCell>
+                              {/* Purchase Price */}
+                              <TableCell />
+                              {/* Price A */}
+                              <TableCell />
+                              {/* Price B */}
+                              <TableCell />
+                              {/* Weight */}
+                              <TableCell className="text-right font-semibold tabular-nums text-xs">
+                                {itemPartTotals.totalWeight.toLocaleString(
+                                  "en-PK",
+                                  {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2,
+                                  },
+                                )}{" "}
+                                kg
+                              </TableCell>
+                              {/* Total Amount */}
+                              <TableCell className="text-right font-semibold tabular-nums">
+                                {itemPartTotals.totalAmount.toLocaleString(
+                                  "en-PK",
+                                  {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  },
+                                )}
+                              </TableCell>
+                              {/* EXP / unit */}
+                              <TableCell />
+                              {/* Action */}
+                              <TableCell />
+                            </TableRow>
+                          </TableFooter>
+                        </Table>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2096,13 +2462,7 @@ export const DirectPurchaseOrder = () => {
                 {/* Expense Section */}
                 <Card className="mb-6">
                   <CardHeader className="py-3">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                      <CardTitle className="text-base font-medium">Expenses</CardTitle>
-                      <Button onClick={handleAddExpense} variant="outline" size="sm" className="w-full sm:w-auto">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Expense
-                      </Button>
-                    </div>
+                    <CardTitle className="text-base font-medium">Expenses</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {formExpenses.length === 0 ? (
@@ -2112,71 +2472,22 @@ export const DirectPurchaseOrder = () => {
                     ) : (
                       <div className="space-y-2">
                         <div className="hidden sm:grid grid-cols-12 gap-2 text-sm font-medium text-muted-foreground pb-2 border-b">
-                          <div className="col-span-12 sm:col-span-3">Expense Type</div>
-                          <div className="col-span-12 sm:col-span-3">Payable Account</div>
-                          <div className="col-span-12 sm:col-span-3">Description</div>
-                          <div className="col-span-12 sm:col-span-2 text-right">Amount</div>
-                          <div className="col-span-12 sm:col-span-1"></div>
+                          <div className="col-span-12 sm:col-span-4">Expense Account</div>
+                          <div className="col-span-12 sm:col-span-5">Description</div>
+                          <div className="col-span-12 sm:col-span-3 text-right">Amount</div>
                         </div>
                         {formExpenses.map((expense) => (
                           <div
                             key={expense.id}
                             className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-2 items-start sm:items-center p-2 sm:p-0 border sm:border-0 rounded-lg sm:rounded-none"
                           >
-                            <div className="col-span-12 sm:col-span-3">
-                              <Select
-                                value={expense.expenseType}
-                                onValueChange={(value) =>
-                                  handleUpdateExpense(expense.id, "expenseType", value)
-                                }
-                              >
-                                <SelectTrigger className={!expense.expenseType ? "border-orange-500" : ""}>
-                                  <SelectValue placeholder="Select expense type..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {expenseTypes.length > 0 ? (
-                                    expenseTypes.map((type) => (
-                                      <SelectItem key={type.id} value={type.name}>
-                                        {type.name}
-                                      </SelectItem>
-                                    ))
-                                  ) : (
-                                    <SelectItem value="NO_EXPENSE_TYPES" disabled>
-                                      No expense types available. Please create expense types first.
-                                    </SelectItem>
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="col-span-12 sm:col-span-3">
+                            <div className="col-span-12 sm:col-span-4">
                               <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">
-                                Payable Account
+                                Expense Account
                               </Label>
-                              <Select
-                                value={expense.payableAccount}
-                                onValueChange={(value) =>
-                                  handleUpdateExpense(expense.id, "payableAccount", value)
-                                }
-                              >
-                                <SelectTrigger className={!expense.payableAccount ? "border-orange-500" : ""}>
-                                  <SelectValue placeholder="Select payable account..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {payableAccounts.length > 0 ? (
-                                    payableAccounts.map((account) => (
-                                      <SelectItem key={account.id} value={account.value || account.id}>
-                                        {account.label}
-                                      </SelectItem>
-                                    ))
-                                  ) : (
-                                    <SelectItem value="NO_ACCOUNTS_AVAILABLE" disabled>
-                                      No accounts available
-                                    </SelectItem>
-                                  )}
-                                </SelectContent>
-                              </Select>
+                              <Input value={DPO_FIXED_EXPENSE_ACCOUNT} disabled className="bg-muted" />
                             </div>
-                            <div className="col-span-12 sm:col-span-3">
+                            <div className="col-span-12 sm:col-span-5">
                               <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">
                                 Description
                               </Label>
@@ -2184,9 +2495,14 @@ export const DirectPurchaseOrder = () => {
                                 value={expense.description}
                                 onChange={(e) => handleUpdateExpense(expense.id, "description", e.target.value)}
                                 placeholder="Enter description..."
+                                className={cn(
+                                  (Number(expense.amount) || 0) > 0 &&
+                                    (!expense.description || expense.description.trim() === "") &&
+                                    "border-orange-500"
+                                )}
                               />
                             </div>
-                            <div className="col-span-12 sm:col-span-2">
+                            <div className="col-span-12 sm:col-span-3">
                               <Label className="text-xs text-muted-foreground sm:hidden mb-1 block">Amount</Label>
                               <Input
                                 type="number"
@@ -2200,16 +2516,6 @@ export const DirectPurchaseOrder = () => {
                                 className={cn("text-right", expense.amount <= 0 && "border-orange-500")}
                                 placeholder="0.00"
                               />
-                            </div>
-                            <div className="col-span-12 sm:col-span-1 flex justify-center sm:justify-center">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleRemoveExpense(expense.id)}
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
                             </div>
                           </div>
                         ))}
@@ -2226,9 +2532,9 @@ export const DirectPurchaseOrder = () => {
               </>
             )}
 
-            {/* Account and Total */}
-            <div className="flex flex-col sm:flex-row justify-end items-stretch sm:items-start gap-4 mb-6">
-              <div className="space-y-2 flex-1 sm:flex-initial w-full sm:w-auto">
+            {/* Account and Totals (single horizontal row) */}
+            <div className="flex flex-col gap-4 mb-6">
+              <div className="space-y-2 w-full sm:w-64">
                 <Label>Account</Label>
                 <SearchableSelect
                   options={accounts}
@@ -2238,44 +2544,138 @@ export const DirectPurchaseOrder = () => {
                   className="w-full"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Items Total</Label>
-                <Input value={calculateItemsTotal().toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} disabled className="w-full sm:w-40 text-right bg-muted" />
-                <Label>Discount (on items)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  className="w-full sm:w-40 text-right"
-                  placeholder="0"
-                  value={formDiscount === "" ? "" : formDiscount}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "") {
-                      setFormDiscount("");
-                      return;
-                    }
-                    const n = parseFloat(v);
-                    setFormDiscount(Number.isFinite(n) ? n : "");
-                  }}
-                  onBlur={() => {
-                    const cap = calculateItemsTotal();
-                    let d = formDiscount === "" ? 0 : Number(formDiscount);
-                    if (!Number.isFinite(d) || d < 0) d = 0;
-                    d = Math.min(d, cap);
-                    setFormDiscount(d === 0 ? "" : Math.round(d * 100) / 100);
-                  }}
-                />
-                <p className="text-[10px] text-muted-foreground max-w-[10rem]">
-                  Max {calculateItemsTotal().toLocaleString("en-PK")} (items only)
-                </p>
-                <Label>Grand Total</Label>
-                <Input value={calculateTotal().toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} disabled className="w-full sm:w-40 text-right bg-muted font-semibold" />
+
+              <div className="flex flex-wrap items-end gap-3 justify-end">
+                {/* Items Total */}
+                <div className="space-y-1 w-32">
+                  <Label className="text-xs">Items Total</Label>
+                  <Input
+                    value={calculateItemsTotal().toLocaleString("en-PK", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    disabled
+                    className="w-full text-right bg-muted"
+                  />
+                </div>
+
+                {/* Discount (on items): Percentage + Amount inline */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Discount (on items)</Label>
+                  <div className="flex items-stretch gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="w-20 text-right"
+                      placeholder="0%"
+                      title="Percentage"
+                      value={(() => {
+                        const itemsSub = calculateItemsTotal();
+                        const disc = calculateDiscountAmount(itemsSub);
+                        if (disc === 0 || itemsSub <= 0) return "";
+                        return (
+                          Math.round((disc / itemsSub) * 100 * 100) / 100
+                        );
+                      })()}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "") {
+                          setFormDiscount("");
+                          return;
+                        }
+                        const p = parseFloat(v);
+                        if (!Number.isFinite(p)) {
+                          setFormDiscount("");
+                          return;
+                        }
+                        const pct = Math.min(Math.max(p, 0), 100);
+                        const itemsSub = calculateItemsTotal();
+                        const amount = (itemsSub * pct) / 100;
+                        setFormDiscount(
+                          amount === 0
+                            ? ""
+                            : Math.round(amount * 100) / 100,
+                        );
+                      }}
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="w-28 text-right"
+                      placeholder="0"
+                      title="Amount"
+                      value={formDiscount === "" ? "" : formDiscount}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "") {
+                          setFormDiscount("");
+                          return;
+                        }
+                        const n = parseFloat(v);
+                        setFormDiscount(Number.isFinite(n) ? n : "");
+                      }}
+                      onBlur={() => {
+                        let d =
+                          formDiscount === "" ? 0 : Number(formDiscount);
+                        if (!Number.isFinite(d) || d < 0) d = 0;
+                        d = Math.min(d, calculateItemsTotal());
+                        setFormDiscount(
+                          d === 0 ? "" : Math.round(d * 100) / 100,
+                        );
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Total After Discount */}
+                <div className="space-y-1 w-36">
+                  <Label className="text-xs">Total After Discount</Label>
+                  <Input
+                    value={(() => {
+                      const itemsSub = calculateItemsTotal();
+                      const disc = calculateDiscountAmount(itemsSub);
+                      return (itemsSub - disc).toLocaleString("en-PK", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      });
+                    })()}
+                    disabled
+                    className="w-full text-right bg-muted"
+                  />
+                </div>
+
+                {/* Expense Amount */}
                 {SHOW_EXPENSES_UI && (
-                  <p className="text-xs text-muted-foreground">
-                    Expenses: {calculateTotalExpenses().toLocaleString("en-PK")}
-                  </p>
+                  <div className="space-y-1 w-32">
+                    <Label className="text-xs">Expense Amount</Label>
+                    <Input
+                      value={calculateTotalExpenses().toLocaleString(
+                        "en-PK",
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        },
+                      )}
+                      disabled
+                      className="w-full text-right bg-muted"
+                    />
+                  </div>
                 )}
+
+                {/* Grand Total */}
+                <div className="space-y-1 w-36">
+                  <Label className="text-xs">Grand Total</Label>
+                  <Input
+                    value={calculateTotal().toLocaleString("en-PK", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                    disabled
+                    className="w-full text-right bg-muted font-semibold"
+                  />
+                </div>
               </div>
             </div>
 
@@ -2299,8 +2699,6 @@ export const DirectPurchaseOrder = () => {
         </Card>
       </div>
 
-      {/* History Sidebar */}
-      {(viewMode === "create" || viewMode === "edit") && renderHistorySidebar()}
     </div>
   );
 
@@ -2309,7 +2707,7 @@ export const DirectPurchaseOrder = () => {
     <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col p-0">
         <DialogHeader className="p-4 border-b bg-muted/30">
-          <DialogTitle>Direct Purchase Order Details</DialogTitle>
+          <DialogTitle>Local Purchase Order Details</DialogTitle>
           <DialogDescription>
             {selectedOrder?.dpoNo} - {selectedOrder?.requestDate}
           </DialogDescription>
@@ -2344,7 +2742,7 @@ export const DirectPurchaseOrder = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-muted-foreground">Description</Label>
+                    <Label className="text-muted-foreground">Remarks</Label>
                     <p className="font-medium">{selectedOrder.description || "-"}</p>
                   </div>
                   <div>
@@ -2782,7 +3180,7 @@ export const DirectPurchaseOrder = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Delete</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this direct purchase order? This action cannot be undone.
+              Are you sure you want to delete this local purchase order? This action cannot be undone.
               <br /><br />
               <strong className="text-yellow-600">⚠️ Warning:</strong> Stock movements associated with this DPO will NOT be automatically deleted. You will need to manually verify and adjust stock entries in the Stock In/Out page.
             </AlertDialogDescription>

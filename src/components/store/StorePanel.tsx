@@ -445,7 +445,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
           newOrders.forEach((order: DirectPurchaseOrder) => {
             addNotification({
-              title: "New Direct Purchase Order",
+              title: "New Local Purchase Order",
               message: `DPO ${order.dpo_no} has been created for your store.`,
               type: "info",
               module: "store",
@@ -904,7 +904,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
       if (deleteOrderType === "dpo" && selectedOrder) {
         await apiClient.deleteDirectPurchaseOrder(selectedOrder.id);
-        toast.success(`Direct Purchase Order ${selectedOrder.dpo_no} deleted successfully`);
+        toast.success(`Local Purchase Order ${selectedOrder.dpo_no} deleted successfully`);
         await fetchOrders();
       } else if (deleteOrderType === "po" && selectedPurchaseOrder) {
         await apiClient.deletePurchaseOrder(selectedPurchaseOrder.id);

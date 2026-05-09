@@ -66,6 +66,7 @@ interface Subcategory {
 interface Brand {
   id: string;
   name: string;
+  longName?: string;
   status: "Active" | "Inactive";
   createdAt?: string;
 }
@@ -264,24 +265,32 @@ function BrandDialogForm({
   onSubmit,
   editingBrand,
   initialName = "",
+  initialLongName = "",
   initialStatus = "Active",
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (name: string, status: "Active" | "Inactive") => void;
+  onSubmit: (
+    name: string,
+    longName: string,
+    status: "Active" | "Inactive",
+  ) => void;
   editingBrand: Brand | null;
   initialName?: string;
+  initialLongName?: string;
   initialStatus?: "Active" | "Inactive";
 }) {
   const [name, setName] = useState(initialName);
+  const [longName, setLongName] = useState(initialLongName);
   const [status, setStatus] = useState<"Active" | "Inactive">(initialStatus);
 
   useEffect(() => {
     if (open) {
       setName(initialName);
+      setLongName(initialLongName);
       setStatus(initialStatus);
     }
-  }, [initialName, initialStatus, open]);
+  }, [initialName, initialLongName, initialStatus, open]);
 
   if (!open) return null;
 
@@ -296,6 +305,17 @@ function BrandDialogForm({
           onChange={(e) => setName(e.target.value)}
           placeholder="Enter brand name"
           autoFocus
+          data-preserve-case="true"
+        />
+      </div>
+      <div>
+        <label className="block text-sm text-muted-foreground mb-1.5">
+          Company Name
+        </label>
+        <Input
+          value={longName}
+          onChange={(e) => setLongName(e.target.value)}
+          placeholder="Enter company name"
           data-preserve-case="true"
         />
       </div>
@@ -320,7 +340,7 @@ function BrandDialogForm({
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={() => onSubmit(name, status)}>
+        <Button onClick={() => onSubmit(name, longName, status)}>
           {editingBrand ? "Update" : "Add"}
         </Button>
       </div>
@@ -459,6 +479,7 @@ export const AttributesPage = () => {
     "Active" | "Inactive"
   >("Active");
   const [newBrandName, setNewBrandName] = useState("");
+  const [newBrandLongName, setNewBrandLongName] = useState("");
   const [newBrandStatus, setNewBrandStatus] = useState<"Active" | "Inactive">(
     "Active",
   );
@@ -497,7 +518,7 @@ export const AttributesPage = () => {
 
   const filteredBrands = useMemo(() => {
     return brands.filter((brand) => {
-      const matchesSearch = brand.name
+      const matchesSearch = `${brand.name} ${brand.longName || ""}`
         .toLowerCase()
         .includes(deferredBrandSearch.toLowerCase());
       const matchesFilter = brandFilter === "all" || brand.id === brandFilter;
@@ -827,9 +848,11 @@ export const AttributesPage = () => {
 
   const handleAddBrand = async (
     name: string,
+    longName: string,
     status: "Active" | "Inactive",
   ) => {
     const trimmedName = name.trim();
+    const trimmedLongName = longName.trim();
     if (!trimmedName) {
       toast({
         title: "Error",
@@ -842,6 +865,7 @@ export const AttributesPage = () => {
       if (editingBrand) {
         const response = await apiClient.updateBrand(editingBrand.id, {
           name: trimmedName,
+          longName: trimmedLongName,
           status: status,
         });
         if (response.error) {
@@ -876,6 +900,7 @@ export const AttributesPage = () => {
       } else {
         const response = await apiClient.createBrand({
           name: trimmedName,
+          longName: trimmedLongName,
           status: status,
         });
         if (response.error) {
@@ -1100,6 +1125,7 @@ export const AttributesPage = () => {
 
   const resetBrandForm = () => {
     setNewBrandName("");
+    setNewBrandLongName("");
     setNewBrandStatus("Active");
     setEditingBrand(null);
     setBrandDialogOpen(false);
@@ -1131,6 +1157,7 @@ export const AttributesPage = () => {
   const openEditBrand = (brand: Brand) => {
     setEditingBrand(brand);
     setNewBrandName(brand.name);
+    setNewBrandLongName(brand.longName || "");
     setNewBrandStatus(brand.status);
     setBrandDialogOpen(true);
   };
@@ -1609,6 +1636,11 @@ export const AttributesPage = () => {
                     <p className="font-medium text-foreground text-sm">
                       {brand.name}
                     </p>
+                    {brand.longName && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Company Name: {brand.longName}
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-1">
                     <Button
@@ -1787,6 +1819,7 @@ export const AttributesPage = () => {
             onSubmit={handleAddBrand}
             editingBrand={editingBrand}
             initialName={newBrandName}
+            initialLongName={newBrandLongName}
             initialStatus={newBrandStatus}
           />
         </DialogContent>

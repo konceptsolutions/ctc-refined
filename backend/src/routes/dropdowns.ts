@@ -807,6 +807,7 @@ router.get("/brands/all", async (req: Request, res: Response) => {
       brands.map((brand) => ({
         id: brand.id,
         name: brand.name,
+        longName: (brand as any).longName || "",
         status: brand.status === "active" ? "Active" : "Inactive",
         createdAt: brand.createdAt,
       })),
@@ -820,6 +821,8 @@ router.get("/brands/all", async (req: Request, res: Response) => {
 router.post("/brands", async (req: Request, res: Response) => {
   try {
     const { name, status } = req.body;
+    const longNameRaw =
+      req.body?.longName !== undefined ? req.body.longName : req.body?.long_name;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Brand name is required" });
@@ -829,6 +832,10 @@ router.post("/brands", async (req: Request, res: Response) => {
       data: {
         id: randomUUID(),
         name: name.trim(),
+        longName:
+          longNameRaw !== undefined && String(longNameRaw).trim() !== ""
+            ? String(longNameRaw).trim()
+            : null,
         status: status === "Inactive" ? "inactive" : "active",
         updatedAt: new Date(),
       } as any,
@@ -837,6 +844,7 @@ router.post("/brands", async (req: Request, res: Response) => {
     res.status(201).json({
       id: brand.id,
       name: brand.name,
+      longName: (brand as any).longName || "",
       status: brand.status === "active" ? "Active" : "Inactive",
       createdAt: brand.createdAt,
     });
@@ -855,22 +863,31 @@ router.put("/brands/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, status } = req.body;
+    const longNameRaw =
+      req.body?.longName !== undefined ? req.body.longName : req.body?.long_name;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Brand name is required" });
     }
 
+    const updateData: any = {
+      name: name.trim(),
+      status: status === "Inactive" ? "inactive" : "active",
+    };
+    if (longNameRaw !== undefined) {
+      updateData.longName =
+        String(longNameRaw).trim() !== "" ? String(longNameRaw).trim() : null;
+    }
+
     const brand = await prisma.brand.update({
       where: { id },
-      data: {
-        name: name.trim(),
-        status: status === "Inactive" ? "inactive" : "active",
-      },
+      data: updateData,
     });
 
     res.json({
       id: brand.id,
       name: brand.name,
+      longName: (brand as any).longName || "",
       status: brand.status === "active" ? "Active" : "Inactive",
       createdAt: brand.createdAt,
     });

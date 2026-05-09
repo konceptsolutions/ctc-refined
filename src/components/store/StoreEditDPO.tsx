@@ -768,7 +768,7 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
         items: itemsForUpdate,
       });
 
-      toast.success("Direct Purchase Order updated successfully");
+      toast.success("Local Purchase Order updated successfully");
       onOpenChange(false);
       if (onSuccess) onSuccess();
     } catch (error: any) {
@@ -784,7 +784,7 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[95vh] overflow-hidden flex flex-col p-0">
         <DialogHeader className="p-4 border-b bg-muted/30">
-          <DialogTitle>Edit Direct Purchase Order - {order.dpo_no}</DialogTitle>
+          <DialogTitle>Edit Local Purchase Order - {order.dpo_no}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden flex flex-col">

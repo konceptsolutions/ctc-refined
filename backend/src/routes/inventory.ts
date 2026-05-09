@@ -7426,6 +7426,8 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
           id: dpo.id,
           dpo_no: dpo.dpoNumber,
           date: dpo.date,
+          invoice_no: (dpo as any).invoiceNo || null,
+          invoice_date: (dpo as any).invoiceDate || null,
           store_id: dpo.storeId,
           store_name: dpo.Store?.name || null,
           supplier_id: dpo.supplierId,
@@ -7548,6 +7550,8 @@ router.get(
         id: order.id,
         dpo_no: order.dpoNumber,
         date: order.date,
+        invoice_no: (order as any).invoiceNo || null,
+        invoice_date: (order as any).invoiceDate || null,
         store_id: order.storeId,
         store_name: order.Store?.name || null,
         supplier_id: order.supplierId,
@@ -7611,6 +7615,8 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
     let {
       dpo_number,
       date,
+      invoice_no,
+      invoice_date,
       store_id,
       supplier_id,
       account,
@@ -7687,6 +7693,11 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
           id: dpoId,
           dpoNumber: dpo_number,
           date: new Date(date),
+          invoiceNo:
+            invoice_no !== undefined && String(invoice_no).trim() !== ""
+              ? String(invoice_no).trim()
+              : null,
+          invoiceDate: invoice_date ? new Date(invoice_date) : null,
           storeId: store_id || null,
           supplierId: supplier_id || null,
           account: account || null,
@@ -7735,7 +7746,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
               amount: Number(exp.amount) || 0,
             })),
           },
-        },
+        } as any,
         include: {
           DirectPurchaseOrderItem: { include: { Part: true } },
           DirectPurchaseOrderExpense: true,
@@ -7747,10 +7758,21 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
         ["completed", "received", "approved"].includes(s.toLowerCase());
       const currentStatus = status || "Completed";
 
-      // 1. Unconditionally update purchase prices for all items
-      for (const item of items) {
-        const partId = item.part_id;
-        const rate = Number(
+      // 1. Unconditionally update Part.purchasePrice and Part.avgCost using
+      //    a true running weighted average:
+      //
+      //      new_avg = (current_avg × current_stock
+      //                 + Σ_lines((purchase_price + EXP/unit) × qty))
+      //                / (current_stock + Σ_lines(qty))
+      //
+      //    EXP/unit is computed by distributing the DPO's total expenses
+      //    across lines proportionally to (qty × weight), matching the UI
+      //    (falls back to qty when weight is 0 / equal split when there is
+      //    no positive share at all).
+      const itemRowsForCost = (items || []).map((item: any) => {
+        const partId = item.part_id as string | undefined;
+        const qty = Number(item.quantity) || 0;
+        const baseRate = Number(
           item.unit_cost ??
             item.unitCost ??
             item.purchase_price ??
@@ -7758,10 +7780,132 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
             item.unitPrice ??
             0,
         );
-        if (partId && rate > 0) {
+        return { partId, qty, baseRate, itemValue: qty * baseRate };
+      });
+
+      const expenseTotalForCost = Number(expensesTotal) || 0;
+      const uniquePartIds = Array.from(
+        new Set(
+          itemRowsForCost
+            .map((r) => r.partId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+
+      // Fetch part weights and current avgCost for the formula.
+      const partRecords = uniquePartIds.length
+        ? await tx.part.findMany({
+            where: { id: { in: uniquePartIds } },
+            select: { id: true, weight: true, avgCost: true, cost: true },
+          })
+        : [];
+      const partInfoById = new Map<
+        string,
+        { weight: number; avgCost: number }
+      >();
+      for (const p of partRecords) {
+        const w = Number((p as any).weight) || 0;
+        const avg =
+          Number((p as any).avgCost) || Number((p as any).cost) || 0;
+        partInfoById.set(p.id, { weight: w, avgCost: avg });
+      }
+
+      // Current on-hand stock per part (excluding reservations) BEFORE this
+      // DPO's stock-in is applied. POST has not created the new movements
+      // yet, so the existing aggregate is the "before" snapshot.
+      const stockByPartId = new Map<string, number>();
+      uniquePartIds.forEach((id) => stockByPartId.set(id, 0));
+      if (uniquePartIds.length) {
+        const grouped = await tx.stockMovement.groupBy({
+          by: ["partId", "type"],
+          where: {
+            partId: { in: uniquePartIds },
+            OR: [
+              { referenceType: null },
+              { referenceType: { not: "stock_reservation" } },
+            ],
+          },
+          _sum: { quantity: true },
+        });
+        for (const row of grouped) {
+          const cur = stockByPartId.get(row.partId) || 0;
+          const q = Number(row._sum.quantity || 0);
+          stockByPartId.set(
+            row.partId,
+            row.type === "in" ? cur + q : cur - q,
+          );
+        }
+      }
+
+      // Distribute total DPO expenses across lines by qty × weight.
+      const lineShares = itemRowsForCost.map((row) => {
+        if (!row.partId || row.qty <= 0) return 0;
+        const w = partInfoById.get(row.partId)?.weight || 0;
+        return w > 0 ? row.qty * w : row.qty;
+      });
+      const totalShare = lineShares.reduce((s, v) => s + v, 0);
+      const lineDistributedExpense = lineShares.map((share, i) => {
+        if (expenseTotalForCost <= 0) return 0;
+        if (totalShare <= 0) {
+          const positiveLines = itemRowsForCost.filter(
+            (r) => r.partId && r.qty > 0,
+          ).length;
+          return positiveLines > 0
+            ? expenseTotalForCost / positiveLines
+            : 0;
+        }
+        return (share / totalShare) * expenseTotalForCost;
+      });
+
+      // Aggregate per part: new qty added by this DPO and the matching
+      // value-with-expense (= qty × (purchase_price + EXP/unit)).
+      const partAggForCost = new Map<
+        string,
+        { qty: number; totalBaseValue: number; totalValueWithExpense: number }
+      >();
+      itemRowsForCost.forEach((row, index) => {
+        if (!row.partId || row.qty <= 0) return;
+        const distExp = lineDistributedExpense[index] || 0;
+        const rowValueWithExpense = row.itemValue + distExp;
+        const existing = partAggForCost.get(row.partId) || {
+          qty: 0,
+          totalBaseValue: 0,
+          totalValueWithExpense: 0,
+        };
+        existing.qty += row.qty;
+        existing.totalBaseValue += row.itemValue;
+        existing.totalValueWithExpense += rowValueWithExpense;
+        partAggForCost.set(row.partId, existing);
+      });
+
+      for (const [partId, agg] of partAggForCost.entries()) {
+        if (agg.qty <= 0) continue;
+        const info = partInfoById.get(partId);
+        const currentAvg = info?.avgCost || 0;
+        const currentStock = Math.max(0, stockByPartId.get(partId) || 0);
+
+        const purchaseRate =
+          Math.round((agg.totalBaseValue / agg.qty) * 10000) / 10000;
+
+        // Running weighted average per the user's formula.
+        const denom = currentStock + agg.qty;
+        const runningAvg =
+          currentStock > 0 && currentAvg > 0
+            ? (currentAvg * currentStock + agg.totalValueWithExpense) /
+              denom
+            : agg.totalValueWithExpense / agg.qty;
+        const avgCostRate =
+          Number.isFinite(runningAvg) && runningAvg > 0
+            ? Math.round(runningAvg * 10000) / 10000
+            : 0;
+
+        if (purchaseRate > 0 || avgCostRate > 0) {
           await tx.part.update({
             where: { id: partId },
-            data: { purchasePrice: rate },
+            data: {
+              ...(purchaseRate > 0 ? { purchasePrice: purchaseRate } : {}),
+              ...(avgCostRate > 0 ? { avgCost: avgCostRate } : {}),
+            },
           });
         }
       }
@@ -7781,6 +7925,9 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
           );
 
           if (partId && rate > 0) {
+            const movementStoreId = item.store_id || store_id || null;
+            const movementRackId = item.rack_id || null;
+            const movementShelfId = item.shelf_id || null;
             // Removed auto-update of avgCost and cost per user request
 
             await tx.stockMovement.create({
@@ -7789,15 +7936,44 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                 partId,
                 type: "in",
                 quantity: qty,
-                storeId: store_id || null,
-                rackId: item.rack_id || null,
-                shelfId: item.shelf_id || null,
+                storeId: movementStoreId,
+                rackId: movementRackId,
+                shelfId: movementShelfId,
                 referenceType: "direct_purchase",
                 referenceId: dpoId,
                 supplierId: supplier_id,
                 notes: `Direct Purchase Order: ${dpo_number}`,
               } as any,
             });
+
+            // Keep PartRackShelf in sync with direct purchase location assignments
+            if (movementStoreId) {
+              const existingPrs = await tx.partRackShelf.findFirst({
+                where: {
+                  partId,
+                  storeId: movementStoreId,
+                  rackId: movementRackId,
+                  shelfId: movementShelfId,
+                },
+              });
+              if (existingPrs) {
+                await tx.partRackShelf.update({
+                  where: { id: existingPrs.id },
+                  data: { quantity: { increment: qty } },
+                });
+              } else {
+                await tx.partRackShelf.create({
+                  data: {
+                    id: crypto.randomUUID(),
+                    partId,
+                    storeId: movementStoreId,
+                    rackId: movementRackId,
+                    shelfId: movementShelfId,
+                    quantity: qty,
+                  },
+                });
+              }
+            }
           }
         }
       }
@@ -7932,30 +8108,63 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
               }
             }
 
-            if (expenses && expenses.length > 0) {
-              for (const exp of expenses) {
-                const epAccount = await tx.account.findFirst({
-                  where: { name: exp.payable_account, status: "Active" },
+            const sourceExpensesForVoucher =
+              expenses && Array.isArray(expenses)
+                ? expenses
+                : (newOrder.DirectPurchaseOrderExpense || []).map((exp: any) => ({
+                    amount: exp.amount,
+                    description: exp.description,
+                  }));
+            if (sourceExpensesForVoucher.length > 0) {
+              const totalExpenseAmount = Math.round(
+                sourceExpensesForVoucher.reduce((sum: number, exp: any) => {
+                  const amt = Number(exp.amount) || 0;
+                  return sum + (amt > 0 ? amt : 0);
+                }, 0) * 100,
+              ) / 100;
+              const freightDescriptions = sourceExpensesForVoucher
+                .map((exp: any) => (exp?.description || "").trim())
+                .filter((desc: string) => !!desc)
+                .join("; ");
+
+              if (totalExpenseAmount > 0) {
+                const freightAccount = await tx.account.findFirst({
+                  where: {
+                    status: "Active",
+                    OR: [
+                      { name: { equals: "Local Purchase Freight", mode: "insensitive" } },
+                      { name: { contains: "Local Purchase Freight", mode: "insensitive" } },
+                      { name: { equals: "Direct Purchase Freight", mode: "insensitive" } },
+                      { name: { contains: "Direct Purchase Freight", mode: "insensitive" } },
+                    ],
+                  },
                 });
-                if (epAccount) {
+
+                if (freightAccount) {
                   voucherEntries.push({
                     id: crypto.randomUUID(),
                     accountId: inventoryAccount.id,
                     accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-                    description: `DPO: ${dpo_number} - ${exp.expense_type}`,
-                    debit: exp.amount,
+                    description: `DPO: ${dpo_number} - Direct Purchase Freight`,
+                    debit: totalExpenseAmount,
                     credit: 0,
                     sortOrder: voucherEntries.length,
                   });
                   voucherEntries.push({
                     id: crypto.randomUUID(),
-                    accountId: epAccount.id,
-                    accountName: `${epAccount.code}-${epAccount.name}`,
-                    description: `DPO: ${dpo_number} - ${exp.expense_type} Payable`,
+                    accountId: freightAccount.id,
+                    accountName: `${freightAccount.code}-${freightAccount.name}`,
+                    description:
+                      freightDescriptions ||
+                      `DPO: ${dpo_number} - Direct Purchase Freight Payable`,
                     debit: 0,
-                    credit: exp.amount,
+                    credit: totalExpenseAmount,
                     sortOrder: voucherEntries.length,
                   });
+                } else {
+                  voucherCreationStatus.errors.push(
+                    "Direct Purchase Freight account not found; expense JV adjustment skipped.",
+                  );
                 }
               }
             }
@@ -8092,6 +8301,8 @@ router.put(
       const {
         dpo_number,
         date,
+        invoice_no,
+        invoice_date,
         store_id,
         supplier_id,
         account,
@@ -8168,6 +8379,16 @@ router.put(
           data: {
             dpoNumber: dpo_number || existingOrder.dpoNumber,
             date: date ? new Date(date) : existingOrder.date,
+            invoiceNo:
+              invoice_no !== undefined
+                ? String(invoice_no).trim() || null
+                : (existingOrder as any).invoiceNo,
+            invoiceDate:
+              invoice_date !== undefined
+                ? invoice_date
+                  ? new Date(invoice_date)
+                  : null
+                : (existingOrder as any).invoiceDate,
             storeId: store_id !== undefined ? store_id : existingOrder.storeId,
             supplierId:
               supplier_id !== undefined
@@ -8182,7 +8403,7 @@ router.put(
             discount: discountVal,
             totalAmount,
             updatedAt: new Date(),
-          },
+          } as any,
         });
 
         // 2. Update Items and Stock Movements if provided
@@ -8224,15 +8445,39 @@ router.put(
             })),
           });
 
-          // Unconditionally update purchase prices for all items matching the new data
-          const itemsByPart = new Map<
-            string,
-            { qty: number; rate: number; rackId: string; shelfId: string }
-          >();
-          for (const item of items) {
-            const partId = item.part_id;
+          // Update Part.purchasePrice and Part.avgCost using a running
+          // weighted average:
+          //
+          //   new_avg = (current_avg × current_stock
+          //              + Σ_lines((purchase_price + EXP/unit) × qty))
+          //             / (current_stock + Σ_lines(qty))
+          //
+          // For an edit, "current_stock" must exclude this DPO's previous
+          // contribution so we are not double-counting it (the prior
+          // movements are reversed below in the same transaction, but we
+          // need the value before that side-effect occurs).
+          const sourceItems: any[] =
+            items && Array.isArray(items)
+              ? items
+              : existingOrder.DirectPurchaseOrderItem.map((it: any) => ({
+                  part_id: it.partId,
+                  quantity: it.quantity,
+                  purchase_price: it.purchasePrice,
+                  rack_id: it.rackId,
+                  shelf_id: it.shelfId,
+                }));
+          const sourceExpenses: any[] =
+            expenses && Array.isArray(expenses)
+              ? expenses
+              : existingOrder.DirectPurchaseOrderExpense.map((exp: any) => ({
+                  amount: exp.amount,
+                  description: exp.description,
+                }));
+
+          const sourceItemRowsForCost = sourceItems.map((item: any) => {
+            const partId = item.part_id as string | undefined;
             const qty = Number(item.quantity) || 0;
-            const rate = Number(
+            const baseRate = Number(
               item.unit_cost ??
                 item.unitCost ??
                 item.purchase_price ??
@@ -8240,29 +8485,165 @@ router.put(
                 item.unitPrice ??
                 0,
             );
-            if (partId && (qty > 0 || rate > 0)) {
-              if (itemsByPart.has(partId)) {
-                const existing = itemsByPart.get(partId)!;
-                existing.qty += qty;
-                // Use last provided positive rate
-                if (rate > 0) existing.rate = rate;
-              } else {
-                itemsByPart.set(partId, {
-                  qty,
-                  rate,
-                  rackId: item.rack_id,
-                  shelfId: item.shelf_id,
-                });
-              }
+            return {
+              partId,
+              qty,
+              baseRate,
+              itemValue: qty * baseRate,
+              rackId: item.rack_id,
+              shelfId: item.shelf_id,
+            };
+          });
+          const totalExpenseForCost = sourceExpenses.reduce(
+            (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
+            0,
+          );
+
+          const uniquePartIdsPut = Array.from(
+            new Set(
+              sourceItemRowsForCost
+                .map((r) => r.partId)
+                .filter((id): id is string => Boolean(id)),
+            ),
+          );
+
+          // Fetch part weight + current avgCost.
+          const partRecordsPut = uniquePartIdsPut.length
+            ? await tx.part.findMany({
+                where: { id: { in: uniquePartIdsPut } },
+                select: {
+                  id: true,
+                  weight: true,
+                  avgCost: true,
+                  cost: true,
+                },
+              })
+            : [];
+          const partInfoByIdPut = new Map<
+            string,
+            { weight: number; avgCost: number }
+          >();
+          for (const p of partRecordsPut) {
+            const w = Number((p as any).weight) || 0;
+            const avg =
+              Number((p as any).avgCost) || Number((p as any).cost) || 0;
+            partInfoByIdPut.set(p.id, { weight: w, avgCost: avg });
+          }
+
+          // Stock per part = total existing stock - this DPO's prior qty.
+          const stockByPartIdPut = new Map<string, number>();
+          uniquePartIdsPut.forEach((id) => stockByPartIdPut.set(id, 0));
+          if (uniquePartIdsPut.length) {
+            const grouped = await tx.stockMovement.groupBy({
+              by: ["partId", "type"],
+              where: {
+                partId: { in: uniquePartIdsPut },
+                OR: [
+                  { referenceType: null },
+                  { referenceType: { not: "stock_reservation" } },
+                ],
+              },
+              _sum: { quantity: true },
+            });
+            for (const row of grouped) {
+              const cur = stockByPartIdPut.get(row.partId) || 0;
+              const q = Number(row._sum.quantity || 0);
+              stockByPartIdPut.set(
+                row.partId,
+                row.type === "in" ? cur + q : cur - q,
+              );
+            }
+            // Subtract qty contributed by this DPO's existing items so the
+            // formula treats it as if the DPO were being added fresh.
+            for (const oldItem of existingOrder.DirectPurchaseOrderItem) {
+              const pid = (oldItem as any).partId as string | undefined;
+              const qty = Number((oldItem as any).quantity) || 0;
+              if (!pid) continue;
+              if (!stockByPartIdPut.has(pid)) continue;
+              stockByPartIdPut.set(
+                pid,
+                (stockByPartIdPut.get(pid) || 0) - qty,
+              );
             }
           }
 
-          // Apply unconditionally updated purchase prices
-          for (const [partId, data] of itemsByPart.entries()) {
-            if (data.rate > 0) {
+          // Distribute total expenses by qty × weight, falling back to qty
+          // (then equal split) when no positive share exists.
+          const lineSharesPut = sourceItemRowsForCost.map((row) => {
+            if (!row.partId || row.qty <= 0) return 0;
+            const w = partInfoByIdPut.get(row.partId)?.weight || 0;
+            return w > 0 ? row.qty * w : row.qty;
+          });
+          const totalSharePut = lineSharesPut.reduce((s, v) => s + v, 0);
+          const lineDistributedExpensePut = lineSharesPut.map((share, i) => {
+            if (totalExpenseForCost <= 0) return 0;
+            if (totalSharePut <= 0) {
+              const positiveLines = sourceItemRowsForCost.filter(
+                (r) => r.partId && r.qty > 0,
+              ).length;
+              return positiveLines > 0
+                ? totalExpenseForCost / positiveLines
+                : 0;
+            }
+            return (share / totalSharePut) * totalExpenseForCost;
+          });
+
+          // Aggregate per part.
+          const partAggForCostPut = new Map<
+            string,
+            {
+              qty: number;
+              totalBaseValue: number;
+              totalValueWithExpense: number;
+            }
+          >();
+          sourceItemRowsForCost.forEach((row, index) => {
+            if (!row.partId || row.qty <= 0) return;
+            const distExp = lineDistributedExpensePut[index] || 0;
+            const rowValueWithExpense = row.itemValue + distExp;
+            const existing = partAggForCostPut.get(row.partId) || {
+              qty: 0,
+              totalBaseValue: 0,
+              totalValueWithExpense: 0,
+            };
+            existing.qty += row.qty;
+            existing.totalBaseValue += row.itemValue;
+            existing.totalValueWithExpense += rowValueWithExpense;
+            partAggForCostPut.set(row.partId, existing);
+          });
+
+          for (const [partId, agg] of partAggForCostPut.entries()) {
+            if (agg.qty <= 0) continue;
+            const info = partInfoByIdPut.get(partId);
+            const currentAvg = info?.avgCost || 0;
+            const currentStock = Math.max(
+              0,
+              stockByPartIdPut.get(partId) || 0,
+            );
+
+            const purchaseRate =
+              Math.round((agg.totalBaseValue / agg.qty) * 10000) / 10000;
+
+            const denom = currentStock + agg.qty;
+            const runningAvg =
+              currentStock > 0 && currentAvg > 0
+                ? (currentAvg * currentStock + agg.totalValueWithExpense) /
+                  denom
+                : agg.totalValueWithExpense / agg.qty;
+            const avgCostRate =
+              Number.isFinite(runningAvg) && runningAvg > 0
+                ? Math.round(runningAvg * 10000) / 10000
+                : 0;
+
+            if (purchaseRate > 0 || avgCostRate > 0) {
               await tx.part.update({
                 where: { id: partId },
-                data: { purchasePrice: data.rate },
+                data: {
+                  ...(purchaseRate > 0
+                    ? { purchasePrice: purchaseRate }
+                    : {}),
+                  ...(avgCostRate > 0 ? { avgCost: avgCostRate } : {}),
+                },
               });
             }
           }
@@ -8274,33 +8655,100 @@ router.put(
 
           if (isApprovedStatus(newStatus)) {
             // Re-create stock movements. Delete existing movements first to avoid duplication
+            const oldMovements = await tx.stockMovement.findMany({
+              where: { referenceType: "direct_purchase", referenceId: id, type: "in" },
+            });
+            // Reverse old direct purchase impact from PartRackShelf
+            for (const mv of oldMovements) {
+              if (!mv.storeId) continue;
+              const existingPrs = await tx.partRackShelf.findFirst({
+                where: {
+                  partId: mv.partId,
+                  storeId: mv.storeId,
+                  rackId: mv.rackId || null,
+                  shelfId: mv.shelfId || null,
+                },
+              });
+              if (!existingPrs) continue;
+              const nextQty = Number(existingPrs.quantity || 0) - Number(mv.quantity || 0);
+              if (nextQty <= 0) {
+                await tx.partRackShelf.delete({ where: { id: existingPrs.id } });
+              } else {
+                await tx.partRackShelf.update({
+                  where: { id: existingPrs.id },
+                  data: { quantity: nextQty },
+                });
+              }
+            }
             await tx.stockMovement.deleteMany({
               where: { referenceType: "direct_purchase", referenceId: id },
             });
 
-            for (const [partId, data] of itemsByPart.entries()) {
-              const { qty, rate } = data;
+            for (const item of sourceItems) {
+              const partId = String(item.part_id || "");
+              const qty = Number(item.quantity) || 0;
+              const rate = Number(
+                item.unit_cost ??
+                  item.unitCost ??
+                  item.purchase_price ??
+                  item.unit_price ??
+                  item.unitPrice ??
+                  0,
+              );
+              const movementStoreId = item.store_id || store_id || existingOrder.storeId || null;
+              const movementRackId = item.rack_id || null;
+              const movementShelfId = item.shelf_id || null;
 
+              if (!partId || qty <= 0) continue;
               if (rate > 0) {
                 // Removed auto-update of avgCost and cost per user request
               }
 
-              // Create stock movement (one per part)
+              // Create stock movement per item row (preserve per-row location)
               await tx.stockMovement.create({
                 data: {
                   id: crypto.randomUUID(),
                   partId,
                   type: "in",
                   quantity: qty,
-                  storeId: store_id || existingOrder.storeId,
-                  rackId: data.rackId || null,
-                  shelfId: data.shelfId || null,
+                  storeId: movementStoreId,
+                  rackId: movementRackId,
+                  shelfId: movementShelfId,
                   referenceType: "direct_purchase",
                   referenceId: id,
                   supplierId: supplier_id || existingOrder.supplierId,
                   notes: `Updated DPO: ${dpo_number || existingOrder.dpoNumber}`,
                 } as any,
               });
+
+              // Sync PartRackShelf for the exact row location
+              if (movementStoreId) {
+                const existingPrs = await tx.partRackShelf.findFirst({
+                  where: {
+                    partId,
+                    storeId: movementStoreId,
+                    rackId: movementRackId,
+                    shelfId: movementShelfId,
+                  },
+                });
+                if (existingPrs) {
+                  await tx.partRackShelf.update({
+                    where: { id: existingPrs.id },
+                    data: { quantity: { increment: qty } },
+                  });
+                } else {
+                  await tx.partRackShelf.create({
+                    data: {
+                      id: crypto.randomUUID(),
+                      partId,
+                      storeId: movementStoreId,
+                      rackId: movementRackId,
+                      shelfId: movementShelfId,
+                      quantity: qty,
+                    },
+                  });
+                }
+              }
             }
           }
         }
@@ -8450,30 +8898,63 @@ router.put(
               }
             }
 
-            if (expenses) {
-              for (const exp of expenses) {
-                const epAccount = await tx.account.findFirst({
-                  where: { name: exp.payable_account },
+            const sourceExpensesForVoucher =
+              expenses && Array.isArray(expenses)
+                ? expenses
+                : existingOrder.DirectPurchaseOrderExpense.map((exp: any) => ({
+                    amount: exp.amount,
+                    description: exp.description,
+                  }));
+            if (sourceExpensesForVoucher.length > 0) {
+              const totalExpenseAmount = Math.round(
+                sourceExpensesForVoucher.reduce((sum: number, exp: any) => {
+                  const amt = Number(exp.amount) || 0;
+                  return sum + (amt > 0 ? amt : 0);
+                }, 0) * 100,
+              ) / 100;
+              const freightDescriptions = sourceExpensesForVoucher
+                .map((exp: any) => (exp?.description || "").trim())
+                .filter((desc: string) => !!desc)
+                .join("; ");
+
+              if (totalExpenseAmount > 0) {
+                const freightAccount = await tx.account.findFirst({
+                  where: {
+                    status: "Active",
+                    OR: [
+                      { name: { equals: "Local Purchase Freight", mode: "insensitive" } },
+                      { name: { contains: "Local Purchase Freight", mode: "insensitive" } },
+                      { name: { equals: "Direct Purchase Freight", mode: "insensitive" } },
+                      { name: { contains: "Direct Purchase Freight", mode: "insensitive" } },
+                    ],
+                  },
                 });
-                if (epAccount) {
+
+                if (freightAccount) {
                   voucherEntries.push({
                     id: crypto.randomUUID(),
                     accountId: inventoryAccount.id,
                     accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-                    description: `DPO: ${updated.dpoNumber} ${exp.expense_type}`,
-                    debit: exp.amount,
+                    description: `DPO: ${updated.dpoNumber} - Direct Purchase Freight`,
+                    debit: totalExpenseAmount,
                     credit: 0,
                     sortOrder: voucherEntries.length,
                   });
                   voucherEntries.push({
                     id: crypto.randomUUID(),
-                    accountId: epAccount.id,
-                    accountName: `${epAccount.code}-${epAccount.name}`,
-                    description: `DPO: ${updated.dpoNumber} ${exp.expense_type} Payable`,
+                    accountId: freightAccount.id,
+                    accountName: `${freightAccount.code}-${freightAccount.name}`,
+                    description:
+                      freightDescriptions ||
+                      `DPO: ${updated.dpoNumber} - Direct Purchase Freight Payable`,
                     debit: 0,
-                    credit: exp.amount,
+                    credit: totalExpenseAmount,
                     sortOrder: voucherEntries.length,
                   });
+                } else {
+                  console.warn(
+                    "Direct Purchase Freight account not found; expense JV adjustment skipped.",
+                  );
                 }
               }
             }

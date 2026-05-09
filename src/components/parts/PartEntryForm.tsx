@@ -99,9 +99,9 @@ const normalizeAvgPriceValue = (source: any): string => {
     
     
     "";
-  if (raw === null || raw === undefined || raw === "") return "";
+  if (raw === null || raw === undefined || raw === "") return "0.00";
   const value = Number(raw);
-  return Number.isFinite(value) ? value.toString() : String(raw);
+  return Number.isFinite(value) ? value.toFixed(2) : String(raw);
 };
 
 interface PartEntryFormProps {
@@ -4011,15 +4011,13 @@ export const PartEntryForm = ({
               </div>
               <div>
                 <label className="block text-xs text-foreground mb-1 font-bold">
-                  Re-Order Level
+                  Avg Price
                 </label>
                 <Input
                   type="number"
-                  value={formatNumericValue(formData.reOrderLevel)}
-                  onChange={(e) =>
-                    handleInputChange("reOrderLevel", e.target.value)
-                  }
-                  className="h-8 text-xs"
+                  readOnly
+                  value={formatNumericValue(formData.avgCost)}
+                  className="h-8 text-xs bg-muted/30"
                 />
               </div>
             </div>
@@ -4423,7 +4421,7 @@ export const PartEntryForm = ({
                             <SearchableSelect
                               options={optionsToRender.map((option) => ({
                                 value: option.id,
-                                label: `MP: ${option.masterPartNo || "-"} | Part: ${option.partNo}`,
+                                label: `Part: ${option.partNo} | MP: ${option.masterPartNo || "-"}`,
                                 description: `Desc: ${option.description || "-"} | Brand: ${option.brandName || "-"}`,
                               }))}
                               value={row.itemPartId}

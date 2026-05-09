@@ -162,7 +162,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
 
     const sql = `
       SELECT 
-        p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."type",
+        p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."priceB" as price_b, p."type",
         p.uom, p.weight, p."updatedAt" as updated_at,
         mp."masterPartNo" as master_part_no,
         b."name" as brand_name,
@@ -287,6 +287,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
         weight: p.weight,
         cost: p.cost,
         price_a: p.price_a,
+        price_b: p.price_b,
         stock: parseInt(p.stock) || 0,
         reserved_stock: parseInt(p.reserved_stock) || 0,
         updated_at: p.updated_at,
@@ -1071,14 +1072,21 @@ router.post("/bulk-update-prices", async (req: Request, res: Response) => {
 // Get price update history - MUST BE BEFORE /:id routes
 router.get("/price-history", async (req: Request, res: Response) => {
   try {
-    const { page = "1", limit = "50" } = req.query;
+    const { page = "1", limit = "50", partId } = req.query;
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
+    // Optional filter by part
+    const where: any = {};
+    if (partId && typeof partId === "string" && partId.trim() !== "") {
+      where.partId = partId;
+    }
+
     const [history, total] = await Promise.all([
       prisma.priceHistory.findMany({
+        where,
         orderBy: { createdAt: "desc" },
         skip,
         take: limitNum,
@@ -1091,12 +1099,15 @@ router.get("/price-history", async (req: Request, res: Response) => {
           },
         },
       }),
-      prisma.priceHistory.count(),
+      prisma.priceHistory.count({ where }),
     ]);
 
     const result = history.map((h) => ({
       id: h.id,
       date: h.createdAt.toISOString(),
+      partId: h.partId,
+      partNo: h.partNo,
+      description: h.description,
       itemsUpdated: h.itemsUpdated,
       priceField: h.priceField,
       updateType:
@@ -1105,7 +1116,13 @@ router.get("/price-history", async (req: Request, res: Response) => {
           : h.updateType === "fixed"
             ? "Fixed Amount"
             : h.updateType,
-      value: h.updateValue || h.newValue || 0,
+      // Keep `value` for backwards compatibility, but also expose the
+      // actual old/new prices so consumers (e.g. the Price Update History
+      // dialog) can show "X -> Y" changes for any update source.
+      value: h.updateValue ?? h.newValue ?? 0,
+      oldValue: h.oldValue ?? null,
+      newValue: h.newValue ?? null,
+      updateValue: h.updateValue ?? null,
       reason: h.reason,
       updatedBy: h.updatedBy || "System",
     }));
@@ -1248,9 +1265,16 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
 router.get("/model-associations/:modelName", async (req: Request, res: Response) => {
   try {
     const modelName = decodeURIComponent(String(req.params.modelName || "")).trim();
-    const application = String(req.query.application || "").trim();
+    const rawApplication = String(req.query.application || "").trim();
+    const invalidApplicationValues = new Set(["n/a", "na", "none", "-", "--", ""]);
+    const application = invalidApplicationValues.has(rawApplication.toLowerCase())
+      ? ""
+      : rawApplication;
     if (!modelName) {
       return res.status(400).json({ error: "Model name is required" });
+    }
+    if (!application) {
+      return res.status(400).json({ error: "Application is required" });
     }
 
     const modelRows = await prisma.model.findMany({
@@ -1258,13 +1282,9 @@ router.get("/model-associations/:modelName", async (req: Request, res: Response)
         name: { equals: modelName, mode: "insensitive" },
         Part: {
           status: "active",
-          ...(application
-            ? {
-              Application: {
-                name: { equals: application, mode: "insensitive" },
-              },
-            }
-            : {}),
+          Application: {
+            name: { equals: application, mode: "insensitive" },
+          },
         },
       },
       include: {

@@ -22,6 +22,8 @@ export interface Part {
   purchasePrice: number | null;
   avgCost: number | null;
   price: number | null;
+  priceA?: number | null;
+  priceB?: number | null;
   stock: number;
   reservedStock?: number;
   masterPartNo?: string;
@@ -100,7 +102,10 @@ export const PartsList = ({
                 UOM
               </TableHead>
               <TableHead className="font-bold text-foreground text-xs py-2 text-right">
-                Model Qty
+                Price A
+              </TableHead>
+              <TableHead className="font-bold text-foreground text-xs py-2 text-right">
+                Price B
               </TableHead>
               <TableHead className="font-bold text-foreground text-xs py-2">
                 Weight
@@ -136,9 +141,10 @@ export const PartsList = ({
                   {part.uom}
                 </TableCell>
                 <TableCell className="text-right text-foreground text-xs py-1.5">
-                  {part.modelTotalQty != null && part.modelTotalQty > 0
-                    ? part.modelTotalQty
-                    : "-"}
+                  {formatCurrency(part.priceA ?? null)}
+                </TableCell>
+                <TableCell className="text-right text-foreground text-xs py-1.5">
+                  {formatCurrency(part.priceB ?? null)}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-xs py-1.5">
                   {part.weight}

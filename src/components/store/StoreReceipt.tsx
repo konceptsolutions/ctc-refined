@@ -129,7 +129,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
           <div ref={receiptRef} className="bg-white p-6 rounded-lg">
             {/* Header */}
             <div className="header">
-              <h1 className="text-2xl font-bold">Direct Purchase Order Receipt</h1>
+              <h1 className="text-2xl font-bold">Local Purchase Order Receipt</h1>
               <p className="text-sm text-muted-foreground mt-2">
                 Order Number: {order.dpo_no}
               </p>

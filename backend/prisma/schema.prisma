@@ -152,6 +152,7 @@ model BackupSchedule {
 model Brand {
   id        String   @id @default(uuid())
   name      String   @unique
+  longName  String?  @map("long_name")
   status    String   @default("active")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -239,6 +240,8 @@ model DirectPurchaseOrder {
   id                         String                       @id @default(uuid())
   dpoNumber                  String                       @unique
   date                       DateTime
+  invoiceNo                  String?
+  invoiceDate                DateTime?
   storeId                    String?
   supplierId                 String?
   account                    String?
@@ -1079,7 +1082,7 @@ model User {
   name      String
   email     String   @unique
   password  String?
-  role      String   @default("Staff")
+  roleId    String   @default("Staff")
   status    String   @default("active")
   lastLogin String?  @default("-")
   createdAt DateTime @default(now())

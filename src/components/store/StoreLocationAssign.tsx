@@ -9,13 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiClient } from "@/lib/api";
@@ -72,6 +66,11 @@ interface StoreLocationAssignProps {
   onSuccess: () => void;
 }
 
+interface StoreOption {
+  id: string;
+  name: string;
+}
+
 const UUID_LIKE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -100,7 +99,10 @@ export const StoreLocationAssign = ({
   const [racks, setRacks] = useState<Rack[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchingRacks, setFetchingRacks] = useState(false);
-  const [itemLocations, setItemLocations] = useState<Record<string, { rackId: string; shelfId: string }>>({});
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [itemLocations, setItemLocations] = useState<
+    Record<string, { storeId: string; rackId: string; shelfId: string }>
+  >({});
   const [partLocationsByPartId, setPartLocationsByPartId] = useState<
     Record<
       string,
@@ -133,15 +135,21 @@ export const StoreLocationAssign = ({
 
   useEffect(() => {
     if (open && order.items && order.items.length > 0) {
+      fetchStores();
       fetchRacks();
       // Initialize from saved rack/shelf IDs (either or both may be set)
-      const initialLocations: Record<string, { rackId: string; shelfId: string }> = {};
+      const initialLocations: Record<
+        string,
+        { storeId: string; rackId: string; shelfId: string }
+      > = {};
       order.items.forEach((item) => {
+        const itemStoreId =
+          item.rackStoreId != null
+            ? String(item.rackStoreId)
+            : rackScopeStoreId || "";
         const rackId = item.rackId != null ? String(item.rackId) : "";
         const shelfId = item.shelfId != null ? String(item.shelfId) : "";
-        if (rackId || shelfId) {
-          initialLocations[item.id] = { rackId, shelfId };
-        }
+        initialLocations[item.id] = { storeId: itemStoreId, rackId, shelfId };
       });
       setItemLocations(initialLocations);
     }
@@ -253,6 +261,7 @@ export const StoreLocationAssign = ({
             if (!fallback) return;
 
             next[item.id] = {
+              storeId: next[item.id]?.storeId || rackScopeStoreId || "",
               rackId: fallback.rackId || "",
               shelfId: fallback.shelfId || "",
             };
@@ -270,31 +279,13 @@ export const StoreLocationAssign = ({
   const fetchRacks = async () => {
     try {
       setFetchingRacks(true);
-      // Scope racks to the purchase order's store when known; otherwise no server filter.
-      const effectiveStoreId = rackScopeStoreId || undefined;
-      const response = await apiClient.getRacks(effectiveStoreId);
+      // Load all racks so each item can choose its own store.
+      const response = await apiClient.getRacks(undefined);
       const racksData = response.data || response;
-
-      // If this PO/panel store is known, do not load other stores' racks when the store has none yet.
-      // (Previous behaviour fell back to all racks, which showed D2/B from another store for akcm, etc.)
-      let resolvedRacksData: any = racksData;
-      if (effectiveStoreId && Array.isArray(racksData) && racksData.length === 0) {
-        if (rackScopeStoreId) {
-          resolvedRacksData = [];
-        } else {
-          const fallbackResponse = await apiClient.getRacks(undefined);
-          resolvedRacksData = fallbackResponse.data || fallbackResponse;
-        }
-      }
+      const resolvedRacksData: any = racksData;
 
       if (Array.isArray(resolvedRacksData)) {
-        let rows = resolvedRacksData;
-        if (rackScopeStoreId) {
-          const forPoStore = rows.filter(
-            (r: any) => String(r.storeId ?? r.store_id ?? "") === rackScopeStoreId,
-          );
-          rows = forPoStore.length > 0 ? forPoStore : rows;
-        }
+        const rows = resolvedRacksData;
         const mapped = rows.map((r: any) => ({
           id: r.id != null ? String(r.id) : "",
           codeNo: r.codeNo || r.code_no,
@@ -307,25 +298,30 @@ export const StoreLocationAssign = ({
         }));
         setRacks(mapped);
 
-        if (rackScopeStoreId && order.items?.length) {
-          const allowed = new Set(mapped.map((r) => String(r.id)));
-          setItemLocations((prev) => {
-            const next = { ...prev };
-            for (const item of order.items!) {
-              const loc = next[item.id];
-              if (!loc?.rackId) continue;
-              if (!allowed.has(String(loc.rackId))) {
-                next[item.id] = { rackId: "", shelfId: "" };
-              }
-            }
-            return next;
-          });
-        }
       }
     } catch (error: any) {
       toast.error("Failed to fetch racks and shelves");
     } finally {
       setFetchingRacks(false);
+    }
+  };
+
+  const fetchStores = async () => {
+    try {
+      const response = await apiClient.getStores();
+      const rows = (response as any)?.data || response;
+      if (Array.isArray(rows)) {
+        setStores(
+          rows.map((s: any) => ({
+            id: String(s.id),
+            name: String(s.name || s.store_name || "Store"),
+          })),
+        );
+      } else {
+        setStores([]);
+      }
+    } catch {
+      setStores([]);
     }
   };
 
@@ -430,11 +426,25 @@ export const StoreLocationAssign = ({
   };
 
   const handleRackChange = (itemId: string, rackId: string) => {
+    const selectedRack = racksEffective.find((r) => String(r.id) === String(rackId));
     setItemLocations((prev) => ({
       ...prev,
       [itemId]: {
+        ...prev[itemId],
+        storeId: selectedRack?.storeId ? String(selectedRack.storeId) : (prev[itemId]?.storeId || ""),
         rackId,
         shelfId: "", // Reset shelf when rack changes
+      },
+    }));
+  };
+
+  const handleStoreChange = (itemId: string, storeIdValue: string) => {
+    setItemLocations((prev) => ({
+      ...prev,
+      [itemId]: {
+        storeId: storeIdValue,
+        rackId: "",
+        shelfId: "",
       },
     }));
   };
@@ -470,6 +480,7 @@ export const StoreLocationAssign = ({
           purchase_price: purchasePrice,
           sale_price: item.salePrice || 0,
           amount: amount,
+          store_id: location?.storeId || null,
           rack_id: location?.rackId || null,
           shelf_id: location?.shelfId || null,
         };
@@ -528,23 +539,29 @@ export const StoreLocationAssign = ({
           ) : (
             <Card>
               <CardContent className="pt-6">
-                <div className="rounded-md border overflow-x-auto -mx-1 sm:mx-0">
-                  <div className="min-w-[1020px] sm:min-w-[1100px]">
+                <div className="rounded-md border -mx-1 sm:mx-0">
+                  <div className="w-full">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[150px]">Part No</TableHead>
-                        <TableHead className="min-w-[200px]">Description</TableHead>
-                        <TableHead className="w-[120px]">Brand</TableHead>
-                        <TableHead className="w-[80px] text-right">Qty</TableHead>
-                        <TableHead className="min-w-[160px] max-w-[220px]">Current assignment</TableHead>
-                        <TableHead className="w-[200px]">Rack</TableHead>
-                        <TableHead className="w-[200px]">Shelf</TableHead>
+                        <TableHead className="w-[120px]">Part No</TableHead>
+                        <TableHead className="w-[170px]">Description</TableHead>
+                        <TableHead className="w-[90px] px-2">Brand</TableHead>
+                        <TableHead className="w-[50px] text-right px-2">Qty</TableHead>
+                        <TableHead className="w-[150px]">Current assignment</TableHead>
+                        <TableHead className="w-[110px]">Store</TableHead>
+                        <TableHead className="w-[110px]">Rack</TableHead>
+                        <TableHead className="w-[110px]">Shelf</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {order.items.map((item) => {
                         const location = itemLocations[item.id];
+                        const racksForStore = location?.storeId
+                          ? racksEffective.filter(
+                              (r) => String(r.storeId ?? "") === String(location.storeId),
+                            )
+                          : racksEffective;
                         const shelves = location?.rackId
                           ? getShelvesForRack(location.rackId)
                           : [];
@@ -574,6 +591,23 @@ export const StoreLocationAssign = ({
                           rackCode: savedRackCode || item.rackCode,
                           shelfNo: savedShelfNo || item.shelfNo,
                         };
+                        const currentStoreId =
+                          location?.storeId ||
+                          (item.rackStoreId != null ? String(item.rackStoreId) : "") ||
+                          rackScopeStoreId ||
+                          "";
+                        const storeOptions = stores.map((store) => ({
+                          value: store.id,
+                          label: store.name,
+                        }));
+                        const rackOptions = racksForStore.map((rack) => ({
+                          value: rack.id,
+                          label: rack.codeNo,
+                        }));
+                        const shelfOptions = shelves.map((shelf) => ({
+                          value: shelf.id,
+                          label: shelf.shelfNo,
+                        }));
                         const orderRackDisplay =
                           savedRackCode ||
                           (savedRackId
@@ -615,10 +649,10 @@ export const StoreLocationAssign = ({
                         return (
                           <TableRow key={item.id} className="align-top">
                             <TableCell className="font-medium align-top py-3">{item.partNo}</TableCell>
-                            <TableCell className="align-top py-3">{item.description || "-"}</TableCell>
-                            <TableCell className="align-top py-3">{item.brand}</TableCell>
-                            <TableCell className="text-right align-top py-3">{item.quantity}</TableCell>
-                            <TableCell className="align-top py-3 text-xs text-muted-foreground leading-snug max-w-[260px]">
+                            <TableCell className="align-top py-3 max-w-[170px] truncate">{item.description || "-"}</TableCell>
+                            <TableCell className="align-top py-3 px-2">{item.brand}</TableCell>
+                            <TableCell className="text-right align-top py-3 px-2">{item.quantity}</TableCell>
+                            <TableCell className="align-top py-3 text-xs text-muted-foreground leading-snug max-w-[150px]">
                               {hasSavedAssignment ? (
                                 <div className="flex flex-col gap-3">
                                   {hasOrderAssignment && (
@@ -681,49 +715,34 @@ export const StoreLocationAssign = ({
                               )}
                             </TableCell>
                             <TableCell className="align-middle">
-                              <Select
-                                value={location?.rackId || ""}
-                                onValueChange={(value) => handleRackChange(item.id, value)}
-                              >
-                                <SelectTrigger className="w-full min-w-[200px] max-w-[240px]">
-                                  <SelectValue placeholder="Select Rack" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {racksEffective.length === 0 ? (
-                                    <div className="px-2 py-1.5 text-sm text-muted-foreground">No racks available</div>
-                                  ) : (
-                                    racksEffective.map((rack) => (
-                                      <SelectItem key={rack.id} value={rack.id}>
-                                        {rack.codeNo}
-                                      </SelectItem>
-                                    ))
-                                  )}
-                                </SelectContent>
-                              </Select>
+                              <SearchableSelect
+                                options={storeOptions}
+                                value={currentStoreId}
+                                onValueChange={(value) => handleStoreChange(item.id, value)}
+                                placeholder="Select Store"
+                                className="w-full max-w-[130px]"
+                                disabled={stores.length === 0}
+                              />
                             </TableCell>
                             <TableCell className="align-middle">
-                              <Select
+                              <SearchableSelect
+                                options={rackOptions}
+                                value={location?.rackId || ""}
+                                onValueChange={(value) => handleRackChange(item.id, value)}
+                                placeholder="Select Rack"
+                                className="w-full max-w-[130px]"
+                                disabled={racksForStore.length === 0}
+                              />
+                            </TableCell>
+                            <TableCell className="align-middle">
+                              <SearchableSelect
+                                options={shelfOptions}
                                 value={location?.shelfId || ""}
                                 onValueChange={(value) => handleShelfChange(item.id, value)}
                                 disabled={!location?.rackId}
-                              >
-                                <SelectTrigger className="w-full min-w-[200px] max-w-[240px]">
-                                  <SelectValue placeholder={location?.rackId ? "Select Shelf" : "Select Rack first"} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {shelves.length === 0 ? (
-                                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                      {location?.rackId ? "No shelves available" : "Select rack first"}
-                                    </div>
-                                  ) : (
-                                    shelves.map((shelf) => (
-                                      <SelectItem key={shelf.id} value={shelf.id}>
-                                        {shelf.shelfNo}
-                                      </SelectItem>
-                                    ))
-                                  )}
-                                </SelectContent>
-                              </Select>
+                                placeholder={location?.rackId ? "Select Shelf" : "Select Rack first"}
+                                className="w-full max-w-[130px]"
+                              />
                             </TableCell>
                           </TableRow>
                         );

@@ -65,6 +65,18 @@ export const PartEntryPage = ({
             purchasePrice: null, // Minimal fields for dedicated list
             avgCost: null,
             price: p.price_a ? parseFloat(p.price_a) : null,
+            priceA:
+              p.price_a !== undefined && p.price_a !== null && p.price_a !== ""
+                ? parseFloat(p.price_a)
+                : p.priceA !== undefined && p.priceA !== null && p.priceA !== ""
+                  ? parseFloat(p.priceA)
+                  : null,
+            priceB:
+              p.price_b !== undefined && p.price_b !== null && p.price_b !== ""
+                ? parseFloat(p.price_b)
+                : p.priceB !== undefined && p.priceB !== null && p.priceB !== ""
+                  ? parseFloat(p.priceB)
+                  : null,
             stock: p.stock || 0,
             reservedStock: p.reserved_stock || 0,
             masterPartNo: (p.part_no || "").trim(),
@@ -187,6 +199,26 @@ export const PartEntryPage = ({
           : null,
         avgCost: savedPart.avgCost ? parseFloat(savedPart.avgCost) : null,
         price: savedPart.price_a ? parseFloat(savedPart.price_a) : null,
+        priceA:
+          savedPart.price_a !== undefined &&
+          savedPart.price_a !== null &&
+          savedPart.price_a !== ""
+            ? parseFloat(savedPart.price_a)
+            : savedPart.priceA !== undefined &&
+                savedPart.priceA !== null &&
+                savedPart.priceA !== ""
+              ? parseFloat(savedPart.priceA)
+              : null,
+        priceB:
+          savedPart.price_b !== undefined &&
+          savedPart.price_b !== null &&
+          savedPart.price_b !== ""
+            ? parseFloat(savedPart.price_b)
+            : savedPart.priceB !== undefined &&
+                savedPart.priceB !== null &&
+                savedPart.priceB !== ""
+              ? parseFloat(savedPart.priceB)
+              : null,
         stock: savedPart.qty || savedPart.stock || 0,
         reservedStock: savedPart.reserved_stock || 0,
         modelTotalQty:
@@ -245,6 +277,18 @@ export const PartEntryPage = ({
               purchasePrice: null,
               avgCost: null,
               price: p.price_a ? parseFloat(p.price_a) : null,
+              priceA:
+                p.price_a !== undefined && p.price_a !== null && p.price_a !== ""
+                  ? parseFloat(p.price_a)
+                  : p.priceA !== undefined && p.priceA !== null && p.priceA !== ""
+                    ? parseFloat(p.priceA)
+                    : null,
+              priceB:
+                p.price_b !== undefined && p.price_b !== null && p.price_b !== ""
+                  ? parseFloat(p.price_b)
+                  : p.priceB !== undefined && p.priceB !== null && p.priceB !== ""
+                    ? parseFloat(p.priceB)
+                    : null,
               stock: p.stock || 0,
               reservedStock: p.reserved_stock || 0,
               masterPartNo: (p.part_no || "").trim(),
@@ -308,6 +352,26 @@ export const PartEntryPage = ({
                           purchasePrice: null,
                           avgCost: null,
                           price: p.price_a ? parseFloat(p.price_a) : null,
+                          priceA:
+                            p.price_a !== undefined &&
+                            p.price_a !== null &&
+                            p.price_a !== ""
+                              ? parseFloat(p.price_a)
+                              : p.priceA !== undefined &&
+                                  p.priceA !== null &&
+                                  p.priceA !== ""
+                                ? parseFloat(p.priceA)
+                                : null,
+                          priceB:
+                            p.price_b !== undefined &&
+                            p.price_b !== null &&
+                            p.price_b !== ""
+                              ? parseFloat(p.price_b)
+                              : p.priceB !== undefined &&
+                                  p.priceB !== null &&
+                                  p.priceB !== ""
+                                ? parseFloat(p.priceB)
+                                : null,
                           stock: p.stock || 0,
                           reservedStock: p.reserved_stock || 0,
                           masterPartNo: (p.part_no || "").trim(),
@@ -360,6 +424,26 @@ export const PartEntryPage = ({
                               purchasePrice: null,
                               avgCost: null,
                               price: p.price_a ? parseFloat(p.price_a) : null,
+                              priceA:
+                                p.price_a !== undefined &&
+                                p.price_a !== null &&
+                                p.price_a !== ""
+                                  ? parseFloat(p.price_a)
+                                  : p.priceA !== undefined &&
+                                      p.priceA !== null &&
+                                      p.priceA !== ""
+                                    ? parseFloat(p.priceA)
+                                    : null,
+                              priceB:
+                                p.price_b !== undefined &&
+                                p.price_b !== null &&
+                                p.price_b !== ""
+                                  ? parseFloat(p.price_b)
+                                  : p.priceB !== undefined &&
+                                      p.priceB !== null &&
+                                      p.priceB !== ""
+                                    ? parseFloat(p.priceB)
+                                    : null,
                               stock: p.stock || 0,
                               reservedStock: p.reserved_stock || 0,
                               masterPartNo: (p.part_no || "").trim(),
@@ -431,6 +515,26 @@ export const PartEntryPage = ({
                                   purchasePrice: null,
                                   avgCost: null,
                                   price: p.price_a ? parseFloat(p.price_a) : null,
+                                  priceA:
+                                    p.price_a !== undefined &&
+                                    p.price_a !== null &&
+                                    p.price_a !== ""
+                                      ? parseFloat(p.price_a)
+                                      : p.priceA !== undefined &&
+                                          p.priceA !== null &&
+                                          p.priceA !== ""
+                                        ? parseFloat(p.priceA)
+                                        : null,
+                                  priceB:
+                                    p.price_b !== undefined &&
+                                    p.price_b !== null &&
+                                    p.price_b !== ""
+                                      ? parseFloat(p.price_b)
+                                      : p.priceB !== undefined &&
+                                          p.priceB !== null &&
+                                          p.priceB !== ""
+                                        ? parseFloat(p.priceB)
+                                        : null,
                                   stock: p.stock || 0,
                                   reservedStock: p.reserved_stock || 0,
                                   masterPartNo: (p.part_no || "").trim(),
@@ -478,6 +582,26 @@ export const PartEntryPage = ({
                               purchasePrice: null,
                               avgCost: null,
                               price: p.price_a ? parseFloat(p.price_a) : null,
+                              priceA:
+                                p.price_a !== undefined &&
+                                p.price_a !== null &&
+                                p.price_a !== ""
+                                  ? parseFloat(p.price_a)
+                                  : p.priceA !== undefined &&
+                                      p.priceA !== null &&
+                                      p.priceA !== ""
+                                    ? parseFloat(p.priceA)
+                                    : null,
+                              priceB:
+                                p.price_b !== undefined &&
+                                p.price_b !== null &&
+                                p.price_b !== ""
+                                  ? parseFloat(p.price_b)
+                                  : p.priceB !== undefined &&
+                                      p.priceB !== null &&
+                                      p.priceB !== ""
+                                    ? parseFloat(p.priceB)
+                                    : null,
                               stock: p.stock || 0,
                               reservedStock: p.reserved_stock || 0,
                               masterPartNo: (p.part_no || "").trim(),
@@ -572,6 +696,26 @@ export const PartEntryPage = ({
                             purchasePrice: null,
                             avgCost: null,
                             price: p.price_a ? parseFloat(p.price_a) : null,
+                            priceA:
+                              p.price_a !== undefined &&
+                              p.price_a !== null &&
+                              p.price_a !== ""
+                                ? parseFloat(p.price_a)
+                                : p.priceA !== undefined &&
+                                    p.priceA !== null &&
+                                    p.priceA !== ""
+                                  ? parseFloat(p.priceA)
+                                  : null,
+                            priceB:
+                              p.price_b !== undefined &&
+                              p.price_b !== null &&
+                              p.price_b !== ""
+                                ? parseFloat(p.price_b)
+                                : p.priceB !== undefined &&
+                                    p.priceB !== null &&
+                                    p.priceB !== ""
+                                  ? parseFloat(p.priceB)
+                                  : null,
                             stock: p.stock || 0,
                             reservedStock: p.reserved_stock || 0,
                             masterPartNo: (p.part_no || "").trim(),
@@ -617,6 +761,26 @@ export const PartEntryPage = ({
                             purchasePrice: null,
                             avgCost: null,
                             price: p.price_a ? parseFloat(p.price_a) : null,
+                            priceA:
+                              p.price_a !== undefined &&
+                              p.price_a !== null &&
+                              p.price_a !== ""
+                                ? parseFloat(p.price_a)
+                                : p.priceA !== undefined &&
+                                    p.priceA !== null &&
+                                    p.priceA !== ""
+                                  ? parseFloat(p.priceA)
+                                  : null,
+                            priceB:
+                              p.price_b !== undefined &&
+                              p.price_b !== null &&
+                              p.price_b !== ""
+                                ? parseFloat(p.price_b)
+                                : p.priceB !== undefined &&
+                                    p.priceB !== null &&
+                                    p.priceB !== ""
+                                  ? parseFloat(p.priceB)
+                                  : null,
                             stock: p.stock || 0,
                             reservedStock: p.reserved_stock || 0,
                             masterPartNo: (p.part_no || "").trim(),

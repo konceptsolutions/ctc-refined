@@ -2094,23 +2094,20 @@ export const CompactPartForm = ({
               className="h-7 text-xs"
             />
           </div>
-        </div>
-
-        {/* Row 4: Re-Order Level */}
-        <div className="grid grid-cols-1 gap-2 mb-2">
           <div>
             <label className="block text-[10px] text-foreground mb-0.5 font-bold">
-              Re-Order Level
+              Avg Price
             </label>
             <Input
               type="number"
-              value={formData.reOrderLevel}
-              onChange={(e) =>
-                handleInputChange("reOrderLevel", e.target.value)
-              }
-              className="h-7 text-xs"
+              readOnly
+              value={formData.avgCost}
+              className="h-7 text-xs bg-muted/30"
             />
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 mb-2">
           {/* <div className="bg-muted/30 p-1 rounded-sm">
             <label className="block text-[10px] text-muted-foreground mb-0.5 font-bold">
               Purchase Price
@@ -2494,7 +2491,7 @@ export const CompactPartForm = ({
                           <SearchableSelect
                             options={optionsToRender.map((option) => ({
                               value: option.id,
-                              label: `MP: ${option.masterPartNo || "-"} | Part: ${option.partNo}`,
+                              label: `Part: ${option.partNo} | MP: ${option.masterPartNo || "-"}`,
                               description: `Desc: ${option.description || "-"} | Brand: ${option.brandName || "-"}`,
                             }))}
                             value={row.itemPartId || undefined}

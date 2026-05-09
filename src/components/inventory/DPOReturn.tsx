@@ -231,7 +231,7 @@ export const DPOReturn = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">DPO Returns</h2>
-                    <p className="text-muted-foreground">Manage and track items returned to suppliers from Direct Purchase Orders</p>
+                    <p className="text-muted-foreground">Manage and track items returned to suppliers from Local Purchase Orders</p>
                 </div>
             </div>
 

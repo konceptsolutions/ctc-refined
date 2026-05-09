@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from "react";
+import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Search, Eye, FileText, CalendarIcon, Package, ShoppingCart, Boxes, Settings2, Truck, Printer, RefreshCw, ArrowRight, X, Trash2, Info } from "lucide-react";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
+import { Plus, Search, Eye, FileText, CalendarIcon, Package, ShoppingCart, Boxes, Settings2, Truck, Printer, RefreshCw, ArrowRight, ArrowLeftRight, X, Trash2, Info } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -143,6 +148,78 @@ export const SalesInquiry = () => {
   const [itemSearch, setItemSearch] = useState("");
   const [selectedPart, setSelectedPart] = useState<PartDetail | null>(null);
   const [showItemDropdown, setShowItemDropdown] = useState(false);
+
+  // Multi-row lookup table state (each row mirrors the Sales Invoice item row)
+  type LookupRow = {
+    id: string;
+    partId: string;
+    search: string;
+    qty: number;
+    unitPrice?: number;
+    priceA?: number;
+    priceB?: number;
+    priceM?: number;
+    selectedPriceType?: "A" | "B" | "M";
+  };
+  const makeLookupRow = (): LookupRow => ({
+    id:
+      typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : `lr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    partId: "",
+    search: "",
+    qty: 0,
+  });
+  const [lookupRows, setLookupRows] = useState<LookupRow[]>([makeLookupRow()]);
+  const [activeLookupRowId, setActiveLookupRowId] = useState<string | null>(
+    null,
+  );
+  // Remembers each row's last-clicked model name so switching items restores
+  // that row's own model selection rather than carrying the previous row's.
+  const [lookupRowSelectedModel, setLookupRowSelectedModel] = useState<
+    Record<string, string>
+  >({});
+  const [showLookupRowDropdown, setShowLookupRowDropdown] = useState<
+    Record<string, boolean>
+  >({});
+  const lookupRowDropdownRefs = useRef<Record<string, HTMLDivElement | null>>(
+    {},
+  );
+  const lookupRowPortalRefs = useRef<Record<string, HTMLDivElement | null>>(
+    {},
+  );
+  const lookupRowInputRefs = useRef<Record<string, HTMLInputElement | null>>(
+    {},
+  );
+  const [lookupDropdownRects, setLookupDropdownRects] = useState<
+    Record<string, { top: number; left: number; width: number }>
+  >({});
+
+  // Top filters (shared across all rows)
+  const [lookupModelFilter, setLookupModelFilter] = useState("");
+  const [lookupDescriptionFilter, setLookupDescriptionFilter] = useState("");
+  const [lookupApplicationFilter, setLookupApplicationFilter] = useState("");
+
+  // Cache of machine models per part for the Quantity Used row
+  const [partModelsByPartId, setPartModelsByPartId] = useState<
+    Record<string, { id: string; name: string; qtyUsed: number }[]>
+  >({});
+
+  // Cache of stock balances per part: { current_stock, reserved_stock, available_stock, avg_cost }
+  const [partStockBalances, setPartStockBalances] = useState<
+    Record<
+      string,
+      {
+        current_stock: number;
+        reserved_stock: number;
+        available_stock: number;
+        avg_cost?: number;
+      }
+    >
+  >({});
+  const [loadingStockBalances, setLoadingStockBalances] = useState<
+    Record<string, boolean>
+  >({});
   const [loadingPartDetails, setLoadingPartDetails] = useState(false);
   const [purchaseOrderHistory, setPurchaseOrderHistory] = useState<any[]>([]);
   const [loadingPOHistory, setLoadingPOHistory] = useState(false);
@@ -159,6 +236,8 @@ export const SalesInquiry = () => {
   const [selectedModelName, setSelectedModelName] = useState("");
   const [modelAssociations, setModelAssociations] = useState<ModelAssociationItem[]>([]);
   const [loadingModelAssociations, setLoadingModelAssociations] = useState(false);
+  const [alternateItems, setAlternateItems] = useState<PartDetail[]>([]);
+  const [loadingAlternateItems, setLoadingAlternateItems] = useState(false);
 
   const itemDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -168,6 +247,12 @@ export const SalesInquiry = () => {
   const [rackMap, setRackMap] = useState<Record<string, string>>({});
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [searchResults, setSearchResults] = useState<PartDetail[]>([]);
+  // Stable cache for parts brought in from external panels (alternates,
+  // associations) so they aren't wiped by the debounced item-search effect
+  // that resets `searchResults`.
+  const [externalLookupParts, setExternalLookupParts] = useState<PartDetail[]>(
+    [],
+  );
 
   const resolveSelectedPartId = (part: PartDetail | null): string | null => {
     if (!part) return null;
@@ -580,12 +665,335 @@ export const SalesInquiry = () => {
     return filtered.slice(0, 150);
   }, [itemSearch, partsData, searchResults]);
 
+  // Pool of parts available to lookup rows (local + on-demand search results
+  // + parts injected from alternate / association side panels).
+  const lookupPartsPool = useMemo(() => {
+    const pool = [...partsData];
+    searchResults.forEach((res) => {
+      if (!pool.find((p) => p.id === res.id)) pool.push(res);
+    });
+    externalLookupParts.forEach((res) => {
+      if (!pool.find((p) => p.id === res.id)) pool.push(res);
+    });
+    return pool;
+  }, [partsData, searchResults, externalLookupParts]);
+
+  // Top-level filter option memos (each filter is computed against the others
+  // so the dropdowns stay coherent).
+  const lookupModelOptions = useMemo(() => {
+    const desc = lookupDescriptionFilter.trim().toLowerCase();
+    const app = lookupApplicationFilter.trim().toLowerCase();
+    const set = new Set<string>();
+    for (const p of lookupPartsPool) {
+      const description = String(p.description || "").toLowerCase();
+      const application = String(p.application || "").toLowerCase();
+      if (desc && description !== desc) continue;
+      if (app && application !== app) continue;
+      const models =
+        partModelsByPartId[p.id || ""] ?? (p.id ? null : []);
+      if (Array.isArray(models)) {
+        for (const m of models) {
+          const name = String(m.name || "").trim();
+          if (name) set.add(name);
+        }
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [
+    lookupPartsPool,
+    lookupDescriptionFilter,
+    lookupApplicationFilter,
+    partModelsByPartId,
+  ]);
+
+  const lookupDescriptionOptions = useMemo(() => {
+    const model = lookupModelFilter.trim().toLowerCase();
+    const app = lookupApplicationFilter.trim().toLowerCase();
+    const set = new Set<string>();
+    for (const p of lookupPartsPool) {
+      const application = String(p.application || "").toLowerCase();
+      if (app && application !== app) continue;
+      if (model) {
+        const models = partModelsByPartId[p.id || ""];
+        const hasModel = (models || []).some(
+          (m) => String(m.name || "").toLowerCase() === model,
+        );
+        if (!hasModel) continue;
+      }
+      const desc = String(p.description || "").trim();
+      if (desc) set.add(desc);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [
+    lookupPartsPool,
+    lookupModelFilter,
+    lookupApplicationFilter,
+    partModelsByPartId,
+  ]);
+
+  const lookupApplicationOptions = useMemo(() => {
+    const model = lookupModelFilter.trim().toLowerCase();
+    const desc = lookupDescriptionFilter.trim().toLowerCase();
+    const set = new Set<string>();
+    for (const p of lookupPartsPool) {
+      const description = String(p.description || "").toLowerCase();
+      if (desc && description !== desc) continue;
+      if (model) {
+        const models = partModelsByPartId[p.id || ""];
+        const hasModel = (models || []).some(
+          (m) => String(m.name || "").toLowerCase() === model,
+        );
+        if (!hasModel) continue;
+      }
+      const app = String(p.application || "").trim();
+      if (app) set.add(app);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [
+    lookupPartsPool,
+    lookupModelFilter,
+    lookupDescriptionFilter,
+    partModelsByPartId,
+  ]);
+
+  const lookupModelFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "__all__", label: "All Models" },
+      ...lookupModelOptions.map((name) => ({ value: name, label: name })),
+    ],
+    [lookupModelOptions],
+  );
+
+  const lookupDescriptionFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "__all__", label: "All Descriptions" },
+      ...lookupDescriptionOptions.map((name) => ({ value: name, label: name })),
+    ],
+    [lookupDescriptionOptions],
+  );
+
+  const lookupApplicationFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "__all__", label: "All Applications" },
+      ...lookupApplicationOptions.map((name) => ({ value: name, label: name })),
+    ],
+    [lookupApplicationOptions],
+  );
+
+  // Build the filtered, sorted parts list shown in a row's dropdown.
+  const getFilteredPartsForLookupRow = useCallback(
+    (rowId: string) => {
+      const row = lookupRows.find((r) => r.id === rowId);
+      const search = (row?.search || "").trim().toLowerCase();
+      const model = lookupModelFilter.trim().toLowerCase();
+      const description = lookupDescriptionFilter.trim().toLowerCase();
+      const application = lookupApplicationFilter.trim().toLowerCase();
+
+      let list = lookupPartsPool.filter((p) => {
+        const pNo = (p.partNo || "").toLowerCase();
+        const mNo = (p.masterPart || "").toLowerCase();
+        const desc = (p.description || "").toLowerCase();
+        const cat = (p.category || "").toLowerCase();
+        const sub = (p.subCategory || "").toLowerCase();
+        const app = (p.application || "").toLowerCase();
+        const brand = (p.brand || "").toLowerCase();
+
+        if (
+          search &&
+          !(
+            pNo.includes(search) ||
+            mNo.includes(search) ||
+            desc.includes(search) ||
+            cat.includes(search) ||
+            sub.includes(search) ||
+            app.includes(search) ||
+            brand.includes(search)
+          )
+        )
+          return false;
+
+        if (description && desc !== description) return false;
+        if (application && app !== application) return false;
+        if (model) {
+          const models = partModelsByPartId[p.id || ""];
+          const hasModel = (models || []).some(
+            (mm) => String(mm.name || "").toLowerCase() === model,
+          );
+          if (!hasModel) return false;
+        }
+        return true;
+      });
+
+      if (search) {
+        list = [...list].sort((a, b) => {
+          const aNo = (a.partNo || "").toLowerCase();
+          const bNo = (b.partNo || "").toLowerCase();
+          const aMaster = (a.masterPart || "").toLowerCase();
+          const bMaster = (b.masterPart || "").toLowerCase();
+          const aExact = aNo === search || aMaster === search;
+          const bExact = bNo === search || bMaster === search;
+          if (aExact && !bExact) return -1;
+          if (!aExact && bExact) return 1;
+          const aStarts =
+            aNo.startsWith(search) || aMaster.startsWith(search);
+          const bStarts =
+            bNo.startsWith(search) || bMaster.startsWith(search);
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+          return 0;
+        });
+      }
+
+      return list.slice(0, 150);
+    },
+    [
+      lookupRows,
+      lookupPartsPool,
+      lookupModelFilter,
+      lookupDescriptionFilter,
+      lookupApplicationFilter,
+      partModelsByPartId,
+    ],
+  );
+
+  // Lazily fetch machine models for parts referenced by lookup rows so the
+  // Quantity Used column has data to render.
+  useEffect(() => {
+    const targets = lookupRows
+      .map((r) => r.partId)
+      .filter((pid): pid is string => !!pid && !partModelsByPartId[pid]);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const updates: Record<
+        string,
+        { id: string; name: string; qtyUsed: number }[]
+      > = {};
+      await Promise.all(
+        targets.map(async (pid) => {
+          try {
+            const resp: any = await apiClient.getPart(pid);
+            const data = resp?.data || resp;
+            const apiModels = data?.models || [];
+            updates[pid] = apiModels.map((m: any) => ({
+              id: String(m.id ?? `${pid}-${m.name}`),
+              name: String(m.name ?? ""),
+              qtyUsed: Number(m.qty_used ?? m.qtyUsed ?? 0) || 0,
+            }));
+          } catch {
+            updates[pid] = [];
+          }
+        }),
+      );
+      if (!cancelled) {
+        setPartModelsByPartId((prev) => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lookupRows, partModelsByPartId]);
+
+  useEffect(() => {
+    const loadAlternateItems = async () => {
+      if (!selectedPart) {
+        setAlternateItems([]);
+        setLoadingAlternateItems(false);
+        return;
+      }
+
+      const selectedPartNo = String(selectedPart.partNo || "").trim();
+      const selectedMasterPart = String(selectedPart.masterPart || "").trim();
+      if (!selectedPartNo && !selectedMasterPart) {
+        setAlternateItems([]);
+        setLoadingAlternateItems(false);
+        return;
+      }
+
+      setLoadingAlternateItems(true);
+      try {
+        const requests: Promise<any>[] = [];
+        if (selectedPartNo) {
+          requests.push(apiClient.getParts({ part_no: selectedPartNo, limit: 10000, page: 1 }));
+          requests.push(apiClient.getParts({ master_part_no: selectedPartNo, limit: 10000, page: 1 }));
+        }
+        if (selectedMasterPart && selectedMasterPart.toLowerCase() !== selectedPartNo.toLowerCase()) {
+          requests.push(apiClient.getParts({ part_no: selectedMasterPart, limit: 10000, page: 1 }));
+          requests.push(apiClient.getParts({ master_part_no: selectedMasterPart, limit: 10000, page: 1 }));
+        }
+
+        const responses = await Promise.all(requests);
+        const rawParts = responses.flatMap((res) => {
+          if (Array.isArray(res)) return res;
+          if (Array.isArray((res as any)?.data)) return (res as any).data;
+          return [];
+        });
+
+        const dedup = new Map<string, PartDetail>();
+        rawParts.forEach((row: any) => {
+          const transformed = transformPart(row, rackMap, stockMap);
+          const key = String(transformed.id || `${transformed.partNo}|${transformed.masterPart}|${transformed.brand}|${transformed.description}`);
+          dedup.set(key, transformed);
+        });
+
+        const normalizedPartNo = selectedPartNo.toLowerCase();
+        const normalizedMaster = selectedMasterPart.toLowerCase();
+        const selectedDescription = String(selectedPart.description || "").trim().toLowerCase();
+        const selectedBrand = String(selectedPart.brand || "").trim().toLowerCase();
+
+        const matched = Array.from(dedup.values()).filter((p) => {
+          const partNo = String(p.partNo || "").trim().toLowerCase();
+          const masterPart = String(p.masterPart || "").trim().toLowerCase();
+          const description = String(p.description || "").trim().toLowerCase();
+          const brand = String(p.brand || "").trim().toLowerCase();
+          const isSelectedRecord =
+            (selectedPart.id && p.id && p.id === selectedPart.id) ||
+            (!selectedPart.id &&
+              partNo === normalizedPartNo &&
+              masterPart === normalizedMaster &&
+              description === selectedDescription &&
+              brand === selectedBrand);
+          if (isSelectedRecord) return false;
+          return (
+            (normalizedPartNo && (partNo === normalizedPartNo || masterPart === normalizedPartNo)) ||
+            (normalizedMaster && (partNo === normalizedMaster || masterPart === normalizedMaster))
+          );
+        });
+
+        setAlternateItems(matched);
+      } catch {
+        setAlternateItems([]);
+      } finally {
+        setLoadingAlternateItems(false);
+      }
+    };
+
+    loadAlternateItems();
+  }, [selectedPart, rackMap, stockMap]);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (itemDropdownRef.current && !itemDropdownRef.current.contains(event.target as Node)) {
         setShowItemDropdown(false);
       }
+      const target = event.target as Node;
+      setShowLookupRowDropdown((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of Object.keys(prev)) {
+          if (!prev[id]) continue;
+          const wrapperEl = lookupRowDropdownRefs.current[id];
+          const portalEl = lookupRowPortalRefs.current[id];
+          const insideWrapper = wrapperEl ? wrapperEl.contains(target) : false;
+          const insidePortal = portalEl ? portalEl.contains(target) : false;
+          if (!insideWrapper && !insidePortal) {
+            next[id] = false;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -601,10 +1009,71 @@ export const SalesInquiry = () => {
     return part.brand && part.brand !== "N/A" ? `${baseLabel} (${part.brand})` : baseLabel;
   };
 
+  const normalizeAssociationApplication = (value: string) => {
+    const rawApplication = String(value || "").trim();
+    return ["n/a", "na", "none", "-", "--", ""].includes(
+      rawApplication.toLowerCase(),
+    )
+      ? ""
+      : rawApplication;
+  };
+
+  const loadModelAssociations = async (
+    modelName: string,
+    application: string,
+    showApplicationToast = true,
+  ) => {
+    const cleanModel = String(modelName || "").trim();
+    if (!cleanModel) return;
+
+    const selectedApplication = normalizeAssociationApplication(application);
+    setSelectedModelName(cleanModel);
+
+    if (!selectedApplication) {
+      setModelAssociations([]);
+      setLoadingModelAssociations(false);
+      if (showApplicationToast) {
+        toast({
+          title: "Application required",
+          description:
+            "Part association is filtered by both model and application.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
+    setLoadingModelAssociations(true);
+    try {
+      const response = await apiClient.getPartsByModelAssociation(
+        cleanModel,
+        selectedApplication,
+      );
+      const data = Array.isArray((response as any)?.data)
+        ? (response as any).data
+        : Array.isArray(response)
+          ? response
+          : [];
+      setModelAssociations(data);
+    } catch {
+      setModelAssociations([]);
+      toast({
+        title: "Failed to load associations",
+        description: "Could not fetch part associations for selected model.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingModelAssociations(false);
+    }
+  };
+
   const handleSelectPart = async (part: PartDetail) => {
     setSelectedPart(part);
     setItemSearch(getItemLabel(part));
     setShowItemDropdown(false);
+    setSelectedModelName("");
+    setModelAssociations([]);
+    setLoadingModelAssociations(false);
 
     // Fetch full part details if we have the ID
     if (part.id) {
@@ -680,6 +1149,13 @@ export const SalesInquiry = () => {
 
         setSelectedPart(fullPartDetails);
         setItemSearch(getItemLabel(fullPartDetails));
+        if (transformedModels.length > 0) {
+          await loadModelAssociations(
+            transformedModels[0]?.name || "",
+            fullPartDetails.application || "",
+            false,
+          );
+        }
       } catch (error: any) {
         // Keep the selected part from list if API fails
       } finally {
@@ -692,37 +1168,337 @@ export const SalesInquiry = () => {
     setItemSearch("");
     setSelectedPart(null);
     setPartModels([]);
+    setSelectedModelName("");
+    setModelAssociations([]);
+    setLoadingModelAssociations(false);
     setShowItemDropdown(false);
   };
 
-  const handleModelAssociationClick = async (modelName: string) => {
-    const cleanModel = String(modelName || "").trim();
-    if (!cleanModel) return;
-    const selectedApplication = String(selectedPart?.application || "").trim();
+  // Multi-row lookup table handlers ---------------------------------------
+  const handleAddLookupRow = () => {
+    const row = makeLookupRow();
+    setLookupRows((prev) => [...prev, row]);
+  };
 
-    setSelectedModelName(cleanModel);
-    setLoadingModelAssociations(true);
+  const handleRemoveLookupRow = (rowId: string) => {
+    setLookupRows((prev) => {
+      const filtered = prev.filter((r) => r.id !== rowId);
+      return filtered.length > 0 ? filtered : [makeLookupRow()];
+    });
+    setShowLookupRowDropdown((prev) => {
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
+    setLookupRowSelectedModel((prev) => {
+      if (!(rowId in prev)) return prev;
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
+    setActiveLookupRowId((curr) => (curr === rowId ? null : curr));
+  };
+
+  const openLookupRowDropdown = useCallback((rowId: string) => {
+    const el = lookupRowInputRefs.current[rowId];
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setLookupDropdownRects((prev) => ({
+        ...prev,
+        [rowId]: {
+          top: rect.bottom + 4,
+          left: rect.left,
+          width: Math.max(rect.width, 360),
+        },
+      }));
+    }
+    setShowLookupRowDropdown((prev) => ({ ...prev, [rowId]: true }));
+  }, []);
+
+  // Recompute dropdown rect on scroll/resize while a dropdown is open.
+  useEffect(() => {
+    const openIds = Object.keys(showLookupRowDropdown).filter(
+      (id) => showLookupRowDropdown[id],
+    );
+    if (openIds.length === 0) return;
+    const recompute = () => {
+      setLookupDropdownRects((prev) => {
+        const next = { ...prev };
+        for (const id of openIds) {
+          const el = lookupRowInputRefs.current[id];
+          if (!el) continue;
+          const rect = el.getBoundingClientRect();
+          next[id] = {
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: Math.max(rect.width, 360),
+          };
+        }
+        return next;
+      });
+    };
+    window.addEventListener("scroll", recompute, true);
+    window.addEventListener("resize", recompute);
+    return () => {
+      window.removeEventListener("scroll", recompute, true);
+      window.removeEventListener("resize", recompute);
+    };
+  }, [showLookupRowDropdown]);
+
+  const handleLookupRowSearchChange = (rowId: string, value: string) => {
+    setLookupRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== rowId) return r;
+        let partId = r.partId;
+        if (partId) {
+          const selected = lookupPartsPool.find((p) => p.id === partId);
+          if (!selected || getItemLabel(selected) !== value) {
+            partId = "";
+          }
+        }
+        return { ...r, search: value, partId };
+      }),
+    );
+    setShowLookupRowDropdown((prev) => ({ ...prev, [rowId]: true }));
+  };
+
+  const fetchPartStockForRow = useCallback(async (partId: string) => {
+    if (!partId) return;
+    setLoadingStockBalances((prev) => ({ ...prev, [partId]: true }));
     try {
-      const response = await apiClient.getPartsByModelAssociation(
-        cleanModel,
-        selectedApplication,
+      const resp: any = await apiClient.getStockBalance(partId);
+      const data = resp?.data || resp || {};
+      const current = Number(
+        data.current_stock ?? data.currentStock ?? data.stock ?? 0,
       );
-      const data = Array.isArray((response as any)?.data)
-        ? (response as any).data
-        : Array.isArray(response)
-          ? response
-          : [];
-      setModelAssociations(data);
+      const reserved = Number(
+        data.reserved_stock ?? data.reservedStock ?? data.reserved ?? 0,
+      );
+      const available = Number.isFinite(
+        Number(data.available_stock ?? data.availableStock ?? data.available),
+      )
+        ? Number(data.available_stock ?? data.availableStock ?? data.available)
+        : Math.max(0, current - reserved);
+      const avgCost = Number(data.avg_cost ?? data.avgCost ?? 0);
+      setPartStockBalances((prev) => ({
+        ...prev,
+        [partId]: {
+          current_stock: current,
+          reserved_stock: reserved,
+          available_stock: available,
+          avg_cost: Number.isFinite(avgCost) ? avgCost : undefined,
+        },
+      }));
     } catch {
-      setModelAssociations([]);
+      // leave whatever we had
+    } finally {
+      setLoadingStockBalances((prev) => ({ ...prev, [partId]: false }));
+    }
+  }, []);
+
+  const handleSelectPartForLookupRow = async (
+    rowId: string,
+    part: PartDetail,
+  ) => {
+    const priceA = parseFloat(part.priceA || "") || 0;
+    const priceB = parseFloat(part.priceB || "") || 0;
+    const priceM = parseFloat(part.priceM || "") || 0;
+    const initialPriceType: "A" | "B" | "M" | undefined = priceA
+      ? "A"
+      : priceB
+        ? "B"
+        : priceM
+          ? "M"
+          : undefined;
+    const initialUnit =
+      initialPriceType === "A"
+        ? priceA
+        : initialPriceType === "B"
+          ? priceB
+          : initialPriceType === "M"
+            ? priceM
+            : 0;
+
+    setLookupRows((prev) =>
+      prev.map((r) =>
+        r.id === rowId
+          ? {
+              ...r,
+              partId: part.id || "",
+              search: getItemLabel(part),
+              priceA,
+              priceB,
+              priceM,
+              selectedPriceType: initialPriceType,
+              unitPrice: initialUnit,
+            }
+          : r,
+      ),
+    );
+    setShowLookupRowDropdown((prev) => ({ ...prev, [rowId]: false }));
+    setActiveLookupRowId(rowId);
+    setLookupRowSelectedModel((prev) => {
+      if (!(rowId in prev)) return prev;
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
+    if (part.id) fetchPartStockForRow(part.id);
+    await handleSelectPart(part);
+  };
+
+  const handleUpdateLookupRow = (
+    rowId: string,
+    patch: Partial<LookupRow>,
+  ) => {
+    setLookupRows((prev) =>
+      prev.map((r) => (r.id === rowId ? { ...r, ...patch } : r)),
+    );
+  };
+
+  // Ensure a PartDetail is present in the lookup pool. We push into a
+  // dedicated cache (`externalLookupParts`) instead of `searchResults` because
+  // `searchResults` is reset by the debounced item-search effect whenever
+  // `itemSearch` changes — which would wipe the freshly-added part roughly
+  // 400ms later, leaving the row's display columns blank.
+  const ensurePartInLookupPool = (part: PartDetail) => {
+    if (!part?.id) return;
+    setExternalLookupParts((prev) =>
+      prev.some((p) => p.id === part.id) ? prev : [...prev, part],
+    );
+  };
+
+  // Swap the currently-active lookup row's part with the chosen alternate part.
+  // Falls back to the first empty row, otherwise creates a new row.
+  const handleSwapWithAlternate = async (alternate: PartDetail) => {
+    if (!alternate?.id) return;
+    ensurePartInLookupPool(alternate);
+    let targetRowId = activeLookupRowId;
+    if (!targetRowId) {
+      const empty = lookupRows.find((r) => !r.partId);
+      if (empty) {
+        targetRowId = empty.id;
+      } else {
+        const newRow = makeLookupRow();
+        targetRowId = newRow.id;
+        setLookupRows((prev) => [...prev, newRow]);
+        // Allow React to flush the new row before populating it.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    await handleSelectPartForLookupRow(targetRowId, alternate);
+    toast({
+      title: "Item swapped",
+      description: `Switched to ${alternate.partNo || alternate.masterPart}.`,
+    });
+  };
+
+  // Resolve a `ModelAssociationItem` to a full `PartDetail`. Tries the local
+  // pool first; falls back to the part-detail API.
+  const resolveAssociationToPartDetail = async (
+    item: ModelAssociationItem,
+  ): Promise<PartDetail | null> => {
+    if (!item?.partId) return null;
+    const cached = lookupPartsPool.find((p) => p.id === item.partId);
+    if (cached) return cached;
+    try {
+      const resp: any = await apiClient.getPart(item.partId);
+      const p = resp?.data || resp;
+      if (!p?.id) return null;
+      const formatNumber = (val: any): string => {
+        if (val === null || val === undefined || val === "") return "0";
+        const num = parseFloat(val);
+        if (isNaN(num)) return "0";
+        return num % 1 === 0 ? String(num) : num.toFixed(2);
+      };
+      return {
+        id: String(p.id),
+        partNo: String(p.master_part_no || p.masterPart || item.partNo || "")
+          .trim() || "N/A",
+        masterPart: String(p.part_no || p.partNo || item.masterPart || "")
+          .trim() || "N/A",
+        brand: String(p.brand_name || p.brand || item.brand || "").trim() ||
+          "N/A",
+        description: String(p.description || item.description || "").trim() ||
+          "No description",
+        category: String(p.category_name || p.category || "").trim() || "N/A",
+        subCategory: String(p.subcategory_name || p.subcategory || "").trim() ||
+          "N/A",
+        application: String(
+          p.application_name ||
+            p.application?.name ||
+            p.application ||
+            item.application ||
+            "",
+        ).trim() || "N/A",
+        uom: String(p.uom || "NOS").trim(),
+        hsCode: String(p.hs_code || p.hsCode || "").trim() || "N/A",
+        weight: formatNumber(p.weight),
+        cost: formatNumber(p.cost),
+        priceA: formatNumber(p.price_a || p.priceA),
+        priceB: formatNumber(p.price_b || p.priceB),
+        priceM: formatNumber(p.price_m || p.priceM),
+        origin: String(p.origin || "").trim() || "N/A",
+        grade: String(p.grade || "A").trim(),
+        status: ((p.status || "active") as string).toUpperCase() === "ACTIVE"
+          ? "A"
+          : "I",
+        rackNo: "N/A",
+        reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
+        quantity: Number(item.quantity || 0),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  // Add a Part Association item as a new row in the lookup table.
+  const handleAddAssociationToLookup = async (item: ModelAssociationItem) => {
+    const part = await resolveAssociationToPartDetail(item);
+    if (!part) {
       toast({
-        title: "Failed to load associations",
-        description: "Could not fetch part associations for selected model.",
+        title: "Could not add part",
+        description: "Failed to resolve part details for this association.",
         variant: "destructive",
       });
-    } finally {
-      setLoadingModelAssociations(false);
+      return;
     }
+    ensurePartInLookupPool(part);
+    // Reuse the first empty row if present; otherwise append a new row.
+    const empty = lookupRows.find((r) => !r.partId);
+    let targetRowId: string;
+    if (empty) {
+      targetRowId = empty.id;
+    } else {
+      const newRow = makeLookupRow();
+      targetRowId = newRow.id;
+      setLookupRows((prev) => [...prev, newRow]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    await handleSelectPartForLookupRow(targetRowId, part);
+    toast({
+      title: "Item added",
+      description: `Added ${part.partNo || part.masterPart} to the items table.`,
+    });
+  };
+
+  const lookupModelChips = (partId: string) =>
+    partModelsByPartId[partId] ||
+    (activeLookupRowId &&
+    lookupRows.find((r) => r.id === activeLookupRowId)?.partId === partId
+      ? partModels.map((m) => ({
+          id: String(m.id ?? ""),
+          name: String(m.name ?? ""),
+          qtyUsed: Number(m.qtyUsed ?? 0),
+        }))
+      : []);
+
+  const handleModelAssociationClick = async (modelName: string) => {
+    await loadModelAssociations(
+      modelName,
+      String(selectedPart?.application || ""),
+      true,
+    );
   };
 
   const handleRefreshParts = async () => {
@@ -1026,8 +1802,9 @@ export const SalesInquiry = () => {
     return `INQ-${String(nextNum).padStart(3, "0")}`;
   };
 
-  const handleAddItem = async () => {
-    if (!selectedPart || !selectedPart.id) {
+  const handleAddItem = async (partOverride?: PartDetail | null) => {
+    const partToAdd = partOverride || selectedPart;
+    if (!partToAdd || !partToAdd.id) {
       toast({
         title: "Validation Error",
         description: "Please select a part first",
@@ -1037,7 +1814,7 @@ export const SalesInquiry = () => {
     }
 
     // Check if part is already in the items list
-    const existingItemIndex = inquiryItems.findIndex(item => item.partId === selectedPart.id);
+    const existingItemIndex = inquiryItems.findIndex(item => item.partId === partToAdd.id);
     if (existingItemIndex >= 0) {
       toast({
         title: "Item Already Added",
@@ -1048,39 +1825,41 @@ export const SalesInquiry = () => {
     }
 
     // Fetch stock and reserved quantity
-    let stock = selectedPart.quantity || 0;
+    let stock = partToAdd.quantity || 0;
     let reservedQty = 0;
 
     try {
-      const stockResponse = await apiClient.getAvailableStock(selectedPart.id);
+      const stockResponse = await apiClient.getAvailableStock(partToAdd.id);
       if (!(stockResponse as any).error && (stockResponse as any).data) {
         stock = (stockResponse as any).data.available || (stockResponse as any).data.stock || stock;
         reservedQty = (stockResponse as any).data.reserved || 0;
       }
     } catch (error) {
-      // Use quantity from selectedPart if available
-      stock = selectedPart.quantity || 0;
+      // Use quantity from partToAdd if available
+      stock = partToAdd.quantity || 0;
     }
 
     const newItem: InquiryItem = {
-      partId: selectedPart.id,
+      partId: partToAdd.id,
       quantity: 1,
-      purchasePrice: parseFloat(selectedPart.cost) || 0,
-      priceA: parseFloat(selectedPart.priceA) || 0,
-      priceB: parseFloat(selectedPart.priceB) || 0,
-      priceM: parseFloat(selectedPart.priceM) || 0,
-      location: selectedPart.rackNo || '',
+      purchasePrice: parseFloat(partToAdd.cost) || 0,
+      priceA: parseFloat(partToAdd.priceA) || 0,
+      priceB: parseFloat(partToAdd.priceB) || 0,
+      priceM: parseFloat(partToAdd.priceM) || 0,
+      location: partToAdd.rackNo || '',
       stock: stock,
       reservedQty: reservedQty,
     };
 
-    setInquiryItems([...inquiryItems, newItem]);
-    setSelectedPart(null);
-    setItemSearch("");
+    setInquiryItems((prev) => [...prev, newItem]);
+    if (!partOverride) {
+      setSelectedPart(null);
+      setItemSearch("");
+    }
 
     toast({
       title: "Item Added",
-      description: `${selectedPart.partNo} has been added to the inquiry.`,
+      description: `${partToAdd.partNo} has been added to the inquiry.`,
     });
   };
 
@@ -1607,247 +2386,663 @@ export const SalesInquiry = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Item Filter with Dropdown */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-            <div ref={itemDropdownRef} className="relative space-y-2">
-              <Label className="text-sm font-medium">Item</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by part no, master, description, category..."
-                  value={itemSearch}
-                  onChange={(e) => {
-                    setItemSearch(e.target.value);
-                    setShowItemDropdown(true);
-                    if (selectedPart && e.target.value !== getItemLabel(selectedPart)) {
-                      setSelectedPart(null);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && filteredParts.length === 1) {
-                      handleSelectPart(filteredParts[0]);
-                    }
-                  }}
-                  onFocus={() => setShowItemDropdown(true)}
-                  className={cn(
-                    "pl-10 pr-10",
-                    showItemDropdown && "ring-2 ring-primary border-primary"
-                  )}
-                />
-                {(itemSearch || selectedPart) && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleClearSearch();
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                    aria-label="Clear selected item"
-                    title="Clear selected item"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              {showItemDropdown && (
-                <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-80 overflow-auto">
-                  {loadingParts ? (
-                    <div className="px-4 py-3 text-sm text-muted-foreground text-center">
-                      Loading items...
-                    </div>
-                  ) : filteredParts.length > 0 ? (
-                    filteredParts.map((part) => {
-                      const availableQty = part.quantity ?? 0;
-                      const brandLabel = part.brand && part.brand !== "N/A" ? part.brand : "";
-                      const showMasterAndPart = part.masterPart && part.masterPart !== part.partNo;
-                      return (
-                      <button
-                        key={part.id}
-                        onClick={() => handleSelectPart(part)}
-                        className={cn(
-                          "w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b border-border last:border-b-0",
-                          selectedPart?.id === part.id && "bg-muted"
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-medium text-foreground text-sm">
-                            {showMasterAndPart
-                              ? `${part.masterPart} | ${part.partNo}`
-                              : part.partNo}
-                          </p>
-                          <span
-                            className={cn(
-                              "text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0",
-                              availableQty > 0
-                                ? "bg-green-100 text-green-700"
-                                : "bg-red-100 text-red-600"
-                            )}
-                          >
-                            {availableQty} pcs
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {part.description || "No description available"}
-                        </p>
-                        {(part.category || part.subCategory) && (
-                          <p className="text-[11px] text-muted-foreground/80 mt-0.5">
-                            {[part.category, part.subCategory].filter(Boolean).join(" / ")}
-                          </p>
-                        )}
-                        <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                          {brandLabel && (
-                            <div className="text-[10px] uppercase font-semibold text-black tracking-wider">
-                              {brandLabel}
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600">
-                            {part.priceA !== "" && (
-                              <span className="bg-blue-50 px-1 rounded border border-blue-100 italic">
-                                A: {Number(part.priceA || 0).toLocaleString()}
-                              </span>
-                            )}
-                            {part.priceB !== "" && (
-                              <span className="bg-indigo-50 px-1 rounded border border-indigo-100 italic">
-                                B: {Number(part.priceB || 0).toLocaleString()}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                      );
-                    })
-                  ) : (
-                    <div className="px-4 py-3 text-sm text-muted-foreground">
-                      {itemSearch ? "No items found matching your search" : "No items available"}
-                    </div>
-                  )}
-                </div>
-              )}
+          {/* Filters + Add New Item */}
+          <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
+            <div className="flex items-center gap-2 shrink-0">
+              <SearchableSelect
+                options={lookupModelFilterOptions}
+                value={lookupModelFilter || "__all__"}
+                onValueChange={(value) =>
+                  setLookupModelFilter(value === "__all__" ? "" : value)
+                }
+                placeholder="Model"
+                className="w-[160px]"
+              />
+              <SearchableSelect
+                options={lookupDescriptionFilterOptions}
+                value={lookupDescriptionFilter || "__all__"}
+                onValueChange={(value) =>
+                  setLookupDescriptionFilter(value === "__all__" ? "" : value)
+                }
+                placeholder="Description"
+                className="w-[170px]"
+              />
+              <SearchableSelect
+                options={lookupApplicationFilterOptions}
+                value={lookupApplicationFilter || "__all__"}
+                onValueChange={(value) =>
+                  setLookupApplicationFilter(value === "__all__" ? "" : value)
+                }
+                placeholder="Application"
+                className="w-[170px]"
+              />
             </div>
-
-            <Button variant="outline" onClick={handleClearSearch}>
-              Clear
+            <Button
+              onClick={handleAddLookupRow}
+              className="gap-2 bg-primary h-8 shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              Add New Item
             </Button>
+            {loadingPartDetails && (
+              <Badge variant="outline" className="text-xs animate-pulse shrink-0">
+                Enriching data...
+              </Badge>
+            )}
           </div>
 
-          {/* Part Details Display (Fixed View) */}
-          <div className="mt-4 p-4 rounded-lg bg-muted/30 border min-h-[160px]">
-            <div className="flex items-center justify-end mb-4 h-8">
-              <div className="flex items-center gap-2">
-                {loadingPartDetails && (
-                  <Badge variant="outline" className="text-xs animate-pulse">
-                    Enriching data...
-                  </Badge>
-                )}
-                {showForm && selectedPart && (
-                  <Button
-                    size="sm"
-                    onClick={handleAddItem}
-                    className="gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add to Inquiry
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div className="border border-border rounded-lg overflow-hidden shadow-sm bg-card">
+          {/* Items Table (mirrors Sales Invoice item selection) — full width */}
+          <div className="mt-4">
+            <div className="border rounded-lg overflow-x-auto shadow-sm bg-card">
               <Table>
-                <TableHeader>
-                  <TableRow className="bg-primary/5 border-b-2 border-primary/20">
-                    <TableHead className="font-bold text-foreground text-sm py-4 px-6">Part Details</TableHead>
-                    <TableHead className="font-bold text-foreground text-sm py-4 px-6 text-right">Prices</TableHead>
-                    <TableHead className="font-bold text-foreground text-sm py-4 px-6">Category/Application</TableHead>
-                    <TableHead className="font-bold text-foreground text-sm py-4 px-6 text-center">Quantity Used</TableHead>
-                    <TableHead className="font-bold text-foreground text-sm py-4 px-6 text-center">Available Qty</TableHead>
+                <TableHeader className="bg-muted/50">
+                  <TableRow className="border-b">
+                    <TableHead className="w-[300px] font-bold text-foreground">
+                      Part Details
+                    </TableHead>
+                    <TableHead className="w-[90px] text-center font-bold text-foreground">
+                      Brand
+                    </TableHead>
+                    <TableHead className="w-[170px] text-center font-bold text-foreground">
+                      Application
+                    </TableHead>
+                    <TableHead className="w-[80px] text-center font-bold text-foreground">
+                      In Stock
+                    </TableHead>
+                    <TableHead className="w-[80px] text-center font-bold text-foreground">
+                      Reserved
+                    </TableHead>
+                    <TableHead className="w-[80px] text-center font-bold text-foreground">
+                      Available
+                    </TableHead>
+                    <TableHead className="w-[95px] text-center font-bold text-foreground">
+                      Cost Price
+                    </TableHead>
+                    <TableHead className="w-[120px] text-center font-bold text-foreground">
+                      Assoc. Prices
+                    </TableHead>
+                    <TableHead className="w-[70px] text-center font-bold text-foreground">
+                      Action
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow className="hover:bg-muted/30 transition-colors">
-                    <TableCell className="py-4 px-6">
-                      {selectedPart ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-1 h-5 bg-primary rounded-full"></div>
-                            <div className="font-semibold text-base text-foreground">
-                              Master Part: {selectedPart.masterPart || 'N/A'}
-                            </div>
-                          </div>
-                          <div className="text-sm font-medium text-foreground pl-3">
-                            Part No: {selectedPart.partNo || 'N/A'}
-                          </div>
-                          <div className="text-sm text-muted-foreground pl-3">{selectedPart.description || 'N/A'}</div>
-                        </div>
-                      ) : (
-                        <div className="py-4 text-muted-foreground italic text-sm">No part selected. Start searching above.</div>
-                      )}
-                    </TableCell>
-                    <TableCell className="py-4 px-6 text-right">
-                      {selectedPart ? (
-                        <div className="space-y-2 text-sm">
-                          <div className="font-semibold text-primary">Cost: <span className="font-bold">Rs {selectedPart.cost && selectedPart.cost !== '0' ? parseFloat(selectedPart.cost).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</span></div>
-                          <div className="font-semibold text-green-600">Price-A: <span className="font-bold">Rs {selectedPart.priceA && selectedPart.priceA !== '0' ? parseFloat(selectedPart.priceA).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</span></div>
-                          <div className="font-semibold text-green-600">Price-B: <span className="font-bold">Rs {selectedPart.priceB && selectedPart.priceB !== '0' ? parseFloat(selectedPart.priceB).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</span></div>
-                          <div className="font-semibold text-green-600">Price-M: <span className="font-bold">Rs {selectedPart.priceM && selectedPart.priceM !== '0' ? parseFloat(selectedPart.priceM).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</span></div>
-                        </div>
-                      ) : (
-                        <div className="text-muted-foreground opacity-30">--</div>
-                      )}
-                    </TableCell>
-                    <TableCell className="py-4 px-6">
-                      {selectedPart ? (
-                        <div className="space-y-2 text-sm">
-                          <div className="font-semibold text-foreground">{selectedPart.category || 'N/A'}</div>
-                          <div className="text-muted-foreground">{selectedPart.subCategory || 'N/A'}</div>
-                          <div className="text-muted-foreground">{selectedPart.application || 'N/A'}</div>
-                        </div>
-                      ) : (
-                        <div className="text-muted-foreground opacity-30">--</div>
-                      )}
-                    </TableCell>
-                    <TableCell className="py-4 px-6 text-center">
-                      {selectedPart && partModels.length > 0 ? (
-                        <div className="flex flex-col items-center gap-1.5 min-w-[120px]">
-                          {partModels.map((m, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => handleModelAssociationClick(m.name)}
-                              className="flex items-center justify-between w-full px-2 py-1 rounded bg-muted/50 border border-border/50 hover:bg-primary/10 hover:border-primary/40 transition-colors text-left"
-                              title="Click to view part association"
+                  {lookupRows.map((row) => {
+                    const rowPart =
+                      lookupPartsPool.find((p) => p.id === row.partId) || null;
+                    const rowFiltered = getFilteredPartsForLookupRow(row.id);
+                    const rowDropdownOpen = !!showLookupRowDropdown[row.id];
+                    const rowModels = lookupModelChips(row.partId || "");
+                    const stockBalance = row.partId
+                      ? partStockBalances[row.partId]
+                      : undefined;
+                    const stockLoading = row.partId
+                      ? !!loadingStockBalances[row.partId]
+                      : false;
+                    const currentStock = stockBalance?.current_stock ??
+                      (rowPart?.quantity || 0);
+                    const reservedStock = stockBalance?.reserved_stock ?? 0;
+                    const availableStock = stockBalance?.available_stock ??
+                      Math.max(0, currentStock - reservedStock);
+                    const balanceAvg = Number(stockBalance?.avg_cost ?? 0);
+                    const partCost = parseFloat(rowPart?.cost || "") || 0;
+                    const avgCost = balanceAvg > 0 ? balanceAvg : partCost;
+                    const priceA = row.priceA ?? 0;
+                    const priceB = row.priceB ?? 0;
+                    const priceM = row.priceM ?? 0;
+                    const showQuantityUsed =
+                      rowPart &&
+                      rowModels.length > 0 &&
+                      !lookupModelFilter.trim();
+                    return (
+                      <Fragment key={row.id}>
+                        <TableRow
+                          className={cn(
+                            "border-b md:border-b-0 md:[&>td]:pb-1 align-top",
+                            rowPart && "cursor-pointer hover:bg-muted/40",
+                            activeLookupRowId === row.id && "bg-primary/5",
+                          )}
+                          onClick={(e) => {
+                            if (!rowPart) return;
+                            const target = e.target as HTMLElement;
+                            if (
+                              target.closest(
+                                'input, textarea, button, a, [role="button"]',
+                              )
+                            ) {
+                              return;
+                            }
+                            // Restore THIS row's own remembered model (if any)
+                            // — not the globally-selected one, otherwise
+                            // switching from item A (D9G) to item B (D9H)
+                            // would force B onto D9G.
+                            const rememberedModel =
+                              lookupRowSelectedModel[row.id] || "";
+                            setActiveLookupRowId(row.id);
+                            handleSelectPart(rowPart).then(() => {
+                              if (!rememberedModel) return;
+                              const cached =
+                                partModelsByPartId[rowPart.id || ""] ??
+                                rowModels;
+                              const stillHasModel = cached.some(
+                                (m) =>
+                                  String(m.name || "").toLowerCase() ===
+                                  rememberedModel.toLowerCase(),
+                              );
+                              if (stillHasModel) {
+                                loadModelAssociations(
+                                  rememberedModel,
+                                  String(rowPart.application || ""),
+                                  false,
+                                );
+                              }
+                            });
+                          }}
+                        >
+                          <TableCell className="align-top">
+                            <div
+                              ref={(el) => {
+                                lookupRowDropdownRefs.current[row.id] = el;
+                              }}
+                              className="relative space-y-2"
                             >
-                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{m.name}</span>
-                              <span className="font-bold text-primary text-sm">{m.qtyUsed}</span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-muted-foreground opacity-30">--</div>
-                      )}
-                    </TableCell>
-                    <TableCell className="py-4 px-6 text-center">
-                      <div className="flex flex-col items-center gap-2">
-                        <div className={cn(
-                          "inline-flex items-center justify-center min-w-[60px] px-3 py-2 rounded-md border transition-all",
-                          selectedPart ? "bg-blue-50 border-blue-200" : "bg-muted/50 border-muted opacity-20"
-                        )}>
-                          <span className={cn(
-                            "font-bold text-lg",
-                            selectedPart ? "text-blue-700" : "text-muted-foreground"
-                          )}>
-                            {selectedPart && selectedPart.quantity !== undefined ? selectedPart.quantity.toLocaleString('en-US') : '0'}
-                          </span>
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                              <div className="relative">
+                                <Input
+                                  ref={(el) => {
+                                    lookupRowInputRefs.current[row.id] = el;
+                                  }}
+                                  placeholder="Select part..."
+                                  value={row.search}
+                                  onChange={(e) =>
+                                    handleLookupRowSearchChange(
+                                      row.id,
+                                      e.target.value,
+                                    )
+                                  }
+                                  onFocus={() => openLookupRowDropdown(row.id)}
+                                  onClick={() => openLookupRowDropdown(row.id)}
+                                  onKeyDown={(e) => {
+                                    if (
+                                      e.key === "Enter" &&
+                                      rowFiltered.length === 1
+                                    ) {
+                                      handleSelectPartForLookupRow(
+                                        row.id,
+                                        rowFiltered[0],
+                                      );
+                                    }
+                                  }}
+                                  className={cn(
+                                    "w-full pr-8 h-10 text-sm",
+                                    rowDropdownOpen &&
+                                      "ring-2 ring-primary border-primary",
+                                  )}
+                                />
+                                {(row.search || row.partId) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setLookupRows((prev) =>
+                                        prev.map((r) =>
+                                          r.id === row.id
+                                            ? {
+                                                ...r,
+                                                partId: "",
+                                                search: "",
+                                                qty: 0,
+                                                unitPrice: undefined,
+                                                priceA: undefined,
+                                                priceB: undefined,
+                                                priceM: undefined,
+                                                selectedPriceType: undefined,
+                                              }
+                                            : r,
+                                        ),
+                                      );
+                                      setShowLookupRowDropdown((prev) => ({
+                                        ...prev,
+                                        [row.id]: false,
+                                      }));
+                                      setLookupRowSelectedModel((prev) => {
+                                        if (!(row.id in prev)) return prev;
+                                        const next = { ...prev };
+                                        delete next[row.id];
+                                        return next;
+                                      });
+                                      if (activeLookupRowId === row.id) {
+                                        setActiveLookupRowId(null);
+                                        handleClearSearch();
+                                      }
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                    aria-label="Clear selected item"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                              {rowDropdownOpen &&
+                                typeof window !== "undefined" &&
+                                lookupDropdownRects[row.id] &&
+                                createPortal(
+                                  <div
+                                    ref={(el) => {
+                                      lookupRowPortalRefs.current[row.id] = el;
+                                    }}
+                                    className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg max-h-[420px] overflow-auto"
+                                    style={{
+                                      top: `${lookupDropdownRects[row.id].top}px`,
+                                      left: `${lookupDropdownRects[row.id].left}px`,
+                                      width: `${Math.max(lookupDropdownRects[row.id].width, 460)}px`,
+                                    }}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                  >
+                                    {loadingParts ? (
+                                      <div className="px-4 py-3 text-sm text-muted-foreground text-center">
+                                        Loading items...
+                                      </div>
+                                    ) : rowFiltered.length > 0 ? (
+                                      rowFiltered.map((part) => {
+                                        const availableQty = part.quantity ?? 0;
+                                        const brandLabel =
+                                          part.brand && part.brand !== "N/A"
+                                            ? part.brand
+                                            : "";
+                                        const showMasterAndPart =
+                                          part.masterPart &&
+                                          part.masterPart !== part.partNo;
+                                        const partIdentifiers =
+                                          showMasterAndPart
+                                            ? `${part.masterPart} | ${part.partNo}`
+                                            : part.partNo;
+                                        const description =
+                                          part.description ||
+                                          "No description available";
+                                        return (
+                                          <button
+                                            key={part.id}
+                                            onClick={() =>
+                                              handleSelectPartForLookupRow(
+                                                row.id,
+                                                part,
+                                              )
+                                            }
+                                            className={cn(
+                                              "w-full text-left px-3 py-2.5 hover:bg-accent hover:text-accent-foreground transition-colors border-b border-border last:border-b-0",
+                                              rowPart?.id === part.id &&
+                                                "bg-muted",
+                                            )}
+                                          >
+                                            <div className="flex items-center justify-between gap-2 min-w-0">
+                                              <div className="font-semibold text-sm">
+                                                {partIdentifiers}
+                                              </div>
+                                              <span
+                                                className={cn(
+                                                  "text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0",
+                                                  availableQty > 0
+                                                    ? "bg-green-100 text-green-700"
+                                                    : "bg-red-100 text-red-600",
+                                                )}
+                                              >
+                                                {availableQty} pcs
+                                              </span>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                                              {description}
+                                            </div>
+                                            {brandLabel ? (
+                                              <div className="text-[11px] text-muted-foreground/80 mt-1">
+                                                {brandLabel}
+                                              </div>
+                                            ) : null}
+                                          </button>
+                                        );
+                                      })
+                                    ) : (
+                                      <div className="px-4 py-3 text-sm text-muted-foreground">
+                                        {row.search
+                                          ? "No items found matching your search"
+                                          : "No items available"}
+                                      </div>
+                                    )}
+                                  </div>,
+                                  document.body,
+                                )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            <span className="text-xs font-medium text-foreground">
+                              {rowPart?.brand && rowPart.brand !== "N/A"
+                                ? rowPart.brand
+                                : "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center align-top px-2">
+                            <span
+                              className="text-xs font-medium text-foreground block break-words leading-snug"
+                              title={rowPart?.application || ""}
+                            >
+                              {rowPart?.application &&
+                              rowPart.application !== "N/A"
+                                ? rowPart.application
+                                : "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <span
+                                className={cn(
+                                  "text-sm font-bold",
+                                  currentStock > 0
+                                    ? "text-foreground"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {!row.partId
+                                  ? "-"
+                                  : stockLoading
+                                    ? "..."
+                                    : currentStock}
+                              </span>
+                              {row.partId && (
+                                <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            <span className="text-sm font-semibold text-orange-600">
+                              {!row.partId
+                                ? "-"
+                                : stockLoading
+                                  ? "..."
+                                  : reservedStock}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            {!row.partId ? (
+                              <span className="text-xs text-muted-foreground">
+                                -
+                              </span>
+                            ) : stockLoading ? (
+                              <span className="text-xs text-muted-foreground">
+                                ...
+                              </span>
+                            ) : (
+                              <Badge
+                                variant={
+                                  availableStock > 0 ? "default" : "destructive"
+                                }
+                                className="px-2 py-0.5 font-bold h-fit"
+                              >
+                                {availableStock}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            {!row.partId ? (
+                              <span className="text-xs text-muted-foreground">
+                                -
+                              </span>
+                            ) : avgCost > 0 ? (
+                              <span className="text-sm font-semibold tabular-nums">
+                                {avgCost.toLocaleString("en-US", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </span>
+                            ) : stockLoading ? (
+                              <span className="text-xs text-muted-foreground">
+                                ...
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                -
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            {!row.partId ? (
+                              <span className="text-xs text-muted-foreground">
+                                -
+                              </span>
+                            ) : (
+                              <div className="flex flex-row gap-1 items-center justify-center">
+                                <Button
+                                  variant={
+                                    row.selectedPriceType === "A"
+                                      ? "default"
+                                      : "outline"
+                                  }
+                                  size="sm"
+                                  className="flex-1 min-w-0 px-2 text-xs"
+                                  onClick={() =>
+                                    handleUpdateLookupRow(row.id, {
+                                      selectedPriceType: "A",
+                                      unitPrice: priceA,
+                                    })
+                                  }
+                                >
+                                  {priceA.toFixed(0)}
+                                </Button>
+                                <Button
+                                  variant={
+                                    row.selectedPriceType === "B"
+                                      ? "default"
+                                      : "outline"
+                                  }
+                                  size="sm"
+                                  className="flex-1 min-w-0 px-2 text-xs"
+                                  onClick={() =>
+                                    handleUpdateLookupRow(row.id, {
+                                      selectedPriceType: "B",
+                                      unitPrice: priceB,
+                                    })
+                                  }
+                                >
+                                  {priceB.toFixed(0)}
+                                </Button>
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            <div className="flex items-center justify-center gap-1">
+                              {showForm && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-primary hover:bg-primary/10"
+                                  onClick={async () => {
+                                    if (!rowPart) return;
+                                    setActiveLookupRowId(row.id);
+                                    await handleAddItem(rowPart);
+                                  }}
+                                  title="Add to Inquiry"
+                                  disabled={!rowPart}
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                onClick={() => handleRemoveLookupRow(row.id)}
+                                title="Remove row"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {showQuantityUsed ? (
+                          <TableRow
+                            key={`${row.id}-qty-used`}
+                            className="border-b bg-muted/20"
+                          >
+                            <TableCell colSpan={9} className="px-4 pt-0 pb-2">
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
+                                  Quantity Used
+                                </span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {rowModels.map((m, idx) => {
+                                    const isActiveModel =
+                                      activeLookupRowId === row.id &&
+                                      selectedModelName &&
+                                      String(m.name || "").toLowerCase() ===
+                                        selectedModelName.toLowerCase();
+                                    return (
+                                      <button
+                                        key={`${row.id}-qu-${idx}`}
+                                        type="button"
+                                        onClick={async () => {
+                                          if (!rowPart) return;
+                                          setActiveLookupRowId(row.id);
+                                          setLookupRowSelectedModel((prev) => ({
+                                            ...prev,
+                                            [row.id]: m.name,
+                                          }));
+                                          await handleSelectPart(rowPart);
+                                          await loadModelAssociations(
+                                            m.name,
+                                            String(rowPart.application || ""),
+                                            true,
+                                          );
+                                        }}
+                                        className={cn(
+                                          "inline-flex items-center justify-between gap-1 px-1.5 py-0.5 rounded border transition-colors text-left min-w-[58px]",
+                                          isActiveModel
+                                            ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                            : "bg-background border-border/50 hover:bg-primary/10 hover:border-primary/40",
+                                        )}
+                                        title="Click to view part association"
+                                      >
+                                        <span
+                                          className={cn(
+                                            "text-[10px] font-bold uppercase tracking-wider",
+                                            isActiveModel
+                                              ? "text-primary-foreground"
+                                              : "text-foreground",
+                                          )}
+                                        >
+                                          {m.name}
+                                        </span>
+                                        {m.qtyUsed ? (
+                                          <span
+                                            className={cn(
+                                              "font-bold text-[11px] shrink-0",
+                                              isActiveModel
+                                                ? "text-primary-foreground"
+                                                : "text-primary",
+                                            )}
+                                          >
+                                            {m.qtyUsed}
+                                          </span>
+                                        ) : null}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
           </div>
 
-          {/* History + Part Association (same page layout) */}
+          {/* Alternate Items (full width) */}
+          <div className="mt-6">
+            <div className="rounded-md border bg-card p-3 flex flex-col min-h-[160px]">
+              <div className="mb-2">
+                <div className="text-sm font-semibold">Alternate Items</div>
+                <div className="text-xs text-muted-foreground">
+                  Match by Part No / Master Part
+                </div>
+              </div>
+              <div className="rounded-md border bg-card overflow-y-auto flex-1 min-h-0 min-w-0 max-h-[520px]">
+                <Table className="table-fixed">
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="text-xs w-9 px-2">Item</TableHead>
+                      <TableHead className="text-xs w-[22%] px-2">Part</TableHead>
+                      <TableHead className="text-xs w-[28%] px-2">Description</TableHead>
+                      <TableHead className="text-xs w-14 px-2">Brand</TableHead>
+                      <TableHead className="text-xs text-right w-[4.75rem] px-2 whitespace-nowrap">Stock</TableHead>
+                      <TableHead className="text-xs text-center w-16 px-2">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {!selectedPart ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground italic">
+                          Select a part to view alternate items.
+                        </TableCell>
+                      </TableRow>
+                    ) : loadingAlternateItems ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                          <div className="flex items-center justify-center gap-2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                            Loading alternates...
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : alternateItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground italic">
+                          No alternate items found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      alternateItems.map((item, index) => (
+                        <TableRow key={`${item.id || item.partNo}-${index}`} className="hover:bg-muted/20">
+                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">{index + 1}</TableCell>
+                          <TableCell
+                            className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
+                            title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                          >
+                            {`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                          </TableCell>
+                          <TableCell
+                            className="text-xs px-2 py-1.5 max-w-0 truncate"
+                            title={item.description || "N/A"}
+                          >
+                            {item.description || "N/A"}
+                          </TableCell>
+                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">{item.brand || "N/A"}</TableCell>
+                          <TableCell className="text-xs text-right font-semibold px-2 py-1.5 whitespace-nowrap tabular-nums">
+                            {Number(item.quantity || 0).toLocaleString("en-US")}
+                          </TableCell>
+                          <TableCell className="text-xs text-center px-2 py-1.5">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-primary hover:bg-primary/10"
+                              onClick={() => handleSwapWithAlternate(item)}
+                              title="Switch active item to this alternate"
+                              disabled={!item.id}
+                            >
+                              <ArrowLeftRight className="w-4 h-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </div>
+
+          {/* History + Part Association */}
           <div className="mt-6 grid grid-cols-1 xl:grid-cols-5 gap-4">
             <div className="xl:col-span-3">
               <Tabs defaultValue="last-sales-invoice">
@@ -1858,7 +3053,7 @@ export const SalesInquiry = () => {
               </TabsTrigger>
               <TabsTrigger value="last-dpo" className="flex items-center gap-1.5 text-xs">
                 <Truck className="h-3.5 w-3.5" />
-                Last Direct PO
+                Last Local PO
               </TabsTrigger>
                 </TabsList>
 
@@ -1955,14 +3150,14 @@ export const SalesInquiry = () => {
                         <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
                           <div className="flex items-center justify-center gap-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                            Loading direct purchase order history...
+                            Loading local purchase order history...
                           </div>
                         </TableCell>
                       </TableRow>
                     ) : dpoHistory.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm italic">
-                          No direct purchase order history available for this part
+                          No local purchase order history available for this part
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -1997,17 +3192,17 @@ export const SalesInquiry = () => {
                   Model: <span className="font-medium text-foreground">{selectedModelName || "Click a model in Quantity Used"}</span>
                 </div>
               </div>
-              <div className="rounded-md border bg-card overflow-auto flex-1 min-h-0 max-h-[520px]">
-                <Table>
+              <div className="rounded-md border bg-card overflow-y-auto flex-1 min-h-0 min-w-0 max-h-[520px]">
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <TableHead className="text-xs w-14">Item</TableHead>
-                      <TableHead className="text-xs min-w-[180px]">Part</TableHead>
-                      <TableHead className="text-xs">Description</TableHead>
-                      <TableHead className="text-xs">Brand</TableHead>
-                      <TableHead className="text-xs">Application</TableHead>
-                      <TableHead className="text-xs">Model</TableHead>
-                      <TableHead className="text-xs text-right">Quantity</TableHead>
+                      <TableHead className="text-xs w-9 px-2">Item</TableHead>
+                      <TableHead className="text-xs w-[22%] px-2">Part</TableHead>
+                      <TableHead className="text-xs w-[28%] px-2">Description</TableHead>
+                      <TableHead className="text-xs w-14 px-2">Brand</TableHead>
+                      <TableHead className="text-xs w-12 px-2">Model</TableHead>
+                      <TableHead className="text-xs text-right w-[3.5rem] px-2 whitespace-nowrap">Qty</TableHead>
+                      <TableHead className="text-xs text-center w-14 px-2">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2029,18 +3224,35 @@ export const SalesInquiry = () => {
                     ) : (
                       modelAssociations.map((item, index) => (
                         <TableRow key={`${item.partId}-${index}`} className="hover:bg-muted/20">
-                          <TableCell className="text-xs">{index + 1}</TableCell>
-                          <TableCell className="text-xs font-medium">
+                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">{index + 1}</TableCell>
+                          <TableCell
+                            className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
+                            title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                          >
                             {`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
                           </TableCell>
-                          <TableCell className="text-xs">{item.description || "N/A"}</TableCell>
-                          <TableCell className="text-xs">{item.brand || "N/A"}</TableCell>
-                          <TableCell className="text-xs">
-                            {item.application || selectedPart?.application || "N/A"}
+                          <TableCell
+                            className="text-xs px-2 py-1.5 max-w-0 truncate"
+                            title={item.description || "N/A"}
+                          >
+                            {item.description || "N/A"}
                           </TableCell>
-                          <TableCell className="text-xs">{item.model || "N/A"}</TableCell>
-                          <TableCell className="text-xs text-right font-semibold">
+                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">{item.brand || "N/A"}</TableCell>
+                          <TableCell className="text-xs px-2 py-1.5 truncate max-w-0">{item.model || "N/A"}</TableCell>
+                          <TableCell className="text-xs text-right font-semibold px-2 py-1.5 whitespace-nowrap tabular-nums">
                             {Number(item.quantity || 0).toLocaleString("en-US")}
+                          </TableCell>
+                          <TableCell className="text-xs text-center px-2 py-1.5">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-primary hover:bg-primary/10"
+                              onClick={() => handleAddAssociationToLookup(item)}
+                              title="Add this part to the items table"
+                              disabled={!item.partId}
+                            >
+                              <Plus className="w-4 h-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -2049,6 +3261,7 @@ export const SalesInquiry = () => {
                 </Table>
               </div>
             </div>
+
           </div>
         </CardContent>
       </Card>

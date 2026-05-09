@@ -197,6 +197,22 @@ export const PricingCosting = () => {
   const [showPriceUpdateHistory, setShowPriceUpdateHistory] = useState(false);
   const [selectedPriceUpdateItem, setSelectedPriceUpdateItem] =
     useState<PriceItem | null>(null);
+  // Real DB-backed price history for the selected part, fetched on dialog open
+  type PerPartHistoryEntry = {
+    id: string;
+    date: string;
+    priceField: string;
+    oldValue: number | null;
+    newValue: number | null;
+    updateType: string;
+    reason: string;
+    updatedBy: string;
+  };
+  const [perPartPriceHistory, setPerPartPriceHistory] = useState<
+    PerPartHistoryEntry[]
+  >([]);
+  const [perPartPriceHistoryLoading, setPerPartPriceHistoryLoading] =
+    useState(false);
   const [showModifiedItems, setShowModifiedItems] = useState(false);
   const [showAllItems, setShowAllItems] = useState(false); // Toggle to show all items without pagination
   const historyPerPage = 10;
@@ -264,6 +280,58 @@ export const PricingCosting = () => {
     lastUpdatedByIdRef.current = nextMap;
   }, [items]);
 
+  // Whenever the Price Update History dialog opens for a part, fetch the
+  // real PriceHistory rows from the backend so we can render the actual
+  // priceField + old -> new for every change source (DPO, Adjustments,
+  // Pricing & Costing, Imports, etc.) instead of only what the local
+  // localStorage cache happens to know about.
+  useEffect(() => {
+    if (!showPriceUpdateHistory || !selectedPriceUpdateItem?.id) {
+      setPerPartPriceHistory([]);
+      return;
+    }
+    const partId = selectedPriceUpdateItem.id;
+    let cancelled = false;
+    (async () => {
+      try {
+        setPerPartPriceHistoryLoading(true);
+        const response: any = await apiClient.getPriceHistory({
+          partId,
+          page: 1,
+          limit: 50,
+        });
+        if (cancelled) return;
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        const mapped: PerPartHistoryEntry[] = rows.map((r: any) => ({
+          id: String(r.id),
+          date: String(r.date || ""),
+          priceField: String(r.priceField || ""),
+          oldValue:
+            r.oldValue !== undefined && r.oldValue !== null
+              ? Number(r.oldValue)
+              : null,
+          newValue:
+            r.newValue !== undefined && r.newValue !== null
+              ? Number(r.newValue)
+              : r.value !== undefined && r.value !== null
+                ? Number(r.value)
+                : null,
+          updateType: String(r.updateType || ""),
+          reason: String(r.reason || ""),
+          updatedBy: String(r.updatedBy || "System"),
+        }));
+        setPerPartPriceHistory(mapped);
+      } catch {
+        if (!cancelled) setPerPartPriceHistory([]);
+      } finally {
+        if (!cancelled) setPerPartPriceHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showPriceUpdateHistory, selectedPriceUpdateItem?.id]);
+
   // Check for part number from DPO page on mount
   useEffect(() => {
     const partNoFromDPO = localStorage.getItem("pricingCostingSearchPartNo");
@@ -283,20 +351,8 @@ export const PricingCosting = () => {
     }
   }, []);
 
-  // Refetch when window gains focus (user returns to tab/window)
-  useEffect(() => {
-    const handleFocus = () => {
-      lastFetchParams.current = "";
-      if (activeTab === "price-updating" || activeTab === "profitability") {
-        fetchParts();
-      }
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [activeTab]);
+  // Do not auto-refetch on window focus/minimize/maximize.
+  // Keep list stable unless user changes filters or clicks Refresh.
 
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -315,6 +371,7 @@ export const PricingCosting = () => {
   ]);
 
   // Fetch parts data - optimized for fast initial load
+  // Note: switching between internal tabs should not force a refetch.
   useEffect(() => {
     if (activeTab === "price-updating" || activeTab === "profitability") {
       // Cancel previous request if still pending
@@ -323,7 +380,7 @@ export const PricingCosting = () => {
       }
 
       // Create a key for current fetch parameters
-      const currentParams = `${activeTab}-${searchTerm}-${filterCategory}-${filterSubCategory}-${filterBrand}-${filterModel}-${currentPage}`;
+      const currentParams = `${searchTerm}-${filterCategory}-${filterSubCategory}-${filterBrand}-${filterModel}-${currentPage}`;
 
       // On initial mount, fetch immediately without debounce
       if (isInitialMount.current) {
@@ -352,7 +409,6 @@ export const PricingCosting = () => {
       };
     }
   }, [
-    activeTab,
     searchTerm,
     filterCategory,
     filterSubCategory,
@@ -3432,245 +3488,117 @@ export const PricingCosting = () => {
               Price Update History
             </DialogTitle>
           </DialogHeader>
-          {selectedPriceUpdateItem &&
-            selectedPriceUpdateItem.lastUpdated &&
-            (() => {
-              // Get price data from lastUpdated or fallback to localStorage
-              let amount = selectedPriceUpdateItem.lastUpdated.amount || {};
-              let previousPrice =
-                selectedPriceUpdateItem.lastUpdated.previousPrice || {};
-
-              // Always check localStorage first as it has the most complete data
-              try {
-                const priceUpdatedItems = JSON.parse(
-                  localStorage.getItem("priceUpdatedItems") || "{}",
-                );
-                if (priceUpdatedItems[selectedPriceUpdateItem.id]) {
-                  const localStorageData =
-                    priceUpdatedItems[selectedPriceUpdateItem.id];
-
-                  // Use localStorage data if it exists (it's more complete)
-                  if (
-                    localStorageData.amount &&
-                    Object.keys(localStorageData.amount).length > 0
-                  ) {
-                    amount = localStorageData.amount;
-                  }
-                  if (
-                    localStorageData.previousPrice &&
-                    Object.keys(localStorageData.previousPrice).length > 0
-                  ) {
-                    previousPrice = localStorageData.previousPrice;
-                  }
-                }
-              } catch (error) { }
-
-              // If still no new price data, use current item prices as fallback for "New Price"
-              if (
-                !amount ||
-                Object.keys(amount).length === 0 ||
-                !Object.values(amount).some(
-                  (v: any) => v !== undefined && v !== null,
-                )
-              ) {
-                amount = {
-                  cost: selectedPriceUpdateItem.cost,
-                  priceA: selectedPriceUpdateItem.priceA,
-                  priceB: selectedPriceUpdateItem.priceB,
-                  priceM: selectedPriceUpdateItem.priceM,
-                };
-              }
-
-              const hasPreviousPrice =
-                previousPrice &&
-                Object.keys(previousPrice).length > 0 &&
-                Object.values(previousPrice).some(
-                  (v: any) => v !== undefined && v !== null,
-                );
-              const hasNewPrice =
-                amount &&
-                Object.keys(amount).length > 0 &&
-                Object.values(amount).some(
-                  (v: any) => v !== undefined && v !== null,
-                );
-
-              return (
-                <div className="space-y-4">
-                  <div className="p-4 bg-muted rounded-lg">
-                    <div className="space-y-2">
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Part Number
-                        </p>
-                        <p className="font-medium">
-                          {selectedPriceUpdateItem.partNo}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Description
-                        </p>
-                        <p className="font-medium text-sm">
-                          {selectedPriceUpdateItem.description}
-                        </p>
-                      </div>
-                    </div>
+          {selectedPriceUpdateItem && (
+            <div className="space-y-4">
+              <div className="p-4 bg-muted rounded-lg">
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Part Number</p>
+                    <p className="font-medium">
+                      {selectedPriceUpdateItem.partNo}
+                    </p>
                   </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">
-                          Updated Date
-                        </span>
-                      </div>
-                      <span className="font-medium">
-                        {selectedPriceUpdateItem.lastUpdated.date}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">
-                          Updated Time
-                        </span>
-                      </div>
-                      <span className="font-medium">
-                        {selectedPriceUpdateItem.lastUpdated.time}
-                      </span>
-                    </div>
-
-                    {hasPreviousPrice ? (
-                      <div className="p-3 border rounded-lg bg-muted/50">
-                        <p className="text-sm font-medium text-muted-foreground mb-3">
-                          Previous Price (Before Update):
-                        </p>
-                        <div className="space-y-2">
-                          {previousPrice.cost !== undefined &&
-                            previousPrice.cost !== null && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">
-                                  Cost:
-                                </span>
-                                <span className="font-medium">
-                                  {formatCurrency(previousPrice.cost)}
-                                </span>
-                              </div>
-                            )}
-                          {previousPrice.priceA !== undefined &&
-                            previousPrice.priceA !== null && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">
-                                  Price A:
-                                </span>
-                                <span className="font-medium">
-                                  {formatCurrency(previousPrice.priceA)}
-                                </span>
-                              </div>
-                            )}
-                          {previousPrice.priceB !== undefined &&
-                            previousPrice.priceB !== null && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">
-                                  Price B:
-                                </span>
-                                <span className="font-medium">
-                                  {formatCurrency(previousPrice.priceB)}
-                                </span>
-                              </div>
-                            )}
-                          {previousPrice.priceM !== undefined &&
-                            previousPrice.priceM !== null && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">
-                                  Price M:
-                                </span>
-                                <span className="font-medium">
-                                  {formatCurrency(previousPrice.priceM)}
-                                </span>
-                              </div>
-                            )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-3 border rounded-lg bg-muted/50">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">
-                          Previous Price (Before Update):
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          No previous price data available
-                        </p>
-                      </div>
-                    )}
-
-                    {hasNewPrice ? (
-                      <div className="p-3 border rounded-lg bg-primary/5">
-                        <p className="text-sm font-medium text-muted-foreground mb-3">
-                          New Price (After Update):
-                        </p>
-                        <div className="space-y-2">
-                          {amount.cost !== undefined &&
-                            amount.cost !== null && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">
-                                  Cost:
-                                </span>
-                                <span className="font-medium text-success">
-                                  {formatCurrency(amount.cost)}
-                                </span>
-                              </div>
-                            )}
-                          {amount.priceA !== undefined &&
-                            amount.priceA !== null && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">
-                                  Price A:
-                                </span>
-                                <span className="font-medium text-success">
-                                  {formatCurrency(amount.priceA)}
-                                </span>
-                              </div>
-                            )}
-                          {amount.priceB !== undefined &&
-                            amount.priceB !== null && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">
-                                  Price B:
-                                </span>
-                                <span className="font-medium text-success">
-                                  {formatCurrency(amount.priceB)}
-                                </span>
-                              </div>
-                            )}
-                          {amount.priceM !== undefined &&
-                            amount.priceM !== null && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">
-                                  Price M:
-                                </span>
-                                <span className="font-medium text-success">
-                                  {formatCurrency(amount.priceM)}
-                                </span>
-                              </div>
-                            )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-3 border rounded-lg bg-primary/5">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">
-                          New Price (After Update):
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          No new price data available
-                        </p>
-                      </div>
-                    )}
+                  <div>
+                    <p className="text-sm text-muted-foreground">Description</p>
+                    <p className="font-medium text-sm">
+                      {selectedPriceUpdateItem.description}
+                    </p>
                   </div>
                 </div>
-              );
-            })()}
+              </div>
+
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                {perPartPriceHistoryLoading ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    Loading price history...
+                  </div>
+                ) : perPartPriceHistory.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground border rounded-lg bg-muted/30">
+                    No price changes recorded for this part yet.
+                  </div>
+                ) : (
+                  perPartPriceHistory.map((entry) => {
+                    // Map storage field name -> friendly label.
+                    const fieldLabel = ((): string => {
+                      const f = entry.priceField;
+                      if (f === "cost") return "Cost";
+                      if (f === "priceA" || f === "price_a") return "Price A";
+                      if (f === "priceB" || f === "price_b") return "Price B";
+                      if (f === "priceM" || f === "price_m") return "Price M";
+                      return f || "Price";
+                    })();
+                    const dateObj = entry.date ? new Date(entry.date) : null;
+                    const dateStr = dateObj
+                      ? dateObj.toLocaleDateString()
+                      : "-";
+                    const timeStr = dateObj
+                      ? dateObj.toLocaleTimeString()
+                      : "-";
+                    const oldVal =
+                      entry.oldValue !== null && entry.oldValue !== undefined
+                        ? formatCurrency(entry.oldValue)
+                        : "-";
+                    const newVal =
+                      entry.newValue !== null && entry.newValue !== undefined
+                        ? formatCurrency(entry.newValue)
+                        : "-";
+                    return (
+                      <div
+                        key={entry.id}
+                        className="p-3 border rounded-lg space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className="bg-primary/10 border-primary/30 text-primary"
+                            >
+                              {fieldLabel}
+                            </Badge>
+                            {entry.updateType && (
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                                {entry.updateType}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Clock className="w-3 h-3" />
+                            <span>
+                              {dateStr} {timeStr}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="rounded bg-muted/50 p-2">
+                            <p className="text-[11px] text-muted-foreground">
+                              Old value
+                            </p>
+                            <p className="font-medium tabular-nums">{oldVal}</p>
+                          </div>
+                          <div className="rounded bg-success/10 p-2">
+                            <p className="text-[11px] text-muted-foreground">
+                              New value
+                            </p>
+                            <p className="font-medium tabular-nums text-success">
+                              {newVal}
+                            </p>
+                          </div>
+                        </div>
+                        {(entry.reason || entry.updatedBy) && (
+                          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                            <span className="truncate" title={entry.reason}>
+                              {entry.reason || ""}
+                            </span>
+                            <span>by {entry.updatedBy || "System"}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
           <DialogFooter>
             <Button
               variant="outline"

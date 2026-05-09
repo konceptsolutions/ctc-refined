@@ -484,7 +484,11 @@ class ApiClient {
     });
   }
 
-  async getPriceHistory(params?: { page?: number; limit?: number }) {
+  async getPriceHistory(params?: {
+    page?: number;
+    limit?: number;
+    partId?: string;
+  }) {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -625,14 +629,17 @@ class ApiClient {
     return this.request(`/dropdowns/brands/all${query}`);
   }
 
-  async createBrand(data: { name: string; status?: string }) {
+  async createBrand(data: { name: string; longName?: string; status?: string }) {
     return this.request("/dropdowns/brands", {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async updateBrand(id: string, data: { name: string; status?: string }) {
+  async updateBrand(
+    id: string,
+    data: { name: string; longName?: string; status?: string },
+  ) {
     return this.request(`/dropdowns/brands/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
@@ -1469,6 +1476,8 @@ class ApiClient {
   async createDirectPurchaseOrder(data: {
     dpo_number: string;
     date: string;
+    invoice_no?: string;
+    invoice_date?: string;
     store_id?: string;
     supplier_id?: string;
     account?: string;
@@ -1506,6 +1515,8 @@ class ApiClient {
     data: {
       dpo_number?: string;
       date?: string;
+      invoice_no?: string;
+      invoice_date?: string;
       store_id?: string;
       supplier_id?: string;
       account?: string;

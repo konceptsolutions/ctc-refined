@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { apiClient } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -70,6 +71,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -297,6 +299,23 @@ interface RecentSaleInvoiceLine {
   unitPrice: number | null;
 }
 
+interface ModelAssociationRow {
+  partId: string;
+  masterPart: string;
+  partNo: string;
+  description: string;
+  brand: string;
+  application?: string;
+  model: string;
+  quantity: number;
+}
+
+interface LinePartAssociationState {
+  selectedModelName: string;
+  items: ModelAssociationRow[];
+  loading: boolean;
+}
+
 interface InlineItemRow {
   id: string;
   selectedPartId: string;
@@ -377,7 +396,7 @@ export const SalesInvoice = () => {
   const [editingCreditLimit, setEditingCreditLimit] = useState<number>(0);
   const [updatingCreditLimit, setUpdatingCreditLimit] = useState(false);
   const [overrideCreditLimit, setOverrideCreditLimit] = useState(false);
-  const [showLastSaleInfo, setShowLastSaleInfo] = useState(true);
+  const [showLastSaleInfo, setShowLastSaleInfo] = useState(false);
   const [recentSalesByPartId, setRecentSalesByPartId] = useState<
     Record<string, RecentSaleInvoiceLine[]>
   >({});
@@ -435,6 +454,15 @@ export const SalesInvoice = () => {
   const [loadingModels, setLoadingModels] = useState<
     Record<string, boolean>
   >({});
+
+  /** Per invoice line (inline row id): part associations for clicked machine model */
+  const [linePartAssociations, setLinePartAssociations] = useState<
+    Record<string, LinePartAssociationState>
+  >({});
+  const [activeAssociationLineId, setActiveAssociationLineId] = useState<
+    string | null
+  >(null);
+
 
   // Accurate locations for parts (fetched on demand or refreshed)
   const [partLocations, setPartLocations] = useState<Record<string, any[]>>({});
@@ -819,12 +847,92 @@ export const SalesInvoice = () => {
     return () => window.removeEventListener("keydown", onShortcut);
   }, [showNewInvoice, handleAddNewItem]);
 
-  // Keep item detail helpers visible by default whenever invoice form opens.
+  // Keep item detail helpers hidden by default whenever invoice form opens.
   useEffect(() => {
     if (showNewInvoice) {
-      setShowLastSaleInfo(true);
+      setShowLastSaleInfo(false);
     }
   }, [showNewInvoice]);
+
+  // Derive Part Association rows from the loaded parts list whenever any of the
+  // top filters (Model / Description / Application) is active. Each row is one
+  // part-model pair so the panel can show the requiredQty per model.
+  const filterAssociationRows = useMemo<ModelAssociationRow[]>(() => {
+    const selectedModel = partsModelFilter.trim().toLowerCase();
+    const selectedDescription = partsDescriptionFilter.trim().toLowerCase();
+    const selectedApplication = partsApplicationFilter.trim().toLowerCase();
+    if (!selectedModel && !selectedDescription && !selectedApplication) {
+      return [];
+    }
+
+    const rows: ModelAssociationRow[] = [];
+    for (const part of parts) {
+      const description = String(part.description || "");
+      const application = String(part.application || "");
+      const partNo = String(part.partNo || "");
+      const masterPart = String(part.masterPartNo || "");
+      const brand = String(part.brands?.[0]?.name || "");
+
+      if (
+        selectedDescription &&
+        description.toLowerCase() !== selectedDescription
+      )
+        continue;
+      if (
+        selectedApplication &&
+        application.toLowerCase() !== selectedApplication
+      )
+        continue;
+
+      const models = part.machineModels || [];
+      if (selectedModel) {
+        const match = models.find(
+          (m) => String(m.name || "").toLowerCase() === selectedModel,
+        );
+        if (!match) continue;
+        rows.push({
+          partId: part.id,
+          masterPart,
+          partNo,
+          description,
+          brand,
+          application,
+          model: String(match.name || ""),
+          quantity: Number(match.requiredQty || 0),
+        });
+      } else if (models.length > 0) {
+        for (const m of models) {
+          rows.push({
+            partId: part.id,
+            masterPart,
+            partNo,
+            description,
+            brand,
+            application,
+            model: String(m.name || ""),
+            quantity: Number(m.requiredQty || 0),
+          });
+        }
+      } else {
+        rows.push({
+          partId: part.id,
+          masterPart,
+          partNo,
+          description,
+          brand,
+          application,
+          model: "",
+          quantity: 0,
+        });
+      }
+    }
+    return rows;
+  }, [
+    parts,
+    partsModelFilter,
+    partsDescriptionFilter,
+    partsApplicationFilter,
+  ]);
 
   // Helper to derive unit price from selected price type + part data
   const getDerivedUnitPrice = (item: InlineItemRow, part: PartItem | null) => {
@@ -841,12 +949,102 @@ export const SalesInvoice = () => {
     return 0;
   };
 
+  const handleLineModelAssociationClick = useCallback(
+    async (lineItemId: string, modelName: string, application?: string) => {
+      const cleanModel = String(modelName || "").trim();
+      if (!cleanModel) return;
+      const rawApplication = String(application || "").trim();
+      const selectedApplication = [
+        "n/a",
+        "na",
+        "none",
+        "-",
+        "--",
+        "",
+      ].includes(rawApplication.toLowerCase())
+        ? ""
+        : rawApplication;
+      setActiveAssociationLineId(lineItemId);
+      if (!selectedApplication) {
+        toast({
+          title: "Application required",
+          description:
+            "Part association is filtered by both model and application.",
+          variant: "destructive",
+        });
+        setLinePartAssociations((prev) => ({
+          ...prev,
+          [lineItemId]: {
+            selectedModelName: cleanModel,
+            items: [],
+            loading: false,
+          },
+        }));
+        return;
+      }
+
+      setLinePartAssociations((prev) => ({
+        ...prev,
+        [lineItemId]: {
+          selectedModelName: cleanModel,
+          items: [],
+          loading: true,
+        },
+      }));
+
+      try {
+        const response = await apiClient.getPartsByModelAssociation(
+          cleanModel,
+          selectedApplication,
+        );
+        const data = Array.isArray((response as any)?.data)
+          ? (response as any).data
+          : Array.isArray(response)
+            ? response
+            : [];
+        setLinePartAssociations((prev) => ({
+          ...prev,
+          [lineItemId]: {
+            selectedModelName: cleanModel,
+            items: data,
+            loading: false,
+          },
+        }));
+      } catch {
+        toast({
+          title: "Failed to load associations",
+          description: "Could not fetch part associations for selected model.",
+          variant: "destructive",
+        });
+        setLinePartAssociations((prev) => ({
+          ...prev,
+          [lineItemId]: {
+            selectedModelName: cleanModel,
+            items: [],
+            loading: false,
+          },
+        }));
+      }
+    },
+    [],
+  );
+
   // Update inline item
   const handleUpdateInlineItem = (
     id: string,
     field: keyof InlineItemRow,
     value: any,
   ) => {
+    if (field === "selectedPartId") {
+      if (activeAssociationLineId === id) {
+        setActiveAssociationLineId(null);
+      }
+      setLinePartAssociations((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
     setInlineItems((prev) =>
       prev.map((item) => {
         if (item.id === id) {
@@ -1009,7 +1207,107 @@ export const SalesInvoice = () => {
       delete next[id];
       return next;
     });
+    if (activeAssociationLineId === id) {
+      setActiveAssociationLineId(null);
+    }
+    setLinePartAssociations((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   };
+
+  const handleAddAssociationItemToInvoice = useCallback(
+    (assocRow: ModelAssociationRow) => {
+      const partId = String(assocRow.partId || "").trim();
+      if (!partId) {
+        toast({
+          title: "Cannot add item",
+          description: "Associated part is missing.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Part association adds start at qty 0 so the user enters quantity explicitly.
+      const addQty = 0;
+      const existingPart =
+        parts.find((candidate) => candidate.id === partId) ||
+        selectedPartsMap[partId];
+
+      setInlineItems((prev) => {
+        const existingIndex = prev.findIndex((i) => i.selectedPartId === partId);
+        if (existingIndex >= 0) {
+          return prev.map((item, idx) =>
+            idx === existingIndex
+              ? { ...item, qty: Math.max(0, Number(item.qty || 0) + addQty) }
+              : item,
+          );
+        }
+
+        const newItem: InlineItemRow = {
+          id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          selectedPartId: partId,
+          qty: addQty,
+          priceA: existingPart?.priceA ?? 0,
+          priceB: existingPart?.priceB ?? 0,
+          priceM: existingPart?.priceM ?? 0,
+          unitPrice: undefined,
+          selectedPriceType: undefined,
+          partNoFallback: assocRow.partNo || "",
+          descriptionFallback: assocRow.description || "",
+          selectedLocationIds: [],
+          selectedLocationId: "",
+          selectedRackId: "",
+          useUnlocatedStock: false,
+        };
+
+        if (existingPart) {
+          if (customerPriceType === "A" && existingPart.priceA) {
+            newItem.selectedPriceType = "A";
+          } else if (customerPriceType === "B" && existingPart.priceB) {
+            newItem.selectedPriceType = "B";
+          } else if (customerPriceType === "M" && existingPart.priceM) {
+            newItem.selectedPriceType = "M";
+          } else if (customerPriceType) {
+            newItem.selectedPriceType = customerPriceType;
+          } else if (existingPart.priceA) {
+            newItem.selectedPriceType = "A";
+          } else if (existingPart.priceB) {
+            newItem.selectedPriceType = "B";
+          } else if (existingPart.priceM) {
+            newItem.selectedPriceType = "M";
+          }
+
+          if (newItem.selectedPriceType === "A") {
+            newItem.unitPrice = newItem.priceA ?? existingPart.priceA ?? 0;
+          } else if (newItem.selectedPriceType === "B") {
+            newItem.unitPrice = newItem.priceB ?? existingPart.priceB ?? 0;
+          } else if (newItem.selectedPriceType === "M") {
+            newItem.unitPrice = newItem.priceM ?? existingPart.priceM ?? 0;
+          } else {
+            newItem.unitPrice = existingPart.priceA ?? 0;
+          }
+          setSelectedPartsMap((prevMap) => ({
+            ...prevMap,
+            [existingPart.id]: existingPart,
+          }));
+        }
+
+        return [newItem, ...prev];
+      });
+
+      fetchPartStockBalance(partId);
+      fetchPartModels(partId);
+    },
+    [
+      customerPriceType,
+      fetchPartModels,
+      fetchPartStockBalance,
+      parts,
+      selectedPartsMap,
+    ],
+  );
 
   // Debounce timer for parts search
   const partsSearchDebounceRef = useRef<Record<string, NodeJS.Timeout>>({});
@@ -1881,11 +2179,19 @@ export const SalesInvoice = () => {
     const tax = calculateTax();
     return subtotal + tax;
   };
+  const totalAfterGstSnapshot = calculateTotalAfterGst();
+
+  const handleDiscountAmountChange = (value: string) => {
+    const parsed = parseFloat(value);
+    const enteredAmount = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    const baseAmount = totalAfterGstSnapshot;
+    const safeDiscount = Math.min(enteredAmount, Math.max(0, baseAmount));
+    setDiscount(safeDiscount);
+  };
 
   // Grand total: total after GST minus discount
   const calculateAmountAfterDiscount = () => {
-    const totalAfterGst = calculateTotalAfterGst();
-    return Math.max(0, totalAfterGst - discount);
+    return Math.max(0, totalAfterGstSnapshot - discount);
   };
 
   // Calculate due amount
@@ -4316,39 +4622,40 @@ export const SalesInvoice = () => {
 
   return (
     <div className="space-y-4">
-      {/* Top Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Sales Invoices</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your sales invoices and inventory movements.
-          </p>
+      {!showNewInvoice && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Sales Invoices</h1>
+            <p className="text-sm text-muted-foreground">
+              Manage your sales invoices and inventory movements.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={refreshPartsData}
+              title="Refresh Stock Data"
+              disabled={partsLoading}
+              className={
+                partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
+              }
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+            <Button
+              onClick={() => {
+                setInvoiceDate(new Date().toISOString().split("T")[0]);
+                setShowNewInvoice(true);
+              }}
+              className="gap-2 flex-1 sm:flex-none whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              New Invoice
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={refreshPartsData}
-            title="Refresh Stock Data"
-            disabled={partsLoading}
-            className={
-              partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
-            }
-          >
-            <RefreshCw className="w-4 h-4" />
-          </Button>
-          <Button
-            onClick={() => {
-              setInvoiceDate(new Date().toISOString().split("T")[0]);
-              setShowNewInvoice(true);
-            }}
-            className="gap-2 flex-1 sm:flex-none whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            New Invoice
-          </Button>
-        </div>
-      </div>
+      )}
 
       {!showNewInvoice && (
         <>
@@ -4522,324 +4829,135 @@ export const SalesInvoice = () => {
 
       {/* New Invoice Inline Form OR Invoices Table */}
       {showNewInvoice ? (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" />
-                {editingInvoiceId ? "Edit Invoice" : "Create New Invoice"}
-              </CardTitle>
-              <Button variant="ghost" size="icon" onClick={resetForm}>
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-8 p-6">
-            {/* Customer & Order Logistics Section */}
-            <div className="bg-primary/5 rounded-xl p-5 border border-primary/10">
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-primary/80 mb-4 flex items-center gap-2">
-                <Users className="w-4 h-4" /> Customer & Delivery Info
-              </h3>
-              <div className="flex flex-wrap gap-3 items-start">
-                <div className="space-y-1.5 w-40">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Sale Type
-                  </Label>
-                  <Select
-                    value={newInvoice.customerType}
-                    onValueChange={(v) => {
-                      const customerType = v as CustomerType;
-                      setNewInvoice((prev) => ({ ...prev, customerType }));
-                      // Reset customer selections when switching
-                      setSelectedCustomerId("");
-                      setSelectedCustomerName("");
-                      setCustomerPriceType(null);
-                      setSelectedCustomerCategory(null);
-                    }}
-                  >
-                    <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="registered">
-                        Party Sale (Credit)
-                      </SelectItem>
-                      <SelectItem value="walking">
-                        Cash Sale (Walk-in)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Customer Name Input - Only show for Cash Sale (walking) */}
-                {newInvoice.customerType === "walking" && (
-                  <div className="space-y-1.5 w-56">
-                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                      Customer Name
-                    </Label>
-                    <Input
-                      placeholder=""
-                      value={newInvoice.customerName || ""}
-                      onChange={(e) =>
-                        setNewInvoice((prev) => ({
-                          ...prev,
-                          customerName: e.target.value,
-                        }))
-                      }
-                      className="bg-background border-primary/20 h-9 text-sm"
-                    />
-                  </div>
-                )}
-
-                {/* Customer Dropdown - Only show for Party Sale (registered) */}
-                {newInvoice.customerType === "registered" && (
-                  <div className="space-y-1.5 w-85">
-                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                      Select Customer
-                    </Label>
-                    <div className="flex gap-2">
-                      <SearchableSelect
-                        options={customers.map((customer) => ({
-                          value: customer.id,
-                          label: customer.priceType
-                            ? `${customer.name} (Price ${customer.priceType})`
-                            : customer.name,
-                        }))}
-                        value={selectedCustomerId || ""}
-                        onValueChange={(value) => {
-                          setSelectedCustomerId(value);
-                          const customer = customers.find(
-                            (c) => c.id === value,
-                          );
-                          if (customer) {
-                            setSelectedCustomerName(customer.name);
-                            const pt = customer.priceType || null;
-                            setCustomerPriceType(pt);
-                            setSelectedCustomerCategory(
-                              customer.category || null,
-                            );
-                            // Auto-apply price type to all existing inline items
-                            if (pt) {
-                              setInlineItems((prev) =>
-                                prev.map((item) => {
-                                  if (!item.selectedPartId) return item;
-                                  return { ...item, selectedPriceType: pt };
-                                }),
-                              );
-                            }
-                          }
-                        }}
-                        disabled={loadingCustomers}
-                        placeholder={
-                          loadingCustomers
-                            ? "Loading..."
-                            : customers.length === 0
-                              ? "No customers available"
-                              : "Search customer..."
-                        }
-                        className="flex-1 h-9"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setShowAddCustomerDialog(true)}
-                        title="Add New Customer"
-                        className="shrink-0"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    {/* Show Previous Balance and Credit Limit */}
-                    {selectedCustomerId &&
-                      (() => {
-                        const customer = customers.find(
-                          (c) => c.id === selectedCustomerId,
-                        );
-                        if (!customer) return null;
-                        return (
-                          <div className="text-xs flex flex-row gap-4 mt-1 bg-muted/50 p-2 rounded-md items-center shadow-sm border border-border/50">
-                            <div>
-                              <span className="text-muted-foreground font-medium mr-1 tracking-tight">
-                                Previous Balance:
-                              </span>
-                              <span
-                                className={`font-semibold tracking-tight ${customer.balance && customer.balance > 0 ? "text-red-600" : "text-emerald-600"}`}
-                              >
-                                Rs {customer.balance?.toFixed(2) || "0.00"}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap text-[11px] bg-background/50 py-1 px-2 rounded border border-border/40">
-                              <span className="text-muted-foreground uppercase tracking-wider font-semibold">
-                                Credit Limit:
-                              </span>
-                              <span className="font-bold">
-                                {customer.creditLimit &&
-                                customer.creditLimit > 0
-                                  ? `Rs ${customer.creditLimit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : "Unlimited"}
-                              </span>
-                              <Button
-                                type="button"
-                                variant="link"
-                                className="h-auto p-0 text-[10px] text-blue-600 hover:text-blue-800 flex items-center"
-                                onClick={() => {
-                                  setEditingCreditLimit(
-                                    customer.creditLimit || 0,
-                                  );
-                                  setShowEditCreditLimitDialog(true);
-                                }}
-                              >
-                                (EDIT)
-                              </Button>
-                              <label className="flex items-center gap-1 ml-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  className="h-3 w-3"
-                                  checked={overrideCreditLimit}
-                                  onChange={(e) =>
-                                    setOverrideCreditLimit(e.target.checked)
-                                  }
-                                />
-                                <span className="text-[10px] text-amber-700 font-semibold">
-                                  Allow over credit limit
-                                </span>
-                              </label>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                  </div>
-                )}
-
-                <div className="space-y-1.5 w-36">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Tax Type
-                  </Label>
-                  <Select value={taxType} onValueChange={setTaxType}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Without GST">Without GST</SelectItem>
-                      <SelectItem value="With GST">With GST</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {taxType === "With GST" && (
-                  <div className="space-y-1.5 w-44">
-                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                      GST Percentage
-                    </Label>
-                    {newInvoice.customerType === "walking" ? (
-                      /* Walk-in (Cash Sale): Show only Custom Input, no buttons/dropdown */
-                      <div className="flex-1">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder=""
-                          value={customGstPercentage}
-                          onChange={(e) =>
-                            setCustomGstPercentage(e.target.value)
-                          }
-                          className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                      </div>
-                    ) : /* Registered (Party Sale): Toggle between Preset and Custom */
-                    !useCustomGst ? (
-                      <div className="flex gap-3">
-                        <Select
-                          value={gstPercentage.toString()}
-                          onValueChange={(value) => {
-                            setGstPercentage(parseFloat(value) || 0);
-                            setUseCustomGst(false);
-                          }}
-                        >
-                          <SelectTrigger className="flex-1 h-9 text-sm">
-                            <SelectValue placeholder="Select GST %" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="18">18%</SelectItem>
-                            <SelectItem value="22">22%</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setUseCustomGst(true);
-                            if (gstPercentage > 0) {
-                              setCustomGstPercentage(gstPercentage.toString());
-                            }
-                          }}
-                          className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
-                        >
-                          Custom
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder=""
-                            value={customGstPercentage}
-                            onChange={(e) =>
-                              setCustomGstPercentage(e.target.value)
-                            }
-                            className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setUseCustomGst(false);
-                            setCustomGstPercentage("");
-                          }}
-                          className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
-                        >
-                          Preset
-                        </Button>
-                      </div>
-                    )}
-                    <p className="text-xs font-medium text-muted-foreground mt-1">
-                      GST Amount: Rs {calculateTax().toLocaleString()}
-                    </p>
-                  </div>
-                )}
-
-                {/* Invoice Date */}
+        <Card className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={resetForm}
+            className="absolute right-3 top-3 z-10"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+          <CardContent className="space-y-6 p-4 pt-4">
+            <div className="flex flex-wrap items-end justify-start gap-3">
+              <div className="space-y-1.5 w-40">
+                <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                  Sale Type
+                </Label>
+                <Select
+                  value={newInvoice.customerType}
+                  onValueChange={(v) => {
+                    const customerType = v as CustomerType;
+                    setNewInvoice((prev) => ({ ...prev, customerType }));
+                    // Reset customer selections when switching
+                    setSelectedCustomerId("");
+                    setSelectedCustomerName("");
+                    setCustomerPriceType(null);
+                    setSelectedCustomerCategory(null);
+                  }}
+                >
+                  <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="registered">
+                      Party Sale (Credit)
+                    </SelectItem>
+                    <SelectItem value="walking">
+                      Cash Sale (Walk-in)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {newInvoice.customerType === "walking" ? (
                 <div className="space-y-1.5 w-56">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Invoice Date
+                    Customer Name
                   </Label>
                   <Input
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    placeholder=""
+                    value={newInvoice.customerName || ""}
+                    onChange={(e) =>
+                      setNewInvoice((prev) => ({
+                        ...prev,
+                        customerName: e.target.value,
+                      }))
+                    }
                     className="bg-background border-primary/20 h-9 text-sm"
                   />
                 </div>
+              ) : (
+                <div className="space-y-1.5 w-[26rem]">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Select Customer
+                  </Label>
+                  <div className="flex gap-2">
+                    <SearchableSelect
+                      options={customers.map((customer) => ({
+                        value: customer.id,
+                        label: customer.priceType
+                          ? `${customer.name} (Price ${customer.priceType})`
+                          : customer.name,
+                      }))}
+                      value={selectedCustomerId || ""}
+                      onValueChange={(value) => {
+                        setSelectedCustomerId(value);
+                        const customer = customers.find((c) => c.id === value);
+                        if (customer) {
+                          setSelectedCustomerName(customer.name);
+                          const pt = customer.priceType || null;
+                          setCustomerPriceType(pt);
+                          setSelectedCustomerCategory(customer.category || null);
+                          if (pt) {
+                            setInlineItems((prev) =>
+                              prev.map((item) => {
+                                if (!item.selectedPartId) return item;
+                                return { ...item, selectedPriceType: pt };
+                              }),
+                            );
+                          }
+                        }
+                      }}
+                      disabled={loadingCustomers}
+                      placeholder={
+                        loadingCustomers
+                          ? "Loading..."
+                          : customers.length === 0
+                            ? "No customers available"
+                            : "Search customer..."
+                      }
+                      className="flex-1 h-9"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setShowAddCustomerDialog(true)}
+                      title="Add New Customer"
+                      className="shrink-0"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+              <div className="space-y-1.5 w-56">
+                <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                  Invoice Date
+                </Label>
+                <Input
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                  className="bg-background border-primary/20 h-9 text-sm"
+                />
               </div>
             </div>
 
             {/* Items Section - Inline Table Like Reference */}
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  onClick={() => handleAddNewItem()}
-                  className="gap-2 bg-primary"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add New Item
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Shortcut: <span className="font-semibold">Alt + Z</span>
-                </span>
-                <div className="ml-0 md:ml-3 flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
+                <div className="flex items-center gap-2 shrink-0">
                   <SearchableSelect
                     options={searchableModelFilterOptions}
                     value={partsModelFilter || "__all__"}
@@ -4847,7 +4965,7 @@ export const SalesInvoice = () => {
                       setPartsModelFilter(value === "__all__" ? "" : value)
                     }
                     placeholder="Model"
-                    className="min-w-[180px]"
+                    className="w-[160px]"
                   />
                   <SearchableSelect
                     options={searchableDescriptionFilterOptions}
@@ -4856,7 +4974,7 @@ export const SalesInvoice = () => {
                       setPartsDescriptionFilter(value === "__all__" ? "" : value)
                     }
                     placeholder="Description"
-                    className="min-w-[200px]"
+                    className="w-[170px]"
                   />
                   <SearchableSelect
                     options={searchableApplicationFilterOptions}
@@ -4865,9 +4983,19 @@ export const SalesInvoice = () => {
                       setPartsApplicationFilter(value === "__all__" ? "" : value)
                     }
                     placeholder="Application"
-                    className="min-w-[190px]"
+                    className="w-[170px]"
                   />
                 </div>
+                <Button
+                  onClick={() => handleAddNewItem()}
+                  className="gap-2 bg-primary h-8 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add New Item
+                </Button>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  Shortcut: <span className="font-semibold">Alt + Z</span>
+                </span>
               </div>
 
               {inlineItems.length > 0 && (
@@ -4875,7 +5003,10 @@ export const SalesInvoice = () => {
                   <Table>
                     <TableHeader className="hidden md:table-header-group bg-muted/50">
                       <TableRow className="border-b">
-                        <TableHead className="w-[380px] font-bold text-foreground">
+                        <TableHead className="w-[40px] text-center font-bold text-foreground">
+                          #
+                        </TableHead>
+                        <TableHead className="w-[300px] font-bold text-foreground">
                           Part Details
                         </TableHead>
                         <TableHead className="w-[130px] text-center font-bold text-foreground">
@@ -4911,16 +5042,24 @@ export const SalesInvoice = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {inlineItems.map((item) => {
+                      {inlineItems.map((item, index) => {
                         const part = getPartForItem(item.selectedPartId);
+                        const pid = item.selectedPartId;
+                        const hasModels =
+                          (part?.machineModels &&
+                            part.machineModels.length > 0) ||
+                          Boolean(loadingModels[pid]);
                         return (
+                          <Fragment key={item.id}>
                           <TableRow
-                            key={item.id}
-                            className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-4 md:space-y-0 relative"
+                            className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-4 md:space-y-0 relative md:[&>td]:pb-1"
                           >
-                            <TableCell className="md:table-cell block p-0 md:p-4 align-middle">
+                            <TableCell className="hidden md:table-cell text-center align-top text-xs font-semibold text-muted-foreground tabular-nums">
+                              {index + 1}
+                            </TableCell>
+                            <TableCell className="md:table-cell block p-0 md:p-4 align-top">
                               <span className="md:hidden text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
-                                Part Details
+                                Part Details #{index + 1}
                               </span>
                               <div className="space-y-2">
                                 <div className="relative">
@@ -5173,7 +5312,7 @@ export const SalesInvoice = () => {
                                   />
                                   {showLastSaleInfo &&
                                     item.selectedPartId && (
-                                      <div className="mt-1 text-[10px] text-muted-foreground flex flex-col gap-1.5">
+                                      <div className="mt-1 text-xs text-muted-foreground flex flex-col gap-1.5">
                                         <div className="flex flex-col gap-1">
                                           <span className="font-semibold">
                                             Last 3 sales (invoices)
@@ -5239,53 +5378,9 @@ export const SalesInvoice = () => {
                                           )}
                                         </div>
 
-                                        <div>
-                                          {part?.machineModels &&
-                                          part.machineModels.length > 0 ? (
-                                            <div className="flex flex-wrap gap-2">
-                                              {part.machineModels.map((m) => (
-                                                <span
-                                                  key={m.id}
-                                                  className="inline-flex items-center gap-1 px-1 py-0.5 rounded bg-muted/30 border border-border/60"
-                                                >
-                                                  <span className="font-semibold">
-                                                    {m.name}
-                                                  </span>
-                                                  {m.requiredQty ? (
-                                                    <span className="text-muted-foreground/80">
-                                                      (Req: {m.requiredQty} pcs)
-                                                    </span>
-                                                  ) : null}
-                                                </span>
-                                              ))}
-                                            </div>
-                                          ) : (
-                                            <span>
-                                              {loadingModels[item.selectedPartId]
-                                                ? "Loading models..."
-                                                : "No machine models"}
-                                            </span>
-                                          )}
-                                        </div>
+                                        {/* model chips removed; Quantity Used section below is the source of truth */}
                                       </div>
                                     )}
-                                  {item.selectedPartId && (
-                                    <div className="flex flex-wrap gap-2 mt-1">
-                                      {part?.brands?.[0]?.name && (
-                                        <Badge
-                                          variant="secondary"
-                                          className="px-1 py-0 h-4 text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-black hover:bg-primary/20 transition-colors"
-                                        >
-                                          {part.brands[0].name}
-                                        </Badge>
-                                      )}
-                                      {part?.category && (
-                                        <span className="text-[10px] text-muted-foreground italic truncate max-w-[200px]">
-                                          {part.category}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
                                   {showPartsDropdown[item.id] &&
                                     typeof window !== "undefined" &&
                                     dropdownPosition[item.id] &&
@@ -5472,14 +5567,14 @@ export const SalesInvoice = () => {
                             </TableCell>
 
                             {/* Column 4: Brand (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-middle">
+                            <TableCell className="hidden md:table-cell text-center align-top">
                               <span className="text-xs font-medium text-foreground">
                                 {part?.brands?.[0]?.name || "-"}
                               </span>
                             </TableCell>
 
                             {/* Column 4: In Stock (Desktop ONLY, Mobile combined in section below) */}
-                            <TableCell className="hidden md:table-cell text-center align-middle">
+                            <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const stockBalance =
                                   partStockBalances[item.selectedPartId];
@@ -5513,7 +5608,7 @@ export const SalesInvoice = () => {
                             </TableCell>
 
                             {/* Column 5: Reserved (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-middle">
+                            <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const stockBalance =
                                   partStockBalances[item.selectedPartId];
@@ -5531,7 +5626,7 @@ export const SalesInvoice = () => {
                             </TableCell>
 
                             {/* Column 6: Available (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-middle">
+                            <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const stockBalance =
                                   partStockBalances[item.selectedPartId];
@@ -5649,7 +5744,7 @@ export const SalesInvoice = () => {
                             </TableCell>
 
                             {/* Column 7: Qty (Desktop ONLY UI, Mobile combined section below) */}
-                            <TableCell className="hidden md:table-cell align-middle">
+                            <TableCell className="hidden md:table-cell align-top">
                               <div className="flex flex-col items-center justify-center">
                                 <Input
                                   type="number"
@@ -5696,7 +5791,7 @@ export const SalesInvoice = () => {
                             </TableCell>
 
                             {/* Column 8: Assoc. Prices (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-middle">
+                            <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const priceAValue =
                                   item.priceA ?? part?.priceA ?? null;
@@ -5712,7 +5807,7 @@ export const SalesInvoice = () => {
                                 }
 
                                 return (
-                                  <div className="flex flex-col gap-1 items-stretch">
+                                  <div className="flex flex-row gap-1 items-center justify-center">
                                     {priceAValue != null && (
                                       <Button
                                         variant={
@@ -5721,7 +5816,7 @@ export const SalesInvoice = () => {
                                             : "outline"
                                         }
                                         size="sm"
-                                        className="w-full text-xs"
+                                        className="flex-1 min-w-0 px-2 text-xs"
                                         onClick={() => {
                                           handleUpdateInlineItem(
                                             item.id,
@@ -5746,7 +5841,7 @@ export const SalesInvoice = () => {
                                             : "outline"
                                         }
                                         size="sm"
-                                        className="w-full text-xs"
+                                        className="flex-1 min-w-0 px-2 text-xs"
                                         onClick={() => {
                                           handleUpdateInlineItem(
                                             item.id,
@@ -5769,7 +5864,7 @@ export const SalesInvoice = () => {
                             </TableCell>
 
                             {/* Column 9: Editable Price (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-middle">
+                            <TableCell className="hidden md:table-cell text-center align-top">
                               <Input
                                 type="number"
                                 min={0}
@@ -5881,7 +5976,7 @@ export const SalesInvoice = () => {
                             </TableCell>
 
                             {/* Column 10: Total */}
-                            <TableCell className="md:table-cell block p-0 md:p-4 md:text-center align-middle font-bold">
+                            <TableCell className="md:table-cell block p-0 md:p-4 md:text-center align-top font-bold">
                               <div className="flex md:flex-col justify-between items-center bg-primary/5 p-3 md:p-0 rounded border border-primary/10 md:border-0 md:bg-transparent">
                                 <span className="md:hidden text-xs font-bold text-primary uppercase">
                                   Total
@@ -5903,7 +5998,7 @@ export const SalesInvoice = () => {
                             </TableCell>
 
                             {/* Column 11: Action (Desktop Only) */}
-                            <TableCell className="hidden md:table-cell align-middle text-center">
+                            <TableCell className="hidden md:table-cell align-top text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <Button
                                   variant="ghost"
@@ -5926,30 +6021,138 @@ export const SalesInvoice = () => {
                               </div>
                             </TableCell>
                           </TableRow>
+                          {hasModels && !partsModelFilter.trim() ? (
+                              <TableRow key={`${item.id}-qty-used`} className="hidden md:table-row border-b bg-muted/20">
+                                <TableCell colSpan={11} className="px-4 pt-0 pb-2">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
+                                      Quantity Used
+                                    </span>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {part?.machineModels?.map((m) => {
+                                        const isActiveModel =
+                                          activeAssociationLineId === item.id &&
+                                          String(
+                                            linePartAssociations[item.id]
+                                              ?.selectedModelName || "",
+                                          ).toLowerCase() ===
+                                            String(m.name || "").toLowerCase();
+                                        return (
+                                          <button
+                                            key={m.id}
+                                            type="button"
+                                            onClick={() =>
+                                              handleLineModelAssociationClick(
+                                                item.id,
+                                                m.name,
+                                                part.application,
+                                              )
+                                            }
+                                            className={cn(
+                                              "inline-flex items-center justify-between gap-1 px-1.5 py-0.5 rounded border transition-colors text-left min-w-[58px]",
+                                              isActiveModel
+                                                ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                                : "bg-background border-border/50 hover:bg-primary/10 hover:border-primary/40",
+                                            )}
+                                            title="Click to view part association"
+                                          >
+                                            <span
+                                              className={cn(
+                                                "text-[10px] font-bold uppercase tracking-wider",
+                                                isActiveModel
+                                                  ? "text-primary-foreground"
+                                                  : "text-foreground",
+                                              )}
+                                            >
+                                              {m.name}
+                                            </span>
+                                            {m.requiredQty ? (
+                                              <span
+                                                className={cn(
+                                                  "font-bold text-[11px] shrink-0",
+                                                  isActiveModel
+                                                    ? "text-primary-foreground"
+                                                    : "text-primary",
+                                                )}
+                                              >
+                                                {m.requiredQty}
+                                              </span>
+                                            ) : null}
+                                          </button>
+                                        );
+                                      })}
+                                      {loadingModels[pid] &&
+                                      (!part?.machineModels ||
+                                        part.machineModels.length === 0) ? (
+                                        <span className="text-xs text-muted-foreground">
+                                          Loading models...
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                          ) : null}
+                          </Fragment>
                         );
                       })}
                     </TableBody>
+                    <TableFooter className="hidden md:table-footer-group bg-muted/30">
+                      <TableRow className="hover:bg-transparent border-t">
+                        {/* # */}
+                        <TableCell />
+                        {/* Part Details */}
+                        <TableCell className="font-semibold text-xs uppercase text-muted-foreground">
+                          Total
+                        </TableCell>
+                        {/* Brand */}
+                        <TableCell />
+                        {/* In Stock */}
+                        <TableCell />
+                        {/* Reserved */}
+                        <TableCell />
+                        {/* Available */}
+                        <TableCell />
+                        {/* Qty */}
+                        <TableCell className="text-center font-semibold tabular-nums">
+                          {inlineItems.reduce(
+                            (sum, it) => sum + (Number(it.qty) || 0),
+                            0,
+                          )}
+                        </TableCell>
+                        {/* Assoc. Prices */}
+                        <TableCell />
+                        {/* Price */}
+                        <TableCell />
+                        {/* Total */}
+                        <TableCell />
+                        {/* Action */}
+                        <TableCell />
+                      </TableRow>
+                    </TableFooter>
                   </Table>
                 </div>
               )}
             </div>
 
             {/* Payment Section */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg border">
-              <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-muted/30 rounded-lg border">
+              <div className="space-y-3 md:col-span-2">
                 <div className="space-y-2">
-                  <Label>Discount</Label>
+                  <Label className="text-xs">Discount</Label>
                   <Input
                     type="number"
                     min={0}
+                    step="0.01"
                     value={discount || ""}
                     onChange={(e) =>
-                      setDiscount(parseFloat(e.target.value) || 0)
+                      handleDiscountAmountChange(e.target.value)
                     }
+                    className="h-8 text-sm"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Bank Account</Label>
+                  <Label className="text-xs">Bank Account</Label>
                   <Select
                     value={selectedBankAccount}
                     onValueChange={(value) => {
@@ -5958,7 +6161,7 @@ export const SalesInvoice = () => {
                     }}
                     disabled={loadingAccounts || bankAccounts.length === 0}
                   >
-                    <SelectTrigger>
+                  <SelectTrigger className="h-8 text-sm">
                       <SelectValue
                         placeholder={
                           loadingAccounts
@@ -5997,7 +6200,7 @@ export const SalesInvoice = () => {
                   </Select>
                   {selectedBankAccount && (
                     <div className="space-y-1">
-                      <Label className="text-sm">Bank Amount (Rs)</Label>
+                      <Label className="text-xs">Bank Amount (Rs)</Label>
                       <Input
                         type="number"
                         min={0}
@@ -6010,12 +6213,13 @@ export const SalesInvoice = () => {
                           setReceivedAmount(val + cashAmount);
                         }}
                         placeholder="0"
+                        className="h-8 text-sm"
                       />
                     </div>
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label>Cash Account</Label>
+                  <Label className="text-xs">Cash Account</Label>
                   <Select
                     value={selectedCashAccount}
                     onValueChange={(value) => {
@@ -6024,7 +6228,7 @@ export const SalesInvoice = () => {
                     }}
                     disabled={loadingAccounts || cashAccounts.length === 0}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-8 text-sm">
                       <SelectValue
                         placeholder={
                           loadingAccounts
@@ -6063,7 +6267,7 @@ export const SalesInvoice = () => {
                   </Select>
                   {selectedCashAccount && (
                     <div className="space-y-1">
-                      <Label className="text-sm">Cash Amount (Rs)</Label>
+                      <Label className="text-xs">Cash Amount (Rs)</Label>
                       <Input
                         type="number"
                         min={0}
@@ -6076,13 +6280,14 @@ export const SalesInvoice = () => {
                           setReceivedAmount(bankAmount + val);
                         }}
                         placeholder="0"
+                        className="h-8 text-sm"
                       />
                     </div>
                   )}
                 </div>
                 {!selectedBankAccount && !selectedCashAccount && (
                   <div className="space-y-2">
-                    <Label>Received Amount</Label>
+                    <Label className="text-xs">Received Amount</Label>
                     <Input
                       type="number"
                       min={0}
@@ -6091,22 +6296,24 @@ export const SalesInvoice = () => {
                         setReceivedAmount(parseFloat(e.target.value) || 0)
                       }
                       placeholder="0"
+                      className="h-8 text-sm"
                     />
                   </div>
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label>Remarks</Label>
+              <div className="space-y-2 md:col-span-2">
+                <Label className="text-xs">Remarks</Label>
                 <Textarea
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   placeholder="Enter remarks..."
-                  rows={6}
+                  rows={5}
+                  className="text-sm"
                 />
               </div>
 
-              <div className="space-y-3 p-4 bg-background rounded-lg border">
+              <div className="space-y-3 p-3 bg-background rounded-lg border md:col-span-3">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Total Amount:</span>
                   <span className="font-medium">
@@ -6170,15 +6377,338 @@ export const SalesInvoice = () => {
                   </span>
                 </div>
               </div>
+
+              <div className="space-y-2 p-3 bg-background rounded-lg border min-h-[260px] md:col-span-5">
+                <div className="text-sm font-semibold">Part Association</div>
+                {(() => {
+                  const modelF = partsModelFilter.trim();
+                  const descriptionF = partsDescriptionFilter.trim();
+                  const applicationF = partsApplicationFilter.trim();
+                  const anyFilter = !!(modelF || descriptionF || applicationF);
+
+                  let selectedModel = "";
+                  let selectedDescription = "";
+                  let selectedApplication = "";
+                  let isLoading = false;
+                  let assocItems: ModelAssociationRow[] = [];
+                  let usingFilter = false;
+
+                  if (anyFilter) {
+                    usingFilter = true;
+                    selectedModel = modelF;
+                    selectedDescription = descriptionF;
+                    selectedApplication = applicationF;
+                    isLoading = partsLoading;
+                    assocItems = filterAssociationRows;
+                  } else {
+                    const lineId = activeAssociationLineId;
+                    if (!lineId) {
+                      return (
+                        <div className="text-xs text-muted-foreground italic">
+                          Click a model in Quantity Used to show association here,
+                          or apply any of the Model / Description / Application
+                          filters above.
+                        </div>
+                      );
+                    }
+                    const lineAssoc = linePartAssociations[lineId];
+                    selectedModel = lineAssoc?.selectedModelName || "";
+                    isLoading = lineAssoc?.loading || false;
+                    assocItems = lineAssoc?.items || [];
+                  }
+                  return (
+                    <>
+                      <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
+                        <span>
+                          Model:{" "}
+                          <span className="font-medium text-foreground">
+                            {selectedModel || (usingFilter ? "Any" : "N/A")}
+                          </span>
+                        </span>
+                        {usingFilter && (
+                          <>
+                            <span>
+                              Description:{" "}
+                              <span className="font-medium text-foreground">
+                                {selectedDescription || "Any"}
+                              </span>
+                            </span>
+                            <span>
+                              Application:{" "}
+                              <span className="font-medium text-foreground">
+                                {selectedApplication || "Any"}
+                              </span>
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <div className="rounded-md border bg-card overflow-y-auto max-h-[240px] min-w-0">
+                        <Table className="table-fixed w-full">
+                          <TableHeader>
+                            <TableRow className="bg-muted/40">
+                              <TableHead className="text-[10px] w-8 px-2 py-1.5 h-auto">
+                                #
+                              </TableHead>
+                              <TableHead className="text-[10px] w-[24%] px-2 py-1.5 h-auto">
+                                Part
+                              </TableHead>
+                              <TableHead className="text-[10px] w-[30%] px-2 py-1.5 h-auto">
+                                Desc
+                              </TableHead>
+                              <TableHead className="text-[10px] w-12 px-2 py-1.5 h-auto">
+                                Brand
+                              </TableHead>
+                              <TableHead className="text-[10px] w-11 px-2 py-1.5 h-auto">
+                                Model
+                              </TableHead>
+                              <TableHead className="text-[10px] w-12 px-2 py-1.5 h-auto text-right">
+                                Qty
+                              </TableHead>
+                              <TableHead className="text-[10px] w-10 px-2 py-1.5 h-auto text-center">
+                                Add
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {isLoading ? (
+                              <TableRow>
+                                <TableCell
+                                  colSpan={7}
+                                  className="text-center py-6 text-xs text-muted-foreground"
+                                >
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" />
+                                    Loading...
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            ) : assocItems.length === 0 ? (
+                              <TableRow>
+                                <TableCell
+                                  colSpan={7}
+                                  className="text-center py-6 text-xs text-muted-foreground italic"
+                                >
+                                  No associated items found for this model.
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              assocItems.map((row, index) => (
+                                <TableRow key={`${row.partId}-${index}`}>
+                                  <TableCell className="text-[10px] px-2 py-1">
+                                    {index + 1}
+                                  </TableCell>
+                                  <TableCell
+                                    className="text-[10px] px-2 py-1 truncate max-w-0 font-medium"
+                                    title={`${row.masterPart || "N/A"} | ${row.partNo || "N/A"}`}
+                                  >
+                                    {`${row.masterPart || "N/A"} | ${row.partNo || "N/A"}`}
+                                  </TableCell>
+                                  <TableCell
+                                    className="text-[10px] px-2 py-1 truncate max-w-0"
+                                    title={row.description || "N/A"}
+                                  >
+                                    {row.description || "N/A"}
+                                  </TableCell>
+                                  <TableCell className="text-[10px] px-2 py-1 whitespace-nowrap">
+                                    {row.brand || "N/A"}
+                                  </TableCell>
+                                  <TableCell className="text-[10px] px-2 py-1 truncate max-w-0">
+                                    {row.model || "N/A"}
+                                  </TableCell>
+                                  <TableCell className="text-[10px] px-2 py-1 text-right font-semibold tabular-nums">
+                                    {Number(row.quantity || 0).toLocaleString("en-US")}
+                                  </TableCell>
+                                  <TableCell className="px-2 py-1 text-center">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5 text-primary hover:bg-primary/10"
+                                      title="Add this part to invoice"
+                                      onClick={() =>
+                                        handleAddAssociationItemToInvoice(row)
+                                      }
+                                    >
+                                      <Plus className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
 
-            {/* Term & delivered to — end of invoice (before save) */}
-            <div className="rounded-lg border border-primary/15 bg-primary/5 p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-primary/80 mb-3">
-                Term and delivery
+            {/* Customer & Order Logistics Section */}
+            <div className="bg-primary/5 rounded-xl p-5 border border-primary/10">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-primary/80 mb-4 flex items-center gap-2">
+                <Users className="w-4 h-4" /> Customer & Delivery Info
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
+              <div className="flex flex-wrap gap-3 items-start">
+                {/* Show Previous Balance and Credit Limit */}
+                {newInvoice.customerType === "registered" &&
+                  selectedCustomerId &&
+                  (() => {
+                    const customer = customers.find(
+                      (c) => c.id === selectedCustomerId,
+                    );
+                    if (!customer) return null;
+                    return (
+                      <div className="text-xs flex flex-row gap-4 mt-1 bg-muted/50 p-2 rounded-md items-center shadow-sm border border-border/50">
+                        <div>
+                          <span className="text-muted-foreground font-medium mr-1 tracking-tight">
+                            Previous Balance:
+                          </span>
+                          <span
+                            className={`font-semibold tracking-tight ${customer.balance && customer.balance > 0 ? "text-red-600" : "text-emerald-600"}`}
+                          >
+                            Rs {customer.balance?.toFixed(2) || "0.00"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap text-[11px] bg-background/50 py-1 px-2 rounded border border-border/40">
+                          <span className="text-muted-foreground uppercase tracking-wider font-semibold">
+                            Credit Limit:
+                          </span>
+                          <span className="font-bold">
+                            {customer.creditLimit &&
+                            customer.creditLimit > 0
+                              ? `Rs ${customer.creditLimit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : "Unlimited"}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="link"
+                            className="h-auto p-0 text-[10px] text-blue-600 hover:text-blue-800 flex items-center"
+                            onClick={() => {
+                              setEditingCreditLimit(customer.creditLimit || 0);
+                              setShowEditCreditLimitDialog(true);
+                            }}
+                          >
+                            (EDIT)
+                          </Button>
+                          <label className="flex items-center gap-1 ml-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="h-3 w-3"
+                              checked={overrideCreditLimit}
+                              onChange={(e) =>
+                                setOverrideCreditLimit(e.target.checked)
+                              }
+                            />
+                            <span className="text-[10px] text-amber-700 font-semibold">
+                              Allow over credit limit
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                <div className="space-y-1.5 w-36">
+                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                    Tax Type
+                  </Label>
+                  <Select value={taxType} onValueChange={setTaxType}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Without GST">Without GST</SelectItem>
+                      <SelectItem value="With GST">With GST</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {taxType === "With GST" && (
+                  <div className="space-y-1.5 w-44">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      GST Percentage
+                    </Label>
+                    {newInvoice.customerType === "walking" ? (
+                      /* Walk-in (Cash Sale): Show only Custom Input, no buttons/dropdown */
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder=""
+                          value={customGstPercentage}
+                          onChange={(e) =>
+                            setCustomGstPercentage(e.target.value)
+                          }
+                          className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                      </div>
+                    ) : /* Registered (Party Sale): Toggle between Preset and Custom */
+                    !useCustomGst ? (
+                      <div className="flex gap-3">
+                        <Select
+                          value={gstPercentage.toString()}
+                          onValueChange={(value) => {
+                            setGstPercentage(parseFloat(value) || 0);
+                            setUseCustomGst(false);
+                          }}
+                        >
+                          <SelectTrigger className="flex-1 h-9 text-sm">
+                            <SelectValue placeholder="Select GST %" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="18">18%</SelectItem>
+                            <SelectItem value="22">22%</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setUseCustomGst(true);
+                            if (gstPercentage > 0) {
+                              setCustomGstPercentage(gstPercentage.toString());
+                            }
+                          }}
+                          className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                        >
+                          Custom
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder=""
+                            value={customGstPercentage}
+                            onChange={(e) =>
+                              setCustomGstPercentage(e.target.value)
+                            }
+                            className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setUseCustomGst(false);
+                            setCustomGstPercentage("");
+                          }}
+                          className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                        >
+                          Preset
+                        </Button>
+                      </div>
+                    )}
+                    <p className="text-xs font-medium text-muted-foreground mt-1">
+                      GST Amount: Rs {calculateTax().toLocaleString()}
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-1.5 w-40">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
                     Term
                   </Label>
@@ -6210,7 +6740,8 @@ export const SalesInvoice = () => {
                     className="h-9 text-sm bg-background"
                   />
                 </div>
-                <div className="space-y-1.5">
+
+                <div className="space-y-1.5 w-80 max-w-full">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
                     Delivered To
                   </Label>
