@@ -48,7 +48,7 @@ async function main() {
       name: adminName,
       email: adminEmail,
       password: hashedPassword,
-      role: adminRole,
+      roleId: role!.id,
       status: "active",
       lastLogin: "-",
       updatedAt: new Date(),

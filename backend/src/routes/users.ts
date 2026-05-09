@@ -6,6 +6,34 @@ import { randomUUID } from 'crypto';
 
 const router = express.Router();
 
+const DEFAULT_ROLE_ID = 'role_store_user';
+
+async function resolveIncomingRole(role: unknown): Promise<string> {
+  if (typeof role !== 'string' || !role.trim()) {
+    return DEFAULT_ROLE_ID;
+  }
+  const trimmed = role.trim();
+  const found = await prisma.role.findFirst({
+    where: {
+      OR: [
+        { id: trimmed },
+        { name: { equals: trimmed, mode: 'insensitive' as const } },
+      ],
+    },
+  });
+  return found?.id ?? DEFAULT_ROLE_ID;
+}
+
+async function roleNamesForUserRows(roleIds: string[]) {
+  const unique = [...new Set(roleIds.filter(Boolean))];
+  if (!unique.length) return {} as Record<string, string>;
+  const roles = await prisma.role.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, name: true },
+  });
+  return Object.fromEntries(roles.map((r) => [r.id, r.name]));
+}
+
 // GET /api/users - Get all users with filters and pagination
 router.get('/', async (req, res) => {
   try {
@@ -29,7 +57,15 @@ router.get('/', async (req, res) => {
     }
 
     if (role && role !== 'all') {
-      where.role = role;
+      const rl = typeof role === 'string' ? role.trim() : '';
+      if (rl) {
+        const found = await prisma.role.findFirst({
+          where: {
+            OR: [{ id: rl }, { name: { equals: rl, mode: 'insensitive' as const } }],
+          },
+        });
+        if (found) where.roleId = found.id;
+      }
     }
 
     // Search filter
@@ -51,7 +87,7 @@ router.get('/', async (req, res) => {
           id: true,
           name: true,
           email: true,
-          role: true,
+          roleId: true,
           status: true,
           lastLogin: true,
           createdAt: true,
@@ -60,11 +96,17 @@ router.get('/', async (req, res) => {
       prisma.user.count({ where }),
     ]);
 
+    const roleNames = await roleNamesForUserRows(users.map((u) => u.roleId));
+
     // Format dates
-    const formattedUsers = users.map(user => ({
-      ...user,
-      createdAt: user.createdAt.toISOString().split('T')[0],
-    }));
+    const formattedUsers = users.map((user) => {
+      const { roleId, ...rest } = user;
+      return {
+        ...rest,
+        role: roleNames[roleId] ?? roleId,
+        createdAt: user.createdAt.toISOString().split('T')[0],
+      };
+    });
 
     res.json({
       data: formattedUsers,
@@ -89,7 +131,7 @@ router.get('/:id', async (req, res) => {
         id: true,
         name: true,
         email: true,
-        role: true,
+        roleId: true,
         status: true,
         lastLogin: true,
         createdAt: true,
@@ -100,7 +142,15 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ data: { ...user, createdAt: user.createdAt.toISOString().split('T')[0] } });
+    const rn = await roleNamesForUserRows([user.roleId]);
+    const { roleId, ...rest } = user;
+    res.json({
+      data: {
+        ...rest,
+        role: rn[roleId] ?? roleId,
+        createdAt: user.createdAt.toISOString().split('T')[0],
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -140,12 +190,14 @@ router.post('/', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const roleIdResolved = await resolveIncomingRole(role);
+
     const user = await prisma.user.create({
       data: {
         id: randomUUID(),
         name,
         email,
-        role: role || 'Staff',
+        roleId: roleIdResolved,
         status: status || 'active',
         password: hashedPassword,
         lastLogin: '-',
@@ -155,7 +207,7 @@ router.post('/', async (req, res) => {
         id: true,
         name: true,
         email: true,
-        role: true,
+        roleId: true,
         status: true,
         lastLogin: true,
         createdAt: true,
@@ -172,10 +224,18 @@ router.post('/', async (req, res) => {
       description: `Created new user: ${name} (${email})`,
       ipAddress: getClientIp(req),
       status: 'success',
-      details: { userId: user.id, email: user.email, role: user.role },
+      details: { userId: user.id, email: user.email, roleId: user.roleId },
     });
 
-    res.status(201).json({ data: { ...user, createdAt: user.createdAt.toISOString().split('T')[0] } });
+    const rn = await roleNamesForUserRows([user.roleId]);
+    const { roleId: rid, ...rest } = user;
+    res.status(201).json({
+      data: {
+        ...rest,
+        role: rn[rid] ?? rid,
+        createdAt: user.createdAt.toISOString().split('T')[0],
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -196,7 +256,7 @@ router.put('/:id', async (req, res) => {
 
     if (name !== undefined) updateData.name = name;
     if (email !== undefined) updateData.email = email;
-    if (role !== undefined) updateData.role = role;
+    if (role !== undefined) updateData.roleId = await resolveIncomingRole(role);
     if (status !== undefined) updateData.status = status;
 
     // Hash password if provided
@@ -211,14 +271,22 @@ router.put('/:id', async (req, res) => {
         id: true,
         name: true,
         email: true,
-        role: true,
+        roleId: true,
         status: true,
         lastLogin: true,
         createdAt: true,
       },
     });
 
-    res.json({ data: { ...user, createdAt: user.createdAt.toISOString().split('T')[0] } });
+    const rn = await roleNamesForUserRows([user.roleId]);
+    const { roleId: urid, ...rest } = user;
+    res.json({
+      data: {
+        ...rest,
+        role: rn[urid] ?? urid,
+        createdAt: user.createdAt.toISOString().split('T')[0],
+      },
+    });
   } catch (error: any) {
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'User not found' });

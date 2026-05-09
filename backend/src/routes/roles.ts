@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
         }
 
         const usersCount = await prisma.user.count({
-          where: { role: role.name },
+          where: { roleId: role.id },
         });
 
         return {
@@ -58,7 +58,7 @@ router.get('/:id', async (req, res) => {
     }
 
     const usersCount = await prisma.user.count({
-      where: { role: role.name },
+      where: { roleId: role.id },
     });
 
     res.json({ data: { ...role, permissions, usersCount } });
@@ -136,7 +136,7 @@ router.put('/:id', async (req, res) => {
     }
 
     const usersCount = await prisma.user.count({
-      where: { role: role.name },
+      where: { roleId: role.id },
     });
 
     res.json({ data: { ...role, permissions: parsedPermissions, usersCount } });
