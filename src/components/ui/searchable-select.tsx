@@ -37,6 +37,9 @@ export const SearchableSelect = ({
 }: SearchableSelectProps & React.ComponentProps<typeof Input>) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
+  /** Keyboard highlight row index within filteredOptions */
+  const [highlightIndex, setHighlightIndex] = React.useState(0);
+  const highlightIndexRef = React.useRef(0);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
@@ -63,6 +66,35 @@ export const SearchableSelect = ({
         opt.description?.toLowerCase().includes(query),
     );
   }, [options, searchQuery]);
+
+  React.useEffect(() => {
+    highlightIndexRef.current = highlightIndex;
+  }, [highlightIndex]);
+
+  React.useEffect(() => {
+    setHighlightIndex(0);
+  }, [searchQuery, isOpen]);
+
+  React.useEffect(() => {
+    const len = filteredOptions.length;
+    setHighlightIndex((hi) =>
+      len === 0 ? 0 : Math.min(Math.max(hi, 0), len - 1),
+    );
+  }, [filteredOptions.length]);
+
+  React.useLayoutEffect(() => {
+    if (!isOpen || filteredOptions.length === 0) return;
+    const root = dropdownRef.current;
+    if (!root) return;
+    const safeIdx = Math.min(
+      Math.max(highlightIndex, 0),
+      filteredOptions.length - 1,
+    );
+    const el = root.querySelector<HTMLElement>(
+      `[data-ss-option-index="${safeIdx}"]`,
+    );
+    el?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [highlightIndex, isOpen, filteredOptions]);
 
   const exactMatch = React.useMemo(() => {
     if (!searchQuery) return true;
@@ -260,15 +292,68 @@ export const SearchableSelect = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    const len = filteredOptions.length;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (disabled) return;
+      if (!isOpen) {
+        setIsOpen(true);
+        setSearchQuery("");
+        setHighlightIndex(0);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => updateDropdownPosition());
+        });
+        return;
+      }
+      if (len === 0) return;
+      setHighlightIndex((i) => Math.min(i + 1, len - 1));
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (disabled) return;
+      if (!isOpen) {
+        setIsOpen(true);
+        setSearchQuery("");
+        const last = len > 0 ? len - 1 : 0;
+        setHighlightIndex(last);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => updateDropdownPosition());
+        });
+        return;
+      }
+      if (len === 0) return;
+      setHighlightIndex((i) => Math.max(i - 1, 0));
+      return;
+    }
+
     if (e.key === "Enter") {
+      if (isOpen && len > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        const hi = Math.min(
+          Math.max(highlightIndexRef.current, 0),
+          len - 1,
+        );
+        handleSelect(filteredOptions[hi].value);
+        return;
+      }
       if (filteredOptions.length > 0 && searchQuery) {
-        // If there are filtered options and user is typing, select the first match
+        e.preventDefault();
+        e.stopPropagation();
         handleSelect(filteredOptions[0].value);
       } else if ((allowCustom || onCreate) && searchQuery && !exactMatch) {
-        // If custom allowed or onCreate provided, and no exact match, create the typed value
+        e.preventDefault();
+        e.stopPropagation();
         handleCreateNew(searchQuery);
       }
     } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
       setIsOpen(false);
       setSearchQuery("");
     }
@@ -379,9 +464,11 @@ export const SearchableSelect = ({
 
             {filteredOptions.length > 0 && (
               <>
-                {filteredOptions.map((option) => (
+                {filteredOptions.map((option, idx) => (
                   <div
                     key={option.value}
+                    data-ss-option-index={idx}
+                    onMouseEnter={() => setHighlightIndex(idx)}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -389,7 +476,11 @@ export const SearchableSelect = ({
                     }}
                     className={cn(
                       "flex items-center justify-between px-3 py-2 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors pointer-events-auto",
-                      value === option.value && "bg-primary/10 text-primary",
+                      idx === highlightIndex &&
+                        "bg-accent text-accent-foreground",
+                      value === option.value &&
+                        idx !== highlightIndex &&
+                        "bg-primary/10 text-primary",
                     )}
                   >
                     <div className="flex flex-col min-w-0">

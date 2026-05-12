@@ -1,4 +1,12 @@
-import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useCallback,
+  Fragment,
+} from "react";
 import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -106,6 +114,8 @@ interface PartDetail {
   rackNo: string;
   reOrderLevel: string;
   quantity?: number; // Available stock quantity
+  /** From parts API when present; used in dropdown before available qty */
+  reservedQty?: number;
 }
 
 interface ModelAssociationItem {
@@ -182,6 +192,11 @@ export const SalesInquiry = () => {
   const [showLookupRowDropdown, setShowLookupRowDropdown] = useState<
     Record<string, boolean>
   >({});
+  /** Keyboard highlight index per lookup row part dropdown */
+  const [lookupRowHighlightIndex, setLookupRowHighlightIndex] = useState<
+    Record<string, number>
+  >({});
+  const lookupRowHighlightIndexRef = useRef<Record<string, number>>({});
   const lookupRowDropdownRefs = useRef<Record<string, HTMLDivElement | null>>(
     {},
   );
@@ -299,7 +314,19 @@ export const SalesInquiry = () => {
       rackNo: rackMapData[p.id] || 'N/A',
       reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
       quantity: stockMapData[p.id] !== undefined ? stockMapData[p.id] : 0,
+      reservedQty: Number(p.reserved_stock ?? p.reservedStock ?? p.reservedQty ?? 0) || 0,
     };
+  };
+
+  const extractPartModels = (part: any) => {
+    const models = Array.isArray(part?.models) ? part.models : [];
+    return models
+      .map((m: any) => ({
+        id: String(m.id ?? `${part?.id || "part"}-${m?.name || "model"}`),
+        name: String(m.name ?? "").trim(),
+        qtyUsed: Number(m.qty_used ?? m.qtyUsed ?? 0) || 0,
+      }))
+      .filter((m: { name: string }) => !!m.name);
   };
 
   useEffect(() => {
@@ -345,17 +372,25 @@ export const SalesInquiry = () => {
         setStockMap(stockMapData);
 
         const idMap: Record<string, string> = {};
+        const modelMapUpdates: Record<
+          string,
+          { id: string; name: string; qtyUsed: number }[]
+        > = {};
         const transformedParts = partsDataArray
           .filter((p: any) => p.status === 'active' || !p.status)
           .map((p: any) => {
             const part = transformPart(p, rackMapData, stockMapData);
             if (part.partNo && part.id) idMap[part.partNo] = part.id;
+            if (part.id) {
+              modelMapUpdates[part.id] = extractPartModels(p);
+            }
             return part;
           })
           .filter((p: PartDetail) => p.partNo && p.partNo !== 'N/A');
 
         setPartIdMap(idMap);
         setPartsData(transformedParts);
+        setPartModelsByPartId((prev) => ({ ...prev, ...modelMapUpdates }));
       } catch (error: any) {
         toast({ title: "Error", description: "Failed to load parts", variant: "destructive" });
       } finally {
@@ -610,6 +645,19 @@ export const SalesInquiry = () => {
 
   // Filter parts based on item search
   const filteredParts = useMemo(() => {
+    const getAvailableQty = (part: PartDetail): number => {
+      const live = part.id ? partStockBalances[part.id]?.available_stock : undefined;
+      if (typeof live === "number") return live;
+      return Number(part.quantity || 0);
+    };
+
+    const compareStockPriority = (a: PartDetail, b: PartDetail) => {
+      const aHasStock = getAvailableQty(a) > 0;
+      const bHasStock = getAvailableQty(b) > 0;
+      if (aHasStock !== bHasStock) return aHasStock ? -1 : 1;
+      return String(a.partNo || "").localeCompare(String(b.partNo || ""));
+    };
+
     // Combine local data and search results
     const combined = [...partsData];
     searchResults.forEach(res => {
@@ -644,6 +692,8 @@ export const SalesInquiry = () => {
 
       // Prioritize exact partNo/master matches followed by startsWith
       filtered = [...filtered].sort((a, b) => {
+        const stockCmp = compareStockPriority(a, b);
+        if (stockCmp !== 0) return stockCmp;
         const aNo = a.partNo.toLowerCase();
         const bNo = b.partNo.toLowerCase();
         const aMaster = a.masterPart.toLowerCase();
@@ -659,11 +709,13 @@ export const SalesInquiry = () => {
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
 
-        return 0;
+        return compareStockPriority(a, b);
       });
+    } else {
+      filtered = [...filtered].sort(compareStockPriority);
     }
     return filtered.slice(0, 150);
-  }, [itemSearch, partsData, searchResults]);
+  }, [itemSearch, partsData, searchResults, partStockBalances]);
 
   // Pool of parts available to lookup rows (local + on-demand search results
   // + parts injected from alternate / association side panels).
@@ -758,7 +810,7 @@ export const SalesInquiry = () => {
 
   const lookupModelFilterOptions = useMemo<SearchableSelectOption[]>(
     () => [
-      { value: "__all__", label: "All Models" },
+      { value: "__all__", label: "Models" },
       ...lookupModelOptions.map((name) => ({ value: name, label: name })),
     ],
     [lookupModelOptions],
@@ -766,7 +818,7 @@ export const SalesInquiry = () => {
 
   const lookupDescriptionFilterOptions = useMemo<SearchableSelectOption[]>(
     () => [
-      { value: "__all__", label: "All Descriptions" },
+      { value: "__all__", label: "Description" },
       ...lookupDescriptionOptions.map((name) => ({ value: name, label: name })),
     ],
     [lookupDescriptionOptions],
@@ -774,7 +826,7 @@ export const SalesInquiry = () => {
 
   const lookupApplicationFilterOptions = useMemo<SearchableSelectOption[]>(
     () => [
-      { value: "__all__", label: "All Applications" },
+      { value: "__all__", label: "Application" },
       ...lookupApplicationOptions.map((name) => ({ value: name, label: name })),
     ],
     [lookupApplicationOptions],
@@ -783,6 +835,18 @@ export const SalesInquiry = () => {
   // Build the filtered, sorted parts list shown in a row's dropdown.
   const getFilteredPartsForLookupRow = useCallback(
     (rowId: string) => {
+      const getAvailableQty = (part: PartDetail): number => {
+        const live = part.id ? partStockBalances[part.id]?.available_stock : undefined;
+        if (typeof live === "number") return live;
+        return Number(part.quantity || 0);
+      };
+      const compareStockPriority = (a: PartDetail, b: PartDetail) => {
+        const aHasStock = getAvailableQty(a) > 0;
+        const bHasStock = getAvailableQty(b) > 0;
+        if (aHasStock !== bHasStock) return aHasStock ? -1 : 1;
+        return String(a.partNo || "").localeCompare(String(b.partNo || ""));
+      };
+
       const row = lookupRows.find((r) => r.id === rowId);
       const search = (row?.search || "").trim().toLowerCase();
       const model = lookupModelFilter.trim().toLowerCase();
@@ -826,6 +890,8 @@ export const SalesInquiry = () => {
 
       if (search) {
         list = [...list].sort((a, b) => {
+          const stockCmp = compareStockPriority(a, b);
+          if (stockCmp !== 0) return stockCmp;
           const aNo = (a.partNo || "").toLowerCase();
           const bNo = (b.partNo || "").toLowerCase();
           const aMaster = (a.masterPart || "").toLowerCase();
@@ -840,8 +906,10 @@ export const SalesInquiry = () => {
             bNo.startsWith(search) || bMaster.startsWith(search);
           if (aStarts && !bStarts) return -1;
           if (!aStarts && bStarts) return 1;
-          return 0;
+          return compareStockPriority(a, b);
         });
+      } else {
+        list = [...list].sort(compareStockPriority);
       }
 
       return list.slice(0, 150);
@@ -853,6 +921,7 @@ export const SalesInquiry = () => {
       lookupDescriptionFilter,
       lookupApplicationFilter,
       partModelsByPartId,
+      partStockBalances,
     ],
   );
 
@@ -1000,13 +1069,26 @@ export const SalesInquiry = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Keep keyboard-highlighted part row visible inside the fixed portal list
+  useLayoutEffect(() => {
+    for (const rowId of Object.keys(showLookupRowDropdown)) {
+      if (!showLookupRowDropdown[rowId]) continue;
+      const panel = lookupRowPortalRefs.current[rowId];
+      if (!panel) continue;
+      const idx = lookupRowHighlightIndex[rowId] ?? 0;
+      const el = panel.querySelector<HTMLElement>(
+        `[data-lookup-item-key="${rowId}"][data-lookup-item-idx="${idx}"]`,
+      );
+      el?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [lookupRowHighlightIndex, showLookupRowDropdown]);
+
   const getItemLabel = (part: PartDetail) => {
     const leftPart =
       part.masterPart && part.masterPart !== part.partNo
         ? `${part.masterPart} | ${part.partNo}`
         : part.partNo;
-    const baseLabel = part.description ? `${leftPart} - ${part.description}` : leftPart;
-    return part.brand && part.brand !== "N/A" ? `${baseLabel} (${part.brand})` : baseLabel;
+    return part.description ? `${leftPart} - ${part.description}` : leftPart;
   };
 
   const normalizeAssociationApplication = (value: string) => {
@@ -1190,6 +1272,12 @@ export const SalesInquiry = () => {
       delete next[rowId];
       return next;
     });
+    setLookupRowHighlightIndex((prev) => {
+      if (!(rowId in prev)) return prev;
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
     setLookupRowSelectedModel((prev) => {
       if (!(rowId in prev)) return prev;
       const next = { ...prev };
@@ -1212,6 +1300,8 @@ export const SalesInquiry = () => {
         },
       }));
     }
+    setLookupRowHighlightIndex((prev) => ({ ...prev, [rowId]: 0 }));
+    lookupRowHighlightIndexRef.current[rowId] = 0;
     setShowLookupRowDropdown((prev) => ({ ...prev, [rowId]: true }));
   }, []);
 
@@ -1245,6 +1335,13 @@ export const SalesInquiry = () => {
     };
   }, [showLookupRowDropdown]);
 
+  useEffect(() => {
+    Object.assign(
+      lookupRowHighlightIndexRef.current,
+      lookupRowHighlightIndex,
+    );
+  }, [lookupRowHighlightIndex]);
+
   const handleLookupRowSearchChange = (rowId: string, value: string) => {
     setLookupRows((prev) =>
       prev.map((r) => {
@@ -1259,6 +1356,8 @@ export const SalesInquiry = () => {
         return { ...r, search: value, partId };
       }),
     );
+    setLookupRowHighlightIndex((prev) => ({ ...prev, [rowId]: 0 }));
+    lookupRowHighlightIndexRef.current[rowId] = 0;
     setShowLookupRowDropdown((prev) => ({ ...prev, [rowId]: true }));
   };
 
@@ -1548,6 +1647,10 @@ export const SalesInquiry = () => {
 
       // Create part ID map
       const idMap: Record<string, string> = {};
+      const modelMapUpdates: Record<
+        string,
+        { id: string; name: string; qtyUsed: number }[]
+      > = {};
 
       // Format numbers properly
       const formatNumber = (val: any): string => {
@@ -1563,6 +1666,7 @@ export const SalesInquiry = () => {
           const partNo = String(p.part_no || p.partNo || '').trim();
           if (partNo && p.id) {
             idMap[partNo] = p.id;
+            modelMapUpdates[p.id] = extractPartModels(p);
           }
 
           return {
@@ -1596,6 +1700,7 @@ export const SalesInquiry = () => {
       setPartIdMap(idMap);
 
       setPartsData(transformedParts);
+      setPartModelsByPartId((prev) => ({ ...prev, ...modelMapUpdates }));
       toast({
         title: "Parts Refreshed",
         description: `Loaded ${transformedParts.length} parts from database.`,
@@ -2278,8 +2383,6 @@ export const SalesInquiry = () => {
                         <TableHead>Price B</TableHead>
                         <TableHead>Price M</TableHead>
                         <TableHead>Location</TableHead>
-                        <TableHead>Stock</TableHead>
-                        <TableHead>Reserved</TableHead>
                         <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2308,8 +2411,6 @@ export const SalesInquiry = () => {
                             <TableCell>Rs {item.priceB?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>Rs {item.priceM?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>{item.location || 'N/A'}</TableCell>
-                            <TableCell>{item.stock || 0}</TableCell>
-                            <TableCell>{item.reservedQty || 0}</TableCell>
                             <TableCell>
                               <Button
                                 variant="ghost"
@@ -2447,13 +2548,13 @@ export const SalesInquiry = () => {
                       Application
                     </TableHead>
                     <TableHead className="w-[80px] text-center font-bold text-foreground">
-                      In Stock
-                    </TableHead>
-                    <TableHead className="w-[80px] text-center font-bold text-foreground">
                       Reserved
                     </TableHead>
                     <TableHead className="w-[80px] text-center font-bold text-foreground">
-                      Available
+                      In Stock
+                    </TableHead>
+                    <TableHead className="w-[80px] text-center font-bold text-foreground">
+                      Available Stock
                     </TableHead>
                     <TableHead className="w-[95px] text-center font-bold text-foreground">
                       Cost Price
@@ -2471,6 +2572,8 @@ export const SalesInquiry = () => {
                     const rowPart =
                       lookupPartsPool.find((p) => p.id === row.partId) || null;
                     const rowFiltered = getFilteredPartsForLookupRow(row.id);
+                    const rowHighlightIdx =
+                      lookupRowHighlightIndex[row.id] ?? 0;
                     const rowDropdownOpen = !!showLookupRowDropdown[row.id];
                     const rowModels = lookupModelChips(row.partId || "");
                     const stockBalance = row.partId
@@ -2561,15 +2664,102 @@ export const SalesInquiry = () => {
                                   }
                                   onFocus={() => openLookupRowDropdown(row.id)}
                                   onClick={() => openLookupRowDropdown(row.id)}
-                                  onKeyDown={(e) => {
-                                    if (
-                                      e.key === "Enter" &&
-                                      rowFiltered.length === 1
-                                    ) {
-                                      handleSelectPartForLookupRow(
-                                        row.id,
-                                        rowFiltered[0],
+                                  onKeyDownCapture={(e) => {
+                                    const len = rowFiltered.length;
+                                    const arrowDown =
+                                      e.key === "ArrowDown" ||
+                                      e.code === "ArrowDown";
+                                    const arrowUp =
+                                      e.key === "ArrowUp" ||
+                                      e.code === "ArrowUp";
+
+                                    const syncHi = (rowId: string, idx: number) => {
+                                      lookupRowHighlightIndexRef.current[rowId] =
+                                        idx;
+                                    };
+
+                                    if (e.key === "Escape") {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setShowLookupRowDropdown((prev) => ({
+                                        ...prev,
+                                        [row.id]: false,
+                                      }));
+                                      return;
+                                    }
+
+                                    if (arrowDown) {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (len === 0) return;
+                                      if (!rowDropdownOpen) {
+                                        setShowLookupRowDropdown((prev) => ({
+                                          ...prev,
+                                          [row.id]: true,
+                                        }));
+                                        syncHi(row.id, 0);
+                                        setLookupRowHighlightIndex((prev) => ({
+                                          ...prev,
+                                          [row.id]: 0,
+                                        }));
+                                        return;
+                                      }
+                                      setLookupRowHighlightIndex((prev) => {
+                                        const cur = prev[row.id] ?? -1;
+                                        const next = Math.min(cur + 1, len - 1);
+                                        syncHi(row.id, next);
+                                        return { ...prev, [row.id]: next };
+                                      });
+                                      return;
+                                    }
+
+                                    if (arrowUp) {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (len === 0) return;
+                                      if (!rowDropdownOpen) {
+                                        setShowLookupRowDropdown((prev) => ({
+                                          ...prev,
+                                          [row.id]: true,
+                                        }));
+                                        const last = Math.max(len - 1, 0);
+                                        syncHi(row.id, last);
+                                        setLookupRowHighlightIndex((prev) => ({
+                                          ...prev,
+                                          [row.id]: last,
+                                        }));
+                                        return;
+                                      }
+                                      setLookupRowHighlightIndex((prev) => {
+                                        const cur = prev[row.id] ?? 0;
+                                        const next = Math.max(cur - 1, 0);
+                                        syncHi(row.id, next);
+                                        return { ...prev, [row.id]: next };
+                                      });
+                                      return;
+                                    }
+
+                                    if (e.key === "Enter") {
+                                      if (len === 0) return;
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      const hi = Math.min(
+                                        Math.max(
+                                          lookupRowHighlightIndexRef.current[
+                                            row.id
+                                          ] ?? 0,
+                                          0,
+                                        ),
+                                        len - 1,
                                       );
+                                      const picked = rowFiltered[hi];
+                                      if (picked) {
+                                        handleSelectPartForLookupRow(
+                                          row.id,
+                                          picked,
+                                        );
+                                      }
+                                      return;
                                     }
                                   }}
                                   className={cn(
@@ -2644,8 +2834,10 @@ export const SalesInquiry = () => {
                                         Loading items...
                                       </div>
                                     ) : rowFiltered.length > 0 ? (
-                                      rowFiltered.map((part) => {
+                                      rowFiltered.map((part, idx) => {
                                         const availableQty = part.quantity ?? 0;
+                                        const reservedQty =
+                                          part.reservedQty ?? 0;
                                         const brandLabel =
                                           part.brand && part.brand !== "N/A"
                                             ? part.brand
@@ -2663,6 +2855,17 @@ export const SalesInquiry = () => {
                                         return (
                                           <button
                                             key={part.id}
+                                            type="button"
+                                            data-lookup-item-key={row.id}
+                                            data-lookup-item-idx={idx}
+                                            onMouseEnter={() =>
+                                              setLookupRowHighlightIndex(
+                                                (prev) => ({
+                                                  ...prev,
+                                                  [row.id]: idx,
+                                                }),
+                                              )
+                                            }
                                             onClick={() =>
                                               handleSelectPartForLookupRow(
                                                 row.id,
@@ -2671,7 +2874,10 @@ export const SalesInquiry = () => {
                                             }
                                             className={cn(
                                               "w-full text-left px-3 py-2.5 hover:bg-accent hover:text-accent-foreground transition-colors border-b border-border last:border-b-0",
+                                              idx === rowHighlightIdx &&
+                                                "bg-accent text-accent-foreground",
                                               rowPart?.id === part.id &&
+                                                idx !== rowHighlightIdx &&
                                                 "bg-muted",
                                             )}
                                           >
@@ -2679,16 +2885,28 @@ export const SalesInquiry = () => {
                                               <div className="font-semibold text-sm">
                                                 {partIdentifiers}
                                               </div>
-                                              <span
-                                                className={cn(
-                                                  "text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0",
-                                                  availableQty > 0
-                                                    ? "bg-green-100 text-green-700"
-                                                    : "bg-red-100 text-red-600",
-                                                )}
-                                              >
-                                                {availableQty} pcs
-                                              </span>
+                                              <div className="flex items-center gap-1 shrink-0">
+                                                <span
+                                                  className={cn(
+                                                    "text-[11px] font-semibold px-2 py-0.5 rounded-full tabular-nums",
+                                                    reservedQty > 0
+                                                      ? "bg-amber-100 text-amber-800"
+                                                      : "bg-muted text-muted-foreground",
+                                                  )}
+                                                >
+                                                  Res {reservedQty}
+                                                </span>
+                                                <span
+                                                  className={cn(
+                                                    "text-[11px] font-semibold px-2 py-0.5 rounded-full tabular-nums",
+                                                    availableQty > 0
+                                                      ? "bg-green-100 text-green-700"
+                                                      : "bg-red-100 text-red-600",
+                                                  )}
+                                                >
+                                                  {availableQty} pcs
+                                                </span>
+                                              </div>
                                             </div>
                                             <div className="text-xs text-muted-foreground line-clamp-2 mt-1">
                                               {description}
@@ -2732,6 +2950,15 @@ export const SalesInquiry = () => {
                             </span>
                           </TableCell>
                           <TableCell className="text-center align-top">
+                            <span className="text-sm font-semibold text-orange-600">
+                              {!row.partId
+                                ? "-"
+                                : stockLoading
+                                  ? "..."
+                                  : reservedStock}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center align-top">
                             <div className="flex items-center justify-center gap-1.5">
                               <span
                                 className={cn(
@@ -2751,15 +2978,6 @@ export const SalesInquiry = () => {
                                 <Package className="w-3.5 h-3.5 text-muted-foreground" />
                               )}
                             </div>
-                          </TableCell>
-                          <TableCell className="text-center align-top">
-                            <span className="text-sm font-semibold text-orange-600">
-                              {!row.partId
-                                ? "-"
-                                : stockLoading
-                                  ? "..."
-                                  : reservedStock}
-                            </span>
                           </TableCell>
                           <TableCell className="text-center align-top">
                             {!row.partId ? (

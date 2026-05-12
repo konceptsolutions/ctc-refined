@@ -34,25 +34,38 @@ async function getNextNumberForPrefix(args: {
   return `${prefix}${String(max + 1).padStart(4, "0")}`;
 }
 
-async function getNextSalesInvoiceNo(currentYear: number): Promise<string> {
-  const prefix = `INV-${currentYear}-`;
-  const invoicePattern = new RegExp(`^INV-${currentYear}-(\\d+)$`);
-  const invoices = await prisma.salesInvoice.findMany({
-    where: { invoiceNo: { startsWith: prefix } },
-    select: { invoiceNo: true },
-  });
+/** Legacy: INV-YYYY-NNN or INV-NNN. New: digits only (no INV prefix). */
+const LEGACY_SALES_INVOICE_NO = /^INV-(\d{4})-(\d+)$/i;
+const PLAIN_SALES_INVOICE_NO = /^INV-(\d+)$/i;
+const NUMERIC_SALES_INVOICE_NO = /^(\d+)$/;
+
+async function getNextSalesInvoiceNo(): Promise<string> {
+  const rows = await prisma.$queryRaw<Array<{ invoiceNo: string }>>`
+    SELECT "invoiceNo" FROM "SalesInvoice"
+    WHERE "invoiceNo" LIKE 'INV-%' OR "invoiceNo" ~ '^[0-9]+$'
+  `;
 
   let maxNo = SALES_INVOICE_START_NO - 1;
-  for (const invoice of invoices) {
-    const match = invoice.invoiceNo.match(invoicePattern);
-    if (!match) continue;
-    const value = parseInt(match[1], 10);
-    if (!Number.isNaN(value)) {
+  for (const { invoiceNo } of rows) {
+    let value: number | null = null;
+    const legacy = invoiceNo.match(LEGACY_SALES_INVOICE_NO);
+    if (legacy) {
+      value = parseInt(legacy[2], 10);
+    } else {
+      const plain = invoiceNo.match(PLAIN_SALES_INVOICE_NO);
+      if (plain) {
+        value = parseInt(plain[1], 10);
+      } else {
+        const num = invoiceNo.match(NUMERIC_SALES_INVOICE_NO);
+        if (num) value = parseInt(num[1], 10);
+      }
+    }
+    if (value != null && !Number.isNaN(value)) {
       maxNo = Math.max(maxNo, value);
     }
   }
 
-  return `INV-${currentYear}-${String(maxNo + 1).padStart(3, "0")}`;
+  return String(maxNo + 1).padStart(3, "0");
 }
 
 // Helper function to calculate stock balance
@@ -987,9 +1000,8 @@ router.post(
         }
       }
 
-      // Generate robust invoice number (format: INV-YYYY-XXX)
-      const currentYear = new Date(invoiceDate || new Date()).getFullYear();
-      const invoiceNo = await getNextSalesInvoiceNo(currentYear);
+      // Generate robust invoice number (numeric string; legacy INV-* rows still drive sequence)
+      const invoiceNo = await getNextSalesInvoiceNo();
 
       // Calculate totals
       const subtotal = quotation.totalAmount;
@@ -1499,9 +1511,8 @@ router.post("/invoices", async (req: Request, res: Response) => {
       }
     }
 
-    // Generate robust invoice number (format: INV-YYYY-XXX)
-    const currentYear = new Date(invoiceDate || new Date()).getFullYear();
-    const invoiceNo = await getNextSalesInvoiceNo(currentYear);
+    // Generate robust invoice number (numeric string; legacy INV-* rows still drive sequence)
+    const invoiceNo = await getNextSalesInvoiceNo();
 
     // Determine which account ID to store (prefer bank, then cash, then legacy accountId)
     const finalAccountId = bankAccountId || cashAccountId || accountId;

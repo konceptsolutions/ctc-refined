@@ -24,7 +24,10 @@ const isPartCodeField = (props: React.ComponentProps<"input">) => {
 };
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, onWheel, onKeyDown, inputMode, ...props }, ref) => {
+  (
+    { className, type, onWheel, onKeyDown, onKeyDownCapture, inputMode, ...props },
+    ref,
+  ) => {
     const isNumberType = type === "number";
     const finalType = isNumberType ? "text" : type;
     const finalInputMode = isNumberType ? inputMode || "decimal" : inputMode;
@@ -47,8 +50,15 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
       onKeyDown?.(event);
     };
 
+    const handleKeyDownCapture: React.KeyboardEventHandler<HTMLInputElement> = (
+      event,
+    ) => {
+      onKeyDownCapture?.(event);
+    };
+
     return (
       <input
+        ref={ref}
         type={finalType}
         inputMode={finalInputMode}
         className={cn(
@@ -56,10 +66,10 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           partCodeFont && "part-code-font font-mono",
           className,
         )}
-        ref={ref}
-        onWheel={handleWheel}
-        onKeyDown={handleKeyDown}
         {...props}
+        onWheel={handleWheel}
+        onKeyDownCapture={handleKeyDownCapture}
+        onKeyDown={handleKeyDown}
       />
     );
   },

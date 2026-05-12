@@ -1,4 +1,11 @@
-import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  Fragment,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { createPortal } from "react-dom";
 import { apiClient } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,6 +91,7 @@ import {
 } from "@/components/ui/searchable-select";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
+import { InvoicePartDropdownList } from "./InvoicePartDropdownList";
 import { printDeliveryChallan } from "@/lib/printDeliveryChallan";
 import {
   Invoice,
@@ -428,6 +436,12 @@ export const SalesInvoice = () => {
   const [showPartsDropdown, setShowPartsDropdown] = useState<
     Record<string, boolean>
   >({});
+  const showPartsDropdownLiveRef = useRef<Record<string, boolean>>({});
+  showPartsDropdownLiveRef.current = showPartsDropdown;
+  /** Keyboard navigation index for each inline row's part dropdown */
+  const [partsDropdownHighlightIndex, setPartsDropdownHighlightIndex] =
+    useState<Record<string, number>>({});
+  const partsDropdownHighlightIndexRef = useRef<Record<string, number>>({});
   const [dropdownPosition, setDropdownPosition] = useState<
     Record<string, { top: number; left: number; width: number }>
   >({});
@@ -435,6 +449,13 @@ export const SalesInvoice = () => {
   const dropdownRefs = useRef<Record<string, HTMLDivElement>>({});
   const isClickingDropdown = useRef<Record<string, boolean>>({});
   const hasFetchedInitialPartsRef = useRef(false);
+
+  useEffect(() => {
+    Object.assign(
+      partsDropdownHighlightIndexRef.current,
+      partsDropdownHighlightIndex,
+    );
+  }, [partsDropdownHighlightIndex]);
 
   // Stock balances for parts (accurate real-time stock)
   const [partStockBalances, setPartStockBalances] = useState<
@@ -799,18 +820,6 @@ export const SalesInvoice = () => {
       );
   }, [invoices, searchTerm, filterInvoiceKind]);
 
-  // Calculate totals
-  const totalInvoices = invoices.length;
-  const totalReceived = invoices.reduce((sum, inv) => sum + inv.paidAmount, 0);
-  const totalReceivable = invoices.reduce(
-    (sum, inv) => sum + (inv.grandTotal - inv.paidAmount),
-    0,
-  );
-  const onHoldCount = invoices.filter((inv) => inv.status === "on_hold").length;
-  const pendingDelivery = invoices.filter(
-    (inv) => inv.status === "approved" || inv.status === "partially_delivered",
-  ).length;
-
   // Add new inline item row
   const handleAddNewItem = useCallback((openDropdown = false) => {
     const newItem: InlineItemRow = {
@@ -1114,6 +1123,9 @@ export const SalesInvoice = () => {
     );
   };
 
+  const handleUpdateInlineItemRef = useRef(handleUpdateInlineItem);
+  handleUpdateInlineItemRef.current = handleUpdateInlineItem;
+
   // Fetch accurate stock balance for a part
   const fetchPartStockBalance = useCallback(async (partId: string, force = false) => {
     if (partStockBalances[partId] && !force) {
@@ -1331,7 +1343,10 @@ export const SalesInvoice = () => {
       hasFetchedInitialPartsRef.current = true;
     }
 
-    if (!silent) setPartsLoading(true);
+    // Avoid blanking the dropdown while a refresh runs if we already have catalog data (global loading was blocking reopen even when parts were cached).
+    if (!silent && parts.length === 0) {
+      setPartsLoading(true);
+    }
     try {
       const params: any = {
         limit: "all", // Load all active parts as requested
@@ -1419,6 +1434,16 @@ export const SalesInvoice = () => {
     }
   };
 
+  const fetchPartsRef = useRef(fetchParts);
+  fetchPartsRef.current = fetchParts;
+
+  // Load catalog as soon as the user enters “new invoice”, so the first line-item open isn’t waiting on the network.
+  useEffect(() => {
+    if (!showNewInvoice) return;
+    if (hasFetchedInitialPartsRef.current) return;
+    void fetchPartsRef.current("", false);
+  }, [showNewInvoice]);
+
   const getFilteredPartsForInlineRow = useCallback(
     (
       rowId: string,
@@ -1437,7 +1462,7 @@ export const SalesInvoice = () => {
         .trim()
         .toLowerCase();
 
-      return parts.filter((part) => {
+      const filtered = parts.filter((part) => {
         const partNo = String(part.partNo || "").toLowerCase();
         const masterPartNo = String(part.masterPartNo || "").toLowerCase();
         const description = String(part.description || "").toLowerCase();
@@ -1482,6 +1507,13 @@ export const SalesInvoice = () => {
 
         return true;
       });
+
+      return [...filtered].sort((a, b) => {
+        const aHasStock = Number(a.availableQty || 0) > 0;
+        const bHasStock = Number(b.availableQty || 0) > 0;
+        if (aHasStock !== bHasStock) return aHasStock ? -1 : 1;
+        return String(a.partNo || "").localeCompare(String(b.partNo || ""));
+      });
     },
     [
       parts,
@@ -1491,6 +1523,117 @@ export const SalesInvoice = () => {
       partsApplicationFilter,
     ],
   );
+
+  const getFilteredPartsForInlineRowLiveRef = useRef(
+    getFilteredPartsForInlineRow,
+  );
+  getFilteredPartsForInlineRowLiveRef.current = getFilteredPartsForInlineRow;
+
+  useEffect(() => {
+    if (!showNewInvoice) return;
+
+    const onDocKeyDown = (ev: KeyboardEvent) => {
+      const el = ev.target as HTMLElement | null;
+      if (!el?.matches?.("input[data-inline-part-input]")) return;
+
+      const itemId = el.getAttribute("data-inline-part-input");
+      if (!itemId) return;
+
+      const getFiltered = getFilteredPartsForInlineRowLiveRef.current;
+      const filteredParts = getFiltered(itemId);
+      const len = filteredParts.length;
+      const open = !!showPartsDropdownLiveRef.current[itemId];
+
+      const arrowDown =
+        ev.key === "ArrowDown" || ev.code === "ArrowDown";
+      const arrowUp = ev.key === "ArrowUp" || ev.code === "ArrowUp";
+
+      const syncHighlight = (rowId: string, index: number) => {
+        partsDropdownHighlightIndexRef.current[rowId] = index;
+      };
+
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        setShowPartsDropdown((prev) => ({ ...prev, [itemId]: false }));
+        return;
+      }
+
+      if (arrowDown) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (len === 0) return;
+        if (!open) {
+          setShowPartsDropdown((prev) => ({ ...prev, [itemId]: true }));
+          if (!hasFetchedInitialPartsRef.current) {
+            void fetchPartsRef.current("", false);
+          }
+          syncHighlight(itemId, 0);
+          setPartsDropdownHighlightIndex((prev) => ({
+            ...prev,
+            [itemId]: 0,
+          }));
+          return;
+        }
+        setPartsDropdownHighlightIndex((prev) => {
+          const cur = prev[itemId] ?? -1;
+          const next = Math.min(cur + 1, len - 1);
+          syncHighlight(itemId, next);
+          return { ...prev, [itemId]: next };
+        });
+        return;
+      }
+
+      if (arrowUp) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (len === 0) return;
+        if (!open) {
+          setShowPartsDropdown((prev) => ({ ...prev, [itemId]: true }));
+          if (!hasFetchedInitialPartsRef.current) {
+            void fetchPartsRef.current("", false);
+          }
+          const last = Math.max(len - 1, 0);
+          syncHighlight(itemId, last);
+          setPartsDropdownHighlightIndex((prev) => ({
+            ...prev,
+            [itemId]: last,
+          }));
+          return;
+        }
+        setPartsDropdownHighlightIndex((prev) => {
+          const cur = prev[itemId] ?? 0;
+          const next = Math.max(cur - 1, 0);
+          syncHighlight(itemId, next);
+          return { ...prev, [itemId]: next };
+        });
+        return;
+      }
+
+      if (ev.key === "Enter") {
+        if (len === 0) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const hi = Math.min(
+          Math.max(partsDropdownHighlightIndexRef.current[itemId] ?? 0, 0),
+          len - 1,
+        );
+        const picked = filteredParts[hi];
+        if (picked) {
+          handleUpdateInlineItemRef.current(
+            itemId,
+            "selectedPartId",
+            picked.id,
+          );
+          setPartsSearchTerm((prev) => ({ ...prev, [itemId]: "" }));
+          setShowPartsDropdown((prev) => ({ ...prev, [itemId]: false }));
+        }
+      }
+    };
+
+    document.addEventListener("keydown", onDocKeyDown, true);
+    return () => document.removeEventListener("keydown", onDocKeyDown, true);
+  }, [showNewInvoice]);
 
   const addItemModelOptions = useMemo(() => {
     const selectedDescription = partsDescriptionFilter.trim().toLowerCase();
@@ -1563,7 +1706,7 @@ export const SalesInvoice = () => {
 
   const searchableModelFilterOptions = useMemo<SearchableSelectOption[]>(
     () => [
-      { value: "__all__", label: "All Models" },
+      { value: "__all__", label: "Models" },
       ...addItemModelOptions.map((name) => ({ value: name, label: name })),
     ],
     [addItemModelOptions],
@@ -1571,7 +1714,7 @@ export const SalesInvoice = () => {
 
   const searchableDescriptionFilterOptions = useMemo<SearchableSelectOption[]>(
     () => [
-      { value: "__all__", label: "All Descriptions" },
+      { value: "__all__", label: "Description" },
       ...addItemDescriptionOptions.map((name) => ({ value: name, label: name })),
     ],
     [addItemDescriptionOptions],
@@ -1579,7 +1722,7 @@ export const SalesInvoice = () => {
 
   const searchableApplicationFilterOptions = useMemo<SearchableSelectOption[]>(
     () => [
-      { value: "__all__", label: "All Applications" },
+      { value: "__all__", label: "Application" },
       ...addItemApplicationOptions.map((name) => ({ value: name, label: name })),
     ],
     [addItemApplicationOptions],
@@ -4659,132 +4802,41 @@ export const SalesInvoice = () => {
 
       {!showNewInvoice && (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-primary/10 rounded-lg">
-                    <FileText className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">
-                      {totalInvoices}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Total Invoices
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-500/10 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">
-                      Rs {totalReceived.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Received</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-500/10 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-orange-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">
-                      Rs {totalReceivable.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Receivable</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-500/10 rounded-lg">
-                    <Truck className="w-5 h-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">
-                      {pendingDelivery}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Pending Delivery
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-yellow-500/10 rounded-lg">
-                    <AlertTriangle className="w-5 h-5 text-yellow-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">
-                      {onHoldCount}
-                    </p>
-                    <p className="text-xs text-muted-foreground">On Hold</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
           {/* Filters */}
           <Card>
             <CardContent className="p-4">
-              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4">
-                <div className="relative flex-1 min-w-[200px]">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="relative min-w-0 flex-1 shrink-0 basis-full sm:basis-[min(100%,22rem)]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder="Search by invoice number or customer..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
+                    className="h-10 pl-10 text-sm"
                   />
                 </div>
-                <div className="w-full sm:w-56 space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    Brand
-                  </Label>
-                  <SearchableSelect
-                    options={brandFilterOptions}
-                    value={filterBrandId}
-                    onValueChange={setFilterBrandId}
-                    placeholder="All brands"
-                    className="w-full"
-                  />
-                </div>
-                <div className="w-full sm:min-w-[280px] sm:max-w-md space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    Item (part no · master)
-                  </Label>
-                  <SearchableSelect
-                    options={itemFilterOptions}
-                    value={filterPartId}
-                    onValueChange={setFilterPartId}
-                    placeholder="All items"
-                    className="w-full"
-                    disabled={partsLoading && parts.length === 0}
-                  />
-                </div>
+                <SearchableSelect
+                  options={brandFilterOptions}
+                  value={filterBrandId}
+                  onValueChange={setFilterBrandId}
+                  placeholder="Brand — all"
+                  aria-label="Filter by brand"
+                  className="w-full shrink-0 sm:w-52 [&_input]:h-10 [&_input]:text-sm"
+                />
+                <SearchableSelect
+                  options={itemFilterOptions}
+                  value={filterPartId}
+                  onValueChange={setFilterPartId}
+                  placeholder="Item (part no · master) — all"
+                  aria-label="Filter by part number or master"
+                  className="min-w-0 w-full shrink-0 sm:min-w-[240px] sm:max-w-xs sm:flex-1 [&_input]:h-10 [&_input]:text-sm"
+                  disabled={partsLoading && parts.length === 0}
+                />
                 <Select
                   value={filterCustomerType}
                   onValueChange={setFilterCustomerType}
                 >
-                  <SelectTrigger className="w-full sm:w-40">
+                  <SelectTrigger className="h-10 w-full shrink-0 text-sm sm:w-40">
                     <SelectValue placeholder="Customer Type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -4794,7 +4846,7 @@ export const SalesInvoice = () => {
                   </SelectContent>
                 </Select>
                 <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-full sm:w-40">
+                  <SelectTrigger className="h-10 w-full shrink-0 text-sm sm:w-40">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -4811,7 +4863,7 @@ export const SalesInvoice = () => {
                   value={filterInvoiceKind}
                   onValueChange={setFilterInvoiceKind}
                 >
-                  <SelectTrigger className="w-full sm:w-[11.5rem]">
+                  <SelectTrigger className="h-10 w-full shrink-0 text-sm sm:w-[11.5rem]">
                     <SelectValue placeholder="Invoice type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -4999,44 +5051,50 @@ export const SalesInvoice = () => {
               </div>
 
               {inlineItems.length > 0 && (
-                <div className="border rounded-lg overflow-x-auto shadow-sm">
-                  <Table>
+                <div className="border rounded-lg overflow-x-auto shadow-sm w-full min-w-0">
+                  <Table className="w-full table-fixed">
+                    <colgroup>
+                      <col className="w-[4%]" />
+                      <col className="w-[32%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[11%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[5%]" />
+                    </colgroup>
                     <TableHeader className="hidden md:table-header-group bg-muted/50">
                       <TableRow className="border-b">
-                        <TableHead className="w-[40px] text-center font-bold text-foreground">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           #
                         </TableHead>
-                        <TableHead className="w-[300px] font-bold text-foreground">
+                        <TableHead className="min-w-0 font-bold text-foreground text-sm py-3">
                           Part Details
                         </TableHead>
-                        <TableHead className="w-[130px] text-center font-bold text-foreground">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Brand
                         </TableHead>
-                        <TableHead
-                          className="w-[100px] text-center font-bold text-foreground select-none"
-                          onClick={() => setShowLastSaleInfo((prev) => !prev)}
-                        >
-                          In Stock
-                        </TableHead>
-                        <TableHead className="w-[100px] text-center font-bold text-foreground">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Reserved
                         </TableHead>
-                        <TableHead className="w-[100px] text-center font-bold text-foreground">
-                          Available
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                          Available Stock
                         </TableHead>
-                        <TableHead className="w-[110px] text-center font-bold text-foreground">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Qty
                         </TableHead>
-                        <TableHead className="w-[110px] text-center font-bold text-foreground">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Assoc. Prices
                         </TableHead>
-                        <TableHead className="w-[110px] text-center font-bold text-foreground">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Price
                         </TableHead>
-                        <TableHead className="w-[110px] text-center font-bold text-foreground">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Total
                         </TableHead>
-                        <TableHead className="w-[60px] text-center font-bold text-foreground">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Action
                         </TableHead>
                       </TableRow>
@@ -5052,12 +5110,12 @@ export const SalesInvoice = () => {
                         return (
                           <Fragment key={item.id}>
                           <TableRow
-                            className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-4 md:space-y-0 relative md:[&>td]:pb-1"
+                            className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-4 md:space-y-0 relative md:[&>td]:py-2"
                           >
-                            <TableCell className="hidden md:table-cell text-center align-top text-xs font-semibold text-muted-foreground tabular-nums">
+                            <TableCell className="hidden md:table-cell text-center align-top text-sm font-semibold text-muted-foreground tabular-nums">
                               {index + 1}
                             </TableCell>
-                            <TableCell className="md:table-cell block p-0 md:p-4 align-top">
+                            <TableCell className="md:table-cell block min-w-0 p-0 md:p-4 align-top">
                               <span className="md:hidden text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
                                 Part Details #{index + 1}
                               </span>
@@ -5067,6 +5125,7 @@ export const SalesInvoice = () => {
                                     ref={(el) => {
                                       if (el) inputRefs.current[item.id] = el;
                                     }}
+                                    data-inline-part-input={item.id}
                                     placeholder="Select part..."
                                     value={(() => {
                                       // If user is typing (search term exists and is not empty), show search term
@@ -5091,20 +5150,14 @@ export const SalesInvoice = () => {
                                             selectedPart.masterPartNo || "";
                                           const description =
                                             selectedPart.description || "";
-                                          const brandName =
-                                            selectedPart.brands?.[0]?.name ||
-                                            "";
                                           const partLabel =
                                             masterPartNo &&
                                             masterPartNo !== partNo
                                               ? `${masterPartNo} | ${partNo}`
                                               : partNo;
-                                          const baseLabel = description
+                                          return description
                                             ? `${partLabel} - ${description}`
                                             : partLabel;
-                                          return brandName
-                                            ? `${baseLabel} (${brandName})`
-                                            : baseLabel;
                                         }
 
                                         // Fallback if parts didn't load yet but we have data from Edit
@@ -5150,17 +5203,31 @@ export const SalesInvoice = () => {
                                           }));
                                         }
                                       }
+                                      setPartsDropdownHighlightIndex((prev) => ({
+                                        ...prev,
+                                        [item.id]: 0,
+                                      }));
+                                      partsDropdownHighlightIndexRef.current[
+                                        item.id
+                                      ] = 0;
                                       setShowPartsDropdown((prev) => ({
                                         ...prev,
                                         [item.id]: true,
                                       }));
                                       // Load parts when dropdown opens (if not already loaded)
                                       if (!hasFetchedInitialPartsRef.current) {
-                                        fetchParts("", true);
+                                        void fetchParts("", false);
                                       }
                                     }}
                                     onChange={(e) => {
                                       const searchValue = e.target.value;
+                                      setPartsDropdownHighlightIndex((prev) => ({
+                                        ...prev,
+                                        [item.id]: 0,
+                                      }));
+                                      partsDropdownHighlightIndexRef.current[
+                                        item.id
+                                      ] = 0;
                                       setPartsSearchTerm((prev) => ({
                                         ...prev,
                                         [item.id]: searchValue,
@@ -5224,39 +5291,14 @@ export const SalesInvoice = () => {
                                       // Client-side filtering still provides instant feedback
                                       // but the server-side call above will refresh 'parts' list with fresh data from DB
                                     }}
-                                    onKeyDown={(e) => {
-                                      // Allow all key inputs including backspace
-                                      if (e.key === "Escape") {
-                                        setShowPartsDropdown((prev) => ({
-                                          ...prev,
-                                          [item.id]: false,
-                                        }));
-                                      } else if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        // Select first result if available
-                                        if (parts.length > 0) {
-                                          const filteredParts =
-                                            getFilteredPartsForInlineRow(item.id);
-                                          if (filteredParts.length > 0) {
-                                            handleUpdateInlineItem(
-                                              item.id,
-                                              "selectedPartId",
-                                              filteredParts[0].id,
-                                            );
-                                            setPartsSearchTerm((prev) => ({
-                                              ...prev,
-                                              [item.id]: "",
-                                            }));
-                                            setShowPartsDropdown((prev) => ({
-                                              ...prev,
-                                              [item.id]: false,
-                                            }));
-                                          }
-                                        }
-                                      }
-                                      // Don't prevent default for other keys (like Backspace)
-                                    }}
                                     onFocus={() => {
+                                      setPartsDropdownHighlightIndex((prev) => ({
+                                        ...prev,
+                                        [item.id]: 0,
+                                      }));
+                                      partsDropdownHighlightIndexRef.current[
+                                        item.id
+                                      ] = 0;
                                       const input = inputRefs.current[item.id];
                                       if (input) {
                                         const rect =
@@ -5277,7 +5319,7 @@ export const SalesInvoice = () => {
                                       }));
                                       // Load parts when dropdown opens (if not already loaded)
                                       if (parts.length === 0) {
-                                        fetchParts("", true);
+                                        void fetchParts("", false);
                                       }
                                     }}
                                     onBlur={(e) => {
@@ -5308,7 +5350,7 @@ export const SalesInvoice = () => {
                                         }
                                       }, 200);
                                     }}
-                                    className="w-full"
+                                    className="w-full h-10 text-sm"
                                   />
                                   {showLastSaleInfo &&
                                     item.selectedPartId && (
@@ -5390,7 +5432,7 @@ export const SalesInvoice = () => {
                                           if (el)
                                             dropdownRefs.current[item.id] = el;
                                         }}
-                                        className="fixed z-[9999] bg-card border border-border rounded-md shadow-lg max-h-80 overflow-auto"
+                                        className="fixed z-[9999] bg-card border border-border rounded-md shadow-lg min-w-0"
                                         data-dropdown-item
                                         style={{
                                           top: `${dropdownPosition[item.id].top}px`,
@@ -5405,154 +5447,61 @@ export const SalesInvoice = () => {
                                           e.preventDefault();
                                         }}
                                       >
-                                        {partsLoading ? (
+                                        {partsLoading && parts.length === 0 ? (
                                           <div className="px-3 py-2 text-sm text-muted-foreground">
                                             Loading parts...
                                           </div>
                                         ) : (
-                                          <>
-                                            {(() => {
-                                              const filteredParts =
-                                                getFilteredPartsForInlineRow(
-                                                  item.id,
-                                                );
-
-                                              return filteredParts.length >
-                                                0 ? (
-                                                <>
-                                                  {filteredParts.map((p) => (
-                                                    <div
-                                                      key={p.id}
-                                                      data-dropdown-item
-                                                      className="px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer border-b border-border last:border-b-0 transition-colors"
-                                                      onMouseDown={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        // Mark that we're clicking on dropdown
-                                                        isClickingDropdown.current[
-                                                          item.id
-                                                        ] = true;
-
-                                                        // Clear search term first to ensure input shows selected part
-                                                        setPartsSearchTerm(
-                                                          (prev) => {
-                                                            const updated = {
-                                                              ...prev,
-                                                            };
-                                                            delete updated[
-                                                              item.id
-                                                            ];
-                                                            return updated;
-                                                          },
-                                                        );
-
-                                                        // Then update the selection
-                                                        handleUpdateInlineItem(
-                                                          item.id,
-                                                          "selectedPartId",
-                                                          p.id,
-                                                        );
-
-                                                        setShowPartsDropdown(
-                                                          (prev) => ({
-                                                            ...prev,
-                                                            [item.id]: false,
-                                                          }),
-                                                        );
-                                                        // Reset flag after a short delay
-                                                        setTimeout(() => {
-                                                          isClickingDropdown.current[
-                                                            item.id
-                                                          ] = false;
-                                                        }, 100);
-                                                      }}
-                                                    >
-                                                      <div className="flex items-center justify-between gap-2">
-                                                        <div className="font-medium">
-                                                          {p.masterPartNo &&
-                                                          p.masterPartNo !==
-                                                            p.partNo
-                                                            ? `${p.masterPartNo} | ${p.partNo}`
-                                                            : p.partNo}
-                                                        </div>
-                                                        <span
-                                                          className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                                                            (p.availableQty ??
-                                                              p.stockQty ??
-                                                              0) > 0
-                                                              ? "bg-green-100 text-green-700"
-                                                              : "bg-red-100 text-red-600"
-                                                          }`}
-                                                        >
-                                                          {p.availableQty ??
-                                                            p.stockQty ??
-                                                            0}{" "}
-                                                          pcs
-                                                        </span>
-                                                      </div>
-                                                      <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                                                        {p.description ||
-                                                          "No description available"}
-                                                      </div>
-                                                      {p.category && (
-                                                        <div className="text-[11px] text-muted-foreground/80 mt-0.5">
-                                                          {p.category}
-                                                        </div>
-                                                      )}
-                                                      {p.application && (
-                                                        <div className="text-[11px] text-muted-foreground/80 mt-0.5">
-                                                          App: {p.application}
-                                                        </div>
-                                                      )}
-                                                      <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                                                        {p.brands &&
-                                                          p.brands.length >
-                                                            0 && (
-                                                            <div className="text-[10px] uppercase font-semibold text-black tracking-wider">
-                                                              {p.brands
-                                                                .map(
-                                                                  (b) => b.name,
-                                                                )
-                                                                .join(", ")}
-                                                            </div>
-                                                          )}
-                                                        {(p.priceA !== null ||
-                                                          p.priceB !==
-                                                            null) && (
-                                                          <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600">
-                                                            {p.priceA !==
-                                                              null && (
-                                                              <span className="bg-blue-50 px-1 rounded border border-blue-100 italic">
-                                                                A:{" "}
-                                                                {Number(
-                                                                  p.priceA,
-                                                                ).toLocaleString()}
-                                                              </span>
-                                                            )}
-                                                            {p.priceB !==
-                                                              null && (
-                                                              <span className="bg-indigo-50 px-1 rounded border border-indigo-100 italic">
-                                                                B:{" "}
-                                                                {Number(
-                                                                  p.priceB,
-                                                                ).toLocaleString()}
-                                                              </span>
-                                                            )}
-                                                          </div>
-                                                        )}
-                                                      </div>
-                                                    </div>
-                                                  ))}
-                                                </>
-                                              ) : (
-                                                <div className="px-3 py-2 text-sm text-muted-foreground">
-                                                  {(partsSearchTerm[item.id] || "").trim()
-                                                    ? "No parts found matching your search"
-                                                    : "No parts available"}
-                                                </div>
+                                          <InvoicePartDropdownList
+                                            inlineRowId={item.id}
+                                            filteredParts={getFilteredPartsForInlineRow(
+                                              item.id,
+                                            )}
+                                            highlightIndex={
+                                              partsDropdownHighlightIndex[
+                                                item.id
+                                              ] ?? 0
+                                            }
+                                            emptyHint={
+                                              (partsSearchTerm[item.id] || "").trim()
+                                                ? "No parts found matching your search"
+                                                : "No parts available"
+                                            }
+                                            onHighlightIndex={(idx) =>
+                                              setPartsDropdownHighlightIndex(
+                                                (prev) => ({
+                                                  ...prev,
+                                                  [item.id]: idx,
+                                                }),
+                                              )
+                                            }
+                                            markDropdownMouseDown={() => {
+                                              isClickingDropdown.current[
+                                                item.id
+                                              ] = true;
+                                            }}
+                                            onPickPart={(p) => {
+                                              setPartsSearchTerm((prev) => {
+                                                const updated = { ...prev };
+                                                delete updated[item.id];
+                                                return updated;
+                                              });
+                                              handleUpdateInlineItem(
+                                                item.id,
+                                                "selectedPartId",
+                                                p.id,
                                               );
-                                            })()}
-                                          </>
+                                              setShowPartsDropdown((prev) => ({
+                                                ...prev,
+                                                [item.id]: false,
+                                              }));
+                                              setTimeout(() => {
+                                                isClickingDropdown.current[
+                                                  item.id
+                                                ] = false;
+                                              }, 100);
+                                            }}
+                                          />
                                         )}
                                       </div>,
                                       document.body,
@@ -5573,59 +5522,29 @@ export const SalesInvoice = () => {
                               </span>
                             </TableCell>
 
-                            {/* Column 4: In Stock (Desktop ONLY, Mobile combined in section below) */}
+                            {/* Reserved (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const stockBalance =
                                   partStockBalances[item.selectedPartId];
-                                const currentStock =
-                                  stockBalance?.current_stock ??
-                                  (part?.stockQty || 0);
-                                const avgCost =
-                                  stockBalance?.avg_cost ?? (part?.price || 0);
-                                const isLoading =
-                                  loadingStock[item.selectedPartId];
-                                return (
-                                  <div className="flex flex-col items-center justify-center">
-                                    <div className="flex items-center gap-1.5">
-                                      <span
-                                        className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}
-                                      >
-                                        {isLoading ? "..." : currentStock}
-                                      </span>
-                                      {part?.id && (
-                                        <Package className="w-3.5 h-3.5 text-muted-foreground" />
-                                      )}
-                                    </div>
-                                    {showLastSaleInfo && (
-                                      <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap mt-1">
-                                        Cost: {avgCost.toFixed(2)}
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </TableCell>
-
-                            {/* Column 5: Reserved (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-top">
-                              {(() => {
-                                const stockBalance =
-                                  partStockBalances[item.selectedPartId];
-                                const reservedStock =
+                                const reserved =
                                   stockBalance?.reserved_stock ??
                                   (part?.reservedQty || 0);
                                 const isLoading =
                                   loadingStock[item.selectedPartId];
-                                return (
-                                  <span className="text-sm font-semibold text-orange-600">
-                                    {isLoading ? "..." : reservedStock}
+                                return isLoading ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    ...
+                                  </span>
+                                ) : (
+                                  <span className="text-sm font-semibold text-orange-600 tabular-nums">
+                                    {item.selectedPartId ? reserved : "—"}
                                   </span>
                                 );
                               })()}
                             </TableCell>
 
-                            {/* Column 6: Available (Desktop ONLY) */}
+                            {/* Available (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const stockBalance =
@@ -5658,33 +5577,12 @@ export const SalesInvoice = () => {
                               })()}
                             </TableCell>
 
-                            {/* Mobile Section: Stock Status (Hidden on Desktop) */}
+                            {/* Mobile Section: Reserved + Available (Hidden on Desktop) */}
                             <TableCell className="md:hidden block p-0 align-middle">
                               <span className="text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
-                                Stock Status
+                                Stock
                               </span>
-                              <div className="grid grid-cols-3 gap-2">
-                                <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
-                                  <span className="text-[9px] text-muted-foreground uppercase mb-1">
-                                    In Stock
-                                  </span>
-                                  {(() => {
-                                    const stockBalance =
-                                      partStockBalances[item.selectedPartId];
-                                    const currentStock =
-                                      stockBalance?.current_stock ??
-                                      (part?.stockQty || 0);
-                                    const isLoading =
-                                      loadingStock[item.selectedPartId];
-                                    return (
-                                      <span
-                                        className={`text-sm font-bold ${currentStock > 0 ? "text-foreground" : "text-muted-foreground"}`}
-                                      >
-                                        {isLoading ? "..." : currentStock}
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
+                              <div className="grid grid-cols-2 gap-2">
                                 <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
                                   <span className="text-[9px] text-muted-foreground uppercase mb-1">
                                     Reserved
@@ -5692,21 +5590,25 @@ export const SalesInvoice = () => {
                                   {(() => {
                                     const stockBalance =
                                       partStockBalances[item.selectedPartId];
-                                    const reservedStock =
+                                    const reserved =
                                       stockBalance?.reserved_stock ??
                                       (part?.reservedQty || 0);
                                     const isLoading =
                                       loadingStock[item.selectedPartId];
-                                    return (
-                                      <span className="text-sm font-semibold text-orange-600">
-                                        {isLoading ? "..." : reservedStock}
+                                    return isLoading ? (
+                                      <span className="text-xs text-muted-foreground">
+                                        ...
+                                      </span>
+                                    ) : (
+                                      <span className="text-sm font-semibold text-orange-600 tabular-nums">
+                                        {item.selectedPartId ? reserved : "—"}
                                       </span>
                                     );
                                   })()}
                                 </div>
                                 <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
                                   <span className="text-[9px] text-muted-foreground uppercase mb-1">
-                                    Available
+                                    Available Stock
                                   </span>
                                   {(() => {
                                     const stockBalance =
@@ -5779,7 +5681,7 @@ export const SalesInvoice = () => {
                                         val,
                                       );
                                   }}
-                                  className="w-16 h-8 text-center font-bold"
+                                  className="w-20 h-10 text-center font-bold text-base"
                                   placeholder="0"
                                 />
                                 {item.qty === 0 && item.selectedPartId && (
@@ -5816,7 +5718,7 @@ export const SalesInvoice = () => {
                                             : "outline"
                                         }
                                         size="sm"
-                                        className="flex-1 min-w-0 px-2 text-xs"
+                                        className="flex-1 min-w-0 px-2 text-sm h-9"
                                         onClick={() => {
                                           handleUpdateInlineItem(
                                             item.id,
@@ -5841,7 +5743,7 @@ export const SalesInvoice = () => {
                                             : "outline"
                                         }
                                         size="sm"
-                                        className="flex-1 min-w-0 px-2 text-xs"
+                                        className="flex-1 min-w-0 px-2 text-sm h-9"
                                         onClick={() => {
                                           handleUpdateInlineItem(
                                             item.id,
@@ -5878,7 +5780,7 @@ export const SalesInvoice = () => {
                                       : parseFloat(e.target.value) || 0,
                                   )
                                 }
-                                className="w-24 text-center h-8"
+                                className="w-28 text-center h-10 text-base"
                               />
                             </TableCell>
 
@@ -6023,7 +5925,7 @@ export const SalesInvoice = () => {
                           </TableRow>
                           {hasModels && !partsModelFilter.trim() ? (
                               <TableRow key={`${item.id}-qty-used`} className="hidden md:table-row border-b bg-muted/20">
-                                <TableCell colSpan={11} className="px-4 pt-0 pb-2">
+                                <TableCell colSpan={12} className="px-4 pt-0 pb-2">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
                                       Quantity Used
@@ -6107,11 +6009,9 @@ export const SalesInvoice = () => {
                         </TableCell>
                         {/* Brand */}
                         <TableCell />
-                        {/* In Stock */}
-                        <TableCell />
                         {/* Reserved */}
                         <TableCell />
-                        {/* Available */}
+                        {/* Available Stock */}
                         <TableCell />
                         {/* Qty */}
                         <TableCell className="text-center font-semibold tabular-nums">
@@ -6797,9 +6697,7 @@ export const SalesInvoice = () => {
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Tax %</TableHead>
                       <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right px-4">Paid</TableHead>
                       <TableHead className="text-center">Delivery</TableHead>
-                      <TableHead className="text-center">Payment</TableHead>
                       <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -6861,23 +6759,11 @@ export const SalesInvoice = () => {
                           </span>
                           Rs {inv.grandTotal.toLocaleString()}
                         </TableCell>
-                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-right">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
-                            Paid
-                          </span>
-                          Rs {inv.paidAmount.toLocaleString()}
-                        </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
                             Delivery
                           </span>
                           {getStatusBadge(inv.status)}
-                        </TableCell>
-                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-center">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
-                            Payment
-                          </span>
-                          {getPaymentBadge(inv.paymentStatus)}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center pt-2 md:pt-4 border-t md:border-t-0">
                           <div className="flex items-center md:justify-center gap-1">
@@ -7135,7 +7021,7 @@ export const SalesInvoice = () => {
                     {filteredInvoices.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={11}
+                          colSpan={9}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No invoices found

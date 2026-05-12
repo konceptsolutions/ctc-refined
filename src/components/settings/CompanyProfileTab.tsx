@@ -98,7 +98,7 @@ export const CompanyProfileTab = () => {
   });
 
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>({
-    prefix: "INV-",
+    prefix: "",
     startingNumber: 1001,
     footer: "Thank you for your business!",
     termsConditions: "Payment is due within 30 days. Late payments may incur additional charges.",
@@ -164,7 +164,7 @@ export const CompanyProfileTab = () => {
           // Safely merge invoiceSettings with defaults
           if (data.invoiceSettings) {
             setInvoiceSettings({
-              prefix: data.invoiceSettings.prefix || "INV-",
+              prefix: data.invoiceSettings.prefix ?? "",
               startingNumber: data.invoiceSettings.startingNumber ?? 1001,
               footer: data.invoiceSettings.footer || "",
               termsConditions: data.invoiceSettings.termsConditions || "",
@@ -463,6 +463,7 @@ export const CompanyProfileTab = () => {
                 <div className="space-y-2">
                   <Label>Invoice Prefix</Label>
                   <Input
+                    placeholder="Optional — leave blank for number-only invoices"
                     value={invoiceSettings.prefix}
                     onChange={(e) => setInvoiceSettings({ ...invoiceSettings, prefix: e.target.value })}
                   />
