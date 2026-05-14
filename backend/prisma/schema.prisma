@@ -428,7 +428,8 @@ model Part {
   AdjustmentItem                AdjustmentItem[]
   DirectPurchaseOrderItem       DirectPurchaseOrderItem[]
   DirectPurchaseOrderReturnItem DirectPurchaseOrderReturnItem[]
-  KitItem                       KitItem[]
+  KitItem                       KitItem[]                       @relation("KitItemParentPart")
+  ReferencedAsKitComponent      KitItem[]                       @relation("KitItemComponentPart")
   Model                         Model[]
   Application                   Application?                    @relation(fields: [applicationId], references: [id])
   Brand                         Brand?                          @relation(fields: [brandId], references: [id])
@@ -451,17 +452,21 @@ model Part {
 }
 
 model KitItem {
-  id          String   @id @default(uuid())
-  partId      String
-  partNo      String
-  partName    String
-  quantity    Int      @default(1)
-  costPerUnit Float
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  Part        Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  id                String   @id @default(uuid())
+  partId            String
+  /// Exact component Part row (same partNo can exist for multiple brands).
+  componentPartId   String?
+  partNo            String
+  partName          String
+  quantity          Int      @default(1)
+  costPerUnit       Float
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  ParentKitPart     Part     @relation("KitItemParentPart", fields: [partId], references: [id], onDelete: Cascade)
+  ComponentPart     Part?    @relation("KitItemComponentPart", fields: [componentPartId], references: [id], onDelete: Restrict)
 
   @@index([partId])
+  @@index([componentPartId])
   @@index([createdAt])
 }
 

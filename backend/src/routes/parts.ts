@@ -40,40 +40,85 @@ const normalizeKitItemsPayload = (kitItems: any): { itemPartId: string; quantity
 };
 
 const buildKitItemsResponse = async (
-  kitItems: { partNo: string; partName: string; quantity: number; costPerUnit: number }[],
+  kitItems: {
+    partNo: string;
+    partName: string;
+    quantity: number;
+    costPerUnit: number;
+    componentPartId?: string | null;
+  }[],
 ) => {
-  const partNos = Array.from(
+  if (!kitItems.length) return [];
+
+  const byComponentId = new Map<
+    string,
+    { id: string; partNo: string; description: string | null; cost: number | null }
+  >();
+  const componentIds = Array.from(
     new Set(
       kitItems
+        .map((row) => String(row?.componentPartId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (componentIds.length > 0) {
+    const resolved = await prisma.part.findMany({
+      where: {
+        id: { in: componentIds },
+        type: "single",
+        status: "active",
+      },
+      select: { id: true, partNo: true, description: true, cost: true },
+    });
+    resolved.forEach((p) => byComponentId.set(p.id, p));
+  }
+
+  const legacyPartNos = Array.from(
+    new Set(
+      kitItems
+        .filter((row) => !String(row?.componentPartId || "").trim())
         .map((row) => String(row?.partNo || "").trim())
         .filter((value) => value !== ""),
     ),
   );
 
-  if (partNos.length === 0) return [];
-
-  const singleParts = await prisma.part.findMany({
-    where: {
-      partNo: { in: partNos },
-      type: "single",
-      status: "active",
-    },
-    select: {
-      id: true,
-      partNo: true,
-      description: true,
-      cost: true,
-    },
-  });
-
-  const singlePartByPartNo = new Map<string, (typeof singleParts)[number]>();
-  singleParts.forEach((part) => {
-    if (!singlePartByPartNo.has(part.partNo)) {
-      singlePartByPartNo.set(part.partNo, part);
-    }
-  });
+  const singlePartByPartNo = new Map<
+    string,
+    { id: string; partNo: string; description: string | null; cost: number | null }
+  >();
+  if (legacyPartNos.length > 0) {
+    const singleParts = await prisma.part.findMany({
+      where: {
+        partNo: { in: legacyPartNos },
+        type: "single",
+        status: "active",
+      },
+      select: {
+        id: true,
+        partNo: true,
+        description: true,
+        cost: true,
+      },
+    });
+    singleParts.forEach((part) => {
+      if (!singlePartByPartNo.has(part.partNo)) {
+        singlePartByPartNo.set(part.partNo, part);
+      }
+    });
+  }
 
   return kitItems.map((row) => {
+    const cid = String(row?.componentPartId || "").trim();
+    if (cid) {
+      const linked = byComponentId.get(cid);
+      return {
+        item_part_id: linked?.id || null,
+        item_part_no: linked?.partNo || row.partNo,
+        item_description: row.partName || linked?.description || row.partNo,
+        quantity: row.quantity || 1,
+        cost_per_unit: row.costPerUnit ?? linked?.cost ?? 0,
+      };
+    }
     const linkedPart = singlePartByPartNo.get(row.partNo);
     return {
       item_part_id: linkedPart?.id || null,
@@ -1809,6 +1854,7 @@ router.post("/", async (req: Request, res: Response) => {
             return {
               id: randomUUID(),
               partId: part.id,
+              componentPartId: row.itemPartId,
               partNo: component.partNo,
               partName: component.description || component.partNo,
               quantity: row.quantity,
@@ -1941,35 +1987,77 @@ router.post("/:id/make-kit", async (req: Request, res: Response) => {
         .json({ error: "No associated single items found for this kit" });
     }
 
-    const perKitQtyByPartNo = new Map<string, number>();
+    type MergedKitNeed = {
+      componentPartId: string | null;
+      partNo: string;
+      perKitQty: number;
+    };
+    const mergedKitNeeds = new Map<string, MergedKitNeed>();
     for (const row of kitPart.KitItem) {
-      const componentPartNo = String(row.partNo || "").trim();
-      if (!componentPartNo) continue;
+      const partNo = String(row.partNo || "").trim();
+      if (!partNo) continue;
       const perKitQty = Math.max(1, Number(row.quantity || 1));
-      perKitQtyByPartNo.set(
-        componentPartNo,
-        (perKitQtyByPartNo.get(componentPartNo) || 0) + perKitQty,
-      );
+      const cid = row.componentPartId ? String(row.componentPartId).trim() : "";
+      const mergeKey = cid ? `id:${cid}` : `pn:${partNo}`;
+      const prev = mergedKitNeeds.get(mergeKey);
+      if (prev) {
+        prev.perKitQty += perKitQty;
+      } else {
+        mergedKitNeeds.set(mergeKey, {
+          componentPartId: cid || null,
+          partNo,
+          perKitQty,
+        });
+      }
     }
+    const kitNeeds = Array.from(mergedKitNeeds.values());
 
-    const componentPartNos = Array.from(perKitQtyByPartNo.keys());
-    const componentCandidates = await prisma.part.findMany({
-      where: {
-        partNo: { in: componentPartNos },
-        type: "single",
-        status: "active",
-      },
-      select: {
-        id: true,
-        partNo: true,
-        avgCost: true,
-        cost: true,
-        purchasePrice: true,
-      },
-    });
+    const explicitIds = [
+      ...new Set(
+        kitNeeds.map((n) => n.componentPartId).filter((v): v is string => Boolean(v)),
+      ),
+    ];
+    const explicitParts = explicitIds.length
+      ? await prisma.part.findMany({
+          where: {
+            id: { in: explicitIds },
+            type: "single",
+            status: "active",
+          },
+          select: {
+            id: true,
+            partNo: true,
+            avgCost: true,
+            cost: true,
+            purchasePrice: true,
+          },
+        })
+      : [];
+    const explicitById = new Map(explicitParts.map((p) => [p.id, p]));
+
+    const legacyPartNos = [
+      ...new Set(kitNeeds.filter((n) => !n.componentPartId).map((n) => n.partNo)),
+    ];
+    const componentCandidates = legacyPartNos.length
+      ? await prisma.part.findMany({
+          where: {
+            partNo: { in: legacyPartNos },
+            type: "single",
+            status: "active",
+          },
+          select: {
+            id: true,
+            partNo: true,
+            avgCost: true,
+            cost: true,
+            purchasePrice: true,
+          },
+        })
+      : [];
 
     const stockByPartId = await getCurrentStockByPartIds([
       id,
+      ...explicitParts.map((row) => row.id),
       ...componentCandidates.map((row) => row.id),
     ]);
 
@@ -2010,7 +2098,41 @@ router.post("/:id/make-kit", async (req: Request, res: Response) => {
     const consumePlan: Array<{ partId: string; quantity: number; partNo: string }> = [];
     let unitKitAvg = 0;
 
-    for (const [partNo, perKitQty] of perKitQtyByPartNo.entries()) {
+    for (const need of kitNeeds) {
+      if (need.componentPartId) {
+        const part = explicitById.get(need.componentPartId);
+        if (!part) {
+          return res.status(400).json({
+            error: `Associated item (id ${need.componentPartId}) is missing or not active single type`,
+          });
+        }
+        const requiredQty = need.perKitQty * quantity;
+        const stock = Math.max(0, Number(stockByPartId.get(part.id) || 0));
+        const componentAvg = Number(
+          part.avgCost ?? part.cost ?? part.purchasePrice ?? 0,
+        );
+        unitKitAvg += componentAvg * need.perKitQty;
+
+        if (stock < requiredQty) {
+          insufficientItems.push({
+            partNo: part.partNo,
+            stock,
+            requiredQty,
+            enoughStock: false,
+          });
+          continue;
+        }
+
+        consumePlan.push({
+          partId: part.id,
+          quantity: requiredQty,
+          partNo: part.partNo,
+        });
+        continue;
+      }
+
+      const partNo = need.partNo;
+      const perKitQty = need.perKitQty;
       const candidates = candidatesByPartNo.get(partNo) || [];
       if (candidates.length === 0) {
         return res.status(400).json({
@@ -2156,32 +2278,54 @@ router.post("/:id/break-kit", async (req: Request, res: Response) => {
         .json({ error: "No associated single items found for this kit" });
     }
 
-    const receiveByPartNo = new Map<string, number>();
+    const mergedLegacyReceive = new Map<string, number>();
+    const mergedExplicitReceive = new Map<
+      string,
+      { targetPartId: string; partNo: string; receiveQty: number }
+    >();
+
     for (const kitRow of kitPart.KitItem) {
       const partNo = String(kitRow.partNo || "").trim();
       if (!partNo) continue;
       const perKitQty = Math.max(1, Number(kitRow.quantity || 1));
-      receiveByPartNo.set(
-        partNo,
-        (receiveByPartNo.get(partNo) || 0) + perKitQty * quantity,
-      );
+      const addQty = perKitQty * quantity;
+      const cid = kitRow.componentPartId ? String(kitRow.componentPartId).trim() : "";
+      if (cid) {
+        const prev = mergedExplicitReceive.get(cid);
+        if (prev) {
+          prev.receiveQty += addQty;
+        } else {
+          mergedExplicitReceive.set(cid, {
+            targetPartId: cid,
+            partNo,
+            receiveQty: addQty,
+          });
+        }
+      } else {
+        mergedLegacyReceive.set(
+          partNo,
+          (mergedLegacyReceive.get(partNo) || 0) + addQty,
+        );
+      }
     }
 
-    const componentPartNos = Array.from(receiveByPartNo.keys());
-    const components = await prisma.part.findMany({
-      where: {
-        partNo: { in: componentPartNos },
-        type: "single",
-        status: "active",
-      },
-      select: {
-        id: true,
-        partNo: true,
-        avgCost: true,
-        cost: true,
-        purchasePrice: true,
-      },
-    });
+    const componentPartNos = Array.from(mergedLegacyReceive.keys());
+    const components = componentPartNos.length
+      ? await prisma.part.findMany({
+          where: {
+            partNo: { in: componentPartNos },
+            type: "single",
+            status: "active",
+          },
+          select: {
+            id: true,
+            partNo: true,
+            avgCost: true,
+            cost: true,
+            purchasePrice: true,
+          },
+        })
+      : [];
     const componentCandidatesByPartNo = new Map<
       string,
       {
@@ -2211,10 +2355,35 @@ router.post("/:id/break-kit", async (req: Request, res: Response) => {
       targetPartIdByPartNo.set(partNo, targetPartId);
     }
 
-    const stockByPartId = await getCurrentStockByPartIds([
-      id,
-      ...components.map((row) => row.id),
-    ]);
+    const allTargetIds = new Set<string>();
+    for (const partNo of componentPartNos) {
+      allTargetIds.add(targetPartIdByPartNo.get(partNo)!);
+    }
+    for (const row of mergedExplicitReceive.values()) {
+      allTargetIds.add(row.targetPartId);
+    }
+
+    const allComponents = await prisma.part.findMany({
+      where: {
+        id: { in: [...allTargetIds] },
+        type: "single",
+        status: "active",
+      },
+      select: {
+        id: true,
+        partNo: true,
+        avgCost: true,
+        cost: true,
+        purchasePrice: true,
+      },
+    });
+    if (allComponents.length !== allTargetIds.size) {
+      return res.status(400).json({
+        error: "One or more kit components are missing or not active single type",
+      });
+    }
+
+    const stockByPartId = await getCurrentStockByPartIds([id, ...allTargetIds]);
     const currentKitStock = Number(stockByPartId.get(id) || 0);
     if (currentKitStock < quantity) {
       return res.status(400).json({
@@ -2225,24 +2394,48 @@ router.post("/:id/break-kit", async (req: Request, res: Response) => {
     const kitAvg = Number(kitPart.avgCost ?? kitPart.cost ?? kitPart.purchasePrice ?? 0);
     const releasedKitValue = kitAvg * quantity;
 
-    const componentById = new Map(components.map((row) => [row.id, row]));
-    const breakRows = Array.from(receiveByPartNo.entries()).map(([partNo, receiveQty]) => {
-      const perKitQty = Math.max(1, receiveQty / quantity);
+    const componentById = new Map(allComponents.map((row) => [row.id, row]));
+    const breakRows: Array<{
+      partNo: string;
+      targetPartId: string;
+      receiveQty: number;
+      perKitQty: number;
+      currentAvg: number;
+      currentStock: number;
+    }> = [];
+
+    for (const [partNo, receiveQty] of mergedLegacyReceive.entries()) {
       const targetPartId = targetPartIdByPartNo.get(partNo)!;
-      const targetPart = componentById.get(targetPartId);
+      const targetPart = componentById.get(targetPartId)!;
       const currentAvg = Number(
-        targetPart?.avgCost ?? targetPart?.cost ?? targetPart?.purchasePrice ?? 0,
+        targetPart.avgCost ?? targetPart.cost ?? targetPart.purchasePrice ?? 0,
       );
       const currentStock = Math.max(0, Number(stockByPartId.get(targetPartId) || 0));
-      return {
+      breakRows.push({
         partNo,
         targetPartId,
         receiveQty,
-        perKitQty,
+        perKitQty: Math.max(1, receiveQty / quantity),
         currentAvg,
         currentStock,
-      };
-    });
+      });
+    }
+
+    for (const row of mergedExplicitReceive.values()) {
+      const targetPart = componentById.get(row.targetPartId)!;
+      const currentAvg = Number(
+        targetPart.avgCost ?? targetPart.cost ?? targetPart.purchasePrice ?? 0,
+      );
+      const currentStock = Math.max(0, Number(stockByPartId.get(row.targetPartId) || 0));
+      breakRows.push({
+        partNo: row.partNo,
+        targetPartId: row.targetPartId,
+        receiveQty: row.receiveQty,
+        perKitQty: Math.max(1, row.receiveQty / quantity),
+        currentAvg,
+        currentStock,
+      });
+    }
 
     const knownAvgRows = breakRows.filter((row) => row.currentAvg > 0);
     const fallbackAvg =
@@ -2771,6 +2964,7 @@ router.put("/:id", async (req: Request, res: Response) => {
               return {
                 id: randomUUID(),
                 partId: id,
+                componentPartId: row.itemPartId,
                 partNo: component.partNo,
                 partName: component.description || component.partNo,
                 quantity: row.quantity,

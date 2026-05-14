@@ -13,7 +13,7 @@ export function getApiBaseUrl(): string {
       return `${origin}/api`;
     }
 
-    // In production, use same origin /api (proxied by nginx)
+    // In production, use same origin /api (nginx, or vite preview proxy)
     return `${origin}/api`;
   }
 
@@ -66,25 +66,10 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {},
   ): Promise<ApiResponse<T>> {
-    // Force no-cache for all requests to prevent stale data
-    const headers = new Headers((options.headers as HeadersInit) || {});
-    headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    // Fresh data: fetch(..., { cache: "no-store" }) below (no per-URL _cb — avoids extra bytes and proxy work).
 
-    // Add cache-busting to URL if not already present (only for GET requests)
-    let urlWithCacheBuster = endpoint;
-    if (!options.method || options.method === "GET") {
-      const separator = endpoint.includes("?") ? "&" : "?";
-      const cacheBuster = `_cb=${Date.now()}`;
-      urlWithCacheBuster = endpoint.includes("_cb=")
-        ? endpoint
-        : `${endpoint}${separator}${cacheBuster}`;
-    }
-
-    // Merge headers properly - preserve existing headers from options
+    // Merge headers: start from caller headers only
     const mergedHeaders = new Headers((options.headers as HeadersInit) || {});
-    headers.forEach((value, key) => {
-      mergedHeaders.set(key, value);
-    });
 
     // Add Authorization header if token exists
     const token = localStorage.getItem("authToken");
@@ -110,11 +95,7 @@ class ApiClient {
       const cleanEndpoint = endpoint.startsWith("/")
         ? endpoint
         : `/${endpoint}`;
-      // Use cache-busted URL
-      const finalEndpoint = urlWithCacheBuster.startsWith("/")
-        ? urlWithCacheBuster
-        : `/${urlWithCacheBuster}`;
-      const url = `${this.baseUrl}${finalEndpoint}`;
+      const url = `${this.baseUrl}${cleanEndpoint}`;
 
       // Build fetch options - ensure body is preserved
       const fetchOptions: RequestInit = {
@@ -132,14 +113,6 @@ class ApiClient {
       // Include any other options (like signal for abort)
       if (options.signal) {
         fetchOptions.signal = options.signal;
-      }
-
-      // Debug logging for POST requests
-      if (
-        fetchOptions.method === "POST" ||
-        fetchOptions.method === "PUT" ||
-        fetchOptions.method === "PATCH"
-      ) {
       }
 
       const response = await fetch(url, fetchOptions);
@@ -310,7 +283,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -348,7 +325,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -428,7 +409,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -443,7 +428,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -724,7 +713,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -788,7 +781,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -893,7 +890,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -945,7 +946,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -968,7 +973,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -989,7 +998,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1072,7 +1085,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1190,7 +1207,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1421,7 +1442,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1445,7 +1470,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1569,7 +1598,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1625,7 +1658,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1661,7 +1698,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1701,7 +1742,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1716,7 +1761,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1746,7 +1795,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1769,7 +1822,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1792,7 +1849,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1885,7 +1946,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -1995,7 +2060,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2120,7 +2189,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2197,7 +2270,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2274,7 +2351,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2289,7 +2370,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2304,7 +2389,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2319,7 +2408,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2338,7 +2431,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2357,7 +2454,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2376,7 +2477,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2396,7 +2501,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2415,7 +2524,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2434,7 +2547,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2453,7 +2570,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2471,7 +2592,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2491,7 +2616,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2510,7 +2639,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2532,7 +2665,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2633,7 +2770,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2871,7 +3012,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -2952,7 +3097,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -3034,7 +3183,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -3125,7 +3278,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });
@@ -3235,7 +3392,11 @@ class ApiClient {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
           queryParams.append(key, String(value));
         }
       });

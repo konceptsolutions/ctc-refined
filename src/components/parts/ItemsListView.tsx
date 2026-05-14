@@ -548,11 +548,13 @@ export const ItemsListView = ({
                 partMetaById.get(String(row.item_part_id || "").trim())?.brand ||
                 "",
               qtyPerKit: Math.max(1, Number(row.quantity || 1)),
-              stock: Number(
-                stockByPartNo.get(String(row.item_part_no || "").trim()) ??
-                  stockById.get(String(row.item_part_id || "")) ??
-                  0,
-              ),
+              // Prefer per–part-id stock when kit line pins a specific Part row; part_no can be shared across brands.
+              stock: (() => {
+                const id = String(row.item_part_id || "").trim();
+                if (id) return Number(stockById.get(id) ?? 0);
+                const pn = String(row.item_part_no || "").trim();
+                return Number(stockByPartNo.get(pn) ?? 0);
+              })(),
             }))
             .filter((row: KitDetailRow) => row.itemPartId)
         : [];

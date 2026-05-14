@@ -3,9 +3,7 @@ module.exports = {
     {
       name: 'nextapp-backend',
       cwd: '/var/www/nextapp/backend',
-      script: 'node',
-      args: 'dist/server.js',
-      interpreter: 'none',
+      script: 'dist/server.js',
       env_file: '/var/www/nextapp/backend/.env',
       env: {
         NODE_ENV: 'production',
@@ -28,6 +26,7 @@ module.exports = {
       log_file: '/var/www/nextapp/logs/backend-combined.log',
       time: true,
       instances: 1,
+      exec_mode: 'fork',
       autorestart: true,
       watch: false,
       max_memory_restart: '1G',
@@ -35,11 +34,11 @@ module.exports = {
     {
       name: 'nextapp-frontend',
       cwd: '/var/www/nextapp',
-      script: 'npx',
-      args: 'vite --host 0.0.0.0 --port 83',
+      script: 'npm',
+      args: 'run preview -- --host 0.0.0.0 --port 83',
       interpreter: 'none',
       env: {
-        NODE_ENV: 'development',
+        NODE_ENV: 'production',
         PORT: 83,
       },
       error_file: '/var/www/nextapp/logs/frontend-error.log',

@@ -111,16 +111,6 @@ export function InvoicePartDropdownList({
                   <span
                     className={cn(
                       "text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums",
-                      (p.reservedQty ?? 0) > 0
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    Res {p.reservedQty ?? 0}
-                  </span>
-                  <span
-                    className={cn(
-                      "text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums",
                       (p.availableQty ?? p.stockQty ?? 0) > 0
                         ? "bg-green-100 text-green-700"
                         : "bg-red-100 text-red-600",

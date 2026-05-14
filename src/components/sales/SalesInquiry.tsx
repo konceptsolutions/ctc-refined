@@ -2835,9 +2835,13 @@ export const SalesInquiry = () => {
                                       </div>
                                     ) : rowFiltered.length > 0 ? (
                                       rowFiltered.map((part, idx) => {
-                                        const availableQty = part.quantity ?? 0;
+                                        const stockQty = part.quantity ?? 0;
                                         const reservedQty =
                                           part.reservedQty ?? 0;
+                                        const availablePcs = Math.max(
+                                          0,
+                                          stockQty - reservedQty,
+                                        );
                                         const brandLabel =
                                           part.brand && part.brand !== "N/A"
                                             ? part.brand
@@ -2889,22 +2893,12 @@ export const SalesInquiry = () => {
                                                 <span
                                                   className={cn(
                                                     "text-[11px] font-semibold px-2 py-0.5 rounded-full tabular-nums",
-                                                    reservedQty > 0
-                                                      ? "bg-amber-100 text-amber-800"
-                                                      : "bg-muted text-muted-foreground",
-                                                  )}
-                                                >
-                                                  Res {reservedQty}
-                                                </span>
-                                                <span
-                                                  className={cn(
-                                                    "text-[11px] font-semibold px-2 py-0.5 rounded-full tabular-nums",
-                                                    availableQty > 0
+                                                    availablePcs > 0
                                                       ? "bg-green-100 text-green-700"
                                                       : "bg-red-100 text-red-600",
                                                   )}
                                                 >
-                                                  {availableQty} pcs
+                                                  {availablePcs} pcs
                                                 </span>
                                               </div>
                                             </div>

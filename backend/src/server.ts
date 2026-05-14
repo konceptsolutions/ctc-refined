@@ -66,13 +66,13 @@ import backupsRoutes from "./routes/backups";
 import companyProfileRoutes from "./routes/company-profile";
 import whatsappSettingsRoutes from "./routes/whatsapp-settings";
 import longcatSettingsRoutes from "./routes/longcat-settings";
-import kitsRoutes from "./routes/kits";
 import vouchersRoutes from "./routes/vouchers";
 import salesRoutes from "./routes/sales";
 import dpoReturnsRoutes from "./routes/dpo-returns";
 import salesReturnsRoutes from "./routes/sales-returns";
 import stockDetailsRoutes from "./routes/stock-details";
 import advancedSearchRoutes from "./routes/advanced-search";
+import purchaseImportRoutes from "./routes/purchase-import";
 import partsDropdownRoutes from "./routes/parts-dropdown";
 import authRoutes from "./routes/auth";
 import { authenticateJWT } from "./middleware/authMiddleware";
@@ -167,13 +167,17 @@ app.use(
 );
 // Middleware to normalize API routes (handle with/without trailing slash without redirecting)
 app.use((req, res, next) => {
-  // Simple request logger
   const start = Date.now();
   res.on("finish", () => {
     const duration = Date.now() - start;
-    console.log(
-      `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`,
-    );
+    const logAll =
+      process.env.REQUEST_LOG === "all" ||
+      process.env.NODE_ENV !== "production";
+    if (logAll || res.statusCode >= 400 || duration >= 2000) {
+      console.log(
+        `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`,
+      );
+    }
   });
 
   // Only apply to API routes
@@ -589,7 +593,6 @@ app.use("/api/backups", authenticateJWT, backupsRoutes);
 app.use("/api/company-profile", authenticateJWT, companyProfileRoutes);
 app.use("/api/whatsapp-settings", authenticateJWT, whatsappSettingsRoutes);
 app.use("/api/longcat-settings", authenticateJWT, longcatSettingsRoutes);
-app.use("/api/kits", authenticateJWT, kitsRoutes);
 app.use("/api/vouchers", authenticateJWT, vouchersRoutes);
 // Legacy/compat alias (some clients call this path directly)
 app.use("/api/getVouchers", authenticateJWT, vouchersRoutes);
@@ -601,6 +604,7 @@ app.use("/api/sales-returns", authenticateJWT, salesReturnsRoutes);
 app.use("/api/stock-details", authenticateJWT, stockDetailsRoutes);
 app.use("/api/advanced-search", authenticateJWT, advancedSearchRoutes);
 app.use("/api/advanced-search", authenticateJWT, advancedSearchRoutes);
+app.use("/api/purchase-import", authenticateJWT, purchaseImportRoutes);
 
 // Dev-Koncepts deployment: all API under /dev-koncepts/api when frontend is at /dev-koncepts/ (so requests hit this backend, not main app)
 app.use("/dev-koncepts/api/parts", authenticateJWT, partsRoutes);
@@ -636,7 +640,6 @@ app.use(
   authenticateJWT,
   longcatSettingsRoutes,
 );
-app.use("/dev-koncepts/api/kits", authenticateJWT, kitsRoutes);
 app.use("/dev-koncepts/api/vouchers", authenticateJWT, vouchersRoutes);
 app.use("/dev-koncepts/api/getVouchers", authenticateJWT, vouchersRoutes);
 app.use("/dev-koncepts/api/sales", authenticateJWT, salesRoutes);
@@ -646,6 +649,11 @@ app.use(
   "/dev-koncepts/api/advanced-search",
   authenticateJWT,
   advancedSearchRoutes,
+);
+app.use(
+  "/dev-koncepts/api/purchase-import",
+  authenticateJWT,
+  purchaseImportRoutes,
 );
 
 // RESTART TRIGGER - EXPLICIT FORCE AT 2026-02-03 18:22

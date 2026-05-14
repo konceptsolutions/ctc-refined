@@ -151,15 +151,11 @@ export const InvoiceItemPicker = ({
                       </div>
                     </div>
 
-                    {/* Stock Info */}
-                    <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-border">
+                    {/* Stock Info (available = in stock minus reserved; reserve not shown in picker) */}
+                    <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-border">
                       <div className="text-center">
                         <p className="text-xs text-muted-foreground">In Stock</p>
                         <p className="text-sm font-medium text-foreground">{part.stockQty}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Reserved</p>
-                        <p className="text-sm font-medium text-orange-500">{part.reservedQty}</p>
                       </div>
                       <div className="text-center">
                         <p className="text-xs text-muted-foreground">Available</p>
