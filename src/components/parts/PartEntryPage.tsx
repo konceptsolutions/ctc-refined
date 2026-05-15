@@ -162,8 +162,10 @@ export const PartEntryPage = ({
             })) || [],
       };
 
+      const updatePartId = partData.editingPartId || selectedPart?.id || null;
+
       // Handle images
-      if (selectedPart) {
+      if (updatePartId) {
         apiData.image_p1 =
           partData.imageP1 !== undefined ? partData.imageP1 : null;
         apiData.image_p2 =
@@ -174,8 +176,8 @@ export const PartEntryPage = ({
       }
 
       let response;
-      if (selectedPart) {
-        response = await apiClient.updatePart(selectedPart.id, apiData);
+      if (updatePartId) {
+        response = await apiClient.updatePart(updatePartId, apiData);
       } else {
         response = await apiClient.createPart(apiData);
       }
@@ -227,9 +229,9 @@ export const PartEntryPage = ({
             : partData.modelQuantities?.reduce((s: number, mq: any) => s + (mq?.qty || 0), 0),
       };
 
-      if (selectedPart) {
+      if (updatePartId) {
         setParts((prev) =>
-          prev.map((p) => (p.id === selectedPart.id ? newPart : p)),
+          prev.map((p) => (p.id === updatePartId ? newPart : p)),
         );
         setSelectedPart(null);
       } else {
@@ -240,7 +242,7 @@ export const PartEntryPage = ({
 
       toast({
         title: "Success",
-        description: selectedPart
+        description: updatePartId
           ? "Part updated successfully"
           : "Part created successfully",
       });

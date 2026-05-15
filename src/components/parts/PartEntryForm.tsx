@@ -111,6 +111,7 @@ interface PartEntryFormProps {
       kitItems: KitItemRow[];
       imageP1?: string | null;
       imageP2?: string | null;
+      editingPartId?: string | null;
     },
   ) => void;
   selectedPart?: Part | null;
@@ -144,6 +145,7 @@ export const PartEntryForm = ({
   const [imageP2, setImageP2] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isAddingNew, setIsAddingNew] = useState(false); // Track if user clicked "New" button
+  const [editingPartId, setEditingPartId] = useState<string | null>(null);
   const [masterPartAutoFilled, setMasterPartAutoFilled] = useState(false); // Track if master part was auto-filled from part number
   const prevSelectedPartId = useRef<string | null>(null);
   const fileInputP1Ref = useRef<HTMLInputElement>(null);
@@ -950,6 +952,7 @@ export const PartEntryForm = ({
             }
             setIsEditing(true);
             setIsAddingNew(false); // Clear adding new mode when editing existing part
+            setEditingPartId(part.id);
             prevSelectedPartId.current = selectedPart.id;
             toast({
               title: "Part Selected",
@@ -986,12 +989,14 @@ export const PartEntryForm = ({
           setKitItems([]);
           setIsEditing(true);
           setIsAddingNew(false); // Clear adding new mode when editing existing part
+          setEditingPartId(selectedPart.id);
           prevSelectedPartId.current = selectedPart.id;
         }
       };
       loadPartData();
     } else if (!selectedPart) {
       prevSelectedPartId.current = null;
+      setEditingPartId(null);
       setImageP1(null);
       setImageP2(null);
       setIsEditing(false);
@@ -1213,6 +1218,7 @@ export const PartEntryForm = ({
       const fullPart = response?.data || response;
 
       if (fullPart && fullPart.id) {
+        setEditingPartId(fullPart.id);
         // SWAPPED: part_no -> masterPartNo UI, master_part_no -> partNo UI
         const masterPartNoValue = (
           fullPart.part_no ||
@@ -1500,7 +1506,14 @@ export const PartEntryForm = ({
           }))
         : [];
 
-    onSave({ ...formData, modelQuantities, kitItems: preparedKitItems, imageP1, imageP2 });
+    onSave({
+      ...formData,
+      modelQuantities,
+      kitItems: preparedKitItems,
+      imageP1,
+      imageP2,
+      editingPartId: editingPartId || selectedPart?.id || null,
+    });
 
     // Notify parent component about selected part number
     const partNo = formData.partNo.trim();
@@ -1511,6 +1524,7 @@ export const PartEntryForm = ({
     setFormData(initialFormData);
     setModelQuantities([{ id: "1", model: "", qty: 0 }]);
     setKitItems([]);
+    setEditingPartId(null);
     setImageP1(null);
     setImageP2(null);
     setIsEditing(false);
@@ -1552,6 +1566,7 @@ export const PartEntryForm = ({
 
     // Reset editing state
     setIsEditing(false);
+    setEditingPartId(null);
 
     // Reset adding new mode when Reset is clicked
     setIsAddingNew(false);
@@ -1663,6 +1678,7 @@ export const PartEntryForm = ({
 
     // Reset editing state
     setIsEditing(false);
+    setEditingPartId(null);
 
     // Set adding new mode when New is clicked
     setIsAddingNew(true);

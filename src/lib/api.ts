@@ -130,8 +130,12 @@ class ApiClient {
         };
       }
 
-      // Check if response was redirected (even if status is 200)
+      // Followed redirects surface as 200 with response.redirected (not 301/302)
       if (response.redirected && response.url !== url) {
+        return {
+          error:
+            "API endpoint redirected to a different URL. This may indicate a configuration issue. Please check the API base URL and server configuration.",
+        };
       }
 
       // Check if response is actually JSON before trying to parse
@@ -377,6 +381,10 @@ class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  async getKitOperationDetails(partId: string) {
+    return this.request(`/parts/${partId}/kit-operation-details`);
   }
 
   async makeKit(partId: string, data: { quantity: number }) {
@@ -3462,6 +3470,7 @@ class ApiClient {
     }>;
     subtotal: number;
     overallDiscount?: number;
+    freightCharges?: number;
     tax?: number;
     taxPercentage?: number;
     grandTotal: number;
@@ -3610,6 +3619,7 @@ class ApiClient {
       }>;
       subtotal?: number;
       overallDiscount?: number;
+      freightCharges?: number;
       grandTotal?: number;
       tax?: number;
       taxPercentage?: number;

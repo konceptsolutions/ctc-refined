@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "SalesInvoice" ADD COLUMN IF NOT EXISTS "freightCharges" DOUBLE PRECISION NOT NULL DEFAULT 0;

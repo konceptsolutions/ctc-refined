@@ -711,6 +711,7 @@ model SalesInvoice {
   salesPerson      String?
   subtotal         Float              @default(0)
   overallDiscount  Float              @default(0)
+  freightCharges   Float              @default(0)
   tax              Float              @default(0)
   taxPercentage    Float?
   grandTotal       Float              @default(0)

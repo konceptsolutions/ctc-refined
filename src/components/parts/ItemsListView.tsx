@@ -93,6 +93,8 @@ export interface Item {
   createdAt?: string; // Creation date and time
   reservedQuantity?: number; // Reserved stock quantity
   stock?: number; // Current stock quantity
+  canDelete?: boolean;
+  deleteBlockReason?: string | null;
   cost?: number | null;
   purchasePrice?: number | null;
   avgCost?: number | null;
@@ -500,61 +502,36 @@ export const ItemsListView = ({
     if (!kitPartId) return;
     setKitDetailsLoading(true);
     try {
-      const [partRes, entryRes] = await Promise.all([
-        apiClient.getPart(kitPartId),
-        apiClient.getPartEntryList({ page: 1, limit: "all" }),
-      ]);
-      const part = ((partRes as any)?.data || partRes) as any;
-      const partRows = Array.isArray((entryRes as any)?.data)
-        ? (entryRes as any).data
-        : Array.isArray(entryRes)
-          ? (entryRes as any)
-          : [];
-      const stockById = new Map<string, number>(
-        partRows.map((row: any) => [String(row.id || ""), Number(row.stock || 0)]),
-      );
-      const stockByPartNo = new Map<string, number>();
-      partRows.forEach((row: any) => {
-        const key = String(row.part_no || row.partNo || "").trim();
-        if (!key) return;
-        stockByPartNo.set(key, (stockByPartNo.get(key) || 0) + Number(row.stock || 0));
-      });
-      const partMetaById = new Map<
-        string,
-        { masterPartNo: string; partNo: string; brand: string }
-      >(
-        partRows.map((row: any) => [
-          String(row.id || ""),
-          {
-            masterPartNo: String(row.master_part_no || row.masterPartNo || "").trim(),
-            partNo: String(row.part_no || row.partNo || "").trim(),
-            brand: String(row.brand_name || row.brand || "").trim(),
-          },
-        ]),
-      );
-      const currentStock = Number(stockById.get(kitPartId) || 0);
-      const rows: KitDetailRow[] = Array.isArray(part?.kit_items)
-        ? part.kit_items
-            .map((row: any) => ({
+      const response = await apiClient.getKitOperationDetails(kitPartId);
+      const data = ((response as any)?.data || response) as {
+        kit_stock?: number;
+        kit_items?: Array<{
+          item_part_id?: string;
+          master_part_no?: string;
+          item_part_no?: string;
+          item_description?: string;
+          brand_name?: string;
+          quantity?: number;
+          stock?: number;
+        }>;
+        error?: string;
+      };
+
+      if ((response as any)?.error) {
+        throw new Error((response as any).error);
+      }
+
+      const currentStock = Number(data.kit_stock || 0);
+      const rows: KitDetailRow[] = Array.isArray(data.kit_items)
+        ? data.kit_items
+            .map((row) => ({
               itemPartId: String(row.item_part_id || "").trim(),
-              masterPartNo:
-                partMetaById.get(String(row.item_part_id || "").trim())
-                  ?.masterPartNo || "",
-              itemPartNo:
-                partMetaById.get(String(row.item_part_id || "").trim())?.partNo ||
-                String(row.item_part_no || "").trim(),
+              masterPartNo: String(row.master_part_no || "").trim(),
+              itemPartNo: String(row.item_part_no || "").trim(),
               itemDescription: String(row.item_description || "").trim(),
-              brand:
-                partMetaById.get(String(row.item_part_id || "").trim())?.brand ||
-                "",
+              brand: String(row.brand_name || "").trim(),
               qtyPerKit: Math.max(1, Number(row.quantity || 1)),
-              // Prefer per–part-id stock when kit line pins a specific Part row; part_no can be shared across brands.
-              stock: (() => {
-                const id = String(row.item_part_id || "").trim();
-                if (id) return Number(stockById.get(id) ?? 0);
-                const pn = String(row.item_part_no || "").trim();
-                return Number(stockByPartNo.get(pn) ?? 0);
-              })(),
+              stock: Number(row.stock || 0),
             }))
             .filter((row: KitDetailRow) => row.itemPartId)
         : [];
@@ -674,18 +651,12 @@ export const ItemsListView = ({
 
   const handleDeleteConfirm = () => {
     if (itemToDelete) {
-      // Check if item is used in any kit (foreign key constraint simulation)
-      const itemUsedInKits = kits.filter((kit) =>
-        kit.items?.some(
-          (item) =>
-            item.id === itemToDelete.id || item.partNo === itemToDelete.partNo,
-        ),
-      );
-
-      if (itemUsedInKits.length > 0) {
+      if (itemToDelete.canDelete === false) {
         toast({
           title: "Cannot Delete Item",
-          description: `There is entry against "${itemToDelete.partNo}". So it cannot be deleted.`,
+          description:
+            itemToDelete.deleteBlockReason ||
+            "This item cannot be deleted because it has stock or transaction history.",
           variant: "destructive",
         });
         setItemToDelete(null);
@@ -1269,20 +1240,11 @@ export const ItemsListView = ({
         // Fallback to individual deletes (parallel, no UI blocking)
         const deletePromises = itemsToDelete.map(async (item) => {
           try {
-            // Check if item is used in any kit
-            const itemUsedInKits = kits.filter((kit) =>
-              kit.items?.some(
-                (kitItem) =>
-                  kitItem.id === item.id || kitItem.partNo === item.partNo,
-              ),
-            );
-
-            if (itemUsedInKits.length > 0) {
+            if (item.canDelete === false) {
               failedDeletes.push(item.partNo);
               return { success: false, partNo: item.partNo };
             }
 
-            // Delete in background (parallel - no sequential delays)
             await onDelete(item);
             return { success: true, partNo: item.partNo };
           } catch (error) {
@@ -2236,22 +2198,37 @@ export const ItemsListView = ({
                                   <Edit className="w-3 h-3 text-primary" />
                                 </Button>
                               </ActionButtonTooltip>
-                              <ActionButtonTooltip
-                                label="Delete"
-                                variant="delete"
-                              >
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6"
-                                  onClick={() => {
-                                    setItemToDelete(item);
-                                    setDeleteConfirmOpen(true);
-                                  }}
+                              {item.canDelete ? (
+                                <ActionButtonTooltip
+                                  label="Delete"
+                                  variant="delete"
                                 >
-                                  <Trash2 className="w-3 h-3 text-destructive" />
-                                </Button>
-                              </ActionButtonTooltip>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setItemToDelete(item);
+                                      setDeleteConfirmOpen(true);
+                                    }}
+                                  >
+                                    <Trash2 className="w-3 h-3 text-destructive" />
+                                  </Button>
+                                </ActionButtonTooltip>
+                              ) : (
+                                <ActionButtonTooltip
+                                  label={
+                                    item.deleteBlockReason ||
+                                    "Cannot delete: stock must be zero with no adjustment, direct purchase, or sales history"
+                                  }
+                                  variant="default"
+                                >
+                                  <span className="inline-flex h-6 w-6 items-center justify-center opacity-35">
+                                    <Trash2 className="w-3 h-3 text-muted-foreground" />
+                                  </span>
+                                </ActionButtonTooltip>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>

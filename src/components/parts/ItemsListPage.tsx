@@ -317,6 +317,8 @@ export const ItemsListPage = ({
       createdAt: formattedCreatedAt,
       reservedQuantity: p.reserved_quantity || p.reservedQuantity || 0,
       stock: p.quantity || p.current_stock || p.stock || 0, // Stock quantity from API
+      canDelete: p.can_delete === true,
+      deleteBlockReason: p.delete_block_reason || null,
       cost: p.cost ? parseFloat(p.cost) : null,
       purchasePrice: p.purchasePrice ? parseFloat(p.purchasePrice) : null,
       avgCost: p.avgCost ? parseFloat(p.avgCost) : null,

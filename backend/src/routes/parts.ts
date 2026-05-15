@@ -10,6 +10,115 @@ import {
 
 const router = express.Router();
 
+/** Matches Prisma schema; use when generated client omits `componentPartId`. */
+type KitItemRecord = {
+  id: string;
+  partId: string;
+  componentPartId?: string | null;
+  partNo: string;
+  partName: string;
+  quantity: number;
+  costPerUnit: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const kitComponentPartId = (row: Pick<KitItemRecord, "componentPartId">) =>
+  row.componentPartId ? String(row.componentPartId).trim() : "";
+
+type PartDeletabilityInput = {
+  currentStock: number;
+  reservedStock: number;
+  adjustmentCount: number;
+  directPurchaseCount: number;
+  salesInvoiceCount: number;
+  kitComponentCount: number;
+};
+
+const evaluatePartDeletability = (
+  input: PartDeletabilityInput,
+): { canDelete: boolean; reason: string | null } => {
+  if (input.currentStock !== 0) {
+    return {
+      canDelete: false,
+      reason: "Current stock must be zero before deleting this item.",
+    };
+  }
+  if (input.reservedStock !== 0) {
+    return {
+      canDelete: false,
+      reason: "Reserved stock must be zero before deleting this item.",
+    };
+  }
+  if (input.adjustmentCount > 0) {
+    return {
+      canDelete: false,
+      reason: "This item has inventory adjustment history and cannot be deleted.",
+    };
+  }
+  if (input.directPurchaseCount > 0) {
+    return {
+      canDelete: false,
+      reason: "This item has direct purchase history and cannot be deleted.",
+    };
+  }
+  if (input.salesInvoiceCount > 0) {
+    return {
+      canDelete: false,
+      reason: "This item has sales history and cannot be deleted.",
+    };
+  }
+  if (input.kitComponentCount > 0) {
+    return {
+      canDelete: false,
+      reason: "This item is used as a kit component and cannot be deleted.",
+    };
+  }
+  return { canDelete: true, reason: null };
+};
+
+const getPartDeletabilityCounts = async (partId: string) => {
+  const part = await prisma.part.findUnique({
+    where: { id: partId },
+    select: { id: true },
+  });
+  if (!part) {
+    return null;
+  }
+
+  const stockByPartId = await getCurrentStockByPartIds([partId]);
+  const reservedAgg = await prisma.stockReservation.aggregate({
+    where: { partId, status: "reserved" },
+    _sum: { quantity: true },
+  });
+
+  const kitComponentRows = await prisma.$queryRaw<{ count: number }[]>`
+    SELECT COUNT(*)::int AS count
+    FROM "KitItem"
+    WHERE "componentPartId" = ${partId}
+  `;
+
+  const [
+    adjustmentCount,
+    directPurchaseCount,
+    salesInvoiceCount,
+  ] = await Promise.all([
+    prisma.adjustmentItem.count({ where: { partId } }),
+    prisma.directPurchaseOrderItem.count({ where: { partId } }),
+    prisma.salesInvoiceItem.count({ where: { partId } }),
+  ]);
+  const kitComponentCount = Number(kitComponentRows[0]?.count || 0);
+
+  return evaluatePartDeletability({
+    currentStock: Number(stockByPartId.get(partId) || 0),
+    reservedStock: Number(reservedAgg._sum.quantity || 0),
+    adjustmentCount,
+    directPurchaseCount,
+    salesInvoiceCount,
+    kitComponentCount,
+  });
+};
+
 const normalizePartType = (value: any): "single" | "kit" => {
   const normalized = String(value || "")
     .trim()
@@ -22,8 +131,14 @@ const normalizeKitItemsPayload = (kitItems: any): { itemPartId: string; quantity
 
   const byPartId = new Map<string, number>();
   kitItems.forEach((row: any) => {
+    // Do not read row.partId — on KitItem rows that is the parent kit Part id, not the component.
     const itemPartId = String(
-      row?.item_part_id || row?.itemPartId || row?.part_id || row?.partId || "",
+      row?.item_part_id ||
+        row?.itemPartId ||
+        row?.component_part_id ||
+        row?.componentPartId ||
+        row?.part_id ||
+        "",
     ).trim();
     const quantityValue = Number(row?.quantity || row?.qty || 0);
     const quantity = Number.isFinite(quantityValue)
@@ -37,6 +152,125 @@ const normalizeKitItemsPayload = (kitItems: any): { itemPartId: string; quantity
     itemPartId,
     quantity,
   }));
+};
+
+type KitComponentRow = {
+  id: string;
+  partNo: string;
+  description: string | null;
+  cost: number | null;
+};
+
+type DbClient = Pick<typeof prisma, "kitItem" | "part">;
+
+const validateKitComponents = async (
+  normalizedKitItems: { itemPartId: string; quantity: number }[],
+  db: DbClient = prisma,
+): Promise<KitComponentRow[]> => {
+  if (!normalizedKitItems.length) return [];
+
+  const componentPartIds = normalizedKitItems.map((row) => row.itemPartId);
+  const validatedKitComponents = await db.part.findMany({
+    where: {
+      id: { in: componentPartIds },
+      type: "single",
+      status: "active",
+    },
+    select: {
+      id: true,
+      partNo: true,
+      description: true,
+      cost: true,
+    },
+  });
+
+  if (validatedKitComponents.length !== new Set(componentPartIds).size) {
+    throw new Error("Kit items must be active single-type parts");
+  }
+
+  return validatedKitComponents;
+};
+
+const buildKitItemCreateRows = (
+  parentPartId: string,
+  normalizedKitItems: { itemPartId: string; quantity: number }[],
+  validatedKitComponents: KitComponentRow[],
+) => {
+  const componentById = new Map(
+    validatedKitComponents.map((row) => [row.id, row]),
+  );
+  const now = new Date();
+
+  return normalizedKitItems
+    .map((row) => {
+      const component = componentById.get(row.itemPartId);
+      if (!component) return null;
+      return {
+        id: randomUUID(),
+        partId: parentPartId,
+        componentPartId: row.itemPartId,
+        partNo: component.partNo,
+        partName: component.description || component.partNo,
+        quantity: row.quantity,
+        costPerUnit: component.cost || 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+    })
+    .filter(Boolean) as {
+    id: string;
+    partId: string;
+    componentPartId: string;
+    partNo: string;
+    partName: string;
+    quantity: number;
+    costPerUnit: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }[];
+};
+
+const syncKitItemsForParentPart = async (
+  db: DbClient,
+  parentPartId: string,
+  kitItemsPayload: unknown,
+  partType: "single" | "kit",
+) => {
+  const parent = await db.part.findUnique({
+    where: { id: parentPartId },
+    select: { id: true },
+  });
+  if (!parent) {
+    throw new Error("Part not found");
+  }
+
+  if (partType === "single") {
+    await db.kitItem.deleteMany({ where: { partId: parentPartId } });
+    return;
+  }
+
+  if (!Array.isArray(kitItemsPayload)) return;
+
+  const normalizedKitItems = normalizeKitItemsPayload(kitItemsPayload);
+  if (normalizedKitItems.some((row) => row.itemPartId === parentPartId)) {
+    throw new Error("A kit cannot include itself as a component");
+  }
+  await db.kitItem.deleteMany({ where: { partId: parentPartId } });
+
+  if (!normalizedKitItems.length) return;
+
+  const validatedKitComponents = await validateKitComponents(
+    normalizedKitItems,
+    db,
+  );
+  const rows = buildKitItemCreateRows(
+    parentPartId,
+    normalizedKitItems,
+    validatedKitComponents,
+  );
+  if (rows.length > 0) {
+    await db.kitItem.createMany({ data: rows });
+  }
 };
 
 const buildKitItemsResponse = async (
@@ -128,6 +362,106 @@ const buildKitItemsResponse = async (
       cost_per_unit: row.costPerUnit ?? linkedPart?.cost ?? 0,
     };
   });
+};
+
+const buildKitOperationDetails = async (kitPartId: string) => {
+  const kitPart = await prisma.part.findUnique({
+    where: { id: kitPartId },
+    include: { KitItem: true },
+  });
+  if (!kitPart) return null;
+  if ((kitPart.type || "single") !== "kit") {
+    return { error: "not_kit" as const };
+  }
+
+  const kitItemRows = ((kitPart as { KitItem?: KitItemRecord[] }).KitItem ||
+    []) as KitItemRecord[];
+
+  const componentIds = new Set<string>();
+  const legacyPartNos = new Set<string>();
+  kitItemRows.forEach((row) => {
+    const cid = kitComponentPartId(row);
+    if (cid) componentIds.add(cid);
+    else {
+      const partNo = String(row.partNo || "").trim();
+      if (partNo) legacyPartNos.add(partNo);
+    }
+  });
+
+  const legacyParts = legacyPartNos.size
+    ? await prisma.part.findMany({
+        where: {
+          partNo: { in: Array.from(legacyPartNos) },
+          type: "single",
+          status: "active",
+        },
+        select: { id: true, partNo: true },
+      })
+    : [];
+
+  const resolvedComponents = componentIds.size
+    ? await prisma.part.findMany({
+        where: { id: { in: Array.from(componentIds) } },
+        select: {
+          id: true,
+          partNo: true,
+          description: true,
+          MasterPart: { select: { masterPartNo: true } },
+          Brand: { select: { name: true } },
+        },
+      })
+    : [];
+  const componentById = new Map(resolvedComponents.map((row) => [row.id, row]));
+
+  const stockPartIds = [
+    kitPartId,
+    ...Array.from(componentIds),
+    ...legacyParts.map((row) => row.id),
+  ];
+  const stockByPartId = await getCurrentStockByPartIds(stockPartIds);
+
+  const stockByPartNo = new Map<string, number>();
+  legacyParts.forEach((row) => {
+    const partNo = String(row.partNo || "").trim();
+    if (!partNo) return;
+    stockByPartNo.set(
+      partNo,
+      (stockByPartNo.get(partNo) || 0) + Number(stockByPartId.get(row.id) || 0),
+    );
+  });
+
+  const kitItems = kitItemRows
+    .map((row) => {
+      const cid = kitComponentPartId(row);
+      const linked = cid ? componentById.get(cid) : undefined;
+      const legacyMatch = !cid
+        ? legacyParts.find((p) => p.partNo === row.partNo)
+        : undefined;
+      const itemPartId = cid || legacyMatch?.id || "";
+      if (!itemPartId) return null;
+
+      const partNo = linked?.partNo || String(row.partNo || "").trim();
+      const stock = cid
+        ? Number(stockByPartId.get(cid) || 0)
+        : Number(stockByPartNo.get(partNo) || 0);
+
+      return {
+        item_part_id: itemPartId,
+        master_part_no: linked?.MasterPart?.masterPartNo || "",
+        item_part_no: partNo,
+        item_description:
+          linked?.description || row.partName || partNo,
+        brand_name: linked?.Brand?.name || "",
+        quantity: Math.max(1, Number(row.quantity || 1)),
+        stock,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    kit_stock: Number(stockByPartId.get(kitPartId) || 0),
+    kit_items: kitItems,
+  };
 };
 
 const getCurrentStockByPartIds = async (partIds: string[]) => {
@@ -512,6 +846,10 @@ router.get("/", async (req: Request, res: Response) => {
         app."name" as application_name,
         COALESCE(st.stock, 0) as current_stock,
         (COALESCE(st.reserved, 0) + COALESCE(sr.reserved, 0)) as reserved_stock,
+        (SELECT COUNT(*)::int FROM "AdjustmentItem" ai WHERE ai."partId" = p.id) as adjustment_count,
+        (SELECT COUNT(*)::int FROM "DirectPurchaseOrderItem" dpoi WHERE dpoi."partId" = p.id) as direct_purchase_count,
+        (SELECT COUNT(*)::int FROM "SalesInvoiceItem" sii_cnt WHERE sii_cnt."partId" = p.id) as sales_invoice_count,
+        (SELECT COUNT(*)::int FROM "KitItem" ki_cmp WHERE ki_cmp."componentPartId" = p.id) as kit_component_count,
         lac.cost as latest_adj_cost,
         ls.last_sale_qty,
         ls.last_sale_price,
@@ -618,6 +956,18 @@ router.get("/", async (req: Request, res: Response) => {
       const rawPurchasePrice = part.purchasePrice || part.purchaseprice || null;
       const rawAvgCost = part.avgCost || part.avgcost || null;
       const latestAdjCost = part.latest_adj_cost || null;
+      const currentStock =
+        parseInt(part.current_stock || part.currentstock) || 0;
+      const reservedStock =
+        parseInt(part.reserved_stock || part.reservedstock) || 0;
+      const deletability = evaluatePartDeletability({
+        currentStock,
+        reservedStock,
+        adjustmentCount: parseInt(part.adjustment_count) || 0,
+        directPurchaseCount: parseInt(part.direct_purchase_count) || 0,
+        salesInvoiceCount: parseInt(part.sales_invoice_count) || 0,
+        kitComponentCount: parseInt(part.kit_component_count) || 0,
+      });
 
       return {
         id: part.id || part.ID,
@@ -632,10 +982,11 @@ router.get("/", async (req: Request, res: Response) => {
         weight: part.weight,
         reorder_level: part.reorderLevel || part.reorderlevel,
         uom: part.uom,
-        qty: parseInt(part.current_stock || part.currentstock) || 0,
-        stock: parseInt(part.current_stock || part.currentstock) || 0,
-        reserved_stock:
-          parseInt(part.reserved_stock || part.reservedstock) || 0,
+        qty: currentStock,
+        stock: currentStock,
+        reserved_stock: reservedStock,
+        can_delete: deletability.canDelete,
+        delete_block_reason: deletability.reason,
         cost: part.cost,
         // Fallback: Use latest approved adjustment cost if available in history, otherwise show 0 if no transactions exist
         purchasePrice: rawPurchasePrice || latestAdjCost || 0,
@@ -1747,29 +2098,12 @@ router.post("/", async (req: Request, res: Response) => {
 
     const normalizedPartType = normalizePartType(type);
     const normalizedKitItems = normalizeKitItemsPayload(kit_items);
-    let validatedKitComponents: { id: string; partNo: string; description: string | null; cost: number | null }[] =
-      [];
 
     if (normalizedPartType === "kit" && normalizedKitItems.length > 0) {
-      const componentPartIds = normalizedKitItems.map((row) => row.itemPartId);
-      validatedKitComponents = await prisma.part.findMany({
-        where: {
-          id: { in: componentPartIds },
-          type: "single",
-          status: "active",
-        },
-        select: {
-          id: true,
-          partNo: true,
-          description: true,
-          cost: true,
-        },
-      });
-
-      if (validatedKitComponents.length !== new Set(componentPartIds).size) {
-        return res
-          .status(400)
-          .json({ error: "Kit items must be active single-type parts" });
+      try {
+        await validateKitComponents(normalizedKitItems);
+      } catch (kitError: any) {
+        return res.status(400).json({ error: kitError.message });
       }
     }
 
@@ -1842,29 +2176,13 @@ router.post("/", async (req: Request, res: Response) => {
       data: partData,
     });
 
-    if (normalizedPartType === "kit" && normalizedKitItems.length > 0) {
-      const componentById = new Map(
-        validatedKitComponents.map((row) => [row.id, row]),
-      );
-      await prisma.kitItem.createMany({
-        data: normalizedKitItems
-          .map((row) => {
-            const component = componentById.get(row.itemPartId);
-            if (!component) return null;
-            return {
-              id: randomUUID(),
-              partId: part.id,
-              componentPartId: row.itemPartId,
-              partNo: component.partNo,
-              partName: component.description || component.partNo,
-              quantity: row.quantity,
-              costPerUnit: component.cost || 0,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            };
-          })
-          .filter(Boolean) as any[],
-      });
+    if (normalizedPartType === "kit" && Array.isArray(kit_items)) {
+      try {
+        await syncKitItemsForParentPart(prisma, part.id, kit_items, "kit");
+      } catch (kitError: any) {
+        await prisma.part.delete({ where: { id: part.id } }).catch(() => undefined);
+        return res.status(400).json({ error: kitError.message });
+      }
     }
 
     const partWithRelations = await prisma.part.findUnique({
@@ -1960,6 +2278,22 @@ router.post("/", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/:id/kit-operation-details", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const details = await buildKitOperationDetails(id);
+    if (!details) {
+      return res.status(404).json({ error: "Part not found" });
+    }
+    if ("error" in details && details.error === "not_kit") {
+      return res.status(400).json({ error: "Selected item is not a kit" });
+    }
+    res.json(details);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/:id/make-kit", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -1993,11 +2327,11 @@ router.post("/:id/make-kit", async (req: Request, res: Response) => {
       perKitQty: number;
     };
     const mergedKitNeeds = new Map<string, MergedKitNeed>();
-    for (const row of kitPart.KitItem) {
+    for (const row of kitPart.KitItem as KitItemRecord[]) {
       const partNo = String(row.partNo || "").trim();
       if (!partNo) continue;
       const perKitQty = Math.max(1, Number(row.quantity || 1));
-      const cid = row.componentPartId ? String(row.componentPartId).trim() : "";
+      const cid = kitComponentPartId(row);
       const mergeKey = cid ? `id:${cid}` : `pn:${partNo}`;
       const prev = mergedKitNeeds.get(mergeKey);
       if (prev) {
@@ -2284,12 +2618,12 @@ router.post("/:id/break-kit", async (req: Request, res: Response) => {
       { targetPartId: string; partNo: string; receiveQty: number }
     >();
 
-    for (const kitRow of kitPart.KitItem) {
+    for (const kitRow of kitPart.KitItem as KitItemRecord[]) {
       const partNo = String(kitRow.partNo || "").trim();
       if (!partNo) continue;
       const perKitQty = Math.max(1, Number(kitRow.quantity || 1));
       const addQty = perKitQty * quantity;
-      const cid = kitRow.componentPartId ? String(kitRow.componentPartId).trim() : "";
+      const cid = kitComponentPartId(kitRow);
       if (cid) {
         const prev = mergedExplicitReceive.get(cid);
         if (prev) {
@@ -2850,34 +3184,20 @@ router.put("/:id", async (req: Request, res: Response) => {
       }
     }
 
+    const existingPart = await prisma.part.findUnique({
+      where: { id },
+      select: { id: true, type: true },
+    });
+    if (!existingPart) {
+      return res.status(404).json({ error: "Part not found" });
+    }
+
     const normalizedKitItems = normalizeKitItemsPayload(kit_items);
-    let validatedKitComponents: {
-      id: string;
-      partNo: string;
-      description: string | null;
-      cost: number | null;
-    }[] = [];
-
     if (Array.isArray(kit_items) && normalizedKitItems.length > 0) {
-      const componentPartIds = normalizedKitItems.map((row) => row.itemPartId);
-      validatedKitComponents = await prisma.part.findMany({
-        where: {
-          id: { in: componentPartIds },
-          type: "single",
-          status: "active",
-        },
-        select: {
-          id: true,
-          partNo: true,
-          description: true,
-          cost: true,
-        },
-      });
-
-      if (validatedKitComponents.length !== new Set(componentPartIds).size) {
-        return res
-          .status(400)
-          .json({ error: "Kit items must be active single-type parts" });
+      try {
+        await validateKitComponents(normalizedKitItems);
+      } catch (kitError: any) {
+        return res.status(400).json({ error: kitError.message });
       }
     }
 
@@ -2947,51 +3267,67 @@ router.put("/:id", async (req: Request, res: Response) => {
     const nextType = ("type" in req.body
       ? normalizePartType(type)
       : undefined) as "single" | "kit" | undefined;
+    const effectiveType: "single" | "kit" =
+      nextType ?? normalizePartType(existingPart.type || "single");
 
-    if (nextType === "single") {
-      await prisma.kitItem.deleteMany({ where: { partId: id } });
-    } else if (Array.isArray(kit_items)) {
-      await prisma.kitItem.deleteMany({ where: { partId: id } });
-      if (normalizedKitItems.length > 0) {
-        const componentById = new Map(
-          validatedKitComponents.map((row) => [row.id, row]),
-        );
-        await prisma.kitItem.createMany({
-          data: normalizedKitItems
-            .map((row) => {
-              const component = componentById.get(row.itemPartId);
-              if (!component) return null;
-              return {
-                id: randomUUID(),
-                partId: id,
-                componentPartId: row.itemPartId,
-                partNo: component.partNo,
-                partName: component.description || component.partNo,
-                quantity: row.quantity,
-                costPerUnit: component.cost || 0,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              };
-            })
-            .filter(Boolean) as any[],
+    let part;
+    try {
+      part = await prisma.$transaction(async (tx) => {
+        const updated = await tx.part.update({
+          where: { id },
+          data: updateData,
+          include: {
+            MasterPart: true,
+            Brand: true,
+            Category: true,
+            Subcategory: true,
+            Application: true,
+            Model: true,
+            KitItem: true,
+          },
+        });
+
+        if (effectiveType === "single") {
+          await syncKitItemsForParentPart(tx, id, [], "single");
+        } else if (Array.isArray(kit_items)) {
+          await syncKitItemsForParentPart(tx, id, kit_items, "kit");
+        }
+
+        return tx.part.findUnique({
+          where: { id },
+          include: {
+            MasterPart: true,
+            Brand: true,
+            Category: true,
+            Subcategory: true,
+            Application: true,
+            Model: true,
+            KitItem: true,
+          },
+        });
+      });
+    } catch (kitError: any) {
+      if (kitError?.message === "Part not found") {
+        return res.status(404).json({ error: kitError.message });
+      }
+      if (
+        kitError?.message === "Kit items must be active single-type parts" ||
+        kitError?.message === "A kit cannot include itself as a component"
+      ) {
+        return res.status(400).json({ error: kitError.message });
+      }
+      if (kitError?.code === "P2003") {
+        return res.status(400).json({
+          error:
+            "Could not save kit items. Ensure the part exists and each kit line is an active single-type part.",
         });
       }
+      throw kitError;
     }
 
-    // Update part
-    const part = await prisma.part.update({
-      where: { id },
-      data: updateData,
-      include: {
-        MasterPart: true,
-        Brand: true,
-        Category: true,
-        Subcategory: true,
-        Application: true,
-        Model: true,
-        KitItem: true,
-      },
-    });
+    if (!part) {
+      return res.status(404).json({ error: "Part not found" });
+    }
 
     // Debug log to verify application is included
 
@@ -3079,6 +3415,16 @@ router.delete("/:id", async (req: Request, res: Response) => {
 
     if (!part) {
       return res.status(404).json({ error: "Part not found" });
+    }
+
+    const deletability = await getPartDeletabilityCounts(id);
+    if (!deletability) {
+      return res.status(404).json({ error: "Part not found" });
+    }
+    if (!deletability.canDelete) {
+      return res.status(400).json({
+        error: deletability.reason || "This item cannot be deleted",
+      });
     }
 
     // Other relationships have onDelete: Cascade, but we can inform the user

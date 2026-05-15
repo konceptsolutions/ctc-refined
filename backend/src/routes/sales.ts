@@ -6,6 +6,19 @@ import { getCanonicalPartId } from "../services/partCanonical";
 const router = express.Router();
 const SALES_INVOICE_START_NO = 1641;
 
+/** Persist freight when Prisma client predates freightCharges column (run prisma generate when dev server is stopped). */
+async function setInvoiceFreightCharges(
+  invoiceId: string,
+  freight: number,
+): Promise<void> {
+  const amount = Math.max(0, Number(freight) || 0);
+  await prisma.$executeRaw`
+    UPDATE "SalesInvoice"
+    SET "freightCharges" = ${amount}
+    WHERE "id" = ${invoiceId}
+  `;
+}
+
 async function getNextNumberForPrefix(args: {
   prefix: string;
   voucherType?: string;
@@ -1480,6 +1493,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
       items,
       subtotal,
       overallDiscount,
+      freightCharges,
       tax,
       taxPercentage,
       grandTotal,
@@ -1517,18 +1531,18 @@ router.post("/invoices", async (req: Request, res: Response) => {
     // Determine which account ID to store (prefer bank, then cash, then legacy accountId)
     const finalAccountId = bankAccountId || cashAccountId || accountId;
 
-    // Create invoice (data asserted to UncheckedCreateInput for taxPercentage compatibility with Prisma client types)
+    const freightAmount = Number(freightCharges || 0);
+
+    // Nested item create requires relation connect (not scalar customerId/accountId).
     const invoice = await prisma.salesInvoice.create({
       data: {
         id: `inv_${Date.now()}`,
         invoiceNo,
         invoiceDate: new Date(invoiceDate),
-        customerId: customerId || null,
         customerName,
         customerType: normalizedCustomerType,
         term: resolvedTerm,
         salesPerson: salesPerson || "Admin",
-        accountId: finalAccountId || null,
         subtotal: subtotal || 0,
         overallDiscount: overallDiscount || 0,
         tax: tax || 0,
@@ -1545,6 +1559,10 @@ router.post("/invoices", async (req: Request, res: Response) => {
         deliveredTo,
         remarks,
         updatedAt: new Date(),
+        ...(customerId ? { Customer: { connect: { id: customerId } } } : {}),
+        ...(finalAccountId
+          ? { Account: { connect: { id: finalAccountId } } }
+          : {}),
         SalesInvoiceItem: {
           create: await Promise.all(
             items.map(async (item: any) => {
@@ -1624,7 +1642,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
             }),
           ),
         },
-      } as Prisma.SalesInvoiceUncheckedCreateInput,
+      },
       include: {
         SalesInvoiceItem: {
           include: {
@@ -1633,6 +1651,8 @@ router.post("/invoices", async (req: Request, res: Response) => {
         },
       },
     });
+
+    await setInvoiceFreightCharges(invoice.id, freightAmount);
 
     // Stock is reserved when the invoice is approved (not while pending)
 
@@ -2378,7 +2398,10 @@ router.post("/invoices", async (req: Request, res: Response) => {
       },
     });
 
-    res.json(updatedInvoice);
+    res.json({
+      ...updatedInvoice,
+      freightCharges: freightAmount,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -2397,6 +2420,7 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
       remarks,
       items,
       overallDiscount,
+      freightCharges,
       subtotal,
       grandTotal,
       tax,
@@ -2655,13 +2679,33 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
         overallDiscount !== undefined
           ? overallDiscount
           : existingInvoice.overallDiscount;
-      const grandTotal = subtotal - discount;
+      const freight =
+        freightCharges !== undefined
+          ? Number(freightCharges || 0)
+          : Number((existingInvoice as any).freightCharges || 0);
+      const taxAmt =
+        tax !== undefined ? Number(tax || 0) : Number(existingInvoice.tax || 0);
+      const grandTotal = subtotal - discount + taxAmt + freight;
 
       updateData.subtotal = subtotal;
       updateData.grandTotal = grandTotal;
-    } else if (overallDiscount !== undefined) {
-      // If only discount changed, recalculate grand total
-      updateData.grandTotal = existingInvoice.subtotal - overallDiscount;
+    } else if (
+      overallDiscount !== undefined ||
+      freightCharges !== undefined ||
+      tax !== undefined
+    ) {
+      const discount =
+        overallDiscount !== undefined
+          ? overallDiscount
+          : existingInvoice.overallDiscount;
+      const freight =
+        freightCharges !== undefined
+          ? Number(freightCharges || 0)
+          : Number((existingInvoice as any).freightCharges || 0);
+      const taxAmt =
+        tax !== undefined ? Number(tax || 0) : Number(existingInvoice.tax || 0);
+      updateData.grandTotal =
+        existingInvoice.subtotal - discount + taxAmt + freight;
     }
 
     // Update the invoice
@@ -2683,6 +2727,10 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
       },
     });
 
+    if (freightCharges !== undefined) {
+      await setInvoiceFreightCharges(id, Number(freightCharges || 0));
+    }
+
     // Update receivable if exists and totals changed
     if (existingInvoice.Receivable && updateData.grandTotal !== undefined) {
       const newDueAmount = updateData.grandTotal - existingInvoice.paidAmount;
@@ -2701,7 +2749,14 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
       });
     }
 
-    res.json(updatedInvoice);
+    const freightForResponse =
+      freightCharges !== undefined
+        ? Number(freightCharges || 0)
+        : Number((existingInvoice as { freightCharges?: number }).freightCharges ?? 0);
+    res.json({
+      ...updatedInvoice,
+      freightCharges: freightForResponse,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -3737,12 +3792,23 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
           });
         }
 
-        const totalRevenue =
-          invoice.grandTotal + (invoice.overallDiscount || 0); // before discount
         const discountAmount = invoice.overallDiscount || 0;
         const grandTotal = invoice.grandTotal;
         const paidAmount = invoice.paidAmount || 0;
         const taxAmount = Number(invoice.tax) || 0;
+        const taxRounded = Math.round(taxAmount * 100) / 100;
+        const freightAmount =
+          Math.round(
+            Number((invoice as { freightCharges?: number }).freightCharges ?? 0) *
+              100,
+          ) / 100;
+        // Gross merchandise (subtotal); discount/GST/freight are separate voucher lines
+        const salesRevenueAmount = Math.max(
+          0,
+          Math.round(Number(invoice.subtotal || 0) * 100) / 100,
+        );
+        const totalRevenue =
+          invoice.grandTotal + (invoice.overallDiscount || 0); // used for walk-in RV balancing
         const isWalking = invoice.customerType === "walking";
 
         // ── JV Voucher ────────────────────────────────────────────────────
@@ -3779,7 +3845,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
           }
         }
 
-        // 2) Registered Customer JV: Goods Sold CR (total), Customer DR (total), then discount
+        // 2) Registered Customer JV: Goods Sold CR (excl. GST & freight), Customer DR, then discount; GST/freight separate
         if (!isWalking) {
           if (goodsRevenueAccount) {
             jvEntries.push({
@@ -3787,7 +3853,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
               accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
               description: `INV: ${invoice.invoiceNo} - Sales Revenue (${invoice.customerName})`,
               debit: 0,
-              credit: totalRevenue,
+              credit: salesRevenueAmount,
               sortOrder: sortIdx++,
             });
           }
@@ -3796,7 +3862,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
               accountId: customerAccount.id,
               accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
               description: `INV: ${invoice.invoiceNo} - Customer Receivable (${invoice.customerName})`,
-              debit: totalRevenue,
+              debit: salesRevenueAmount,
               credit: 0,
               sortOrder: sortIdx++,
             });
@@ -3839,6 +3905,29 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
               credit: taxAmount,
               sortOrder: sortIdx++,
             });
+          }
+          // Freight: DR Customer, CR Goods Sold (registered party sale)
+          if (freightAmount > 0 && goodsRevenueAccount && customerAccount) {
+            jvEntries.push({
+              accountId: customerAccount.id,
+              accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+              description: `INV: ${invoice.invoiceNo} - Freight Charges (${invoice.customerName})`,
+              debit: freightAmount,
+              credit: 0,
+              sortOrder: sortIdx++,
+            });
+            jvEntries.push({
+              accountId: goodsRevenueAccount.id,
+              accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
+              description: `INV: ${invoice.invoiceNo} - Freight Charges (${invoice.customerName})`,
+              debit: 0,
+              credit: freightAmount,
+              sortOrder: sortIdx++,
+            });
+          } else if (freightAmount > 0) {
+            console.warn(
+              `[Voucher] Freight JV lines skipped for ${invoice.invoiceNo}: need Goods Sold (701001) and customer receivable account.`,
+            );
           }
         }
 
@@ -3897,7 +3986,6 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
           if (isWalking) {
             // Walking customer RV: use amount actually received (paidAmount saved on invoice), fallback to grandTotal
             const amountReceived = Math.round((paidAmount > 0 ? paidAmount : grandTotal) * 100) / 100;
-            const taxRounded = Math.round(taxAmount * 100) / 100;
             const discountRounded = Math.round(discountAmount * 100) / 100;
             const totalRevenueRounded = Math.round(totalRevenue * 100) / 100;
             // Credits: Revenue (excl GST) + GST; Debits: Discount + Cash/Bank. Balance: totalRevenue = discount + amountReceived.
@@ -3907,8 +3995,9 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
               );
             }
             let rvSort = 0;
+            const freightRounded = freightAmount;
             if (goodsRevenueAccount) {
-              const revenueCredit = taxRounded > 0 ? totalRevenueRounded - taxRounded : totalRevenueRounded;
+              const revenueCredit = salesRevenueAmount;
               rvEntries.push({
                 accountId: goodsRevenueAccount.id,
                 accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
@@ -3917,6 +4006,20 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
                 credit: Math.max(0, Math.round(revenueCredit * 100) / 100),
                 sortOrder: rvSort++,
               });
+            }
+            if (freightRounded > 0 && goodsRevenueAccount) {
+              rvEntries.push({
+                accountId: goodsRevenueAccount.id,
+                accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
+                description: `INV: ${invoice.invoiceNo} - Freight Charges`,
+                debit: 0,
+                credit: freightRounded,
+                sortOrder: rvSort++,
+              });
+            } else if (freightRounded > 0) {
+              console.warn(
+                `[Voucher] Walk-in freight RV line skipped for ${invoice.invoiceNo}: Goods Sold account (701001) not found.`,
+              );
             }
             if (taxRounded > 0 && gstAccount) {
               rvEntries.push({

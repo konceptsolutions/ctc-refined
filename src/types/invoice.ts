@@ -137,6 +137,7 @@ export interface Invoice {
   subtotal: number;
   overallDiscount: number;
   overallDiscountType: "percent" | "fixed";
+  freightCharges?: number;
   tax: number;
   taxPercentage?: number | null;
   grandTotal: number;

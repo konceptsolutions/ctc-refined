@@ -539,6 +539,7 @@ export const SalesInvoice = () => {
 
   // Payment fields
   const [discount, setDiscount] = useState(0);
+  const [freightCharges, setFreightCharges] = useState(0);
   const [taxType, setTaxType] = useState("Without GST");
   const [gstPercentage, setGstPercentage] = useState(0);
   const [customGstPercentage, setCustomGstPercentage] = useState("");
@@ -2060,6 +2061,7 @@ export const SalesInvoice = () => {
             subtotal: inv.subtotal,
             overallDiscount: inv.overallDiscount || 0,
             overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
             tax: inv.tax || 0,
             taxPercentage:
               inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
@@ -2332,9 +2334,18 @@ export const SalesInvoice = () => {
     setDiscount(safeDiscount);
   };
 
-  // Grand total: total after GST minus discount
-  const calculateAmountAfterDiscount = () => {
+  const handleFreightChargesChange = (value: string) => {
+    const parsed = parseFloat(value);
+    setFreightCharges(Number.isFinite(parsed) ? Math.max(0, parsed) : 0);
+  };
+
+  const calculateAfterDiscount = () => {
     return Math.max(0, totalAfterGstSnapshot - discount);
+  };
+
+  // Grand total: after GST, minus discount, plus freight
+  const calculateAmountAfterDiscount = () => {
+    return Math.max(0, calculateAfterDiscount() + freightCharges);
   };
 
   // Calculate due amount
@@ -2555,6 +2566,7 @@ export const SalesInvoice = () => {
           items: invoiceItems,
           subtotal,
           overallDiscount: discount,
+          freightCharges,
           tax: calculateTax(),
           taxPercentage:
             taxType === "With GST" ? getCurrentGstRate() : undefined,
@@ -2592,6 +2604,7 @@ export const SalesInvoice = () => {
           items: invoiceItems,
           subtotal,
           overallDiscount: discount,
+          freightCharges,
           tax: calculateTax(),
           taxPercentage:
             taxType === "With GST" ? getCurrentGstRate() : undefined,
@@ -2668,8 +2681,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
@@ -2714,6 +2728,7 @@ export const SalesInvoice = () => {
     });
     setInlineItems([]);
     setDiscount(0);
+    setFreightCharges(0);
     setReceivedAmount(0);
     setBankAmount(0); // Reset bank amount
     setCashAmount(0); // Reset cash amount
@@ -2864,6 +2879,14 @@ export const SalesInvoice = () => {
       });
 
       setDiscount(invoice.overallDiscount || 0);
+      setFreightCharges(
+        Number(
+          fullInvoice.freightCharges ??
+            (fullInvoice as { freight_charges?: number }).freight_charges ??
+            invoice.freightCharges ??
+            0,
+        ) || 0,
+      );
       setDeliveredTo(fullInvoice.deliveredTo || "");
       setRemarks(fullInvoice.remarks || "");
 
@@ -3038,8 +3061,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
@@ -3142,8 +3166,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
@@ -3286,8 +3311,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
@@ -3360,6 +3386,12 @@ export const SalesInvoice = () => {
         customerType: (fullInv.customerType || inv.customerType) as CustomerType,
         subtotal: Number(fullInv.subtotal ?? inv.subtotal),
         overallDiscount: Number(fullInv.overallDiscount ?? inv.overallDiscount),
+        freightCharges: Number(
+          fullInv.freightCharges ??
+            (fullInv as { freight_charges?: number }).freight_charges ??
+            inv.freightCharges ??
+            0,
+        ),
         tax: Number(fullInv.tax ?? inv.tax),
         taxPercentage: fullInv.taxPercentage ?? inv.taxPercentage,
         grandTotal: Number(fullInv.grandTotal ?? inv.grandTotal),
@@ -3675,8 +3707,9 @@ export const SalesInvoice = () => {
           })) || [],
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
@@ -3769,8 +3802,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
@@ -3866,8 +3900,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
@@ -3962,8 +3997,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
@@ -4050,8 +4086,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
@@ -4147,8 +4184,9 @@ export const SalesInvoice = () => {
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
-        overallDiscountType: "fixed" as const,
-        tax: inv.tax || 0,
+            overallDiscountType: "fixed" as const,
+            freightCharges: Number(inv.freightCharges || 0),
+            tax: inv.tax || 0,
         taxPercentage:
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
@@ -4322,6 +4360,7 @@ export const SalesInvoice = () => {
         0,
     );
     const discountAmount = Number(invoice.overallDiscount || 0);
+    const freightAmount = Number(invoice.freightCharges || 0);
     const taxAmount = Number(invoice.tax || 0);
     const taxPercentageStored = Number(
       invoice.taxPercentage ?? invoiceMeta.taxPercentage ?? 0,
@@ -4358,7 +4397,9 @@ export const SalesInvoice = () => {
     const totalReceivable = balBf + currentAmount;
     const currentAmountWords = numberToWords(currentAmount);
     const linesBeforeCurrentAmount =
-      (discountAmount > 0 ? 1 : 0) + (taxAmount > 0 ? 1 : 0);
+      (discountAmount > 0 ? 1 : 0) +
+      (freightAmount > 0 ? 1 : 0) +
+      (taxAmount > 0 ? 1 : 0);
     const amountWordsOffsetPx = linesBeforeCurrentAmount * 22;
 
     const rows =
@@ -4498,6 +4539,11 @@ export const SalesInvoice = () => {
                 ${
                   discountAmount > 0
                     ? `<tr><td>Discount</td><td class="r">- ${discountAmount.toLocaleString()}</td></tr>`
+                    : ""
+                }
+                ${
+                  freightAmount > 0
+                    ? `<tr><td>Freight</td><td class="r">${freightAmount.toLocaleString()}</td></tr>`
                     : ""
                 }
                 ${
@@ -6052,6 +6098,19 @@ export const SalesInvoice = () => {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label className="text-xs">Freight Charges</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={freightCharges || ""}
+                    onChange={(e) =>
+                      handleFreightChargesChange(e.target.value)
+                    }
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label className="text-xs">Bank Account</Label>
                   <Select
                     value={selectedBankAccount}
@@ -6245,8 +6304,12 @@ export const SalesInvoice = () => {
                 <div className="flex justify-between border-t pt-2">
                   <span className="font-medium">After Discount:</span>
                   <span className="font-bold">
-                    Rs {(calculateTotalAfterGst() - discount).toLocaleString()}
+                    Rs {calculateAfterDiscount().toLocaleString()}
                   </span>
+                </div>
+                <div className="flex justify-between text-blue-700">
+                  <span>Freight Charges:</span>
+                  <span>+Rs {freightCharges.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2 font-bold text-lg">
                   <span>Grand Total:</span>
