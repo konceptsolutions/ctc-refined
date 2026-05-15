@@ -2559,8 +2559,11 @@ export const SalesInquiry = () => {
                     <TableHead className="w-[95px] text-center font-bold text-foreground">
                       Cost Price
                     </TableHead>
-                    <TableHead className="w-[120px] text-center font-bold text-foreground">
-                      Assoc. Prices
+                    <TableHead className="w-[70px] text-center font-bold text-foreground">
+                      Price A
+                    </TableHead>
+                    <TableHead className="w-[70px] text-center font-bold text-foreground">
+                      Price B
                     </TableHead>
                     <TableHead className="w-[70px] text-center font-bold text-foreground">
                       Action
@@ -3021,42 +3024,48 @@ export const SalesInquiry = () => {
                                 -
                               </span>
                             ) : (
-                              <div className="flex flex-row gap-1 items-center justify-center">
-                                <Button
-                                  variant={
-                                    row.selectedPriceType === "A"
-                                      ? "default"
-                                      : "outline"
-                                  }
-                                  size="sm"
-                                  className="flex-1 min-w-0 px-2 text-xs"
-                                  onClick={() =>
-                                    handleUpdateLookupRow(row.id, {
-                                      selectedPriceType: "A",
-                                      unitPrice: priceA,
-                                    })
-                                  }
-                                >
-                                  {priceA.toFixed(0)}
-                                </Button>
-                                <Button
-                                  variant={
-                                    row.selectedPriceType === "B"
-                                      ? "default"
-                                      : "outline"
-                                  }
-                                  size="sm"
-                                  className="flex-1 min-w-0 px-2 text-xs"
-                                  onClick={() =>
-                                    handleUpdateLookupRow(row.id, {
-                                      selectedPriceType: "B",
-                                      unitPrice: priceB,
-                                    })
-                                  }
-                                >
-                                  {priceB.toFixed(0)}
-                                </Button>
-                              </div>
+                              <Button
+                                variant={
+                                  row.selectedPriceType === "A"
+                                    ? "default"
+                                    : "outline"
+                                }
+                                size="sm"
+                                className="w-full min-w-0 px-2 text-xs"
+                                onClick={() =>
+                                  handleUpdateLookupRow(row.id, {
+                                    selectedPriceType: "A",
+                                    unitPrice: priceA,
+                                  })
+                                }
+                              >
+                                {priceA.toFixed(0)}
+                              </Button>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            {!row.partId ? (
+                              <span className="text-xs text-muted-foreground">
+                                -
+                              </span>
+                            ) : (
+                              <Button
+                                variant={
+                                  row.selectedPriceType === "B"
+                                    ? "default"
+                                    : "outline"
+                                }
+                                size="sm"
+                                className="w-full min-w-0 px-2 text-xs"
+                                onClick={() =>
+                                  handleUpdateLookupRow(row.id, {
+                                    selectedPriceType: "B",
+                                    unitPrice: priceB,
+                                  })
+                                }
+                              >
+                                {priceB.toFixed(0)}
+                              </Button>
                             )}
                           </TableCell>
                           <TableCell className="text-center align-top">
@@ -3094,7 +3103,7 @@ export const SalesInquiry = () => {
                             key={`${row.id}-qty-used`}
                             className="border-b bg-muted/20"
                           >
-                            <TableCell colSpan={9} className="px-4 pt-0 pb-2">
+                            <TableCell colSpan={10} className="px-4 pt-0 pb-2">
                               <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
                                   Quantity Used

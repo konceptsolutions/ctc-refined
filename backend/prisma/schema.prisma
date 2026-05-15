@@ -211,6 +211,7 @@ model Customer {
   Account            Account[]
   Receivable         Receivable[]
   SalesInvoice       SalesInvoice[]
+  SalesQuotation     SalesQuotation[]
   SalesReturn        SalesReturn[]
   VoucherEntry       VoucherEntry[]
 }
@@ -780,16 +781,24 @@ model SalesQuotation {
   quotationNo        String               @unique
   quotationDate      DateTime
   validUntil         DateTime
+  customerType       String               @default("registered")
+  customerId         String?
   customerName       String
   customerEmail      String?
   customerPhone      String?
   customerAddress    String?
   status             String               @default("draft")
+  subtotal           Float                @default(0)
+  overallDiscount    Float                @default(0)
+  freightCharges     Float                @default(0)
+  tax                Float                @default(0)
+  taxPercentage      Float?
   totalAmount        Float                @default(0)
   notes              String?
   invoiceId          String?              @unique
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
+  Customer           Customer?            @relation(fields: [customerId], references: [id])
   SalesInvoice       SalesInvoice?        @relation(fields: [invoiceId], references: [id])
   SalesQuotationItem SalesQuotationItem[]
 }

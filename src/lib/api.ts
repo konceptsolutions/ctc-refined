@@ -3309,11 +3309,19 @@ class ApiClient {
     quotationDate: string;
     validUntil: string;
     customerName: string;
+    customerType?: string;
+    customerId?: string;
     customerEmail?: string;
     customerPhone?: string;
     customerAddress?: string;
     status?: string;
     notes?: string;
+    subtotal?: number;
+    overallDiscount?: number;
+    freightCharges?: number;
+    tax?: number;
+    taxPercentage?: number;
+    totalAmount?: number;
     items: Array<{
       partId: string;
       partNo: string;
@@ -3334,11 +3342,19 @@ class ApiClient {
       quotationDate?: string;
       validUntil?: string;
       customerName?: string;
+      customerType?: string;
+      customerId?: string;
       customerEmail?: string;
       customerPhone?: string;
       customerAddress?: string;
       status?: string;
       notes?: string;
+      subtotal?: number;
+      overallDiscount?: number;
+      freightCharges?: number;
+      tax?: number;
+      taxPercentage?: number;
+      totalAmount?: number;
       items?: Array<{
         partId: string;
         partNo: string;

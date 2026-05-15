@@ -150,6 +150,9 @@ export interface Invoice {
   holdSince?: string;
   createdAt: string;
   updatedAt: string;
+  /** Quotation-only (when reused from sales quotation list) */
+  validUntil?: string;
+  quotationStatus?: string;
 }
 
 export interface StockReservation {

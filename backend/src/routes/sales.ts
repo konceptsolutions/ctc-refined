@@ -19,6 +19,34 @@ async function setInvoiceFreightCharges(
   `;
 }
 
+async function setQuotationFinancialFields(
+  quotationId: string,
+  data: {
+    subtotal: number;
+    overallDiscount: number;
+    freightCharges: number;
+    tax: number;
+    taxPercentage: number | null;
+    totalAmount: number;
+    customerType?: string;
+    customerId?: string | null;
+  },
+): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "SalesQuotation"
+    SET
+      "subtotal" = ${data.subtotal},
+      "overallDiscount" = ${data.overallDiscount},
+      "freightCharges" = ${data.freightCharges},
+      "tax" = ${data.tax},
+      "taxPercentage" = ${data.taxPercentage},
+      "totalAmount" = ${data.totalAmount},
+      "customerType" = COALESCE(${data.customerType ?? null}, "customerType"),
+      "customerId" = ${data.customerId ?? null}
+    WHERE "id" = ${quotationId}
+  `;
+}
+
 async function getNextNumberForPrefix(args: {
   prefix: string;
   voucherType?: string;
@@ -797,10 +825,34 @@ router.post("/quotations", async (req: Request, res: Response) => {
       customerEmail,
       customerPhone,
       customerAddress,
+      customerType,
+      customerId,
       status,
       notes,
       items,
+      subtotal,
+      overallDiscount,
+      freightCharges,
+      tax,
+      taxPercentage,
+      totalAmount,
     } = req.body;
+
+    const lineSubtotal =
+      subtotal != null
+        ? Number(subtotal)
+        : (items || []).reduce(
+            (sum: number, item: any) =>
+              sum + Number(item.quantity || 0) * Number(item.unitPrice || 0),
+            0,
+          );
+    const discount = Number(overallDiscount || 0);
+    const freight = Number(freightCharges || 0);
+    const taxAmt = Number(tax || 0);
+    const grandTotal =
+      totalAmount != null
+        ? Number(totalAmount)
+        : lineSubtotal - discount + taxAmt + freight;
 
     // Generate robust quotation number
     const lastQuotation = await prisma.salesQuotation.findFirst({
@@ -849,14 +901,22 @@ router.post("/quotations", async (req: Request, res: Response) => {
       },
     });
 
-    // Calculate total
-    const totalAmount = items.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0,
-    );
-    const updatedQuotation = await prisma.salesQuotation.update({
+    await setQuotationFinancialFields(quotation.id, {
+      subtotal: lineSubtotal,
+      overallDiscount: discount,
+      freightCharges: freight,
+      tax: taxAmt,
+      taxPercentage:
+        taxPercentage != null && taxPercentage !== ""
+          ? Number(taxPercentage)
+          : null,
+      totalAmount: grandTotal,
+      customerType: customerType || "registered",
+      customerId: customerId || null,
+    });
+
+    const updatedQuotation = await prisma.salesQuotation.findUnique({
       where: { id: quotation.id },
-      data: { totalAmount },
       include: {
         SalesQuotationItem: {
           include: {
@@ -866,7 +926,20 @@ router.post("/quotations", async (req: Request, res: Response) => {
       },
     });
 
-    res.json(updatedQuotation);
+    res.json({
+      ...updatedQuotation,
+      customerType: customerType || "registered",
+      customerId: customerId || null,
+      subtotal: lineSubtotal,
+      overallDiscount: discount,
+      freightCharges: freight,
+      tax: taxAmt,
+      taxPercentage:
+        taxPercentage != null && taxPercentage !== ""
+          ? Number(taxPercentage)
+          : null,
+      totalAmount: grandTotal,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -883,24 +956,33 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
       customerEmail,
       customerPhone,
       customerAddress,
+      customerType,
+      customerId,
       status,
       notes,
       items,
+      subtotal,
+      overallDiscount,
+      freightCharges,
+      tax,
+      taxPercentage,
+      totalAmount,
     } = req.body;
 
-    // Update quotation
+    const updateData: Prisma.SalesQuotationUpdateInput = {
+      quotationDate: quotationDate ? new Date(quotationDate) : undefined,
+      validUntil: validUntil ? new Date(validUntil) : undefined,
+      customerName,
+      customerEmail,
+      customerPhone,
+      customerAddress,
+      status,
+      notes,
+    };
+
     const quotation = await prisma.salesQuotation.update({
       where: { id },
-      data: {
-        quotationDate: quotationDate ? new Date(quotationDate) : undefined,
-        validUntil: validUntil ? new Date(validUntil) : undefined,
-        customerName,
-        customerEmail,
-        customerPhone,
-        customerAddress,
-        status,
-        notes,
-      },
+      data: updateData,
     });
 
     // Update items if provided
@@ -924,15 +1006,50 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
       });
     }
 
-    // Recalculate total
     const updatedItems = await prisma.salesQuotationItem.findMany({
       where: { quotationId: id },
     });
-    const totalAmount = updatedItems.reduce((sum, item) => sum + item.total, 0);
+    const lineSubtotal =
+      subtotal != null
+        ? Number(subtotal)
+        : updatedItems.reduce((sum, item) => sum + item.total, 0);
+    const discount = Number(
+      overallDiscount !== undefined
+        ? overallDiscount
+        : (quotation as { overallDiscount?: number }).overallDiscount || 0,
+    );
+    const freight = Number(
+      freightCharges !== undefined
+        ? freightCharges
+        : (quotation as { freightCharges?: number }).freightCharges || 0,
+    );
+    const taxAmt = Number(
+      tax !== undefined ? tax : (quotation as { tax?: number }).tax || 0,
+    );
+    const grandTotal =
+      totalAmount != null
+        ? Number(totalAmount)
+        : lineSubtotal - discount + taxAmt + freight;
 
-    const updatedQuotation = await prisma.salesQuotation.update({
+    await setQuotationFinancialFields(id, {
+      subtotal: lineSubtotal,
+      overallDiscount: discount,
+      freightCharges: freight,
+      tax: taxAmt,
+      taxPercentage:
+        taxPercentage !== undefined
+          ? taxPercentage != null && taxPercentage !== ""
+            ? Number(taxPercentage)
+            : null
+          : ((quotation as { taxPercentage?: number | null }).taxPercentage ??
+            null),
+      totalAmount: grandTotal,
+      customerType: customerType || undefined,
+      customerId: customerId !== undefined ? customerId || null : undefined,
+    });
+
+    const updatedQuotation = await prisma.salesQuotation.findUnique({
       where: { id },
-      data: { totalAmount },
       include: {
         SalesQuotationItem: {
           include: {
@@ -942,7 +1059,14 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
       },
     });
 
-    res.json(updatedQuotation);
+    res.json({
+      ...updatedQuotation,
+      subtotal: lineSubtotal,
+      overallDiscount: discount,
+      freightCharges: freight,
+      tax: taxAmt,
+      totalAmount: grandTotal,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1016,12 +1140,30 @@ router.post(
       // Generate robust invoice number (numeric string; legacy INV-* rows still drive sequence)
       const invoiceNo = await getNextSalesInvoiceNo();
 
-      // Calculate totals
-      const subtotal = quotation.totalAmount;
-      const overallDiscount = discount || 0;
-      const taxAmount = tax || 0;
-      const grandTotal = subtotal - overallDiscount + taxAmount;
-      const normalizedCustomerType = customerType || "registered";
+      const q = quotation as {
+        subtotal?: number;
+        overallDiscount?: number;
+        freightCharges?: number;
+        tax?: number;
+        taxPercentage?: number | null;
+        totalAmount?: number;
+        customerType?: string;
+        customerId?: string | null;
+      };
+      const subtotal =
+        q.subtotal ??
+        quotation.SalesQuotationItem.reduce((s, i) => s + i.total, 0);
+      const overallDiscount =
+        discount != null ? Number(discount) : Number(q.overallDiscount || 0);
+      const freight = Number(q.freightCharges || 0);
+      const taxAmount = tax != null ? Number(tax) : Number(q.tax || 0);
+      const grandTotal =
+        q.totalAmount != null
+          ? Number(q.totalAmount)
+          : subtotal - overallDiscount + taxAmount + freight;
+      const normalizedCustomerType =
+        customerType || q.customerType || "registered";
+      const resolvedCustomerId = customerId || q.customerId || null;
       const resolvedTerm =
         normalizedCustomerType === "registered"
           ? String(term ?? "").trim() || null
@@ -1032,7 +1174,6 @@ router.post(
           id: crypto.randomUUID(),
           invoiceNo,
           invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
-          customerId: customerId || null,
           customerName: quotation.customerName,
           customerType: normalizedCustomerType,
           term: resolvedTerm,
@@ -1040,6 +1181,7 @@ router.post(
           subtotal,
           overallDiscount,
           tax: taxAmount,
+          taxPercentage: q.taxPercentage ?? undefined,
           grandTotal,
           paidAmount: paidAmount || 0,
           status: "pending",
@@ -1072,6 +1214,12 @@ router.post(
             })),
           },
         };
+      if (resolvedCustomerId) {
+        invoiceCreateData.Customer = { connect: { id: resolvedCustomerId } };
+      }
+      if (accountId) {
+        invoiceCreateData.Account = { connect: { id: accountId } };
+      }
 
       const invoice = await prisma.salesInvoice.create({
         data: invoiceCreateData,
@@ -1083,6 +1231,8 @@ router.post(
           },
         },
       });
+
+      await setInvoiceFreightCharges(invoice.id, freight);
 
       // Stock is reserved when the invoice is approved (not while pending)
 

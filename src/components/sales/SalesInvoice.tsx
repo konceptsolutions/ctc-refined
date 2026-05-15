@@ -89,6 +89,7 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/ui/searchable-select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import { InvoicePartDropdownList } from "./InvoicePartDropdownList";
@@ -341,7 +342,14 @@ interface InlineItemRow {
   descriptionFallback?: string;
 }
 
-export const SalesInvoice = () => {
+type SalesDocumentKind = "invoice" | "quotation";
+
+export const SalesInvoice = ({
+  documentKind = "invoice",
+}: {
+  documentKind?: SalesDocumentKind;
+}) => {
+  const isQuotation = documentKind === "quotation";
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -375,7 +383,8 @@ export const SalesInvoice = () => {
 
   // New / Edit Invoice State
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
-  const [showNewInvoice, setShowNewInvoice] = useState(false);
+  const [documentView, setDocumentView] = useState<"form" | "list">("form");
+  const showDocumentForm = documentView === "form";
   const [newInvoice, setNewInvoice] = useState<Partial<Invoice>>({
     customerType: "registered", // Default to Party Sale
     items: [],
@@ -540,6 +549,12 @@ export const SalesInvoice = () => {
   // Payment fields
   const [discount, setDiscount] = useState(0);
   const [freightCharges, setFreightCharges] = useState(0);
+  const [validUntil, setValidUntil] = useState(() =>
+    new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+  );
+  const [quotationStatus, setQuotationStatus] = useState<
+    "draft" | "sent" | "accepted" | "rejected" | "expired"
+  >("draft");
   const [taxType, setTaxType] = useState("Without GST");
   const [gstPercentage, setGstPercentage] = useState(0);
   const [customGstPercentage, setCustomGstPercentage] = useState("");
@@ -846,7 +861,7 @@ export const SalesInvoice = () => {
 
   useEffect(() => {
     const onShortcut = (e: KeyboardEvent) => {
-      if (!showNewInvoice) return;
+      if (!showDocumentForm) return;
       if (e.altKey && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
         handleAddNewItem(true);
@@ -855,14 +870,14 @@ export const SalesInvoice = () => {
 
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
-  }, [showNewInvoice, handleAddNewItem]);
+  }, [showDocumentForm, handleAddNewItem]);
 
   // Keep item detail helpers hidden by default whenever invoice form opens.
   useEffect(() => {
-    if (showNewInvoice) {
+    if (showDocumentForm) {
       setShowLastSaleInfo(false);
     }
-  }, [showNewInvoice]);
+  }, [showDocumentForm]);
 
   // Derive Part Association rows from the loaded parts list whenever any of the
   // top filters (Model / Description / Application) is active. Each row is one
@@ -1440,10 +1455,10 @@ export const SalesInvoice = () => {
 
   // Load catalog as soon as the user enters “new invoice”, so the first line-item open isn’t waiting on the network.
   useEffect(() => {
-    if (!showNewInvoice) return;
+    if (!showDocumentForm) return;
     if (hasFetchedInitialPartsRef.current) return;
     void fetchPartsRef.current("", false);
-  }, [showNewInvoice]);
+  }, [showDocumentForm]);
 
   const getFilteredPartsForInlineRow = useCallback(
     (
@@ -1531,7 +1546,7 @@ export const SalesInvoice = () => {
   getFilteredPartsForInlineRowLiveRef.current = getFilteredPartsForInlineRow;
 
   useEffect(() => {
-    if (!showNewInvoice) return;
+    if (!showDocumentForm) return;
 
     const onDocKeyDown = (ev: KeyboardEvent) => {
       const el = ev.target as HTMLElement | null;
@@ -1634,7 +1649,7 @@ export const SalesInvoice = () => {
 
     document.addEventListener("keydown", onDocKeyDown, true);
     return () => document.removeEventListener("keydown", onDocKeyDown, true);
-  }, [showNewInvoice]);
+  }, [showDocumentForm]);
 
   const addItemModelOptions = useMemo(() => {
     const selectedDescription = partsDescriptionFilter.trim().toLowerCase();
@@ -1739,7 +1754,7 @@ export const SalesInvoice = () => {
     if (hasFetchedInitialPartsRef.current && !hasSearchTerm) {
       const interval = setInterval(() => {
         // Quietly background refresh parts data to capture external stock changes
-        fetchParts("", true, true);
+        void fetchPartsRef.current("", true, true);
 
         // Also refresh individual stock balances for visible items if any
         if (inlineItems.length > 0) {
@@ -1781,7 +1796,7 @@ export const SalesInvoice = () => {
     .join("|");
 
   useEffect(() => {
-    if (!showNewInvoice || !showLastSaleInfo) {
+    if (!showDocumentForm || !showLastSaleInfo) {
       return;
     }
 
@@ -1880,7 +1895,7 @@ export const SalesInvoice = () => {
       cancelled = true;
     };
   }, [
-    showNewInvoice,
+    showDocumentForm,
     showLastSaleInfo,
     lastSalePartIdsFingerprint,
     editingInvoiceId,
@@ -1970,13 +1985,13 @@ export const SalesInvoice = () => {
   );
 
   useEffect(() => {
-    if (!showNewInvoice) {
-      void fetchParts("", false);
+    if (!showDocumentForm) {
+      void fetchPartsRef.current("", false);
     }
-  }, [showNewInvoice]);
+  }, [showDocumentForm]);
 
   useEffect(() => {
-    if (showNewInvoice) return;
+    if (showDocumentForm) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -2000,13 +2015,82 @@ export const SalesInvoice = () => {
     return () => {
       cancelled = true;
     };
-  }, [showNewInvoice]);
+  }, [showDocumentForm]);
 
-  // Fetch invoices from backend
+  const mapQuotationToInvoice = (q: any): Invoice => ({
+    id: q.id,
+    invoiceNo: q.quotationNo,
+    invoiceDate: q.quotationDate,
+    term: null,
+    customerType: (q.customerType || "registered") as CustomerType,
+    customerId: q.customerId || "",
+    customerName: q.customerName,
+    salesPerson: "Admin",
+    items:
+      q.SalesQuotationItem?.map((item: any) => ({
+        id: item.id,
+        partId: item.partId,
+        partNo: item.partNo,
+        description: item.description || "",
+        orderedQty: item.quantity,
+        deliveredQty: 0,
+        pendingQty: item.quantity,
+        reversedQty: 0,
+        unitPrice: item.unitPrice,
+        discount: 0,
+        discountType: "percent" as const,
+        lineTotal: item.total,
+        grade: "A" as ItemGrade,
+        brand: item.Part?.Brand?.name || "",
+      })) || [],
+    subtotal: Number(q.subtotal ?? q.totalAmount ?? 0),
+    overallDiscount: Number(q.overallDiscount || 0),
+    overallDiscountType: "fixed",
+    freightCharges: Number(q.freightCharges || 0),
+    tax: Number(q.tax || 0),
+    taxPercentage:
+      q.taxPercentage != null ? Number(q.taxPercentage) : undefined,
+    grandTotal: Number(q.totalAmount || 0),
+    paidAmount: 0,
+    status: (q.status || "draft") as InvoiceStatus,
+    paymentStatus: "unpaid",
+    deliveryLog: [],
+    createdAt: q.createdAt,
+    updatedAt: q.updatedAt,
+    validUntil: q.validUntil,
+    quotationStatus: q.status,
+  } as Invoice & { validUntil?: string; quotationStatus?: string });
+
+  // Fetch invoices / quotations from backend
   useEffect(() => {
     const fetchInvoices = async () => {
       setLoadingInvoices(true);
       try {
+        if (isQuotation) {
+          const response = (await apiClient.getSalesQuotations()) as any;
+          if (response?.error) {
+            toast({
+              title: "Error",
+              description: "Failed to load quotations",
+              variant: "destructive",
+            });
+            return;
+          }
+          const rows: any[] = Array.isArray(response)
+            ? response
+            : response.data || [];
+          setInvoices(
+            rows
+              .map(mapQuotationToInvoice)
+              .sort(
+                (a, b) =>
+                  new Date(b.createdAt).getTime() -
+                  new Date(a.createdAt).getTime(),
+              ),
+          );
+          return;
+        }
+
         const response = (await apiClient.getSalesInvoices(
           salesInvoicesQueryParams,
         )) as any;
@@ -2102,7 +2186,7 @@ export const SalesInvoice = () => {
     };
 
     fetchInvoices();
-  }, [salesInvoicesQueryParams, invoiceListRefreshTick]);
+  }, [salesInvoicesQueryParams, invoiceListRefreshTick, isQuotation]);
 
   // Fetch customers from API
   useEffect(() => {
@@ -2434,6 +2518,7 @@ export const SalesInvoice = () => {
 
     // NEW: Credit Limit Validation for Registered Customers (can be overridden via checkbox)
     if (
+      !isQuotation &&
       newInvoice.customerType === "registered" &&
       selectedCustomerId &&
       !overrideCreditLimit
@@ -2462,7 +2547,7 @@ export const SalesInvoice = () => {
       }
     }
 
-    if (newInvoice.customerType === "walking") {
+    if (!isQuotation && newInvoice.customerType === "walking") {
       if (totalReceived <= 0) {
         toast({
           title: "Missing Payment Information",
@@ -2544,6 +2629,67 @@ export const SalesInvoice = () => {
             : newInvoice.customerType === "registered"
               ? "Walk-in Customer" // Party Sale fallback
               : "Walk-in Customer"; // Cash Sale fallback
+
+      const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+
+      if (isQuotation) {
+        const quotationPayload = {
+          quotationDate: invoiceDate,
+          validUntil,
+          customerName,
+          customerType: newInvoice.customerType,
+          customerId: selectedCustomerId || undefined,
+          customerEmail: (selectedCustomer as { email?: string })?.email,
+          customerPhone:
+            (selectedCustomer as { contactNo?: string; cellNumber?: string })
+              ?.contactNo ||
+            (selectedCustomer as { cellNumber?: string })?.cellNumber,
+          customerAddress: selectedCustomer?.address,
+          status: quotationStatus,
+          notes: remarks,
+          subtotal,
+          overallDiscount: discount,
+          freightCharges,
+          tax: calculateTax(),
+          taxPercentage:
+            taxType === "With GST" ? getCurrentGstRate() : undefined,
+          totalAmount: grandTotal,
+          items: invoiceItems.map((i) => ({
+            partId: i.partId,
+            partNo: i.partNo,
+            description: i.description,
+            quantity: i.orderedQty,
+            unitPrice: i.unitPrice,
+          })),
+        };
+        const response = editingInvoiceId
+          ? await apiClient.updateSalesQuotation(
+              editingInvoiceId,
+              quotationPayload,
+            )
+          : await apiClient.createSalesQuotation(quotationPayload);
+
+        if ((response as any)?.error) {
+          toast({
+            title: "Error",
+            description:
+              (response as any).error ||
+              `Failed to ${editingInvoiceId ? "update" : "create"} quotation`,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        toast({
+          title: `Quotation ${editingInvoiceId ? "Updated" : "Created"}`,
+          description: `Quotation saved successfully.`,
+        });
+        resetForm();
+        setDocumentView("list");
+        refreshPartsData();
+        setInvoiceListRefreshTick((t) => t + 1);
+        return;
+      }
 
       let response;
       const resolvedTerm =
@@ -2640,6 +2786,7 @@ export const SalesInvoice = () => {
       });
 
       resetForm();
+      setDocumentView("list");
       refreshPartsData();
 
       // Refresh invoices
@@ -2719,7 +2866,7 @@ export const SalesInvoice = () => {
   // Reset form
   const resetForm = () => {
     setEditingInvoiceId(null);
-    setShowNewInvoice(false);
+    setDocumentView("form");
     setNewInvoice({
       customerType: "registered", // Default to Party Sale
       items: [],
@@ -2746,12 +2893,18 @@ export const SalesInvoice = () => {
     setSelectedCustomerName("");
     setCustomerPriceType(null);
     setSelectedCustomerCategory(null);
+    setValidUntil(
+      new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+    );
+    setQuotationStatus("draft");
   };
 
   // Handle Edit Invoice
   const handleEditInvoice = async (invoice: Invoice) => {
     try {
-      const fullInvoice = (await apiClient.getSalesInvoice(invoice.id)) as any;
+      const fullInvoice = isQuotation
+        ? ((await apiClient.getSalesQuotation(invoice.id)) as any)
+        : ((await apiClient.getSalesInvoice(invoice.id)) as any);
       setEditingInvoiceId(invoice.id);
 
       setNewInvoice({
@@ -2764,13 +2917,27 @@ export const SalesInvoice = () => {
       });
       setSelectedCustomerId(invoice.customerId || "");
       setSelectedCustomerName(invoice.customerName || "");
-      // Restore invoice date when editing
-      const invDate = fullInvoice.invoiceDate ?? invoice.invoiceDate;
+      const invDate = isQuotation
+        ? fullInvoice.quotationDate ?? invoice.invoiceDate
+        : fullInvoice.invoiceDate ?? invoice.invoiceDate;
       setInvoiceDate(
         typeof invDate === "string"
           ? invDate.slice(0, 10)
           : new Date(invDate).toISOString().split("T")[0],
       );
+      if (isQuotation) {
+        const vu = fullInvoice.validUntil ?? invoice.validUntil;
+        setValidUntil(
+          typeof vu === "string"
+            ? vu.slice(0, 10)
+            : new Date(vu).toISOString().split("T")[0],
+        );
+        setQuotationStatus(
+          (fullInvoice.status ||
+            invoice.quotationStatus ||
+            "draft") as typeof quotationStatus,
+        );
+      }
       setTerm(String(fullInvoice.term ?? invoice.term ?? ""));
       // Restore customer price type when editing
       const editCustomer = customers.find((c) => c.id === invoice.customerId);
@@ -2779,8 +2946,10 @@ export const SalesInvoice = () => {
 
       const partItemsToMerge: PartItem[] = [];
 
-      const convertedItems = (fullInvoice.SalesInvoiceItem || []).map(
-        (item: any) => {
+      const sourceItems = isQuotation
+        ? fullInvoice.SalesQuotationItem || []
+        : fullInvoice.SalesInvoiceItem || [];
+      const convertedItems = sourceItems.map((item: any) => {
           if (item.Part && !parts.find((p) => p.id === item.Part.id)) {
             // Note: masterPartNo and partNo swapping logic to match fetchParts
             const stockLocations = (item.Part.PartRackShelf || []).map(
@@ -2823,7 +2992,7 @@ export const SalesInvoice = () => {
           return {
             id: item.id,
             selectedPartId: item.partId,
-            qty: item.orderedQty,
+            qty: isQuotation ? item.quantity : item.orderedQty,
             // Restore unitPrice and infer selectedPriceType based on part prices
             unitPrice: item.unitPrice,
             selectedPriceType: (() => {
@@ -2878,7 +3047,9 @@ export const SalesInvoice = () => {
         }
       });
 
-      setDiscount(invoice.overallDiscount || 0);
+      setDiscount(
+        Number(fullInvoice.overallDiscount ?? invoice.overallDiscount ?? 0),
+      );
       setFreightCharges(
         Number(
           fullInvoice.freightCharges ??
@@ -2887,8 +3058,25 @@ export const SalesInvoice = () => {
             0,
         ) || 0,
       );
+      const taxPct = fullInvoice.taxPercentage ?? invoice.taxPercentage;
+      if (taxPct != null && Number(taxPct) > 0) {
+        setTaxType("With GST");
+        setGstPercentage(Number(taxPct));
+        setUseCustomGst(false);
+      } else if (Number(fullInvoice.tax ?? invoice.tax) > 0) {
+        setTaxType("With GST");
+        setUseCustomGst(true);
+        setCustomGstPercentage("");
+      } else {
+        setTaxType("Without GST");
+      }
       setDeliveredTo(fullInvoice.deliveredTo || "");
-      setRemarks(fullInvoice.remarks || "");
+      setRemarks(fullInvoice.notes ?? fullInvoice.remarks ?? "");
+
+      if (isQuotation) {
+        setDocumentView("form");
+        return;
+      }
 
       // Handle account and payment amounts
       if (invoice.accountId) {
@@ -2917,7 +3105,7 @@ export const SalesInvoice = () => {
         setCashAmount(0);
       }
 
-      setShowNewInvoice(true);
+      setDocumentView("form");
     } catch (error) {
       toast({
         title: "Error",
@@ -4783,6 +4971,33 @@ export const SalesInvoice = () => {
     );
   };
 
+  const getQuotationStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      draft: "bg-slate-500/10 text-slate-600 border-slate-500/20",
+      sent: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+      accepted: "bg-green-500/10 text-green-600 border-green-500/20",
+      rejected: "bg-red-500/10 text-red-600 border-red-500/20",
+      expired: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+    };
+    const labels: Record<string, string> = {
+      draft: "Draft",
+      sent: "Sent",
+      accepted: "Accepted",
+      rejected: "Rejected",
+      expired: "Expired",
+    };
+    const style =
+      styles[status] || "bg-gray-500/10 text-gray-600 border-gray-500/20";
+    const label =
+      labels[status] ||
+      status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
+    return (
+      <Badge variant="outline" className={style}>
+        {label}
+      </Badge>
+    );
+  };
+
   const getPaymentBadge = (status: "unpaid" | "partial" | "paid") => {
     const styles = {
       unpaid: "bg-red-500/10 text-red-600 border-red-500/20",
@@ -4811,42 +5026,35 @@ export const SalesInvoice = () => {
 
   return (
     <div className="space-y-4">
-      {!showNewInvoice && (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Sales Invoices</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage your sales invoices and inventory movements.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={refreshPartsData}
-              title="Refresh Stock Data"
-              disabled={partsLoading}
-              className={
-                partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
-              }
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            <Button
-              onClick={() => {
-                setInvoiceDate(new Date().toISOString().split("T")[0]);
-                setShowNewInvoice(true);
-              }}
-              className="gap-2 flex-1 sm:flex-none whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" />
-              New Invoice
-            </Button>
-          </div>
-        </div>
-      )}
+      <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs
+          value={documentView}
+          onValueChange={(v) => setDocumentView(v as "form" | "list")}
+        >
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="form">
+              {isQuotation ? "Quotation Form" : "Invoice Form"}
+            </TabsTrigger>
+            <TabsTrigger value="list">
+              {isQuotation ? "Quotation List" : "Invoice List"}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={refreshPartsData}
+          title="Refresh Stock Data"
+          disabled={partsLoading}
+          className={
+            partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
+          }
+        >
+          <RefreshCw className="w-4 h-4" />
+        </Button>
+      </div>
 
-      {!showNewInvoice && (
+      {!showDocumentForm && !isQuotation && (
         <>
           {/* Filters */}
           <Card>
@@ -4926,16 +5134,8 @@ export const SalesInvoice = () => {
       )}
 
       {/* New Invoice Inline Form OR Invoices Table */}
-      {showNewInvoice ? (
+      {showDocumentForm ? (
         <Card className="relative">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={resetForm}
-            className="absolute right-3 top-3 z-10"
-          >
-            <X className="w-4 h-4" />
-          </Button>
           <CardContent className="space-y-6 p-4 pt-4">
             <div className="flex flex-wrap items-end justify-start gap-3">
               <div className="space-y-1.5 w-40">
@@ -5041,7 +5241,7 @@ export const SalesInvoice = () => {
               )}
               <div className="space-y-1.5 w-56">
                 <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                  Invoice Date
+                  {isQuotation ? "Quotation Date" : "Invoice Date"}
                 </Label>
                 <Input
                   type="date"
@@ -5101,14 +5301,15 @@ export const SalesInvoice = () => {
                   <Table className="w-full table-fixed">
                     <colgroup>
                       <col className="w-[4%]" />
-                      <col className="w-[32%]" />
-                      <col className="w-[9%]" />
+                      <col className="w-[30%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[7%]" />
+                      <col className="w-[7%]" />
+                      <col className="w-[7%]" />
+                      <col className="w-[7%]" />
+                      <col className="w-[7%]" />
                       <col className="w-[8%]" />
                       <col className="w-[8%]" />
-                      <col className="w-[8%]" />
-                      <col className="w-[11%]" />
-                      <col className="w-[9%]" />
-                      <col className="w-[9%]" />
                       <col className="w-[5%]" />
                     </colgroup>
                     <TableHeader className="hidden md:table-header-group bg-muted/50">
@@ -5132,7 +5333,10 @@ export const SalesInvoice = () => {
                           Qty
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
-                          Assoc. Prices
+                          Price A
+                        </TableHead>
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                          Price B
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Price
@@ -5738,79 +5942,87 @@ export const SalesInvoice = () => {
                               </div>
                             </TableCell>
 
-                            {/* Column 8: Assoc. Prices (Desktop ONLY) */}
+                            {/* Column 8: Price A (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const priceAValue =
                                   item.priceA ?? part?.priceA ?? null;
-                                const priceBValue =
-                                  item.priceB ?? part?.priceB ?? null;
-
-                                if (priceAValue == null && priceBValue == null) {
+                                if (priceAValue == null) {
                                   return (
                                     <span className="text-xs text-muted-foreground">
                                       -
                                     </span>
                                   );
                                 }
-
                                 return (
-                                  <div className="flex flex-row gap-1 items-center justify-center">
-                                    {priceAValue != null && (
-                                      <Button
-                                        variant={
-                                          item.selectedPriceType === "A"
-                                            ? "default"
-                                            : "outline"
-                                        }
-                                        size="sm"
-                                        className="flex-1 min-w-0 px-2 text-sm h-9"
-                                        onClick={() => {
-                                          handleUpdateInlineItem(
-                                            item.id,
-                                            "selectedPriceType",
-                                            "A",
-                                          );
-                                          handleUpdateInlineItem(
-                                            item.id,
-                                            "unitPrice",
-                                            priceAValue,
-                                          );
-                                        }}
-                                      >
-                                        {priceAValue.toFixed(0)}
-                                      </Button>
-                                    )}
-                                    {priceBValue != null && (
-                                      <Button
-                                        variant={
-                                          item.selectedPriceType === "B"
-                                            ? "default"
-                                            : "outline"
-                                        }
-                                        size="sm"
-                                        className="flex-1 min-w-0 px-2 text-sm h-9"
-                                        onClick={() => {
-                                          handleUpdateInlineItem(
-                                            item.id,
-                                            "selectedPriceType",
-                                            "B",
-                                          );
-                                          handleUpdateInlineItem(
-                                            item.id,
-                                            "unitPrice",
-                                            priceBValue,
-                                          );
-                                        }}
-                                      >
-                                        {priceBValue.toFixed(0)}
-                                      </Button>
-                                    )}
-                                  </div>
+                                  <Button
+                                    variant={
+                                      item.selectedPriceType === "A"
+                                        ? "default"
+                                        : "outline"
+                                    }
+                                    size="sm"
+                                    className="w-full min-w-0 px-2 text-sm h-9"
+                                    onClick={() => {
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "selectedPriceType",
+                                        "A",
+                                      );
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "unitPrice",
+                                        priceAValue,
+                                      );
+                                    }}
+                                  >
+                                    {priceAValue.toFixed(0)}
+                                  </Button>
                                 );
                               })()}
                             </TableCell>
 
+                            {/* Column 9: Price B (Desktop ONLY) */}
+                            <TableCell className="hidden md:table-cell text-center align-top">
+                              {(() => {
+                                const priceBValue =
+                                  item.priceB ?? part?.priceB ?? null;
+                                if (priceBValue == null) {
+                                  return (
+                                    <span className="text-xs text-muted-foreground">
+                                      -
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <Button
+                                    variant={
+                                      item.selectedPriceType === "B"
+                                        ? "default"
+                                        : "outline"
+                                    }
+                                    size="sm"
+                                    className="w-full min-w-0 px-2 text-sm h-9"
+                                    onClick={() => {
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "selectedPriceType",
+                                        "B",
+                                      );
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "unitPrice",
+                                        priceBValue,
+                                      );
+                                    }}
+                                  >
+                                    {priceBValue.toFixed(0)}
+                                  </Button>
+                                );
+                              })()}
+                            </TableCell>
+
+                            {/* Column 10: Editable Price (Desktop ONLY) */}
                             {/* Column 9: Editable Price (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-top">
                               <Input
@@ -5971,7 +6183,7 @@ export const SalesInvoice = () => {
                           </TableRow>
                           {hasModels && !partsModelFilter.trim() ? (
                               <TableRow key={`${item.id}-qty-used`} className="hidden md:table-row border-b bg-muted/20">
-                                <TableCell colSpan={12} className="px-4 pt-0 pb-2">
+                                <TableCell colSpan={11} className="px-4 pt-0 pb-2">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
                                       Quantity Used
@@ -6066,7 +6278,9 @@ export const SalesInvoice = () => {
                             0,
                           )}
                         </TableCell>
-                        {/* Assoc. Prices */}
+                        {/* Price A */}
+                        <TableCell />
+                        {/* Price B */}
                         <TableCell />
                         {/* Price */}
                         <TableCell />
@@ -6110,6 +6324,8 @@ export const SalesInvoice = () => {
                     className="h-8 text-sm"
                   />
                 </div>
+                {!isQuotation ? (
+                <>
                 <div className="space-y-2">
                   <Label className="text-xs">Bank Account</Label>
                   <Select
@@ -6259,6 +6475,8 @@ export const SalesInvoice = () => {
                     />
                   </div>
                 )}
+                </>
+                ) : null}
               </div>
 
               <div className="space-y-2 md:col-span-2">
@@ -6317,10 +6535,12 @@ export const SalesInvoice = () => {
                     Rs {calculateAmountAfterDiscount().toLocaleString()}
                   </span>
                 </div>
+                {!isQuotation ? (
                 <div className="flex justify-between text-green-600">
                   <span>Received:</span>
                   <span>Rs {calculateTotalReceived().toLocaleString()}</span>
                 </div>
+                ) : null}
                 {selectedBankAccount && bankAmount > 0 && (
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span className="ml-4"> Bank:</span>
@@ -6333,12 +6553,14 @@ export const SalesInvoice = () => {
                     <span>Rs {cashAmount.toLocaleString()}</span>
                   </div>
                 )}
+                {!isQuotation ? (
                 <div className="flex justify-between border-t pt-2">
                   <span className="font-medium">Due Amount:</span>
                   <span className="text-xl font-bold text-primary">
                     Rs {calculateDueAmount().toLocaleString()}
                   </span>
                 </div>
+                ) : null}
               </div>
 
               <div className="space-y-2 p-3 bg-background rounded-lg border min-h-[260px] md:col-span-5">
@@ -6508,6 +6730,7 @@ export const SalesInvoice = () => {
             </div>
 
             {/* Customer & Order Logistics Section */}
+            {!isQuotation ? (
             <div className="bg-primary/5 rounded-xl p-5 border border-primary/10">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-primary/80 mb-4 flex items-center gap-2">
                 <Users className="w-4 h-4" /> Customer & Delivery Info
@@ -6717,50 +6940,200 @@ export const SalesInvoice = () => {
                 </div>
               </div>
             </div>
+            ) : null}
+
+            {isQuotation ? (
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+                  Quotation Details
+                </h3>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="space-y-1.5 w-56">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      Valid Until
+                    </Label>
+                    <Input
+                      type="date"
+                      value={validUntil}
+                      onChange={(e) => setValidUntil(e.target.value)}
+                      className="bg-background border-primary/20 h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5 w-36">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      Tax Type
+                    </Label>
+                    <Select value={taxType} onValueChange={setTaxType}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Without GST">Without GST</SelectItem>
+                        <SelectItem value="With GST">With GST</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {taxType === "With GST" && (
+                    <div className="space-y-1.5 w-44">
+                      <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                        GST Percentage
+                      </Label>
+                      {newInvoice.customerType === "walking" ? (
+                        <div className="flex-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder=""
+                            value={customGstPercentage}
+                            onChange={(e) =>
+                              setCustomGstPercentage(e.target.value)
+                            }
+                            className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                      ) : !useCustomGst ? (
+                        <div className="flex gap-3">
+                          <Select
+                            value={gstPercentage.toString()}
+                            onValueChange={(value) => {
+                              setGstPercentage(parseFloat(value) || 0);
+                              setUseCustomGst(false);
+                            }}
+                          >
+                            <SelectTrigger className="flex-1 h-9 text-sm">
+                              <SelectValue placeholder="Select GST %" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="18">18%</SelectItem>
+                              <SelectItem value="22">22%</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setUseCustomGst(true);
+                              if (gstPercentage > 0) {
+                                setCustomGstPercentage(
+                                  gstPercentage.toString(),
+                                );
+                              }
+                            }}
+                            className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                          >
+                            Custom
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder=""
+                              value={customGstPercentage}
+                              onChange={(e) =>
+                                setCustomGstPercentage(e.target.value)
+                              }
+                              className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setUseCustomGst(false);
+                              setCustomGstPercentage("");
+                            }}
+                            className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                          >
+                            Preset
+                          </Button>
+                        </div>
+                      )}
+                      <p className="text-xs font-medium text-muted-foreground mt-1">
+                        GST Amount: Rs {calculateTax().toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
               <Button
                 variant="outline"
-                onClick={resetForm}
+                onClick={() => {
+                  resetForm();
+                  setDocumentView("list");
+                }}
                 className="w-full sm:w-auto order-2 sm:order-1"
               >
-                Cancel
+                Back to List
               </Button>
               <Button
                 onClick={handleSaveInvoice}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
                 <FileText className="w-4 h-4 mr-2" />
-                {editingInvoiceId ? "Save Changes" : "Create Invoice"}
+                {editingInvoiceId
+                  ? "Save Changes"
+                  : isQuotation
+                    ? "Create Quotation"
+                    : "Create Invoice"}
               </Button>
             </div>
           </CardContent>
         </Card>
       ) : (
+        <>
+          {isQuotation && (
+            <Card>
+              <CardContent className="p-4">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by quotation number or customer..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="h-10 pl-10 text-sm"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
         /* Invoices Table */
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Invoice List</CardTitle>
+            <CardTitle className="text-base">
+              {isQuotation ? "Quotation List" : "Invoice List"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {loadingInvoices ? (
               <div className="text-center py-8 text-muted-foreground">
-                Loading invoices...
+                {isQuotation ? "Loading quotations..." : "Loading invoices..."}
               </div>
             ) : (
               <div className="overflow-x-auto -mx-2 sm:mx-0">
                 <Table className="min-w-[800px] md:min-w-full">
                   <TableHeader className="hidden md:table-header-group">
                     <TableRow>
-                      <TableHead>Invoice #</TableHead>
+                      <TableHead>
+                        {isQuotation ? "Quotation #" : "Invoice #"}
+                      </TableHead>
                       <TableHead>Date</TableHead>
-                      <TableHead>Term</TableHead>
+                      <TableHead>
+                        {isQuotation ? "Valid Until" : "Term"}
+                      </TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Tax %</TableHead>
                       <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-center">Delivery</TableHead>
+                      <TableHead className="text-center">
+                        {isQuotation ? "Status" : "Delivery"}
+                      </TableHead>
                       <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -6772,7 +7145,7 @@ export const SalesInvoice = () => {
                       >
                         <TableCell className="md:table-cell font-bold md:font-medium p-0 md:p-4 block">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
-                            Invoice #
+                            {isQuotation ? "Quotation #" : "Invoice #"}
                           </span>
                           {inv.invoiceNo}
                         </TableCell>
@@ -6784,9 +7157,17 @@ export const SalesInvoice = () => {
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
-                            Term
+                            {isQuotation ? "Valid Until" : "Term"}
                           </span>
-                          {formatTermDisplay(inv)}
+                          {isQuotation
+                            ? (inv as Invoice & { validUntil?: string })
+                                .validUntil
+                              ? formatInvoiceDateDisplay(
+                                  (inv as Invoice & { validUntil?: string })
+                                    .validUntil!,
+                                )
+                              : "-"
+                            : formatTermDisplay(inv)}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
@@ -6824,9 +7205,14 @@ export const SalesInvoice = () => {
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
-                            Delivery
+                            {isQuotation ? "Status" : "Delivery"}
                           </span>
-                          {getStatusBadge(inv.status)}
+                          {isQuotation
+                            ? getQuotationStatusBadge(
+                                (inv as Invoice & { quotationStatus?: string })
+                                  .quotationStatus || inv.status,
+                              )
+                            : getStatusBadge(inv.status)}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center pt-2 md:pt-4 border-t md:border-t-0">
                           <div className="flex items-center md:justify-center gap-1">
@@ -7087,7 +7473,9 @@ export const SalesInvoice = () => {
                           colSpan={9}
                           className="text-center py-8 text-muted-foreground"
                         >
-                          No invoices found
+                          {isQuotation
+                            ? "No quotations found"
+                            : "No invoices found"}
                         </TableCell>
                       </TableRow>
                     )}
@@ -7097,6 +7485,7 @@ export const SalesInvoice = () => {
             )}
           </CardContent>
         </Card>
+        </>
       )}
 
       {/* View Invoice Dialog */}
