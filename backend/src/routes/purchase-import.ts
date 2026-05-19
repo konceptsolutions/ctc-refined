@@ -52,6 +52,25 @@ const normalizeConsignee = (value: any): "ISB" | "KHI" | "Other" | null => {
   return null;
 };
 
+const resolveRequestConsignee = async (
+  purchaseImportRequestModel: any,
+  row: { batchId: string; consignee?: string | null },
+): Promise<string | null> => {
+  const current = String(row.consignee || "").trim();
+  if (current) return current;
+
+  const sibling = await purchaseImportRequestModel.findFirst({
+    where: {
+      batchId: row.batchId,
+      consignee: { not: null },
+    },
+    select: { consignee: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const siblingValue = String(sibling?.consignee || "").trim();
+  return siblingValue || null;
+};
+
 const normalizeQuotationStatus = (value: any): "pending" | "confirm" | "revise" => {
   const normalized = String(value || "")
     .trim()
@@ -59,6 +78,23 @@ const normalizeQuotationStatus = (value: any): "pending" | "confirm" | "revise" 
   if (normalized === "confirm") return "confirm";
   if (normalized === "revise") return "revise";
   return "pending";
+};
+
+const PURCHASE_QUOTATION_TERMS = [
+  "EX-Works",
+  "F.O.B",
+  "CTF/CNF",
+  "CFR",
+  "CIF",
+] as const;
+
+const normalizePurchaseQuotationTerms = (value: any): string | null => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const matched = PURCHASE_QUOTATION_TERMS.find(
+    (term) => term.toLowerCase() === raw.toLowerCase(),
+  );
+  return matched || null;
 };
 
 const parseDateOrNow = (value: any) => {
@@ -199,6 +235,10 @@ router.post("/requests", async (req: Request, res: Response) => {
     const supplierIdsRaw = req.body?.supplierIds;
     const itemsRaw = req.body?.items;
     const notes = typeof req.body?.notes === "string" ? req.body.notes.trim() : "";
+    const partReference =
+      typeof req.body?.partReference === "string"
+        ? req.body.partReference.trim()
+        : "";
     const rawConsignee = req.body?.consignee;
     const consignee = normalizeConsignee(rawConsignee);
 
@@ -256,13 +296,14 @@ router.post("/requests", async (req: Request, res: Response) => {
     const batchId = randomUUID();
     let requestCount = 0;
     let itemRecordCount = 0;
+    let baseRequestNo = "";
 
     await prisma.$transaction(async (tx) => {
       const maxRequestNoRows = await (tx as any).$queryRaw<
         Array<{ maxNo: number | null }>
       >`SELECT COALESCE(MAX((regexp_match("requestNo", '^PIR-([0-9]+)'))[1]::INT), 0) AS "maxNo" FROM "PurchaseImportRequest"`;
       const maxNo = Number(maxRequestNoRows?.[0]?.maxNo || 0);
-      const baseRequestNo = `PIR-${String(maxNo + 1).padStart(4, "0")}`;
+      baseRequestNo = `PIR-${String(maxNo + 1).padStart(4, "0")}`;
       const requestSuppliers: Array<string | null> =
         supplierIds.length > 0 ? supplierIds : [null];
 
@@ -278,6 +319,7 @@ router.post("/requests", async (req: Request, res: Response) => {
             requestNo,
             batchId,
             supplierId: supplierId || null,
+            partReference: partReference || null,
             consignee,
             status: "pending",
             notes: notes || null,
@@ -313,6 +355,7 @@ router.post("/requests", async (req: Request, res: Response) => {
     res.status(201).json({
       data: {
         batchId,
+        baseRequestNo,
         createdCount: itemRecordCount,
         requestCount,
         supplierCount: supplierIds.length,
@@ -347,12 +390,14 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
         notes: true,
         status: true,
         requestNo: true,
+        partReference: true,
         consignee: true,
+        createdAt: true,
       },
     });
 
     if (!selectedRequest) {
-      return res.status(404).json({ error: "Purchase import request not found." });
+      return res.status(404).json({ error: "Purchase import inquiry not found." });
     }
 
     const batchRows = await purchaseImportRequestModel.findMany({
@@ -365,14 +410,17 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
       },
     });
 
-    const firstRow = batchRows[0];
-    const items = (firstRow?.PurchaseImportRequestItem || []).map((item: any) => ({
-      partId: item.partId,
-      demandQuantity: item.demandQuantity,
-      weight: item.weight,
-      currentStock: item.currentStock,
-      totalWeight: item.totalWeight,
-    }));
+    const selectedBatchRow =
+      batchRows.find((row: any) => row.id === requestId) ?? batchRows[0];
+    const items = (selectedBatchRow?.PurchaseImportRequestItem || []).map(
+      (item: any) => ({
+        partId: item.partId,
+        demandQuantity: item.demandQuantity,
+        weight: item.weight,
+        currentStock: item.currentStock,
+        totalWeight: item.totalWeight,
+      }),
+    );
 
     res.json({
       data: {
@@ -380,7 +428,12 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
         batchId: selectedRequest.batchId,
         requestNo: selectedRequest.requestNo,
         baseRequestNo: getBaseRequestNo(selectedRequest.requestNo),
-        consignee: selectedRequest.consignee || null,
+        requestDate: selectedRequest.createdAt,
+        partReference: selectedRequest.partReference || "",
+        consignee:
+          batchRows.find((row: any) => row.consignee)?.consignee ||
+          selectedRequest.consignee ||
+          null,
         notes: selectedRequest.notes || "",
         status: selectedRequest.status || "pending",
         supplierIds: batchRows
@@ -413,6 +466,10 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
     const supplierIds = normalizeSupplierIds(req.body?.supplierIds);
     const items = normalizeItems(req.body?.items);
     const notes = typeof req.body?.notes === "string" ? req.body.notes.trim() : "";
+    const partReference =
+      typeof req.body?.partReference === "string"
+        ? req.body.partReference.trim()
+        : "";
     const rawConsignee = req.body?.consignee;
     const consignee = normalizeConsignee(rawConsignee);
 
@@ -438,7 +495,7 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
       select: { batchId: true, requestNo: true },
     });
     if (!requestRow) {
-      return res.status(404).json({ error: "Purchase import request not found." });
+      return res.status(404).json({ error: "Purchase import inquiry not found." });
     }
 
     const confirmedRowsCount = await purchaseImportRequestModel.count({
@@ -495,13 +552,21 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
       const existingBySupplierId = new Map<
         string | null,
         { id: string; supplierId: string | null }
-      >(
-        existingBatchRequests.map((row: any) => [row.supplierId, row]),
-      );
+      >();
+      for (const row of existingBatchRequests) {
+        if (!existingBySupplierId.has(row.supplierId)) {
+          existingBySupplierId.set(row.supplierId, row);
+        }
+      }
 
       const targetSupplierIds: Array<string | null> =
         supplierIds.length > 0 ? supplierIds : [null];
       const activeRequestIds: string[] = [];
+      const matchedExistingIds = new Set<string>();
+
+      const takeReusableExisting = () =>
+        existingBatchRequests.find((row: any) => !matchedExistingIds.has(row.id));
+
       for (let index = 0; index < targetSupplierIds.length; index += 1) {
         const supplierId = targetSupplierIds[index];
         const requestNo =
@@ -509,18 +574,25 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
             ? `${baseRequestNo}-${index + 1}`
             : baseRequestNo;
         const existing = existingBySupplierId.get(supplierId);
+        const rowToUpdate =
+          existing && !matchedExistingIds.has(existing.id)
+            ? existing
+            : takeReusableExisting();
 
-        if (existing) {
+        if (rowToUpdate) {
           await (tx as any).purchaseImportRequest.update({
-            where: { id: existing.id },
+            where: { id: rowToUpdate.id },
             data: {
               requestNo,
+              supplierId: supplierId || null,
+              partReference: partReference || null,
               consignee,
               notes: notes || null,
               updatedAt: new Date(),
             },
           });
-          activeRequestIds.push(existing.id);
+          matchedExistingIds.add(rowToUpdate.id);
+          activeRequestIds.push(rowToUpdate.id);
           continue;
         }
 
@@ -531,6 +603,7 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
             requestNo,
             batchId,
             supplierId: supplierId || null,
+            partReference: partReference || null,
             consignee,
             status: "pending",
             notes: notes || null,
@@ -538,11 +611,15 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
             updatedAt: new Date(),
           },
         });
+        matchedExistingIds.add(newRequestId);
         activeRequestIds.push(newRequestId);
       }
 
       const removableRequestIds = existingBatchRequests
-        .filter((row: any) => !targetSupplierIds.includes(row.supplierId))
+        .filter(
+          (row: any) =>
+            !matchedExistingIds.has(row.id) && row.id !== requestId,
+        )
         .map((row: any) => row.id);
 
       if (removableRequestIds.length > 0) {
@@ -551,11 +628,15 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
         });
       }
 
+      const itemTargetRequestIds = Array.from(
+        new Set([...activeRequestIds, requestId]),
+      );
+
       await (tx as any).purchaseImportRequestItem.deleteMany({
-        where: { purchaseImportRequestId: { in: activeRequestIds } },
+        where: { purchaseImportRequestId: { in: itemTargetRequestIds } },
       });
 
-      for (const activeRequestId of activeRequestIds) {
+      for (const activeRequestId of itemTargetRequestIds) {
         const itemRecords = items.map((item: any) => {
           const weight = Number.isFinite(item.weight) ? item.weight : 0;
           const totalWeight = item.demandQuantity * weight;
@@ -587,6 +668,7 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
         requestCount,
         supplierCount: supplierIds.length,
         itemCount: items.length,
+        savedItemCount: items.length,
       },
     });
   } catch (error: any) {
@@ -615,7 +697,42 @@ router.put("/requests/:requestId/status", async (req: Request, res: Response) =>
       select: { id: true, batchId: true },
     });
     if (!requestRow) {
-      return res.status(404).json({ error: "Purchase import request not found." });
+      return res.status(404).json({ error: "Purchase import inquiry not found." });
+    }
+
+    if (status === "confirm") {
+      const supplierRowsCount = await purchaseImportRequestModel.count({
+        where: {
+          batchId: requestRow.batchId,
+          supplierId: { not: null },
+        },
+      });
+      if (supplierRowsCount === 0) {
+        return res.status(400).json({
+          error:
+            "Select at least one supplier on this inquiry before confirming.",
+        });
+      }
+    }
+
+    if (status === "pending") {
+      const batchRequestRows = await purchaseImportRequestModel.findMany({
+        where: { batchId: requestRow.batchId },
+        select: { id: true },
+      });
+      const batchRequestIds = batchRequestRows.map((row: { id: string }) => row.id);
+      const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+      if (purchaseQuotationModel && batchRequestIds.length > 0) {
+        const quotationCount = await purchaseQuotationModel.count({
+          where: { purchaseImportRequestId: { in: batchRequestIds } },
+        });
+        if (quotationCount > 0) {
+          return res.status(400).json({
+            error:
+              "Cannot unconfirm an inquiry that already has purchase quotations.",
+          });
+        }
+      }
     }
 
     const updateResult = await purchaseImportRequestModel.updateMany({
@@ -682,17 +799,17 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       },
     });
     if (!requestRow) {
-      return res.status(404).json({ error: "Purchase import request not found." });
+      return res.status(404).json({ error: "Purchase import inquiry not found." });
     }
 
     if (String(requestRow.status || "").toLowerCase() !== "confirm") {
       return res.status(400).json({
-        error: "Only confirmed purchase import requests can create quotations.",
+        error: "Only confirmed purchase import inquiries can create quotations.",
       });
     }
     if (!requestRow.Supplier?.id) {
       return res.status(400).json({
-        error: "Please select supplier in purchase import request before creating quotation.",
+        error: "Please select supplier in purchase import inquiry before creating quotation.",
       });
     }
 
@@ -705,12 +822,17 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
 
     const supplierCurrency = requestRow.Supplier?.currencyName || "USD";
     const currencyOptions = Array.from(new Set(["USD", supplierCurrency]));
+    const consignee = await resolveRequestConsignee(
+      purchaseImportRequestModel,
+      requestRow,
+    );
 
     res.json({
       data: {
         requestId: requestRow.id,
         requestNo: requestRow.requestNo,
         requestDate: requestRow.createdAt,
+        consignee,
         quotationNo,
         quotationDate: new Date(),
         supplier: {
@@ -761,16 +883,16 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
       select: { id: true, supplierId: true, status: true },
     });
     if (!requestRow) {
-      return res.status(404).json({ error: "Purchase import request not found." });
+      return res.status(404).json({ error: "Purchase import inquiry not found." });
     }
     if (String(requestRow.status || "").toLowerCase() !== "confirm") {
       return res.status(400).json({
-        error: "Only confirmed purchase import requests can create quotations.",
+        error: "Only confirmed purchase import inquiries can create quotations.",
       });
     }
     if (!requestRow.supplierId) {
       return res.status(400).json({
-        error: "Please select supplier in purchase import request before creating quotation.",
+        error: "Please select supplier in purchase import inquiry before creating quotation.",
       });
     }
 
@@ -785,6 +907,13 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
         ? "revised"
         : "original";
     const status = String(req.body?.status || "pending").trim().toLowerCase() || "pending";
+    const termsRaw = req.body?.terms;
+    if (termsRaw != null && String(termsRaw).trim() && !normalizePurchaseQuotationTerms(termsRaw)) {
+      return res.status(400).json({
+        error: `Invalid terms. Allowed values: ${PURCHASE_QUOTATION_TERMS.join(", ")}.`,
+      });
+    }
+    const terms = normalizePurchaseQuotationTerms(termsRaw);
     const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
 
     const items = itemsRaw
@@ -861,6 +990,7 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
           quotationDate,
           revisedQuotationDate,
           quotationType,
+          terms,
           status,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -970,6 +1100,7 @@ router.get("/quotations", async (req: Request, res: Response) => {
 
 router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
   try {
+    const purchaseImportRequestModel = (prisma as any).purchaseImportRequest;
     const purchaseQuotationModel = (prisma as any).purchaseQuotation;
     if (!purchaseQuotationModel) {
       return res.status(500).json({
@@ -1000,6 +1131,8 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
             id: true,
             requestNo: true,
             createdAt: true,
+            consignee: true,
+            batchId: true,
           },
         },
         PurchaseQuotationItem: {
@@ -1023,6 +1156,13 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Purchase quotation not found." });
     }
 
+    const requestConsignee = row.PurchaseImportRequest
+      ? await resolveRequestConsignee(purchaseImportRequestModel, {
+          batchId: row.PurchaseImportRequest.batchId,
+          consignee: row.PurchaseImportRequest.consignee,
+        })
+      : null;
+
     res.json({
       data: {
         id: row.id,
@@ -1030,6 +1170,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
         quotationDate: row.quotationDate,
         revisedQuotationDate: row.revisedQuotationDate,
         quotationType: row.quotationType,
+        terms: row.terms || null,
         status: row.status,
         currency: row.currency,
         conversionRate: Number(row.conversionRate || 1),
@@ -1037,6 +1178,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
           id: row.PurchaseImportRequest?.id,
           requestNo: row.PurchaseImportRequest?.requestNo,
           requestDate: row.PurchaseImportRequest?.createdAt,
+          consignee: requestConsignee,
         },
         supplier: {
           id: row.Supplier?.id,
@@ -1102,6 +1244,16 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
       Number.isFinite(conversionRate) && conversionRate > 0 ? conversionRate : 1;
     const currency = String(req.body?.currency || "USD").trim().toUpperCase() || "USD";
     const status = normalizeQuotationStatus(req.body?.status || "revise");
+    const termsRaw = req.body?.terms;
+    if (termsRaw != null && String(termsRaw).trim() && !normalizePurchaseQuotationTerms(termsRaw)) {
+      return res.status(400).json({
+        error: `Invalid terms. Allowed values: ${PURCHASE_QUOTATION_TERMS.join(", ")}.`,
+      });
+    }
+    const terms =
+      termsRaw !== undefined
+        ? normalizePurchaseQuotationTerms(termsRaw)
+        : undefined;
     const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
 
     const items = itemsRaw
@@ -1171,6 +1323,7 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
           lcTotal,
           fcRevisedTotal,
           lcRevisedTotal,
+          ...(terms !== undefined ? { terms } : {}),
           updatedAt: new Date(),
         },
       });
@@ -1295,7 +1448,7 @@ router.get("/requests", async (req: Request, res: Response) => {
       purchaseImportRequestModel.findMany({
         skip,
         take: limit,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ requestNo: "desc" }, { createdAt: "desc" }],
         include: {
           Supplier: {
             select: { id: true, code: true, name: true, companyName: true },

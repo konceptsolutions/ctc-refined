@@ -76,6 +76,7 @@ import {
   Ban,
   RotateCcw,
   Undo2,
+  Pencil,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -406,6 +407,9 @@ export const SalesInvoice = ({
 
   // Add Customer Dialog State
   const [showAddCustomerDialog, setShowAddCustomerDialog] = useState(false);
+  const [customerDialogEditId, setCustomerDialogEditId] = useState<string | null>(
+    null,
+  );
 
   // Edit Credit Limit State
   const [showEditCreditLimitDialog, setShowEditCreditLimitDialog] =
@@ -3115,13 +3119,7 @@ export const SalesInvoice = ({
     }
   };
 
-  // Handle customer created in the CustomerFormDialog
-  const handleCustomerCreated = async (created: {
-    id: string;
-    name: string;
-    priceType: string | null;
-  }) => {
-    // Refresh customers list
+  const refreshCustomersList = async () => {
     try {
       const customersResponse = await apiClient.getCustomers({
         status: "active",
@@ -3137,29 +3135,64 @@ export const SalesInvoice = ({
             id: c.id,
             name: c.name,
             type: c.type || "registered",
+            address: c.address || "",
+            area: c.area || null,
             balance: c.balance || 0,
             creditLimit: c.creditLimit || 0,
             creditDays: c.creditDays || 0,
             priceType: c.priceType || null,
-            tax: c.tax || 0,
+            category: c.category || null,
           }));
         setCustomers(formattedCustomers);
       }
     } catch {
       /* ignore refresh error */
     }
+  };
 
-    // Auto-select the newly created customer
-    setSelectedCustomerId(created.id);
-    setSelectedCustomerName(created.name);
-    const pt = (created.priceType as "A" | "B" | "M" | null) || null;
+  const applySelectedCustomer = (customer: {
+    id: string;
+    name: string;
+    priceType: string | null;
+    category?: string | null;
+  }) => {
+    setSelectedCustomerId(customer.id);
+    setSelectedCustomerName(customer.name);
+    const pt = (customer.priceType as "A" | "B" | "M" | null) || null;
     setCustomerPriceType(pt);
+    setSelectedCustomerCategory(
+      customer.category === "Reseller" || customer.category === "EndUser"
+        ? customer.category
+        : null,
+    );
     if (pt) {
       setInlineItems((prev) =>
         prev.map((item) =>
           item.selectedPartId ? { ...item, selectedPriceType: pt } : item,
         ),
       );
+    }
+  };
+
+  const handleCustomerCreated = async (created: {
+    id: string;
+    name: string;
+    priceType: string | null;
+    category?: string | null;
+  }) => {
+    await refreshCustomersList();
+    applySelectedCustomer(created);
+  };
+
+  const handleCustomerUpdated = async (updated: {
+    id: string;
+    name: string;
+    priceType: string | null;
+    category?: string | null;
+  }) => {
+    await refreshCustomersList();
+    if (selectedCustomerId === updated.id) {
+      applySelectedCustomer(updated);
     }
   };
 
@@ -5138,35 +5171,6 @@ export const SalesInvoice = ({
         <Card className="relative">
           <CardContent className="space-y-6 p-4 pt-4">
             <div className="flex flex-wrap items-end justify-start gap-3">
-              <div className="space-y-1.5 w-40">
-                <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                  Sale Type
-                </Label>
-                <Select
-                  value={newInvoice.customerType}
-                  onValueChange={(v) => {
-                    const customerType = v as CustomerType;
-                    setNewInvoice((prev) => ({ ...prev, customerType }));
-                    // Reset customer selections when switching
-                    setSelectedCustomerId("");
-                    setSelectedCustomerName("");
-                    setCustomerPriceType(null);
-                    setSelectedCustomerCategory(null);
-                  }}
-                >
-                  <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-9 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="registered">
-                      Party Sale (Credit)
-                    </SelectItem>
-                    <SelectItem value="walking">
-                      Cash Sale (Walk-in)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
               {newInvoice.customerType === "walking" ? (
                 <div className="space-y-1.5 w-56">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
@@ -5230,15 +5234,62 @@ export const SalesInvoice = ({
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => setShowAddCustomerDialog(true)}
+                      onClick={() => {
+                        setCustomerDialogEditId(null);
+                        setShowAddCustomerDialog(true);
+                      }}
                       title="Add New Customer"
                       className="shrink-0"
                     >
                       <Plus className="w-4 h-4" />
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={!selectedCustomerId}
+                      onClick={() => {
+                        if (!selectedCustomerId) return;
+                        setCustomerDialogEditId(selectedCustomerId);
+                        setShowAddCustomerDialog(true);
+                      }}
+                      title="Edit Selected Customer"
+                      className="shrink-0"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               )}
+              <div className="space-y-1.5 w-40">
+                <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                  Sale Type
+                </Label>
+                <Select
+                  value={newInvoice.customerType}
+                  onValueChange={(v) => {
+                    const customerType = v as CustomerType;
+                    setNewInvoice((prev) => ({ ...prev, customerType }));
+                    // Reset customer selections when switching
+                    setSelectedCustomerId("");
+                    setSelectedCustomerName("");
+                    setCustomerPriceType(null);
+                    setSelectedCustomerCategory(null);
+                  }}
+                >
+                  <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="registered">
+                      Party Sale (Credit)
+                    </SelectItem>
+                    <SelectItem value="walking">
+                      Cash Sale (Walk-in)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1.5 w-56">
                 <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
                   {isQuotation ? "Quotation Date" : "Invoice Date"}
@@ -5285,7 +5336,7 @@ export const SalesInvoice = ({
                   />
                 </div>
                 <Button
-                  onClick={() => handleAddNewItem()}
+                  onClick={() => handleAddNewItem(true)}
                   className="gap-2 bg-primary h-8 shrink-0"
                 >
                   <Plus className="w-4 h-4" />
@@ -5301,11 +5352,11 @@ export const SalesInvoice = ({
                   <Table className="w-full table-fixed">
                     <colgroup>
                       <col className="w-[4%]" />
-                      <col className="w-[30%]" />
-                      <col className="w-[8%]" />
+                      <col className="w-[28%]" />
                       <col className="w-[7%]" />
-                      <col className="w-[7%]" />
-                      <col className="w-[7%]" />
+                      <col className="w-[6%]" />
+                      <col className="w-[6%]" />
+                      <col className="w-[6%]" />
                       <col className="w-[7%]" />
                       <col className="w-[7%]" />
                       <col className="w-[8%]" />
@@ -5320,29 +5371,32 @@ export const SalesInvoice = ({
                         <TableHead className="min-w-0 font-bold text-foreground text-sm py-3">
                           Part Details
                         </TableHead>
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                        <TableHead
+                          className="text-center font-bold text-foreground text-sm py-3 cursor-default select-none"
+                          onClick={() => setShowLastSaleInfo((prev) => !prev)}
+                        >
                           Brand
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
-                          Reserved
+                          RES
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
-                          Available Stock
+                          Stock
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Qty
+                        </TableHead>
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                          Rate
+                        </TableHead>
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                          Total
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Price A
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Price B
-                        </TableHead>
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
-                          Price
-                        </TableHead>
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
-                          Total
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Action
@@ -5368,6 +5422,30 @@ export const SalesInvoice = ({
                             <TableCell className="md:table-cell block min-w-0 p-0 md:p-4 align-top">
                               <span className="md:hidden text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
                                 Part Details #{index + 1}
+                                {part?.brands?.[0]?.name ? (
+                                  <>
+                                    {" · "}
+                                    <span
+                                      role="button"
+                                      tabIndex={0}
+                                      className="normal-case cursor-default"
+                                      onClick={() =>
+                                        setShowLastSaleInfo((prev) => !prev)
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (
+                                          e.key === "Enter" ||
+                                          e.key === " "
+                                        ) {
+                                          e.preventDefault();
+                                          setShowLastSaleInfo((prev) => !prev);
+                                        }
+                                      }}
+                                    >
+                                      {part.brands[0].name}
+                                    </span>
+                                  </>
+                                ) : null}
                               </span>
                               <div className="space-y-2">
                                 <div className="relative">
@@ -5765,11 +5843,24 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
-                            {/* Column 4: Brand (Desktop ONLY) */}
+                            {/* Brand (Desktop ONLY) — header toggles cost & last sales */}
                             <TableCell className="hidden md:table-cell text-center align-top">
-                              <span className="text-xs font-medium text-foreground">
-                                {part?.brands?.[0]?.name || "-"}
-                              </span>
+                              <div className="flex flex-col items-center justify-center gap-0.5">
+                                <span className="text-xs font-medium text-foreground">
+                                  {part?.brands?.[0]?.name || "-"}
+                                </span>
+                                {showLastSaleInfo &&
+                                  item.selectedPartId &&
+                                  !loadingStock[item.selectedPartId] && (
+                                    <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap">
+                                      Cost:{" "}
+                                      {(
+                                        partStockBalances[item.selectedPartId]
+                                          ?.avg_cost ?? (part?.price || 0)
+                                      ).toFixed(2)}
+                                    </span>
+                                  )}
+                              </div>
                             </TableCell>
 
                             {/* Reserved (Desktop ONLY) */}
@@ -5835,7 +5926,7 @@ export const SalesInvoice = ({
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
                                   <span className="text-[9px] text-muted-foreground uppercase mb-1">
-                                    Reserved
+                                    RES
                                   </span>
                                   {(() => {
                                     const stockBalance =
@@ -5858,7 +5949,7 @@ export const SalesInvoice = ({
                                 </div>
                                 <div className="flex flex-col items-center justify-center bg-muted/20 p-2 rounded">
                                   <span className="text-[9px] text-muted-foreground uppercase mb-1">
-                                    Available Stock
+                                    Stock
                                   </span>
                                   {(() => {
                                     const stockBalance =
@@ -5942,7 +6033,48 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
-                            {/* Column 8: Price A (Desktop ONLY) */}
+                            {/* Column 8: Rate (Desktop ONLY) */}
+                            <TableCell className="hidden md:table-cell text-center align-top">
+                              <Input
+                                type="number"
+                                min={0}
+                                value={item.unitPrice ?? ""}
+                                onChange={(e) =>
+                                  handleUpdateInlineItem(
+                                    item.id,
+                                    "unitPrice",
+                                    e.target.value === ""
+                                      ? undefined
+                                      : parseFloat(e.target.value) || 0,
+                                  )
+                                }
+                                className="w-28 text-center h-10 text-base"
+                              />
+                            </TableCell>
+
+                            {/* Column 9: Total */}
+                            <TableCell className="md:table-cell block p-0 md:p-4 md:text-center align-top font-bold">
+                              <div className="flex md:flex-col justify-between items-center bg-primary/5 p-3 md:p-0 rounded border border-primary/10 md:border-0 md:bg-transparent">
+                                <span className="md:hidden text-xs font-bold text-primary uppercase">
+                                  Total
+                                </span>
+                                <span className="text-lg md:text-base text-primary">
+                                  Rs {calculateLineTotal(item).toLocaleString()}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive md:hidden"
+                                  onClick={() =>
+                                    handleRemoveInlineItem(item.id)
+                                  }
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+
+                            {/* Column 10: Price A (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const priceAValue =
@@ -5982,7 +6114,7 @@ export const SalesInvoice = ({
                               })()}
                             </TableCell>
 
-                            {/* Column 9: Price B (Desktop ONLY) */}
+                            {/* Column 11: Price B (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-top">
                               {(() => {
                                 const priceBValue =
@@ -6022,50 +6154,12 @@ export const SalesInvoice = ({
                               })()}
                             </TableCell>
 
-                            {/* Column 10: Editable Price (Desktop ONLY) */}
-                            {/* Column 9: Editable Price (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-top">
-                              <Input
-                                type="number"
-                                min={0}
-                                value={item.unitPrice ?? ""}
-                                onChange={(e) =>
-                                  handleUpdateInlineItem(
-                                    item.id,
-                                    "unitPrice",
-                                    e.target.value === ""
-                                      ? undefined
-                                      : parseFloat(e.target.value) || 0,
-                                  )
-                                }
-                                className="w-28 text-center h-10 text-base"
-                              />
-                            </TableCell>
-
-                            {/* Mobile Section: Qty & Price (Hidden on Desktop) */}
+                            {/* Mobile: Price A & B (after Total on small screens) */}
                             <TableCell className="md:hidden block p-0 align-middle">
                               <span className="text-xs font-bold text-muted-foreground block mb-2 uppercase tracking-wider">
-                                Quantity & Price
+                                Price A & B
                               </span>
-                              <div className="grid grid-cols-3 gap-2 items-center">
-                                <div className="space-y-1">
-                                  <span className="text-[9px] text-muted-foreground uppercase">
-                                    Qty
-                                  </span>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={item.qty || ""}
-                                    onChange={(e) =>
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "qty",
-                                        parseInt(e.target.value) || 0,
-                                      )
-                                    }
-                                    className="h-8 text-center font-bold"
-                                  />
-                                </div>
+                              <div className="grid grid-cols-2 gap-2 items-center">
                                 <div className="space-y-1">
                                   <span className="text-[9px] text-muted-foreground uppercase">
                                     Price A
@@ -6082,13 +6176,18 @@ export const SalesInvoice = ({
                                         }
                                         size="sm"
                                         className="w-full h-8 text-[10px]"
-                                        onClick={() =>
+                                        onClick={() => {
                                           handleUpdateInlineItem(
                                             item.id,
                                             "selectedPriceType",
                                             "A",
-                                          )
-                                        }
+                                          );
+                                          handleUpdateInlineItem(
+                                            item.id,
+                                            "unitPrice",
+                                            val,
+                                          );
+                                        }}
                                       >
                                         {val.toFixed(0)}
                                       </Button>
@@ -6115,13 +6214,18 @@ export const SalesInvoice = ({
                                         }
                                         size="sm"
                                         className="w-full h-8 text-[10px]"
-                                        onClick={() =>
+                                        onClick={() => {
                                           handleUpdateInlineItem(
                                             item.id,
                                             "selectedPriceType",
                                             "B",
-                                          )
-                                        }
+                                          );
+                                          handleUpdateInlineItem(
+                                            item.id,
+                                            "unitPrice",
+                                            val,
+                                          );
+                                        }}
                                       >
                                         {val.toFixed(0)}
                                       </Button>
@@ -6135,25 +6239,50 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
-                            {/* Column 10: Total */}
-                            <TableCell className="md:table-cell block p-0 md:p-4 md:text-center align-top font-bold">
-                              <div className="flex md:flex-col justify-between items-center bg-primary/5 p-3 md:p-0 rounded border border-primary/10 md:border-0 md:bg-transparent">
-                                <span className="md:hidden text-xs font-bold text-primary uppercase">
-                                  Total
-                                </span>
-                                <span className="text-lg md:text-base text-primary">
-                                  Rs {calculateLineTotal(item).toLocaleString()}
-                                </span>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-destructive md:hidden"
-                                  onClick={() =>
-                                    handleRemoveInlineItem(item.id)
-                                  }
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                            {/* Mobile: Qty & Rate (Hidden on Desktop) */}
+                            <TableCell className="md:hidden block p-0 align-middle">
+                              <span className="text-xs font-bold text-muted-foreground block mb-2 uppercase tracking-wider">
+                                Qty & Rate
+                              </span>
+                              <div className="grid grid-cols-2 gap-2 items-center">
+                                <div className="space-y-1">
+                                  <span className="text-[9px] text-muted-foreground uppercase">
+                                    Qty
+                                  </span>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={item.qty || ""}
+                                    onChange={(e) =>
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "qty",
+                                        parseInt(e.target.value) || 0,
+                                      )
+                                    }
+                                    className="h-8 text-center font-bold"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-[9px] text-muted-foreground uppercase">
+                                    Rate
+                                  </span>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={item.unitPrice ?? ""}
+                                    onChange={(e) =>
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "unitPrice",
+                                        e.target.value === ""
+                                          ? undefined
+                                          : parseFloat(e.target.value) || 0,
+                                      )
+                                    }
+                                    className="h-8 text-center font-bold"
+                                  />
+                                </div>
                               </div>
                             </TableCell>
 
@@ -6278,13 +6407,13 @@ export const SalesInvoice = ({
                             0,
                           )}
                         </TableCell>
+                        {/* Rate */}
+                        <TableCell />
+                        {/* Total */}
+                        <TableCell />
                         {/* Price A */}
                         <TableCell />
                         {/* Price B */}
-                        <TableCell />
-                        {/* Price */}
-                        <TableCell />
-                        {/* Total */}
                         <TableCell />
                         {/* Action */}
                         <TableCell />
@@ -8332,8 +8461,13 @@ export const SalesInvoice = ({
       {/* Add Customer Dialog */}
       <CustomerFormDialog
         open={showAddCustomerDialog}
-        onOpenChange={setShowAddCustomerDialog}
+        customerId={customerDialogEditId}
+        onOpenChange={(open) => {
+          setShowAddCustomerDialog(open);
+          if (!open) setCustomerDialogEditId(null);
+        }}
         onCreated={handleCustomerCreated}
+        onUpdated={handleCustomerUpdated}
       />
       <Dialog
         open={showEditCreditLimitDialog}

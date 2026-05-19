@@ -73,30 +73,112 @@ const emptyForm: CustomerFormData = {
     remarks: "",
 };
 
+export type CustomerFormSavedCustomer = {
+    id: string;
+    name: string;
+    priceType: string | null;
+    category?: string | null;
+};
+
 interface CustomerFormDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onCreated: (customer: { id: string; name: string; priceType: string | null }) => void;
+    customerId?: string | null;
+    onCreated?: (customer: CustomerFormSavedCustomer) => void;
+    onUpdated?: (customer: CustomerFormSavedCustomer) => void;
 }
+
+const formatDateForInput = (value?: string | null) => {
+    if (!value) return "";
+    const dateObj = new Date(value);
+    if (Number.isNaN(dateObj.getTime())) return "";
+    return dateObj.toISOString().split("T")[0];
+};
+
+const mapCustomerToForm = (customer: any): CustomerFormData => ({
+    name: customer.name || "",
+    code: customer.code || "",
+    shortTitle: customer.shortTitle || "",
+    referenceName: customer.referenceName || "",
+    address: customer.address || "",
+    area: customer.area || "",
+    contactNo: customer.contactNo || "",
+    cellNumber: customer.cellNumber || "",
+    email: customer.email || "",
+    cnic: customer.cnic || "",
+    gstNumber: customer.gstNumber || "",
+    pstNumber: customer.pstNumber || "",
+    ntn: customer.ntn || "",
+    contactPersons: Array.isArray(customer.contactPersons)
+        ? customer.contactPersons
+        : [],
+    category: customer.category === "Reseller" || customer.category === "EndUser"
+        ? customer.category
+        : "",
+    accountOpeningDate: formatDateForInput(customer.accountOpeningDate),
+    accountClosingDate: formatDateForInput(customer.accountClosingDate),
+    status: customer.status === "inactive" ? "inactive" : "active",
+    openingBalance: Number(customer.openingBalance || 0),
+    date: formatDateForInput(customer.date),
+    creditLimit: Number(customer.creditLimit || 0),
+    priceType:
+        customer.priceType === "A" ||
+        customer.priceType === "B" ||
+        customer.priceType === "M"
+            ? customer.priceType
+            : "",
+    remarks: customer.remarks || "",
+});
 
 export const CustomerFormDialog = ({
     open,
     onOpenChange,
+    customerId = null,
     onCreated,
+    onUpdated,
 }: CustomerFormDialogProps) => {
     const [form, setForm] = useState<CustomerFormData>(emptyForm);
     const [saving, setSaving] = useState(false);
+    const [loadingCustomer, setLoadingCustomer] = useState(false);
     const [areas, setAreas] = useState<string[]>([]);
+    const isEditMode = Boolean(customerId);
 
     useEffect(() => {
-        if (open) {
+        if (!open) return;
+
+        apiClient.getAreas().then((res: any) => {
+            const list = Array.isArray(res) ? res : res?.data || [];
+            setAreas(list);
+        }).catch(() => { });
+
+        if (!customerId) {
             setForm(emptyForm);
-            apiClient.getAreas().then((res: any) => {
-                const list = Array.isArray(res) ? res : res?.data || [];
-                setAreas(list);
-            }).catch(() => { });
+            return;
         }
-    }, [open]);
+
+        const loadCustomer = async () => {
+            setLoadingCustomer(true);
+            try {
+                const response = await apiClient.getCustomer(customerId);
+                const customer = (response as any)?.data || response;
+                if (!customer?.id) {
+                    throw new Error("Customer not found");
+                }
+                setForm(mapCustomerToForm(customer));
+            } catch (err: any) {
+                toast({
+                    title: "Error",
+                    description: err.message || "Failed to load customer details",
+                    variant: "destructive",
+                });
+                onOpenChange(false);
+            } finally {
+                setLoadingCustomer(false);
+            }
+        };
+
+        void loadCustomer();
+    }, [open, customerId, onOpenChange]);
 
     const set = (field: keyof CustomerFormData, value: any) => {
         setForm((prev) => {
@@ -145,7 +227,7 @@ export const CustomerFormDialog = ({
 
         setSaving(true);
         try {
-            const response = await apiClient.createCustomer({
+            const payload = {
                 name: form.name.trim(),
                 code: form.code || undefined,
                 shortTitle: form.shortTitle || undefined,
@@ -169,19 +251,47 @@ export const CustomerFormDialog = ({
                 creditLimit: form.creditLimit || 0,
                 priceType: form.priceType || undefined,
                 remarks: form.remarks || undefined,
-            } as any);
+            } as any;
+
+            const response = isEditMode
+                ? await apiClient.updateCustomer(customerId!, payload)
+                : await apiClient.createCustomer(payload);
 
             if ((response as any).error) {
                 toast({ title: "Error", description: (response as any).error, variant: "destructive" });
                 return;
             }
 
-            const created = (response as any).data || response;
-            toast({ title: "Customer Created", description: `"${form.name}" has been added successfully.` });
-            onCreated({ id: created.id, name: created.name, priceType: form.priceType || null });
+            const saved = (response as any).data || response;
+            const savedCustomer: CustomerFormSavedCustomer = {
+                id: saved.id || customerId!,
+                name: saved.name || form.name.trim(),
+                priceType: form.priceType || null,
+                category: form.category || null,
+            };
+
+            if (isEditMode) {
+                toast({
+                    title: "Customer Updated",
+                    description: `"${savedCustomer.name}" has been updated successfully.`,
+                });
+                onUpdated?.(savedCustomer);
+            } else {
+                toast({
+                    title: "Customer Created",
+                    description: `"${savedCustomer.name}" has been added successfully.`,
+                });
+                onCreated?.(savedCustomer);
+            }
             onOpenChange(false);
         } catch (err: any) {
-            toast({ title: "Error", description: err.message || "Failed to create customer", variant: "destructive" });
+            toast({
+                title: "Error",
+                description:
+                    err.message ||
+                    (isEditMode ? "Failed to update customer" : "Failed to create customer"),
+                variant: "destructive",
+            });
         } finally {
             setSaving(false);
         }
@@ -191,9 +301,16 @@ export const CustomerFormDialog = ({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader className="bg-primary text-primary-foreground -m-6 mb-4 p-4 rounded-t-lg">
-                    <DialogTitle className="text-sm font-semibold">Add New Customer</DialogTitle>
+                    <DialogTitle className="text-sm font-semibold">
+                        {isEditMode ? "Edit Customer" : "Add New Customer"}
+                    </DialogTitle>
                 </DialogHeader>
 
+                {loadingCustomer ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">
+                        Loading customer details...
+                    </p>
+                ) : (
                 <div className="space-y-4 pt-2">
                     {/* Row 1: Code, Title, Short Title, Reference Name */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -507,6 +624,7 @@ export const CustomerFormDialog = ({
                         />
                     </div>
                 </div>
+                )}
 
                 <DialogFooter className="mt-4">
                     <Button
@@ -518,10 +636,16 @@ export const CustomerFormDialog = ({
                     </Button>
                     <Button
                         onClick={handleSave}
-                        disabled={saving}
+                        disabled={saving || loadingCustomer}
                         className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs"
                     >
-                        {saving ? "Creating..." : "Add Customer"}
+                        {saving
+                            ? isEditMode
+                                ? "Saving..."
+                                : "Creating..."
+                            : isEditMode
+                              ? "Save Changes"
+                              : "Add Customer"}
                     </Button>
                 </DialogFooter>
             </DialogContent>

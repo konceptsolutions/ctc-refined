@@ -1,0 +1,1 @@
+ALTER TABLE "PurchaseQuotation" ADD COLUMN IF NOT EXISTS "terms" TEXT;

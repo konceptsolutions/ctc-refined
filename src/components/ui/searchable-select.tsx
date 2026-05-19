@@ -21,6 +21,8 @@ interface SearchableSelectProps {
   allowCustom?: boolean;
   onCreate?: (value: string) => void;
   createLabel?: string;
+  /** When true, the closed input shows only the label (not description). */
+  selectedDisplayLabelOnly?: boolean;
 }
 
 export const SearchableSelect = ({
@@ -33,6 +35,7 @@ export const SearchableSelect = ({
   allowCustom = false,
   onCreate,
   createLabel = "item",
+  selectedDisplayLabelOnly = false,
   ...props
 }: SearchableSelectProps & React.ComponentProps<typeof Input>) => {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -52,9 +55,11 @@ export const SearchableSelect = ({
 
   const selectedOption = options.find((opt) => opt.value === value);
   const displayValue = selectedOption
-    ? [selectedOption.label, selectedOption.description]
-      .filter(Boolean)
-      .join(" - ")
+    ? selectedDisplayLabelOnly
+      ? selectedOption.label
+      : [selectedOption.label, selectedOption.description]
+          .filter(Boolean)
+          .join(" - ")
     : value || "";
 
   const filteredOptions = React.useMemo(() => {
@@ -291,6 +296,38 @@ export const SearchableSelect = ({
     inputRef.current?.focus();
   };
 
+  const handleInputBlur = () => {
+    window.setTimeout(() => {
+      const active = document.activeElement;
+      if (
+        containerRef.current?.contains(active) ||
+        dropdownRef.current?.contains(active)
+      ) {
+        return;
+      }
+
+      const query = searchQuery.trim();
+      if (query) {
+        const exact = options.find(
+          (opt) =>
+            opt.label.toLowerCase() === query.toLowerCase() ||
+            opt.value === query,
+        );
+        if (exact) {
+          handleSelect(exact.value);
+          return;
+        }
+        if (filteredOptions.length === 1) {
+          handleSelect(filteredOptions[0].value);
+          return;
+        }
+      }
+
+      setIsOpen(false);
+      setSearchQuery("");
+    }, 150);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     const len = filteredOptions.length;
 
@@ -367,6 +404,7 @@ export const SearchableSelect = ({
           value={isOpen ? searchQuery : displayValue}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
           onKeyDown={handleKeyDown}
           onClick={() => {
             if (!disabled && !isOpen) {
@@ -382,7 +420,11 @@ export const SearchableSelect = ({
           }}
           placeholder={placeholder}
           disabled={disabled}
-          className={cn("pr-16 h-8 text-xs", partCodeContext && "part-code-font font-mono")}
+          className={cn(
+            "pr-16 h-8 text-xs",
+            partCodeContext && "part-code-font font-mono",
+            selectedDisplayLabelOnly && value && !isOpen && "truncate",
+          )}
           {...props}
         />
         <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">

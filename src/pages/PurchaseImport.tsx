@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FileText, Package, BarChart3, Plus, Trash2, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,10 +22,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 
-type PurchaseImportTab = "request" | "quotation" | "costing" | "history";
+type PurchaseImportTab = "inquiry" | "quotation" | "costing" | "history";
 
 interface TabConfig {
   id: PurchaseImportTab;
@@ -34,12 +35,20 @@ interface TabConfig {
   description: string;
 }
 
+const PURCHASE_QUOTATION_TERMS = [
+  "EX-Works",
+  "F.O.B",
+  "CTF/CNF",
+  "CFR",
+  "CIF",
+] as const;
+
 const tabs: TabConfig[] = [
   {
-    id: "request",
-    label: "Purchase Import Request",
+    id: "inquiry",
+    label: "Purchase Import Inquiry",
     icon: FileText,
-    description: "Create and manage purchase import requests",
+    description: "Create and manage purchase import inquiries",
   },
   {
     id: "quotation",
@@ -89,6 +98,11 @@ type LastPurchase = {
   amount: number;
 };
 
+type SupplierRow = {
+  id: string;
+  supplierId: string;
+};
+
 type ItemRow = {
   id: string;
   partId: string;
@@ -104,6 +118,7 @@ type PurchaseImportRequestRecord = {
   id: string;
   requestNo?: string;
   batchId: string;
+  supplierId?: string | null;
   consignee?: string | null;
   status: string;
   notes?: string | null;
@@ -178,6 +193,7 @@ type PurchaseQuotationDetailPayload = {
   quotationDate: string;
   revisedQuotationDate?: string | null;
   quotationType: string;
+  terms?: string | null;
   status: string;
   currency: string;
   conversionRate: number;
@@ -185,6 +201,7 @@ type PurchaseQuotationDetailPayload = {
     id: string;
     requestNo?: string | null;
     requestDate?: string;
+    consignee?: string | null;
   };
   supplier?: {
     id: string;
@@ -199,6 +216,9 @@ type PurchaseImportRequestEditPayload = {
   id: string;
   batchId: string;
   requestNo?: string;
+  baseRequestNo?: string;
+  requestDate?: string;
+  partReference?: string;
   consignee?: string | null;
   notes?: string;
   status?: string;
@@ -227,6 +247,7 @@ type PurchaseQuotationContextPayload = {
   requestId: string;
   requestNo: string;
   requestDate: string;
+  consignee?: string | null;
   quotationNo: string;
   quotationDate: string;
   supplier: {
@@ -304,8 +325,16 @@ const emptyNewSupplierForm: NewSupplierForm = {
   remarks: "",
 };
 
+const createRowId = () =>
+  `row-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const createEmptySupplierRow = (): SupplierRow => ({
+  id: createRowId(),
+  supplierId: "",
+});
+
 const createEmptyItem = (): ItemRow => ({
-  id: `row-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  id: createRowId(),
   partId: "",
   currentStock: 0,
   demandQuantity: 0,
@@ -322,6 +351,67 @@ const toInputDate = (value?: string | Date | null) => {
   return dateObj.toISOString().split("T")[0];
 };
 
+const mapApiPartToOption = (row: any): PartOption => ({
+  id: String(row.id || ""),
+  partNo: String(row.part_no || row.partNo || "").trim(),
+  masterPartNo: String(
+    row.master_part_no || row.masterPartNo || row.MasterPart?.masterPartNo || "",
+  ).trim(),
+  description: String(row.description || "").trim(),
+  brand: String(row.brand_name || row.brand || row.Brand?.name || "").trim(),
+  weight: Number(row.weight || 0),
+});
+
+const fetchAlternateParts = async (
+  current: PartOption,
+  excludePartId?: string,
+): Promise<PartOption[]> => {
+  const partNo = String(current.partNo || "").trim();
+  const masterPartNo = String(current.masterPartNo || "").trim();
+  if (!partNo && !masterPartNo) return [];
+
+  const requests: Promise<unknown>[] = [];
+  if (partNo) {
+    requests.push(apiClient.getParts({ part_no: partNo, limit: 10000, page: 1 }));
+    requests.push(apiClient.getParts({ master_part_no: partNo, limit: 10000, page: 1 }));
+  }
+  if (masterPartNo && masterPartNo.toLowerCase() !== partNo.toLowerCase()) {
+    requests.push(apiClient.getParts({ part_no: masterPartNo, limit: 10000, page: 1 }));
+    requests.push(apiClient.getParts({ master_part_no: masterPartNo, limit: 10000, page: 1 }));
+  }
+
+  const responses = await Promise.all(requests);
+  const rawParts = responses.flatMap((res) => {
+    if (Array.isArray(res)) return res;
+    if (Array.isArray((res as { data?: unknown[] })?.data)) {
+      return (res as { data: unknown[] }).data;
+    }
+    return [];
+  });
+
+  const dedup = new Map<string, PartOption>();
+  rawParts.forEach((row) => {
+    const mapped = mapApiPartToOption(row);
+    if (!mapped.id) return;
+    dedup.set(mapped.id, mapped);
+  });
+
+  const normalizedPartNo = partNo.toLowerCase();
+  const normalizedMaster = masterPartNo.toLowerCase();
+
+  return Array.from(dedup.values()).filter((part) => {
+    if (excludePartId && part.id === excludePartId) return false;
+    const candidatePartNo = String(part.partNo || "").trim().toLowerCase();
+    const candidateMaster = String(part.masterPartNo || "").trim().toLowerCase();
+    return (
+      (normalizedPartNo &&
+        (candidatePartNo === normalizedPartNo || candidateMaster === normalizedPartNo)) ||
+      (normalizedMaster &&
+        (candidatePartNo === normalizedMaster || candidateMaster === normalizedMaster))
+    );
+  });
+};
+
 const PurchaseImportRequestForm = ({
   requestId,
   onSaved,
@@ -336,23 +426,35 @@ const PurchaseImportRequestForm = ({
   const [saving, setSaving] = useState(false);
   const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([]);
   const [partOptions, setPartOptions] = useState<PartOption[]>([]);
-  const [selectedSupplierIds, setSelectedSupplierIds] = useState<string[]>([]);
-  const [pendingSupplierId, setPendingSupplierId] = useState("");
+  const [supplierRows, setSupplierRows] = useState<SupplierRow[]>([]);
+  const [partReference, setPartReference] = useState("");
   const [consignee, setConsignee] = useState<"ISB" | "KHI" | "Other">("ISB");
   const [items, setItems] = useState<ItemRow[]>([createEmptyItem()]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const [notes, setNotes] = useState("");
   const [isSupplierDialogOpen, setIsSupplierDialogOpen] = useState(false);
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [newSupplierForm, setNewSupplierForm] =
     useState<NewSupplierForm>(emptyNewSupplierForm);
   const [loadingEditRequest, setLoadingEditRequest] = useState(false);
+  const [inquiryNumber, setInquiryNumber] = useState("");
+  const [inquiryDate, setInquiryDate] = useState(() => toInputDate(new Date()));
 
   const isEditMode = Boolean(requestId);
 
-  const totalRequestWeight = useMemo(
-    () => items.reduce((sum, row) => sum + (Number(row.totalWeight) || 0), 0),
-    [items],
-  );
+  const itemTotals = useMemo(() => {
+    const totalWeight = items.reduce(
+      (sum, row) => sum + (Number(row.totalWeight) || 0),
+      0,
+    );
+    const totalQty = items.reduce(
+      (sum, row) => sum + (Number(row.demandQuantity) || 0),
+      0,
+    );
+    const itemCount = items.filter((row) => row.partId).length;
+    return { totalWeight, totalQty, itemCount };
+  }, [items]);
 
   const loadSuppliers = async () => {
     const suppliersRes = await apiClient.getSuppliers({
@@ -404,8 +506,14 @@ const PurchaseImportRequestForm = ({
             | undefined;
 
           if (editData) {
-            setSelectedSupplierIds(
-              Array.isArray(editData.supplierIds) ? editData.supplierIds : [],
+            const editSupplierIds = Array.isArray(editData.supplierIds)
+              ? editData.supplierIds
+              : [];
+            setSupplierRows(
+              editSupplierIds.map((supplierId) => ({
+                id: createRowId(),
+                supplierId,
+              })),
             );
             const normalizedConsignee = String(editData.consignee || "")
               .trim()
@@ -418,10 +526,15 @@ const PurchaseImportRequestForm = ({
                   : "ISB",
             );
             setNotes(editData.notes || "");
+            setPartReference(editData.partReference || "");
+            setInquiryNumber(
+              editData.baseRequestNo || editData.requestNo || "",
+            );
+            setInquiryDate(toInputDate(editData.requestDate));
 
             const nextItems = Array.isArray(editData.items)
-              ? editData.items.map((item) => ({
-                  id: `row-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+              ? editData.items.map((item, index) => ({
+                  id: `row-${item.partId}-${index}-${Math.random().toString(16).slice(2)}`,
                   partId: item.partId || "",
                   currentStock: Number(item.currentStock || 0),
                   demandQuantity: Number(item.demandQuantity || 0),
@@ -435,7 +548,7 @@ const PurchaseImportRequestForm = ({
               : [];
 
             if (nextItems.length > 0) {
-              setItems(nextItems);
+              setItems([...nextItems, createEmptyItem()]);
               nextItems.forEach((row) => {
                 if (row.partId) {
                   fetchPartDetails(row.id, row.partId);
@@ -466,7 +579,7 @@ const PurchaseImportRequestForm = ({
       partOptions.map((p) => ({
         value: p.id,
         label: `${p.masterPartNo || "-"} | ${p.partNo}`,
-        description: `${p.description || "-"} | ${p.brand || "-"}`,
+        description: p.description || "-",
       })),
     [partOptions],
   );
@@ -481,19 +594,37 @@ const PurchaseImportRequestForm = ({
     [supplierOptions],
   );
 
-  const addExistingSupplier = () => {
-    if (!pendingSupplierId) {
-      toast({
-        title: "Select a supplier",
-        description: "Choose an existing supplier first.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setSelectedSupplierIds((prev) =>
-      prev.includes(pendingSupplierId) ? prev : [...prev, pendingSupplierId],
+  const selectedSupplierIds = useMemo(
+    () =>
+      [
+        ...new Set(
+          supplierRows.map((row) => row.supplierId).filter(Boolean),
+        ),
+      ],
+    [supplierRows],
+  );
+
+  const getSupplierOptionsForRow = (rowId: string) => {
+    const usedIds = new Set(
+      supplierRows
+        .filter((row) => row.id !== rowId && row.supplierId)
+        .map((row) => row.supplierId),
     );
-    setPendingSupplierId("");
+    return supplierSelectOptions.filter((opt) => !usedIds.has(opt.value));
+  };
+
+  const addSupplierRow = () => {
+    setSupplierRows((prev) => [...prev, createEmptySupplierRow()]);
+  };
+
+  const updateSupplierRow = (rowId: string, supplierId: string) => {
+    setSupplierRows((prev) =>
+      prev.map((row) => (row.id === rowId ? { ...row, supplierId } : row)),
+    );
+  };
+
+  const removeSupplierRow = (rowId: string) => {
+    setSupplierRows((prev) => prev.filter((row) => row.id !== rowId));
   };
 
   const handleSupplierFieldChange = (field: keyof NewSupplierForm, value: string) => {
@@ -562,9 +693,15 @@ const PurchaseImportRequestForm = ({
       const createdId = (created as any)?.data?.id;
       await loadSuppliers();
       if (createdId) {
-        setSelectedSupplierIds((prev) =>
-          prev.includes(createdId) ? prev : [...prev, createdId],
-        );
+        setSupplierRows((prev) => {
+          const emptyRowIndex = prev.findIndex((row) => !row.supplierId);
+          if (emptyRowIndex >= 0) {
+            return prev.map((row, index) =>
+              index === emptyRowIndex ? { ...row, supplierId: createdId } : row,
+            );
+          }
+          return [...prev, { id: createRowId(), supplierId: createdId }];
+        });
       }
       setNewSupplierForm(emptyNewSupplierForm);
       setIsSupplierDialogOpen(false);
@@ -636,7 +773,25 @@ const PurchaseImportRequestForm = ({
   };
 
   const handleSave = async () => {
-    const validItems = items.filter((row) => row.partId && row.demandQuantity > 0);
+    const currentItems = itemsRef.current;
+    const incompleteRows = currentItems.filter(
+      (row) =>
+        (row.partId && Number(row.demandQuantity) <= 0) ||
+        (!row.partId && Number(row.demandQuantity) > 0),
+    );
+    if (incompleteRows.length > 0) {
+      toast({
+        title: "Incomplete item rows",
+        description:
+          "Each item row needs a part selected from the dropdown and demand quantity greater than zero. Click the part option in the list to select it (typing alone is not enough).",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const validItems = currentItems.filter(
+      (row) => row.partId && Number(row.demandQuantity) > 0,
+    );
     if (validItems.length === 0) {
       toast({
         title: "Items required",
@@ -650,6 +805,7 @@ const PurchaseImportRequestForm = ({
     try {
       const payload = {
         supplierIds: selectedSupplierIds,
+        partReference,
         consignee,
         notes,
         items: validItems.map((row) => ({
@@ -662,18 +818,29 @@ const PurchaseImportRequestForm = ({
       if (requestId) {
         const res = await apiClient.updatePurchaseImportRequest(requestId, payload);
         const updatedCount = (res as any)?.data?.updatedCount || 0;
+
         toast({
-          title: "Purchase import request updated",
-          description:
+          title: "Purchase import inquiry updated",
+          description: `${validItems.length} item(s) saved.${
             selectedSupplierIds.length > 0
-              ? `${updatedCount} item records were updated for all selected suppliers.`
-              : `${updatedCount} item records were updated.`,
+              ? ` (${updatedCount} records across suppliers.)`
+              : ""
+          }`,
         });
+        onSaved?.();
+        return;
       } else {
         const res = await apiClient.createPurchaseImportRequest(payload);
         const createdCount = (res as any)?.data?.createdCount || 0;
+        const baseRequestNo = (res as any)?.data?.baseRequestNo as
+          | string
+          | undefined;
+        if (baseRequestNo) {
+          setInquiryNumber(baseRequestNo);
+          setInquiryDate(toInputDate(new Date()));
+        }
         toast({
-          title: "Purchase import request saved",
+          title: "Purchase import inquiry saved",
           description:
             selectedSupplierIds.length > 0
               ? `${createdCount} records were created based on selected suppliers.`
@@ -681,16 +848,24 @@ const PurchaseImportRequestForm = ({
         });
       }
 
-      setSelectedSupplierIds([]);
+      setSupplierRows([]);
+      setPartReference("");
       setConsignee("ISB");
       setItems([createEmptyItem()]);
       setNotes("");
+      setInquiryNumber("");
+      setInquiryDate(toInputDate(new Date()));
       onSaved?.();
     } catch (error: any) {
+      const apiError =
+        error?.response?.data?.error || error?.message || "Could not save inquiry.";
+      const isDuplicateRequestNo = /requestNo|Unique constraint/i.test(String(apiError));
       toast({
         title: "Save failed",
         description:
-          error?.response?.data?.error || error?.message || "Could not save request.",
+          isDuplicateRequestNo && !requestId
+            ? "This inquiry number already exists. Open it from Inquiry List and click Edit to update it."
+            : apiError,
         variant: "destructive",
       });
     } finally {
@@ -700,33 +875,17 @@ const PurchaseImportRequestForm = ({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold">Purchase Import Request</h2>
-          <p className="text-sm text-muted-foreground">
-            {isEditMode
-              ? "Edit this request once and changes will apply to all selected suppliers."
-              : "Suppliers are optional. Add items and save; if suppliers are selected, records are stored once per selected supplier."}
-          </p>
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(140px,200px)_minmax(140px,200px)_1fr] gap-4 items-start">
+        <div className="space-y-2 min-w-0">
+          <Label>Part Reference</Label>
+          <Input
+            value={partReference}
+            onChange={(e) => setPartReference(e.target.value)}
+            placeholder="Part reference"
+            disabled={loadingForm}
+          />
         </div>
-        <Button
-          type="button"
-          onClick={handleSave}
-          disabled={saving || loadingForm || loadingEditRequest}
-        >
-          {saving ? "Saving..." : isEditMode ? "Update Request" : "Save Request"}
-        </Button>
-      </div>
-      {onCancel && (
-        <div className="flex justify-end -mt-2">
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Back to List
-          </Button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4">
-        <div className="space-y-2 max-w-xs">
+        <div className="space-y-2">
           <Label>Consignee</Label>
           <Select value={consignee} onValueChange={(value: "ISB" | "KHI" | "Other") => setConsignee(value)}>
             <SelectTrigger>
@@ -739,44 +898,14 @@ const PurchaseImportRequestForm = ({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <Label>Notes</Label>
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional notes for this import request"
+            placeholder="Optional notes for this import inquiry"
             className="min-h-[40px]"
           />
-        </div>
-      </div>
-
-      <div className="rounded-md border border-border p-3 space-y-2">
-        <Label>Add Supplier</Label>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-          <SearchableSelect
-            options={supplierSelectOptions}
-            value={pendingSupplierId}
-            onValueChange={setPendingSupplierId}
-            placeholder="Select international supplier"
-            disabled={loadingForm}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={addExistingSupplier}
-            disabled={loadingForm}
-          >
-            Add Existing Supplier
-          </Button>
-          <div className="md:col-span-2 flex justify-end">
-            <Button
-              type="button"
-              onClick={() => setIsSupplierDialogOpen(true)}
-              disabled={loadingForm}
-            >
-              Add New Supplier
-            </Button>
-          </div>
         </div>
       </div>
 
@@ -1075,63 +1204,107 @@ const PurchaseImportRequestForm = ({
           </div>
         </DialogContent>
       </Dialog>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Suppliers</h3>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={addSupplierRow}
+              disabled={loadingForm}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Supplier
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={() => setIsSupplierDialogOpen(true)}
+              disabled={loadingForm}
+              title="Add new supplier"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="sr-only">Add new supplier</span>
+            </Button>
+          </div>
+        </div>
 
-      <div className="rounded-md border border-border p-3">
-        <p className="text-sm font-semibold mb-2">Selected Suppliers</p>
-        {selectedSupplierIds.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No supplier selected yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-muted-foreground border-b">
-                  <th className="text-left py-2">Supplier</th>
-                  <th className="text-left py-2">Country</th>
-                  <th className="text-left py-2">Area</th>
-                  <th className="text-left py-2">Type</th>
-                  <th className="text-left py-2">Currency</th>
-                  <th className="text-center py-2 w-20">Action</th>
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr className="text-muted-foreground border-b">
+                <th className="text-left p-2 min-w-[280px] w-[32%]">Supplier</th>
+                <th className="text-left p-2 w-[100px]">Country</th>
+                <th className="text-left p-2 w-[80px]">Area</th>
+                <th className="text-left p-2 w-[110px]">Type</th>
+                <th className="text-left p-2 w-[80px]">Currency</th>
+                <th className="text-center p-2 w-16">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supplierRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="p-3 text-xs text-muted-foreground text-center"
+                  >
+                    No suppliers added. Click Add Supplier to add a row.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {selectedSupplierIds.map((supplierId) => {
-                  const supplier = supplierOptions.find((s) => s.id === supplierId);
-                  if (!supplier) return null;
+              ) : (
+                supplierRows.map((row) => {
+                  const supplier = supplierOptions.find(
+                    (s) => s.id === row.supplierId,
+                  );
                   return (
-                    <tr key={supplierId} className="border-b">
-                      <td className="py-2">{supplier.label}</td>
-                      <td className="py-2">{supplier.country || "-"}</td>
-                      <td className="py-2">{supplier.area || "-"}</td>
-                      <td className="py-2 capitalize">{supplier.type || "local"}</td>
-                      <td className="py-2 uppercase">{supplier.currencyName || "-"}</td>
-                      <td className="py-2 text-center">
+                    <tr key={row.id} className="border-b align-top">
+                      <td className="p-2 min-w-[280px] w-[32%]">
+                        <SearchableSelect
+                          options={getSupplierOptionsForRow(row.id)}
+                          value={row.supplierId}
+                          onValueChange={(supplierId) =>
+                            updateSupplierRow(row.id, supplierId)
+                          }
+                          placeholder="Select supplier"
+                          disabled={loadingForm}
+                          selectedDisplayLabelOnly
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="p-2">{supplier?.country || "-"}</td>
+                      <td className="p-2">{supplier?.area || "-"}</td>
+                      <td className="p-2 capitalize">
+                        {supplier?.type || "-"}
+                      </td>
+                      <td className="p-2 uppercase">
+                        {supplier?.currencyName || "-"}
+                      </td>
+                      <td className="p-2 text-center">
                         <Button
                           type="button"
                           variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() =>
-                            setSelectedSupplierIds((prev) =>
-                              prev.filter((id) => id !== supplierId),
-                            )
-                          }
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => removeSupplierRow(row.id)}
                         >
-                          Remove
+                          <Trash2 className="w-4 h-4" />
                         </Button>
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div className="space-y-3">
+<div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Items</h3>
-          <Button type="button" variant="outline" size="sm" onClick={addItemRow}>
+          <Button type="button" size="sm" onClick={addItemRow}>
             <Plus className="w-4 h-4 mr-1" />
             Add Item
           </Button>
@@ -1256,11 +1429,58 @@ const PurchaseImportRequestForm = ({
                 </Fragment>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="bg-muted/40 font-semibold border-t">
+                <td className="p-2 text-left">
+                  Total Items:{" "}
+                  <span className="tabular-nums">{itemTotals.itemCount}</span>
+                </td>
+                <td className="p-2" />
+                <td className="p-2" />
+                <td className="p-2 text-right tabular-nums">
+                  {itemTotals.totalQty}
+                </td>
+                <td className="p-2" />
+                <td className="p-2 text-right tabular-nums">
+                  {itemTotals.totalWeight.toFixed(2)}
+                </td>
+                <td className="p-2" />
+              </tr>
+            </tfoot>
           </table>
         </div>
 
-        <div className="text-right text-sm font-medium">
-          Total Weight: <span className="text-primary">{totalRequestWeight.toFixed(2)}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
+          <div className="space-y-2">
+            <Label>Inquiry Number</Label>
+            <Input
+              value={inquiryNumber || "—"}
+              disabled
+              readOnly
+              className="bg-muted/40"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Inquiry Date</Label>
+            <Input
+              type="date"
+              value={inquiryDate}
+              disabled
+              readOnly
+              className="bg-muted/40"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || loadingForm || loadingEditRequest}
+            className="w-full sm:w-auto"
+          >
+            {saving ? "Saving..." : isEditMode ? "Update Inquiry" : "Save Inquiry"}
+          </Button>
         </div>
       </div>
     </div>
@@ -1269,10 +1489,12 @@ const PurchaseImportRequestForm = ({
 
 const PurchaseQuotationForm = ({
   requestId,
+  initialConsignee,
   onSaved,
   onCancel,
 }: {
   requestId: string;
+  initialConsignee?: string | null;
   onSaved?: () => void;
   onCancel?: () => void;
 }) => {
@@ -1283,17 +1505,28 @@ const PurchaseQuotationForm = ({
   const [quotationDate, setQuotationDate] = useState(toInputDate(new Date()));
   const [currency, setCurrency] = useState("USD");
   const [conversionRate, setConversionRate] = useState(1);
+  const [terms, setTerms] = useState("");
   const [rows, setRows] = useState<PurchaseQuotationFormItem[]>([]);
+  const [replacePartId, setReplacePartId] = useState<string | null>(null);
+  const [alternateParts, setAlternateParts] = useState<PartOption[]>([]);
+  const [loadingAlternates, setLoadingAlternates] = useState(false);
 
   useEffect(() => {
     const loadContext = async () => {
       setLoading(true);
       try {
         const res = await apiClient.getPurchaseQuotationContext(requestId);
-        const data = (res as any)?.data as PurchaseQuotationContextPayload | undefined;
-        if (!data) {
+        const raw = (res as any)?.data as PurchaseQuotationContextPayload | undefined;
+        if (!raw) {
           throw new Error("Quotation context is unavailable.");
         }
+        const data: PurchaseQuotationContextPayload = {
+          ...raw,
+          consignee:
+            raw.consignee ||
+            initialConsignee ||
+            null,
+        };
         setContext(data);
         setQuotationDate(toInputDate(data.quotationDate || new Date()));
         setCurrency(data.defaultCurrency || "USD");
@@ -1322,12 +1555,88 @@ const PurchaseQuotationForm = ({
     };
 
     loadContext();
-  }, [requestId, toast, onCancel]);
+  }, [requestId, initialConsignee, toast, onCancel]);
 
   const updateRow = (partId: string, patch: Partial<PurchaseQuotationFormItem>) => {
     setRows((prev) =>
       prev.map((row) => (row.partId === partId ? { ...row, ...patch } : row)),
     );
+  };
+
+  const closeReplacePanel = () => {
+    setReplacePartId(null);
+    setAlternateParts([]);
+    setLoadingAlternates(false);
+  };
+
+  const toggleReplacePanel = async (partId: string) => {
+    if (replacePartId === partId) {
+      closeReplacePanel();
+      return;
+    }
+
+    const row = rows.find((item) => item.partId === partId);
+    if (!row) return;
+
+    const currentPart: PartOption = {
+      id: row.partId,
+      partNo: row.partNo,
+      masterPartNo: row.masterPartNo,
+      description: row.description,
+      brand: row.brand,
+      weight: row.weight,
+    };
+
+    setReplacePartId(partId);
+    setAlternateParts([]);
+    setLoadingAlternates(true);
+    try {
+      const matched = await fetchAlternateParts(currentPart, partId);
+      setAlternateParts(matched);
+    } catch {
+      setAlternateParts([]);
+      toast({
+        title: "Failed to load alternates",
+        description: "Could not fetch alternate items for this part.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingAlternates(false);
+    }
+  };
+
+  const handleReplaceWithAlternate = async (oldPartId: string, alternate: PartOption) => {
+    try {
+      const res = await apiClient.getPurchaseImportPartDetails(alternate.id);
+      const details = (res as any)?.data;
+      const part = details?.part || {};
+      setRows((prev) =>
+        prev.map((row) => {
+          if (row.partId !== oldPartId) return row;
+          return {
+            ...row,
+            partId: alternate.id,
+            masterPartNo: alternate.masterPartNo || part.masterPartNo || row.masterPartNo,
+            partNo: alternate.partNo || part.partNo || row.partNo,
+            description: alternate.description || part.description || row.description,
+            brand: alternate.brand || part.brand || row.brand,
+            currentStock: Number(details?.currentStock ?? row.currentStock),
+            weight: Number(part.weight ?? alternate.weight ?? row.weight),
+          };
+        }),
+      );
+      closeReplacePanel();
+      toast({
+        title: "Item replaced",
+        description: `${alternate.masterPartNo || "-"} | ${alternate.partNo} is now selected.`,
+      });
+    } catch {
+      toast({
+        title: "Failed to replace item",
+        description: "Could not load details for the selected alternate.",
+        variant: "destructive",
+      });
+    }
   };
 
   const calculations = useMemo(
@@ -1380,6 +1689,7 @@ const PurchaseQuotationForm = ({
         conversionRate: Number(conversionRate || 1),
         quotationType: "original" as const,
         status: "pending",
+        terms: terms || undefined,
         items: rows.map((row) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
@@ -1417,7 +1727,7 @@ const PurchaseQuotationForm = ({
         <div>
           <h2 className="text-base font-semibold">Purchase Quotation</h2>
           <p className="text-sm text-muted-foreground">
-            Create quotation for the selected confirmed supplier request.
+            Create quotation for the selected confirmed supplier inquiry.
           </p>
         </div>
         <Button type="button" onClick={handleSaveQuotation} disabled={loading || saving || !context}>
@@ -1437,58 +1747,65 @@ const PurchaseQuotationForm = ({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="space-y-1">
-              <Label>Import Request No</Label>
-              <Input value={context.requestNo || "-"} disabled />
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <div className="space-y-1 min-w-0">
+                <Label>Import Inquiry No</Label>
+                <Input value={context.requestNo || "-"} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Import Inquiry Date</Label>
+                <Input value={toInputDate(context.requestDate)} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Consignee</Label>
+                <Input value={String(context.consignee || "").trim() || "-"} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Quotation No</Label>
+                <Input value={context.quotationNo || "-"} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Quotation Date</Label>
+                <Input
+                  type="date"
+                  value={quotationDate}
+                  onChange={(e) => setQuotationDate(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Import Request Date</Label>
-              <Input value={toInputDate(context.requestDate)} disabled />
-            </div>
-            <div className="space-y-1">
-              <Label>Quotation No</Label>
-              <Input value={context.quotationNo || "-"} disabled />
-            </div>
-            <div className="space-y-1">
-              <Label>Quotation Date</Label>
-              <Input
-                type="date"
-                value={quotationDate}
-                onChange={(e) => setQuotationDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <Label>Supplier</Label>
-              <Input value={context.supplier?.name || "-"} disabled />
-            </div>
-            <div className="space-y-1">
-              <Label>Supplier Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(context.currencyOptions || ["USD"]).map((curr) => (
-                    <SelectItem key={curr} value={curr}>
-                      {curr}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Exchange Rate</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.0001"
-                value={conversionRate}
-                onChange={(e) => setConversionRate(Number(e.target.value || 0))}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="space-y-1 md:col-span-2 min-w-0">
+                <Label>Supplier</Label>
+                <Input value={context.supplier?.name || "-"} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Supplier Currency</Label>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(context.currencyOptions || ["USD"]).map((curr) => (
+                      <SelectItem key={curr} value={curr}>
+                        {curr}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Exchange Rate</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.0001"
+                  value={conversionRate}
+                  onChange={(e) => setConversionRate(Number(e.target.value || 0))}
+                />
+              </div>
             </div>
           </div>
-
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
@@ -1504,13 +1821,15 @@ const PurchaseQuotationForm = ({
                   <th className="text-right p-2 border-b">LC Rate</th>
                   <th className="text-right p-2 border-b">LC Amount</th>
                   <th className="text-right p-2 border-b">Total Weight</th>
+                  <th className="text-center p-2 border-b min-w-[90px]">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => {
                   const calc = calculations.find((item) => item.partId === row.partId);
                   return (
-                    <tr key={row.partId} className="border-b hover:bg-muted/20">
+                    <Fragment key={row.partId}>
+                    <tr className="border-b hover:bg-muted/20">
                       <td
                         className="p-2 min-w-[280px]"
                         title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
@@ -1567,7 +1886,59 @@ const PurchaseQuotationForm = ({
                       <td className="p-2 text-right">{Number(calc?.lcRate || 0).toFixed(2)}</td>
                       <td className="p-2 text-right">{Number(calc?.lcAmount || 0).toFixed(2)}</td>
                       <td className="p-2 text-right">{Number(calc?.totalWeight || 0).toFixed(2)}</td>
+                      <td className="p-2 text-center">
+                        <Button
+                          type="button"
+                          variant={replacePartId === row.partId ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          disabled={loading || saving}
+                          onClick={() => toggleReplacePanel(row.partId)}
+                        >
+                          Replace
+                        </Button>
+                      </td>
                     </tr>
+                    {replacePartId === row.partId && (
+                      <tr className="border-b bg-muted/20">
+                        <td colSpan={12} className="p-2">
+                          <div className="rounded-md border border-dashed border-border p-2">
+                            <p className="text-xs font-medium mb-2">
+                              Alternate items (same Part No / Master Part No)
+                            </p>
+                            {loadingAlternates ? (
+                              <p className="text-xs text-muted-foreground">Loading alternates...</p>
+                            ) : alternateParts.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                No alternate items found.
+                              </p>
+                            ) : (
+                              <div className="space-y-1 max-h-48 overflow-y-auto">
+                                {alternateParts.map((alternate) => (
+                                  <button
+                                    key={alternate.id}
+                                    type="button"
+                                    className="w-full text-left rounded-md border border-border bg-background px-2 py-1.5 text-xs hover:bg-accent transition-colors"
+                                    onClick={() =>
+                                      handleReplaceWithAlternate(row.partId, alternate)
+                                    }
+                                  >
+                                    <span className="font-medium">
+                                      {alternate.masterPartNo || "-"} | {alternate.partNo}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {" "}
+                                      | {alternate.description || "-"} | {alternate.brand || "-"}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1584,9 +1955,28 @@ const PurchaseQuotationForm = ({
                   <td className="p-2" />
                   <td className="p-2 text-right">{quotationTotals.lcAmount.toFixed(2)}</td>
                   <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
+                  <td className="p-2" />
                 </tr>
               </tfoot>
             </table>
+          </div>
+
+          <div className="max-w-xs">
+            <div className="space-y-1">
+              <Label>Terms</Label>
+              <Select value={terms || undefined} onValueChange={setTerms}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select terms" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PURCHASE_QUOTATION_TERMS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </>
       )}
@@ -1611,6 +2001,7 @@ const PurchaseQuotationRevisionForm = ({
   const [revisedQuotationDate, setRevisedQuotationDate] = useState(toInputDate(new Date()));
   const [currency, setCurrency] = useState("USD");
   const [conversionRate, setConversionRate] = useState(1);
+  const [terms, setTerms] = useState("");
   const [rows, setRows] = useState<PurchaseQuotationFormItem[]>([]);
 
   useEffect(() => {
@@ -1627,6 +2018,7 @@ const PurchaseQuotationRevisionForm = ({
         setRevisedQuotationDate(toInputDate(data.revisedQuotationDate || new Date()));
         setCurrency(data.currency || "USD");
         setConversionRate(Number(data.conversionRate || 1));
+        setTerms(data.terms || "");
         setRows(
           Array.isArray(data.items)
             ? data.items.map((item) => ({
@@ -1732,6 +2124,7 @@ const PurchaseQuotationRevisionForm = ({
         status: "revise",
         currency,
         conversionRate: Number(conversionRate || 1),
+        terms: terms || undefined,
         items: rows.map((row) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
@@ -1784,55 +2177,65 @@ const PurchaseQuotationRevisionForm = ({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="space-y-1">
-              <Label>Import Request No</Label>
-              <Input value={detail.request?.requestNo || "-"} disabled />
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+              <div className="space-y-1 min-w-0">
+                <Label>Import Inquiry No</Label>
+                <Input value={detail.request?.requestNo || "-"} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Import Inquiry Date</Label>
+                <Input value={toInputDate(detail.request?.requestDate)} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Consignee</Label>
+                <Input
+                  value={String(detail.request?.consignee || "").trim() || "-"}
+                  disabled
+                />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Quotation No</Label>
+                <Input value={detail.quotationNo || "-"} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Quotation Date</Label>
+                <Input
+                  type="date"
+                  value={quotationDate}
+                  onChange={(e) => setQuotationDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Revised Quotation Date</Label>
+                <Input
+                  type="date"
+                  value={revisedQuotationDate}
+                  onChange={(e) => setRevisedQuotationDate(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Import Request Date</Label>
-              <Input value={toInputDate(detail.request?.requestDate)} disabled />
-            </div>
-            <div className="space-y-1">
-              <Label>Quotation No</Label>
-              <Input value={detail.quotationNo || "-"} disabled />
-            </div>
-            <div className="space-y-1">
-              <Label>Quotation Date</Label>
-              <Input
-                type="date"
-                value={quotationDate}
-                onChange={(e) => setQuotationDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Revised Quotation Date</Label>
-              <Input
-                type="date"
-                value={revisedQuotationDate}
-                onChange={(e) => setRevisedQuotationDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <Label>Supplier</Label>
-              <Input value={detail.supplier?.name || "-"} disabled />
-            </div>
-            <div className="space-y-1">
-              <Label>Supplier Currency</Label>
-              <Input value={currency || "-"} disabled />
-            </div>
-            <div className="space-y-1">
-              <Label>Exchange Rate</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.0001"
-                value={conversionRate}
-                onChange={(e) => setConversionRate(Number(e.target.value || 0))}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="space-y-1 md:col-span-2 min-w-0">
+                <Label>Supplier</Label>
+                <Input value={detail.supplier?.name || "-"} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Supplier Currency</Label>
+                <Input value={currency || "-"} disabled />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label>Exchange Rate</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.0001"
+                  value={conversionRate}
+                  onChange={(e) => setConversionRate(Number(e.target.value || 0))}
+                />
+              </div>
             </div>
           </div>
-
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
@@ -1963,6 +2366,24 @@ const PurchaseQuotationRevisionForm = ({
               </tfoot>
             </table>
           </div>
+
+          <div className="max-w-xs">
+            <div className="space-y-1">
+              <Label>Terms</Label>
+              <Select value={terms || undefined} onValueChange={setTerms}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select terms" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PURCHASE_QUOTATION_TERMS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </>
       )}
     </div>
@@ -1971,10 +2392,13 @@ const PurchaseQuotationRevisionForm = ({
 
 const PurchaseImportRequestTab = () => {
   const { toast } = useToast();
-  const [showForm, setShowForm] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [requestView, setRequestView] = useState<"form" | "list">("form");
+  const showRequestForm = requestView === "form";
   const [showQuotationForm, setShowQuotationForm] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [quotationRequestId, setQuotationRequestId] = useState<string | null>(null);
+  const [quotationConsignee, setQuotationConsignee] = useState<string | null>(null);
   const [confirmingRequestId, setConfirmingRequestId] = useState<string | null>(null);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requests, setRequests] = useState<PurchaseImportRequestRecord[]>([]);
@@ -1994,8 +2418,8 @@ const PurchaseImportRequestTab = () => {
       setRequests(rows);
     } catch (error: any) {
       toast({
-        title: "Failed to load requests",
-        description: error?.message || "Could not fetch purchase import requests.",
+        title: "Failed to load inquiries",
+        description: error?.message || "Could not fetch purchase import inquiries.",
         variant: "destructive",
       });
     } finally {
@@ -2004,27 +2428,47 @@ const PurchaseImportRequestTab = () => {
   };
 
   useEffect(() => {
-    if (!showForm && !showQuotationForm) {
+    const editId = searchParams.get("edit");
+    if (editId) {
+      setEditingRequestId(editId);
+      setRequestView("form");
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!showQuotationForm && requestView === "list") {
       fetchRequests();
     }
-  }, [showForm, showQuotationForm]);
+  }, [showQuotationForm, requestView]);
 
   const handleConfirmRequest = async (requestId: string) => {
+    const row = requests.find((r) => r.id === requestId);
+    const hasSupplier = Boolean(row?.supplierId || row?.Supplier?.id);
+    if (!hasSupplier) {
+      toast({
+        title: "Supplier required",
+        description:
+          "Select at least one supplier on the inquiry before confirming.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setConfirmingRequestId(requestId);
     try {
       await apiClient.updatePurchaseImportRequestStatus(requestId, "confirm");
       toast({
-        title: "Request confirmed",
-        description: "Request status has been updated to confirm.",
+        title: "Inquiry confirmed",
+        description: "Inquiry status has been updated to confirm.",
       });
       await fetchRequests();
     } catch (error: any) {
       toast({
-        title: "Failed to confirm request",
+        title: "Failed to confirm inquiry",
         description:
           error?.response?.data?.error ||
           error?.message ||
-          "Could not update request status.",
+          "Could not update inquiry status.",
         variant: "destructive",
       });
     } finally {
@@ -2032,65 +2476,97 @@ const PurchaseImportRequestTab = () => {
     }
   };
 
-  if (showForm) {
-    return (
-      <PurchaseImportRequestForm
-        requestId={editingRequestId}
-        onCancel={() => {
-          setShowForm(false);
-          setEditingRequestId(null);
-        }}
-        onSaved={() => {
-          setShowForm(false);
-          setEditingRequestId(null);
-        }}
-      />
-    );
-  }
+  const handleUnconfirmRequest = async (requestId: string) => {
+    setConfirmingRequestId(requestId);
+    try {
+      await apiClient.updatePurchaseImportRequestStatus(requestId, "pending");
+      toast({
+        title: "Inquiry unconfirmed",
+        description: "Inquiry status has been set back to pending.",
+      });
+      await fetchRequests();
+    } catch (error: any) {
+      toast({
+        title: "Failed to unconfirm inquiry",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not update inquiry status.",
+        variant: "destructive",
+      });
+    } finally {
+      setConfirmingRequestId(null);
+    }
+  };
 
   if (showQuotationForm && quotationRequestId) {
     return (
       <PurchaseQuotationForm
         requestId={quotationRequestId}
+        initialConsignee={quotationConsignee}
         onCancel={() => {
           setShowQuotationForm(false);
           setQuotationRequestId(null);
+          setQuotationConsignee(null);
         }}
         onSaved={() => {
           setShowQuotationForm(false);
           setQuotationRequestId(null);
+          setQuotationConsignee(null);
         }}
       />
     );
   }
 
-  return (
-    <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Purchase Import Requests</h2>
-          <p className="text-sm text-muted-foreground">
-            Review existing requests and create a new one.
-          </p>
-        </div>
-        <Button
-          type="button"
-          onClick={() => {
-            setEditingRequestId(null);
-            setShowForm(true);
-          }}
-        >
-          <Plus className="w-4 h-4 mr-1" />
-          Add Request
-        </Button>
-      </div>
+  const goToRequestList = () => {
+    setRequestView("list");
+    setEditingRequestId(null);
+    setSearchParams({}, { replace: true });
+  };
 
-      <div className="overflow-x-auto rounded-md border border-border">
+  const goToNewRequestForm = () => {
+    setEditingRequestId(null);
+    setRequestView("form");
+    setSearchParams({}, { replace: true });
+  };
+
+  return (
+    <div className="space-y-4">
+      <Tabs
+        value={requestView}
+        onValueChange={(v) => setRequestView(v as "form" | "list")}
+      >
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="form">Inquiry Form</TabsTrigger>
+          <TabsTrigger value="list">Inquiry List</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {showRequestForm ? (
+        <PurchaseImportRequestForm
+          requestId={editingRequestId}
+          onCancel={goToRequestList}
+          onSaved={() => {
+            goToRequestList();
+            void fetchRequests();
+          }}
+        />
+      ) : (
+        <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
+          <div className="flex items-center justify-end">
+            <Button type="button" onClick={goToNewRequestForm}>
+              <Plus className="w-4 h-4 mr-1" />
+              New Inquiry
+            </Button>
+          </div>
+
+          <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
               <th className="text-left p-2 border-b">Date</th>
-              <th className="text-left p-2 border-b">Request No</th>
+              <th className="text-left p-2 border-b">Inquiry No</th>
+              <th className="text-left p-2 border-b">Consignee</th>
               <th className="text-left p-2 border-b">Supplier</th>
               <th className="text-right p-2 border-b">Items</th>
               <th className="text-right p-2 border-b">Total Qty</th>
@@ -2103,14 +2579,14 @@ const PurchaseImportRequestTab = () => {
           <tbody>
             {loadingRequests ? (
               <tr>
-                <td colSpan={9} className="p-4 text-center text-muted-foreground">
-                  Loading requests...
+                <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                  Loading inquiries...
                 </td>
               </tr>
             ) : requests.length === 0 ? (
               <tr>
-                <td colSpan={9} className="p-4 text-center text-muted-foreground">
-                  No requests found. Click <span className="font-medium">Add Request</span> to create one.
+                <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                  No inquiries found. Use <span className="font-medium">New Inquiry</span> or the Inquiry Form tab.
                 </td>
               </tr>
             ) : (
@@ -2133,12 +2609,15 @@ const PurchaseImportRequestTab = () => {
                   row.Supplier?.name ||
                   row.Supplier?.code ||
                   "N/A";
+                const consigneeLabel = row.consignee || "-";
+                const hasSupplier = Boolean(row.supplierId || row.Supplier?.id);
                 return (
                   <tr key={row.id} className="border-b hover:bg-muted/20">
                     <td className="p-2">
                       {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}
                     </td>
                     <td className="p-2 font-mono text-xs">{row.requestNo || "-"}</td>
+                    <td className="p-2">{consigneeLabel}</td>
                     <td className="p-2">{supplierName}</td>
                     <td className="p-2 text-right">{itemRows.length}</td>
                     <td className="p-2 text-right">{totalQty}</td>
@@ -2153,11 +2632,23 @@ const PurchaseImportRequestTab = () => {
                           type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() => handleConfirmRequest(row.id)}
-                          disabled={isConfirmed || confirmingRequestId === row.id}
+                          onClick={() =>
+                            isConfirmed
+                              ? handleUnconfirmRequest(row.id)
+                              : handleConfirmRequest(row.id)
+                          }
+                          disabled={
+                            confirmingRequestId === row.id ||
+                            (!isConfirmed && !hasSupplier)
+                          }
+                          title={
+                            !hasSupplier && !isConfirmed
+                              ? "Select at least one supplier before confirming"
+                              : undefined
+                          }
                         >
                           <Check className="w-3.5 h-3.5 mr-1" />
-                          {isConfirmed ? "Confirmed" : "Confirm"}
+                          {isConfirmed ? "Unconfirm" : "Confirm"}
                         </Button>
                         <Button
                           type="button"
@@ -2166,6 +2657,7 @@ const PurchaseImportRequestTab = () => {
                           disabled={!isConfirmed}
                           onClick={() => {
                             if (!isConfirmed) return;
+                            setQuotationConsignee(row.consignee || null);
                             setQuotationRequestId(row.id);
                             setShowQuotationForm(true);
                           }}
@@ -2180,7 +2672,8 @@ const PurchaseImportRequestTab = () => {
                           onClick={() => {
                             if (isConfirmed) return;
                             setEditingRequestId(row.id);
-                            setShowForm(true);
+                            setRequestView("form");
+                            setSearchParams({ edit: row.id }, { replace: true });
                           }}
                         >
                           <Pencil className="w-3.5 h-3.5 mr-1" />
@@ -2195,6 +2688,8 @@ const PurchaseImportRequestTab = () => {
           </tbody>
         </table>
       </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2292,7 +2787,7 @@ const PurchaseQuotationTab = () => {
             <tr>
               <th className="text-left p-2 border-b">Date</th>
               <th className="text-left p-2 border-b">Quotation No</th>
-              <th className="text-left p-2 border-b">Request No</th>
+              <th className="text-left p-2 border-b">Inquiry No</th>
               <th className="text-left p-2 border-b">Supplier</th>
               <th className="text-right p-2 border-b">Items</th>
               <th className="text-right p-2 border-b">FC Total</th>
@@ -2389,12 +2884,19 @@ const PurchaseImport = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
 
-  const activeTab: PurchaseImportTab = tabs.some((t) => t.id === tab)
-    ? (tab as PurchaseImportTab)
-    : "request";
+  const normalizedTab = tab === "request" ? "inquiry" : tab;
+  const activeTab: PurchaseImportTab = tabs.some((t) => t.id === normalizedTab)
+    ? (normalizedTab as PurchaseImportTab)
+    : "inquiry";
 
   useEffect(() => {
-    if (!tab) navigate("/purchase-import/request", { replace: true });
+    if (!tab) {
+      navigate("/purchase-import/inquiry", { replace: true });
+      return;
+    }
+    if (tab === "request") {
+      navigate("/purchase-import/inquiry", { replace: true });
+    }
   }, [tab, navigate]);
 
   const handleTabChange = (tabId: PurchaseImportTab) => {
@@ -2403,7 +2905,7 @@ const PurchaseImport = () => {
 
   const renderContent = () => {
     switch (activeTab) {
-      case "request":
+      case "inquiry":
         return <PurchaseImportRequestTab />;
       case "quotation":
         return <PurchaseQuotationTab />;

@@ -2179,6 +2179,7 @@ class ApiClient {
 
   async createPurchaseImportRequest(data: {
     supplierIds: string[];
+    partReference?: string;
     consignee?: "ISB" | "KHI" | "Other";
     notes?: string;
     items: Array<{
@@ -2220,6 +2221,7 @@ class ApiClient {
     requestId: string,
     data: {
       supplierIds: string[];
+      partReference?: string;
       consignee?: "ISB" | "KHI" | "Other";
       notes?: string;
       items: Array<{
@@ -2258,6 +2260,7 @@ class ApiClient {
       status?: string;
       currency: string;
       conversionRate: number;
+      terms?: string;
       items: Array<{
         partId: string;
         demandQuantity: number;
@@ -2315,6 +2318,7 @@ class ApiClient {
       status?: "pending" | "confirm" | "revise";
       currency: string;
       conversionRate: number;
+      terms?: string;
       items: Array<{
         partId: string;
         demandQuantity: number;

@@ -476,6 +476,7 @@ model PurchaseImportRequest {
   requestNo                 String                      @unique
   batchId                   String
   supplierId                String?
+  partReference             String?
   consignee                 String?
   status                    String                      @default("pending")
   notes                     String?
@@ -523,6 +524,7 @@ model PurchaseQuotation {
   quotationDate           DateTime
   revisedQuotationDate    DateTime?
   quotationType           String                 @default("original")
+  terms                   String?
   status                  String                 @default("pending")
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
