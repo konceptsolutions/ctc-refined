@@ -871,20 +871,11 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/customers/:id - Delete customer
-router.delete("/:id", async (req, res) => {
-  try {
-    await prisma.customer.delete({
-      where: { id: req.params.id },
-    });
-
-    res.json({ message: "Customer deleted successfully" });
-  } catch (error: any) {
-    if (error.code === "P2025") {
-      return res.status(404).json({ error: "Customer not found" });
-    }
-    res.status(500).json({ error: error.message });
-  }
+// DELETE /api/customers/:id - Disabled (customers cannot be deleted from Manage)
+router.delete("/:id", async (_req, res) => {
+  return res.status(403).json({
+    error: "Deleting customers is not allowed. Set status to closed or inactive instead.",
+  });
 });
 
 export default router;

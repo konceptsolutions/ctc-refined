@@ -9,6 +9,8 @@ export interface SearchableSelectOption {
   value: string;
   label: string;
   description?: string;
+  /** Extra text shown in the dropdown list only (e.g. brand), not in the selected field */
+  listOnlyDescription?: string;
 }
 
 interface SearchableSelectProps {
@@ -68,7 +70,8 @@ export const SearchableSelect = ({
     return options.filter(
       (opt) =>
         opt.label.toLowerCase().includes(query) ||
-        opt.description?.toLowerCase().includes(query),
+        opt.description?.toLowerCase().includes(query) ||
+        opt.listOnlyDescription?.toLowerCase().includes(query),
     );
   }, [options, searchQuery]);
 
@@ -527,9 +530,12 @@ export const SearchableSelect = ({
                   >
                     <div className="flex flex-col min-w-0">
                       <span className={cn("font-medium truncate", partCodeContext && "part-code-font font-mono")}>{option.label}</span>
-                      {option.description && (
+                      {(option.description || option.listOnlyDescription) && (
                         <span className="text-[11px] text-muted-foreground truncate">
-                          {option.description}
+                          {[option.description, option.listOnlyDescription]
+                            .map((part) => String(part || "").trim())
+                            .filter(Boolean)
+                            .join(" | ")}
                         </span>
                       )}
                     </div>

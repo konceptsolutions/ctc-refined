@@ -3,7 +3,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Package, BarChart3, Plus, Trash2, Pencil, Check } from "lucide-react";
+import { FileText, Package, BarChart3, Plus, Trash2, Pencil, Check, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,6 +84,7 @@ type PartOption = {
   partNo: string;
   masterPartNo: string;
   description: string;
+  hsCode: string;
   brand: string;
   weight: number;
 };
@@ -107,12 +108,17 @@ type ItemRow = {
   id: string;
   partId: string;
   currentStock: number;
-  demandQuantity: number;
+  khiQuantity: number;
+  isbQuantity: number;
+  otherQuantity: number;
   weight: number;
   totalWeight: number;
   lastPurchases: LastPurchase[];
   loadingDetails: boolean;
 };
+
+type InquiryItemSort = "alphabetical" | "numeric" | "description" | "hsCode";
+type SortDirection = "asc" | "desc";
 
 type PurchaseImportRequestRecord = {
   id: string;
@@ -226,6 +232,9 @@ type PurchaseImportRequestEditPayload = {
   items: Array<{
     partId: string;
     demandQuantity: number;
+    khiQuantity?: number;
+    isbQuantity?: number;
+    otherQuantity?: number;
     weight: number;
     currentStock?: number;
     totalWeight?: number;
@@ -240,6 +249,9 @@ type PurchaseQuotationContextItem = {
   brand: string;
   currentStock: number;
   demandQuantity: number;
+  khiQuantity?: number;
+  isbQuantity?: number;
+  otherQuantity?: number;
   weight: number;
 };
 
@@ -250,6 +262,10 @@ type PurchaseQuotationContextPayload = {
   consignee?: string | null;
   quotationNo: string;
   quotationDate: string;
+  existingQuotationId?: string | null;
+  currency?: string;
+  conversionRate?: number;
+  terms?: string | null;
   supplier: {
     id: string;
     name: string;
@@ -257,15 +273,46 @@ type PurchaseQuotationContextPayload = {
   };
   currencyOptions: string[];
   defaultCurrency: string;
-  items: PurchaseQuotationContextItem[];
+  items: Array<
+    PurchaseQuotationContextItem & {
+      quotationQuantity?: number;
+      shipDays?: number;
+      fcRate?: number;
+      revisedFcRate?: number;
+    }
+  >;
 };
 
 type PurchaseQuotationFormItem = PurchaseQuotationContextItem & {
+  rowId: string;
+  isNewRow?: boolean;
+  loadingPartDetails?: boolean;
   quotationQuantity: number;
   shipDays: number;
   fcRate: number;
   revisedFcRate: number;
 };
+
+const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
+  rowId: createRowId(),
+  isNewRow: true,
+  partId: "",
+  masterPartNo: "",
+  partNo: "",
+  description: "",
+  brand: "",
+  currentStock: 0,
+  demandQuantity: 0,
+  khiQuantity: 0,
+  isbQuantity: 0,
+  otherQuantity: 0,
+  weight: 0,
+  quotationQuantity: 0,
+  shipDays: 0,
+  fcRate: 0,
+  revisedFcRate: 0,
+  loadingPartDetails: false,
+});
 
 type NewSupplierForm = {
   code: string;
@@ -337,12 +384,133 @@ const createEmptyItem = (): ItemRow => ({
   id: createRowId(),
   partId: "",
   currentStock: 0,
-  demandQuantity: 0,
+  khiQuantity: 0,
+  isbQuantity: 0,
+  otherQuantity: 0,
   weight: 0,
   totalWeight: 0,
   lastPurchases: [],
   loadingDetails: false,
 });
+
+const getInquiryRowDemandQuantity = (row: Pick<ItemRow, "khiQuantity" | "isbQuantity" | "otherQuantity">) =>
+  Number(row.khiQuantity || 0) + Number(row.isbQuantity || 0) + Number(row.otherQuantity || 0);
+
+const getQuotationRowDemandQuantity = (
+  row: Pick<PurchaseQuotationFormItem, "khiQuantity" | "isbQuantity" | "otherQuantity">,
+) =>
+  Number(row.khiQuantity || 0) +
+  Number(row.isbQuantity || 0) +
+  Number(row.otherQuantity || 0);
+
+type PartSortFields = {
+  masterPartNo?: string;
+  partNo?: string;
+  description?: string;
+  hsCode?: string;
+};
+
+const compareInquiryItemSort = (
+  a: PartSortFields,
+  b: PartSortFields,
+  itemSort: InquiryItemSort,
+  itemSortDirection: SortDirection,
+): number => {
+  const directionMultiplier = itemSortDirection === "asc" ? 1 : -1;
+  if (itemSort === "description") {
+    const descriptionDiff = String(a.description || "")
+      .trim()
+      .toLowerCase()
+      .localeCompare(String(b.description || "").trim().toLowerCase());
+    if (descriptionDiff !== 0) return descriptionDiff * directionMultiplier;
+  }
+  if (itemSort === "hsCode") {
+    const hsCodeDiff = String(a.hsCode || "")
+      .trim()
+      .toLowerCase()
+      .localeCompare(String(b.hsCode || "").trim().toLowerCase());
+    if (hsCodeDiff !== 0) return hsCodeDiff * directionMultiplier;
+  }
+  if (itemSort === "numeric") {
+    const combinedA = `${a.masterPartNo || ""} ${a.partNo || ""}`;
+    const combinedB = `${b.masterPartNo || ""} ${b.partNo || ""}`;
+    const matchedA = combinedA.match(/\d+(\.\d+)?/);
+    const matchedB = combinedB.match(/\d+(\.\d+)?/);
+    const numericA = matchedA ? Number(matchedA[0]) : Number.POSITIVE_INFINITY;
+    const numericB = matchedB ? Number(matchedB[0]) : Number.POSITIVE_INFINITY;
+    if (numericA !== numericB) return (numericA - numericB) * directionMultiplier;
+  }
+
+  const textA = `${a.masterPartNo || ""} ${a.partNo || ""} ${a.description || ""}`
+    .trim()
+    .toLowerCase();
+  const textB = `${b.masterPartNo || ""} ${b.partNo || ""} ${b.description || ""}`
+    .trim()
+    .toLowerCase();
+  return textA.localeCompare(textB) * directionMultiplier;
+};
+
+const buildSortedPartSelectOptions = (
+  partOptions: PartOption[],
+  itemSort: InquiryItemSort,
+  itemSortDirection: SortDirection,
+) =>
+  [...partOptions]
+    .sort((a, b) => compareInquiryItemSort(a, b, itemSort, itemSortDirection))
+    .map((p) => ({
+      value: p.id,
+      label: `${p.masterPartNo || "-"} | ${p.partNo}`,
+      description: String(p.description || "").trim() || "-",
+      listOnlyDescription: String(p.brand || "").trim() || undefined,
+    }));
+
+const sortInquiryItemRows = <T extends { partId: string }>(
+  rows: T[],
+  partOptions: PartOption[],
+  itemSort: InquiryItemSort,
+  itemSortDirection: SortDirection,
+  getRowFields?: (row: T, part?: PartOption) => PartSortFields,
+): T[] => {
+  const withPart = rows.filter((row) => row.partId);
+  const withoutPart = rows.filter((row) => !row.partId);
+  const partById = new Map(partOptions.map((part) => [part.id, part]));
+  const resolveFields = (row: T): PartSortFields => {
+    if (getRowFields) return getRowFields(row, partById.get(row.partId));
+    const part = partById.get(row.partId);
+    return {
+      masterPartNo: part?.masterPartNo,
+      partNo: part?.partNo,
+      description: part?.description,
+      hsCode: part?.hsCode,
+    };
+  };
+  const sortedWithPart = [...withPart].sort((a, b) =>
+    compareInquiryItemSort(resolveFields(a), resolveFields(b), itemSort, itemSortDirection),
+  );
+  return [...sortedWithPart, ...withoutPart];
+};
+
+const buildQuotationPartFieldsFromSelection = (
+  alternate: PartOption,
+  detailsData: { part?: Record<string, unknown>; currentStock?: number } | null | undefined,
+  partOptionsList: PartOption[],
+) => {
+  const part = (detailsData?.part || {}) as Record<string, unknown>;
+  const fromOptions = partOptionsList.find((p) => p.id === alternate.id);
+  return {
+    partId: alternate.id,
+    masterPartNo: String(
+      alternate.masterPartNo || part.masterPartNo || fromOptions?.masterPartNo || "",
+    ).trim(),
+    partNo: String(alternate.partNo || part.partNo || fromOptions?.partNo || "").trim(),
+    description: String(
+      alternate.description || part.description || fromOptions?.description || "",
+    ).trim(),
+    brand: String(alternate.brand || part.brand || fromOptions?.brand || "").trim(),
+    currentStock: Number(detailsData?.currentStock ?? 0),
+    weight: Number(part.weight ?? alternate.weight ?? fromOptions?.weight ?? 0),
+  };
+};
 
 const toInputDate = (value?: string | Date | null) => {
   if (!value) return "";
@@ -358,49 +526,25 @@ const mapApiPartToOption = (row: any): PartOption => ({
     row.master_part_no || row.masterPartNo || row.MasterPart?.masterPartNo || "",
   ).trim(),
   description: String(row.description || "").trim(),
+  hsCode: String(row.hs_code || row.hsCode || "").trim(),
   brand: String(row.brand_name || row.brand || row.Brand?.name || "").trim(),
   weight: Number(row.weight || 0),
 });
 
-const fetchAlternateParts = async (
-  current: PartOption,
-  excludePartId?: string,
-): Promise<PartOption[]> => {
+const filterAlternateOptions = (
+  parts: PartOption[],
+  current: Pick<PartOption, "partNo" | "masterPartNo">,
+  excludePartId: string,
+): PartOption[] => {
   const partNo = String(current.partNo || "").trim();
   const masterPartNo = String(current.masterPartNo || "").trim();
   if (!partNo && !masterPartNo) return [];
 
-  const requests: Promise<unknown>[] = [];
-  if (partNo) {
-    requests.push(apiClient.getParts({ part_no: partNo, limit: 10000, page: 1 }));
-    requests.push(apiClient.getParts({ master_part_no: partNo, limit: 10000, page: 1 }));
-  }
-  if (masterPartNo && masterPartNo.toLowerCase() !== partNo.toLowerCase()) {
-    requests.push(apiClient.getParts({ part_no: masterPartNo, limit: 10000, page: 1 }));
-    requests.push(apiClient.getParts({ master_part_no: masterPartNo, limit: 10000, page: 1 }));
-  }
-
-  const responses = await Promise.all(requests);
-  const rawParts = responses.flatMap((res) => {
-    if (Array.isArray(res)) return res;
-    if (Array.isArray((res as { data?: unknown[] })?.data)) {
-      return (res as { data: unknown[] }).data;
-    }
-    return [];
-  });
-
-  const dedup = new Map<string, PartOption>();
-  rawParts.forEach((row) => {
-    const mapped = mapApiPartToOption(row);
-    if (!mapped.id) return;
-    dedup.set(mapped.id, mapped);
-  });
-
   const normalizedPartNo = partNo.toLowerCase();
   const normalizedMaster = masterPartNo.toLowerCase();
 
-  return Array.from(dedup.values()).filter((part) => {
-    if (excludePartId && part.id === excludePartId) return false;
+  return parts.filter((part) => {
+    if (!part.id || part.id === excludePartId) return false;
     const candidatePartNo = String(part.partNo || "").trim().toLowerCase();
     const candidateMaster = String(part.masterPartNo || "").trim().toLowerCase();
     return (
@@ -412,12 +556,87 @@ const fetchAlternateParts = async (
   });
 };
 
+const fetchAlternatePartsFromPartsApi = async (
+  partId: string,
+  current: Pick<PartOption, "partNo" | "masterPartNo">,
+): Promise<PartOption[]> => {
+  const partNo = String(current.partNo || "").trim();
+  const masterPartNo = String(current.masterPartNo || "").trim();
+  const searchValues = Array.from(new Set([partNo, masterPartNo].filter(Boolean)));
+  if (searchValues.length === 0) return [];
+
+  const requests = searchValues.flatMap((value) => [
+    apiClient.getParts({ part_no: value, limit: 500, page: 1 }),
+    apiClient.getParts({ master_part_no: value, limit: 500, page: 1 }),
+  ]);
+
+  const responses = await Promise.all(requests);
+  const dedup = new Map<string, PartOption>();
+  responses.forEach((res) => {
+    const rawParts = Array.isArray((res as { data?: unknown[] })?.data)
+      ? (res as { data: unknown[] }).data
+      : Array.isArray(res)
+        ? (res as unknown[])
+        : [];
+    rawParts.forEach((row) => {
+      const mapped = mapApiPartToOption(row);
+      if (mapped.id) dedup.set(mapped.id, mapped);
+    });
+  });
+
+  return filterAlternateOptions(Array.from(dedup.values()), current, partId);
+};
+
+const fetchAlternateParts = async (
+  partId: string,
+  current?: Pick<PartOption, "partNo" | "masterPartNo">,
+): Promise<PartOption[]> => {
+  const id = String(partId || "").trim();
+  if (!id) return [];
+
+  let resolvedCurrent = current;
+  if (!resolvedCurrent?.partNo && !resolvedCurrent?.masterPartNo) {
+    const res = await apiClient.getPurchaseImportPartDetails(id);
+    const part = (res as { data?: { part?: Record<string, unknown> } })?.data?.part;
+    resolvedCurrent = {
+      partNo: String(part?.partNo || ""),
+      masterPartNo: String(part?.masterPartNo || ""),
+    };
+  }
+
+  try {
+    const res = await apiClient.getPurchaseImportAlternateParts(id);
+    if ((res as { error?: string })?.error) {
+      throw new Error(String((res as { error?: string }).error));
+    }
+
+    const rawParts = Array.isArray((res as { data?: unknown[] })?.data)
+      ? (res as { data: unknown[] }).data
+      : [];
+
+    const mapped = rawParts
+      .map((row) => mapApiPartToOption(row))
+      .filter((part) => part.id && part.id !== id);
+
+    const filtered = filterAlternateOptions(mapped, resolvedCurrent || {}, id);
+    if (filtered.length > 0) {
+      return filtered;
+    }
+  } catch {
+    // Fall back to parts list API (e.g. when alternate-parts route is unavailable).
+  }
+
+  return fetchAlternatePartsFromPartsApi(id, resolvedCurrent || {});
+};
+
 const PurchaseImportRequestForm = ({
   requestId,
+  readOnly = false,
   onSaved,
   onCancel,
 }: {
   requestId?: string | null;
+  readOnly?: boolean;
   onSaved?: () => void;
   onCancel?: () => void;
 }) => {
@@ -440,8 +659,11 @@ const PurchaseImportRequestForm = ({
   const [loadingEditRequest, setLoadingEditRequest] = useState(false);
   const [inquiryNumber, setInquiryNumber] = useState("");
   const [inquiryDate, setInquiryDate] = useState(() => toInputDate(new Date()));
+  const [itemSort, setItemSort] = useState<InquiryItemSort>("alphabetical");
+  const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
 
   const isEditMode = Boolean(requestId);
+  const isViewMode = Boolean(readOnly);
 
   const itemTotals = useMemo(() => {
     const totalWeight = items.reduce(
@@ -449,12 +671,17 @@ const PurchaseImportRequestForm = ({
       0,
     );
     const totalQty = items.reduce(
-      (sum, row) => sum + (Number(row.demandQuantity) || 0),
+      (sum, row) => sum + getInquiryRowDemandQuantity(row),
       0,
     );
     const itemCount = items.filter((row) => row.partId).length;
     return { totalWeight, totalQty, itemCount };
   }, [items]);
+
+  const sortedItems = useMemo(
+    () => sortInquiryItemRows(items, partOptions, itemSort, itemSortDirection),
+    [items, itemSort, itemSortDirection, partOptions],
+  );
 
   const loadSuppliers = async () => {
     const suppliersRes = await apiClient.getSuppliers({
@@ -493,6 +720,7 @@ const PurchaseImportRequestForm = ({
           partNo: p.partNo || "",
           masterPartNo: p.masterPartNo || "",
           description: p.description || "",
+          hsCode: p.hs_code || p.hsCode || "",
           brand: p.brand || "",
           weight: Number(p.weight || 0),
         }));
@@ -533,18 +761,34 @@ const PurchaseImportRequestForm = ({
             setInquiryDate(toInputDate(editData.requestDate));
 
             const nextItems = Array.isArray(editData.items)
-              ? editData.items.map((item, index) => ({
-                  id: `row-${item.partId}-${index}-${Math.random().toString(16).slice(2)}`,
-                  partId: item.partId || "",
-                  currentStock: Number(item.currentStock || 0),
-                  demandQuantity: Number(item.demandQuantity || 0),
-                  weight: Number(item.weight || 0),
-                  totalWeight:
-                    Number(item.totalWeight || 0) ||
-                    Number(item.weight || 0) * Number(item.demandQuantity || 0),
-                  lastPurchases: [],
-                  loadingDetails: false,
-                }))
+              ? editData.items.map((item, index) => {
+                  const demandQty = Number(item.demandQuantity || 0);
+                  const rawKhi = Number(item.khiQuantity || 0);
+                  const rawIsb = Number(item.isbQuantity || 0);
+                  const rawOther = Number(item.otherQuantity || 0);
+                  const splitQty = rawKhi + rawIsb + rawOther;
+                  const khiQuantity =
+                    splitQty > 0 ? rawKhi : normalizedConsignee === "KHI" ? demandQty : 0;
+                  const isbQuantity =
+                    splitQty > 0 ? rawIsb : normalizedConsignee === "ISB" ? demandQty : 0;
+                  const otherQuantity =
+                    splitQty > 0 ? rawOther : normalizedConsignee === "OTHER" ? demandQty : 0;
+
+                  return {
+                    id: `row-${item.partId}-${index}-${Math.random().toString(16).slice(2)}`,
+                    partId: item.partId || "",
+                    currentStock: Number(item.currentStock || 0),
+                    khiQuantity,
+                    isbQuantity,
+                    otherQuantity,
+                    weight: Number(item.weight || 0),
+                    totalWeight:
+                      Number(item.totalWeight || 0) ||
+                      Number(item.weight || 0) * (khiQuantity + isbQuantity + otherQuantity),
+                    lastPurchases: [],
+                    loadingDetails: false,
+                  };
+                })
               : [];
 
             if (nextItems.length > 0) {
@@ -575,13 +819,8 @@ const PurchaseImportRequestForm = ({
   }, [toast, requestId]);
 
   const partSelectOptions = useMemo(
-    () =>
-      partOptions.map((p) => ({
-        value: p.id,
-        label: `${p.masterPartNo || "-"} | ${p.partNo}`,
-        description: p.description || "-",
-      })),
-    [partOptions],
+    () => buildSortedPartSelectOptions(partOptions, itemSort, itemSortDirection),
+    [partOptions, itemSort, itemSortDirection],
   );
 
   const supplierSelectOptions = useMemo(
@@ -734,7 +973,8 @@ const PurchaseImportRequestForm = ({
       prev.map((row) => {
         if (row.id !== rowId) return row;
         const next = { ...row, ...patch };
-        next.totalWeight = (Number(next.weight) || 0) * (Number(next.demandQuantity) || 0);
+        next.totalWeight =
+          (Number(next.weight) || 0) * getInquiryRowDemandQuantity(next);
         return next;
       }),
     );
@@ -776,8 +1016,8 @@ const PurchaseImportRequestForm = ({
     const currentItems = itemsRef.current;
     const incompleteRows = currentItems.filter(
       (row) =>
-        (row.partId && Number(row.demandQuantity) <= 0) ||
-        (!row.partId && Number(row.demandQuantity) > 0),
+        (row.partId && getInquiryRowDemandQuantity(row) <= 0) ||
+        (!row.partId && getInquiryRowDemandQuantity(row) > 0),
     );
     if (incompleteRows.length > 0) {
       toast({
@@ -790,7 +1030,7 @@ const PurchaseImportRequestForm = ({
     }
 
     const validItems = currentItems.filter(
-      (row) => row.partId && Number(row.demandQuantity) > 0,
+      (row) => row.partId && getInquiryRowDemandQuantity(row) > 0,
     );
     if (validItems.length === 0) {
       toast({
@@ -806,11 +1046,13 @@ const PurchaseImportRequestForm = ({
       const payload = {
         supplierIds: selectedSupplierIds,
         partReference,
-        consignee,
         notes,
         items: validItems.map((row) => ({
           partId: row.partId,
-          demandQuantity: Number(row.demandQuantity),
+          demandQuantity: getInquiryRowDemandQuantity(row),
+          khiQuantity: Number(row.khiQuantity || 0),
+          isbQuantity: Number(row.isbQuantity || 0),
+          otherQuantity: Number(row.otherQuantity || 0),
           weight: Number(row.weight || 0),
         })),
       };
@@ -850,7 +1092,6 @@ const PurchaseImportRequestForm = ({
 
       setSupplierRows([]);
       setPartReference("");
-      setConsignee("ISB");
       setItems([createEmptyItem()]);
       setNotes("");
       setInquiryNumber("");
@@ -875,7 +1116,8 @@ const PurchaseImportRequestForm = ({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(140px,200px)_minmax(140px,200px)_1fr] gap-4 items-start">
+      <div className={cn("space-y-5", isViewMode && "pointer-events-none opacity-95")}>
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(140px,220px)_1fr] gap-4 items-start">
         <div className="space-y-2 min-w-0">
           <Label>Part Reference</Label>
           <Input
@@ -884,19 +1126,6 @@ const PurchaseImportRequestForm = ({
             placeholder="Part reference"
             disabled={loadingForm}
           />
-        </div>
-        <div className="space-y-2">
-          <Label>Consignee</Label>
-          <Select value={consignee} onValueChange={(value: "ISB" | "KHI" | "Other") => setConsignee(value)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select consignee" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ISB">ISB</SelectItem>
-              <SelectItem value="KHI">KHI</SelectItem>
-              <SelectItem value="Other">Other</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
         <div className="space-y-2 min-w-0">
           <Label>Notes</Label>
@@ -1302,12 +1531,37 @@ const PurchaseImportRequestForm = ({
       </div>
 
 <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Items</h3>
-          <Button type="button" size="sm" onClick={addItemRow}>
-            <Plus className="w-4 h-4 mr-1" />
-            Add Item
-          </Button>
+          <div className="flex items-center gap-2">
+            <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="alphabetical">Sort: Alphabetical</SelectItem>
+                <SelectItem value="numeric">Sort: Numeric</SelectItem>
+                <SelectItem value="description">Sort: Description</SelectItem>
+                <SelectItem value="hsCode">Sort: HS Code</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={itemSortDirection}
+              onValueChange={(value: SortDirection) => setItemSortDirection(value)}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="button" size="sm" onClick={addItemRow}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add Item
+            </Button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -1315,16 +1569,18 @@ const PurchaseImportRequestForm = ({
             <thead className="bg-muted/40">
               <tr>
                 <th className="text-left p-2 border-b">Item</th>
-                <th className="text-left p-2 border-b">Brand</th>
                 <th className="text-right p-2 border-b">Current Stock</th>
-                <th className="text-right p-2 border-b">Demand Qty</th>
+                <th className="text-right p-2 border-b">KHI Qty</th>
+                <th className="text-right p-2 border-b">ISB Qty</th>
+                <th className="text-right p-2 border-b">Other Qty</th>
+                <th className="text-right p-2 border-b">Total Demand</th>
                 <th className="text-right p-2 border-b">Weight</th>
                 <th className="text-right p-2 border-b">Total Weight</th>
                 <th className="text-center p-2 border-b w-16">Action</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((row) => (
+              {sortedItems.map((row) => (
                 <Fragment key={row.id}>
                   <tr className="align-top">
                     <td className="p-2 border-b min-w-[320px]">
@@ -1339,22 +1595,48 @@ const PurchaseImportRequestForm = ({
                         <p className="text-xs text-muted-foreground mt-1">Loading details...</p>
                       )}
                     </td>
-                    <td className="p-2 border-b">
-                      {partOptions.find((p) => p.id === row.partId)?.brand || "-"}
-                    </td>
                     <td className="p-2 border-b text-right">{row.currentStock}</td>
                     <td className="p-2 border-b">
                       <Input
                         type="number"
                         min={0}
-                        className="h-8 text-right"
-                        value={row.demandQuantity === 0 ? "" : row.demandQuantity}
+                        className="h-8 w-20 text-right ml-auto"
+                        value={row.khiQuantity === 0 ? "" : row.khiQuantity}
                         onChange={(e) =>
                           updateItem(row.id, {
-                            demandQuantity: Number(e.target.value || 0),
+                            khiQuantity: Number(e.target.value || 0),
                           })
                         }
                       />
+                    </td>
+                    <td className="p-2 border-b">
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 w-20 text-right ml-auto"
+                        value={row.isbQuantity === 0 ? "" : row.isbQuantity}
+                        onChange={(e) =>
+                          updateItem(row.id, {
+                            isbQuantity: Number(e.target.value || 0),
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="p-2 border-b">
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 w-20 text-right ml-auto"
+                        value={row.otherQuantity === 0 ? "" : row.otherQuantity}
+                        onChange={(e) =>
+                          updateItem(row.id, {
+                            otherQuantity: Number(e.target.value || 0),
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="p-2 border-b text-right font-medium tabular-nums">
+                      {getInquiryRowDemandQuantity(row)}
                     </td>
                     <td className="p-2 border-b">
                       <Input
@@ -1386,7 +1668,7 @@ const PurchaseImportRequestForm = ({
                     </td>
                   </tr>
                   <tr>
-                    <td colSpan={7} className="px-2 pb-3 border-b">
+                    <td colSpan={9} className="px-2 pb-3 border-b">
                       <div className="rounded-md border border-dashed border-border p-2">
                         <p className="text-xs font-medium mb-2">Last 3 Purchases</p>
                         {row.lastPurchases.length === 0 ? (
@@ -1437,6 +1719,8 @@ const PurchaseImportRequestForm = ({
                 </td>
                 <td className="p-2" />
                 <td className="p-2" />
+                <td className="p-2" />
+                <td className="p-2" />
                 <td className="p-2 text-right tabular-nums">
                   {itemTotals.totalQty}
                 </td>
@@ -1449,6 +1733,7 @@ const PurchaseImportRequestForm = ({
             </tfoot>
           </table>
         </div>
+      </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
           <div className="space-y-2">
@@ -1471,7 +1756,15 @@ const PurchaseImportRequestForm = ({
             />
           </div>
         </div>
+      </div>
 
+      {isViewMode ? (
+        <div className="flex justify-end pt-2">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Back to List
+          </Button>
+        </div>
+      ) : (
         <div className="flex justify-end pt-2">
           <Button
             type="button"
@@ -1481,6 +1774,273 @@ const PurchaseImportRequestForm = ({
           >
             {saving ? "Saving..." : isEditMode ? "Update Inquiry" : "Save Inquiry"}
           </Button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const PurchaseImportRequestView = ({
+  requestId,
+  onBack,
+}: {
+  requestId: string;
+  onBack: () => void;
+}) => {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState<PurchaseImportRequestEditPayload | null>(null);
+  const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([]);
+  const [partOptions, setPartOptions] = useState<PartOption[]>([]);
+
+  useEffect(() => {
+    const loadView = async () => {
+      setLoading(true);
+      try {
+        const [requestRes, suppliersRes, partsRes] = await Promise.all([
+          apiClient.getPurchaseImportRequestById(requestId),
+          apiClient.getSuppliers({ page: 1, limit: 1000 }),
+          apiClient.getPartsDropdown(),
+        ]);
+
+        const requestData = (requestRes as any)?.data as
+          | PurchaseImportRequestEditPayload
+          | undefined;
+        if (!requestData) {
+          throw new Error("Inquiry detail is unavailable.");
+        }
+
+        setDetail(requestData);
+        setSupplierOptions(
+          (((suppliersRes as any)?.data || []) as any[]).map((s) => ({
+            id: s.id,
+            label: s.companyName || s.name || s.code || "Unnamed Supplier",
+            country: s.country || "-",
+            area: s.area || "-",
+            type: s.type === "international" ? "international" : "local",
+            currencyName: s.currencyName || "",
+          })),
+        );
+        setPartOptions(
+          (((partsRes as any)?.data || []) as any[]).map((p) => ({
+            id: p.id || "",
+            partNo: p.partNo || "",
+            masterPartNo: p.masterPartNo || "",
+            description: p.description || "",
+            hsCode: p.hs_code || p.hsCode || "",
+            brand: p.brand || "",
+            weight: Number(p.weight || 0),
+          })),
+        );
+      } catch (error: any) {
+        toast({
+          title: "Failed to load inquiry",
+          description: error?.message || "Could not load inquiry detail.",
+          variant: "destructive",
+        });
+        onBack();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadView();
+  }, [requestId, toast, onBack]);
+
+  const supplierRows = useMemo(
+    () =>
+      (detail?.supplierIds || []).map((supplierId) => {
+        const supplier = supplierOptions.find((row) => row.id === supplierId);
+        return {
+          supplierId,
+          name: supplier?.label || supplierId,
+          country: supplier?.country || "-",
+          area: supplier?.area || "-",
+          type: supplier?.type || "-",
+          currencyName: supplier?.currencyName || "-",
+        };
+      }),
+    [detail?.supplierIds, supplierOptions],
+  );
+
+  const itemRows = useMemo(
+    () =>
+      (detail?.items || []).map((item) => {
+        const part = partOptions.find((row) => row.id === item.partId);
+        const khiQuantity = Number(item.khiQuantity || 0);
+        const isbQuantity = Number(item.isbQuantity || 0);
+        const otherQuantity = Number(item.otherQuantity || 0);
+        const totalDemand =
+          khiQuantity + isbQuantity + otherQuantity ||
+          Number(item.demandQuantity || 0);
+        const weight = Number(item.weight || part?.weight || 0);
+        return {
+          ...item,
+          masterPartNo: part?.masterPartNo || "-",
+          partNo: part?.partNo || "-",
+          description: part?.description || "-",
+          brand: part?.brand || "-",
+          khiQuantity,
+          isbQuantity,
+          otherQuantity,
+          totalDemand,
+          weight,
+          totalWeight: Number(item.totalWeight || totalDemand * weight || 0),
+        };
+      }),
+    [detail?.items, partOptions],
+  );
+
+  const totals = useMemo(
+    () => ({
+      qty: itemRows.reduce((sum, row) => sum + row.totalDemand, 0),
+      weight: itemRows.reduce((sum, row) => sum + row.totalWeight, 0),
+    }),
+    [itemRows],
+  );
+
+  if (loading || !detail) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+        Loading inquiry detail...
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">View Import Inquiry</h2>
+          <p className="text-sm text-muted-foreground">
+            Read-only inquiry details.
+          </p>
+        </div>
+        <Button type="button" variant="outline" onClick={onBack}>
+          Back to List
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="rounded-md border p-3">
+          <p className="text-xs text-muted-foreground">Inquiry No</p>
+          <p className="font-medium">{detail.requestNo || "-"}</p>
+        </div>
+        <div className="rounded-md border p-3">
+          <p className="text-xs text-muted-foreground">Inquiry Date</p>
+          <p className="font-medium">{toInputDate(detail.requestDate) || "-"}</p>
+        </div>
+        <div className="rounded-md border p-3">
+          <p className="text-xs text-muted-foreground">Status</p>
+          <p className="font-medium capitalize">{detail.status || "pending"}</p>
+        </div>
+        <div className="rounded-md border p-3">
+          <p className="text-xs text-muted-foreground">Part Reference</p>
+          <p className="font-medium">{detail.partReference || "-"}</p>
+        </div>
+      </div>
+
+      {detail.notes ? (
+        <div className="rounded-md border p-3">
+          <p className="text-xs text-muted-foreground">Notes</p>
+          <p className="text-sm">{detail.notes}</p>
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold">Suppliers</h3>
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="text-left p-2 border-b">Supplier</th>
+                <th className="text-left p-2 border-b">Country</th>
+                <th className="text-left p-2 border-b">Area</th>
+                <th className="text-left p-2 border-b">Type</th>
+                <th className="text-left p-2 border-b">Currency</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supplierRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-3 text-center text-muted-foreground">
+                    No suppliers found.
+                  </td>
+                </tr>
+              ) : (
+                supplierRows.map((supplier) => (
+                  <tr key={supplier.supplierId} className="border-b">
+                    <td className="p-2">{supplier.name}</td>
+                    <td className="p-2">{supplier.country}</td>
+                    <td className="p-2">{supplier.area}</td>
+                    <td className="p-2 capitalize">{supplier.type}</td>
+                    <td className="p-2 uppercase">{supplier.currencyName}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold">Items</h3>
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="text-left p-2 border-b">Item</th>
+                <th className="text-left p-2 border-b">Brand</th>
+                <th className="text-right p-2 border-b">Stock</th>
+                <th className="text-right p-2 border-b">KHI</th>
+                <th className="text-right p-2 border-b">ISB</th>
+                <th className="text-right p-2 border-b">Other</th>
+                <th className="text-right p-2 border-b">Total Qty</th>
+                <th className="text-right p-2 border-b">Weight</th>
+                <th className="text-right p-2 border-b">Total Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itemRows.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="p-3 text-center text-muted-foreground">
+                    No items found.
+                  </td>
+                </tr>
+              ) : (
+                itemRows.map((item) => (
+                  <tr key={item.partId} className="border-b">
+                    <td className="p-2">
+                      <div className="font-medium">
+                        {item.masterPartNo} | {item.partNo}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {item.description}
+                      </div>
+                    </td>
+                    <td className="p-2">{item.brand}</td>
+                    <td className="p-2 text-right">{Number(item.currentStock || 0)}</td>
+                    <td className="p-2 text-right">{item.khiQuantity}</td>
+                    <td className="p-2 text-right">{item.isbQuantity}</td>
+                    <td className="p-2 text-right">{item.otherQuantity}</td>
+                    <td className="p-2 text-right font-medium">{item.totalDemand}</td>
+                    <td className="p-2 text-right">{item.weight.toFixed(2)}</td>
+                    <td className="p-2 text-right">{item.totalWeight.toFixed(2)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+            <tfoot>
+              <tr className="bg-muted/40 font-semibold">
+                <td className="p-2" colSpan={6}>
+                  Totals
+                </td>
+                <td className="p-2 text-right">{totals.qty}</td>
+                <td className="p-2" />
+                <td className="p-2 text-right">{totals.weight.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     </div>
@@ -1499,17 +2059,63 @@ const PurchaseQuotationForm = ({
   onCancel?: () => void;
 }) => {
   const { toast } = useToast();
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [context, setContext] = useState<PurchaseQuotationContextPayload | null>(null);
+  const [existingQuotationId, setExistingQuotationId] = useState<string | null>(null);
   const [quotationDate, setQuotationDate] = useState(toInputDate(new Date()));
   const [currency, setCurrency] = useState("USD");
   const [conversionRate, setConversionRate] = useState(1);
   const [terms, setTerms] = useState("");
   const [rows, setRows] = useState<PurchaseQuotationFormItem[]>([]);
-  const [replacePartId, setReplacePartId] = useState<string | null>(null);
+  const [partOptions, setPartOptions] = useState<PartOption[]>([]);
+  const [replaceRowId, setReplaceRowId] = useState<string | null>(null);
   const [alternateParts, setAlternateParts] = useState<PartOption[]>([]);
   const [loadingAlternates, setLoadingAlternates] = useState(false);
+  const [replacingRowId, setReplacingRowId] = useState<string | null>(null);
+  const [itemSort, setItemSort] = useState<InquiryItemSort>("alphabetical");
+  const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
+
+  const partSelectOptions = useMemo(
+    () => buildSortedPartSelectOptions(partOptions, itemSort, itemSortDirection),
+    [partOptions, itemSort, itemSortDirection],
+  );
+
+  const sortedRows = useMemo(
+    () =>
+      sortInquiryItemRows(rows, partOptions, itemSort, itemSortDirection, (row, part) => ({
+        masterPartNo: row.masterPartNo || part?.masterPartNo,
+        partNo: row.partNo || part?.partNo,
+        description: row.description || part?.description,
+        hsCode: part?.hsCode,
+      })),
+    [rows, partOptions, itemSort, itemSortDirection],
+  );
+
+  useEffect(() => {
+    const loadParts = async () => {
+      try {
+        const partsRes = await apiClient.getPartsDropdown();
+        const partsData = (partsRes as any)?.data || [];
+        setPartOptions(
+          partsData.map((p: any) => ({
+            id: p.id || "",
+            partNo: p.partNo || "",
+            masterPartNo: p.masterPartNo || "",
+            description: p.description || "",
+            hsCode: p.hs_code || p.hsCode || "",
+            brand: p.brand || "",
+            weight: Number(p.weight || 0),
+          })),
+        );
+      } catch {
+        setPartOptions([]);
+      }
+    };
+    loadParts();
+  }, []);
 
   useEffect(() => {
     const loadContext = async () => {
@@ -1528,17 +2134,27 @@ const PurchaseQuotationForm = ({
             null,
         };
         setContext(data);
+        setExistingQuotationId(data.existingQuotationId || null);
         setQuotationDate(toInputDate(data.quotationDate || new Date()));
-        setCurrency(data.defaultCurrency || "USD");
-        setConversionRate(1);
+        setCurrency(data.currency || data.defaultCurrency || "USD");
+        setConversionRate(Number(data.conversionRate || 1));
+        setTerms(data.terms || "");
         setRows(
           Array.isArray(data.items)
             ? data.items.map((item) => ({
                 ...item,
-                quotationQuantity: Number(item.demandQuantity || 0),
-                shipDays: 0,
-                fcRate: 0,
-                revisedFcRate: 0,
+                rowId: createRowId(),
+                isNewRow: false,
+                khiQuantity: Number(item.khiQuantity || 0),
+                isbQuantity: Number(item.isbQuantity || 0),
+                otherQuantity: Number(item.otherQuantity || 0),
+                quotationQuantity: Number(
+                  item.quotationQuantity ?? item.demandQuantity ?? 0,
+                ),
+                shipDays: Number(item.shipDays || 0),
+                fcRate: Number(item.fcRate || 0),
+                revisedFcRate: Number(item.revisedFcRate || 0),
+                loadingPartDetails: false,
               }))
             : [],
         );
@@ -1548,50 +2164,144 @@ const PurchaseQuotationForm = ({
           description: error?.response?.data?.error || error?.message || "Could not load quotation data.",
           variant: "destructive",
         });
-        onCancel?.();
+        onCancelRef.current?.();
       } finally {
         setLoading(false);
       }
     };
 
     loadContext();
-  }, [requestId, initialConsignee, toast, onCancel]);
+  }, [requestId, initialConsignee]);
 
-  const updateRow = (partId: string, patch: Partial<PurchaseQuotationFormItem>) => {
+  const updateRow = (rowId: string, patch: Partial<PurchaseQuotationFormItem>) => {
     setRows((prev) =>
-      prev.map((row) => (row.partId === partId ? { ...row, ...patch } : row)),
+      prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)),
     );
   };
 
+  const updateQuotationSplitQuantity = (
+    rowId: string,
+    field: "khiQuantity" | "isbQuantity" | "otherQuantity",
+    value: number,
+  ) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+        const next = { ...row, [field]: Number(value || 0) };
+        return {
+          ...next,
+          demandQuantity: getQuotationRowDemandQuantity(next),
+        };
+      }),
+    );
+  };
+
+  const addQuotationRow = () => {
+    setRows((prev) => [...prev, createEmptyQuotationRow()]);
+  };
+
+  const removeQuotationRow = (rowId: string) => {
+    setRows((prev) => {
+      const target = prev.find((row) => row.rowId === rowId);
+      if (!target?.isNewRow) return prev;
+      return prev.filter((row) => row.rowId !== rowId);
+    });
+    if (replaceRowId === rowId) {
+      closeReplacePanel();
+    }
+  };
+
+  const selectPartForRow = async (rowId: string, partId: string) => {
+    if (!partId) {
+      updateRow(rowId, {
+        partId: "",
+        masterPartNo: "",
+        partNo: "",
+        description: "",
+        brand: "",
+        currentStock: 0,
+        weight: 0,
+        loadingPartDetails: false,
+      });
+      return;
+    }
+
+    const duplicate = rows.find((row) => row.rowId !== rowId && row.partId === partId);
+    if (duplicate) {
+      toast({
+        title: "Part already added",
+        description: "This part is already on the quotation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateRow(rowId, { partId, loadingPartDetails: true });
+    try {
+      const res = await apiClient.getPurchaseImportPartDetails(partId);
+      if ((res as any)?.error) {
+        throw new Error(String((res as any).error));
+      }
+      const details = (res as any)?.data;
+      const option =
+        partOptions.find((p) => p.id === partId) ||
+        ({
+          id: partId,
+          partNo: "",
+          masterPartNo: "",
+          description: "",
+          brand: "",
+          weight: 0,
+        } as PartOption);
+      const fields = buildQuotationPartFieldsFromSelection(option, details, partOptions);
+      setRows((prev) =>
+        prev.map((row) => {
+          if (row.rowId !== rowId) return row;
+          const demandQuantity = Number(row.demandQuantity || 0);
+          return {
+            ...row,
+            ...fields,
+            quotationQuantity:
+              Number(row.quotationQuantity || 0) > 0
+                ? Number(row.quotationQuantity)
+                : demandQuantity,
+            loadingPartDetails: false,
+          };
+        }),
+      );
+    } catch {
+      updateRow(rowId, { loadingPartDetails: false });
+      toast({
+        title: "Failed to load part details",
+        description: "Could not fetch stock and weight for the selected part.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const closeReplacePanel = () => {
-    setReplacePartId(null);
+    setReplaceRowId(null);
     setAlternateParts([]);
     setLoadingAlternates(false);
   };
 
-  const toggleReplacePanel = async (partId: string) => {
-    if (replacePartId === partId) {
+  const toggleReplacePanel = async (rowId: string) => {
+    if (replaceRowId === rowId) {
       closeReplacePanel();
       return;
     }
 
-    const row = rows.find((item) => item.partId === partId);
-    if (!row) return;
+    const row = rows.find((item) => item.rowId === rowId);
+    if (!row?.partId) return;
 
-    const currentPart: PartOption = {
-      id: row.partId,
-      partNo: row.partNo,
-      masterPartNo: row.masterPartNo,
-      description: row.description,
-      brand: row.brand,
-      weight: row.weight,
-    };
-
-    setReplacePartId(partId);
+    setReplaceRowId(rowId);
     setAlternateParts([]);
     setLoadingAlternates(true);
     try {
-      const matched = await fetchAlternateParts(currentPart, partId);
+      const matched = await fetchAlternateParts(row.partId, {
+        partNo: row.partNo,
+        masterPartNo: row.masterPartNo,
+      });
       setAlternateParts(matched);
     } catch {
       setAlternateParts([]);
@@ -1605,37 +2315,93 @@ const PurchaseQuotationForm = ({
     }
   };
 
-  const handleReplaceWithAlternate = async (oldPartId: string, alternate: PartOption) => {
+  const handleReplaceWithAlternate = async (rowId: string, alternate: PartOption) => {
+    if (replacingRowId) return;
+
+    let blocked = false;
+    setRows((prev) => {
+      const targetRow = prev.find((row) => row.rowId === rowId);
+      if (!targetRow?.partId) {
+        blocked = true;
+        return prev;
+      }
+      if (alternate.id === targetRow.partId) {
+        blocked = true;
+        return prev;
+      }
+      if (prev.some((row) => row.rowId !== rowId && row.partId === alternate.id)) {
+        blocked = true;
+        return prev;
+      }
+      const fields = buildQuotationPartFieldsFromSelection(
+        alternate,
+        null,
+        partOptions,
+      );
+      return prev.map((row) =>
+        row.rowId === rowId
+          ? { ...row, ...fields, loadingPartDetails: true }
+          : row,
+      );
+    });
+
+    if (blocked) {
+      const targetRow = rows.find((row) => row.rowId === rowId);
+      if (!targetRow?.partId) return;
+      if (alternate.id === targetRow.partId) {
+        toast({
+          title: "Already selected",
+          description: "This item is already on this quotation line.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Part already added",
+        description: "This part is already on the quotation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    closeReplacePanel();
+    setReplacingRowId(rowId);
+
     try {
       const res = await apiClient.getPurchaseImportPartDetails(alternate.id);
+      if ((res as any)?.error) {
+        throw new Error(String((res as any).error));
+      }
       const details = (res as any)?.data;
-      const part = details?.part || {};
-      setRows((prev) =>
-        prev.map((row) => {
-          if (row.partId !== oldPartId) return row;
-          return {
-            ...row,
-            partId: alternate.id,
-            masterPartNo: alternate.masterPartNo || part.masterPartNo || row.masterPartNo,
-            partNo: alternate.partNo || part.partNo || row.partNo,
-            description: alternate.description || part.description || row.description,
-            brand: alternate.brand || part.brand || row.brand,
-            currentStock: Number(details?.currentStock ?? row.currentStock),
-            weight: Number(part.weight ?? alternate.weight ?? row.weight),
-          };
-        }),
+      const fields = buildQuotationPartFieldsFromSelection(
+        alternate,
+        details,
+        partOptions,
       );
-      closeReplacePanel();
+      setRows((prev) =>
+        prev.map((row) =>
+          row.rowId === rowId
+            ? { ...row, ...fields, loadingPartDetails: false }
+            : row,
+        ),
+      );
       toast({
         title: "Item replaced",
-        description: `${alternate.masterPartNo || "-"} | ${alternate.partNo} is now selected.`,
+        description: `${fields.masterPartNo || "-"} | ${fields.partNo || "-"} | ${fields.brand || "-"}`,
       });
     } catch {
+      setRows((prev) =>
+        prev.map((row) =>
+          row.rowId === rowId ? { ...row, loadingPartDetails: false } : row,
+        ),
+      );
       toast({
         title: "Failed to replace item",
         description: "Could not load details for the selected alternate.",
         variant: "destructive",
       });
+    } finally {
+      setReplacingRowId(null);
     }
   };
 
@@ -1649,6 +2415,7 @@ const PurchaseQuotationForm = ({
         const lcAmount = quotationQuantity * lcRate;
         const totalWeight = quotationQuantity * Number(row.weight || 0);
         return {
+          rowId: row.rowId,
           partId: row.partId,
           quotationQuantity,
           fcRate,
@@ -1681,6 +2448,35 @@ const PurchaseQuotationForm = ({
   const handleSaveQuotation = async () => {
     if (!context) return;
 
+    const incompleteRows = rows.filter(
+      (row) =>
+        (row.partId && Number(row.quotationQuantity || 0) <= 0) ||
+        (!row.partId &&
+          (Number(row.quotationQuantity || 0) > 0 ||
+            Number(row.demandQuantity || 0) > 0)),
+    );
+    if (incompleteRows.length > 0) {
+      toast({
+        title: "Incomplete item rows",
+        description:
+          "Each row needs a part selected and quotation quantity greater than zero.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const validItems = rows.filter(
+      (row) => row.partId && Number(row.quotationQuantity || 0) > 0,
+    );
+    if (validItems.length === 0) {
+      toast({
+        title: "Items required",
+        description: "Please add at least one item with quotation quantity.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -1690,7 +2486,7 @@ const PurchaseQuotationForm = ({
         quotationType: "original" as const,
         status: "pending",
         terms: terms || undefined,
-        items: rows.map((row) => ({
+        items: validItems.map((row) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
           quotationQuantity: Number(row.quotationQuantity || 0),
@@ -1701,13 +2497,15 @@ const PurchaseQuotationForm = ({
         })),
       };
 
-      const res = await apiClient.createPurchaseQuotation(requestId, payload);
-      const quotationNo = (res as any)?.data?.quotationNo;
+      const res = existingQuotationId
+        ? await apiClient.updatePurchaseQuotation(existingQuotationId, payload)
+        : await apiClient.createPurchaseQuotation(requestId, payload);
+      const quotationNo = (res as any)?.data?.quotationNo || context?.quotationNo;
       toast({
-        title: "Quotation saved",
+        title: existingQuotationId ? "Quotation updated" : "Quotation saved",
         description: quotationNo
-          ? `Quotation ${quotationNo} has been created successfully.`
-          : "Quotation has been created successfully.",
+          ? `Quotation ${quotationNo} has been ${existingQuotationId ? "updated" : "created"} successfully.`
+          : `Quotation has been ${existingQuotationId ? "updated" : "created"} successfully.`,
       });
       onSaved?.();
     } catch (error: any) {
@@ -1727,11 +2525,13 @@ const PurchaseQuotationForm = ({
         <div>
           <h2 className="text-base font-semibold">Purchase Quotation</h2>
           <p className="text-sm text-muted-foreground">
-            Create quotation for the selected confirmed supplier inquiry.
+            {existingQuotationId
+              ? "View and update the saved quotation for this inquiry."
+              : "Create quotation for the selected confirmed supplier inquiry."}
           </p>
         </div>
         <Button type="button" onClick={handleSaveQuotation} disabled={loading || saving || !context}>
-          {saving ? "Saving..." : "Save Quotation"}
+          {saving ? "Saving..." : existingQuotationId ? "Update Quotation" : "Save Quotation"}
         </Button>
       </div>
 
@@ -1748,7 +2548,7 @@ const PurchaseQuotationForm = ({
       ) : (
         <>
           <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div className="space-y-1 min-w-0">
                 <Label>Import Inquiry No</Label>
                 <Input value={context.requestNo || "-"} disabled />
@@ -1756,10 +2556,6 @@ const PurchaseQuotationForm = ({
               <div className="space-y-1 min-w-0">
                 <Label>Import Inquiry Date</Label>
                 <Input value={toInputDate(context.requestDate)} disabled />
-              </div>
-              <div className="space-y-1 min-w-0">
-                <Label>Consignee</Label>
-                <Input value={String(context.consignee || "").trim() || "-"} disabled />
               </div>
               <div className="space-y-1 min-w-0">
                 <Label>Quotation No</Label>
@@ -1806,6 +2602,43 @@ const PurchaseQuotationForm = ({
               </div>
             </div>
           </div>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Items</h3>
+            <div className="flex items-center gap-2">
+              <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="alphabetical">Sort: Alphabetical</SelectItem>
+                  <SelectItem value="numeric">Sort: Numeric</SelectItem>
+                  <SelectItem value="description">Sort: Description</SelectItem>
+                  <SelectItem value="hsCode">Sort: HS Code</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={itemSortDirection}
+                onValueChange={(value: SortDirection) => setItemSortDirection(value)}
+              >
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Ascending</SelectItem>
+                  <SelectItem value="desc">Descending</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                size="sm"
+                onClick={addQuotationRow}
+                disabled={loading || saving}
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Add Item
+              </Button>
+            </div>
+          </div>
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
@@ -1825,23 +2658,106 @@ const PurchaseQuotationForm = ({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
-                  const calc = calculations.find((item) => item.partId === row.partId);
+                {sortedRows.map((row) => {
+                  const calc = calculations.find((item) => item.rowId === row.rowId);
                   return (
-                    <Fragment key={row.partId}>
+                    <Fragment key={`${row.rowId}-${row.partId}`}>
                     <tr className="border-b hover:bg-muted/20">
-                      <td
-                        className="p-2 min-w-[280px]"
-                        title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
-                      >
-                        <div className="font-medium">{row.masterPartNo || "-"}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {row.partNo || "-"} | {row.description || "-"} | {row.brand || "-"}
-                        </div>
+                      <td className="p-2 min-w-[280px]">
+                        {row.isNewRow ? (
+                          <div className="space-y-1">
+                            <SearchableSelect
+                              options={partSelectOptions}
+                              value={row.partId}
+                              onValueChange={(partId) => selectPartForRow(row.rowId, partId)}
+                              placeholder="Master Part | Part No"
+                              selectedDisplayLabelOnly
+                              disabled={loading || saving}
+                            />
+                            {row.loadingPartDetails && (
+                              <p className="text-xs text-muted-foreground">Loading details...</p>
+                            )}
+                            {row.partId && !row.loadingPartDetails && (
+                              <p className="text-xs text-muted-foreground">
+                                {row.description || "-"}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div
+                            title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
+                          >
+                            <div className="font-medium">{row.masterPartNo || "-"}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {row.description || "-"}
+                            </div>
+                            {row.loadingPartDetails && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Updating part details...
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="p-2">{row.brand || "-"}</td>
                       <td className="p-2 text-right">{row.currentStock}</td>
-                      <td className="p-2 text-right">{row.demandQuantity}</td>
+                      <td className="p-2 text-right">
+                        {row.isNewRow ? (
+                          <div className="flex items-center gap-1.5 min-w-[290px]">
+                            <Input
+                              type="number"
+                              min={0}
+                              className="h-7 w-16 min-w-0 text-right text-xs px-2"
+                              placeholder="KHI"
+                              value={Number(row.khiQuantity || 0) === 0 ? "" : Number(row.khiQuantity || 0)}
+                              onChange={(e) =>
+                                updateQuotationSplitQuantity(
+                                  row.rowId,
+                                  "khiQuantity",
+                                  Number(e.target.value || 0),
+                                )
+                              }
+                            />
+                            <Input
+                              type="number"
+                              min={0}
+                              className="h-7 w-16 min-w-0 text-right text-xs px-2"
+                              placeholder="ISB"
+                              value={Number(row.isbQuantity || 0) === 0 ? "" : Number(row.isbQuantity || 0)}
+                              onChange={(e) =>
+                                updateQuotationSplitQuantity(
+                                  row.rowId,
+                                  "isbQuantity",
+                                  Number(e.target.value || 0),
+                                )
+                              }
+                            />
+                            <Input
+                              type="number"
+                              min={0}
+                              className="h-7 w-20 min-w-0 text-right text-xs px-2"
+                              placeholder="Other"
+                              value={Number(row.otherQuantity || 0) === 0 ? "" : Number(row.otherQuantity || 0)}
+                              onChange={(e) =>
+                                updateQuotationSplitQuantity(
+                                  row.rowId,
+                                  "otherQuantity",
+                                  Number(e.target.value || 0),
+                                )
+                              }
+                            />
+                            <Input
+                              type="number"
+                              className="h-7 w-20 min-w-0 text-right text-xs px-2 bg-muted/40"
+                              value={row.demandQuantity === 0 ? "" : row.demandQuantity}
+                              placeholder="Total"
+                              disabled
+                            />
+                          </div>
+                        ) : (
+                          row.demandQuantity
+                        )}
+                      </td>
                       <td className="p-2">
                         <Input
                           type="number"
@@ -1849,7 +2765,7 @@ const PurchaseQuotationForm = ({
                           className="h-8 text-right"
                           value={row.quotationQuantity === 0 ? "" : row.quotationQuantity}
                           onChange={(e) =>
-                            updateRow(row.partId, {
+                            updateRow(row.rowId, {
                               quotationQuantity: Number(e.target.value || 0),
                             })
                           }
@@ -1862,7 +2778,7 @@ const PurchaseQuotationForm = ({
                           className="h-8 text-right"
                           value={row.shipDays === 0 ? "" : row.shipDays}
                           onChange={(e) =>
-                            updateRow(row.partId, {
+                            updateRow(row.rowId, {
                               shipDays: Number(e.target.value || 0),
                             })
                           }
@@ -1876,7 +2792,7 @@ const PurchaseQuotationForm = ({
                           className="h-8 text-right"
                           value={row.fcRate === 0 ? "" : row.fcRate}
                           onChange={(e) =>
-                            updateRow(row.partId, {
+                            updateRow(row.rowId, {
                               fcRate: Number(e.target.value || 0),
                             })
                           }
@@ -1887,19 +2803,40 @@ const PurchaseQuotationForm = ({
                       <td className="p-2 text-right">{Number(calc?.lcAmount || 0).toFixed(2)}</td>
                       <td className="p-2 text-right">{Number(calc?.totalWeight || 0).toFixed(2)}</td>
                       <td className="p-2 text-center">
-                        <Button
-                          type="button"
-                          variant={replacePartId === row.partId ? "default" : "outline"}
-                          size="sm"
-                          className="h-8 px-2 text-xs"
-                          disabled={loading || saving}
-                          onClick={() => toggleReplacePanel(row.partId)}
-                        >
-                          Replace
-                        </Button>
+                        <div className="flex items-center justify-center gap-1">
+                          {row.partId && !row.isNewRow ? (
+                            <Button
+                              type="button"
+                              variant={replaceRowId === row.rowId ? "default" : "outline"}
+                              size="sm"
+                              className="h-8 px-2 text-xs"
+                              disabled={
+                                loading ||
+                                saving ||
+                                replacingRowId !== null ||
+                                (loadingAlternates && replaceRowId !== row.rowId)
+                              }
+                              onClick={() => toggleReplacePanel(row.rowId)}
+                            >
+                              Replace
+                            </Button>
+                          ) : null}
+                          {row.isNewRow ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              disabled={loading || saving}
+                              onClick={() => removeQuotationRow(row.rowId)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
-                    {replacePartId === row.partId && (
+                    {replaceRowId === row.rowId && (
                       <tr className="border-b bg-muted/20">
                         <td colSpan={12} className="p-2">
                           <div className="rounded-md border border-dashed border-border p-2">
@@ -1918,9 +2855,10 @@ const PurchaseQuotationForm = ({
                                   <button
                                     key={alternate.id}
                                     type="button"
-                                    className="w-full text-left rounded-md border border-border bg-background px-2 py-1.5 text-xs hover:bg-accent transition-colors"
+                                    disabled={replacingRowId !== null}
+                                    className="w-full text-left rounded-md border border-border bg-background px-2 py-1.5 text-xs hover:bg-accent transition-colors disabled:opacity-50 disabled:pointer-events-none"
                                     onClick={() =>
-                                      handleReplaceWithAlternate(row.partId, alternate)
+                                      handleReplaceWithAlternate(row.rowId, alternate)
                                     }
                                   >
                                     <span className="font-medium">
@@ -1994,6 +2932,8 @@ const PurchaseQuotationRevisionForm = ({
   onCancel?: () => void;
 }) => {
   const { toast } = useToast();
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<PurchaseQuotationDetailPayload | null>(null);
@@ -2003,6 +2943,47 @@ const PurchaseQuotationRevisionForm = ({
   const [conversionRate, setConversionRate] = useState(1);
   const [terms, setTerms] = useState("");
   const [rows, setRows] = useState<PurchaseQuotationFormItem[]>([]);
+  const [replaceRowId, setReplaceRowId] = useState<string | null>(null);
+  const [alternateParts, setAlternateParts] = useState<PartOption[]>([]);
+  const [loadingAlternates, setLoadingAlternates] = useState(false);
+  const [replacingRowId, setReplacingRowId] = useState<string | null>(null);
+  const [partOptions, setPartOptions] = useState<PartOption[]>([]);
+  const [itemSort, setItemSort] = useState<InquiryItemSort>("alphabetical");
+  const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
+
+  const sortedRows = useMemo(
+    () =>
+      sortInquiryItemRows(rows, partOptions, itemSort, itemSortDirection, (row, part) => ({
+        masterPartNo: row.masterPartNo || part?.masterPartNo,
+        partNo: row.partNo || part?.partNo,
+        description: row.description || part?.description,
+        hsCode: part?.hsCode,
+      })),
+    [rows, partOptions, itemSort, itemSortDirection],
+  );
+
+  useEffect(() => {
+    const loadParts = async () => {
+      try {
+        const partsRes = await apiClient.getPartsDropdown();
+        const partsData = (partsRes as any)?.data || [];
+        setPartOptions(
+          partsData.map((p: any) => ({
+            id: p.id || "",
+            partNo: p.partNo || "",
+            masterPartNo: p.masterPartNo || "",
+            description: p.description || "",
+            hsCode: p.hs_code || p.hsCode || "",
+            brand: p.brand || "",
+            weight: Number(p.weight || 0),
+          })),
+        );
+      } catch {
+        setPartOptions([]);
+      }
+    };
+    loadParts();
+  }, []);
 
   useEffect(() => {
     const loadQuotation = async () => {
@@ -2022,6 +3003,8 @@ const PurchaseQuotationRevisionForm = ({
         setRows(
           Array.isArray(data.items)
             ? data.items.map((item) => ({
+                rowId: createRowId(),
+                isNewRow: false,
                 partId: item.partId,
                 masterPartNo: item.masterPartNo || "",
                 partNo: item.partNo || "",
@@ -2029,11 +3012,15 @@ const PurchaseQuotationRevisionForm = ({
                 brand: item.brand || "",
                 currentStock: Number((item as any).currentStock || 0),
                 demandQuantity: Number(item.demandQuantity || 0),
+                khiQuantity: Number((item as any).khiQuantity || 0),
+                isbQuantity: Number((item as any).isbQuantity || 0),
+                otherQuantity: Number((item as any).otherQuantity || 0),
                 quotationQuantity: Number(item.quotationQuantity || 0),
                 shipDays: Number(item.shipDays || 0),
                 fcRate: Number(item.fcRate || 0),
                 revisedFcRate: Number(item.revisedFcRate || 0),
                 weight: Number(item.weight || 0),
+                loadingPartDetails: false,
               }))
             : [],
         );
@@ -2043,19 +3030,145 @@ const PurchaseQuotationRevisionForm = ({
           description: error?.response?.data?.error || error?.message || "Could not load quotation detail.",
           variant: "destructive",
         });
-        onCancel?.();
+        onCancelRef.current?.();
       } finally {
         setLoading(false);
       }
     };
 
     loadQuotation();
-  }, [quotationId, toast, onCancel]);
+  }, [quotationId]);
 
-  const updateRow = (partId: string, patch: Partial<PurchaseQuotationFormItem>) => {
+  const updateRow = (rowId: string, patch: Partial<PurchaseQuotationFormItem>) => {
     setRows((prev) =>
-      prev.map((row) => (row.partId === partId ? { ...row, ...patch } : row)),
+      prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)),
     );
+  };
+
+  const closeReplacePanel = () => {
+    setReplaceRowId(null);
+    setAlternateParts([]);
+    setLoadingAlternates(false);
+  };
+
+  const toggleReplacePanel = async (rowId: string) => {
+    if (replaceRowId === rowId) {
+      closeReplacePanel();
+      return;
+    }
+
+    const row = rows.find((item) => item.rowId === rowId);
+    if (!row?.partId) return;
+
+    setReplaceRowId(rowId);
+    setAlternateParts([]);
+    setLoadingAlternates(true);
+    try {
+      const matched = await fetchAlternateParts(row.partId, {
+        partNo: row.partNo,
+        masterPartNo: row.masterPartNo,
+      });
+      setAlternateParts(matched);
+    } catch {
+      setAlternateParts([]);
+      toast({
+        title: "Failed to load alternates",
+        description: "Could not fetch alternate items for this part.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingAlternates(false);
+    }
+  };
+
+  const handleReplaceWithAlternate = async (rowId: string, alternate: PartOption) => {
+    if (replacingRowId) return;
+
+    let blocked = false;
+    setRows((prev) => {
+      const targetRow = prev.find((row) => row.rowId === rowId);
+      if (!targetRow?.partId) {
+        blocked = true;
+        return prev;
+      }
+      if (alternate.id === targetRow.partId) {
+        blocked = true;
+        return prev;
+      }
+      if (prev.some((row) => row.rowId !== rowId && row.partId === alternate.id)) {
+        blocked = true;
+        return prev;
+      }
+      const fields = buildQuotationPartFieldsFromSelection(
+        alternate,
+        null,
+        partOptions,
+      );
+      return prev.map((row) =>
+        row.rowId === rowId
+          ? { ...row, ...fields, loadingPartDetails: true }
+          : row,
+      );
+    });
+
+    if (blocked) {
+      const targetRow = rows.find((row) => row.rowId === rowId);
+      if (!targetRow?.partId) return;
+      if (alternate.id === targetRow.partId) {
+        toast({
+          title: "Already selected",
+          description: "This item is already on this quotation line.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Part already added",
+        description: "This part is already on the quotation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    closeReplacePanel();
+    setReplacingRowId(rowId);
+
+    try {
+      const res = await apiClient.getPurchaseImportPartDetails(alternate.id);
+      if ((res as any)?.error) {
+        throw new Error(String((res as any).error));
+      }
+      const details = (res as any)?.data;
+      const fields = buildQuotationPartFieldsFromSelection(
+        alternate,
+        details,
+        partOptions,
+      );
+      setRows((prev) =>
+        prev.map((row) =>
+          row.rowId === rowId
+            ? { ...row, ...fields, loadingPartDetails: false }
+            : row,
+        ),
+      );
+      toast({
+        title: "Item replaced",
+        description: `${fields.masterPartNo || "-"} | ${fields.partNo || "-"} | ${fields.brand || "-"}`,
+      });
+    } catch {
+      setRows((prev) =>
+        prev.map((row) =>
+          row.rowId === rowId ? { ...row, loadingPartDetails: false } : row,
+        ),
+      );
+      toast({
+        title: "Failed to replace item",
+        description: "Could not load details for the selected alternate.",
+        variant: "destructive",
+      });
+    } finally {
+      setReplacingRowId(null);
+    }
   };
 
   const calculations = useMemo(
@@ -2072,6 +3185,7 @@ const PurchaseQuotationRevisionForm = ({
         const revisedLcAmount = quotationQuantity * revisedLcRate;
         const totalWeight = quotationQuantity * Number(row.weight || 0);
         return {
+          rowId: row.rowId,
           partId: row.partId,
           quotationQuantity,
           fcRate,
@@ -2178,7 +3292,7 @@ const PurchaseQuotationRevisionForm = ({
       ) : (
         <>
           <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <div className="space-y-1 min-w-0">
                 <Label>Import Inquiry No</Label>
                 <Input value={detail.request?.requestNo || "-"} disabled />
@@ -2186,13 +3300,6 @@ const PurchaseQuotationRevisionForm = ({
               <div className="space-y-1 min-w-0">
                 <Label>Import Inquiry Date</Label>
                 <Input value={toInputDate(detail.request?.requestDate)} disabled />
-              </div>
-              <div className="space-y-1 min-w-0">
-                <Label>Consignee</Label>
-                <Input
-                  value={String(detail.request?.consignee || "").trim() || "-"}
-                  disabled
-                />
               </div>
               <div className="space-y-1 min-w-0">
                 <Label>Quotation No</Label>
@@ -2236,6 +3343,34 @@ const PurchaseQuotationRevisionForm = ({
               </div>
             </div>
           </div>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Items</h3>
+            <div className="flex items-center gap-2">
+              <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="alphabetical">Sort: Alphabetical</SelectItem>
+                  <SelectItem value="numeric">Sort: Numeric</SelectItem>
+                  <SelectItem value="description">Sort: Description</SelectItem>
+                  <SelectItem value="hsCode">Sort: HS Code</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={itemSortDirection}
+                onValueChange={(value: SortDirection) => setItemSortDirection(value)}
+              >
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asc">Ascending</SelectItem>
+                  <SelectItem value="desc">Descending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
@@ -2255,20 +3390,22 @@ const PurchaseQuotationRevisionForm = ({
                   <th className="text-right p-2 border-b">Revised LC Rate</th>
                   <th className="text-right p-2 border-b">Revised LC Amount</th>
                   <th className="text-right p-2 border-b">Total Weight</th>
+                  <th className="text-center p-2 border-b min-w-[90px]">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
-                  const calc = calculations.find((item) => item.partId === row.partId);
+                {sortedRows.map((row) => {
+                  const calc = calculations.find((item) => item.rowId === row.rowId);
                   return (
-                    <tr key={row.partId} className="border-b hover:bg-muted/20">
+                    <Fragment key={`${row.rowId}-${row.partId}`}>
+                    <tr className="border-b hover:bg-muted/20">
                       <td
                         className="p-2 min-w-[280px]"
                         title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
                       >
                         <div className="font-medium">{row.masterPartNo || "-"}</div>
                         <div className="text-xs text-muted-foreground">
-                          {row.partNo || "-"} | {row.description || "-"} | {row.brand || "-"}
+                          {row.description || "-"}
                         </div>
                       </td>
                       <td className="p-2">{row.brand || "-"}</td>
@@ -2281,7 +3418,7 @@ const PurchaseQuotationRevisionForm = ({
                           className="h-8 text-right"
                           value={row.quotationQuantity === 0 ? "" : row.quotationQuantity}
                           onChange={(e) =>
-                            updateRow(row.partId, {
+                            updateRow(row.rowId, {
                               quotationQuantity: Number(e.target.value || 0),
                             })
                           }
@@ -2294,7 +3431,7 @@ const PurchaseQuotationRevisionForm = ({
                           className="h-8 text-right"
                           value={row.shipDays === 0 ? "" : row.shipDays}
                           onChange={(e) =>
-                            updateRow(row.partId, {
+                            updateRow(row.rowId, {
                               shipDays: Number(e.target.value || 0),
                             })
                           }
@@ -2308,7 +3445,7 @@ const PurchaseQuotationRevisionForm = ({
                           className="h-8 text-right"
                           value={row.fcRate === 0 ? "" : row.fcRate}
                           onChange={(e) =>
-                            updateRow(row.partId, {
+                            updateRow(row.rowId, {
                               fcRate: Number(e.target.value || 0),
                             })
                           }
@@ -2325,7 +3462,7 @@ const PurchaseQuotationRevisionForm = ({
                           className="h-8 text-right"
                           value={row.revisedFcRate === 0 ? "" : row.revisedFcRate}
                           onChange={(e) =>
-                            updateRow(row.partId, {
+                            updateRow(row.rowId, {
                               revisedFcRate: Number(e.target.value || 0),
                             })
                           }
@@ -2341,7 +3478,65 @@ const PurchaseQuotationRevisionForm = ({
                         {Number(calc?.revisedLcAmount || 0).toFixed(2)}
                       </td>
                       <td className="p-2 text-right">{Number(calc?.totalWeight || 0).toFixed(2)}</td>
+                      <td className="p-2 text-center">
+                        <Button
+                          type="button"
+                          variant={replaceRowId === row.rowId ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          disabled={
+                            loading ||
+                            saving ||
+                            replacingRowId !== null ||
+                            (loadingAlternates && replaceRowId !== row.rowId)
+                          }
+                          onClick={() => toggleReplacePanel(row.rowId)}
+                        >
+                          Replace
+                        </Button>
+                      </td>
                     </tr>
+                    {replaceRowId === row.rowId && (
+                      <tr className="border-b bg-muted/20">
+                        <td colSpan={16} className="p-2">
+                          <div className="rounded-md border border-dashed border-border p-2">
+                            <p className="text-xs font-medium mb-2">
+                              Alternate items (same Part No / Master Part No)
+                            </p>
+                            {loadingAlternates ? (
+                              <p className="text-xs text-muted-foreground">Loading alternates...</p>
+                            ) : alternateParts.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                No alternate items found.
+                              </p>
+                            ) : (
+                              <div className="space-y-1 max-h-48 overflow-y-auto">
+                                {alternateParts.map((alternate) => (
+                                  <button
+                                    key={alternate.id}
+                                    type="button"
+                                    disabled={replacingRowId !== null}
+                                    className="w-full text-left rounded-md border border-border bg-background px-2 py-1.5 text-xs hover:bg-accent transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                                    onClick={() =>
+                                      handleReplaceWithAlternate(row.rowId, alternate)
+                                    }
+                                  >
+                                    <span className="font-medium">
+                                      {alternate.masterPartNo || "-"} | {alternate.partNo}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {" "}
+                                      | {alternate.description || "-"} | {alternate.brand || "-"}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -2362,6 +3557,7 @@ const PurchaseQuotationRevisionForm = ({
                   <td className="p-2" />
                   <td className="p-2 text-right">{quotationTotals.revisedLcAmount.toFixed(2)}</td>
                   <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
+                  <td className="p-2" />
                 </tr>
               </tfoot>
             </table>
@@ -2397,6 +3593,7 @@ const PurchaseImportRequestTab = () => {
   const showRequestForm = requestView === "form";
   const [showQuotationForm, setShowQuotationForm] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [viewingRequestId, setViewingRequestId] = useState<string | null>(null);
   const [quotationRequestId, setQuotationRequestId] = useState<string | null>(null);
   const [quotationConsignee, setQuotationConsignee] = useState<string | null>(null);
   const [confirmingRequestId, setConfirmingRequestId] = useState<string | null>(null);
@@ -2429,8 +3626,14 @@ const PurchaseImportRequestTab = () => {
 
   useEffect(() => {
     const editId = searchParams.get("edit");
-    if (editId) {
+    const viewId = searchParams.get("view");
+    if (viewId) {
+      setEditingRequestId(viewId);
+      setViewingRequestId(viewId);
+      setRequestView("form");
+    } else if (editId) {
       setEditingRequestId(editId);
+      setViewingRequestId(null);
       setRequestView("form");
     }
   }, [searchParams]);
@@ -2521,11 +3724,13 @@ const PurchaseImportRequestTab = () => {
   const goToRequestList = () => {
     setRequestView("list");
     setEditingRequestId(null);
+    setViewingRequestId(null);
     setSearchParams({}, { replace: true });
   };
 
   const goToNewRequestForm = () => {
     setEditingRequestId(null);
+    setViewingRequestId(null);
     setRequestView("form");
     setSearchParams({}, { replace: true });
   };
@@ -2543,14 +3748,21 @@ const PurchaseImportRequestTab = () => {
       </Tabs>
 
       {showRequestForm ? (
-        <PurchaseImportRequestForm
-          requestId={editingRequestId}
-          onCancel={goToRequestList}
-          onSaved={() => {
-            goToRequestList();
-            void fetchRequests();
-          }}
-        />
+        viewingRequestId ? (
+          <PurchaseImportRequestView
+            requestId={viewingRequestId}
+            onBack={goToRequestList}
+          />
+        ) : (
+          <PurchaseImportRequestForm
+            requestId={editingRequestId}
+            onCancel={goToRequestList}
+            onSaved={() => {
+              goToRequestList();
+              void fetchRequests();
+            }}
+          />
+        )
       ) : (
         <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
           <div className="flex items-center justify-end">
@@ -2668,10 +3880,25 @@ const PurchaseImportRequestTab = () => {
                           type="button"
                           size="sm"
                           variant="outline"
+                          onClick={() => {
+                            setEditingRequestId(row.id);
+                            setViewingRequestId(row.id);
+                            setRequestView("form");
+                            setSearchParams({ view: row.id }, { replace: true });
+                          }}
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1" />
+                          View
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
                           disabled={isConfirmed}
                           onClick={() => {
                             if (isConfirmed) return;
                             setEditingRequestId(row.id);
+                            setViewingRequestId(null);
                             setRequestView("form");
                             setSearchParams({ edit: row.id }, { replace: true });
                           }}

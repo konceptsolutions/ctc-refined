@@ -1472,6 +1472,7 @@ class ApiClient {
     to_date?: string;
     store_id?: string;
     part_id?: string;
+    order_type?: string;
     page?: number;
     limit?: number;
   }) {
@@ -1498,11 +1499,13 @@ class ApiClient {
     params?: {
       page?: number;
       limit?: number;
+      order_type?: string;
     },
   ) {
     return this.getDirectPurchaseOrders({
       ...params,
       part_id: partId,
+      order_type: params?.order_type ?? "local_purchase",
     });
   }
 
@@ -1517,6 +1520,8 @@ class ApiClient {
     invoice_date?: string;
     store_id?: string;
     supplier_id?: string;
+    branch_account_id?: string;
+    order_type?: string;
     account?: string;
     description?: string;
     status?: string;
@@ -1556,6 +1561,8 @@ class ApiClient {
       invoice_date?: string;
       store_id?: string;
       supplier_id?: string;
+      branch_account_id?: string;
+      order_type?: string;
       account?: string;
       description?: string;
       status?: string;
@@ -2177,6 +2184,10 @@ class ApiClient {
     return this.request(`/purchase-import/part-details/${partId}`);
   }
 
+  async getPurchaseImportAlternateParts(partId: string) {
+    return this.request(`/purchase-import/alternate-parts/${partId}`);
+  }
+
   async createPurchaseImportRequest(data: {
     supplierIds: string[];
     partReference?: string;
@@ -2185,6 +2196,9 @@ class ApiClient {
     items: Array<{
       partId: string;
       demandQuantity: number;
+      khiQuantity?: number;
+      isbQuantity?: number;
+      otherQuantity?: number;
       weight: number;
     }>;
   }) {
@@ -2227,6 +2241,9 @@ class ApiClient {
       items: Array<{
         partId: string;
         demandQuantity: number;
+        khiQuantity?: number;
+        isbQuantity?: number;
+        otherQuantity?: number;
         weight: number;
       }>;
     },
@@ -2298,6 +2315,30 @@ class ApiClient {
 
   async getPurchaseQuotationById(quotationId: string) {
     return this.request(`/purchase-import/quotations/${quotationId}`);
+  }
+
+  async updatePurchaseQuotation(
+    quotationId: string,
+    data: {
+      quotationDate: string;
+      currency: string;
+      conversionRate: number;
+      terms?: string;
+      items: Array<{
+        partId: string;
+        demandQuantity: number;
+        quotationQuantity: number;
+        shipDays: number;
+        fcRate: number;
+        revisedFcRate?: number;
+        weight: number;
+      }>;
+    },
+  ) {
+    return this.request(`/purchase-import/quotations/${quotationId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
   }
 
   async updatePurchaseQuotationStatus(
@@ -3621,6 +3662,7 @@ class ApiClient {
       term?: string;
       customerName?: string;
       customerId?: string;
+      customerType?: string;
       deliveredTo?: string;
       remarks?: string;
       items?: Array<{

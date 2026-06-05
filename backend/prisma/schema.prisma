@@ -25,9 +25,10 @@ model Account {
   Customer            Customer?      @relation(fields: [customerId], references: [id])
   Subgroup            Subgroup       @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
   Supplier            Supplier?      @relation(fields: [supplierId], references: [id])
-  SalesInvoice        SalesInvoice[]
-  SalesReturnPayments SalesReturn[]  @relation("SalesReturnPaymentAccount")
-  VoucherEntry        VoucherEntry[]
+  SalesInvoice              SalesInvoice[]
+  SalesReturnPayments       SalesReturn[]          @relation("SalesReturnPaymentAccount")
+  VoucherEntry              VoucherEntry[]
+  DirectPurchaseOrderBranch DirectPurchaseOrder[]  @relation("DirectPurchaseOrderBranchAccount")
 }
 
 model ActivityLog {
@@ -245,6 +246,8 @@ model DirectPurchaseOrder {
   invoiceDate                DateTime?
   storeId                    String?
   supplierId                 String?
+  branchAccountId            String?
+  orderType                  String                       @default("local_purchase")
   account                    String?
   description                String?
   status                     String                       @default("Completed")
@@ -255,6 +258,7 @@ model DirectPurchaseOrder {
   updatedAt                  DateTime                     @updatedAt
   Store                      Store?                       @relation(fields: [storeId], references: [id])
   Supplier                   Supplier?                    @relation(fields: [supplierId], references: [id])
+  BranchAccount              Account?                     @relation("DirectPurchaseOrderBranchAccount", fields: [branchAccountId], references: [id])
   DirectPurchaseOrderExpense DirectPurchaseOrderExpense[]
   DirectPurchaseOrderItem    DirectPurchaseOrderItem[]
   DirectPurchaseOrderReturn  DirectPurchaseOrderReturn[]
@@ -498,6 +502,9 @@ model PurchaseImportRequestItem {
   partId                  String
   currentStock            Int                   @default(0)
   demandQuantity          Int
+  khiQuantity             Int                   @default(0)
+  isbQuantity             Int                   @default(0)
+  otherQuantity           Int                   @default(0)
   weight                  Float                 @default(0)
   totalWeight             Float                 @default(0)
   createdAt               DateTime              @default(now())

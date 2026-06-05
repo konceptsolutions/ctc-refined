@@ -894,20 +894,11 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/suppliers/:id - Delete supplier
-router.delete("/:id", async (req, res) => {
-  try {
-    await prisma.supplier.delete({
-      where: { id: req.params.id },
-    });
-
-    res.json({ message: "Supplier deleted successfully" });
-  } catch (error: any) {
-    if (error.code === "P2025") {
-      return res.status(404).json({ error: "Supplier not found" });
-    }
-    res.status(500).json({ error: error.message });
-  }
+// DELETE /api/suppliers/:id - Disabled (suppliers cannot be deleted from Manage)
+router.delete("/:id", async (_req, res) => {
+  return res.status(403).json({
+    error: "Deleting suppliers is not allowed. Set status to inactive instead.",
+  });
 });
 
 export default router;

@@ -23,7 +23,6 @@ import {
   Save,
   RotateCcw,
   Calendar,
-  ArrowLeft,
   Printer,
   Undo2,
 } from "lucide-react";
@@ -59,9 +58,14 @@ import { Label } from "@/components/ui/label";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import {
+  branchAccountDisplayName,
+  fetchBranchAccountOptions,
+} from "@/lib/branch-accounts";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface DirectPurchaseOrderItem {
   id: string;
@@ -118,6 +122,67 @@ interface ExpenseForm {
 
 const DPO_FIXED_EXPENSE_ACCOUNT = "Local Purchase Freight";
 
+type DirectPurchaseOrderVariant = "local-purchase" | "transfer-in";
+
+const DPO_VARIANT_LABELS: Record<
+  DirectPurchaseOrderVariant,
+  {
+    listTitle: string;
+    listSubtitle: string;
+    newButton: string;
+    allOrdersTitle: string;
+    formTitleCreate: string;
+    formTitleEdit: string;
+    viewDialogTitle: string;
+    createdToast: string;
+    updatedToast: string;
+    deletedToast: string;
+    numberPrefix: string;
+    orderNumberLabel: string;
+    partyColumnLabel: string;
+    partyFieldLabel: string;
+    formTabLabel: string;
+    listTabLabel: string;
+  }
+> = {
+  "local-purchase": {
+    listTitle: "Local Purchase Orders",
+    listSubtitle: "Manage local purchase orders",
+    newButton: "New Local Purchase Order",
+    allOrdersTitle: "All Local Purchase Orders",
+    formTabLabel: "Local Purchase Form",
+    listTabLabel: "Local Purchase List",
+    formTitleCreate: "Add Local Purchase Order",
+    formTitleEdit: "Edit Local Purchase Order",
+    viewDialogTitle: "Local Purchase Order Details",
+    createdToast: "Local Purchase Order created successfully",
+    updatedToast: "Local Purchase Order updated successfully",
+    deletedToast: "Local Purchase Order deleted successfully",
+    numberPrefix: "DPO",
+    orderNumberLabel: "DPO No.",
+    partyColumnLabel: "Supplier",
+    partyFieldLabel: "Supplier",
+  },
+  "transfer-in": {
+    listTitle: "Transfer In",
+    listSubtitle: "Record stock received via transfer in",
+    newButton: "New Transfer In",
+    allOrdersTitle: "All Transfer In",
+    formTabLabel: "Transfer In Form",
+    listTabLabel: "Transfer In List",
+    formTitleCreate: "Add Transfer In",
+    formTitleEdit: "Edit Transfer In",
+    viewDialogTitle: "Transfer In Details",
+    createdToast: "Transfer In created successfully",
+    updatedToast: "Transfer In updated successfully",
+    deletedToast: "Transfer In deleted successfully",
+    numberPrefix: "TIN",
+    orderNumberLabel: "Transfer In No.",
+    partyColumnLabel: "Branch",
+    partyFieldLabel: "Branch",
+  },
+};
+
 const createDefaultDpoExpense = (): ExpenseForm => ({
   id: String(Date.now() + Math.random()),
   expenseType: DPO_FIXED_EXPENSE_ACCOUNT,
@@ -126,7 +191,13 @@ const createDefaultDpoExpense = (): ExpenseForm => ({
   amount: 0,
 });
 
-export const DirectPurchaseOrder = () => {
+export const DirectPurchaseOrder = ({
+  variant = "local-purchase",
+}: {
+  variant?: DirectPurchaseOrderVariant;
+}) => {
+  const labels = DPO_VARIANT_LABELS[variant];
+  const isTransferIn = variant === "transfer-in";
   const navigate = useNavigate();
 
   // Orders state
@@ -137,7 +208,8 @@ export const DirectPurchaseOrder = () => {
   const [totalRecords, setTotalRecords] = useState(0);
 
   // View mode state
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [viewMode, setViewMode] = useState<ViewMode>("create");
+  const [pageView, setPageView] = useState<"form" | "list">("form");
   const [selectedOrder, setSelectedOrder] = useState<DirectPurchaseOrder | null>(null);
 
   // View dialog
@@ -156,6 +228,7 @@ export const DirectPurchaseOrder = () => {
   // Form state
   const [formStore, setFormStore] = useState("");
   const [formSupplier, setFormSupplier] = useState("");
+  const [formBranch, setFormBranch] = useState("");
   const [formRequestDate, setFormRequestDate] = useState<Date>(new Date());
   const [formInvoiceNo, setFormInvoiceNo] = useState("");
   const [formInvoiceDate, setFormInvoiceDate] = useState<Date | undefined>(
@@ -192,6 +265,9 @@ export const DirectPurchaseOrder = () => {
   >([]);
   const [brands, setBrands] = useState<{ id: string; value: string; label: string }[]>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; value: string; label: string }[]>([]);
+  const [branchAccounts, setBranchAccounts] = useState<
+    { id: string; value: string; label: string }[]
+  >([]);
   const [accounts, setAccounts] = useState<{ id: string; value: string; label: string }[]>([]);
   const [payableAccounts, setPayableAccounts] = useState<{ id: string; value: string; label: string }[]>([]);
   const [expenseTypes, setExpenseTypes] = useState<{ id: string; name: string; code?: string }[]>([]);
@@ -237,6 +313,7 @@ export const DirectPurchaseOrder = () => {
       setLoading(true);
       const response = await apiClient.getDirectPurchaseOrders({
         status: statusFilter !== "all" ? statusFilter : undefined,
+        order_type: isTransferIn ? "transfer_in" : "local_purchase",
         page: currentPage,
         limit: itemsPerPage,
       }) as any;
@@ -259,6 +336,7 @@ export const DirectPurchaseOrder = () => {
             order.dpo_no?.toLowerCase().includes(searchLower) ||
             order.store_name?.toLowerCase().includes(searchLower) ||
             order.supplier_name?.toLowerCase().includes(searchLower) ||
+            order.branch_account_name?.toLowerCase().includes(searchLower) ||
             order.description?.toLowerCase().includes(searchLower)
           );
         });
@@ -272,7 +350,9 @@ export const DirectPurchaseOrder = () => {
           ? new Date(o.invoice_date).toLocaleDateString("en-GB")
           : "",
         store: o.store_name || "N/A",
-        supplier: o.supplier_name || "N/A",
+        supplier: isTransferIn
+          ? branchAccountDisplayName(o.branch_account_name) || "N/A"
+          : o.supplier_name || "N/A",
         requestDate: new Date(o.date).toLocaleDateString('en-GB'),
         date: o.date, // Raw date for sorting
         description: o.description || "",
@@ -544,22 +624,39 @@ export const DirectPurchaseOrder = () => {
   }, [currentPage, itemsPerPage, statusFilter]);
 
   useEffect(() => {
-    if (viewMode === "list") {
+    if (viewMode === "list" || pageView === "list") {
       fetchOrders();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm]);
+  }, [searchTerm, pageView]);
 
   useEffect(() => {
     fetchStores();
     fetchParts();
     fetchBrands();
-    fetchSuppliers();
+    if (!isTransferIn) {
+      fetchSuppliers();
+    }
     fetchAccounts();
     fetchPayableAccounts();
     fetchExpenseTypes();
     fetchBankCashAccounts();
-  }, []);
+  }, [isTransferIn]);
+
+  useEffect(() => {
+    if (!isTransferIn) return;
+    fetchBranchAccountOptions("Current Liabilities")
+      .then(setBranchAccounts)
+      .catch(() => setBranchAccounts([]));
+  }, [isTransferIn]);
+
+  // Form tab opens on create — initialize default expense row like resetForm()
+  useEffect(() => {
+    if (pageView !== "form" || viewMode !== "create") return;
+    setFormExpenses((prev) =>
+      prev.length > 0 ? prev : [createDefaultDpoExpense()],
+    );
+  }, [pageView, viewMode]);
 
   // Filter and sort orders (client-side for search) — DPO serial (dpo number) descending
   const filteredOrders = useMemo(() => {
@@ -585,13 +682,14 @@ export const DirectPurchaseOrder = () => {
     // Generate based on current year and records count
     // Backend will auto-correct if duplicate
     const nextNum = totalRecords + 1;
-    return `DPO-${year}-${String(nextNum).padStart(3, "0")}`;
+    return `${labels.numberPrefix}-${year}-${String(nextNum).padStart(3, "0")}`;
   };
 
   // Reset form
   const resetForm = () => {
     setFormStore("");
     setFormSupplier("");
+    setFormBranch("");
     setFormRequestDate(new Date());
     setFormInvoiceNo("");
     setFormInvoiceDate(undefined);
@@ -609,6 +707,7 @@ export const DirectPurchaseOrder = () => {
   const handleNewOrder = () => {
     resetForm();
     setViewMode("create");
+    setPageView("form");
   };
 
   // Open edit view
@@ -626,6 +725,7 @@ export const DirectPurchaseOrder = () => {
       setSelectedOrder(order);
       setFormStore(dpo.store_id || "");
       setFormSupplier(dpo.supplier_id || "");
+      setFormBranch(dpo.branch_account_id || "");
       setFormDescription(dpo.description || "");
       setFormInvoiceNo(dpo.invoice_no || "");
       setFormInvoiceDate(dpo.invoice_date ? new Date(dpo.invoice_date) : undefined);
@@ -730,11 +830,24 @@ export const DirectPurchaseOrder = () => {
       setFormExpenses(mappedExpenses.length > 0 ? mappedExpenses : [createDefaultDpoExpense()]);
 
       setViewMode("edit");
+      setPageView("form");
     } catch (error: any) {
       toast.error(`Error fetching order: ${error.message}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageViewChange = (value: string) => {
+    const next = value as "form" | "list";
+    setPageView(next);
+    if (next === "form") {
+      if (viewMode === "list") {
+        setViewMode("create");
+      }
+      return;
+    }
+    setViewMode("list");
   };
 
   // Open view dialog
@@ -789,6 +902,7 @@ export const DirectPurchaseOrder = () => {
 
   // Back to list
   const handleBackToList = () => {
+    setPageView("list");
     setViewMode("list");
     setSelectedOrder(null);
     resetForm();
@@ -812,7 +926,7 @@ export const DirectPurchaseOrder = () => {
         return;
       }
 
-      toast.success("Local Purchase Order deleted successfully");
+      toast.success(labels.deletedToast);
 
       // Warning: Stock movements are not automatically reversed (backend issue)
       toast.warning("⚠️ Important: Please verify stock movements in Stock In/Out page. Associated stock entries may need manual review.", {
@@ -903,7 +1017,10 @@ export const DirectPurchaseOrder = () => {
       // Fetch direct purchase orders to find last purchase for this part
       let dpoResponse: any = null;
       try {
-        dpoResponse = await apiClient.getDirectPurchaseOrders({ limit: 100 }) as any;
+        dpoResponse = await apiClient.getDirectPurchaseOrders({
+          limit: 100,
+          order_type: isTransferIn ? "transfer_in" : "local_purchase",
+        }) as any;
         // Check if response has error (like 502 Bad Gateway)
         if (dpoResponse?.error) {
           dpoResponse = null; // Set to null to skip processing
@@ -1364,7 +1481,12 @@ export const DirectPurchaseOrder = () => {
 
   // Save order
   const handleSave = async () => {
-    if (!formSupplier) {
+    if (isTransferIn) {
+      if (!formBranch) {
+        toast.error("Please select a branch");
+        return;
+      }
+    } else if (!formSupplier) {
       toast.error("Please select a supplier");
       return;
     }
@@ -1414,8 +1536,10 @@ export const DirectPurchaseOrder = () => {
           ? format(formInvoiceDate, "yyyy-MM-dd")
           : undefined,
         store_id: formStore || undefined,
-        supplier_id: formSupplier || undefined,
-        account: formAccount || undefined, // Send Account ID (bank/cash account ID)
+        order_type: isTransferIn ? "transfer_in" : "local_purchase",
+        branch_account_id: isTransferIn ? formBranch || undefined : undefined,
+        supplier_id: isTransferIn ? undefined : formSupplier || undefined,
+        account: isTransferIn ? undefined : formAccount || undefined,
         description: formDescription || undefined,
         status: "Order Receivable Pending",
         discount: discountVal,
@@ -1459,8 +1583,8 @@ export const DirectPurchaseOrder = () => {
       // Show simple success message
       // Vouchers (JV/PV) are only created when the store manager receives/approves the order
       const successMessage = viewMode === "edit"
-        ? "Local Purchase Order updated successfully"
-        : "Local Purchase Order created successfully";
+        ? labels.updatedToast
+        : labels.createdToast;
       toast.success(successMessage);
 
       // Refresh history if a part was selected
@@ -1605,8 +1729,13 @@ export const DirectPurchaseOrder = () => {
     try {
       setLoading(true);
       // Update status to Completed
+      const detail = (await apiClient.getDirectPurchaseOrder(order.id)) as any;
+      const dpo = detail?.data || detail;
+
       const response = await apiClient.updateDirectPurchaseOrder(order.id, {
         status: "Completed",
+        order_type: dpo?.order_type || dpo?.orderType,
+        branch_account_id: dpo?.branch_account_id || dpo?.branchAccountId,
       }) as any;
 
       if (response.error) {
@@ -1790,23 +1919,12 @@ export const DirectPurchaseOrder = () => {
   // Render list view
   const renderListView = () => (
     <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Local Purchase Orders</h1>
-        <p className="text-muted-foreground text-sm">Manage local purchase orders</p>
-      </div>
-
-      {/* New Order Button */}
-      <Button onClick={handleNewOrder} className="bg-orange-500 hover:bg-orange-600 text-white">
-        <Plus className="w-4 h-4 mr-2" />
-        New Local Purchase Order
-      </Button>
 
       {/* Orders Card */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg font-semibold">
-            All Local Purchase Orders ({filteredOrders.length})
+            {labels.allOrdersTitle} ({filteredOrders.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1848,10 +1966,10 @@ export const DirectPurchaseOrder = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12">S.NO</TableHead>
-                      <TableHead className="min-w-[120px]">DPO No.</TableHead>
+                      <TableHead className="min-w-[120px]">{labels.orderNumberLabel}</TableHead>
                       <TableHead className="min-w-[120px]">Invoice No.</TableHead>
                       <TableHead className="min-w-[110px]">Invoice Date</TableHead>
-                      <TableHead className="min-w-[140px]">Supplier</TableHead>
+                      <TableHead className="min-w-[140px]">{labels.partyColumnLabel}</TableHead>
                       <TableHead className="min-w-[110px]">Request Date</TableHead>
                       <TableHead className="min-w-[150px]">Remarks</TableHead>
                       <TableHead className="text-right min-w-[120px]">Grand Total</TableHead>
@@ -2095,43 +2213,22 @@ export const DirectPurchaseOrder = () => {
   const renderCreateEditView = () => (
     <div className="flex flex-col gap-4">
       <div className="flex-1 space-y-4 min-w-0">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-            <Button variant="ghost" size="icon" onClick={handleBackToList} className="shrink-0">
-              <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
-            </Button>
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
-                {viewMode === "edit" ? "Edit Local Purchase Order" : "Add Local Purchase Order"}
-              </h1>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBackToList}
-            className="shrink-0"
-            aria-label="Close form"
-            title="Close"
-          >
-            <X className="h-4 w-4 sm:h-5 sm:w-5" />
-          </Button>
-        </div>
 
         {/* Form Card */}
         <Card>
           <CardContent className="pt-6">
             {/* Header Fields */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-              <div className="space-y-2">
-                <Label>PO NO</Label>
-                <Input
-                  value={viewMode === "edit" && selectedOrder ? selectedOrder.dpoNo : generateDpoNo()}
-                  disabled
-                  className="bg-muted"
-                />
-              </div>
+              {!isTransferIn && (
+                <div className="space-y-2">
+                  <Label>PO NO</Label>
+                  <Input
+                    value={viewMode === "edit" && selectedOrder ? selectedOrder.dpoNo : generateDpoNo()}
+                    disabled
+                    className="bg-muted"
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Request Date</Label>
                 <Popover>
@@ -2193,13 +2290,22 @@ export const DirectPurchaseOrder = () => {
                 </Popover>
               </div>
               <div className="space-y-2">
-                <Label>Supplier</Label>
-                <SearchableSelect
-                  options={suppliers}
-                  value={formSupplier}
-                  onValueChange={setFormSupplier}
-                  placeholder="Select supplier..."
-                />
+                <Label>{labels.partyFieldLabel}</Label>
+                {isTransferIn ? (
+                  <SearchableSelect
+                    options={branchAccounts}
+                    value={formBranch}
+                    onValueChange={setFormBranch}
+                    placeholder="Select branch..."
+                  />
+                ) : (
+                  <SearchableSelect
+                    options={suppliers}
+                    value={formSupplier}
+                    onValueChange={setFormSupplier}
+                    placeholder="Select supplier..."
+                  />
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Remarks</Label>
@@ -2462,12 +2568,34 @@ export const DirectPurchaseOrder = () => {
                 {/* Expense Section */}
                 <Card className="mb-6">
                   <CardHeader className="py-3">
-                    <CardTitle className="text-base font-medium">Expenses</CardTitle>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <CardTitle className="text-base font-medium">Expenses</CardTitle>
+                      <Button
+                        type="button"
+                        onClick={handleAddExpense}
+                        variant="outline"
+                        size="sm"
+                        className="w-full sm:w-auto"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Expense
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     {formExpenses.length === 0 ? (
                       <div className="text-center py-4 text-muted-foreground">
                         <p className="text-sm">No expenses added yet</p>
+                        <Button
+                          type="button"
+                          onClick={handleAddExpense}
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Expense
+                        </Button>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -2534,16 +2662,18 @@ export const DirectPurchaseOrder = () => {
 
             {/* Account and Totals (single horizontal row) */}
             <div className="flex flex-col gap-4 mb-6">
-              <div className="space-y-2 w-full sm:w-64">
-                <Label>Account</Label>
-                <SearchableSelect
-                  options={accounts}
-                  value={formAccount}
-                  onValueChange={setFormAccount}
-                  placeholder="Select account..."
-                  className="w-full"
-                />
-              </div>
+              {!isTransferIn && (
+                <div className="space-y-2 w-full sm:w-64">
+                  <Label>Account</Label>
+                  <SearchableSelect
+                    options={accounts}
+                    value={formAccount}
+                    onValueChange={setFormAccount}
+                    placeholder="Select account..."
+                    className="w-full"
+                  />
+                </div>
+              )}
 
               <div className="flex flex-wrap items-end gap-3 justify-end">
                 {/* Items Total */}
@@ -2707,7 +2837,7 @@ export const DirectPurchaseOrder = () => {
     <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col p-0">
         <DialogHeader className="p-4 border-b bg-muted/30">
-          <DialogTitle>Local Purchase Order Details</DialogTitle>
+          <DialogTitle>{labels.viewDialogTitle}</DialogTitle>
           <DialogDescription>
             {selectedOrder?.dpoNo} - {selectedOrder?.requestDate}
           </DialogDescription>
@@ -2720,7 +2850,7 @@ export const DirectPurchaseOrder = () => {
               <div className="p-6 pb-2">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                   <div>
-                    <Label className="text-muted-foreground">DPO No</Label>
+                    <Label className="text-muted-foreground">{labels.orderNumberLabel}</Label>
                     <p className="font-medium">{selectedOrder.dpoNo}</p>
                   </div>
                   <div>
@@ -2728,7 +2858,7 @@ export const DirectPurchaseOrder = () => {
                     <p className="font-medium">{selectedOrder.store}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Supplier</Label>
+                    <Label className="text-muted-foreground">{labels.partyFieldLabel}</Label>
                     <p className="font-medium">{selectedOrder.supplier || "-"}</p>
                   </div>
                   <div>
@@ -2745,10 +2875,12 @@ export const DirectPurchaseOrder = () => {
                     <Label className="text-muted-foreground">Remarks</Label>
                     <p className="font-medium">{selectedOrder.description || "-"}</p>
                   </div>
-                  <div>
-                    <Label className="text-muted-foreground">Account</Label>
-                    <p className="font-medium">{selectedOrder.account}</p>
-                  </div>
+                  {!isTransferIn && (
+                    <div>
+                      <Label className="text-muted-foreground">Account</Label>
+                      <p className="font-medium">{selectedOrder.account}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2837,10 +2969,15 @@ export const DirectPurchaseOrder = () => {
           <div className="flex gap-2">
             {selectedOrder && (selectedOrder.status === "Order Receivable Pending" || selectedOrder.status === "Completed") && (
               <>
-                <Button onClick={() => handlePaymentClick(selectedOrder)} className="bg-green-600 hover:bg-green-700 text-white">
-                  <Save className="w-4 h-4 mr-2" />
-                  Pay Supplier
-                </Button>
+                {!isTransferIn && (
+                  <Button
+                    onClick={() => handlePaymentClick(selectedOrder)}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    Pay Supplier
+                  </Button>
+                )}
                 {selectedOrder.status === "Order Receivable Pending" && (
                   <Button onClick={() => handlePrint(selectedOrder)} className="bg-primary hover:bg-primary/90">
                     <Printer className="w-4 h-4 mr-2" />
@@ -3055,10 +3192,23 @@ export const DirectPurchaseOrder = () => {
     </Dialog>
   );
 
+  const showForm =
+    pageView === "form" && (viewMode === "create" || viewMode === "edit");
+  const showList = pageView === "list";
+
   return (
     <div className="space-y-4">
-      {viewMode === "list" && renderListView()}
-      {(viewMode === "create" || viewMode === "edit") && renderCreateEditView()}
+      <div className="mb-2">
+        <Tabs value={pageView} onValueChange={handlePageViewChange}>
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="form">{labels.formTabLabel}</TabsTrigger>
+            <TabsTrigger value="list">{labels.listTabLabel}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {showList && renderListView()}
+      {showForm && renderCreateEditView()}
       {renderViewDialog()}
       {renderReturnDialog()}
 
@@ -3074,7 +3224,7 @@ export const DirectPurchaseOrder = () => {
           {selectedOrder && (
             <div className="space-y-4">
               <div className="bg-muted/30 p-3 rounded-lg text-sm space-y-1">
-                <p><span className="text-muted-foreground">DPO No:</span> {selectedOrder.dpoNo}</p>
+                <p><span className="text-muted-foreground">{labels.orderNumberLabel}:</span> {selectedOrder.dpoNo}</p>
                 <p>
                   <span className="text-muted-foreground">Items subtotal:</span>{" "}
                   <span className="font-medium tabular-nums">

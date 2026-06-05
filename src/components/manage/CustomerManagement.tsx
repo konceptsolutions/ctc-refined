@@ -415,31 +415,6 @@ export const CustomerManagement = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      const response = (await apiClient.deleteCustomer(id)) as any;
-      if (response.error) {
-        toast({
-          title: "Error",
-          description: response.error,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Customer Deleted",
-          description: "Customer has been removed.",
-        });
-        fetchCustomers();
-      }
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete customer",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleStatusChange = async (
     id: string,
     newStatus: "active" | "inactive",
@@ -695,13 +670,6 @@ export const CustomerManagement = () => {
                             onClick={() => handleOpenDialog(customer)}
                           >
                             Edit
-                          </Button>
-                          <Button
-                            variant="link"
-                            className="h-auto p-0 text-xs text-destructive"
-                            onClick={() => handleDelete(customer.id)}
-                          >
-                            Delete
                           </Button>
                         </div>
                       </TableCell>

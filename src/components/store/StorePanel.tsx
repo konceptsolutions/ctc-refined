@@ -54,6 +54,7 @@ import {
   Filter,
   ArrowDownCircle,
   ArrowUpCircle,
+  ArrowLeftRight,
   List,
   Trash2,
   Edit,
@@ -100,6 +101,9 @@ interface DirectPurchaseOrder {
   store_id: string;
   store_name: string;
   supplier_id?: string;
+  branch_account_name?: string;
+  branch_account_id?: string;
+  order_type?: string;
   account?: string;
   description?: string;
   status: string;
@@ -110,6 +114,43 @@ interface DirectPurchaseOrder {
   created_at: string;
   items?: DirectPurchaseOrderItem[];
 }
+
+type StoreOrderTypeFilter =
+  | "all"
+  | "receiving"
+  | "stock-out"
+  | "transfer-in"
+  | "transfer-out"
+  | "adjusted"
+  | "part-association";
+
+const mapApiDpoToStoreOrder = (order: any): DirectPurchaseOrder => ({
+  id: order.id,
+  dpo_no: order.dpo_no || order.dpoNumber,
+  date: order.date,
+  store_id: order.store_id || order.storeId,
+  store_name: order.store_name || order.store?.name || "Unknown",
+  supplier_id: order.supplier_id || order.supplierId,
+  branch_account_id: order.branch_account_id || order.branchAccountId,
+  branch_account_name:
+    order.branch_account_name || order.BranchAccount?.name || undefined,
+  order_type: order.order_type || order.orderType,
+  account: order.account,
+  description: order.description,
+  status: order.status || "Completed",
+  total_amount: order.total_amount || order.totalAmount || 0,
+  items_count: order.items_count || order.items?.length || 0,
+  total_quantity:
+    order.total_quantity ||
+    (order.items && order.items.length > 0
+      ? order.items.reduce(
+          (sum: number, item: any) => sum + (item.quantity || 0),
+          0,
+        )
+      : 0),
+  expenses_count: order.expenses_count || order.expenses?.length || 0,
+  created_at: order.created_at || order.createdAt,
+});
 
 interface Store {
   id: string;
@@ -174,8 +215,10 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [searchParams] = useSearchParams();
   const isStoreOnlyUser = getUserRole() === "store" || isStoreUserRole();
   const [orders, setOrders] = useState<DirectPurchaseOrder[]>([]);
+  const [transferInOrders, setTransferInOrders] = useState<DirectPurchaseOrder[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [stockOutOrders, setStockOutOrders] = useState<StockOutOrder[]>([]);
+  const [transferOutOrders, setTransferOutOrders] = useState<StockOutOrder[]>([]);
   const [adjustments, setAdjustments] = useState<any[]>([]);
   const [partOptions, setPartOptions] = useState<Array<{
     id: string;
@@ -194,7 +237,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState<"all" | "receiving" | "stock-out" | "adjusted" | "part-association">("all");
+  const [typeFilter, setTypeFilter] = useState<StoreOrderTypeFilter>("all");
   const [receivingFilter, setReceivingFilter] = useState<"all" | "po" | "dpo">("all");
   const [loading, setLoading] = useState(false);
 
@@ -246,11 +289,25 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         setAdjustments([]);
         setStockOutOrders([]);
       } else if (typeFilter === "stock-out") {
-        // Only fetch Sales Invoices for stock out
         fetchStockOutOrders();
-        // Clear other data
         setOrders([]);
         setPurchaseOrders([]);
+        setTransferInOrders([]);
+        setTransferOutOrders([]);
+        setAdjustments([]);
+      } else if (typeFilter === "transfer-in") {
+        fetchTransferInOrders();
+        setOrders([]);
+        setPurchaseOrders([]);
+        setStockOutOrders([]);
+        setTransferOutOrders([]);
+        setAdjustments([]);
+      } else if (typeFilter === "transfer-out") {
+        fetchTransferOutOrders();
+        setOrders([]);
+        setPurchaseOrders([]);
+        setStockOutOrders([]);
+        setTransferInOrders([]);
         setAdjustments([]);
       } else if (typeFilter === "adjusted") {
         // Fetch adjustments for adjusted items
@@ -294,6 +351,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       "all",
       "receiving",
       "stock-out",
+      "transfer-in",
+      "transfer-out",
       "adjusted",
       ...(isStoreOnlyUser ? ["part-association"] : []),
     ] as const;
@@ -302,9 +361,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       (allowedTypes as readonly string[]).includes(requestedType) &&
       requestedType !== typeFilter
     ) {
-      setTypeFilter(
-        requestedType as "all" | "receiving" | "stock-out" | "adjusted" | "part-association",
-      );
+      setTypeFilter(requestedType as StoreOrderTypeFilter);
     }
   }, [searchParams, typeFilter, isStoreOnlyUser]);
 
@@ -316,6 +373,10 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       // Keep the currently selected view up-to-date, with newest orders on top.
       if (typeFilter === "stock-out") {
         fetchStockOutOrders(true);
+      } else if (typeFilter === "transfer-in") {
+        fetchTransferInOrders(true);
+      } else if (typeFilter === "transfer-out") {
+        fetchTransferOutOrders(true);
       } else if (typeFilter === "receiving") {
         fetchPurchaseOrders(true);
         fetchOrders(true);
@@ -327,6 +388,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchPurchaseOrders(true);
         fetchOrders(true);
         fetchStockOutOrders(true);
+        fetchTransferInOrders(true);
+        fetchTransferOutOrders(true);
         fetchAdjustments(true);
       }
 
@@ -419,22 +482,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
       const ordersData = response.data || response;
       if (Array.isArray(ordersData)) {
-        const formattedOrders = ordersData.map((order: any) => ({
-          id: order.id,
-          dpo_no: order.dpo_no || order.dpoNumber,
-          date: order.date,
-          store_id: order.store_id || order.storeId,
-          store_name: order.store_name || order.store?.name || "Unknown",
-          supplier_id: order.supplier_id || order.supplierId,
-          account: order.account,
-          description: order.description,
-          status: order.status || "Completed",
-          total_amount: order.total_amount || order.totalAmount || 0,
-          items_count: order.items_count || order.items?.length || 0,
-          total_quantity: order.total_quantity || (order.items && order.items.length > 0 ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0),
-          expenses_count: order.expenses_count || order.expenses?.length || 0,
-          created_at: order.created_at || order.createdAt,
-        }));
+        const formattedOrders = ordersData.map(mapApiDpoToStoreOrder);
 
         // Check for new orders and show notifications
         if (!silent && orders.length > 0) {
@@ -468,6 +516,51 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     }
   };
 
+  const fetchTransferInOrders = async (silent = false) => {
+    if (!selectedStoreId) return;
+
+    try {
+      if (!silent) setLoading(true);
+      const response = await apiClient.getDirectPurchaseOrders({
+        store_id: selectedStoreId === "all" ? undefined : selectedStoreId,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        order_type: "transfer_in",
+      });
+
+      const ordersData = response.data || response;
+      if (Array.isArray(ordersData)) {
+        const formattedOrders = ordersData.map(mapApiDpoToStoreOrder);
+
+        if (!silent && transferInOrders.length > 0) {
+          const newOrders = formattedOrders.filter(
+            (newOrder: DirectPurchaseOrder) =>
+              !transferInOrders.find((oldOrder) => oldOrder.id === newOrder.id),
+          );
+          newOrders.forEach((order: DirectPurchaseOrder) => {
+            addNotification({
+              title: "New Transfer In",
+              message: `Transfer In ${order.dpo_no} has been created for your store.`,
+              type: "info",
+              module: "store",
+              action: {
+                label: "View Order",
+                path: `/store/orders?type=transfer-in`,
+              },
+            });
+          });
+        }
+
+        setTransferInOrders(formattedOrders);
+      }
+    } catch (error: any) {
+      if (!silent) {
+        toast.error(error.error || "Failed to fetch transfer in orders");
+      }
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
   const fetchOrderDetails = async (orderId: string) => {
     try {
       const response = await apiClient.getDirectPurchaseOrder(orderId);
@@ -481,6 +574,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           store_id: orderData.store_id || orderData.storeId || '',
           store_name: orderData.store_name || orderData.store?.name || "Unknown",
           supplier_id: orderData.supplier_id || orderData.supplierId,
+          branch_account_id: orderData.branch_account_id || orderData.branchAccountId,
+          branch_account_name: orderData.branch_account_name,
+          order_type: orderData.order_type || orderData.orderType,
           account: orderData.account,
           description: orderData.description,
           status: orderData.status || "Completed",
@@ -598,8 +694,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       const invoicesData = Array.isArray(response) ? response : (response.data || []);
       if (Array.isArray(invoicesData)) {
         const formattedInvoices = invoicesData
-          // Show ALL invoices regardless of status for Stock Out Items
-          // This allows users to see all sales invoices that may need delivery
+          .filter(
+            (invoice: any) =>
+              String(invoice.customerType || invoice.customer_type || "")
+                .toLowerCase() !== "transfer",
+          )
           .map((invoice: any) => ({
             id: invoice.id,
             invoiceNo: invoice.invoiceNo,
@@ -669,6 +768,49 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       }
     } catch (error: any) {
       if (!silent) toast.error(error.error || "Failed to fetch sales invoices");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const fetchTransferOutOrders = async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const response = await apiClient.getSalesInvoices({
+        customerType: "transfer",
+      });
+
+      const invoicesData = Array.isArray(response) ? response : (response.data || []);
+      if (Array.isArray(invoicesData)) {
+        const formattedInvoices = invoicesData.map((invoice: any) => ({
+          id: invoice.id,
+          invoiceNo: invoice.invoiceNo,
+          invoiceDate: invoice.invoiceDate || invoice.invoice_date,
+          customerName:
+            invoice.customerName ||
+            invoice.customer_name ||
+            invoice.branch_account_name ||
+            "Branch",
+          status: invoice.status || "pending",
+          grandTotal: invoice.grandTotal || invoice.grand_total || 0,
+          items_count:
+            Number(invoice.items_count) ||
+            (Array.isArray(invoice.SalesInvoiceItem)
+              ? invoice.SalesInvoiceItem.length
+              : 0) ||
+            (Array.isArray(invoice.items) ? invoice.items.length : 0),
+          deliveredTo: invoice.deliveredTo || invoice.delivered_to,
+          createdAt: invoice.createdAt || invoice.created_at,
+          customerType: "transfer",
+        }));
+        setTransferOutOrders(formattedInvoices);
+      } else {
+        setTransferOutOrders([]);
+      }
+    } catch (error: any) {
+      if (!silent) {
+        toast.error(error.error || "Failed to fetch transfer out orders");
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -1048,6 +1190,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         await apiClient.updateDirectPurchaseOrder(selectedOrder.id, {
           status: "Received",
           ...(resolvedStoreId ? { store_id: resolvedStoreId } : {}),
+          order_type: fullOrder.order_type || "local_purchase",
+          branch_account_id: fullOrder.branch_account_id || undefined,
           items: itemsForUpdate,
         });
 
@@ -1087,10 +1231,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       setSelectedPurchaseOrder(null);
       setReceivingOrderType(null);
 
-      // Refresh orders
       if (typeFilter === "receiving") {
         await fetchOrders();
         await fetchPurchaseOrders();
+      } else if (typeFilter === "transfer-in") {
+        await fetchTransferInOrders();
       } else {
         await fetchOrders();
       }
@@ -1153,6 +1298,23 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
   // Filter Sales Invoices (for Delivering)
   const filteredStockOutOrders = (stockOutOrders || []).filter((invoice) => {
+    const inDateRange = isWithinDateRange(invoice.invoiceDate);
+    const matchesSearch =
+      invoice.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      invoice.customerName.toLowerCase().includes(searchTerm.toLowerCase());
+    return inDateRange && matchesSearch;
+  });
+
+  const filteredTransferInOrders = (transferInOrders || []).filter((order) => {
+    const inDateRange = isWithinDateRange(order.date);
+    const party = order.branch_account_name || order.store_name || "";
+    const matchesSearch =
+      order.dpo_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      party.toLowerCase().includes(searchTerm.toLowerCase());
+    return inDateRange && matchesSearch;
+  });
+
+  const filteredTransferOutOrders = (transferOutOrders || []).filter((invoice) => {
     const inDateRange = isWithinDateRange(invoice.invoiceDate);
     const matchesSearch =
       invoice.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1437,6 +1599,24 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   Stock Out Items
                 </Button>
                 <Button
+                  variant={typeFilter === "transfer-in" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTypeFilter("transfer-in")}
+                  className="gap-2"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                  Transfer In
+                </Button>
+                <Button
+                  variant={typeFilter === "transfer-out" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTypeFilter("transfer-out")}
+                  className="gap-2"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                  Transfer Out
+                </Button>
+                <Button
                   variant={typeFilter === "adjusted" ? "default" : "outline"}
                   size="sm"
                   onClick={() => setTypeFilter("adjusted")}
@@ -1471,11 +1651,15 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                 ? "Receiving Items"
                 : typeFilter === "stock-out"
                   ? "Stock Out Items"
-                  : typeFilter === "adjusted"
-                    ? "Adjusted Items"
-                    : typeFilter === "part-association"
-                      ? "Part Association"
-                    : "All Orders"}
+                  : typeFilter === "transfer-in"
+                    ? "Transfer In"
+                    : typeFilter === "transfer-out"
+                      ? "Transfer Out"
+                      : typeFilter === "adjusted"
+                        ? "Adjusted Items"
+                        : typeFilter === "part-association"
+                          ? "Part Association"
+                          : "All Orders"}
               {selectedStore && ` - ${selectedStore.name}`}
             </CardTitle>
           </CardHeader>
@@ -1988,6 +2172,220 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   )
                 )}
 
+                {/* Transfer In — branch receipts (same workflow as DPO receiving) */}
+                {typeFilter === "transfer-in" && (
+                  filteredTransferInOrders.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No transfer in orders found.
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Order Number</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Branch</TableHead>
+                            <TableHead>Items</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredTransferInOrders.map((order) => (
+                            <TableRow key={`tin-${order.id}`}>
+                              <TableCell className="font-medium">{order.dpo_no}</TableCell>
+                              <TableCell>
+                                {format(new Date(order.date), "MMM dd, yyyy")}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">Transfer In</Badge>
+                              </TableCell>
+                              <TableCell>
+                                {order.branch_account_name || order.store_name}
+                              </TableCell>
+                              <TableCell>{order.items_count} items</TableCell>
+                              <TableCell>{order.total_quantity || 0}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    order.status === "Completed"
+                                      ? "default"
+                                      : order.status === "Draft"
+                                        ? "secondary"
+                                        : "destructive"
+                                  }
+                                >
+                                  {order.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleViewOrder(order)}
+                                    title="View Order"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                  {order.status !== "Cancelled" && (
+                                    <>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleEditDPO(order)}
+                                        title="Edit Order"
+                                        disabled={order.status === "Received"}
+                                        className={
+                                          order.status === "Received"
+                                            ? "opacity-50 cursor-not-allowed"
+                                            : undefined
+                                        }
+                                      >
+                                        <Edit className="w-4 h-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleAssignLocation(order)}
+                                        title="Assign Location"
+                                        disabled={order.status !== "Received"}
+                                        className={
+                                          order.status !== "Received"
+                                            ? "opacity-50 cursor-not-allowed"
+                                            : undefined
+                                        }
+                                      >
+                                        <MapPin className="w-4 h-4" />
+                                      </Button>
+                                    </>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handlePrintReceipt(order)}
+                                    title="Print Receipt"
+                                  >
+                                    <Printer className="w-4 h-4" />
+                                  </Button>
+                                  {order.status !== "Received" && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleReceiveOrder(order)}
+                                      title="Receive Order"
+                                    >
+                                      <CheckCircle className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )
+                )}
+
+                {/* Transfer Out — branch deliveries (same workflow as stock out) */}
+                {typeFilter === "transfer-out" && (
+                  filteredTransferOutOrders.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No transfer out orders found.
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Order Number</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Branch</TableHead>
+                            <TableHead>Items</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Sent To</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredTransferOutOrders.map((invoice) => (
+                            <TableRow key={`tout-${invoice.id}`}>
+                              <TableCell className="font-medium">
+                                {invoice.invoiceNo}
+                              </TableCell>
+                              <TableCell>
+                                {format(new Date(invoice.invoiceDate), "MMM dd, yyyy")}
+                              </TableCell>
+                              <TableCell>{invoice.customerName}</TableCell>
+                              <TableCell>{invoice.items_count} items</TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    invoice.status === "fully_delivered"
+                                      ? "default"
+                                      : invoice.status === "reversed" ||
+                                          invoice.status === "partially_reversed" ||
+                                          invoice.status === "cancelled"
+                                        ? "destructive"
+                                        : invoice.status === "pending"
+                                          ? "secondary"
+                                          : "outline"
+                                  }
+                                >
+                                  {invoice.status.replace(/_/g, " ")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{invoice.deliveredTo || "-"}</TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handlePrintDeliveryChallan(invoice)}
+                                    title="Print Delivery Challan"
+                                  >
+                                    <Printer className="w-4 h-4 mr-1" />
+                                    Challan
+                                  </Button>
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={() => handlePrintStockOutReceipt(invoice)}
+                                    title="Confirm Stock Out"
+                                    disabled={
+                                      invoice.status === "pending" ||
+                                      invoice.status === "fully_delivered" ||
+                                      invoice.status === "reversed" ||
+                                      invoice.status === "partially_reversed" ||
+                                      invoice.status === "cancelled"
+                                    }
+                                  >
+                                    <ArrowDownCircle className="w-4 h-4 mr-1" />
+                                    {invoice.status === "pending"
+                                      ? "Pending"
+                                      : invoice.status === "fully_delivered"
+                                        ? "Delivered"
+                                        : invoice.status === "reversed" ||
+                                            invoice.status === "partially_reversed"
+                                          ? "Reversed"
+                                          : invoice.status === "cancelled"
+                                            ? "Cancelled"
+                                            : "Stock Out"}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )
+                )}
+
                 {/* Adjusted Items - Adjustments */}
                 {typeFilter === "adjusted" && (
                   adjustments.length === 0 ? (
@@ -2199,7 +2597,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           onOpenChange={setStockOutReceiptOpen}
           onDeliveryConfirmed={async () => {
             setStockOutReceiptOpen(false);
-            await fetchStockOutOrders();
+            if (typeFilter === "transfer-out") {
+              await fetchTransferOutOrders();
+            } else {
+              await fetchStockOutOrders();
+            }
           }}
         />
       )}
@@ -2213,10 +2615,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           onSuccess={async () => {
             setEditDPODialogOpen(false);
             setSelectedOrder(null);
-            // Refresh orders
-            await fetchOrders();
-            if (typeFilter === "receiving") {
-              await fetchPurchaseOrders();
+            if (typeFilter === "transfer-in") {
+              await fetchTransferInOrders();
+            } else {
+              await fetchOrders();
+              if (typeFilter === "receiving") {
+                await fetchPurchaseOrders();
+              }
             }
           }}
         />
@@ -2232,10 +2637,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           onSuccess={async () => {
             setLocationAssignDialogOpen(false);
             setSelectedOrder(null);
-            // Refresh orders
-            await fetchOrders();
-            if (typeFilter === "receiving") {
-              await fetchPurchaseOrders();
+            if (typeFilter === "transfer-in") {
+              await fetchTransferInOrders();
+            } else {
+              await fetchOrders();
+              if (typeFilter === "receiving") {
+                await fetchPurchaseOrders();
+              }
             }
           }}
         />

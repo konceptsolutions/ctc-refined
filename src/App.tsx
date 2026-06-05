@@ -10,6 +10,7 @@ import ItemsList from "./pages/ItemsList";
 import Attributes from "./pages/Attributes";
 import Models from "./pages/Models";
 import Inventory from "./pages/Inventory";
+import Transfer from "./pages/Transfer";
 import Sales from "./pages/Sales";
 import PurchaseImport from "./pages/PurchaseImport";
 import Manage from "./pages/Manage";
@@ -49,6 +50,8 @@ const App = () => (
             <Route path="/partentry/details-search" element={<ProtectedRoute><DetailsPartSearchPage /></ProtectedRoute>} />
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
             <Route path="/inventory/:tab" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
+            <Route path="/transfer" element={<ProtectedRoute><Transfer /></ProtectedRoute>} />
+            <Route path="/transfer/:tab" element={<ProtectedRoute><Transfer /></ProtectedRoute>} />
             <Route path="/pricing-costing" element={<ProtectedRoute><PricingCostingPage /></ProtectedRoute>} />
             <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
             <Route path="/sales/:tab" element={<ProtectedRoute><Sales /></ProtectedRoute>} />

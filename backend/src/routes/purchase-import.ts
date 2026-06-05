@@ -18,11 +18,22 @@ const normalizeSupplierIds = (supplierIdsRaw: any): string[] =>
 
 const normalizeItems = (itemsRaw: any) =>
   (Array.isArray(itemsRaw) ? itemsRaw : [])
-    .map((item: any) => ({
-      partId: String(item?.partId || "").trim(),
-      demandQuantity: Number(item?.demandQuantity || 0),
-      weight: Number(item?.weight || 0),
-    }))
+    .map((item: any) => {
+      const khiQuantity = Number(item?.khiQuantity || 0);
+      const isbQuantity = Number(item?.isbQuantity || 0);
+      const otherQuantity = Number(item?.otherQuantity || 0);
+      const splitQuantity = khiQuantity + isbQuantity + otherQuantity;
+      const fallbackDemand = Number(item?.demandQuantity || 0);
+      const demandQuantity = splitQuantity > 0 ? splitQuantity : fallbackDemand;
+      return {
+        partId: String(item?.partId || "").trim(),
+        demandQuantity,
+        khiQuantity: Number.isFinite(khiQuantity) ? khiQuantity : 0,
+        isbQuantity: Number.isFinite(isbQuantity) ? isbQuantity : 0,
+        otherQuantity: Number.isFinite(otherQuantity) ? otherQuantity : 0,
+        weight: Number(item?.weight || 0),
+      };
+    })
     .filter(
       (item: any) =>
         item.partId &&
@@ -102,6 +113,107 @@ const parseDateOrNow = (value: any) => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
+
+router.get("/alternate-parts/:partId", async (req: Request, res: Response) => {
+  try {
+    const partId = String(req.params.partId || "").trim();
+    if (!partId) {
+      return res.status(400).json({ error: "Part id is required." });
+    }
+
+    const part = await prisma.part.findUnique({
+      where: { id: partId },
+      select: {
+        id: true,
+        partNo: true,
+        masterPartId: true,
+        MasterPart: { select: { masterPartNo: true } },
+      },
+    });
+
+    if (!part) {
+      return res.status(404).json({ error: "Part not found" });
+    }
+
+    const partNo = String(part.partNo || "").trim();
+    const masterPartNo = String(part.MasterPart?.masterPartNo || "").trim();
+    const searchKeys = Array.from(
+      new Set([partNo, masterPartNo].filter((value) => value.length > 0)),
+    );
+
+    if (searchKeys.length === 0 && !part.masterPartId) {
+      return res.json({ data: [] });
+    }
+
+    const params: unknown[] = [partId];
+    const matchClauses: string[] = [];
+    let paramIdx = 2;
+
+    for (const key of searchKeys) {
+      params.push(`%${key}%`);
+      matchClauses.push(`(
+        p."partNo" ILIKE $${paramIdx}
+        OR mp."masterPartNo" ILIKE $${paramIdx}
+        OR (p."masterPartId" IS NOT NULL AND p."masterPartId" IN (
+          SELECT "masterPartId" FROM "Part"
+          WHERE "partNo" ILIKE $${paramIdx} AND "masterPartId" IS NOT NULL
+          UNION
+          SELECT id FROM "MasterPart" WHERE "masterPartNo" ILIKE $${paramIdx}
+        ))
+      )`);
+      paramIdx += 1;
+    }
+
+    if (part.masterPartId) {
+      params.push(part.masterPartId);
+      matchClauses.push(`p."masterPartId" = $${paramIdx}::uuid`);
+      paramIdx += 1;
+    }
+
+    const whereMatch =
+      matchClauses.length > 0 ? `AND (${matchClauses.join(" OR ")})` : "";
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+        SELECT
+          p.id,
+          p."partNo" AS "partNo",
+          p.description,
+          COALESCE(p.weight, 0) AS weight,
+          COALESCE(mp."masterPartNo", '') AS "masterPartNo",
+          COALESCE(b.name, '') AS brand_name
+        FROM "Part" p
+        LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+        LEFT JOIN "Brand" b ON p."brandId" = b.id
+        WHERE p.id::text <> $1::text
+        ${whereMatch}
+        ORDER BY mp."masterPartNo" ASC NULLS LAST, p."partNo" ASC
+        LIMIT 200
+      `,
+      ...params,
+    )) as Array<{
+      id: string;
+      partNo: string;
+      description: string | null;
+      weight: number;
+      masterPartNo: string;
+      brand_name: string;
+    }>;
+
+    res.json({
+      data: rows.map((row) => ({
+        id: row.id,
+        partNo: row.partNo,
+        masterPartNo: row.masterPartNo || "",
+        description: row.description || "",
+        brand: row.brand_name || "",
+        weight: Number(row.weight || 0),
+      })),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.get("/part-details/:partId", async (req: Request, res: Response) => {
   try {
@@ -338,6 +450,9 @@ router.post("/requests", async (req: Request, res: Response) => {
             partId: item.partId,
             currentStock: stockByPartId[item.partId] || 0,
             demandQuantity: item.demandQuantity,
+            khiQuantity: item.khiQuantity,
+            isbQuantity: item.isbQuantity,
+            otherQuantity: item.otherQuantity,
             weight,
             totalWeight,
             createdAt: new Date(),
@@ -415,7 +530,14 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
     const items = (selectedBatchRow?.PurchaseImportRequestItem || []).map(
       (item: any) => ({
         partId: item.partId,
-        demandQuantity: item.demandQuantity,
+        demandQuantity:
+          Number(item.khiQuantity || 0) +
+            Number(item.isbQuantity || 0) +
+            Number(item.otherQuantity || 0) ||
+          Number(item.demandQuantity || 0),
+        khiQuantity: Number(item.khiQuantity || 0),
+        isbQuantity: Number(item.isbQuantity || 0),
+        otherQuantity: Number(item.otherQuantity || 0),
         weight: item.weight,
         currentStock: item.currentStock,
         totalWeight: item.totalWeight,
@@ -646,6 +768,9 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
             partId: item.partId,
             currentStock: stockByPartId[item.partId] || 0,
             demandQuantity: item.demandQuantity,
+            khiQuantity: item.khiQuantity,
+            isbQuantity: item.isbQuantity,
+            otherQuantity: item.otherQuantity,
             weight,
             totalWeight,
             createdAt: new Date(),
@@ -758,6 +883,7 @@ router.put("/requests/:requestId/status", async (req: Request, res: Response) =>
 router.get("/requests/:requestId/quotation-context", async (req: Request, res: Response) => {
   try {
     const purchaseImportRequestModel = (prisma as any).purchaseImportRequest;
+    const purchaseQuotationModel = (prisma as any).purchaseQuotation;
     if (!purchaseImportRequestModel) {
       return res.status(500).json({
         error:
@@ -813,19 +939,97 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       });
     }
 
-    const maxQuotationRows = await prisma.$queryRaw<Array<{ maxNo: number | null }>>`
-      SELECT COALESCE(MAX((regexp_match("quotationNo", '^PQ-([0-9]+)'))[1]::INT), 0) AS "maxNo"
-      FROM "PurchaseQuotation"
-    `;
-    const maxNo = Number(maxQuotationRows?.[0]?.maxNo || 0);
-    const quotationNo = `PQ-${String(maxNo + 1).padStart(4, "0")}`;
-
     const supplierCurrency = requestRow.Supplier?.currencyName || "USD";
     const currencyOptions = Array.from(new Set(["USD", supplierCurrency]));
     const consignee = await resolveRequestConsignee(
       purchaseImportRequestModel,
       requestRow,
     );
+
+    const stockByPartId = new Map<string, number>(
+      (requestRow.PurchaseImportRequestItem || []).map((item: any) => [
+        String(item.partId),
+        Number(item.currentStock || 0),
+      ]),
+    );
+
+    const existingQuotation = purchaseQuotationModel
+      ? await purchaseQuotationModel.findFirst({
+          where: { purchaseImportRequestId: requestId },
+          orderBy: { createdAt: "desc" },
+          include: {
+            PurchaseQuotationItem: {
+              orderBy: { createdAt: "asc" },
+              include: {
+                Part: {
+                  select: {
+                    id: true,
+                    partNo: true,
+                    description: true,
+                    MasterPart: { select: { masterPartNo: true } },
+                    Brand: { select: { name: true } },
+                  },
+                },
+              },
+            },
+          },
+        })
+      : null;
+
+    let quotationNo: string;
+    let quotationDate: Date;
+    let defaultCurrency = "USD";
+    let conversionRate = 1;
+    let terms: string | null = null;
+    let existingQuotationId: string | null = null;
+    let items: any[];
+
+    if (existingQuotation) {
+      existingQuotationId = existingQuotation.id;
+      quotationNo = existingQuotation.quotationNo;
+      quotationDate = existingQuotation.quotationDate;
+      defaultCurrency = String(existingQuotation.currency || "USD");
+      conversionRate = Number(existingQuotation.conversionRate || 1);
+      terms = existingQuotation.terms || null;
+      items = (existingQuotation.PurchaseQuotationItem || []).map((item: any) => ({
+        partId: item.partId,
+        masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
+        partNo: item.Part?.partNo || "",
+        description: item.Part?.description || "",
+        brand: item.Part?.Brand?.name || "",
+        currentStock: stockByPartId.get(String(item.partId)) ?? 0,
+        demandQuantity: Number(item.demandQuantity || 0),
+        quotationQuantity: Number(item.quotationQuantity || 0),
+        shipDays: Number(item.shipDays || 0),
+        fcRate: Number(item.fcRate || 0),
+        revisedFcRate: Number(item.revisedFcRate || 0),
+        weight: Number(item.weight || 0),
+        totalWeight: Number(item.totalWeight || 0),
+      }));
+    } else {
+      const maxQuotationRows = await prisma.$queryRaw<Array<{ maxNo: number | null }>>`
+        SELECT COALESCE(MAX((regexp_match("quotationNo", '^PQ-([0-9]+)'))[1]::INT), 0) AS "maxNo"
+        FROM "PurchaseQuotation"
+      `;
+      const maxNo = Number(maxQuotationRows?.[0]?.maxNo || 0);
+      quotationNo = `PQ-${String(maxNo + 1).padStart(4, "0")}`;
+      quotationDate = new Date();
+      items = requestRow.PurchaseImportRequestItem.map((item: any) => ({
+        partId: item.partId,
+        masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
+        partNo: item.Part?.partNo || "",
+        description: item.Part?.description || "",
+        brand: item.Part?.Brand?.name || "",
+        currentStock: Number(item.currentStock || 0),
+        demandQuantity: Number(item.demandQuantity || 0),
+        weight: Number(item.weight || 0),
+        totalWeight: Number(item.totalWeight || 0),
+        quotationQuantity: Number(item.demandQuantity || 0),
+        shipDays: 0,
+        fcRate: 0,
+        revisedFcRate: 0,
+      }));
+    }
 
     res.json({
       data: {
@@ -834,7 +1038,11 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         requestDate: requestRow.createdAt,
         consignee,
         quotationNo,
-        quotationDate: new Date(),
+        quotationDate,
+        existingQuotationId,
+        currency: defaultCurrency,
+        conversionRate,
+        terms,
         supplier: {
           id: requestRow.Supplier?.id,
           code: requestRow.Supplier?.code,
@@ -842,18 +1050,8 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
           currency: supplierCurrency,
         },
         currencyOptions,
-        defaultCurrency: "USD",
-        items: requestRow.PurchaseImportRequestItem.map((item: any) => ({
-          partId: item.partId,
-          masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-          partNo: item.Part?.partNo || "",
-          description: item.Part?.description || "",
-          brand: item.Part?.Brand?.name || "",
-          currentStock: Number(item.currentStock || 0),
-          demandQuantity: Number(item.demandQuantity || 0),
-          weight: Number(item.weight || 0),
-          totalWeight: Number(item.totalWeight || 0),
-        })),
+        defaultCurrency,
+        items,
       },
     });
   } catch (error: any) {
@@ -893,6 +1091,16 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
     if (!requestRow.supplierId) {
       return res.status(400).json({
         error: "Please select supplier in purchase import inquiry before creating quotation.",
+      });
+    }
+
+    const existingForRequest = await purchaseQuotationModel.findFirst({
+      where: { purchaseImportRequestId: requestId },
+      select: { id: true, quotationNo: true },
+    });
+    if (existingForRequest) {
+      return res.status(409).json({
+        error: `Quotation ${existingForRequest.quotationNo} already exists for this inquiry. Open it to view or update saved details.`,
       });
     }
 
@@ -1206,6 +1414,150 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
           weight: Number(item.weight || 0),
           totalWeight: Number(item.totalWeight || 0),
         })),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
+  try {
+    const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+    const purchaseQuotationItemModel = (prisma as any).purchaseQuotationItem;
+    if (!purchaseQuotationModel || !purchaseQuotationItemModel) {
+      return res.status(500).json({
+        error:
+          "Purchase quotation models are unavailable in Prisma client. Restart backend and regenerate Prisma client.",
+      });
+    }
+
+    const quotationId = String(req.params.quotationId || "").trim();
+    if (!quotationId) {
+      return res.status(400).json({ error: "Quotation id is required." });
+    }
+
+    const existing = await purchaseQuotationModel.findUnique({
+      where: { id: quotationId },
+      select: { id: true, quotationNo: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Purchase quotation not found." });
+    }
+
+    const quotationDate = parseDateOrNow(req.body?.quotationDate);
+    const conversionRate = Number(req.body?.conversionRate || 1);
+    const normalizedConversionRate =
+      Number.isFinite(conversionRate) && conversionRate > 0 ? conversionRate : 1;
+    const currency = String(req.body?.currency || "USD").trim().toUpperCase() || "USD";
+    const termsRaw = req.body?.terms;
+    if (termsRaw != null && String(termsRaw).trim() && !normalizePurchaseQuotationTerms(termsRaw)) {
+      return res.status(400).json({
+        error: `Invalid terms. Allowed values: ${PURCHASE_QUOTATION_TERMS.join(", ")}.`,
+      });
+    }
+    const terms = normalizePurchaseQuotationTerms(termsRaw);
+    const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
+
+    const items = itemsRaw
+      .map((item: any) => {
+        const quotationQuantity = Number(item?.quotationQuantity || 0);
+        const fcRate = Number(item?.fcRate || 0);
+        const lcRate = fcRate * normalizedConversionRate;
+        const demandQuantity = Number(item?.demandQuantity || 0);
+        const shipDays = Number(item?.shipDays || 0);
+        const weight = Number(item?.weight || 0);
+        return {
+          partId: String(item?.partId || "").trim(),
+          demandQuantity,
+          quotationQuantity,
+          shipDays,
+          fcRate,
+          fcAmount: fcRate * quotationQuantity,
+          lcRate,
+          lcAmount: lcRate * quotationQuantity,
+          revisedFcRate: Number(item?.revisedFcRate || 0),
+          revisedFcAmount: Number(item?.revisedFcRate || 0) * quotationQuantity,
+          revisedLcRate: Number(item?.revisedFcRate || 0) * normalizedConversionRate,
+          revisedLcAmount:
+            Number(item?.revisedFcRate || 0) * normalizedConversionRate * quotationQuantity,
+          weight,
+          totalWeight: weight * quotationQuantity,
+        };
+      })
+      .filter((item: any) => item.partId);
+
+    if (items.length === 0) {
+      return res.status(400).json({ error: "Please add at least one quotation item." });
+    }
+
+    const partIds: string[] = Array.from(
+      new Set(items.map((item: any) => String(item.partId))),
+    );
+    const validPartsCount = await prisma.part.count({ where: { id: { in: partIds } } });
+    if (validPartsCount !== partIds.length) {
+      return res.status(400).json({ error: "One or more items are invalid." });
+    }
+
+    const fcTotal = items.reduce((sum: number, item: any) => sum + Number(item.fcAmount || 0), 0);
+    const lcTotal = items.reduce((sum: number, item: any) => sum + Number(item.lcAmount || 0), 0);
+    const fcRevisedTotal = items.reduce(
+      (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
+      0,
+    );
+    const lcRevisedTotal = items.reduce(
+      (sum: number, item: any) => sum + Number(item.revisedLcAmount || 0),
+      0,
+    );
+
+    await prisma.$transaction(async (tx) => {
+      await (tx as any).purchaseQuotation.update({
+        where: { id: quotationId },
+        data: {
+          quotationDate,
+          currency,
+          conversionRate: normalizedConversionRate,
+          fcTotal,
+          lcTotal,
+          fcRevisedTotal,
+          lcRevisedTotal,
+          terms,
+          updatedAt: new Date(),
+        },
+      });
+
+      await (tx as any).purchaseQuotationItem.deleteMany({
+        where: { purchaseQuotationId: quotationId },
+      });
+
+      await (tx as any).purchaseQuotationItem.createMany({
+        data: items.map((item: any) => ({
+          id: randomUUID(),
+          purchaseQuotationId: quotationId,
+          partId: item.partId,
+          demandQuantity: item.demandQuantity,
+          quotationQuantity: item.quotationQuantity,
+          shipDays: item.shipDays,
+          fcRate: item.fcRate,
+          fcAmount: item.fcAmount,
+          lcRate: item.lcRate,
+          lcAmount: item.lcAmount,
+          revisedFcRate: item.revisedFcRate,
+          revisedFcAmount: item.revisedFcAmount,
+          revisedLcRate: item.revisedLcRate,
+          revisedLcAmount: item.revisedLcAmount,
+          weight: item.weight,
+          totalWeight: item.totalWeight,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })),
+      });
+    });
+
+    res.json({
+      data: {
+        id: quotationId,
+        quotationNo: existing.quotationNo,
       },
     });
   } catch (error: any) {

@@ -15,6 +15,89 @@ import { getCanonicalPartId } from "../services/partCanonical";
 const router = express.Router();
 const DPO_START_NO = 113;
 
+type PrismaTx = Omit<
+  typeof prisma,
+  "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
+>;
+
+const isTransferInDpo = (orderType?: string | null, dpoNumber?: string | null) =>
+  String(orderType || "").trim() === "transfer_in" ||
+  /^TIN-/i.test(String(dpoNumber || "").trim());
+
+/** Supplier payable (local purchase) or selected branch account (transfer in) for DPO vouchers. */
+async function resolveDpoCounterpartyAccount(
+  tx: PrismaTx,
+  args: {
+    isTransferIn: boolean;
+    branchAccountId?: string | null;
+    supplierId?: string | null;
+    dpoNumber?: string | null;
+    orderType?: string | null;
+  },
+): Promise<{
+  counterpartyAccount: {
+    id: string;
+    code: string;
+    name: string;
+    Subgroup: { MainGroup: { type: string } };
+  } | null;
+  counterpartyLabel: string;
+}> {
+  const transferIn = isTransferInDpo(
+    args.orderType ?? (args.isTransferIn ? "transfer_in" : "local_purchase"),
+    args.dpoNumber,
+  );
+
+  if (transferIn) {
+    const branchId = args.branchAccountId?.trim() || null;
+    if (!branchId) {
+      throw new Error(
+        "Transfer In requires a branch account on the order before posting the voucher.",
+      );
+    }
+    const branchAccount = await tx.account.findUnique({
+      where: { id: branchId },
+      include: { Subgroup: { include: { MainGroup: true } } },
+    });
+    if (!branchAccount) {
+      throw new Error(`Branch account not found (id: ${branchId}).`);
+    }
+    return {
+      counterpartyAccount: branchAccount as any,
+      counterpartyLabel: branchAccount.name || "Branch",
+    };
+  }
+
+  const supplier = args.supplierId
+    ? await tx.supplier.findUnique({ where: { id: args.supplierId } })
+    : null;
+
+  let counterpartyAccount = await tx.account.findFirst({
+    where: {
+      Subgroup: { code: "301" },
+      OR: [
+        { name: supplier?.name || "" },
+        { name: supplier?.companyName || "" },
+        { name: { contains: supplier?.name || "Supplier" } },
+      ],
+    },
+    include: { Subgroup: { include: { MainGroup: true } } },
+  });
+
+  if (!counterpartyAccount) {
+    counterpartyAccount = await tx.account.findFirst({
+      where: { Subgroup: { code: "301" } },
+      include: { Subgroup: { include: { MainGroup: true } } },
+    });
+  }
+
+  return {
+    counterpartyAccount: counterpartyAccount as any,
+    counterpartyLabel:
+      supplier?.companyName || supplier?.name || "Supplier",
+  };
+}
+
 // Get inventory dashboard stats
 router.post("/sync-part-rack-shelf", async (req: Request, res: Response) => {
   try {
@@ -7362,6 +7445,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
       from_date,
       to_date,
       store_id,
+      order_type,
       page = "1",
       limit = "50",
     } = req.query;
@@ -7371,6 +7455,12 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = {};
+    if (order_type && String(order_type).trim() !== "") {
+      where.orderType = String(order_type).trim();
+    } else {
+      // Local purchase list: never include transfer-in documents
+      where.orderType = { not: "transfer_in" };
+    }
     if (status && status !== "all") {
       where.status = status as string;
     }
@@ -7393,6 +7483,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
         include: {
           Store: true,
           Supplier: true,
+          BranchAccount: true,
           DirectPurchaseOrderItem: {
             include: {
               Part: {
@@ -7432,6 +7523,9 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
           store_name: dpo.Store?.name || null,
           supplier_id: dpo.supplierId,
           supplier_name: dpo.Supplier?.name || null,
+          branch_account_id: dpo.branchAccountId,
+          branch_account_name: dpo.BranchAccount?.name?.trim() || null,
+          order_type: dpo.orderType || "local_purchase",
           account: dpo.account,
           description: dpo.description,
           status: dpo.status,
@@ -7506,6 +7600,7 @@ router.get(
         include: {
           Store: true,
           Supplier: true,
+          BranchAccount: true,
           DirectPurchaseOrderItem: {
             include: {
               Part: {
@@ -7556,6 +7651,9 @@ router.get(
         store_name: order.Store?.name || null,
         supplier_id: order.supplierId,
         supplier_name: order.Supplier?.name || null,
+        branch_account_id: order.branchAccountId,
+        branch_account_name: order.BranchAccount?.name?.trim() || null,
+        order_type: order.orderType || "local_purchase",
         account: order.account,
         description: order.description,
         status: order.status,
@@ -7619,6 +7717,8 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       invoice_date,
       store_id,
       supplier_id,
+      branch_account_id,
+      order_type,
       account,
       description,
       status,
@@ -7627,25 +7727,34 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       discount: discountBody,
     } = req.body || {};
 
+    const resolvedOrderType =
+      String(order_type || "local_purchase").trim() || "local_purchase";
+    const isTransferIn = isTransferInDpo(resolvedOrderType, dpo_number);
+
     if (!date || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "date and items are required" });
     }
 
-    if (!supplier_id) {
+    if (isTransferIn) {
+      if (!branch_account_id) {
+        return res.status(400).json({ error: "Branch is required" });
+      }
+    } else if (!supplier_id) {
       return res.status(400).json({ error: "Supplier is required" });
     }
 
     const { order, voucherStatus } = await prisma.$transaction(async (tx) => {
       // Generate DPO number
+      const numberPrefix = isTransferIn ? "TIN" : "DPO";
       if (!dpo_number) {
         const year = new Date(date).getFullYear();
         const dposForYear = await tx.directPurchaseOrder.findMany({
-          where: { dpoNumber: { startsWith: `DPO-${year}-` } },
+          where: { dpoNumber: { startsWith: `${numberPrefix}-${year}-` } },
           select: { dpoNumber: true },
         });
 
         let maxNum = DPO_START_NO - 1;
-        const pattern = new RegExp(`^DPO-${year}-(\\d+)$`);
+        const pattern = new RegExp(`^${numberPrefix}-${year}-(\\d+)$`);
         for (const row of dposForYear) {
           const match = row.dpoNumber.match(pattern);
           if (!match) continue;
@@ -7656,7 +7765,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
         }
 
         const nextNum = maxNum + 1;
-        dpo_number = `DPO-${year}-${String(nextNum).padStart(3, "0")}`;
+        dpo_number = `${numberPrefix}-${year}-${String(nextNum).padStart(3, "0")}`;
       }
 
       // Calculate totals
@@ -7699,7 +7808,9 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
               : null,
           invoiceDate: invoice_date ? new Date(invoice_date) : null,
           storeId: store_id || null,
-          supplierId: supplier_id || null,
+          supplierId: isTransferIn ? null : supplier_id || null,
+          branchAccountId: isTransferIn ? branch_account_id || null : null,
+          orderType: resolvedOrderType,
           account: account || null,
           description: description || null,
           status: status || "Completed",
@@ -8013,26 +8124,14 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
             });
           }
 
-          const supplier = await tx.supplier.findUnique({
-            where: { id: supplier_id },
-          });
-          let mainPayableAccount = await tx.account.findFirst({
-            where: {
-              Subgroup: { code: "301" },
-              OR: [
-                { name: supplier?.name || "" },
-                { name: supplier?.companyName || "" },
-                { name: { contains: supplier?.name || "Supplier" } },
-              ],
-            },
-            include: { Subgroup: { include: { MainGroup: true } } },
-          });
-          if (!mainPayableAccount) {
-            mainPayableAccount = await tx.account.findFirst({
-              where: { Subgroup: { code: "301" } },
-              include: { Subgroup: { include: { MainGroup: true } } },
+          const { counterpartyAccount: mainPayableAccount, counterpartyLabel } =
+            await resolveDpoCounterpartyAccount(tx, {
+              isTransferIn,
+              orderType: resolvedOrderType,
+              branchAccountId: branch_account_id || newOrder.branchAccountId,
+              supplierId: supplier_id,
+              dpoNumber: dpo_number,
             });
-          }
 
           if (inventoryAccount && mainPayableAccount) {
             const lastVoucher = await tx.voucher.findFirst({
@@ -8175,8 +8274,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                 voucherNumber: jvNumber,
                 type: "journal",
                 date: new Date(date),
-                narration:
-                  supplier?.companyName || supplier?.name || "Supplier",
+                narration: counterpartyLabel,
                 totalDebit:
                   Math.round((itemsTotal + expensesTotal) * 100) / 100,
                 totalCredit:
@@ -8231,8 +8329,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                   voucherNumber: pvNumber,
                   type: "payment",
                   date: new Date(date),
-                  narration:
-                    supplier?.companyName || supplier?.name || "Supplier",
+                  narration: counterpartyLabel,
                   cashBankAccount: cashBankAccount.name,
                   totalDebit: totalAmount,
                   totalCredit: totalAmount,
@@ -8305,6 +8402,8 @@ router.put(
         invoice_date,
         store_id,
         supplier_id,
+        branch_account_id,
+        order_type,
         account,
         description,
         status,
@@ -8325,6 +8424,22 @@ router.put(
         return res
           .status(404)
           .json({ error: "Direct Purchase Order not found" });
+      }
+
+      const resolvedOrderType =
+        order_type !== undefined
+          ? String(order_type).trim() || existingOrder.orderType
+          : existingOrder.orderType || "local_purchase";
+      const isTransferIn = isTransferInDpo(
+        resolvedOrderType,
+        dpo_number || existingOrder.dpoNumber,
+      );
+
+      if (isTransferIn && branch_account_id === undefined && !existingOrder.branchAccountId) {
+        return res.status(400).json({ error: "Branch is required" });
+      }
+      if (!isTransferIn && supplier_id === undefined && !existingOrder.supplierId) {
+        return res.status(400).json({ error: "Supplier is required" });
       }
 
       // Calculate totals (items + expenses − discount on items only)
@@ -8390,10 +8505,17 @@ router.put(
                   : null
                 : (existingOrder as any).invoiceDate,
             storeId: store_id !== undefined ? store_id : existingOrder.storeId,
-            supplierId:
-              supplier_id !== undefined
+            orderType: resolvedOrderType,
+            supplierId: isTransferIn
+              ? null
+              : supplier_id !== undefined
                 ? supplier_id
                 : existingOrder.supplierId,
+            branchAccountId: isTransferIn
+              ? branch_account_id !== undefined
+                ? branch_account_id || null
+                : existingOrder.branchAccountId
+              : null,
             account: account !== undefined ? account : existingOrder.account,
             description:
               description !== undefined
@@ -8803,26 +8925,14 @@ router.put(
             });
           }
 
-          const supplier = await tx.supplier.findUnique({
-            where: { id: supplier_id || existingOrder.supplierId || "" },
-          });
-          let mainPayableAccount = await tx.account.findFirst({
-            where: {
-              Subgroup: { code: "301" },
-              OR: [
-                { name: supplier?.name || "" },
-                { name: supplier?.companyName || "" },
-                { name: { contains: supplier?.name || "Supplier" } },
-              ],
-            },
-            include: { Subgroup: { include: { MainGroup: true } } },
-          });
-          if (!mainPayableAccount) {
-            mainPayableAccount = await tx.account.findFirst({
-              where: { Subgroup: { code: "301" } },
-              include: { Subgroup: { include: { MainGroup: true } } },
+          const { counterpartyAccount: mainPayableAccount, counterpartyLabel } =
+            await resolveDpoCounterpartyAccount(tx, {
+              isTransferIn,
+              orderType: updated.orderType,
+              branchAccountId: updated.branchAccountId,
+              supplierId: updated.supplierId,
+              dpoNumber: updated.dpoNumber,
             });
-          }
 
           if (inventoryAccount && mainPayableAccount) {
             const lastVoucher = await tx.voucher.findFirst({
@@ -8965,8 +9075,7 @@ router.put(
                 voucherNumber,
                 type: "journal",
                 date: new Date(date || updated.date),
-                narration:
-                  supplier?.companyName || supplier?.name || "Supplier",
+                narration: counterpartyLabel,
                 totalDebit:
                   Math.round((itemsTotal + expensesTotal) * 100) / 100,
                 totalCredit:
@@ -9021,8 +9130,7 @@ router.put(
                     voucherNumber: pvVoucherNumber,
                     type: "payment",
                     date: new Date(date || updated.date),
-                    narration:
-                      supplier?.companyName || supplier?.name || "Supplier",
+                    narration: counterpartyLabel,
                     cashBankAccount: cashBankAccount.name,
                     totalDebit: totalAmount,
                     totalCredit: totalAmount,
@@ -9093,19 +9201,24 @@ router.post(
         where: { id: dpoId },
       });
 
-      if (!dpo || !dpo.supplierId) {
+      if (!dpo) {
         return res.status(400).json({
-          error: "Direct Purchase Order not found or has no supplier",
+          error: "Direct Purchase Order not found",
         });
       }
 
-      // Fetch supplier separately
-      const supplier = await prisma.supplier.findUnique({
-        where: { id: dpo.supplierId },
-      });
+      const isTransferIn = (dpo.orderType || "local_purchase") === "transfer_in";
 
-      if (!supplier) {
-        return res.status(400).json({ error: "Supplier not found" });
+      if (!isTransferIn && !dpo.supplierId) {
+        return res.status(400).json({
+          error: "Direct Purchase Order has no supplier",
+        });
+      }
+
+      if (isTransferIn && !dpo.branchAccountId) {
+        return res.status(400).json({
+          error: "Transfer In order has no branch account",
+        });
       }
 
       if (!amount || amount <= 0) {
@@ -9114,31 +9227,58 @@ router.post(
         });
       }
 
-      // Get supplier account (should already exist)
-      const payablesSubgroup = await prisma.subgroup.findFirst({
-        where: { code: "301" },
-      });
+      let counterpartyAccount: {
+        id: string;
+        code: string;
+        name: string;
+      } | null = null;
+      let counterpartyLabel = "Supplier";
 
-      if (!payablesSubgroup) {
-        return res
-          .status(400)
-          .json({ error: "Supplier Payables subgroup not found" });
+      if (isTransferIn && dpo.branchAccountId) {
+        counterpartyAccount = await prisma.account.findUnique({
+          where: { id: dpo.branchAccountId },
+          select: { id: true, code: true, name: true },
+        });
+        counterpartyLabel = counterpartyAccount?.name || "Branch";
+      } else {
+        const supplier = await prisma.supplier.findUnique({
+          where: { id: dpo.supplierId! },
+        });
+
+        if (!supplier) {
+          return res.status(400).json({ error: "Supplier not found" });
+        }
+
+        counterpartyLabel =
+          supplier.companyName || supplier.name || "Supplier";
+
+        const payablesSubgroup = await prisma.subgroup.findFirst({
+          where: { code: "301" },
+        });
+
+        if (!payablesSubgroup) {
+          return res
+            .status(400)
+            .json({ error: "Supplier Payables subgroup not found" });
+        }
+
+        counterpartyAccount = await prisma.account.findFirst({
+          where: {
+            subgroupId: payablesSubgroup.id,
+            OR: [
+              { name: supplier.companyName || "" },
+              { name: supplier.name || "" },
+            ],
+          },
+          select: { id: true, code: true, name: true },
+        });
       }
 
-      const supplierAccount = await prisma.account.findFirst({
-        where: {
-          subgroupId: payablesSubgroup.id,
-          OR: [
-            { name: supplier.companyName || "" },
-            { name: supplier.name || "" },
-          ],
-        },
-      });
-
-      if (!supplierAccount) {
+      if (!counterpartyAccount) {
         return res.status(400).json({
-          error:
-            "Supplier account not found. Please ensure supplier account exists.",
+          error: isTransferIn
+            ? "Branch account not found."
+            : "Supplier account not found. Please ensure supplier account exists.",
         });
       }
 
@@ -9209,8 +9349,7 @@ router.post(
           voucherNumber,
           type: "payment",
           date: paymentDate ? new Date(paymentDate) : new Date(),
-          narration:
-            supplier.companyName || supplier.name || "Supplier Payment",
+          narration: `${counterpartyLabel} Payment`,
           cashBankAccount: cashBankAccount.name,
           totalDebit: amount,
           totalCredit: amount,
@@ -9223,8 +9362,8 @@ router.post(
             create: [
               {
                 id: crypto.randomUUID(),
-                accountId: supplierAccount.id,
-                accountName: `${supplierAccount.code}-${supplierAccount.name}`,
+                accountId: counterpartyAccount.id,
+                accountName: `${counterpartyAccount.code}-${counterpartyAccount.name}`,
                 description: description || `Payment for DPO ${dpo.dpoNumber}`,
                 debit: amount,
                 credit: 0,
@@ -9245,22 +9384,20 @@ router.post(
       });
 
       // Update account balances
-      // Debit Supplier (decreases liability)
       await prisma.account.update({
-        where: { id: supplierAccount.id },
+        where: { id: counterpartyAccount.id },
         data: {
           currentBalance: {
-            decrement: amount, // Liability decreases with debit
+            decrement: amount,
           },
         },
       });
 
-      // Credit Cash/Bank (decreases asset)
       await prisma.account.update({
         where: { id: cashBankAccount.id },
         data: {
           currentBalance: {
-            decrement: amount, // Asset decreases with credit
+            decrement: amount,
           },
         },
       });
@@ -9270,7 +9407,7 @@ router.post(
           id: paymentVoucher.id,
           voucherNumber: paymentVoucher.voucherNumber,
           amount,
-          supplier: supplierAccount.name,
+          counterparty: counterpartyAccount.name,
           cashBankAccount: cashBankAccount.name,
         },
       });

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Search, Edit, Trash2, MoreVertical, X } from "lucide-react";
+import { Plus, Search, Edit, MoreVertical, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -442,31 +442,6 @@ export const SupplierManagement = () => {
     setIsDialogOpen(false);
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      const response = (await apiClient.deleteSupplier(id)) as any;
-      if (response.error) {
-        toast({
-          title: "Error",
-          description: response.error,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Supplier Deleted",
-          description: "Supplier has been removed.",
-        });
-        fetchSuppliers();
-      }
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete supplier",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleToggleStatusClick = (supplier: Supplier) => {
     setSupplierToToggle(supplier);
     setStatusConfirmOpen(true);
@@ -713,16 +688,6 @@ export const SupplierManagement = () => {
                               onClick={() => handleEdit(supplier)}
                             >
                               <Edit className="w-3 h-3" />
-                            </Button>
-                          </ActionButtonTooltip>
-                          <ActionButtonTooltip label="Delete" variant="delete">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-destructive hover:text-destructive/80"
-                              onClick={() => handleDelete(supplier.id)}
-                            >
-                              <Trash2 className="w-3 h-3" />
                             </Button>
                           </ActionButtonTooltip>
                           <ActionButtonTooltip

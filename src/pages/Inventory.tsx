@@ -22,7 +22,6 @@ import {
 
 // Inventory sub-modules
 import { StockInOut } from "@/components/inventory/StockInOut";
-import { StockTransfer } from "@/components/inventory/StockTransfer";
 import { StockBalance } from "@/components/inventory/StockBalance";
 import { AdjustItem } from "@/components/inventory/AdjustItem";
 import { InventoryDashboard } from "@/components/inventory/InventoryDashboard";
@@ -41,7 +40,6 @@ type InventoryTab =
   | "dashboard"
   | "current-stock"
   | "stock-in-out"
-  | "stock-transfer"
   | "adjust-item"
   | "stock-balance"
   | "multi-dimensional"
@@ -110,8 +108,6 @@ const Inventory = () => {
         return <StoreManagementTab />;
       case "stock-in-out":
         return <StockInOut />;
-      case "stock-transfer":
-        return <StockTransfer />;
       case "adjust-item":
         return <AdjustItem />;
       case "stock-balance":

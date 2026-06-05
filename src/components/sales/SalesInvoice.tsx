@@ -8,6 +8,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { apiClient } from "@/lib/api";
+import {
+  branchAccountDisplayName,
+  fetchBranchAccountOptions,
+} from "@/lib/branch-accounts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -343,7 +347,7 @@ interface InlineItemRow {
   descriptionFallback?: string;
 }
 
-type SalesDocumentKind = "invoice" | "quotation";
+type SalesDocumentKind = "invoice" | "quotation" | "transfer-out";
 
 export const SalesInvoice = ({
   documentKind = "invoice",
@@ -351,6 +355,32 @@ export const SalesInvoice = ({
   documentKind?: SalesDocumentKind;
 }) => {
   const isQuotation = documentKind === "quotation";
+  const isTransferOut = documentKind === "transfer-out";
+  const docFormLabel = isQuotation
+    ? "Quotation Form"
+    : isTransferOut
+      ? "Transfer Out Form"
+      : "Invoice Form";
+  const docListLabel = isQuotation
+    ? "Quotation List"
+    : isTransferOut
+      ? "Transfer Out List"
+      : "Invoice List";
+  const docDateLabel = isQuotation
+    ? "Quotation Date"
+    : isTransferOut
+      ? "Transfer Out Date"
+      : "Invoice Date";
+  const docNumberLabel = isQuotation
+    ? "Quotation #"
+    : isTransferOut
+      ? "Transfer #"
+      : "Invoice #";
+  const docLoadingLabel = isQuotation
+    ? "Loading quotations..."
+    : isTransferOut
+      ? "Loading transfer out records..."
+      : "Loading invoices...";
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -366,8 +396,11 @@ export const SalesInvoice = ({
   const salesInvoicesQueryParams = useMemo(
     () => ({
       status: filterStatus !== "all" ? filterStatus : undefined,
-      customerType:
-        filterCustomerType !== "all" ? filterCustomerType : undefined,
+      customerType: isTransferOut
+        ? "transfer"
+        : filterCustomerType !== "all"
+          ? filterCustomerType
+          : undefined,
       search: searchTerm.trim() || undefined,
       partId: filterPartId.trim() || undefined,
       brandId: filterBrandId.trim() || undefined,
@@ -378,7 +411,22 @@ export const SalesInvoice = ({
       searchTerm,
       filterPartId,
       filterBrandId,
+      isTransferOut,
     ],
+  );
+  const [selectedBranchAccountId, setSelectedBranchAccountId] = useState("");
+  const [branchAccounts, setBranchAccounts] = useState<
+    { id: string; value: string; label: string }[]
+  >([]);
+  const getTransferOutBranchLabel = useCallback(
+    (inv: Pick<Invoice, "customerName" | "accountId">) => {
+      if (inv.accountId) {
+        const match = branchAccounts.find((b) => b.id === inv.accountId);
+        if (match?.label) return match.label;
+      }
+      return branchAccountDisplayName(inv.customerName);
+    },
+    [branchAccounts],
   );
   const [approvingInvoice, setApprovingInvoice] = useState<string | null>(null);
 
@@ -387,11 +435,19 @@ export const SalesInvoice = ({
   const [documentView, setDocumentView] = useState<"form" | "list">("form");
   const showDocumentForm = documentView === "form";
   const [newInvoice, setNewInvoice] = useState<Partial<Invoice>>({
-    customerType: "registered", // Default to Party Sale
+    customerType: isTransferOut ? "transfer" : "registered",
     items: [],
     overallDiscount: 0,
     overallDiscountType: "percent",
   });
+
+  const scopeInvoiceList = useCallback(
+    (rows: Invoice[]) =>
+      rows.filter((inv) =>
+        isTransferOut ? inv.customerType === "transfer" : inv.customerType !== "transfer",
+      ),
+    [isTransferOut],
+  );
 
   // Customers data from API
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -2177,7 +2233,7 @@ export const SalesInvoice = ({
               new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
           );
 
-        setInvoices(transformedInvoices);
+        setInvoices(scopeInvoiceList(transformedInvoices));
       } catch (error: any) {
         toast({
           title: "Error",
@@ -2190,7 +2246,13 @@ export const SalesInvoice = ({
     };
 
     fetchInvoices();
-  }, [salesInvoicesQueryParams, invoiceListRefreshTick, isQuotation]);
+  }, [
+    salesInvoicesQueryParams,
+    invoiceListRefreshTick,
+    isQuotation,
+    isTransferOut,
+    scopeInvoiceList,
+  ]);
 
   // Fetch customers from API
   useEffect(() => {
@@ -2239,8 +2301,17 @@ export const SalesInvoice = ({
       }
     };
 
-    fetchCustomers();
-  }, []);
+    if (!isTransferOut) {
+      fetchCustomers();
+    }
+  }, [isTransferOut]);
+
+  useEffect(() => {
+    if (!isTransferOut) return;
+    fetchBranchAccountOptions("Current Assets")
+      .then(setBranchAccounts)
+      .catch(() => setBranchAccounts([]));
+  }, [isTransferOut]);
 
   // Fetch accounts from Accounting API - Separate Bank and Cash accounts
   useEffect(() => {
@@ -2510,8 +2581,16 @@ export const SalesInvoice = ({
     const totalReceived = calculateTotalReceived();
     const grandTotal = calculateAmountAfterDiscount();
 
-    // Validation for Registered Customers (Party Sale)
-    if (newInvoice.customerType === "registered" && !selectedCustomerId) {
+    if (isTransferOut) {
+      if (!selectedBranchAccountId) {
+        toast({
+          title: "Branch Required",
+          description: "Please select a branch for Transfer Out.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else if (newInvoice.customerType === "registered" && !selectedCustomerId) {
       toast({
         title: "Customer Required",
         description: "Please select a customer for Party Sale (Credit).",
@@ -2523,6 +2602,7 @@ export const SalesInvoice = ({
     // NEW: Credit Limit Validation for Registered Customers (can be overridden via checkbox)
     if (
       !isQuotation &&
+      !isTransferOut &&
       newInvoice.customerType === "registered" &&
       selectedCustomerId &&
       !overrideCreditLimit
@@ -2551,7 +2631,7 @@ export const SalesInvoice = ({
       }
     }
 
-    if (!isQuotation && newInvoice.customerType === "walking") {
+    if (!isQuotation && !isTransferOut && newInvoice.customerType === "walking") {
       if (totalReceived <= 0) {
         toast({
           title: "Missing Payment Information",
@@ -2625,16 +2705,23 @@ export const SalesInvoice = ({
       // Determine customer name based on selection
       // registered = Party Sale (picks from customer dropdown)
       // walking    = Cash Sale  (free-text name entry)
-      const customerName =
-        newInvoice.customerType === "registered" && selectedCustomerName
-          ? selectedCustomerName // Party Sale: use selected customer
+      const selectedBranch = branchAccounts.find(
+        (b) => b.id === selectedBranchAccountId,
+      );
+      const customerName = isTransferOut
+        ? selectedBranch?.label || "Branch"
+        : newInvoice.customerType === "registered" && selectedCustomerName
+          ? selectedCustomerName
           : newInvoice.customerType === "walking" && newInvoice.customerName
-            ? newInvoice.customerName // Cash Sale: use typed name
+            ? newInvoice.customerName
             : newInvoice.customerType === "registered"
-              ? "Walk-in Customer" // Party Sale fallback
-              : "Walk-in Customer"; // Cash Sale fallback
+              ? "Walk-in Customer"
+              : "Walk-in Customer";
 
       const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+      const resolvedCustomerType = isTransferOut
+        ? "transfer"
+        : newInvoice.customerType;
 
       if (isQuotation) {
         const quotationPayload = {
@@ -2696,40 +2783,59 @@ export const SalesInvoice = ({
       }
 
       let response;
-      const resolvedTerm =
-        newInvoice.customerType === "registered"
+      const resolvedTerm = isTransferOut
+        ? undefined
+        : newInvoice.customerType === "registered"
           ? term.trim() || undefined
           : selectedBankAccount && bankAmount > 0
             ? "online"
             : selectedCashAccount && cashAmount > 0
               ? "cash"
               : undefined;
+      const resolvedTax = isTransferOut ? 0 : calculateTax();
+      const resolvedTaxPercentage = isTransferOut
+        ? undefined
+        : taxType === "With GST"
+          ? getCurrentGstRate()
+          : undefined;
+      const resolvedAccountId = isTransferOut
+        ? selectedBranchAccountId || undefined
+        : selectedBankAccount || selectedCashAccount || undefined;
       if (editingInvoiceId) {
         // UPDATE Existing Invoice
         response = await apiClient.updateSalesInvoice(editingInvoiceId, {
           invoiceDate: invoiceDate,
           term: resolvedTerm,
-          customerId: selectedCustomerId || undefined,
+          customerId: isTransferOut ? undefined : selectedCustomerId || undefined,
           customerName: customerName,
+          customerType: resolvedCustomerType,
           deliveredTo: deliveredTo || undefined,
           remarks: remarks || undefined,
           items: invoiceItems,
           subtotal,
           overallDiscount: discount,
           freightCharges,
-          tax: calculateTax(),
-          taxPercentage:
-            taxType === "With GST" ? getCurrentGstRate() : undefined,
+          tax: resolvedTax,
+          taxPercentage: resolvedTaxPercentage,
           grandTotal,
-          accountId: selectedBankAccount || selectedCashAccount || undefined,
-          bankAccountId: selectedBankAccount || undefined,
-          cashAccountId: selectedCashAccount || undefined,
+          accountId: resolvedAccountId,
+          bankAccountId: isTransferOut ? undefined : selectedBankAccount || undefined,
+          cashAccountId: isTransferOut ? undefined : selectedCashAccount || undefined,
           bankAmount:
-            selectedBankAccount && bankAmount > 0 ? bankAmount : undefined,
+            isTransferOut
+              ? undefined
+              : selectedBankAccount && bankAmount > 0
+                ? bankAmount
+                : undefined,
           cashAmount:
-            selectedCashAccount && cashAmount > 0 ? cashAmount : undefined,
-          paidAmount:
-            selectedBankAccount || selectedCashAccount
+            isTransferOut
+              ? undefined
+              : selectedCashAccount && cashAmount > 0
+                ? cashAmount
+                : undefined,
+          paidAmount: isTransferOut
+            ? receivedAmount
+            : selectedBankAccount || selectedCashAccount
               ? bankAmount + cashAmount
               : receivedAmount,
         });
@@ -2738,31 +2844,39 @@ export const SalesInvoice = ({
         response = await apiClient.createSalesInvoice({
           invoiceDate: invoiceDate,
           term: resolvedTerm,
-          customerId: selectedCustomerId || undefined,
+          customerId: isTransferOut ? undefined : selectedCustomerId || undefined,
           customerName: customerName,
-          customerType: newInvoice.customerType as CustomerType,
+          customerType: resolvedCustomerType as CustomerType,
           salesPerson: newInvoice.salesPerson || "Admin",
-          accountId: selectedBankAccount || selectedCashAccount || undefined, // Keep for backward compatibility
-          bankAccountId: selectedBankAccount || undefined,
-          cashAccountId: selectedCashAccount || undefined,
+          accountId: resolvedAccountId,
+          bankAccountId: isTransferOut ? undefined : selectedBankAccount || undefined,
+          cashAccountId: isTransferOut ? undefined : selectedCashAccount || undefined,
           bankAmount:
-            selectedBankAccount && bankAmount > 0 ? bankAmount : undefined, // NEW
+            isTransferOut
+              ? undefined
+              : selectedBankAccount && bankAmount > 0
+                ? bankAmount
+                : undefined,
           cashAmount:
-            selectedCashAccount && cashAmount > 0 ? cashAmount : undefined, // NEW
+            isTransferOut
+              ? undefined
+              : selectedCashAccount && cashAmount > 0
+                ? cashAmount
+                : undefined,
           deliveredTo: deliveredTo || undefined,
           remarks: remarks || undefined,
           items: invoiceItems,
           subtotal,
           overallDiscount: discount,
           freightCharges,
-          tax: calculateTax(),
-          taxPercentage:
-            taxType === "With GST" ? getCurrentGstRate() : undefined,
+          tax: resolvedTax,
+          taxPercentage: resolvedTaxPercentage,
           grandTotal,
-          paidAmount:
-            selectedBankAccount || selectedCashAccount
+          paidAmount: isTransferOut
+            ? receivedAmount
+            : selectedBankAccount || selectedCashAccount
               ? bankAmount + cashAmount
-              : receivedAmount, // Calculate from bank + cash
+              : receivedAmount,
         });
       }
 
@@ -2777,10 +2891,14 @@ export const SalesInvoice = ({
         return;
       }
 
-      const invoiceType =
-        newInvoice.customerType === "registered" ? "Party Sale" : "Cash Sale";
-      const message =
-        newInvoice.customerType === "registered"
+      const invoiceType = isTransferOut
+        ? "Transfer Out"
+        : newInvoice.customerType === "registered"
+          ? "Party Sale"
+          : "Cash Sale";
+      const message = isTransferOut
+        ? `Transfer Out ${editingInvoiceId ? "updated" : "created"}. Stock will be reserved when you approve.`
+        : newInvoice.customerType === "registered"
           ? `Invoice ${editingInvoiceId ? "updated" : "created"}. Stock will be reserved when you approve the invoice.`
           : `Invoice ${editingInvoiceId ? "updated" : "created"}. Stock will be reserved when you approve; confirm delivery to complete.`;
 
@@ -2855,7 +2973,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
     } catch (error: any) {
       toast({
         title: "Error",
@@ -2872,7 +2990,7 @@ export const SalesInvoice = ({
     setEditingInvoiceId(null);
     setDocumentView("form");
     setNewInvoice({
-      customerType: "registered", // Default to Party Sale
+      customerType: isTransferOut ? "transfer" : "registered",
       items: [],
       overallDiscount: 0,
       overallDiscountType: "percent",
@@ -2895,6 +3013,7 @@ export const SalesInvoice = ({
     setInvoiceDate(new Date().toISOString().split("T")[0]); // Reset to today when starting a new invoice
     setSelectedCustomerId("");
     setSelectedCustomerName("");
+    setSelectedBranchAccountId("");
     setCustomerPriceType(null);
     setSelectedCustomerCategory(null);
     setValidUntil(
@@ -2919,8 +3038,17 @@ export const SalesInvoice = ({
         overallDiscount: invoice.overallDiscount || 0,
         overallDiscountType: "percent",
       });
-      setSelectedCustomerId(invoice.customerId || "");
-      setSelectedCustomerName(invoice.customerName || "");
+      if (invoice.customerType === "transfer" || isTransferOut) {
+        setSelectedBranchAccountId(
+          fullInvoice.accountId || invoice.accountId || "",
+        );
+        setSelectedCustomerId("");
+        setSelectedCustomerName("");
+      } else {
+        setSelectedCustomerId(invoice.customerId || "");
+        setSelectedCustomerName(invoice.customerName || "");
+        setSelectedBranchAccountId("");
+      }
       const invDate = isQuotation
         ? fullInvoice.quotationDate ?? invoice.invoiceDate
         : fullInvoice.invoiceDate ?? invoice.invoiceDate;
@@ -2942,7 +3070,11 @@ export const SalesInvoice = ({
             "draft") as typeof quotationStatus,
         );
       }
-      setTerm(String(fullInvoice.term ?? invoice.term ?? ""));
+      if (!isTransferOut) {
+        setTerm(String(fullInvoice.term ?? invoice.term ?? ""));
+      } else {
+        setTerm("");
+      }
       // Restore customer price type when editing
       const editCustomer = customers.find((c) => c.id === invoice.customerId);
       setCustomerPriceType(editCustomer?.priceType || null);
@@ -3062,17 +3194,24 @@ export const SalesInvoice = ({
             0,
         ) || 0,
       );
-      const taxPct = fullInvoice.taxPercentage ?? invoice.taxPercentage;
-      if (taxPct != null && Number(taxPct) > 0) {
-        setTaxType("With GST");
-        setGstPercentage(Number(taxPct));
-        setUseCustomGst(false);
-      } else if (Number(fullInvoice.tax ?? invoice.tax) > 0) {
-        setTaxType("With GST");
-        setUseCustomGst(true);
-        setCustomGstPercentage("");
-      } else {
+      if (isTransferOut) {
         setTaxType("Without GST");
+        setGstPercentage(0);
+        setCustomGstPercentage("");
+        setUseCustomGst(false);
+      } else {
+        const taxPct = fullInvoice.taxPercentage ?? invoice.taxPercentage;
+        if (taxPct != null && Number(taxPct) > 0) {
+          setTaxType("With GST");
+          setGstPercentage(Number(taxPct));
+          setUseCustomGst(false);
+        } else if (Number(fullInvoice.tax ?? invoice.tax) > 0) {
+          setTaxType("With GST");
+          setUseCustomGst(true);
+          setCustomGstPercentage("");
+        } else {
+          setTaxType("Without GST");
+        }
       }
       setDeliveredTo(fullInvoice.deliveredTo || "");
       setRemarks(fullInvoice.notes ?? fullInvoice.remarks ?? "");
@@ -3305,7 +3444,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
     } catch (error: any) {
       toast({
         title: "Error",
@@ -3410,7 +3549,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
 
       // Update selected invoice
       const updatedInvoice = transformedInvoices.find(
@@ -3556,7 +3695,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
 
       // Update selected invoice
       if (selectedInvoice) {
@@ -3850,7 +3989,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
     } catch (error: any) {
       toast({
         title: "Error",
@@ -3947,7 +4086,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
 
       setShowHoldDialog(false);
       setHoldReason("");
@@ -4046,7 +4185,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
 
       setShowCancelConfirm(false);
       setInvoiceToCancel(null);
@@ -4144,7 +4283,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
 
       setShowSoftDeleteConfirm(false);
       setInvoiceToSoftDelete(null);
@@ -4241,7 +4380,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
 
       setShowDeleteConfirm(false);
       setInvoiceToDelete(null);
@@ -4330,7 +4469,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
     } catch (error: any) {
       toast({
         title: "Error",
@@ -4428,7 +4567,7 @@ export const SalesInvoice = ({
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
       }));
-      setInvoices(transformedInvoices);
+      setInvoices(scopeInvoiceList(transformedInvoices));
     } catch (error: any) {
       toast({
         title: "Error",
@@ -5065,12 +5204,8 @@ export const SalesInvoice = ({
           onValueChange={(v) => setDocumentView(v as "form" | "list")}
         >
           <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="form">
-              {isQuotation ? "Quotation Form" : "Invoice Form"}
-            </TabsTrigger>
-            <TabsTrigger value="list">
-              {isQuotation ? "Quotation List" : "Invoice List"}
-            </TabsTrigger>
+            <TabsTrigger value="form">{docFormLabel}</TabsTrigger>
+            <TabsTrigger value="list">{docListLabel}</TabsTrigger>
           </TabsList>
         </Tabs>
         <Button
@@ -5096,7 +5231,11 @@ export const SalesInvoice = ({
                 <div className="relative min-w-0 flex-1 shrink-0 basis-full sm:basis-[min(100%,22rem)]">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    placeholder="Search by invoice number or customer..."
+                    placeholder={
+                      isTransferOut
+                        ? "Search by transfer no. or branch..."
+                        : "Search by invoice number or customer..."
+                    }
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="h-10 pl-10 text-sm"
@@ -5119,19 +5258,21 @@ export const SalesInvoice = ({
                   className="min-w-0 w-full shrink-0 sm:min-w-[240px] sm:max-w-xs sm:flex-1 [&_input]:h-10 [&_input]:text-sm"
                   disabled={partsLoading && parts.length === 0}
                 />
-                <Select
-                  value={filterCustomerType}
-                  onValueChange={setFilterCustomerType}
-                >
-                  <SelectTrigger className="h-10 w-full shrink-0 text-sm sm:w-40">
-                    <SelectValue placeholder="Customer Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="walking">Cash Sale</SelectItem>
-                    <SelectItem value="registered">Party Sale</SelectItem>
-                  </SelectContent>
-                </Select>
+                {!isTransferOut && (
+                  <Select
+                    value={filterCustomerType}
+                    onValueChange={setFilterCustomerType}
+                  >
+                    <SelectTrigger className="h-10 w-full shrink-0 text-sm sm:w-40">
+                      <SelectValue placeholder="Customer Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="walking">Cash Sale</SelectItem>
+                      <SelectItem value="registered">Party Sale</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
                 <Select value={filterStatus} onValueChange={setFilterStatus}>
                   <SelectTrigger className="h-10 w-full shrink-0 text-sm sm:w-40">
                     <SelectValue placeholder="Status" />
@@ -5171,128 +5312,148 @@ export const SalesInvoice = ({
         <Card className="relative">
           <CardContent className="space-y-6 p-4 pt-4">
             <div className="flex flex-wrap items-end justify-start gap-3">
-              {newInvoice.customerType === "walking" ? (
-                <div className="space-y-1.5 w-56">
+              {isTransferOut ? (
+                <div className="space-y-1.5 w-[26rem]">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Customer Name
+                    Branch
                   </Label>
-                  <Input
-                    placeholder=""
-                    value={newInvoice.customerName || ""}
-                    onChange={(e) =>
-                      setNewInvoice((prev) => ({
-                        ...prev,
-                        customerName: e.target.value,
-                      }))
+                  <SearchableSelect
+                    options={branchAccounts}
+                    value={selectedBranchAccountId || ""}
+                    onValueChange={setSelectedBranchAccountId}
+                    placeholder={
+                      branchAccounts.length === 0
+                        ? "No branch accounts found"
+                        : "Select branch..."
                     }
-                    className="bg-background border-primary/20 h-9 text-sm"
+                    className="h-9"
                   />
                 </div>
               ) : (
-                <div className="space-y-1.5 w-[26rem]">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Select Customer
-                  </Label>
-                  <div className="flex gap-2">
-                    <SearchableSelect
-                      options={customers.map((customer) => ({
-                        value: customer.id,
-                        label: customer.priceType
-                          ? `${customer.name} (Price ${customer.priceType})`
-                          : customer.name,
-                      }))}
-                      value={selectedCustomerId || ""}
-                      onValueChange={(value) => {
-                        setSelectedCustomerId(value);
-                        const customer = customers.find((c) => c.id === value);
-                        if (customer) {
-                          setSelectedCustomerName(customer.name);
-                          const pt = customer.priceType || null;
-                          setCustomerPriceType(pt);
-                          setSelectedCustomerCategory(customer.category || null);
-                          if (pt) {
-                            setInlineItems((prev) =>
-                              prev.map((item) => {
-                                if (!item.selectedPartId) return item;
-                                return { ...item, selectedPriceType: pt };
-                              }),
-                            );
-                          }
+                <>
+                  {newInvoice.customerType === "walking" ? (
+                    <div className="space-y-1.5 w-56">
+                      <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                        Customer Name
+                      </Label>
+                      <Input
+                        placeholder=""
+                        value={newInvoice.customerName || ""}
+                        onChange={(e) =>
+                          setNewInvoice((prev) => ({
+                            ...prev,
+                            customerName: e.target.value,
+                          }))
                         }
+                        className="bg-background border-primary/20 h-9 text-sm"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 w-[26rem]">
+                      <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                        Select Customer
+                      </Label>
+                      <div className="flex gap-2">
+                        <SearchableSelect
+                          options={customers.map((customer) => ({
+                            value: customer.id,
+                            label: customer.priceType
+                              ? `${customer.name} (Price ${customer.priceType})`
+                              : customer.name,
+                          }))}
+                          value={selectedCustomerId || ""}
+                          onValueChange={(value) => {
+                            setSelectedCustomerId(value);
+                            const customer = customers.find((c) => c.id === value);
+                            if (customer) {
+                              setSelectedCustomerName(customer.name);
+                              const pt = customer.priceType || null;
+                              setCustomerPriceType(pt);
+                              setSelectedCustomerCategory(customer.category || null);
+                              if (pt) {
+                                setInlineItems((prev) =>
+                                  prev.map((item) => {
+                                    if (!item.selectedPartId) return item;
+                                    return { ...item, selectedPriceType: pt };
+                                  }),
+                                );
+                              }
+                            }
+                          }}
+                          disabled={loadingCustomers}
+                          placeholder={
+                            loadingCustomers
+                              ? "Loading..."
+                              : customers.length === 0
+                                ? "No customers available"
+                                : "Search customer..."
+                          }
+                          className="flex-1 h-9"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            setCustomerDialogEditId(null);
+                            setShowAddCustomerDialog(true);
+                          }}
+                          title="Add New Customer"
+                          className="shrink-0"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          disabled={!selectedCustomerId}
+                          onClick={() => {
+                            if (!selectedCustomerId) return;
+                            setCustomerDialogEditId(selectedCustomerId);
+                            setShowAddCustomerDialog(true);
+                          }}
+                          title="Edit Selected Customer"
+                          className="shrink-0"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-1.5 w-40">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      Sale Type
+                    </Label>
+                    <Select
+                      value={newInvoice.customerType}
+                      onValueChange={(v) => {
+                        const customerType = v as CustomerType;
+                        setNewInvoice((prev) => ({ ...prev, customerType }));
+                        setSelectedCustomerId("");
+                        setSelectedCustomerName("");
+                        setCustomerPriceType(null);
+                        setSelectedCustomerCategory(null);
                       }}
-                      disabled={loadingCustomers}
-                      placeholder={
-                        loadingCustomers
-                          ? "Loading..."
-                          : customers.length === 0
-                            ? "No customers available"
-                            : "Search customer..."
-                      }
-                      className="flex-1 h-9"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        setCustomerDialogEditId(null);
-                        setShowAddCustomerDialog(true);
-                      }}
-                      title="Add New Customer"
-                      className="shrink-0"
                     >
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      disabled={!selectedCustomerId}
-                      onClick={() => {
-                        if (!selectedCustomerId) return;
-                        setCustomerDialogEditId(selectedCustomerId);
-                        setShowAddCustomerDialog(true);
-                      }}
-                      title="Edit Selected Customer"
-                      className="shrink-0"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
+                      <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="registered">
+                          Party Sale (Credit)
+                        </SelectItem>
+                        <SelectItem value="walking">
+                          Cash Sale (Walk-in)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                </div>
+                </>
               )}
-              <div className="space-y-1.5 w-40">
-                <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                  Sale Type
-                </Label>
-                <Select
-                  value={newInvoice.customerType}
-                  onValueChange={(v) => {
-                    const customerType = v as CustomerType;
-                    setNewInvoice((prev) => ({ ...prev, customerType }));
-                    // Reset customer selections when switching
-                    setSelectedCustomerId("");
-                    setSelectedCustomerName("");
-                    setCustomerPriceType(null);
-                    setSelectedCustomerCategory(null);
-                  }}
-                >
-                  <SelectTrigger className="bg-background border-primary/20 hover:border-primary/40 focus:ring-primary/30 h-9 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="registered">
-                      Party Sale (Credit)
-                    </SelectItem>
-                    <SelectItem value="walking">
-                      Cash Sale (Walk-in)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="space-y-1.5 w-56">
                 <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                  {isQuotation ? "Quotation Date" : "Invoice Date"}
+                  {docDateLabel}
                 </Label>
                 <Input
                   type="date"
@@ -6455,6 +6616,8 @@ export const SalesInvoice = ({
                 </div>
                 {!isQuotation ? (
                 <>
+                {!isTransferOut && (
+                <>
                 <div className="space-y-2">
                   <Label className="text-xs">Bank Account</Label>
                   <Select
@@ -6589,7 +6752,9 @@ export const SalesInvoice = ({
                     </div>
                   )}
                 </div>
-                {!selectedBankAccount && !selectedCashAccount && (
+                </>
+                )}
+                {(isTransferOut || (!selectedBankAccount && !selectedCashAccount)) && (
                   <div className="space-y-2">
                     <Label className="text-xs">Received Amount</Label>
                     <Input
@@ -6626,7 +6791,7 @@ export const SalesInvoice = ({
                     Rs {calculateTotalAmount().toLocaleString()}
                   </span>
                 </div>
-                {taxType === "With GST" && (
+                {!isTransferOut && taxType === "With GST" && (
                   <>
                     <div className="flex justify-between text-blue-600">
                       <span>GST %:</span>
@@ -6862,11 +7027,13 @@ export const SalesInvoice = ({
             {!isQuotation ? (
             <div className="bg-primary/5 rounded-xl p-5 border border-primary/10">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-primary/80 mb-4 flex items-center gap-2">
-                <Users className="w-4 h-4" /> Customer & Delivery Info
+                <Users className="w-4 h-4" />{" "}
+                {isTransferOut ? "Delivery Info" : "Customer & Delivery Info"}
               </h3>
               <div className="flex flex-wrap gap-3 items-start">
                 {/* Show Previous Balance and Credit Limit */}
-                {newInvoice.customerType === "registered" &&
+                {!isTransferOut &&
+                  newInvoice.customerType === "registered" &&
                   selectedCustomerId &&
                   (() => {
                     const customer = customers.find(
@@ -6924,137 +7091,143 @@ export const SalesInvoice = ({
                     );
                   })()}
 
-                <div className="space-y-1.5 w-36">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Tax Type
-                  </Label>
-                  <Select value={taxType} onValueChange={setTaxType}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Without GST">Without GST</SelectItem>
-                      <SelectItem value="With GST">With GST</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {!isTransferOut && (
+                  <>
+                    <div className="space-y-1.5 w-36">
+                      <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                        Tax Type
+                      </Label>
+                      <Select value={taxType} onValueChange={setTaxType}>
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Without GST">Without GST</SelectItem>
+                          <SelectItem value="With GST">With GST</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                {taxType === "With GST" && (
-                  <div className="space-y-1.5 w-44">
-                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                      GST Percentage
-                    </Label>
-                    {newInvoice.customerType === "walking" ? (
-                      /* Walk-in (Cash Sale): Show only Custom Input, no buttons/dropdown */
-                      <div className="flex-1">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder=""
-                          value={customGstPercentage}
-                          onChange={(e) =>
-                            setCustomGstPercentage(e.target.value)
-                          }
-                          className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                      </div>
-                    ) : /* Registered (Party Sale): Toggle between Preset and Custom */
-                    !useCustomGst ? (
-                      <div className="flex gap-3">
-                        <Select
-                          value={gstPercentage.toString()}
-                          onValueChange={(value) => {
-                            setGstPercentage(parseFloat(value) || 0);
-                            setUseCustomGst(false);
-                          }}
-                        >
-                          <SelectTrigger className="flex-1 h-9 text-sm">
-                            <SelectValue placeholder="Select GST %" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="18">18%</SelectItem>
-                            <SelectItem value="22">22%</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setUseCustomGst(true);
-                            if (gstPercentage > 0) {
-                              setCustomGstPercentage(gstPercentage.toString());
-                            }
-                          }}
-                          className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
-                        >
-                          Custom
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder=""
-                            value={customGstPercentage}
-                            onChange={(e) =>
-                              setCustomGstPercentage(e.target.value)
-                            }
-                            className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setUseCustomGst(false);
-                            setCustomGstPercentage("");
-                          }}
-                          className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
-                        >
-                          Preset
-                        </Button>
+                    {taxType === "With GST" && (
+                      <div className="space-y-1.5 w-44">
+                        <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                          GST Percentage
+                        </Label>
+                        {newInvoice.customerType === "walking" ? (
+                          <div className="flex-1">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder=""
+                              value={customGstPercentage}
+                              onChange={(e) =>
+                                setCustomGstPercentage(e.target.value)
+                              }
+                              className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                        ) : !useCustomGst ? (
+                          <div className="flex gap-3">
+                            <Select
+                              value={gstPercentage.toString()}
+                              onValueChange={(value) => {
+                                setGstPercentage(parseFloat(value) || 0);
+                                setUseCustomGst(false);
+                              }}
+                            >
+                              <SelectTrigger className="flex-1 h-9 text-sm">
+                                <SelectValue placeholder="Select GST %" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="18">18%</SelectItem>
+                                <SelectItem value="22">22%</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setUseCustomGst(true);
+                                if (gstPercentage > 0) {
+                                  setCustomGstPercentage(
+                                    gstPercentage.toString(),
+                                  );
+                                }
+                              }}
+                              className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                            >
+                              Custom
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder=""
+                                value={customGstPercentage}
+                                onChange={(e) =>
+                                  setCustomGstPercentage(e.target.value)
+                                }
+                                className="h-9 text-xs font-medium w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setUseCustomGst(false);
+                                setCustomGstPercentage("");
+                              }}
+                              className="h-9 text-sm font-medium whitespace-nowrap px-5 min-w-[85px]"
+                            >
+                              Preset
+                            </Button>
+                          </div>
+                        )}
+                        <p className="text-xs font-medium text-muted-foreground mt-1">
+                          GST Amount: Rs {calculateTax().toLocaleString()}
+                        </p>
                       </div>
                     )}
-                    <p className="text-xs font-medium text-muted-foreground mt-1">
-                      GST Amount: Rs {calculateTax().toLocaleString()}
-                    </p>
-                  </div>
-                )}
 
-                <div className="space-y-1.5 w-40">
-                  <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
-                    Term
-                  </Label>
-                  <Input
-                    type={
-                      newInvoice.customerType === "registered" ? "number" : "text"
-                    }
-                    min={0}
-                    placeholder={
-                      newInvoice.customerType === "registered"
-                        ? "Days"
-                        : "Auto (Cash / Online)"
-                    }
-                    value={
-                      newInvoice.customerType === "registered"
-                        ? term
-                        : selectedBankAccount && bankAmount > 0
-                          ? "online"
-                          : selectedCashAccount && cashAmount > 0
-                            ? "cash"
-                            : ""
-                    }
-                    onChange={(e) => {
-                      if (newInvoice.customerType === "registered") {
-                        setTerm(e.target.value);
-                      }
-                    }}
-                    readOnly={newInvoice.customerType !== "registered"}
-                    className="h-9 text-sm bg-background"
-                  />
-                </div>
+                    <div className="space-y-1.5 w-40">
+                      <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                        Term
+                      </Label>
+                      <Input
+                        type={
+                          newInvoice.customerType === "registered"
+                            ? "number"
+                            : "text"
+                        }
+                        min={0}
+                        placeholder={
+                          newInvoice.customerType === "registered"
+                            ? "Days"
+                            : "Auto (Cash / Online)"
+                        }
+                        value={
+                          newInvoice.customerType === "registered"
+                            ? term
+                            : selectedBankAccount && bankAmount > 0
+                              ? "online"
+                              : selectedCashAccount && cashAmount > 0
+                                ? "cash"
+                                : ""
+                        }
+                        onChange={(e) => {
+                          if (newInvoice.customerType === "registered") {
+                            setTerm(e.target.value);
+                          }
+                        }}
+                        readOnly={newInvoice.customerType !== "registered"}
+                        className="h-9 text-sm bg-background"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="space-y-1.5 w-80 max-w-full">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
@@ -7236,13 +7409,13 @@ export const SalesInvoice = ({
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">
-              {isQuotation ? "Quotation List" : "Invoice List"}
+              {docListLabel}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {loadingInvoices ? (
               <div className="text-center py-8 text-muted-foreground">
-                {isQuotation ? "Loading quotations..." : "Loading invoices..."}
+                {docLoadingLabel}
               </div>
             ) : (
               <div className="overflow-x-auto -mx-2 sm:mx-0">
@@ -7250,13 +7423,13 @@ export const SalesInvoice = ({
                   <TableHeader className="hidden md:table-header-group">
                     <TableRow>
                       <TableHead>
-                        {isQuotation ? "Quotation #" : "Invoice #"}
+                        {docNumberLabel}
                       </TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>
                         {isQuotation ? "Valid Until" : "Term"}
                       </TableHead>
-                      <TableHead>Customer</TableHead>
+                      <TableHead>{isTransferOut ? "Branch" : "Customer"}</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Tax %</TableHead>
                       <TableHead className="text-right">Total</TableHead>
@@ -7274,7 +7447,7 @@ export const SalesInvoice = ({
                       >
                         <TableCell className="md:table-cell font-bold md:font-medium p-0 md:p-4 block">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
-                            {isQuotation ? "Quotation #" : "Invoice #"}
+                            {docNumberLabel}
                           </span>
                           {inv.invoiceNo}
                         </TableCell>
@@ -7300,9 +7473,11 @@ export const SalesInvoice = ({
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
-                            Customer
+                            {isTransferOut ? "Branch" : "Customer"}
                           </span>
-                          {inv.customerName}
+                          {isTransferOut
+                            ? getTransferOutBranchLabel(inv)
+                            : inv.customerName}
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
@@ -7346,7 +7521,8 @@ export const SalesInvoice = ({
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center pt-2 md:pt-4 border-t md:border-t-0">
                           <div className="flex items-center md:justify-center gap-1">
                             {/* Record Payment */}
-                            {inv.paymentStatus !== "paid" &&
+                            {!isTransferOut &&
+                              inv.paymentStatus !== "paid" &&
                               inv.status !== "pending" && (
                                 <Button
                                   variant="ghost"
@@ -7500,10 +7676,11 @@ export const SalesInvoice = ({
                               </DropdownMenuContent>
                             </DropdownMenu>
                             {/* Sale return once approved or in any delivery-complete state; reverse undelivered stock is the orange icon */}
-                            {(inv.status === "approved" ||
-                              inv.status === "partially_delivered" ||
-                              inv.status === "delivered" ||
-                              inv.status === "fully_delivered") && (
+                            {!isTransferOut &&
+                              (inv.status === "approved" ||
+                                inv.status === "partially_delivered" ||
+                                inv.status === "delivered" ||
+                                inv.status === "fully_delivered") && (
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -7527,7 +7704,8 @@ export const SalesInvoice = ({
                               </Button>
                             )}
                             {/* Reverse Stock - for approved or partially delivered party sale (registered) only; not for cash sale */}
-                            {inv.customerType === "registered" &&
+                            {!isTransferOut &&
+                              inv.customerType === "registered" &&
                               (inv.status === "approved" ||
                                 inv.status === "partially_delivered") &&
                               inv.items?.some(
@@ -7637,8 +7815,14 @@ export const SalesInvoice = ({
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Customer</p>
-                  <p className="font-medium">{selectedInvoice.customerName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isTransferOut ? "Branch" : "Customer"}
+                  </p>
+                  <p className="font-medium">
+                    {isTransferOut
+                      ? getTransferOutBranchLabel(selectedInvoice)
+                      : selectedInvoice.customerName}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Type</p>

@@ -14,6 +14,7 @@ import {
   Store as StoreIcon,
   Truck,
   BookMarked,
+  ArrowLeftRight,
   LucideIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,7 @@ export const Sidebar = () => {
     { Icon: Home, path: "/", label: "Dashboard" },
     { Icon: Package, path: "/partentry", label: "Part Entry" },
     { Icon: Boxes, path: "/inventory", label: "Inventory Management" },
+    { Icon: ArrowLeftRight, path: "/transfer", label: "Transfer" },
     { Icon: StoreIcon, path: "/store", label: "Store" },
     { Icon: Calculator, path: "/pricing-costing", label: "Pricing & Costing" },
     { Icon: DollarSign, path: "/sales", label: "Sales & Distribution" },

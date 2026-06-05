@@ -1,6 +1,6 @@
 // Invoice Types for Sales Invoice System
 
-export type CustomerType = "walking" | "registered";
+export type CustomerType = "walking" | "registered" | "transfer";
 
 export type StockStatus = "available" | "reserved" | "out";
 

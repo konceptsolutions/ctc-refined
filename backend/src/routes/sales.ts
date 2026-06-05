@@ -109,6 +109,34 @@ async function getNextSalesInvoiceNo(): Promise<string> {
   return String(maxNo + 1).padStart(3, "0");
 }
 
+/** Transfer Out documents use TOUT-YYYY-NNN (separate from sales invoice numbers). */
+async function getNextTransferOutInvoiceNo(invoiceDate?: string | Date): Promise<string> {
+  const year = invoiceDate
+    ? new Date(invoiceDate).getFullYear()
+    : new Date().getFullYear();
+  const prefix = `TOUT-${year}-`;
+  const rows = await prisma.salesInvoice.findMany({
+    where: {
+      customerType: "transfer",
+      invoiceNo: { startsWith: prefix },
+    },
+    select: { invoiceNo: true },
+  });
+
+  let maxNum = 0;
+  const pattern = new RegExp(`^TOUT-${year}-(\\d+)$`);
+  for (const { invoiceNo } of rows) {
+    const match = invoiceNo.match(pattern);
+    if (!match) continue;
+    const parsed = parseInt(match[1], 10);
+    if (!Number.isNaN(parsed)) {
+      maxNum = Math.max(maxNum, parsed);
+    }
+  }
+
+  return `${prefix}${String(maxNum + 1).padStart(3, "0")}`;
+}
+
 // Helper function to calculate stock balance
 async function getStockBalance(partId: string): Promise<number> {
   const movements = await prisma.stockMovement.findMany({
@@ -333,6 +361,29 @@ async function createVoucherForInvoice(
         credit: grandTotal,
         sortOrder: 1,
       });
+    } else if (customerType === "transfer" && accountId) {
+      const branchAccount = await prisma.account.findUnique({
+        where: { id: accountId },
+        select: { code: true, name: true },
+      });
+      if (branchAccount) {
+        voucherEntries.push({
+          accountId: accountId,
+          accountName: `${branchAccount.code}-${branchAccount.name}`,
+          description: `Branch - Invoice ${invoiceNo}`,
+          debit: grandTotal,
+          credit: 0,
+          sortOrder: 0,
+        });
+        voucherEntries.push({
+          accountId: salesRevenueAccount.id,
+          accountName: `${salesRevenueAccount.code}-${salesRevenueAccount.name}`,
+          description: `Sales Revenue - Invoice ${invoiceNo}`,
+          debit: 0,
+          credit: grandTotal,
+          sortOrder: 1,
+        });
+      }
     } else if (customerType === "registered" && accountsReceivableAccount) {
       // Party sale - Accounts Receivable (debit) and Sales Revenue (credit)
       voucherEntries.push({
@@ -1376,6 +1427,9 @@ router.get("/invoices", async (req: Request, res: Response) => {
 
     if (customerType && customerType !== "all") {
       where.customerType = customerType;
+    } else {
+      // Sales invoice list: exclude transfer-out documents
+      where.customerType = { not: "transfer" };
     }
 
     const andExtra: any[] = [];
@@ -1675,8 +1729,10 @@ router.post("/invoices", async (req: Request, res: Response) => {
       }
     }
 
-    // Generate robust invoice number (numeric string; legacy INV-* rows still drive sequence)
-    const invoiceNo = await getNextSalesInvoiceNo();
+    const invoiceNo =
+      normalizedCustomerType === "transfer"
+        ? await getNextTransferOutInvoiceNo(invoiceDate)
+        : await getNextSalesInvoiceNo();
 
     // Determine which account ID to store (prefer bank, then cash, then legacy accountId)
     const finalAccountId = bankAccountId || cashAccountId || accountId;
@@ -2565,6 +2621,7 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
       invoiceDate,
       customerName,
       customerId,
+      customerType,
       term,
       deliveredTo,
       remarks,
@@ -2631,6 +2688,12 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
     }
     if (customerId !== undefined) {
       updateData.customerId = customerId;
+    }
+    if (customerType !== undefined) {
+      updateData.customerType = customerType;
+      if (customerType === "transfer") {
+        updateData.customerId = null;
+      }
     }
     if (deliveredTo !== undefined) {
       updateData.deliveredTo = deliveredTo;
@@ -3886,9 +3949,15 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
           "401001",
         );
 
-        // Customer account (for registered customers)
+        // Customer / branch account (transfer-out uses selected branch on invoice)
+        const isTransferOut = invoice.customerType === "transfer";
         let customerAccount: any = null;
-        if (invoice.customerId) {
+        if (isTransferOut && invoice.accountId) {
+          customerAccount = await prisma.account.findUnique({
+            where: { id: invoice.accountId },
+            include: { Subgroup: { include: { MainGroup: true } } },
+          });
+        } else if (invoice.customerId) {
           customerAccount = await prisma.account.findFirst({
             where: {
               status: "Active",
@@ -3900,13 +3969,19 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             include: { Subgroup: { include: { MainGroup: true } } },
           });
         }
-        // Fallback: generic Receivable by code (optional)
-        if (!customerAccount) {
+        // Fallback: generic Receivable by code (registered sales only)
+        if (!customerAccount && !isTransferOut) {
           customerAccount = await accountByIdOrCode(undefined, "105001");
         }
 
+        const partyLabel = isTransferOut
+          ? customerAccount?.name || invoice.customerName || "Branch"
+          : invoice.customerName || "Customer";
+
         // Payment account: from approve request (frontend), or from invoice (saved at creation)
-        const paymentAccountId = paymentAccountIdFromRequest || invoice.accountId;
+        const paymentAccountId = isTransferOut
+          ? paymentAccountIdFromRequest || null
+          : paymentAccountIdFromRequest || invoice.accountId;
         const paymentAccount = paymentAccountId
           ? await prisma.account.findUnique({
               where: { id: paymentAccountId },
@@ -3976,7 +4051,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             jvEntries.push({
               accountId: inventoryAccount.id,
               accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - ${partNo || "Item"} (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - ${partNo || "Item"} (${partyLabel})`,
               debit: 0,
               credit: amount,
               sortOrder: sortIdx++,
@@ -3987,7 +4062,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             jvEntries.push({
               accountId: costAccount.id,
               accountName: `${costAccount.code}-${costAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - ${partNo || "Item"} (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - ${partNo || "Item"} (${partyLabel})`,
               debit: amount,
               credit: 0,
               sortOrder: sortIdx++,
@@ -3995,13 +4070,18 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
           }
         }
 
-        // 2) Registered Customer JV: Goods Sold CR (excl. GST & freight), Customer DR, then discount; GST/freight separate
+        // 2) Registered / transfer-out JV: Goods Sold CR, party DR (customer or branch), discount/GST/freight
         if (!isWalking) {
+          if (isTransferOut && !customerAccount) {
+            console.warn(
+              `[Voucher] Transfer-out JV party lines skipped for ${invoice.invoiceNo}: branch account not set on invoice.`,
+            );
+          }
           if (goodsRevenueAccount) {
             jvEntries.push({
               accountId: goodsRevenueAccount.id,
               accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - Sales Revenue (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - Sales Revenue (${partyLabel})`,
               debit: 0,
               credit: salesRevenueAmount,
               sortOrder: sortIdx++,
@@ -4011,7 +4091,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             jvEntries.push({
               accountId: customerAccount.id,
               accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - Customer Receivable (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - ${isTransferOut ? "Branch" : "Customer"} Receivable (${partyLabel})`,
               debit: salesRevenueAmount,
               credit: 0,
               sortOrder: sortIdx++,
@@ -4021,7 +4101,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             jvEntries.push({
               accountId: discountAccount.id,
               accountName: `${discountAccount.code}-${discountAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - Sales Discount (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - Sales Discount (${partyLabel})`,
               debit: discountAmount,
               credit: 0,
               sortOrder: sortIdx++,
@@ -4030,19 +4110,19 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
               jvEntries.push({
                 accountId: customerAccount.id,
                 accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Discount on Receivable (${invoice.customerName})`,
+                description: `INV: ${invoice.invoiceNo} - Discount on Receivable (${partyLabel})`,
                 debit: 0,
                 credit: discountAmount,
                 sortOrder: sortIdx++,
               });
             }
           }
-          // GST: Debit Customer, Credit GST account (when invoice has tax)
+          // GST: Debit party account, Credit GST account (when invoice has tax)
           if (taxAmount > 0 && gstAccount && customerAccount) {
             jvEntries.push({
               accountId: customerAccount.id,
               accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - GST (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - GST (${partyLabel})`,
               debit: taxAmount,
               credit: 0,
               sortOrder: sortIdx++,
@@ -4050,18 +4130,18 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             jvEntries.push({
               accountId: gstAccount.id,
               accountName: `${gstAccount.code}-${gstAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - GST Payable (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - GST Payable (${partyLabel})`,
               debit: 0,
               credit: taxAmount,
               sortOrder: sortIdx++,
             });
           }
-          // Freight: DR Customer, CR Goods Sold (registered party sale)
+          // Freight: DR party account, CR Goods Sold
           if (freightAmount > 0 && goodsRevenueAccount && customerAccount) {
             jvEntries.push({
               accountId: customerAccount.id,
               accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - Freight Charges (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - Freight Charges (${partyLabel})`,
               debit: freightAmount,
               credit: 0,
               sortOrder: sortIdx++,
@@ -4069,14 +4149,14 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             jvEntries.push({
               accountId: goodsRevenueAccount.id,
               accountName: `${goodsRevenueAccount.code}-${goodsRevenueAccount.name}`,
-              description: `INV: ${invoice.invoiceNo} - Freight Charges (${invoice.customerName})`,
+              description: `INV: ${invoice.invoiceNo} - Freight Charges (${partyLabel})`,
               debit: 0,
               credit: freightAmount,
               sortOrder: sortIdx++,
             });
           } else if (freightAmount > 0) {
             console.warn(
-              `[Voucher] Freight JV lines skipped for ${invoice.invoiceNo}: need Goods Sold (701001) and customer receivable account.`,
+              `[Voucher] Freight JV lines skipped for ${invoice.invoiceNo}: need Goods Sold (701001) and ${isTransferOut ? "branch" : "customer"} account.`,
             );
           }
         }
@@ -4091,7 +4171,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
               voucherNumber: jvNo,
               type: "journal",
               date: new Date(invoice.invoiceDate),
-              narration: `Sales Invoice ${invoice.invoiceNo} — Approved (${invoice.customerName})`,
+              narration: `Sales Invoice ${invoice.invoiceNo} — Approved (${partyLabel})`,
               totalDebit: jvDebit,
               totalCredit: jvCredit,
               status: "posted",
@@ -4125,7 +4205,9 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
         }
 
         // ── RV Voucher — walking: always (full amount); registered: only when an amount was actually received (paidAmount > 0)
-        const createRV = isWalking || (paidAmount > 0 && paymentAccount && customerAccount);
+        const createRV =
+          isWalking ||
+          (!isTransferOut && paidAmount > 0 && paymentAccount && customerAccount);
         if (createRV) {
           const rvNo = await getNextNumberForPrefix({
             prefix: "RV",
@@ -4213,7 +4295,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
               rvEntries.push({
                 accountId: customerAccount.id,
                 accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Payment Received (${invoice.customerName})`,
+                description: `INV: ${invoice.invoiceNo} - Payment Received (${partyLabel})`,
                 debit: 0,
                 credit: receivedAmount,
                 sortOrder: 0,
@@ -4238,7 +4320,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
                 voucherNumber: rvNo,
                 type: "receipt",
                 date: new Date(invoice.invoiceDate),
-                narration: `Payment - Invoice ${invoice.invoiceNo} (${invoice.customerName})`,
+                narration: `Payment - Invoice ${invoice.invoiceNo} (${partyLabel})`,
                 totalDebit: rvDebit,
                 totalCredit: rvCredit,
                 status: "posted",
