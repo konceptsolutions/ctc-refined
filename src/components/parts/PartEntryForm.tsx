@@ -112,6 +112,7 @@ interface PartEntryFormProps {
       imageP1?: string | null;
       imageP2?: string | null;
       editingPartId?: string | null;
+      saveMode: "create" | "update";
     },
   ) => void;
   selectedPart?: Part | null;
@@ -1441,11 +1442,23 @@ export const PartEntryForm = ({
     );
   };
 
-  const handleSave = () => {
+  const handleSaveWithMode = (saveMode: "create" | "update") => {
     if (!formData.partNo.trim()) {
       toast({
         title: "Validation Error",
         description: "Part No is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      saveMode === "update" &&
+      !(editingPartId || selectedPart?.id)
+    ) {
+      toast({
+        title: "Validation Error",
+        description: "No existing part selected to update",
         variant: "destructive",
       });
       return;
@@ -1512,7 +1525,11 @@ export const PartEntryForm = ({
       kitItems: preparedKitItems,
       imageP1,
       imageP2,
-      editingPartId: editingPartId || selectedPart?.id || null,
+      saveMode,
+      editingPartId:
+        saveMode === "update"
+          ? editingPartId || selectedPart?.id || null
+          : null,
     });
 
     // Notify parent component about selected part number
@@ -1541,7 +1558,10 @@ export const PartEntryForm = ({
 
     toast({
       title: "Success",
-      description: "Part saved successfully",
+      description:
+        saveMode === "update"
+          ? "Part updated successfully"
+          : "Part created successfully",
     });
   };
 
@@ -4502,21 +4522,43 @@ export const PartEntryForm = ({
               </div>
             )}
 
-            <div className="flex gap-3">
-              <Button
-                className="gap-1.5 h-7 text-xs px-4 min-w-[140px]"
-                onClick={handleSave}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                {isEditing ? "Update Part" : "Save Part"}
-              </Button>
-              <Button
-                variant="outline"
-                className="h-8 text-xs px-4"
-                onClick={handleReset}
-              >
-                Reset
-              </Button>
+            <div className="flex items-center justify-between gap-3 w-full">
+              <div className="flex flex-wrap gap-3">
+                {isEditing ? (
+                  <Button
+                    className="gap-1.5 h-7 text-xs px-4 min-w-[140px]"
+                    onClick={() => handleSaveWithMode("update")}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Update Part
+                  </Button>
+                ) : (
+                  <Button
+                    className="gap-1.5 h-7 text-xs px-4 min-w-[140px]"
+                    onClick={() => handleSaveWithMode("create")}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Save Part
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className="h-8 text-xs px-4"
+                  onClick={handleReset}
+                >
+                  Reset
+                </Button>
+              </div>
+              {isEditing && (
+                <Button
+                  variant="secondary"
+                  className="gap-1.5 h-7 text-xs px-4 min-w-[140px] shrink-0"
+                  onClick={() => handleSaveWithMode("create")}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Part
+                </Button>
+              )}
             </div>
           </div>
         </div>

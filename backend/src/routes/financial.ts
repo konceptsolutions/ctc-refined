@@ -3,6 +3,27 @@ import prisma from "../config/database";
 
 const router = Router();
 
+function voucherNumberSortKey(voucherNo: string): number {
+  const match = String(voucherNo || "").match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+/** Keep all lines of one voucher together: date → voucher no → line order. */
+function compareLedgerVoucherEntries(
+  a: { entryDate: Date | string; entryNo: string; sortOrder: number },
+  b: { entryDate: Date | string; entryNo: string; sortOrder: number },
+): number {
+  const timeA = new Date(a.entryDate).getTime();
+  const timeB = new Date(b.entryDate).getTime();
+  if (timeA !== timeB) return timeA - timeB;
+
+  const vA = voucherNumberSortKey(a.entryNo);
+  const vB = voucherNumberSortKey(b.entryNo);
+  if (vA !== vB) return vA - vB;
+
+  return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+}
+
 // Helper function to format date
 const formatDate = (date: Date): string => {
   return date.toISOString().split("T")[0];
@@ -823,10 +844,12 @@ router.get("/ledgers", async (req: Request, res: Response) => {
           },
         },
         include: { Voucher: true },
-        orderBy: { Voucher: { date: "asc" } },
+        orderBy: [
+          { Voucher: { date: "asc" } },
+          { sortOrder: "asc" },
+        ],
       });
 
-      // Combine and Sort (Just voucher entries now)
       const allEntries = voucherEntries.map((entry: any) => ({
         type: "voucher",
         entryDate: entry.Voucher.date,
@@ -834,15 +857,11 @@ router.get("/ledgers", async (req: Request, res: Response) => {
         description: entry.description || entry.Voucher.narration || "",
         debit: entry.debit,
         credit: entry.credit,
+        sortOrder: entry.sortOrder ?? 0,
         id: entry.id,
       }));
 
-      // Sort by date then type (Using date directly as they are Date objects)
-      allEntries.sort((a, b) => {
-        const timeA = new Date(a.entryDate).getTime();
-        const timeB = new Date(b.entryDate).getTime();
-        return timeA - timeB;
-      });
+      allEntries.sort(compareLedgerVoucherEntries);
 
       // 3. Process entries and calculate running balance
       for (const entry of allEntries) {

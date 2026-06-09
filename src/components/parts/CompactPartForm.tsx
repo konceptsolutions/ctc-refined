@@ -91,6 +91,15 @@ const initialFormData: PartFormData = {
   type: "single",
 };
 
+/** Dropdown APIs return a raw array; some callers wrap as { data: [] }. */
+function normalizeDropdownList<T>(res: unknown): T[] {
+  if (Array.isArray(res)) return res as T[];
+  if (res && typeof res === "object" && Array.isArray((res as { data?: T[] }).data)) {
+    return (res as { data: T[] }).data;
+  }
+  return [];
+}
+
 interface CompactPartFormProps {
   onSave: (
     part: PartFormData & {
@@ -134,9 +143,6 @@ export const CompactPartForm = ({
   // Track if we're in "new mode" (creating new item, not editing)
   const [isNewMode, setIsNewMode] = useState(!editItem);
 
-  // Items screen requirement: do not show searchable dropdown popups
-  const disableDropdowns = true;
-
   // Dropdown data
   const [categories, setCategories] = useState<{ id: string; name: string }[]>(
     [],
@@ -157,8 +163,10 @@ export const CompactPartForm = ({
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showSubcategoryDropdown, setShowSubcategoryDropdown] = useState(false);
+  const [showApplicationDropdown, setShowApplicationDropdown] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [subcategorySearch, setSubcategorySearch] = useState("");
+  const [applicationSearch, setApplicationSearch] = useState("");
   const [brandSearch, setBrandSearch] = useState("");
   const [masterPartSearch, setMasterPartSearch] = useState("");
 
@@ -167,6 +175,7 @@ export const CompactPartForm = ({
   const brandDropdownRef = useRef<HTMLDivElement>(null);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const subcategoryDropdownRef = useRef<HTMLDivElement>(null);
+  const applicationDropdownRef = useRef<HTMLDivElement>(null);
 
   const fileInputP1Ref = useRef<HTMLInputElement>(null);
   const fileInputP2Ref = useRef<HTMLInputElement>(null);
@@ -177,21 +186,11 @@ export const CompactPartForm = ({
       try {
         const [catsRes, brandsRes, masterPartsRes] = await Promise.all([
           apiClient.getCategories(),
-          apiClient.getBrands(),
+          apiClient.getBrands(undefined, 10000),
           apiClient.getMasterParts(),
         ]);
 
-        // Handle categories
-        let categoriesData: any[] = [];
-        const catsResponse = catsRes as any;
-        if (catsResponse?.error) {
-          // Ignore categories API wrapper errors; default empty list is used.
-        } else if (Array.isArray(catsResponse)) {
-          categoriesData = catsResponse;
-        } else if (catsResponse?.data && Array.isArray(catsResponse.data)) {
-          categoriesData = catsResponse.data;
-        }
-        setCategories(categoriesData);
+        setCategories(normalizeDropdownList<{ id: string; name: string }>(catsRes));
 
         // Handle brands - Extract from API response
         let brandsData: any[] = [];
@@ -441,9 +440,11 @@ export const CompactPartForm = ({
       const fetchSubcategories = async () => {
         try {
           const res = await apiClient.getSubcategories(formData.categoryId);
-          if (res.data) {
-            setSubcategories(Array.isArray(res.data) ? res.data : []);
-          }
+          setSubcategories(
+            normalizeDropdownList<{ id: string; name: string; categoryId: string }>(
+              res,
+            ),
+          );
         } catch (error) {
           // Ignore subcategory fetch errors; user can retry by reopening.
         }
@@ -461,25 +462,24 @@ export const CompactPartForm = ({
     }
   }, [formData.categoryId]);
 
-  // Fetch applications when subcategory changes
+  // Load all applications for the dropdown (no category/subcategory filter)
   useEffect(() => {
-    if (formData.subCategoryId) {
-      const fetchApplications = async () => {
-        try {
-          const res = await apiClient.getApplications(formData.subCategoryId);
-          if (res.data) {
-            setApplications(Array.isArray(res.data) ? res.data : []);
-          }
-        } catch (error) {
-          // Ignore application fetch errors; user can retry by reopening.
-        }
-      };
-      fetchApplications();
-    } else {
-      setApplications([]);
-      setFormData((prev) => ({ ...prev, application: "", applicationId: "" }));
-    }
-  }, [formData.subCategoryId]);
+    const fetchApplications = async () => {
+      try {
+        const res = await apiClient.getAllApplications();
+        setApplications(
+          normalizeDropdownList<{
+            id: string;
+            name: string;
+            subcategoryId: string;
+          }>(res),
+        );
+      } catch (error) {
+        // Ignore application fetch errors; user can retry by reopening.
+      }
+    };
+    fetchApplications();
+  }, []);
 
   // Sync isNewMode with editItem prop
   useEffect(() => {
@@ -590,6 +590,20 @@ export const CompactPartForm = ({
             const remarks = part.remarks || "";
             const type = forcedType || part.type || "single";
 
+            if (applicationId && applicationName) {
+              setApplications((prev) => {
+                if (prev.some((app) => app.id === applicationId)) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: applicationId,
+                    name: applicationName,
+                    subcategoryId: part.application_subcategory_id || "",
+                  },
+                ];
+              });
+            }
+
             // Set form data step by step
             setFormData({
               // Step 1
@@ -633,6 +647,23 @@ export const CompactPartForm = ({
 
             // Set master part search to show the value in the input
             setMasterPartSearch(masterPartNo);
+
+            if (brandName) {
+              setBrands((prev) => {
+                const exists = prev.some(
+                  (b) =>
+                    b.name.trim().toLowerCase() === brandName.trim().toLowerCase(),
+                );
+                if (exists) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: part.brand_id || `current-${brandName}`,
+                    name: brandName,
+                  },
+                ];
+              });
+            }
 
             // Images
             setImageP1(part.image_p1 || null);
@@ -759,6 +790,7 @@ export const CompactPartForm = ({
       return updated;
     });
     setCategorySearch("");
+    setApplicationSearch("");
     setShowCategoryDropdown(false);
   };
 
@@ -781,6 +813,7 @@ export const CompactPartForm = ({
       return updated;
     });
     setSubcategorySearch("");
+    setApplicationSearch("");
     setShowSubcategoryDropdown(false);
   };
 
@@ -800,6 +833,8 @@ export const CompactPartForm = ({
       }
       return updated;
     });
+    setApplicationSearch("");
+    setShowApplicationDropdown(false);
   };
 
   const handleBrandSelect = (brandName: string) => {
@@ -832,10 +867,10 @@ export const CompactPartForm = ({
       if (responseData.data || responseData.id) {
         const newBrand = responseData.data || responseData;
         // Refresh brands list
-        const brandsRes = await apiClient.getBrands();
-        if (brandsRes.data) {
-          setBrands(Array.isArray(brandsRes.data) ? brandsRes.data : []);
-        }
+        const brandsRes = await apiClient.getBrands(undefined, 10000);
+        setBrands(
+          normalizeDropdownList<{ id: string; name: string }>(brandsRes),
+        );
         // Select the newly created brand
         handleBrandSelect(newBrand.name);
         toast({
@@ -872,9 +907,9 @@ export const CompactPartForm = ({
         const newCategory = responseData.data || responseData;
         // Refresh categories list
         const catsRes = await apiClient.getCategories();
-        if (catsRes.data) {
-          setCategories(Array.isArray(catsRes.data) ? catsRes.data : []);
-        }
+        setCategories(
+          normalizeDropdownList<{ id: string; name: string }>(catsRes),
+        );
         // Select the newly created category
         handleCategorySelect(newCategory.id, newCategory.name);
         toast({
@@ -921,9 +956,11 @@ export const CompactPartForm = ({
         const newSubcategory = responseData.data || responseData;
         // Refresh subcategories list
         const res = await apiClient.getSubcategories(formData.categoryId);
-        if (res.data) {
-          setSubcategories(Array.isArray(res.data) ? res.data : []);
-        }
+        setSubcategories(
+          normalizeDropdownList<{ id: string; name: string; categoryId: string }>(
+            res,
+          ),
+        );
         // Select the newly created subcategory
         handleSubcategorySelect(newSubcategory.id, newSubcategory.name);
         toast({
@@ -942,7 +979,7 @@ export const CompactPartForm = ({
   };
 
   const handleCreateApplication = async () => {
-    const newApplicationName = formData.application.trim();
+    const newApplicationName = (applicationSearch || formData.application).trim();
     if (!newApplicationName) {
       toast({
         title: "Error",
@@ -969,10 +1006,12 @@ export const CompactPartForm = ({
       if (responseData.data || responseData.id) {
         const newApplication = responseData.data || responseData;
         // Refresh applications list
-        const res = await apiClient.getApplications(formData.subCategoryId);
-        if (res.data) {
-          setApplications(Array.isArray(res.data) ? res.data : []);
-        }
+        const res = await apiClient.getAllApplications();
+        setApplications(
+          normalizeDropdownList<{ id: string; name: string; subcategoryId: string }>(
+            res,
+          ),
+        );
         // Select the newly created application
         handleApplicationSelect(newApplication.id, newApplication.name);
         toast({
@@ -1013,6 +1052,12 @@ export const CompactPartForm = ({
         !subcategoryDropdownRef.current.contains(event.target as Node)
       ) {
         setShowSubcategoryDropdown(false);
+      }
+      if (
+        applicationDropdownRef.current &&
+        !applicationDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowApplicationDropdown(false);
       }
     };
 
@@ -1347,9 +1392,8 @@ export const CompactPartForm = ({
       setPartsForMasterPartSearch([]);
       setMasterPartSearchLoading(false);
 
-      // Reset dependent dropdowns (subcategories and applications depend on parent selections)
+      // Reset dependent dropdowns (subcategories depend on category selection)
       setSubcategories([]);
-      setApplications([]);
 
       // Clear input refs if they exist (force immediate UI update)
       if (masterPartInputRef.current) {
@@ -1425,6 +1469,16 @@ export const CompactPartForm = ({
       (sub) => sub.name && sub.name.toLowerCase().includes(searchLower),
     );
   }, [subcategories, subcategorySearch]);
+
+  const filteredApplications = useMemo(() => {
+    if (!applicationSearch || applicationSearch.trim() === "") {
+      return applications;
+    }
+    const searchLower = applicationSearch.toLowerCase();
+    return applications.filter(
+      (app) => app.name && app.name.toLowerCase().includes(searchLower),
+    );
+  }, [applications, applicationSearch]);
 
   // Filter brands
   const filteredBrands = useMemo(() => {
@@ -1570,8 +1624,7 @@ export const CompactPartForm = ({
                 />
               )}
               {/* Only show dropdown when NOT in new mode and search conditions are met */}
-              {!disableDropdowns &&
-                !isNewMode &&
+              {!isNewMode &&
                 showMasterPartDropdown &&
                 masterPartSearch &&
                 masterPartSearch.trim().length >= 2 && (
@@ -1654,10 +1707,9 @@ export const CompactPartForm = ({
                   const value = e.target.value;
                   setBrandSearch(value);
                   setFormData((prev) => ({ ...prev, brand: value }));
-                  if (!disableDropdowns) setShowBrandDropdown(true);
+                  setShowBrandDropdown(true);
                 }}
                 onFocus={async (e) => {
-                  if (disableDropdowns) return;
                   // When focusing, clear search to show all brands initially
                   // User can then type to filter
                   setBrandSearch("");
@@ -1665,29 +1717,12 @@ export const CompactPartForm = ({
                   // If brands are empty, try to refetch them
                   if (brands.length === 0) {
                     try {
-                      const brandsRes = await apiClient.getBrands();
-                      const brandsResponse = brandsRes as any;
-
-                      let brandsData: any[] = [];
-                      if (Array.isArray(brandsResponse)) {
-                        brandsData = brandsResponse.filter(
-                          (b: any) => b && (b.id || b._id) && b.name,
-                        );
-                      } else if (
-                        brandsResponse?.data &&
-                        Array.isArray(brandsResponse.data)
-                      ) {
-                        brandsData = brandsResponse.data.filter(
-                          (b: any) => b && (b.id || b._id) && b.name,
-                        );
-                      }
-
-                      brandsData = brandsData.map((b: any) => ({
-                        id: b.id || b._id || String(Math.random()),
-                        name: b.name || b.brand_name || String(b),
-                      }));
-
-                      setBrands(brandsData);
+                      const brandsRes = await apiClient.getBrands(undefined, 10000);
+                      setBrands(
+                        normalizeDropdownList<{ id: string; name: string }>(
+                          brandsRes,
+                        ),
+                      );
                     } catch (error) {
                       // Ignore brand refresh failure while opening dropdown.
                     }
@@ -1696,7 +1731,6 @@ export const CompactPartForm = ({
                   setShowBrandDropdown(true);
                 }}
                 onClick={async (e) => {
-                  if (disableDropdowns) return;
                   // When clicking, clear search to show all brands initially
                   // User can then type to filter
                   setBrandSearch("");
@@ -1704,29 +1738,12 @@ export const CompactPartForm = ({
                   // If brands are empty, try to refetch them
                   if (brands.length === 0) {
                     try {
-                      const brandsRes = await apiClient.getBrands();
-                      const brandsResponse = brandsRes as any;
-
-                      let brandsData: any[] = [];
-                      if (Array.isArray(brandsResponse)) {
-                        brandsData = brandsResponse.filter(
-                          (b: any) => b && (b.id || b._id) && b.name,
-                        );
-                      } else if (
-                        brandsResponse?.data &&
-                        Array.isArray(brandsResponse.data)
-                      ) {
-                        brandsData = brandsResponse.data.filter(
-                          (b: any) => b && (b.id || b._id) && b.name,
-                        );
-                      }
-
-                      brandsData = brandsData.map((b: any) => ({
-                        id: b.id || b._id || String(Math.random()),
-                        name: b.name || b.brand_name || String(b),
-                      }));
-
-                      setBrands(brandsData);
+                      const brandsRes = await apiClient.getBrands(undefined, 10000);
+                      setBrands(
+                        normalizeDropdownList<{ id: string; name: string }>(
+                          brandsRes,
+                        ),
+                      );
                     } catch (error) {
                       // Ignore brand refresh failure while opening dropdown.
                     }
@@ -1737,7 +1754,7 @@ export const CompactPartForm = ({
                 }}
                 className="h-7 text-xs"
               />
-              {!disableDropdowns && showBrandDropdown && (
+              {showBrandDropdown && (
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
                   {/* Debug info */}
                   {(() => {
@@ -1836,10 +1853,9 @@ export const CompactPartForm = ({
                       categoryId: "",
                     }));
                   }
-                  if (!disableDropdowns) setShowCategoryDropdown(true);
+                  setShowCategoryDropdown(true);
                 }}
                 onFocus={(e) => {
-                  if (disableDropdowns) return;
                   // Keep the current value visible but clear search to show all items
                   e.target.select();
                   if (!categorySearch || categorySearch === formData.category) {
@@ -1848,7 +1864,6 @@ export const CompactPartForm = ({
                   setShowCategoryDropdown(true);
                 }}
                 onClick={(e) => {
-                  if (disableDropdowns) return;
                   // Keep the current value visible but clear search to show all items
                   e.currentTarget.focus();
                   if (!categorySearch || categorySearch === formData.category) {
@@ -1858,7 +1873,7 @@ export const CompactPartForm = ({
                 }}
                 className="h-7 text-xs"
               />
-              {!disableDropdowns && showCategoryDropdown && (
+              {showCategoryDropdown && (
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
                   {filteredCategories.length > 0 ? (
                     <>
@@ -1917,10 +1932,9 @@ export const CompactPartForm = ({
                       subCategoryId: "",
                     }));
                   }
-                  if (!disableDropdowns) setShowSubcategoryDropdown(true);
+                  setShowSubcategoryDropdown(true);
                 }}
                 onFocus={(e) => {
-                  if (disableDropdowns) return;
                   if (formData.categoryId) {
                     // Keep the current value visible but clear search to show all items
                     e.target.select();
@@ -1934,7 +1948,6 @@ export const CompactPartForm = ({
                   }
                 }}
                 onClick={(e) => {
-                  if (disableDropdowns) return;
                   if (formData.categoryId) {
                     // Keep the current value visible but clear search to show all items
                     e.currentTarget.focus();
@@ -1950,9 +1963,7 @@ export const CompactPartForm = ({
                 disabled={!formData.categoryId}
                 className="h-7 text-xs"
               />
-              {!disableDropdowns &&
-                showSubcategoryDropdown &&
-                formData.categoryId && (
+              {showSubcategoryDropdown && formData.categoryId && (
                   <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
                     {filteredSubcategories.length > 0 ? (
                       <>
@@ -1987,50 +1998,90 @@ export const CompactPartForm = ({
                 )}
             </div>
           </div>
-          <div className="relative">
+          <div ref={applicationDropdownRef} className="relative">
             <label className="block text-[10px] text-foreground mb-0.5 font-bold">
               Application
             </label>
-            <div className="flex items-center gap-1">
+            <div className="relative">
               <Input
-                placeholder={
-                  formData.subCategoryId
-                    ? "Type application"
-                    : "Please select a sub-category first"
+                placeholder="Click to select or add new"
+                value={
+                  applicationSearch !== null && applicationSearch !== ""
+                    ? applicationSearch
+                    : formData.application || ""
                 }
-                value={formData.application || ""}
                 onChange={(e) => {
                   const value = e.target.value;
-                  handleInputChange("application", value);
-                  // If user is typing, clear any previously-selected applicationId
-                  if (formData.applicationId) {
-                    handleInputChange("applicationId", "");
-                  }
+                  setApplicationSearch(value);
+                  setFormData((prev) => ({
+                    ...prev,
+                    application: value,
+                    applicationId: value
+                      ? value === prev.application
+                        ? prev.applicationId
+                        : ""
+                      : "",
+                  }));
                   if (!value) {
                     handleInputChange("applicationId", "");
                   }
+                  setShowApplicationDropdown(true);
                 }}
-                onBlur={() => {
-                  const name = (formData.application || "").trim();
-                  if (!name) {
-                    if (formData.applicationId)
-                      handleInputChange("applicationId", "");
-                    return;
+                onFocus={(e) => {
+                  e.target.select();
+                  if (
+                    !applicationSearch ||
+                    applicationSearch === formData.application
+                  ) {
+                    setApplicationSearch("");
                   }
-                  const match = applications.find(
-                    (a) =>
-                      (a.name || "").trim().toLowerCase() ===
-                      name.toLowerCase(),
-                  );
-                  if (match) {
-                    handleApplicationSelect(match.id, match.name);
-                  } else if (formData.applicationId) {
-                    handleInputChange("applicationId", "");
-                  }
+                  setShowApplicationDropdown(true);
                 }}
-                disabled={!formData.subCategoryId}
-                className="h-7 text-xs flex-1"
+                onClick={(e) => {
+                  e.currentTarget.focus();
+                  if (
+                    !applicationSearch ||
+                    applicationSearch === formData.application
+                  ) {
+                    setApplicationSearch("");
+                  }
+                  setShowApplicationDropdown(true);
+                }}
+                className="h-7 text-xs"
               />
+              {showApplicationDropdown && (
+                <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
+                  {filteredApplications.length > 0 ? (
+                    <>
+                      {filteredApplications.map((app) => (
+                        <div
+                          key={app.id}
+                          className="px-3 py-2 text-xs hover:bg-muted cursor-pointer border-b border-border last:border-b-0"
+                          onClick={() =>
+                            handleApplicationSelect(app.id, app.name)
+                          }
+                        >
+                          {app.name}
+                        </div>
+                      ))}
+                      <div className="border-t border-border" />
+                    </>
+                  ) : (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      {applications.length === 0
+                        ? "No applications available"
+                        : "No matching applications"}
+                    </div>
+                  )}
+                  <div
+                    className="px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground cursor-pointer font-medium flex items-center gap-2 border-t border-border"
+                    onClick={handleCreateApplication}
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add New: "{applicationSearch || "New Application"}"
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

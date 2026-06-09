@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
@@ -145,6 +145,9 @@ export const AdjustItem = () => {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterPartId, setFilterPartId] = useState<string>("");
+  const [filterAdjustType, setFilterAdjustType] = useState<
+    "all" | "add" | "remove"
+  >("all");
   const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
   const [parts, setParts] = useState<
     {
@@ -167,7 +170,7 @@ export const AdjustItem = () => {
   >({});
 
   // Fetch adjustments
-  const fetchAdjustments = async () => {
+  const fetchAdjustments = useCallback(async () => {
     console.log("fetchAdjustments called", { currentPage, itemsPerPage, filterPartId, debouncedSearch });
     try {
       setLoading(true);
@@ -178,6 +181,11 @@ export const AdjustItem = () => {
       };
       if (filterPartId) {
         params.part_id = filterPartId;
+      }
+      if (filterAdjustType === "add") {
+        params.adjust_type = "add";
+      } else if (filterAdjustType === "remove") {
+        params.adjust_type = "remove";
       }
       console.log("API call params:", params);
       const response: any = await apiClient.getAdjustments(params);
@@ -199,7 +207,8 @@ export const AdjustItem = () => {
           subject: a.subject || "",
           store: a.store_name || "N/A",
           store_id: a.store_id,
-          addInventory: a.add_inventory,
+          addInventory:
+            a.add_inventory === true || a.add_inventory === "true",
           items: [],
           notes: a.notes || "",
           totalAmount: parseFloat(a.total_amount) || 0,
@@ -213,7 +222,13 @@ export const AdjustItem = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    currentPage,
+    itemsPerPage,
+    debouncedSearch,
+    filterPartId,
+    filterAdjustType,
+  ]);
 
   const handleApproveClick = async (record: AdjustmentRecord) => {
     try {
@@ -422,7 +437,7 @@ export const AdjustItem = () => {
 
   useEffect(() => {
     fetchAdjustments();
-  }, [currentPage, itemsPerPage, debouncedSearch, filterPartId]);
+  }, [fetchAdjustments]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -459,14 +474,19 @@ export const AdjustItem = () => {
   }, [store, view]);
 
 
-  // Sort records by adjustment_no desc for frontend display
+  // Filter + sort records for list display
   const sortedRecords = useMemo(() => {
-    return [...records].sort((a, b) => {
+    const filtered = records.filter((record) => {
+      if (filterAdjustType === "add") return record.addInventory === true;
+      if (filterAdjustType === "remove") return record.addInventory === false;
+      return true;
+    });
+    return [...filtered].sort((a, b) => {
       const noA = Number(a.adjustment_no || 0);
       const noB = Number(b.adjustment_no || 0);
       return noB - noA;
     });
-  }, [records]);
+  }, [records, filterAdjustType]);
 
   // Pagination logic
   const totalPages = Math.ceil(totalRecords / itemsPerPage);
@@ -493,7 +513,7 @@ export const AdjustItem = () => {
     }
   };
 
-  const handleAddItem = () => {
+  const handleAddItem = useCallback(() => {
     const newItem: AdjustmentItem = {
       id: Date.now().toString(),
       itemId: "",
@@ -509,8 +529,8 @@ export const AdjustItem = () => {
       rackId: "",
       shelfId: "",
     };
-    setAdjustmentItems([...adjustmentItems, newItem]);
-  };
+    setAdjustmentItems((prev) => [...prev, newItem]);
+  }, []);
 
   // Shortcut key handling
   useEffect(() => {
@@ -995,6 +1015,24 @@ export const AdjustItem = () => {
               placeholder="Filter by Item"
               className="h-9"
             />
+          </div>
+          <div className="w-[180px]">
+            <Select
+              value={filterAdjustType}
+              onValueChange={(value: "all" | "add" | "remove") => {
+                setFilterAdjustType(value);
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="Adjust Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="add">Add Inventory</SelectItem>
+                <SelectItem value="remove">Remove Inventory</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex gap-2">
             <Button

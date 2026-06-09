@@ -886,9 +886,10 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
           include: {
             Voucher: true,
           },
-          orderBy: {
-            Voucher: { date: "asc" },
-          },
+          orderBy: [
+            { Voucher: { date: "asc" } },
+            { sortOrder: "asc" },
+          ],
         },
       },
     });
@@ -915,11 +916,18 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
           description: entry.description || entry.Voucher.narration || "",
           debit: entry.debit,
           credit: entry.credit,
+          sortOrder: entry.sortOrder ?? 0,
         });
       });
 
-      // Sort transactions by date
-      allTransactions.sort((a, b) => a.date.getTime() - b.date.getTime());
+      allTransactions.sort((a, b) => {
+        const timeDiff = a.date.getTime() - b.date.getTime();
+        if (timeDiff !== 0) return timeDiff;
+        const vA = parseInt(String(a.journalNo).match(/(\d+)/)?.[1] || "0", 10);
+        const vB = parseInt(String(b.journalNo).match(/(\d+)/)?.[1] || "0", 10);
+        if (vA !== vB) return vA - vB;
+        return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      });
 
       // Calculate running balance
       const transactions = allTransactions.map((txn: any) => {

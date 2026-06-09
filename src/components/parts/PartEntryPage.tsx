@@ -162,7 +162,10 @@ export const PartEntryPage = ({
             })) || [],
       };
 
-      const updatePartId = partData.editingPartId || selectedPart?.id || null;
+      const updatePartId =
+        partData.saveMode === "update"
+          ? partData.editingPartId || selectedPart?.id || null
+          : null;
 
       // Handle images
       if (updatePartId) {

@@ -63,7 +63,9 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^13.0.0",
     "vaul": "^0.9.9",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "exceljs": "^4.4.0",
+    "pdfjs-dist": "^5.4.530"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
@@ -77,11 +79,9 @@
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
-    "exceljs": "^4.4.0",
     "globals": "^15.15.0",
     "lovable-tagger": "^1.1.13",
     "pdf2json": "^4.0.0",
-    "pdfjs-dist": "^5.4.530",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",

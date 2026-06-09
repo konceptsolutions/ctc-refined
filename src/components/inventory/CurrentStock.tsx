@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  FileUp,
 } from "lucide-react";
 import {
   Dialog,
@@ -46,6 +47,13 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
+import { extractStockRowsFromPdf } from "@/lib/stockPdfParser";
+import {
+  comparePdfStockWithSystem,
+  downloadBlob,
+  generateStockCompareExcel,
+  type SystemStockItem,
+} from "@/lib/stockCompareReport";
 
 interface StockItem {
   part_id: string;
@@ -102,6 +110,10 @@ export const CurrentStock = () => {
   const [editSourceLocation, setEditSourceLocation] = useState<any>(null);
 
   const [viewLocationDialogOpen, setViewLocationDialogOpen] = useState(false);
+  const [pdfCompareDialogOpen, setPdfCompareDialogOpen] = useState(false);
+  const [pdfCompareFile, setPdfCompareFile] = useState<File | null>(null);
+  const [comparingPdf, setComparingPdf] = useState(false);
+  const pdfCompareInputRef = useRef<HTMLInputElement>(null);
   const [selectedPartLocations, setSelectedPartLocations] = useState<any[]>([]);
   const [viewingItem, setViewingItem] = useState<StockItem | null>(null);
 
@@ -809,6 +821,67 @@ export const CurrentStock = () => {
     return value.toLocaleString("en-PK");
   };
 
+  const handlePdfStockCompare = async () => {
+    if (!pdfCompareFile) {
+      toast.error("Please select a PDF file first");
+      return;
+    }
+
+    try {
+      setComparingPdf(true);
+
+      const { rows: pdfRows, pageCount, rawLineCount } =
+        await extractStockRowsFromPdf(pdfCompareFile);
+
+      if (pdfRows.length === 0) {
+        toast.error(
+          "Could not read any part/qty rows from the PDF. Use a text-based PDF with part number and quantity columns.",
+        );
+        return;
+      }
+
+      const stockParams: Record<string, string | number> = {
+        page: 1,
+        limit: 100000,
+      };
+      if (stockAsOfDate) {
+        stockParams.stock_as_of_date = stockAsOfDate;
+      }
+
+      const response = await apiClient.getPartRackShelfSummary(stockParams);
+      const systemStock = ((response as any).data || []) as SystemStockItem[];
+
+      const { rows, systemOnlyRows, summary } = comparePdfStockWithSystem(
+        pdfRows,
+        systemStock,
+        { pageCount, rawLineCount },
+      );
+
+      const blob = await generateStockCompareExcel({
+        rows,
+        systemOnlyRows,
+        summary,
+        fileName: pdfCompareFile.name,
+      });
+
+      const dateStamp = new Date().toISOString().split("T")[0];
+      downloadBlob(blob, `stock-pdf-compare-${dateStamp}.xlsx`);
+
+      toast.success(
+        `Excel report downloaded: ${summary.pdfItems} PDF items, ${summary.matched} matched, ${summary.over + summary.under} with variance, ${summary.notInSystem} not in system.`,
+      );
+      setPdfCompareDialogOpen(false);
+      setPdfCompareFile(null);
+      if (pdfCompareInputRef.current) {
+        pdfCompareInputRef.current.value = "";
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to compare PDF stock");
+    } finally {
+      setComparingPdf(false);
+    }
+  };
+
   const handleExport = async () => {
     try {
       const exportParams: any = {
@@ -925,6 +998,14 @@ export const CurrentStock = () => {
           </Button>
           */}
           <Button
+            variant="outline"
+            onClick={() => setPdfCompareDialogOpen(true)}
+            className="gap-2"
+          >
+            <FileUp className="w-4 h-4" />
+            Compare PDF Stock
+          </Button>
+          <Button
             onClick={handleExport}
             className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
           >
@@ -933,6 +1014,73 @@ export const CurrentStock = () => {
           </Button>
         </div>
       </div>
+
+      <Dialog open={pdfCompareDialogOpen} onOpenChange={setPdfCompareDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Compare PDF Stock</DialogTitle>
+            <DialogDescription>
+              Upload a stock PDF. All pages will be scanned, quantities will be
+              compared with current system stock, and an Excel report will be
+              downloaded.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="pdf-stock-upload">Stock PDF</Label>
+              <Input
+                id="pdf-stock-upload"
+                ref={pdfCompareInputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                disabled={comparingPdf}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setPdfCompareFile(file);
+                }}
+              />
+              {pdfCompareFile && (
+                <p className="text-xs text-muted-foreground">
+                  Selected: {pdfCompareFile.name}
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Supports &quot;Stock With Price&quot; reports (Part No, Brand,
+              Description, Location, Stock, Price columns). The Stock column is
+              used for comparison. Scanned/image PDFs may not parse correctly.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPdfCompareDialogOpen(false);
+                setPdfCompareFile(null);
+                if (pdfCompareInputRef.current) {
+                  pdfCompareInputRef.current.value = "";
+                }
+              }}
+              disabled={comparingPdf}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handlePdfStockCompare} disabled={comparingPdf}>
+              {comparingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Comparing...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  Generate Excel Report
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Filters */}
       <div className="space-y-3">

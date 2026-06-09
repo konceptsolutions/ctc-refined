@@ -1952,18 +1952,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   >
                                     <Eye className="w-4 h-4" />
                                   </Button>
-                                  {order.status !== "Cancelled" && (
-                                    <>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleEditPurchaseOrder(order)}
-                                        title="Edit Order"
-                                      >
-                                        <Edit className="w-4 h-4" />
-                                      </Button>
-                                    </>
-                                  )}
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -2027,28 +2015,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     <Eye className="w-4 h-4" />
                                   </Button>
                                   {order.status !== "Cancelled" && (
-                                    <>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleEditDPO(order)}
-                                        title="Edit Order"
-                                        disabled={order.status === "Received"}
-                                        className={order.status === "Received" ? "opacity-50 cursor-not-allowed" : undefined}
-                                      >
-                                        <Edit className="w-4 h-4" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleAssignLocation(order)}
-                                        title="Assign Location"
-                                        disabled={order.status !== "Received"}
-                                        className={order.status !== "Received" ? "opacity-50 cursor-not-allowed" : undefined}
-                                      >
-                                        <MapPin className="w-4 h-4" />
-                                      </Button>
-                                    </>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleAssignLocation(order)}
+                                      title="Assign Location"
+                                      disabled={order.status !== "Received"}
+                                      className={order.status !== "Received" ? "opacity-50 cursor-not-allowed" : undefined}
+                                    >
+                                      <MapPin className="w-4 h-4" />
+                                    </Button>
                                   )}
                                   <Button
                                     variant="ghost"

@@ -38,11 +38,17 @@ router.get("/brands", async (req: Request, res: Response) => {
       where.name = { contains: search as string };
     }
 
+    const limitRaw = req.query.limit;
+    const parsedLimit =
+      limitRaw != null && String(limitRaw).trim() !== ""
+        ? parseInt(String(limitRaw), 10)
+        : undefined;
+
     const brands = await prisma.brand.findMany({
       where,
       select: { id: true, name: true },
       orderBy: { name: "asc" },
-      take: 50,
+      ...(parsedLimit && parsedLimit > 0 ? { take: parsedLimit } : {}),
     });
 
     res.json(brands);
@@ -103,10 +109,12 @@ router.get("/subcategories", async (req: Request, res: Response) => {
 // Get applications by subcategory or master_part_no
 router.get("/applications", async (req: Request, res: Response) => {
   try {
-    const { subcategory_id, master_part_no, search } = req.query;
+    const { subcategory_id, category_id, master_part_no, search } = req.query;
 
     const where: any = { status: "active", NOT: [{ name: "." }, { name: "" }] };
-    if (subcategory_id) {
+    if (category_id) {
+      where.Subcategory = { categoryId: category_id as string };
+    } else if (subcategory_id) {
       where.subcategoryId = subcategory_id as string;
     }
     if (master_part_no) {

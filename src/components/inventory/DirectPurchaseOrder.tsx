@@ -92,6 +92,8 @@ interface DirectPurchaseOrder {
   grandTotal: number;
   /** Supplier discount on items subtotal only */
   discount?: number;
+  /** Sum of DPO expense rows (added to grand total) */
+  totalExpenses?: number;
   status: "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled" | "Received";
   items: DirectPurchaseOrderItem[];
   account: string;
@@ -850,6 +852,39 @@ export const DirectPurchaseOrder = ({
     setViewMode("list");
   };
 
+  const mapDpoToViewOrder = (dpo: any): DirectPurchaseOrder => ({
+    id: dpo.id,
+    dpoNo: dpo.dpo_no,
+    invoiceNo: dpo.invoice_no || "",
+    invoiceDate: dpo.invoice_date
+      ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
+      : "",
+    store: dpo.store_name || "N/A",
+    supplier: dpo.supplier_name || "N/A",
+    requestDate: new Date(dpo.date).toLocaleDateString("en-GB"),
+    date: dpo.date,
+    description: dpo.description || "",
+    grandTotal: dpo.total_amount || 0,
+    discount: Number(dpo.discount) || 0,
+    totalExpenses: (dpo.expenses || []).reduce(
+      (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
+      0,
+    ),
+    status: dpo.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
+    account: dpo.account || "",
+    items: (dpo.items || []).map((item: any) => ({
+      id: item.id,
+      partNo: item.part_no,
+      description: item.part_description || item.part_no,
+      brand: item.brand || "",
+      uom: item.uom || "pcs",
+      quantity: item.quantity,
+      returnedQuantity: item.returned_quantity || 0,
+      purchasePrice: item.purchase_price,
+      amount: item.amount,
+    })),
+  });
+
   // Open view dialog
   const handleView = async (order: DirectPurchaseOrder) => {
     try {
@@ -861,37 +896,7 @@ export const DirectPurchaseOrder = ({
         return;
       }
 
-      const dpo = response;
-      const viewOrder: DirectPurchaseOrder = {
-        id: dpo.id,
-        dpoNo: dpo.dpo_no,
-        invoiceNo: dpo.invoice_no || "",
-        invoiceDate: dpo.invoice_date
-          ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
-          : "",
-        store: dpo.store_name || "N/A",
-        supplier: dpo.supplier_name || "N/A",
-        requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
-        date: dpo.date, // Raw date for sorting
-        description: dpo.description || "",
-        grandTotal: dpo.total_amount || 0,
-        discount: Number(dpo.discount) || 0,
-        status: dpo.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
-        account: dpo.account || "",
-        items: (dpo.items || []).map((item: any) => ({
-          id: item.id,
-          partNo: item.part_no,
-          description: item.part_description || item.part_no,
-          brand: item.brand || "",
-          uom: item.uom || "pcs",
-          quantity: item.quantity,
-          returnedQuantity: item.returned_quantity || 0,
-          purchasePrice: item.purchase_price,
-          amount: item.amount,
-        })),
-      };
-
-      setSelectedOrder(viewOrder);
+      setSelectedOrder(mapDpoToViewOrder(response));
       setShowViewDialog(true);
     } catch (error: any) {
       toast.error(`Error fetching order: ${error.message}`);
@@ -1681,35 +1686,7 @@ export const DirectPurchaseOrder = ({
       if (showViewDialog && selectedOrder) {
         const updatedOrder = await apiClient.getDirectPurchaseOrder(selectedOrder.id) as any;
         if (!updatedOrder.error) {
-          const dpo = updatedOrder;
-          const viewOrder: DirectPurchaseOrder = {
-            id: dpo.id,
-            dpoNo: dpo.dpo_no,
-            invoiceNo: dpo.invoice_no || "",
-            invoiceDate: dpo.invoice_date
-              ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
-              : "",
-            store: dpo.store_name || "N/A",
-            supplier: dpo.supplier_name || "N/A",
-            requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
-            date: dpo.date, // Raw date for sorting
-            description: dpo.description || "",
-            grandTotal: dpo.total_amount || 0,
-            discount: Number(dpo.discount) || 0,
-            status: dpo.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
-            account: dpo.account || "",
-            items: (dpo.items || []).map((item: any) => ({
-              id: item.id,
-              partNo: item.part_no,
-              description: item.part_description || item.part_no,
-              brand: item.brand || "",
-              uom: item.uom || "pcs",
-              quantity: item.quantity,
-              purchasePrice: item.purchase_price,
-              amount: item.amount,
-            })),
-          };
-          setSelectedOrder(viewOrder);
+          setSelectedOrder(mapDpoToViewOrder(updatedOrder));
         }
       }
     } catch (error: any) {
@@ -1750,35 +1727,7 @@ export const DirectPurchaseOrder = ({
       if (showViewDialog && selectedOrder) {
         const updatedOrder = await apiClient.getDirectPurchaseOrder(order.id) as any;
         if (!updatedOrder.error) {
-          const dpo = updatedOrder;
-          const viewOrder: DirectPurchaseOrder = {
-            id: dpo.id,
-            dpoNo: dpo.dpo_no,
-            invoiceNo: dpo.invoice_no || "",
-            invoiceDate: dpo.invoice_date
-              ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
-              : "",
-            store: dpo.store_name || "N/A",
-            supplier: dpo.supplier_name || "N/A",
-            requestDate: new Date(dpo.date).toLocaleDateString('en-GB'),
-            date: dpo.date, // Raw date for sorting
-            description: dpo.description || "",
-            grandTotal: dpo.total_amount || 0,
-            discount: Number(dpo.discount) || 0,
-            status: dpo.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
-            account: dpo.account || "",
-            items: (dpo.items || []).map((item: any) => ({
-              id: item.id,
-              partNo: item.part_no,
-              description: item.part_description || item.part_no,
-              brand: item.brand || "",
-              uom: item.uom || "pcs",
-              quantity: item.quantity,
-              purchasePrice: item.purchase_price,
-              amount: item.amount,
-            })),
-          };
-          setSelectedOrder(viewOrder);
+          setSelectedOrder(mapDpoToViewOrder(updatedOrder));
         }
       }
     } catch (error: any) {
@@ -2835,19 +2784,19 @@ export const DirectPurchaseOrder = ({
   // Render view dialog
   const renderViewDialog = () => (
     <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="p-4 border-b bg-muted/30">
+      <DialogContent className="max-w-5xl h-[min(90vh,820px)] max-h-[90vh] overflow-hidden !flex flex-col p-0 gap-0">
+        <DialogHeader className="p-4 border-b bg-muted/30 shrink-0">
           <DialogTitle>{labels.viewDialogTitle}</DialogTitle>
           <DialogDescription>
             {selectedOrder?.dpoNo} - {selectedOrder?.requestDate}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
           {selectedOrder && (
-            <div className="flex-1 overflow-hidden flex flex-col">
+            <>
               {/* Fixed Top Info */}
-              <div className="p-6 pb-2">
+              <div className="p-6 pb-2 shrink-0">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                   <div>
                     <Label className="text-muted-foreground">{labels.orderNumberLabel}</Label>
@@ -2884,53 +2833,51 @@ export const DirectPurchaseOrder = ({
                 </div>
               </div>
 
-              {/* Scrollable Items Table */}
-              <div className="flex-1 overflow-hidden px-6 py-2">
-                <div className="h-full border rounded-md flex flex-col overflow-hidden bg-card">
-                  <ScrollArea className="flex-1">
-                    <Table>
-                      <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm">
-                        <TableRow>
-                          <TableHead>#</TableHead>
-                          <TableHead className="min-w-[120px]">Part No</TableHead>
-                          <TableHead className="min-w-[150px]">Description</TableHead>
-                          <TableHead className="min-w-[80px]">Brand</TableHead>
-                          <TableHead className="min-w-[60px]">UoM</TableHead>
-                          <TableHead className="min-w-[60px]">Qty</TableHead>
-                          <TableHead className="min-w-[120px]">Purchase Price</TableHead>
-                          <TableHead className="text-right min-w-[100px]">Amount</TableHead>
+              {/* Scrollable items — fills space between header meta and totals */}
+              <div className="flex-1 min-h-0 px-6 py-2">
+                <div className="h-full min-h-[140px] overflow-y-auto overscroll-contain border rounded-md bg-card">
+                  <table className="w-full caption-bottom text-sm">
+                    <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm shadow-sm">
+                      <TableRow>
+                        <TableHead>#</TableHead>
+                        <TableHead className="min-w-[120px]">Part No</TableHead>
+                        <TableHead className="min-w-[150px]">Description</TableHead>
+                        <TableHead className="min-w-[80px]">Brand</TableHead>
+                        <TableHead className="min-w-[60px]">UoM</TableHead>
+                        <TableHead className="min-w-[60px]">Qty</TableHead>
+                        <TableHead className="min-w-[120px]">Purchase Price</TableHead>
+                        <TableHead className="text-right min-w-[100px]">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedOrder.items.map((item, index) => (
+                        <TableRow key={item.id} className="hover:bg-muted/30">
+                          <TableCell>{index + 1}</TableCell>
+                          <TableCell className="font-medium">
+                            {item.partNo}
+                            {item.returnedQuantity > 0 && (
+                              <Badge variant="destructive" className="ml-2 text-[10px] h-5 px-1.5">
+                                Returned {item.returnedQuantity === item.quantity ? "(All)" : `(${item.returnedQuantity})`}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>{item.description}</TableCell>
+                          <TableCell>{item.brand}</TableCell>
+                          <TableCell>{item.uom}</TableCell>
+                          <TableCell>{item.quantity}</TableCell>
+                          <TableCell>{item.purchasePrice.toLocaleString("en-PK")}</TableCell>
+                          <TableCell className="text-right font-medium">
+                            {item.amount.toLocaleString("en-PK")}
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {selectedOrder.items.map((item, index) => (
-                          <TableRow key={item.id} className="hover:bg-muted/30">
-                            <TableCell>{index + 1}</TableCell>
-                            <TableCell className="font-medium">
-                              {item.partNo}
-                              {item.returnedQuantity > 0 && (
-                                <Badge variant="destructive" className="ml-2 text-[10px] h-5 px-1.5">
-                                  Returned {item.returnedQuantity === item.quantity ? "(All)" : `(${item.returnedQuantity})`}
-                                </Badge>
-                              )}
-                            </TableCell>
-                            <TableCell>{item.description}</TableCell>
-                            <TableCell>{item.brand}</TableCell>
-                            <TableCell>{item.uom}</TableCell>
-                            <TableCell>{item.quantity}</TableCell>
-                            <TableCell>{item.purchasePrice.toLocaleString("en-PK")}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              {item.amount.toLocaleString("en-PK")}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
+                      ))}
+                    </TableBody>
+                  </table>
                 </div>
               </div>
 
               {/* Totals: items subtotal, discount, grand total */}
-              <div className="px-6 py-4 bg-muted/10 border-t">
+              <div className="px-6 py-4 bg-muted/10 border-t shrink-0 relative z-10">
                 <div className="flex justify-end">
                   <div className="text-right space-y-1 min-w-[280px]">
                     <div className="flex justify-between gap-8 text-sm">
@@ -2953,19 +2900,35 @@ export const DirectPurchaseOrder = ({
                         </span>
                       </div>
                     )}
-                    <div className="pt-2 mt-1 border-t border-border/60">
-                      <p className="text-muted-foreground text-sm uppercase font-semibold">Grand total</p>
-                      <p className="text-2xl font-bold text-primary tabular-nums">
-                        {selectedOrder.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
-                      </p>
+                    {(selectedOrder.totalExpenses ?? 0) > 0 && (
+                      <div className="flex justify-between gap-8 text-sm">
+                        <span className="text-muted-foreground">Expense amount</span>
+                        <span className="font-medium tabular-nums">
+                          {(selectedOrder.totalExpenses ?? 0).toLocaleString("en-PK", {
+                            style: "currency",
+                            currency: "PKR",
+                          })}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-baseline justify-between gap-8 pt-2 mt-2 border-t border-border/60">
+                      <span className="text-sm uppercase font-semibold text-muted-foreground">
+                        Grand total
+                      </span>
+                      <span className="text-xl sm:text-2xl font-bold text-primary tabular-nums">
+                        {selectedOrder.grandTotal.toLocaleString("en-PK", {
+                          style: "currency",
+                          currency: "PKR",
+                        })}
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </>
           )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t bg-background p-4">
           <div className="flex gap-2">
             {selectedOrder && (selectedOrder.status === "Order Receivable Pending" || selectedOrder.status === "Completed") && (
               <>
@@ -3239,6 +3202,14 @@ export const DirectPurchaseOrder = ({
                     <span className="font-medium tabular-nums text-destructive">
                       -
                       {(selectedOrder.discount ?? 0).toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                    </span>
+                  </p>
+                )}
+                {(selectedOrder.totalExpenses ?? 0) > 0 && (
+                  <p>
+                    <span className="text-muted-foreground">Expense amount:</span>{" "}
+                    <span className="font-medium tabular-nums">
+                      {(selectedOrder.totalExpenses ?? 0).toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
                     </span>
                   </p>
                 )}

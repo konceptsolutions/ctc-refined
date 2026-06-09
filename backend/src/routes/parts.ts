@@ -3165,23 +3165,9 @@ router.put("/:id", async (req: Request, res: Response) => {
         } catch (error) {
           validatedApplicationId = null;
         }
-      } else {
-        // Verify application belongs to subcategory
-        try {
-          const application = await prisma.application.findUnique({
-            where: { id: validatedApplicationId },
-          });
-          if (
-            application &&
-            application.subcategoryId !== validatedSubcategoryId
-          ) {
-            // Application doesn't belong to subcategory, clear it
-            validatedApplicationId = null;
-          }
-        } catch (error) {
-          validatedApplicationId = null;
-        }
       }
+      // Applications may belong to a different subcategory than the part
+      // (e.g. group-level "VEHICLE PARTS" app on a "SEAL KIT" part).
     }
 
     const existingPart = await prisma.part.findUnique({

@@ -269,6 +269,37 @@ async function findAccountByKeywords(
   return acc;
 }
 
+/** Customer receivable account — never match a supplier/payable account with the same name. */
+async function findCustomerReceivableAccount(
+  customerId: string,
+  customerName?: string | null,
+  tx: any = prisma,
+) {
+  const include = { Subgroup: { include: { MainGroup: true } } };
+
+  const byCustomerId = await tx.account.findFirst({
+    where: { status: "Active", customerId, supplierId: null },
+    include,
+  });
+  if (byCustomerId) return byCustomerId;
+
+  if (customerName) {
+    const byNameInReceivable = await tx.account.findFirst({
+      where: {
+        status: "Active",
+        name: customerName,
+        supplierId: null,
+        customerId: { not: null },
+        Subgroup: { code: { in: ["105", "201"] } },
+      },
+      include,
+    });
+    if (byNameInReceivable) return byNameInReceivable;
+  }
+
+  return null;
+}
+
 // Helper function to create voucher for sales invoice
 async function createVoucherForInvoice(
   invoiceNo: string,
@@ -3149,6 +3180,10 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
         },
       });
 
+      // Running balances when multiple lines pick the same location in one stock-out
+      const locationQtyRemaining = new Map<string, number>();
+      const unallocatedQtyRemaining = new Map<string, number>();
+
       // Update Items & Stock
       for (const item of items) {
         const invoiceItem = await tx.salesInvoiceItem.findUnique({
@@ -3191,15 +3226,23 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
             if (embeddedPartId !== invoiceItem.partId) {
               throw new Error("Invalid rack/shelf location for this line item.");
             }
-            const unallocAvail = await getPartUnallocatedExcessQty(
-              tx,
-              invoiceItem.partId,
-            );
+            let unallocAvail = unallocatedQtyRemaining.get(embeddedPartId);
+            if (unallocAvail === undefined) {
+              unallocAvail = await getPartUnallocatedExcessQty(
+                tx,
+                invoiceItem.partId,
+              );
+              unallocatedQtyRemaining.set(embeddedPartId, unallocAvail);
+            }
             if (qtyToDeliver > unallocAvail) {
               throw new Error(
                 `Insufficient unallocated stock (available ${unallocAvail}, requested ${qtyToDeliver}).`,
               );
             }
+            unallocatedQtyRemaining.set(
+              embeddedPartId,
+              unallocAvail - qtyToDeliver,
+            );
             await tx.stockMovement.create({
               data: {
                 id: `sm_${Date.now()}_${invoiceItem.id}_unalloc`,
@@ -3226,11 +3269,20 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
             if (!prs || prs.partId !== invoiceItem.partId) {
               throw new Error("Invalid rack/shelf location for this line item.");
             }
-            if (Number(prs.quantity) < qtyToDeliver) {
+            let availableAtLocation = locationQtyRemaining.get(prsIdStr);
+            if (availableAtLocation === undefined) {
+              availableAtLocation = Number(prs.quantity);
+              locationQtyRemaining.set(prsIdStr, availableAtLocation);
+            }
+            if (qtyToDeliver > availableAtLocation) {
               throw new Error(
-                `Insufficient stock at selected location (available ${prs.quantity}, requested ${qtyToDeliver}).`,
+                `Insufficient stock at selected location (available ${availableAtLocation}, requested ${qtyToDeliver}).`,
               );
             }
+            locationQtyRemaining.set(
+              prsIdStr,
+              availableAtLocation - qtyToDeliver,
+            );
             await tx.partRackShelf.update({
               where: { id: prs.id },
               data: { quantity: { decrement: qtyToDeliver } },
@@ -3412,16 +3464,10 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
 
       let customerAccount: any = null;
       if (invoice.customerId) {
-        customerAccount = await prisma.account.findFirst({
-          where: {
-            status: "Active",
-            OR: [
-              { customerId: invoice.customerId },
-              { name: invoice.customerName || "" },
-            ],
-          },
-          include: { Subgroup: { include: { MainGroup: true } } },
-        });
+        customerAccount = await findCustomerReceivableAccount(
+          invoice.customerId,
+          invoice.customerName,
+        );
       }
       if (!customerAccount) {
         customerAccount = await prisma.account.findFirst({
@@ -3958,16 +4004,10 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             include: { Subgroup: { include: { MainGroup: true } } },
           });
         } else if (invoice.customerId) {
-          customerAccount = await prisma.account.findFirst({
-            where: {
-              status: "Active",
-              OR: [
-                { customerId: invoice.customerId },
-                { name: invoice.customerName || "" },
-              ],
-            },
-            include: { Subgroup: { include: { MainGroup: true } } },
-          });
+          customerAccount = await findCustomerReceivableAccount(
+            invoice.customerId,
+            invoice.customerName,
+          );
         }
         // Fallback: generic Receivable by code (registered sales only)
         if (!customerAccount && !isTransferOut) {
@@ -4768,16 +4808,11 @@ router.post("/invoices/bulk-reverse", async (req: Request, res: Response) => {
 
         let customerAccount: any = null;
         if (invoice.customerId) {
-          customerAccount = await tx.account.findFirst({
-            where: {
-              status: "Active",
-              OR: [
-                { customerId: invoice.customerId },
-                { name: invoice.customerName || "" },
-              ],
-            },
-            include: { Subgroup: { include: { MainGroup: true } } },
-          });
+          customerAccount = await findCustomerReceivableAccount(
+            invoice.customerId,
+            invoice.customerName,
+            tx,
+          );
         }
         if (!customerAccount) {
           customerAccount = await findAccountByKeywords(

@@ -531,9 +531,11 @@ class ApiClient {
     subcategoryId?: string,
     master_part_no?: string,
     search?: string,
+    categoryId?: string,
   ) {
     const params = new URLSearchParams();
-    if (subcategoryId) params.append("subcategory_id", subcategoryId);
+    if (categoryId) params.append("category_id", categoryId);
+    else if (subcategoryId) params.append("subcategory_id", subcategoryId);
     if (master_part_no) params.append("master_part_no", master_part_no);
     if (search) params.append("search", search);
     const query = params.toString() ? `?${params.toString()}` : "";
@@ -1087,6 +1089,8 @@ class ApiClient {
     status?: string;
     search?: string;
     part_id?: string;
+    add_inventory?: string;
+    adjust_type?: string;
     page?: number;
     limit?: number;
   }) {

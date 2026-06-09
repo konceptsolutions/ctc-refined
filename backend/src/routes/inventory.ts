@@ -2820,6 +2820,20 @@ router.delete("/transfers/:id", async (req: Request, res: Response) => {
   }
 });
 
+const parseAddInventoryFilter = (
+  query: Request["query"],
+): boolean | undefined => {
+  const raw = query.add_inventory ?? query.adjust_type;
+  if (raw === undefined || raw === null) return undefined;
+  const value = String(Array.isArray(raw) ? raw[0] : raw)
+    .trim()
+    .toLowerCase();
+  if (!value || value === "all") return undefined;
+  if (value === "true" || value === "add") return true;
+  if (value === "false" || value === "remove") return false;
+  return undefined;
+};
+
 // Get adjustments
 router.get("/adjustments", async (req: Request, res: Response) => {
   try {
@@ -2832,6 +2846,7 @@ router.get("/adjustments", async (req: Request, res: Response) => {
       page = "1",
       limit = "50",
     } = req.query;
+    const addInventoryFilter = parseAddInventoryFilter(req.query);
 
     console.log("Adjustments API called with params:", {
       from_date,
@@ -2839,6 +2854,7 @@ router.get("/adjustments", async (req: Request, res: Response) => {
       status,
       search,
       part_id,
+      add_inventory: addInventoryFilter,
       page,
       limit,
     });
@@ -2872,6 +2888,10 @@ router.get("/adjustments", async (req: Request, res: Response) => {
 
     if (status && status !== "all") {
       where.status = status;
+    }
+
+    if (addInventoryFilter !== undefined) {
+      where.addInventory = addInventoryFilter;
     }
 
     if (search) {

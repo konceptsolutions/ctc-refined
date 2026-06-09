@@ -199,23 +199,74 @@ export const StoreSalesInvoiceReceipt = ({
     };
   }, [open, invoice.id, invoice.items]);
 
+  const getAllocatedForPart = useCallback(
+    (partId: string, excludeItemId?: string): number => {
+      return (invoice.items || []).reduce((sum, row) => {
+        if (excludeItemId && row.id === excludeItemId) return sum;
+        if (String(row.partId) !== String(partId)) return sum;
+        return sum + (deliveryQuantities[row.id] ?? 0);
+      }, 0);
+    },
+    [invoice.items, deliveryQuantities],
+  );
+
+  const getRemainingPartStock = useCallback(
+    (partId: string, excludeItemId?: string): number | null => {
+      const stock = partStockInfo[String(partId)];
+      if (!stock || typeof stock.current_stock !== "number") return null;
+      const allocatedElsewhere = getAllocatedForPart(partId, excludeItemId);
+      return Math.max(0, stock.current_stock - allocatedElsewhere);
+    },
+    [partStockInfo, getAllocatedForPart],
+  );
+
+  const getAllocatedFromLocation = useCallback(
+    (prsId: string, excludeItemId?: string): number => {
+      return (invoice.items || []).reduce((sum, row) => {
+        if (excludeItemId && row.id === excludeItemId) return sum;
+        if (selectedPrsByItemId[row.id] !== prsId) return sum;
+        return sum + (deliveryQuantities[row.id] ?? 0);
+      }, 0);
+    },
+    [invoice.items, selectedPrsByItemId, deliveryQuantities],
+  );
+
+  const getRemainingAtLocation = useCallback(
+    (prsId: string, excludeItemId?: string): number => {
+      for (const opts of Object.values(partLocationsByPartId)) {
+        const opt = opts.find((o) => o.id === prsId);
+        if (opt) {
+          const allocatedElsewhere = getAllocatedFromLocation(prsId, excludeItemId);
+          return Math.max(0, opt.quantity - allocatedElsewhere);
+        }
+      }
+      return 0;
+    },
+    [partLocationsByPartId, getAllocatedFromLocation],
+  );
+
   const getMaxStockOutQtyForItem = useCallback(
     (item: SalesInvoiceItem): number => {
       const pendingQty = Math.max(0, item.orderedQty - item.deliveredQty);
-      const stock = partStockInfo[String(item.partId)];
+      const remainingStock = getRemainingPartStock(String(item.partId), item.id);
       const prsId = selectedPrsByItemId[item.id];
       const opts = partLocationsByPartId[String(item.partId)] || [];
       const opt = prsId ? opts.find((o) => o.id === prsId) : undefined;
       let max = pendingQty;
-      if (stock && typeof stock.current_stock === "number") {
-        max = Math.min(max, stock.current_stock);
+      if (remainingStock !== null) {
+        max = Math.min(max, remainingStock);
       }
       if (opt) {
-        max = Math.min(max, opt.quantity);
+        max = Math.min(max, getRemainingAtLocation(prsId, item.id));
       }
       return Math.max(0, max);
     },
-    [partStockInfo, selectedPrsByItemId, partLocationsByPartId],
+    [
+      getRemainingPartStock,
+      selectedPrsByItemId,
+      partLocationsByPartId,
+      getRemainingAtLocation,
+    ],
   );
 
   useEffect(() => {
@@ -265,6 +316,7 @@ export const StoreSalesInvoiceReceipt = ({
         return;
       }
 
+      const usageByLocation = new Map<string, number>();
       for (const item of itemsWithQty) {
         const prsId = selectedPrsByItemId[item.id];
         if (!prsId) {
@@ -273,14 +325,27 @@ export const StoreSalesInvoiceReceipt = ({
           );
           return;
         }
-        const opts = partLocationsByPartId[String(item.partId)] || [];
-        const opt = opts.find((o) => o.id === prsId);
+        const qty = getDeliveryQty(item.id);
+        usageByLocation.set(prsId, (usageByLocation.get(prsId) || 0) + qty);
+
         const allowed = getMaxStockOutQtyForItem(item);
-        if (getDeliveryQty(item.id) > allowed) {
+        if (qty > allowed) {
+          const remaining = getRemainingAtLocation(prsId, item.id);
           toast.error(
-            opt && getDeliveryQty(item.id) > opt.quantity
-              ? `Stock out qty for ${item.partNo} exceeds quantity at the selected location (${opt.quantity}).`
+            remaining < qty
+              ? `Stock out qty for ${item.partNo} exceeds quantity left at the selected location (${remaining} available after other lines).`
               : `Stock out qty for ${item.partNo} cannot exceed in-stock quantity or pending amount.`,
+          );
+          return;
+        }
+      }
+
+      for (const [prsId, totalQty] of usageByLocation) {
+        const remaining = getRemainingAtLocation(prsId);
+        const capacity = remaining + totalQty;
+        if (totalQty > capacity) {
+          toast.error(
+            `Total stock out (${totalQty}) exceeds quantity at one selected location (${capacity} available). Split lines across different locations.`,
           );
           return;
         }
@@ -373,8 +438,8 @@ export const StoreSalesInvoiceReceipt = ({
                   const locOptions =
                     partLocationsByPartId[String(item.partId)] || [];
                   const partIdStr = String(item.partId);
-                  const stockRow = partStockInfo[partIdStr];
                   const stockLoading = loadingPartStock[partIdStr];
+                  const remainingStock = getRemainingPartStock(partIdStr, item.id);
                   const maxOutQty = getMaxStockOutQtyForItem(item);
                   return (
                     <TableRow
@@ -403,9 +468,9 @@ export const StoreSalesInvoiceReceipt = ({
                           <span className="text-xs text-muted-foreground">
                             …
                           </span>
-                        ) : stockRow ? (
+                        ) : remainingStock !== null ? (
                           <span className="text-sm font-semibold tabular-nums">
-                            {stockRow.current_stock}
+                            {remainingStock}
                           </span>
                         ) : (
                           <span
@@ -442,11 +507,28 @@ export const StoreSalesInvoiceReceipt = ({
                               <SelectValue placeholder="Select location" />
                             </SelectTrigger>
                             <SelectContent>
-                              {locOptions.map((opt) => (
-                                <SelectItem key={opt.id} value={opt.id}>
-                                  {opt.label}
-                                </SelectItem>
-                              ))}
+                              {locOptions.map((opt) => {
+                                const remaining = getRemainingAtLocation(
+                                  opt.id,
+                                  item.id,
+                                );
+                                const label =
+                                  remaining === opt.quantity
+                                    ? opt.label
+                                    : opt.label.replace(
+                                        /\(\d+\)$/,
+                                        `(${remaining} left)`,
+                                      );
+                                return (
+                                  <SelectItem
+                                    key={opt.id}
+                                    value={opt.id}
+                                    disabled={remaining <= 0}
+                                  >
+                                    {label}
+                                  </SelectItem>
+                                );
+                              })}
                             </SelectContent>
                           </Select>
                         )}
