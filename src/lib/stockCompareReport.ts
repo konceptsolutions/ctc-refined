@@ -15,9 +15,10 @@ export type CompareStatus = "Match" | "Over" | "Under" | "Not in System";
 
 export interface CompareRow {
   pdfPartNo: string;
+  pdfBrand: string | null;
   systemPartNo: string | null;
   masterPartNo: string | null;
-  brand: string | null;
+  systemBrand: string | null;
   description: string | null;
   pdfQty: number;
   systemQty: number;
@@ -44,23 +45,29 @@ export interface CompareSummary {
 const normalizePartNo = (value: string) =>
   value.trim().toUpperCase().replace(/\s+/g, "");
 
+const normalizeBrand = (value: string | null | undefined) =>
+  (value || "").trim().toUpperCase();
+
+const partBrandKey = (partNo: string, brand: string | null | undefined) =>
+  `${normalizePartNo(partNo)}|${normalizeBrand(brand)}`;
+
 const buildSystemLookup = (items: SystemStockItem[]) => {
-  const byPartNo = new Map<string, SystemStockItem>();
-  const byMasterPartNo = new Map<string, SystemStockItem>();
+  const byPartAndBrand = new Map<string, SystemStockItem>();
+  const byMasterPartAndBrand = new Map<string, SystemStockItem>();
 
   for (const item of items) {
     if (item.part_no) {
-      byPartNo.set(normalizePartNo(item.part_no), item);
+      byPartAndBrand.set(partBrandKey(item.part_no, item.brand), item);
     }
     if (item.master_part_no) {
-      const key = normalizePartNo(item.master_part_no);
-      if (!byMasterPartNo.has(key)) {
-        byMasterPartNo.set(key, item);
+      const key = partBrandKey(item.master_part_no, item.brand);
+      if (!byMasterPartAndBrand.has(key)) {
+        byMasterPartAndBrand.set(key, item);
       }
     }
   }
 
-  return { byPartNo, byMasterPartNo };
+  return { byPartAndBrand, byMasterPartAndBrand };
 };
 
 const resolveStatus = (pdfQty: number, systemQty: number): CompareStatus => {
@@ -79,28 +86,27 @@ export const comparePdfStockWithSystem = (
   systemOnlyRows: SystemStockItem[];
   summary: CompareSummary;
 } => {
-  const { byPartNo, byMasterPartNo } = buildSystemLookup(systemStock);
-  const matchedSystemKeys = new Set<string>();
+  const { byPartAndBrand, byMasterPartAndBrand } = buildSystemLookup(systemStock);
+  const matchedSystemPartIds = new Set<string>();
   const rows: CompareRow[] = [];
 
   for (const pdfRow of pdfRows) {
-    const key = normalizePartNo(pdfRow.partNo);
-    const systemItem = byPartNo.get(key) || byMasterPartNo.get(key) || null;
+    const key = partBrandKey(pdfRow.partNo, pdfRow.brand);
+    const systemItem =
+      byPartAndBrand.get(key) || byMasterPartAndBrand.get(key) || null;
     const systemQty = systemItem?.current_stock ?? -1;
     const status = resolveStatus(pdfRow.qty, systemQty);
 
     if (systemItem) {
-      matchedSystemKeys.add(normalizePartNo(systemItem.part_no));
-      if (systemItem.master_part_no) {
-        matchedSystemKeys.add(normalizePartNo(systemItem.master_part_no));
-      }
+      matchedSystemPartIds.add(systemItem.part_id);
     }
 
     rows.push({
       pdfPartNo: pdfRow.partNo,
+      pdfBrand: pdfRow.brand,
       systemPartNo: systemItem?.part_no ?? null,
       masterPartNo: systemItem?.master_part_no ?? null,
-      brand: systemItem?.brand ?? null,
+      systemBrand: systemItem?.brand ?? null,
       description: systemItem?.description ?? null,
       pdfQty: pdfRow.qty,
       systemQty: systemQty < 0 ? 0 : systemQty,
@@ -111,13 +117,9 @@ export const comparePdfStockWithSystem = (
     });
   }
 
-  const systemOnlyRows = systemStock.filter((item) => {
-    const partKey = normalizePartNo(item.part_no);
-    const masterKey = item.master_part_no
-      ? normalizePartNo(item.master_part_no)
-      : "";
-    return !matchedSystemKeys.has(partKey) && !matchedSystemKeys.has(masterKey);
-  });
+  const systemOnlyRows = systemStock.filter(
+    (item) => !matchedSystemPartIds.has(item.part_id),
+  );
 
   const summary: CompareSummary = {
     pdfPages: meta.pageCount,
@@ -176,9 +178,10 @@ export const generateStockCompareExcel = async (input: {
   const comparisonSheet = workbook.addWorksheet("Comparison");
   comparisonSheet.columns = [
     { header: "PDF Part No", key: "pdfPartNo", width: 18 },
+    { header: "PDF Brand", key: "pdfBrand", width: 12 },
     { header: "System Part No", key: "systemPartNo", width: 18 },
     { header: "Master Part No", key: "masterPartNo", width: 18 },
-    { header: "Brand", key: "brand", width: 14 },
+    { header: "System Brand", key: "systemBrand", width: 12 },
     { header: "Description", key: "description", width: 36 },
     { header: "PDF Qty", key: "pdfQty", width: 12 },
     { header: "System Qty", key: "systemQty", width: 12 },

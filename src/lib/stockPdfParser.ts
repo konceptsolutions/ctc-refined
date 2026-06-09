@@ -4,6 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 export interface PdfStockRow {
   partNo: string;
+  brand: string | null;
   qty: number;
   pages: number[];
 }
@@ -20,6 +21,7 @@ type TableRow = {
 
 type ColumnPositions = {
   partColumnX: number | null;
+  brandColumnX: number | null;
   stockColumnX: number | null;
 };
 
@@ -30,6 +32,7 @@ const LOCATION_PATTERN = /^[A-Z]{1,2}\d+[A-Z]?$/i;
 
 const STOCK_COLUMN_TOLERANCE = 42;
 const PART_COLUMN_TOLERANCE = 40;
+const BRAND_COLUMN_TOLERANCE = 35;
 
 const isLikelyPartNo = (value: string) => {
   const part = value.trim();
@@ -89,6 +92,7 @@ const rowText = (row: TableRow) =>
 /** Header is often split across rows: "Part No Brand..." and "Location Stock Price..." */
 const buildColumnPositions = (tableRows: TableRow[]): ColumnPositions => {
   let partColumnX: number | null = null;
+  let brandColumnX: number | null = null;
   let stockColumnX: number | null = null;
 
   for (const row of tableRows.slice(0, 20)) {
@@ -96,7 +100,8 @@ const buildColumnPositions = (tableRows: TableRow[]): ColumnPositions => {
     if (
       !text.includes("part") &&
       !text.includes("stock") &&
-      !text.includes("location")
+      !text.includes("location") &&
+      !text.includes("brand")
     ) {
       continue;
     }
@@ -105,6 +110,9 @@ const buildColumnPositions = (tableRows: TableRow[]): ColumnPositions => {
       const value = cell.str.trim().toLowerCase();
       if (value === "part no" || value === "partno" || value === "part") {
         partColumnX = cell.x;
+      }
+      if (value === "brand") {
+        brandColumnX = cell.x;
       }
       if (value === "stock") {
         stockColumnX = cell.x;
@@ -117,9 +125,38 @@ const buildColumnPositions = (tableRows: TableRow[]): ColumnPositions => {
       rowText(row).toLowerCase().includes("part no"),
     );
     partColumnX = headerish?.cells[0]?.x ?? null;
+    brandColumnX = brandColumnX ?? headerish?.cells[1]?.x ?? null;
   }
 
-  return { partColumnX, stockColumnX };
+  return { partColumnX, brandColumnX, stockColumnX };
+};
+
+const extractBrandFromRow = (
+  row: TableRow,
+  brandColumnX: number | null,
+  partCell: TextCell,
+): string | null => {
+  const brandCell =
+    brandColumnX !== null
+      ? getCellNearX(row, brandColumnX, BRAND_COLUMN_TOLERANCE)
+      : null;
+  if (brandCell && brandCell !== partCell) {
+    const brand = brandCell.str.trim();
+    if (brand && !HEADER_TOKEN_PATTERN.test(brand)) {
+      return brand;
+    }
+  }
+
+  const partIdx = row.cells.indexOf(partCell);
+  if (partIdx >= 0 && partIdx + 1 < row.cells.length) {
+    const next = row.cells[partIdx + 1].str.trim();
+    if (next && !HEADER_TOKEN_PATTERN.test(next) && !LOCATION_PATTERN.test(next)) {
+      const qty = parsePlainInteger(next);
+      if (qty === null) return next;
+    }
+  }
+
+  return null;
 };
 
 const isMetaOrHeaderRow = (row: TableRow) => {
@@ -165,8 +202,9 @@ const getCellNearX = (row: TableRow, targetX: number, tolerance: number) => {
 const parseRowByColumns = (
   row: TableRow,
   partColumnX: number,
+  brandColumnX: number | null,
   stockColumnX: number,
-): { partNo: string; qty: number } | null => {
+): { partNo: string; brand: string | null; qty: number } | null => {
   const partCell =
     getCellNearX(row, partColumnX, PART_COLUMN_TOLERANCE) ?? row.cells[0];
   const stockCell = getCellNearX(row, stockColumnX, STOCK_COLUMN_TOLERANCE);
@@ -178,14 +216,19 @@ const parseRowByColumns = (
   const qty = parsePlainInteger(stockCell.str);
   if (qty === null) return null;
 
-  return { partNo, qty };
+  return {
+    partNo,
+    brand: extractBrandFromRow(row, brandColumnX, partCell),
+    qty,
+  };
 };
 
 /** Fallback when column positions fail or row has no location column */
 export const parseStockWithPriceLine = (
   line: string,
   partNoFromCell?: string,
-): { partNo: string; qty: number } | null => {
+  brandFromCell?: string | null,
+): { partNo: string; brand: string | null; qty: number } | null => {
   const trimmed = line.replace(/\s+/g, " ").trim();
   if (!trimmed || trimmed.length < 3) return null;
   if (/stock\s+with\s+price/i.test(trimmed)) return null;
@@ -196,6 +239,18 @@ export const parseStockWithPriceLine = (
   const partNo = partNoFromCell?.trim() || tokens[0];
   if (!isLikelyPartNo(partNo)) return null;
 
+  const partTokenCount = partNoFromCell
+    ? partNo.split(" ").filter(Boolean).length
+    : 1;
+  const brand =
+    brandFromCell?.trim() ||
+    (tokens.length > partTokenCount &&
+    !HEADER_TOKEN_PATTERN.test(tokens[partTokenCount]) &&
+    !LOCATION_PATTERN.test(tokens[partTokenCount]) &&
+    parsePlainInteger(tokens[partTokenCount]) === null
+      ? tokens[partTokenCount]
+      : null);
+
   const firstCommaPriceIdx = tokens.findIndex((token) => hasCommaPrice(token));
 
   if (firstCommaPriceIdx > 2) {
@@ -204,13 +259,13 @@ export const parseStockWithPriceLine = (
       if (LOCATION_PATTERN.test(token)) continue;
       const qty = parsePlainInteger(token);
       if (qty !== null) {
-        return { partNo: partNo.trim(), qty };
+        return { partNo: partNo.trim(), brand: brand || null, qty };
       }
     }
   }
 
   let locationIdx = -1;
-  for (let i = 2; i < tokens.length; i += 1) {
+  for (let i = partTokenCount + (brand ? 1 : 0); i < tokens.length; i += 1) {
     if (LOCATION_PATTERN.test(tokens[i])) {
       locationIdx = i;
       break;
@@ -220,16 +275,16 @@ export const parseStockWithPriceLine = (
   if (locationIdx >= 0 && locationIdx + 1 < tokens.length) {
     const qty = parsePlainInteger(tokens[locationIdx + 1]);
     if (qty !== null) {
-      return { partNo: partNo.trim(), qty };
+      return { partNo: partNo.trim(), brand: brand || null, qty };
     }
   }
 
-  for (let i = 2; i < tokens.length; i += 1) {
+  for (let i = partTokenCount + (brand ? 1 : 0); i < tokens.length; i += 1) {
     if (LOCATION_PATTERN.test(tokens[i])) continue;
     if (hasCommaPrice(tokens[i])) break;
     const qty = parsePlainInteger(tokens[i]);
     if (qty !== null) {
-      return { partNo: partNo.trim(), qty };
+      return { partNo: partNo.trim(), brand: brand || null, qty };
     }
   }
 
@@ -238,10 +293,12 @@ export const parseStockWithPriceLine = (
 
 const parsePageRows = (
   tableRows: TableRow[],
-): Array<{ partNo: string; qty: number }> => {
-  const { partColumnX, stockColumnX } = buildColumnPositions(tableRows);
+): Array<{ partNo: string; brand: string | null; qty: number }> => {
+  const { partColumnX, brandColumnX, stockColumnX } =
+    buildColumnPositions(tableRows);
   const useColumns = partColumnX !== null && stockColumnX !== null;
-  const parsedRows: Array<{ partNo: string; qty: number }> = [];
+  const parsedRows: Array<{ partNo: string; brand: string | null; qty: number }> =
+    [];
 
   for (const row of tableRows) {
     if (isMetaOrHeaderRow(row)) continue;
@@ -253,16 +310,25 @@ const parsePageRows = (
       (partColumnX !== null
         ? getCellNearX(row, partColumnX, PART_COLUMN_TOLERANCE)
         : null) ?? row.cells[0];
+    const brand =
+      partCell !== null
+        ? extractBrandFromRow(row, brandColumnX, partCell)
+        : null;
 
     if (useColumns) {
-      const byColumns = parseRowByColumns(row, partColumnX!, stockColumnX!);
+      const byColumns = parseRowByColumns(
+        row,
+        partColumnX!,
+        brandColumnX,
+        stockColumnX!,
+      );
       if (byColumns) {
         parsedRows.push(byColumns);
         continue;
       }
     }
 
-    const fallback = parseStockWithPriceLine(text, partCell?.str);
+    const fallback = parseStockWithPriceLine(text, partCell?.str, brand);
     if (fallback) parsedRows.push(fallback);
   }
 
@@ -284,6 +350,7 @@ export const extractStockRowsFromPdf = async (
     for (const parsed of parsedRows) {
       rows.push({
         partNo: parsed.partNo,
+        brand: parsed.brand,
         qty: parsed.qty,
         pages: [pageNumber],
       });
