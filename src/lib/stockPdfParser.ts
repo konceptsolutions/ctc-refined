@@ -1,7 +1,7 @@
 import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// Stable public path so rebuilds don't break the worker URL (hashed assets 404 after deploy).
+pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 export interface PdfStockRow {
   partNo: string;
