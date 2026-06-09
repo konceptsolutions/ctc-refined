@@ -73,7 +73,7 @@ const resolveStatus = (pdfQty: number, systemQty: number): CompareStatus => {
 export const comparePdfStockWithSystem = (
   pdfRows: PdfStockRow[],
   systemStock: SystemStockItem[],
-  meta: { pageCount: number; rawLineCount: number },
+  meta: { pageCount: number; parsedLineCount: number },
 ): {
   rows: CompareRow[];
   systemOnlyRows: SystemStockItem[];
@@ -121,7 +121,7 @@ export const comparePdfStockWithSystem = (
 
   const summary: CompareSummary = {
     pdfPages: meta.pageCount,
-    pdfLinesParsed: meta.rawLineCount,
+    pdfLinesParsed: meta.parsedLineCount,
     pdfItems: pdfRows.length,
     systemItems: systemStock.length,
     matched: rows.filter((row) => row.status === "Match").length,

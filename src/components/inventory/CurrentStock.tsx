@@ -830,7 +830,7 @@ export const CurrentStock = () => {
     try {
       setComparingPdf(true);
 
-      const { rows: pdfRows, pageCount, rawLineCount } =
+      const { rows: pdfRows, pageCount, parsedLineCount } =
         await extractStockRowsFromPdf(pdfCompareFile);
 
       if (pdfRows.length === 0) {
@@ -854,7 +854,7 @@ export const CurrentStock = () => {
       const { rows, systemOnlyRows, summary } = comparePdfStockWithSystem(
         pdfRows,
         systemStock,
-        { pageCount, rawLineCount },
+        { pageCount, parsedLineCount },
       );
 
       const blob = await generateStockCompareExcel({
@@ -868,7 +868,7 @@ export const CurrentStock = () => {
       downloadBlob(blob, `stock-pdf-compare-${dateStamp}.xlsx`);
 
       toast.success(
-        `Excel report downloaded: ${summary.pdfItems} PDF items, ${summary.matched} matched, ${summary.over + summary.under} with variance, ${summary.notInSystem} not in system.`,
+        `Excel report downloaded: ${parsedLineCount} PDF line items, ${summary.matched} matched, ${summary.over + summary.under} with variance, ${summary.notInSystem} not in system.`,
       );
       setPdfCompareDialogOpen(false);
       setPdfCompareFile(null);
