@@ -5093,6 +5093,8 @@ export const SalesInvoice = ({
       delivered: "Delivered",
       cancelled: "Cancelled",
       fully_delivered: "Fully Delivered",
+      partially_return: "Partially Return",
+      return: "Return",
     };
     return labels[status] ?? status;
   };
@@ -5122,6 +5124,10 @@ export const SalesInvoice = ({
       partially_delivered_reversed:
         "bg-red-500/10 text-red-600 border-red-500/20",
       delivered: "bg-green-500/10 text-green-600 border-green-500/20",
+      cancelled: "bg-red-500/10 text-red-600 border-red-500/20",
+      fully_delivered: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
+      partially_return: "bg-amber-500/10 text-amber-700 border-amber-500/20",
+      return: "bg-purple-500/10 text-purple-700 border-purple-500/20",
     };
     const labels: Record<string, string> = {
       pending: "Pending",
@@ -5130,6 +5136,10 @@ export const SalesInvoice = ({
       partially_delivered: "Partially Delivered",
       partially_delivered_reversed: "Partially Delivered Reverse",
       delivered: "Delivered",
+      cancelled: "Cancelled",
+      fully_delivered: "Fully Delivered",
+      partially_return: "Partially Return",
+      return: "Return",
     };
 
     const style =

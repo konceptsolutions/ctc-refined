@@ -290,7 +290,23 @@ type PurchaseQuotationFormItem = PurchaseQuotationContextItem & {
   quotationQuantity: number;
   shipDays: number;
   fcRate: number;
+  fcRateText: string;
   revisedFcRate: number;
+  revisedFcRateText: string;
+};
+
+const RATE_INPUT_PATTERN = /^\d*\.?\d{0,4}$/;
+
+const formatRateInput = (value: number): string => {
+  if (!Number.isFinite(value) || value === 0) return "";
+  return String(Math.round(value * 10000) / 10000);
+};
+
+const parseRateInput = (raw: string): number => {
+  if (!raw || raw === ".") return 0;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round(parsed * 10000) / 10000;
 };
 
 const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
@@ -310,7 +326,9 @@ const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
   quotationQuantity: 0,
   shipDays: 0,
   fcRate: 0,
+  fcRateText: "",
   revisedFcRate: 0,
+  revisedFcRateText: "",
   loadingPartDetails: false,
 });
 
@@ -2153,7 +2171,11 @@ const PurchaseQuotationForm = ({
                 ),
                 shipDays: Number(item.shipDays || 0),
                 fcRate: Number(item.fcRate || 0),
+                fcRateText: formatRateInput(Number(item.fcRate || 0)),
                 revisedFcRate: Number(item.revisedFcRate || 0),
+                revisedFcRateText: formatRateInput(
+                  Number(item.revisedFcRate || 0),
+                ),
                 loadingPartDetails: false,
               }))
             : [],
@@ -2786,16 +2808,23 @@ const PurchaseQuotationForm = ({
                       </td>
                       <td className="p-2">
                         <Input
-                          type="number"
-                          min={0}
-                          step="0.0001"
+                          type="text"
+                          inputMode="decimal"
                           className="h-8 text-right"
-                          value={row.fcRate === 0 ? "" : row.fcRate}
-                          onChange={(e) =>
+                          value={row.fcRateText}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
                             updateRow(row.rowId, {
-                              fcRate: Number(e.target.value || 0),
-                            })
-                          }
+                              fcRateText: raw,
+                              fcRate: parseRateInput(raw),
+                            });
+                          }}
+                          onBlur={() => {
+                            updateRow(row.rowId, {
+                              fcRateText: formatRateInput(row.fcRate),
+                            });
+                          }}
                         />
                       </td>
                       <td className="p-2 text-right">{Number(calc?.fcAmount || 0).toFixed(2)}</td>
@@ -3018,7 +3047,11 @@ const PurchaseQuotationRevisionForm = ({
                 quotationQuantity: Number(item.quotationQuantity || 0),
                 shipDays: Number(item.shipDays || 0),
                 fcRate: Number(item.fcRate || 0),
+                fcRateText: formatRateInput(Number(item.fcRate || 0)),
                 revisedFcRate: Number(item.revisedFcRate || 0),
+                revisedFcRateText: formatRateInput(
+                  Number(item.revisedFcRate || 0),
+                ),
                 weight: Number(item.weight || 0),
                 loadingPartDetails: false,
               }))
@@ -3439,16 +3472,23 @@ const PurchaseQuotationRevisionForm = ({
                       </td>
                       <td className="p-2">
                         <Input
-                          type="number"
-                          min={0}
-                          step="0.0001"
+                          type="text"
+                          inputMode="decimal"
                           className="h-8 text-right"
-                          value={row.fcRate === 0 ? "" : row.fcRate}
-                          onChange={(e) =>
+                          value={row.fcRateText}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
                             updateRow(row.rowId, {
-                              fcRate: Number(e.target.value || 0),
-                            })
-                          }
+                              fcRateText: raw,
+                              fcRate: parseRateInput(raw),
+                            });
+                          }}
+                          onBlur={() => {
+                            updateRow(row.rowId, {
+                              fcRateText: formatRateInput(row.fcRate),
+                            });
+                          }}
                         />
                       </td>
                       <td className="p-2 text-right">{Number(calc?.fcAmount || 0).toFixed(2)}</td>
@@ -3456,16 +3496,23 @@ const PurchaseQuotationRevisionForm = ({
                       <td className="p-2 text-right">{Number(calc?.lcAmount || 0).toFixed(2)}</td>
                       <td className="p-2">
                         <Input
-                          type="number"
-                          min={0}
-                          step="0.0001"
+                          type="text"
+                          inputMode="decimal"
                           className="h-8 text-right"
-                          value={row.revisedFcRate === 0 ? "" : row.revisedFcRate}
-                          onChange={(e) =>
+                          value={row.revisedFcRateText}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
                             updateRow(row.rowId, {
-                              revisedFcRate: Number(e.target.value || 0),
-                            })
-                          }
+                              revisedFcRateText: raw,
+                              revisedFcRate: parseRateInput(raw),
+                            });
+                          }}
+                          onBlur={() => {
+                            updateRow(row.rowId, {
+                              revisedFcRateText: formatRateInput(row.revisedFcRate),
+                            });
+                          }}
                         />
                       </td>
                       <td className="p-2 text-right">
@@ -3778,7 +3825,6 @@ const PurchaseImportRequestTab = () => {
             <tr>
               <th className="text-left p-2 border-b">Date</th>
               <th className="text-left p-2 border-b">Inquiry No</th>
-              <th className="text-left p-2 border-b">Consignee</th>
               <th className="text-left p-2 border-b">Supplier</th>
               <th className="text-right p-2 border-b">Items</th>
               <th className="text-right p-2 border-b">Total Qty</th>
@@ -3791,13 +3837,13 @@ const PurchaseImportRequestTab = () => {
           <tbody>
             {loadingRequests ? (
               <tr>
-                <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                <td colSpan={9} className="p-4 text-center text-muted-foreground">
                   Loading inquiries...
                 </td>
               </tr>
             ) : requests.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                <td colSpan={9} className="p-4 text-center text-muted-foreground">
                   No inquiries found. Use <span className="font-medium">New Inquiry</span> or the Inquiry Form tab.
                 </td>
               </tr>
@@ -3821,7 +3867,6 @@ const PurchaseImportRequestTab = () => {
                   row.Supplier?.name ||
                   row.Supplier?.code ||
                   "N/A";
-                const consigneeLabel = row.consignee || "-";
                 const hasSupplier = Boolean(row.supplierId || row.Supplier?.id);
                 return (
                   <tr key={row.id} className="border-b hover:bg-muted/20">
@@ -3829,7 +3874,6 @@ const PurchaseImportRequestTab = () => {
                       {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}
                     </td>
                     <td className="p-2 font-mono text-xs">{row.requestNo || "-"}</td>
-                    <td className="p-2">{consigneeLabel}</td>
                     <td className="p-2">{supplierName}</td>
                     <td className="p-2 text-right">{itemRows.length}</td>
                     <td className="p-2 text-right">{totalQty}</td>

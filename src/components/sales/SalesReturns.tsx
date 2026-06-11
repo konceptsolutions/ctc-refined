@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +58,7 @@ import { toast } from "@/hooks/use-toast";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { getUserRole } from "@/utils/auth";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface ReturnItem {
   id: string;
@@ -72,8 +73,41 @@ interface ReturnItem {
   total: number;
 }
 
+interface OriginalInvoiceItem {
+  partNo: string;
+  description: string;
+  brand: string;
+  uom: string;
+  orderedQty: number;
+  deliveredQty: number;
+  pendingQty: number;
+  unitPrice: number;
+  discount: number;
+  lineTotal: number;
+}
+
+interface OriginalInvoiceDetails {
+  invoiceNo: string;
+  invoiceDate: string;
+  customerName: string;
+  customerType: string;
+  salesPerson: string;
+  status: string;
+  paymentStatus: string;
+  remarks: string;
+  subtotal: number;
+  overallDiscount: number;
+  freightCharges: number;
+  tax: number;
+  taxPercentage: number;
+  grandTotal: number;
+  paidAmount: number;
+  items: OriginalInvoiceItem[];
+}
+
 interface SalesReturn {
   id: string;
+  salesInvoiceId: string;
   invoiceNo: string;
   returnDate: string;
   customerName: string;
@@ -89,6 +123,56 @@ interface SalesReturn {
   /** Server status: pending | completed | rejected */
   status?: string;
 }
+
+const formatDisplayDate = (value?: string | Date | null) => {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleDateString();
+  } catch {
+    return String(value);
+  }
+};
+
+const mapOriginalInvoiceFromApi = (fullInv: any): OriginalInvoiceDetails => {
+  const items: OriginalInvoiceItem[] = (fullInv.SalesInvoiceItem || []).map(
+    (item: any) => {
+      const part = item.Part || {};
+      return {
+        partNo: String(item.partNo || part.partNo || "").trim() || "—",
+        description:
+          String(item.description || part.description || "").trim() || "—",
+        brand: String(item.brand || part.Brand?.name || "").trim() || "—",
+        uom: String(part.uom || "pcs").trim() || "pcs",
+        orderedQty: Number(item.orderedQty) || 0,
+        deliveredQty: Number(item.deliveredQty) || 0,
+        pendingQty: Number(item.pendingQty) || 0,
+        unitPrice: Number(item.unitPrice) || 0,
+        discount: Number(item.discount) || 0,
+        lineTotal: Number(item.lineTotal) || 0,
+      };
+    },
+  );
+
+  return {
+    invoiceNo: String(fullInv.invoiceNo || "").trim() || "—",
+    invoiceDate: formatDisplayDate(fullInv.invoiceDate),
+    customerName: String(fullInv.customerName || "").trim() || "—",
+    customerType:
+      fullInv.customerType === "walking" ? "Walk-in" : "Registered",
+    salesPerson: String(fullInv.salesPerson || "").trim() || "—",
+    status: String(fullInv.status || "").trim() || "—",
+    paymentStatus: String(fullInv.paymentStatus || "").trim() || "—",
+    remarks: String(fullInv.remarks || "").trim() || "—",
+    subtotal: Number(fullInv.subtotal) || 0,
+    overallDiscount: Number(fullInv.overallDiscount) || 0,
+    freightCharges: Number(fullInv.freightCharges) || 0,
+    tax: Number(fullInv.tax) || 0,
+    taxPercentage: Number(fullInv.taxPercentage) || 0,
+    grandTotal: Number(fullInv.grandTotal) || 0,
+    paidAmount: Number(fullInv.paidAmount) || 0,
+    items,
+  };
+};
 
 /** Map Prisma/API sales return row to list UI model */
 function mapApiSalesReturn(row: any): SalesReturn {
@@ -130,6 +214,7 @@ function mapApiSalesReturn(row: any): SalesReturn {
 
   return {
     id: String(row.id),
+    salesInvoiceId: String(row.salesInvoiceId || "").trim(),
     invoiceNo: String(row.returnNumber || "").trim() || String(row.id),
     returnDate,
     customerName: String(inv.customerName || "").trim() || "—",
@@ -158,8 +243,7 @@ export const SalesReturns = () => {
   const [availableCustomers, setAvailableCustomers] = useState<{ id: string; name: string }[]>([]);
 
   // Filter states
-  const [filterItemType, setFilterItemType] = useState("");
-  const [filterItem, setFilterItem] = useState("");
+  const [filterItem, setFilterItem] = useState("all");
   const [filterCustomer, setFilterCustomer] = useState("");
   const [customerNameSearch, setCustomerNameSearch] = useState("");
 
@@ -169,6 +253,9 @@ export const SalesReturns = () => {
   const [isApproveConfirmOpen, setIsApproveConfirmOpen] = useState(false);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [isOriginalInvoiceOpen, setIsOriginalInvoiceOpen] = useState(false);
+  const [originalInvoice, setOriginalInvoice] =
+    useState<OriginalInvoiceDetails | null>(null);
+  const [loadingOriginalInvoice, setLoadingOriginalInvoice] = useState(false);
   const [selectedReturn, setSelectedReturn] = useState<SalesReturn | null>(null);
   const [returnToDelete, setReturnToDelete] = useState<SalesReturn | null>(null);
   const [returnToApprove, setReturnToApprove] = useState<SalesReturn | null>(null);
@@ -270,13 +357,38 @@ export const SalesReturns = () => {
     setAvailableCustomers(uniqueCustomers);
   }, [returns]);
 
+  const itemFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "All Items" },
+      ...availableItems.map((item) => ({
+        value: item.partNo,
+        label: item.partNo,
+        description: item.name,
+      })),
+    ],
+    [availableItems],
+  );
+
   const filteredReturns = returns.filter((item) => {
-    const matchesItemType = !filterItemType || filterItemType === "all";
-    const matchesItem = !filterItem || filterItem === "all" ||
-      item.items.some(i => i.partNo === filterItem || i.itemName.toLowerCase().includes(filterItem.toLowerCase()));
-    const matchesCustomer = !filterCustomer || filterCustomer === "all" || item.customerName === filterCustomer;
-    const matchesCustomerName = !customerNameSearch || item.customerName.toLowerCase().includes(customerNameSearch.toLowerCase());
-    return matchesItemType && matchesItem && matchesCustomer && matchesCustomerName;
+    const matchesItem =
+      !filterItem ||
+      filterItem === "all" ||
+      item.items.some(
+        (i) =>
+          i.partNo === filterItem ||
+          i.itemName.toLowerCase().includes(filterItem.toLowerCase()),
+      );
+    const matchesCustomer =
+      !filterCustomer ||
+      filterCustomer === "all" ||
+      item.customerName === filterCustomer;
+    const searchText = customerNameSearch.trim().toLowerCase();
+    const matchesCustomerName =
+      !searchText ||
+      item.customerName.toLowerCase().includes(searchText) ||
+      item.invoiceNo.toLowerCase().includes(searchText) ||
+      (item.originalInvoiceNo?.toLowerCase().includes(searchText) ?? false);
+    return matchesItem && matchesCustomer && matchesCustomerName;
   });
 
   const paginatedReturns = filteredReturns.slice(
@@ -442,9 +554,39 @@ export const SalesReturns = () => {
     }
   };
 
-  const handleViewOriginalInvoice = (returnItem: SalesReturn) => {
+  const handleViewOriginalInvoice = async (returnItem: SalesReturn) => {
     setSelectedReturn(returnItem);
     setIsOriginalInvoiceOpen(true);
+    setOriginalInvoice(null);
+
+    const invoiceId = returnItem.salesInvoiceId;
+    if (!invoiceId) {
+      toast({
+        title: "Error",
+        description: "Original invoice reference not found for this return.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoadingOriginalInvoice(true);
+    try {
+      const resp = (await apiClient.getSalesInvoice(invoiceId)) as any;
+      const fullInv = resp?.data || resp;
+      if (!fullInv?.id) {
+        throw new Error("Could not load original invoice");
+      }
+      setOriginalInvoice(mapOriginalInvoiceFromApi(fullInv));
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to load original invoice",
+        variant: "destructive",
+      });
+      setIsOriginalInvoiceOpen(false);
+    } finally {
+      setLoadingOriginalInvoice(false);
+    }
   };
 
   const handlePrint = () => {
@@ -605,36 +747,17 @@ export const SalesReturns = () => {
       {/* Filters */}
       <Card className="shadow-sm">
         <CardContent className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <div className="space-y-1">
-              <Label className="text-xs text-primary">Item Type</Label>
-              <Select value={filterItemType} onValueChange={setFilterItemType}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Select..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="single">Single</SelectItem>
-                  <SelectItem value="set">Set</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             <div className="space-y-1">
               <Label className="text-xs text-primary">Item</Label>
-              <Select value={filterItem} onValueChange={setFilterItem}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Select..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Items</SelectItem>
-                  {availableItems.map((item) => (
-                    <SelectItem key={item.id} value={item.partNo}>
-                      {item.name} ({item.partNo})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={itemFilterOptions}
+                value={filterItem}
+                onValueChange={setFilterItem}
+                placeholder="Search part no or description..."
+                className="h-9 text-xs"
+                selectedDisplayLabelOnly
+              />
             </div>
 
             <div className="space-y-1">
@@ -655,11 +778,11 @@ export const SalesReturns = () => {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs text-primary">Customer Name</Label>
+              <Label className="text-xs text-primary">Search</Label>
               <Input
                 value={customerNameSearch}
                 onChange={(e) => setCustomerNameSearch(e.target.value)}
-                placeholder=""
+                placeholder="Invoice no or customer name..."
                 className="h-9 text-xs"
               />
             </div>
@@ -711,7 +834,7 @@ export const SalesReturns = () => {
                 ) : paginatedReturns.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={11} className="text-center py-8 text-muted-foreground text-xs">
-                      {filterItemType || filterItem !== "all" || filterCustomer !== "all" || customerNameSearch
+                      {filterItem !== "all" || filterCustomer !== "all" || customerNameSearch
                         ? "No return orders found matching your filters"
                         : "No return orders found. Returns will appear here once created."}
                     </TableCell>
@@ -992,34 +1115,197 @@ export const SalesReturns = () => {
       </Dialog>
 
       {/* View Original Invoice Dialog */}
-      <Dialog open={isOriginalInvoiceOpen} onOpenChange={setIsOriginalInvoiceOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Original Invoice</DialogTitle>
-          </DialogHeader>
-          {selectedReturn && (
-            <div className="space-y-4">
-              <div className="p-4 border rounded-lg bg-muted/20">
-                <p className="text-sm">
-                  <span className="text-muted-foreground">Original Invoice Number:</span>{" "}
-                  <span className="font-medium">{selectedReturn.originalInvoiceNo || "N/A"}</span>
-                </p>
-                <p className="text-sm mt-2">
-                  <span className="text-muted-foreground">Customer:</span>{" "}
-                  <span className="font-medium">{selectedReturn.customerName}</span>
-                </p>
-                <p className="text-sm mt-2">
-                  <span className="text-muted-foreground">Return Invoice:</span>{" "}
-                  <span className="font-medium">{selectedReturn.invoiceNo}</span>
-                </p>
-              </div>
+      <Dialog
+        open={isOriginalInvoiceOpen}
+        onOpenChange={(open) => {
+          setIsOriginalInvoiceOpen(open);
+          if (!open) {
+            setOriginalInvoice(null);
+            setLoadingOriginalInvoice(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="flex flex-row items-center gap-3">
+            <div className="p-2 bg-primary rounded-lg">
+              <FileText className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg">Original Sale Invoice</DialogTitle>
               <p className="text-xs text-muted-foreground">
-                This shows the reference to the original sale invoice from which the return was made.
+                Return: {selectedReturn?.invoiceNo || "—"}
+                {selectedReturn?.originalInvoiceNo
+                  ? ` · Invoice: ${selectedReturn.originalInvoiceNo}`
+                  : ""}
               </p>
             </div>
-          )}
+          </DialogHeader>
+
+          {loadingOriginalInvoice ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Loading original invoice...
+            </p>
+          ) : originalInvoice ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 text-xs p-4 border rounded-lg bg-muted/20">
+                <div>
+                  <p className="text-muted-foreground">Invoice No</p>
+                  <p className="font-medium">{originalInvoice.invoiceNo}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Invoice Date</p>
+                  <p className="font-medium">{originalInvoice.invoiceDate}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Customer</p>
+                  <p className="font-medium">{originalInvoice.customerName}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Customer Type</p>
+                  <p className="font-medium">{originalInvoice.customerType}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Sales Person</p>
+                  <p className="font-medium">{originalInvoice.salesPerson}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Status</p>
+                  <p className="font-medium capitalize">{originalInvoice.status}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Payment Status</p>
+                  <p className="font-medium capitalize">
+                    {originalInvoice.paymentStatus}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Remarks</p>
+                  <p className="font-medium">{originalInvoice.remarks}</p>
+                </div>
+              </div>
+
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-xs font-semibold">Sr.</TableHead>
+                      <TableHead className="text-xs font-semibold">Part No</TableHead>
+                      <TableHead className="text-xs font-semibold">Item</TableHead>
+                      <TableHead className="text-xs font-semibold">Brand</TableHead>
+                      <TableHead className="text-xs font-semibold">Uom</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">
+                        Ordered
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold text-right">
+                        Delivered
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold text-right">
+                        Pending
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold text-right">
+                        Price
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold text-right">
+                        Discount
+                      </TableHead>
+                      <TableHead className="text-xs font-semibold text-right">
+                        Total
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {originalInvoice.items.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={11}
+                          className="text-center text-xs text-muted-foreground py-6"
+                        >
+                          No line items on this invoice.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      originalInvoice.items.map((item, idx) => (
+                        <TableRow key={`${item.partNo}-${idx}`}>
+                          <TableCell className="text-xs">{idx + 1}</TableCell>
+                          <TableCell className="text-xs">{item.partNo}</TableCell>
+                          <TableCell className="text-xs">{item.description}</TableCell>
+                          <TableCell className="text-xs">{item.brand}</TableCell>
+                          <TableCell className="text-xs">{item.uom}</TableCell>
+                          <TableCell className="text-xs text-right">
+                            {item.orderedQty}
+                          </TableCell>
+                          <TableCell className="text-xs text-right">
+                            {item.deliveredQty}
+                          </TableCell>
+                          <TableCell className="text-xs text-right">
+                            {item.pendingQty}
+                          </TableCell>
+                          <TableCell className="text-xs text-right">
+                            {item.unitPrice.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-xs text-right">
+                            {item.discount.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-xs text-right">
+                            {item.lineTotal.toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="flex flex-col items-end gap-1 text-xs">
+                <p>
+                  Subtotal:
+                  <span className="font-semibold ml-2">
+                    PKR {originalInvoice.subtotal.toLocaleString()}
+                  </span>
+                </p>
+                <p>
+                  Overall Discount:
+                  <span className="font-semibold ml-2">
+                    PKR {originalInvoice.overallDiscount.toLocaleString()}
+                  </span>
+                </p>
+                <p>
+                  Freight:
+                  <span className="font-semibold ml-2">
+                    PKR {originalInvoice.freightCharges.toLocaleString()}
+                  </span>
+                </p>
+                <p>
+                  GST
+                  {originalInvoice.taxPercentage > 0
+                    ? ` (${originalInvoice.taxPercentage}%)`
+                    : ""}
+                  :
+                  <span className="font-semibold ml-2">
+                    PKR {originalInvoice.tax.toLocaleString()}
+                  </span>
+                </p>
+                <p>
+                  Grand Total:
+                  <span className="font-semibold ml-2">
+                    PKR {originalInvoice.grandTotal.toLocaleString()}
+                  </span>
+                </p>
+                <p>
+                  Paid Amount:
+                  <span className="font-semibold ml-2">
+                    PKR {originalInvoice.paidAmount.toLocaleString()}
+                  </span>
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           <div className="flex justify-end pt-4 border-t">
-            <Button variant="outline" onClick={() => setIsOriginalInvoiceOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsOriginalInvoiceOpen(false)}
+            >
               Close
             </Button>
           </div>

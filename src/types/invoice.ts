@@ -12,7 +12,9 @@ export type InvoiceStatus =
   | "partially_delivered_reversed"
   | "delivered"
   | "cancelled"
-  | "fully_delivered";
+  | "fully_delivered"
+  | "partially_return"
+  | "return";
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 

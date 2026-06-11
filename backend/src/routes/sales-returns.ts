@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
+import { syncSalesInvoiceReturnStatus } from '../utils/salesInvoiceReturnStatus';
 
 const router = express.Router();
 const SALES_RETURN_START_NO = 97;
@@ -1521,9 +1522,17 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
       },
     });
 
+    await syncSalesInvoiceReturnStatus(salesReturn.salesInvoiceId);
+
+    const salesInvoice = await prisma.salesInvoice.findUnique({
+      where: { id: salesReturn.salesInvoiceId },
+      select: { id: true, invoiceNo: true, status: true },
+    });
+
     res.json({
       message: 'Sales return approved successfully',
       salesReturn: updatedReturn,
+      salesInvoice,
       stockMovements,
       vouchers,
     });
