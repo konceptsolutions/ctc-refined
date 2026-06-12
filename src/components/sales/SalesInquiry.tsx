@@ -129,6 +129,68 @@ interface ModelAssociationItem {
   quantity: number;
 }
 
+const resolvePartStockQty = (p: any): number => {
+  const fromParts = Number(
+    p.current_stock ?? p.currentStock ?? p.stock ?? p.qty,
+  );
+  return Number.isFinite(fromParts) ? Math.max(0, fromParts) : 0;
+};
+
+const formatPartNumber = (val: any): string => {
+  if (val === null || val === undefined || val === "") return "0";
+  const num = parseFloat(val);
+  if (isNaN(num)) return "0";
+  return num % 1 === 0 ? String(num) : num.toFixed(2);
+};
+
+// Correctly transform parts based on project convention (Swapped)
+const transformPart = (
+  p: any,
+  rackMapData: Record<string, string>,
+): PartDetail => ({
+  id: p.id,
+  partNo:
+    String(p.master_part_no || p.masterPart || p.master_part_no || "").trim() ||
+    "N/A",
+  masterPart: String(p.part_no || p.partNo || p.part_no || "").trim() || "N/A",
+  brand: String(p.brand_name || p.brand || "").trim() || "N/A",
+  description:
+    String(p.description || p.part_no || "").trim() || "No description",
+  category: String(p.category_name || p.category || "").trim() || "N/A",
+  subCategory:
+    String(p.subcategory_name || p.subcategory || "").trim() || "N/A",
+  application:
+    String(
+      p.application_name || p.application?.name || p.application || "",
+    ).trim() || "N/A",
+  uom: String(p.uom || "NOS").trim(),
+  hsCode: String(p.hs_code || p.hsCode || "").trim() || "N/A",
+  weight: formatPartNumber(p.weight),
+  cost: formatPartNumber(p.cost),
+  priceA: formatPartNumber(p.price_a || p.priceA),
+  priceB: formatPartNumber(p.price_b || p.priceB),
+  priceM: formatPartNumber(p.price_m || p.priceM),
+  origin: String(p.origin || "").trim() || "N/A",
+  grade: String(p.grade || "A").trim(),
+  status: (p.status || "active").toUpperCase() === "ACTIVE" ? "A" : "I",
+  rackNo: rackMapData[p.id] || "N/A",
+  reOrderLevel: formatPartNumber(p.reorder_level || p.reorderLevel),
+  quantity: resolvePartStockQty(p),
+  reservedQty:
+    Number(p.reserved_stock ?? p.reservedStock ?? p.reservedQty ?? 0) || 0,
+});
+
+const extractPartModels = (part: any) => {
+  const models = Array.isArray(part?.models) ? part.models : [];
+  return models
+    .map((m: any) => ({
+      id: String(m.id ?? `${part?.id || "part"}-${m?.name || "model"}`),
+      name: String(m.name ?? "").trim(),
+      qtyUsed: Number(m.qty_used ?? m.qtyUsed ?? 0) || 0,
+    }))
+    .filter((m: { name: string }) => !!m.name);
+};
+
 export const SalesInquiry = () => {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -269,75 +331,35 @@ export const SalesInquiry = () => {
     [],
   );
 
-  const resolveSelectedPartId = (part: PartDetail | null): string | null => {
-    if (!part) return null;
-    if (part.id) return part.id;
-    return partIdMap[part.partNo] || null;
-  };
+  const resolveSelectedPartId = useCallback(
+    (part: PartDetail | null): string | null => {
+      if (!part) return null;
+      if (part.id) return part.id;
+      return partIdMap[part.partNo] || null;
+    },
+    [partIdMap],
+  );
 
-  const resolvePartStockQty = (
-    p: any,
-    stockMapData: Record<string, number>,
-  ): number => {
-    const fromParts = Number(p.current_stock ?? p.currentStock);
-    if (Number.isFinite(fromParts)) return fromParts;
-    if (stockMapData[p.id] !== undefined) return stockMapData[p.id];
-    return 0;
-  };
-
-  // Correctly transform parts based on project convention (Swapped)
-  const transformPart = (p: any, rackMapData: Record<string, string>, stockMapData: Record<string, number>): PartDetail => {
-    // Format numbers properly
-    const formatNumber = (val: any): string => {
-      if (val === null || val === undefined || val === '') return '0';
-      const num = parseFloat(val);
-      if (isNaN(num)) return '0';
-      return num % 1 === 0 ? String(num) : num.toFixed(2);
-    };
-
-    // SWAPPED mapping to match project convention:
-    // - UI "Part No" field shows master_part_no data
-    // - UI "Master Part" field shows part_no data
-    // NOTE: master_part_no is the actual item number (e.g. 0021212)
-    // part_no is the family/master number (e.g. 0021212 or 9G6744)
-    return {
-      id: p.id,
-      partNo: String(p.master_part_no || p.masterPart || p.master_part_no || '').trim() || 'N/A',
-      masterPart: String(p.part_no || p.partNo || p.part_no || '').trim() || 'N/A',
-      brand: String(p.brand_name || p.brand || '').trim() || 'N/A',
-      description: String(p.description || p.part_no || '').trim() || 'No description',
-      category: String(p.category_name || p.category || '').trim() || 'N/A',
-      subCategory: String(p.subcategory_name || p.subcategory || '').trim() || 'N/A',
-      application:
-        String(p.application_name || p.application?.name || p.application || "").trim() ||
-        "N/A",
-      uom: String(p.uom || 'NOS').trim(),
-      hsCode: String(p.hs_code || p.hsCode || '').trim() || 'N/A',
-      weight: formatNumber(p.weight),
-      cost: formatNumber(p.cost),
-      priceA: formatNumber(p.price_a || p.priceA),
-      priceB: formatNumber(p.price_b || p.priceB),
-      priceM: formatNumber(p.price_m || p.priceM),
-      origin: String(p.origin || '').trim() || 'N/A',
-      grade: String(p.grade || 'A').trim(),
-      status: (p.status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
-      rackNo: rackMapData[p.id] || 'N/A',
-      reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
-      quantity: resolvePartStockQty(p, stockMapData),
-      reservedQty: Number(p.reserved_stock ?? p.reservedStock ?? p.reservedQty ?? 0) || 0,
-    };
-  };
-
-  const extractPartModels = (part: any) => {
-    const models = Array.isArray(part?.models) ? part.models : [];
-    return models
-      .map((m: any) => ({
-        id: String(m.id ?? `${part?.id || "part"}-${m?.name || "model"}`),
-        name: String(m.name ?? "").trim(),
-        qtyUsed: Number(m.qty_used ?? m.qtyUsed ?? 0) || 0,
-      }))
-      .filter((m: { name: string }) => !!m.name);
-  };
+  const getPartStockDisplay = useCallback(
+    (part: PartDetail, balances: typeof partStockBalances) => {
+      const live = part.id ? balances[part.id] : undefined;
+      if (live) {
+        return {
+          current: live.current_stock,
+          reserved: live.reserved_stock,
+          available: live.available_stock,
+        };
+      }
+      const current = Number(part.quantity || 0);
+      const reserved = Number(part.reservedQty || 0);
+      return {
+        current,
+        reserved,
+        available: Math.max(0, current - reserved),
+      };
+    },
+    [],
+  );
 
   useEffect(() => {
     const fetchParts = async () => {
@@ -389,7 +411,7 @@ export const SalesInquiry = () => {
         const transformedParts = partsDataArray
           .filter((p: any) => p.status === 'active' || !p.status)
           .map((p: any) => {
-            const part = transformPart(p, rackMapData, stockMapData);
+            const part = transformPart(p, rackMapData);
             if (part.partNo && part.id) idMap[part.partNo] = part.id;
             if (part.id) {
               modelMapUpdates[part.id] = extractPartModels(p);
@@ -428,7 +450,7 @@ export const SalesInquiry = () => {
         });
 
         const data = Array.isArray(response) ? response : response?.data || [];
-        const transformed = data.map((p: any) => transformPart(p, rackMap, stockMap));
+        const transformed = data.map((p: any) => transformPart(p, rackMap));
         setSearchResults(transformed);
       } catch (err) {
         console.error("Search failed", err);
@@ -502,7 +524,7 @@ export const SalesInquiry = () => {
     };
 
     fetchPOHistory();
-  }, [selectedPart, partIdMap]);
+  }, [selectedPart, resolveSelectedPartId]);
 
   // Fetch sales invoice history when a part is selected
   useEffect(() => {
@@ -535,7 +557,7 @@ export const SalesInquiry = () => {
     };
 
     fetchSalesInvoiceHistory();
-  }, [selectedPart, partIdMap]);
+  }, [selectedPart, resolveSelectedPartId]);
 
   // Fetch direct purchase order history when a part is selected
   useEffect(() => {
@@ -651,15 +673,12 @@ export const SalesInquiry = () => {
     };
 
     fetchDpoHistory();
-  }, [selectedPart, partIdMap]);
+  }, [selectedPart, resolveSelectedPartId]);
 
   // Filter parts based on item search
   const filteredParts = useMemo(() => {
-    const getAvailableQty = (part: PartDetail): number => {
-      const live = part.id ? partStockBalances[part.id]?.available_stock : undefined;
-      if (typeof live === "number") return live;
-      return Number(part.quantity || 0);
-    };
+    const getAvailableQty = (part: PartDetail): number =>
+      getPartStockDisplay(part, partStockBalances).available;
 
     const compareStockPriority = (a: PartDetail, b: PartDetail) => {
       const aHasStock = getAvailableQty(a) > 0;
@@ -725,7 +744,7 @@ export const SalesInquiry = () => {
       filtered = [...filtered].sort(compareStockPriority);
     }
     return filtered.slice(0, 150);
-  }, [itemSearch, partsData, searchResults, partStockBalances]);
+  }, [itemSearch, partsData, searchResults, partStockBalances, getPartStockDisplay]);
 
   // Pool of parts available to lookup rows (local + on-demand search results
   // + parts injected from alternate / association side panels).
@@ -845,11 +864,8 @@ export const SalesInquiry = () => {
   // Build the filtered, sorted parts list shown in a row's dropdown.
   const getFilteredPartsForLookupRow = useCallback(
     (rowId: string) => {
-      const getAvailableQty = (part: PartDetail): number => {
-        const live = part.id ? partStockBalances[part.id]?.available_stock : undefined;
-        if (typeof live === "number") return live;
-        return Number(part.quantity || 0);
-      };
+      const getAvailableQty = (part: PartDetail): number =>
+        getPartStockDisplay(part, partStockBalances).available;
       const compareStockPriority = (a: PartDetail, b: PartDetail) => {
         const aHasStock = getAvailableQty(a) > 0;
         const bHasStock = getAvailableQty(b) > 0;
@@ -932,6 +948,7 @@ export const SalesInquiry = () => {
       lookupApplicationFilter,
       partModelsByPartId,
       partStockBalances,
+      getPartStockDisplay,
     ],
   );
 
@@ -1010,7 +1027,7 @@ export const SalesInquiry = () => {
 
         const dedup = new Map<string, PartDetail>();
         rawParts.forEach((row: any) => {
-          const transformed = transformPart(row, rackMap, stockMap);
+          const transformed = transformPart(row, rackMap);
           const key = String(transformed.id || `${transformed.partNo}|${transformed.masterPart}|${transformed.brand}|${transformed.description}`);
           dedup.set(key, transformed);
         });
@@ -1399,6 +1416,31 @@ export const SalesInquiry = () => {
     }
   }, []);
 
+  // Refresh stock for visible dropdown options (same source as In Stock column).
+  useEffect(() => {
+    lookupRows.forEach((row) => {
+      if (!showLookupRowDropdown[row.id]) return;
+      getFilteredPartsForLookupRow(row.id)
+        .slice(0, 30)
+        .forEach((part) => {
+          if (
+            part.id &&
+            partStockBalances[part.id] === undefined &&
+            !loadingStockBalances[part.id]
+          ) {
+            void fetchPartStockForRow(part.id);
+          }
+        });
+    });
+  }, [
+    showLookupRowDropdown,
+    lookupRows,
+    getFilteredPartsForLookupRow,
+    partStockBalances,
+    loadingStockBalances,
+    fetchPartStockForRow,
+  ]);
+
   const handleSelectPartForLookupRow = async (
     rowId: string,
     part: PartDetail,
@@ -1696,7 +1738,7 @@ export const SalesInquiry = () => {
             status: (p.status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
             rackNo: rackMapData[p.id] || 'N/A',
             reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
-            quantity: resolvePartStockQty(p, stockMapData),
+            quantity: resolvePartStockQty(p),
           };
         })
         .filter((p: PartDetail) => p.partNo && p.partNo.trim() !== '');
@@ -2842,13 +2884,11 @@ export const SalesInquiry = () => {
                                       </div>
                                     ) : rowFiltered.length > 0 ? (
                                       rowFiltered.map((part, idx) => {
-                                        const stockQty = part.quantity ?? 0;
-                                        const reservedQty =
-                                          part.reservedQty ?? 0;
-                                        const availablePcs = Math.max(
-                                          0,
-                                          stockQty - reservedQty,
+                                        const stockDisplay = getPartStockDisplay(
+                                          part,
+                                          partStockBalances,
                                         );
+                                        const availablePcs = stockDisplay.available;
                                         const brandLabel =
                                           part.brand && part.brand !== "N/A"
                                             ? part.brand
