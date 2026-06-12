@@ -11,6 +11,11 @@ import {
   calculateAverageCostDPO,
 } from "../utils/inventoryFormulas";
 import { getCanonicalPartId } from "../services/partCanonical";
+import {
+  netStockFromMovements,
+  stockInOutTotals,
+  unassignedStockFromMovements,
+} from "../utils/stockMovementBalance";
 
 const router = express.Router();
 const DPO_START_NO = 113;
@@ -1385,6 +1390,13 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
 
     const movements = await prisma.stockMovement.findMany({
       where: { partId },
+      select: {
+        type: true,
+        quantity: true,
+        referenceType: true,
+        rackId: true,
+        shelfId: true,
+      },
     });
 
     const reservedStock = await prisma.stockReservation.aggregate({
@@ -1401,24 +1413,14 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
       },
     });
 
-    const stockIn = movements
-      .filter((m) => m.type === "in")
-      .reduce((sum, m) => sum + m.quantity, 0);
-    const stockOut = movements
-      .filter((m) => m.type === "out")
-      .reduce((sum, m) => sum + m.quantity, 0);
-    const currentStock = Math.max(0, stockIn - stockOut);
+    const { stockIn, stockOut } = stockInOutTotals(movements);
+    const currentStock = Math.max(0, netStockFromMovements(movements));
     const reservedQty = reservedStock._sum.quantity || 0;
     const availableStock = Math.max(0, currentStock - reservedQty);
-
-    // Calculate unassigned stock (movements with no rack and no shelf)
-    const unassignedIn = movements
-      .filter((m) => m.type === "in" && !m.rackId && !m.shelfId)
-      .reduce((sum, m) => sum + m.quantity, 0);
-    const unassignedOut = movements
-      .filter((m) => m.type === "out" && !m.rackId && !m.shelfId)
-      .reduce((sum, m) => sum + m.quantity, 0);
-    const unassignedStock = Math.max(0, unassignedIn - unassignedOut);
+    const unassignedStock = Math.max(
+      0,
+      unassignedStockFromMovements(movements),
+    );
 
     const part = await prisma.part.findUnique({
       where: { id: partId },
@@ -1690,8 +1692,9 @@ router.get("/balances", async (req: Request, res: Response) => {
         LEFT JOIN (
           SELECT 
             "partId",
-            SUM(CASE WHEN type = 'in' THEN quantity ELSE 0 END) as stock_in,
-            SUM(CASE WHEN type = 'out' THEN quantity ELSE 0 END) as stock_out
+            SUM(CASE WHEN ("referenceType" IS NULL OR "referenceType" != 'stock_reservation') AND type = 'in' THEN quantity ELSE 0 END) as stock_in,
+            SUM(CASE WHEN ("referenceType" IS NULL OR "referenceType" != 'stock_reservation') AND type != 'in' THEN quantity ELSE 0 END) as stock_out,
+            SUM(CASE WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as current_stock
           FROM "StockMovement"
           ${store_id ? `WHERE "storeId" = '${store_id}'` : ""}
           GROUP BY "partId"
@@ -2017,113 +2020,6 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
       cost: row.cost || 0,
       purchase_price: row.purchasePrice || 0,
       price_a: row.priceA || 0,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get stock balance for a part
-router.get("/balance/:partId", async (req: Request, res: Response) => {
-  try {
-    const { partId } = req.params;
-
-    const movements = await prisma.stockMovement.findMany({
-      where: { partId },
-    });
-
-    const reservedStock = await prisma.stockReservation.aggregate({
-      where: {
-        partId,
-        status: "reserved",
-        OR: [
-          { invoiceId: null },
-          { SalesInvoice: { is: { status: { not: "cancelled" } } } },
-        ],
-      },
-      _sum: {
-        quantity: true,
-      },
-    });
-
-    const stockIn = movements
-      .filter((m) => m.type === "in")
-      .reduce((sum, m) => sum + m.quantity, 0);
-    const stockOut = movements
-      .filter((m) => m.type === "out")
-      .reduce((sum, m) => sum + m.quantity, 0);
-    const currentStock = Math.max(0, stockIn - stockOut);
-    const reservedQty = reservedStock._sum.quantity || 0;
-    const availableStock = Math.max(0, currentStock - reservedQty);
-
-    // Calculate unassigned stock (movements with no rack and no shelf)
-    const unassignedIn = movements
-      .filter((m) => m.type === "in" && !m.rackId && !m.shelfId)
-      .reduce((sum, m) => sum + m.quantity, 0);
-    const unassignedOut = movements
-      .filter((m) => m.type === "out" && !m.rackId && !m.shelfId)
-      .reduce((sum, m) => sum + m.quantity, 0);
-    const unassignedStock = Math.max(0, unassignedIn - unassignedOut);
-
-    const part = await prisma.part.findUnique({
-      where: { id: partId },
-      include: {
-        Brand: true,
-        Category: true,
-      },
-    });
-
-    // Use Raw Query to get cost data to bypass any Prisma model/caching issues
-    // This matches the logic that works in parts.ts
-    const partCosts: any[] = await prisma.$queryRaw`
-      SELECT cost, "purchasePrice", "avgCost", "priceA" 
-      FROM "Part" 
-      WHERE id = ${partId}::uuid
-    `;
-
-    const rawPartData = partCosts[0] || {};
-    const dbAvgCost = rawPartData.avgCost || 0;
-    const dbCost = rawPartData.cost || 0;
-    const dbPurchasePrice = rawPartData.purchasePrice || 0;
-    // const dbPriceA = rawPartData.priceA || 0; // Available if needed
-
-    // Get latest adjustment cost (fallback logic same as Parts API)
-    const lastAdjustment = await prisma.adjustmentItem.findFirst({
-      where: {
-        partId: partId,
-        Adjustment: {
-          status: "approved",
-          deletedAt: null,
-        },
-        cost: { not: null, gt: 0 },
-      },
-      orderBy: [
-        { Adjustment: { date: "desc" } },
-        { Adjustment: { createdAt: "desc" } },
-      ],
-      select: { cost: true },
-    });
-
-    res.json({
-      part_id: partId,
-      part_no: part?.partNo,
-      part_description: part?.description,
-      brand: (part as any).Brand?.name || null,
-      category: (part as any).Category?.name || null,
-      stock_in: stockIn,
-      stock_out: stockOut,
-      current_stock: currentStock,
-      unassigned_stock: unassignedStock,
-      reserved_stock: reservedQty,
-      available_stock: availableStock,
-      reorder_level: part?.reorderLevel || 0,
-      is_low_stock: part?.reorderLevel
-        ? currentStock <= part.reorderLevel
-        : false,
-      is_out_of_stock: currentStock <= 0,
-      cost: dbCost || part?.cost || 0,
-      avg_cost:
-        dbAvgCost || dbCost || dbPurchasePrice || lastAdjustment?.cost || 0,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

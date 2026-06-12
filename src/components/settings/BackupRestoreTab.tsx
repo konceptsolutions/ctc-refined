@@ -381,7 +381,7 @@ export const BackupRestoreTab = () => {
             <HardDrive className="w-8 h-8 opacity-80" />
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white border-0">
+        <Card className="bg-gradient-to-r from-primary to-primary text-white border-0">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-xs opacity-80">Active Schedules</p>

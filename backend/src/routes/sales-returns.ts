@@ -4,6 +4,12 @@ import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { syncSalesInvoiceReturnStatus } from '../utils/salesInvoiceReturnStatus';
+import { approveDirectSalesReturn } from '../utils/directSalesReturnApprove';
+import {
+  buildDirectReturnItemsCreate,
+  nextDirectReturnNumber,
+  parseDirectReturnBody,
+} from '../utils/directSalesReturnInput';
 
 const router = express.Router();
 const SALES_RETURN_START_NO = 97;
@@ -106,6 +112,7 @@ router.get('/', async (req: Request, res: Response) => {
       prisma.salesReturn.findMany({
         where,
         include: {
+          Customer: { select: { name: true } },
           SalesInvoice: {
             select: {
               invoiceNo: true,
@@ -495,6 +502,159 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// ==================== CREATE DIRECT SALES RETURN (legacy / no invoice in system) ====================
+router.post('/direct', async (req: Request, res: Response) => {
+  try {
+    const { created_by } = req.body;
+    let parsed;
+    try {
+      parsed = await parseDirectReturnBody(req.body);
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    const salesReturn = await prisma.$transaction(async (tx) => {
+      const returnNumber = await nextDirectReturnNumber(
+        tx,
+        parsed.legacyInvoiceNo,
+      );
+      const salesReturnItemsWithIds = buildDirectReturnItemsCreate(
+        parsed.validatedItems,
+      );
+
+      const created = await tx.salesReturn.create({
+        data: {
+          id: crypto.randomUUID(),
+          returnNumber,
+          isDirectReturn: true,
+          legacyInvoiceNo: parsed.legacyInvoiceNo,
+          legacyCustomerName: parsed.legacyCustomerName || null,
+          customerType: parsed.customerType,
+          ...(parsed.customerId
+            ? { Customer: { connect: { id: parsed.customerId } } }
+            : {}),
+          returnDate: parsed.returnDate,
+          reason: parsed.reason,
+          status: 'pending',
+          subtotal: parsed.returnSubtotal,
+          tax: parsed.returnTax,
+          taxPercentage: parsed.taxPct,
+          deduction: parsed.deduction,
+          totalAmount: parsed.netReturnTotal,
+          paidAmount: parsed.paidAmount,
+          ...(parsed.paymentAccountId
+            ? {
+                PaymentAccount: { connect: { id: parsed.paymentAccountId } },
+              }
+            : {}),
+          createdBy: created_by || 'System',
+          updatedAt: new Date(),
+          SalesReturnItem: {
+            create: salesReturnItemsWithIds,
+          },
+        } as any,
+        include: {
+          SalesReturnItem: { include: { Part: true } },
+          Customer: true,
+        },
+      });
+
+      return created;
+    });
+
+    res.status(201).json({
+      message: 'Direct sales return created successfully',
+      salesReturn,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== UPDATE DIRECT SALES RETURN (pending only) ====================
+router.put('/direct/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await prisma.salesReturn.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Sales return not found' });
+    }
+    if (!existing.isDirectReturn) {
+      return res.status(400).json({
+        error: 'Only direct (legacy) sales returns can be edited here',
+      });
+    }
+    if (existing.status !== 'pending') {
+      return res.status(400).json({
+        error: `Cannot edit return with status: ${existing.status}. Only pending returns can be edited.`,
+      });
+    }
+
+    let parsed;
+    try {
+      parsed = await parseDirectReturnBody(req.body);
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    const salesReturn = await prisma.$transaction(async (tx) => {
+      let returnNumber = existing.returnNumber;
+      if (parsed.legacyInvoiceNo !== existing.legacyInvoiceNo) {
+        returnNumber = await nextDirectReturnNumber(tx, parsed.legacyInvoiceNo);
+      }
+
+      await tx.salesReturnItem.deleteMany({
+        where: { salesReturnId: id },
+      });
+
+      const salesReturnItemsWithIds = buildDirectReturnItemsCreate(
+        parsed.validatedItems,
+      );
+
+      const updated = await tx.salesReturn.update({
+        where: { id },
+        data: {
+          returnNumber,
+          legacyInvoiceNo: parsed.legacyInvoiceNo,
+          legacyCustomerName: parsed.legacyCustomerName || null,
+          customerType: parsed.customerType,
+          customerId: parsed.customerId,
+          returnDate: parsed.returnDate,
+          reason: parsed.reason,
+          subtotal: parsed.returnSubtotal,
+          tax: parsed.returnTax,
+          taxPercentage: parsed.taxPct,
+          deduction: parsed.deduction,
+          totalAmount: parsed.netReturnTotal,
+          paidAmount: parsed.paidAmount,
+          paymentAccountId: parsed.paymentAccountId,
+          updatedAt: new Date(),
+          SalesReturnItem: {
+            create: salesReturnItemsWithIds,
+          },
+        } as any,
+        include: {
+          SalesReturnItem: { include: { Part: true } },
+          Customer: true,
+        },
+      });
+
+      return updated;
+    });
+
+    res.json({
+      message: 'Direct sales return updated successfully',
+      salesReturn,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== APPROVE SALES RETURN ====================
 router.post('/:id/approve', async (req: Request, res: Response) => {
   try {
@@ -505,6 +665,7 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
     const salesReturn = await prisma.salesReturn.findUnique({
       where: { id },
       include: {
+        Customer: true,
         SalesReturnItem: {
           include: {
             Part: true,
@@ -526,6 +687,21 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
 
     if (salesReturn.status !== 'pending') {
       return res.status(400).json({ error: `Cannot approve return with status: ${salesReturn.status}` });
+    }
+
+    if (salesReturn.isDirectReturn) {
+      try {
+        const directResult = await approveDirectSalesReturn(
+          salesReturn,
+          approved_by,
+        );
+        return res.json({
+          message: 'Direct sales return approved successfully',
+          ...directResult,
+        });
+      } catch (directErr: any) {
+        return res.status(400).json({ error: directErr.message });
+      }
     }
 
     // ========== STEP 1: RESTORE PartRackShelf + STOCK MOVEMENTS (IN) ==========
@@ -1522,12 +1698,16 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
       },
     });
 
-    await syncSalesInvoiceReturnStatus(salesReturn.salesInvoiceId);
+    if (salesReturn.salesInvoiceId) {
+      await syncSalesInvoiceReturnStatus(salesReturn.salesInvoiceId);
+    }
 
-    const salesInvoice = await prisma.salesInvoice.findUnique({
-      where: { id: salesReturn.salesInvoiceId },
-      select: { id: true, invoiceNo: true, status: true },
-    });
+    const salesInvoice = salesReturn.salesInvoiceId
+      ? await prisma.salesInvoice.findUnique({
+          where: { id: salesReturn.salesInvoiceId },
+          select: { id: true, invoiceNo: true, status: true },
+        })
+      : null;
 
     res.json({
       message: 'Sales return approved successfully',

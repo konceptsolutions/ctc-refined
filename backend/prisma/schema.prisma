@@ -827,34 +827,39 @@ model SalesQuotationItem {
 }
 
 model SalesReturn {
-  id               String            @id @default(uuid())
-  returnNumber     String            @unique
-  salesInvoiceId   String
-  returnDate       DateTime
-  reason           String?
-  status           String            @default("pending")
-  subtotal         Float             @default(0)
-  tax              Float             @default(0)
-  taxPercentage    Float             @default(0)
-  deduction        Float             @default(0)
-  totalAmount      Float             @default(0)
-  paymentAccountId String?
-  paidAmount       Float             @default(0)
-  createdBy        String?
-  approvedBy       String?
-  approvedAt       DateTime?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  customerId       String?
-  Customer         Customer?         @relation(fields: [customerId], references: [id])
-  PaymentAccount   Account?          @relation("SalesReturnPaymentAccount", fields: [paymentAccountId], references: [id])
-  SalesInvoice     SalesInvoice      @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
-  SalesReturnItem  SalesReturnItem[]
-  Voucher          Voucher[]
+  id                 String            @id @default(uuid())
+  returnNumber       String            @unique
+  salesInvoiceId     String?
+  isDirectReturn     Boolean           @default(false)
+  legacyInvoiceNo    String?
+  legacyCustomerName String?
+  customerType       String?
+  returnDate         DateTime
+  reason             String?
+  status             String            @default("pending")
+  subtotal           Float             @default(0)
+  tax                Float             @default(0)
+  taxPercentage      Float             @default(0)
+  deduction          Float             @default(0)
+  totalAmount        Float             @default(0)
+  paymentAccountId   String?
+  paidAmount         Float             @default(0)
+  createdBy          String?
+  approvedBy         String?
+  approvedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  customerId         String?
+  Customer           Customer?         @relation(fields: [customerId], references: [id])
+  PaymentAccount     Account?          @relation("SalesReturnPaymentAccount", fields: [paymentAccountId], references: [id])
+  SalesInvoice       SalesInvoice?     @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  SalesReturnItem    SalesReturnItem[]
+  Voucher            Voucher[]
 
   @@index([returnDate])
   @@index([salesInvoiceId])
   @@index([status])
+  @@index([isDirectReturn])
 }
 
 model SalesReturnItem {

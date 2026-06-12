@@ -309,6 +309,16 @@ const parseRateInput = (raw: string): number => {
   return Math.round(parsed * 10000) / 10000;
 };
 
+const QUOTATION_QTY_COL_CLASS = "text-right p-2 border-b w-24 whitespace-nowrap";
+const QUOTATION_SHIP_DAYS_COL_CLASS = "text-right p-2 border-b w-20 whitespace-nowrap";
+const QUOTATION_FC_RATE_COL_CLASS = "text-right p-2 border-b w-24 whitespace-nowrap";
+const QUOTATION_QTY_INPUT_CLASS =
+  "h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto";
+const QUOTATION_SHIP_DAYS_INPUT_CLASS =
+  "h-8 w-20 min-w-0 text-right text-xs px-2 ml-auto";
+const QUOTATION_FC_RATE_INPUT_CLASS =
+  "h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto";
+
 const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
   rowId: createRowId(),
   isNewRow: true,
@@ -982,6 +992,20 @@ const PurchaseImportRequestForm = ({
     setItems((prev) => [...prev, createEmptyItem()]);
   };
 
+  useEffect(() => {
+    if (isViewMode) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        setItems((prev) => [...prev, createEmptyItem()]);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isViewMode]);
+
   const removeItemRow = (rowId: string) => {
     setItems((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== rowId) : prev));
   };
@@ -1577,7 +1601,7 @@ const PurchaseImportRequestForm = ({
             </Select>
             <Button type="button" size="sm" onClick={addItemRow}>
               <Plus className="w-4 h-4 mr-1" />
-              Add Item
+              Add Item (Alt + Z)
             </Button>
           </div>
         </div>
@@ -1586,6 +1610,7 @@ const PurchaseImportRequestForm = ({
           <table className="w-full text-sm border border-border rounded-md">
             <thead className="bg-muted/40">
               <tr>
+                <th className="text-center p-2 border-b w-12">#</th>
                 <th className="text-left p-2 border-b">Item</th>
                 <th className="text-right p-2 border-b">Current Stock</th>
                 <th className="text-right p-2 border-b">KHI Qty</th>
@@ -1598,9 +1623,12 @@ const PurchaseImportRequestForm = ({
               </tr>
             </thead>
             <tbody>
-              {sortedItems.map((row) => (
+              {sortedItems.map((row, index) => (
                 <Fragment key={row.id}>
                   <tr className="align-top">
+                    <td className="p-2 border-b text-center text-muted-foreground tabular-nums">
+                      {index + 1}
+                    </td>
                     <td className="p-2 border-b min-w-[320px]">
                       <SearchableSelect
                         options={partSelectOptions}
@@ -1686,7 +1714,7 @@ const PurchaseImportRequestForm = ({
                     </td>
                   </tr>
                   <tr>
-                    <td colSpan={9} className="px-2 pb-3 border-b">
+                    <td colSpan={10} className="px-2 pb-3 border-b">
                       <div className="rounded-md border border-dashed border-border p-2">
                         <p className="text-xs font-medium mb-2">Last 3 Purchases</p>
                         {row.lastPurchases.length === 0 ? (
@@ -1731,6 +1759,7 @@ const PurchaseImportRequestForm = ({
             </tbody>
             <tfoot>
               <tr className="bg-muted/40 font-semibold border-t">
+                <td className="p-2" />
                 <td className="p-2 text-left">
                   Total Items:{" "}
                   <span className="tabular-nums">{itemTotals.itemCount}</span>
@@ -2665,13 +2694,14 @@ const PurchaseQuotationForm = ({
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr>
+                  <th className="text-center p-2 border-b w-12">#</th>
                   <th className="text-left p-2 border-b">Item</th>
                   <th className="text-left p-2 border-b">Brand</th>
                   <th className="text-right p-2 border-b">Current Stock</th>
                   <th className="text-right p-2 border-b">Request QTY</th>
-                  <th className="text-right p-2 border-b">Quotation QTY</th>
-                  <th className="text-right p-2 border-b">Ship Days</th>
-                  <th className="text-right p-2 border-b">FC Rate</th>
+                  <th className={QUOTATION_QTY_COL_CLASS}>Quotation QTY</th>
+                  <th className={QUOTATION_SHIP_DAYS_COL_CLASS}>Ship Days</th>
+                  <th className={QUOTATION_FC_RATE_COL_CLASS}>FC Rate</th>
                   <th className="text-right p-2 border-b">FC Amount</th>
                   <th className="text-right p-2 border-b">LC Rate</th>
                   <th className="text-right p-2 border-b">LC Amount</th>
@@ -2680,11 +2710,14 @@ const PurchaseQuotationForm = ({
                 </tr>
               </thead>
               <tbody>
-                {sortedRows.map((row) => {
+                {sortedRows.map((row, index) => {
                   const calc = calculations.find((item) => item.rowId === row.rowId);
                   return (
                     <Fragment key={`${row.rowId}-${row.partId}`}>
                     <tr className="border-b hover:bg-muted/20">
+                      <td className="p-2 text-center text-muted-foreground tabular-nums">
+                        {index + 1}
+                      </td>
                       <td className="p-2 min-w-[280px]">
                         {row.isNewRow ? (
                           <div className="space-y-1">
@@ -2780,11 +2813,11 @@ const PurchaseQuotationForm = ({
                           row.demandQuantity
                         )}
                       </td>
-                      <td className="p-2">
+                      <td className="p-2 text-right">
                         <Input
                           type="number"
                           min={0}
-                          className="h-8 text-right"
+                          className={QUOTATION_QTY_INPUT_CLASS}
                           value={row.quotationQuantity === 0 ? "" : row.quotationQuantity}
                           onChange={(e) =>
                             updateRow(row.rowId, {
@@ -2793,11 +2826,11 @@ const PurchaseQuotationForm = ({
                           }
                         />
                       </td>
-                      <td className="p-2">
+                      <td className="p-2 text-right">
                         <Input
                           type="number"
                           min={0}
-                          className="h-8 text-right"
+                          className={QUOTATION_SHIP_DAYS_INPUT_CLASS}
                           value={row.shipDays === 0 ? "" : row.shipDays}
                           onChange={(e) =>
                             updateRow(row.rowId, {
@@ -2806,11 +2839,11 @@ const PurchaseQuotationForm = ({
                           }
                         />
                       </td>
-                      <td className="p-2">
+                      <td className="p-2 text-right">
                         <Input
                           type="text"
                           inputMode="decimal"
-                          className="h-8 text-right"
+                          className={QUOTATION_FC_RATE_INPUT_CLASS}
                           value={row.fcRateText}
                           onChange={(e) => {
                             const raw = e.target.value;
@@ -2867,7 +2900,7 @@ const PurchaseQuotationForm = ({
                     </tr>
                     {replaceRowId === row.rowId && (
                       <tr className="border-b bg-muted/20">
-                        <td colSpan={12} className="p-2">
+                        <td colSpan={13} className="p-2">
                           <div className="rounded-md border border-dashed border-border p-2">
                             <p className="text-xs font-medium mb-2">
                               Alternate items (same Part No / Master Part No)
@@ -2911,6 +2944,7 @@ const PurchaseQuotationForm = ({
               </tbody>
               <tfoot>
                 <tr className="bg-muted/40 font-semibold border-t">
+                  <td className="p-2" />
                   <td className="p-2">Totals</td>
                   <td className="p-2" />
                   <td className="p-2" />
@@ -3408,17 +3442,18 @@ const PurchaseQuotationRevisionForm = ({
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr>
+                  <th className="text-center p-2 border-b w-12">#</th>
                   <th className="text-left p-2 border-b">Item</th>
                   <th className="text-left p-2 border-b">Brand</th>
                   <th className="text-right p-2 border-b">Current Stock</th>
                   <th className="text-right p-2 border-b">Request QTY</th>
-                  <th className="text-right p-2 border-b">Quotation QTY</th>
-                  <th className="text-right p-2 border-b">Ship Days</th>
-                  <th className="text-right p-2 border-b">FC Rate</th>
+                  <th className={QUOTATION_QTY_COL_CLASS}>Quotation QTY</th>
+                  <th className={QUOTATION_SHIP_DAYS_COL_CLASS}>Ship Days</th>
+                  <th className={QUOTATION_FC_RATE_COL_CLASS}>FC Rate</th>
                   <th className="text-right p-2 border-b">FC Amount</th>
                   <th className="text-right p-2 border-b">LC Rate</th>
                   <th className="text-right p-2 border-b">LC Amount</th>
-                  <th className="text-right p-2 border-b">Revised FC Rate</th>
+                  <th className={QUOTATION_FC_RATE_COL_CLASS}>Revised FC Rate</th>
                   <th className="text-right p-2 border-b">Revised FC Amount</th>
                   <th className="text-right p-2 border-b">Revised LC Rate</th>
                   <th className="text-right p-2 border-b">Revised LC Amount</th>
@@ -3427,11 +3462,14 @@ const PurchaseQuotationRevisionForm = ({
                 </tr>
               </thead>
               <tbody>
-                {sortedRows.map((row) => {
+                {sortedRows.map((row, index) => {
                   const calc = calculations.find((item) => item.rowId === row.rowId);
                   return (
                     <Fragment key={`${row.rowId}-${row.partId}`}>
                     <tr className="border-b hover:bg-muted/20">
+                      <td className="p-2 text-center text-muted-foreground tabular-nums">
+                        {index + 1}
+                      </td>
                       <td
                         className="p-2 min-w-[280px]"
                         title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
@@ -3444,11 +3482,11 @@ const PurchaseQuotationRevisionForm = ({
                       <td className="p-2">{row.brand || "-"}</td>
                       <td className="p-2 text-right">{row.currentStock || 0}</td>
                       <td className="p-2 text-right">{row.demandQuantity}</td>
-                      <td className="p-2">
+                      <td className="p-2 text-right">
                         <Input
                           type="number"
                           min={0}
-                          className="h-8 text-right"
+                          className={QUOTATION_QTY_INPUT_CLASS}
                           value={row.quotationQuantity === 0 ? "" : row.quotationQuantity}
                           onChange={(e) =>
                             updateRow(row.rowId, {
@@ -3457,11 +3495,11 @@ const PurchaseQuotationRevisionForm = ({
                           }
                         />
                       </td>
-                      <td className="p-2">
+                      <td className="p-2 text-right">
                         <Input
                           type="number"
                           min={0}
-                          className="h-8 text-right"
+                          className={QUOTATION_SHIP_DAYS_INPUT_CLASS}
                           value={row.shipDays === 0 ? "" : row.shipDays}
                           onChange={(e) =>
                             updateRow(row.rowId, {
@@ -3470,11 +3508,11 @@ const PurchaseQuotationRevisionForm = ({
                           }
                         />
                       </td>
-                      <td className="p-2">
+                      <td className="p-2 text-right">
                         <Input
                           type="text"
                           inputMode="decimal"
-                          className="h-8 text-right"
+                          className={QUOTATION_FC_RATE_INPUT_CLASS}
                           value={row.fcRateText}
                           onChange={(e) => {
                             const raw = e.target.value;
@@ -3494,11 +3532,11 @@ const PurchaseQuotationRevisionForm = ({
                       <td className="p-2 text-right">{Number(calc?.fcAmount || 0).toFixed(2)}</td>
                       <td className="p-2 text-right">{Number(calc?.lcRate || 0).toFixed(2)}</td>
                       <td className="p-2 text-right">{Number(calc?.lcAmount || 0).toFixed(2)}</td>
-                      <td className="p-2">
+                      <td className="p-2 text-right">
                         <Input
                           type="text"
                           inputMode="decimal"
-                          className="h-8 text-right"
+                          className={QUOTATION_FC_RATE_INPUT_CLASS}
                           value={row.revisedFcRateText}
                           onChange={(e) => {
                             const raw = e.target.value;
@@ -3545,7 +3583,7 @@ const PurchaseQuotationRevisionForm = ({
                     </tr>
                     {replaceRowId === row.rowId && (
                       <tr className="border-b bg-muted/20">
-                        <td colSpan={16} className="p-2">
+                        <td colSpan={17} className="p-2">
                           <div className="rounded-md border border-dashed border-border p-2">
                             <p className="text-xs font-medium mb-2">
                               Alternate items (same Part No / Master Part No)
@@ -3589,6 +3627,7 @@ const PurchaseQuotationRevisionForm = ({
               </tbody>
               <tfoot>
                 <tr className="bg-muted/40 font-semibold border-t">
+                  <td className="p-2" />
                   <td className="p-2">Totals</td>
                   <td className="p-2" />
                   <td className="p-2" />

@@ -155,7 +155,7 @@ export const PartsList = ({
                 <TableCell className="text-right text-primary font-medium text-xs py-1.5">
                   {formatCurrency(part.price)}
                 </TableCell> */}
-                <TableCell className="text-right text-foreground text-xs py-1.5 font-bold text-orange-600">
+                <TableCell className="text-right text-foreground text-xs py-1.5 font-bold text-primary">
                   {part.reservedStock || 0}
                 </TableCell>
                 <TableCell className="text-right text-foreground text-xs py-1.5 font-bold">

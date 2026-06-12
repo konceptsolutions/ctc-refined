@@ -38,15 +38,12 @@ router.get("/:partId", async (req: Request, res: Response) => {
             select: { type: true, quantity: true }
         });
 
-        const stockIn = movements
-            .filter((m) => m.type === "in")
-            .reduce((sum, m) => sum + m.quantity, 0);
-
-        const stockOut = movements
-            .filter((m) => m.type === "out")
-            .reduce((sum, m) => sum + m.quantity, 0);
-
-        const currentStock = stockIn - stockOut;
+        // Match cost-lookup / Stock In-Out: only exact lowercase "in" adds stock;
+        // every other type (including "IN", "out", etc.) reduces stock.
+        const currentStock = movements.reduce(
+            (sum, m) => sum + (m.type === "in" ? m.quantity : -m.quantity),
+            0,
+        );
 
         // 3. Get Cost Data (Raw Query for reliability as seen in other endpoints)
         const partCosts: any[] = await prisma.$queryRaw`

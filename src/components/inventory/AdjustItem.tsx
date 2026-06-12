@@ -455,11 +455,65 @@ export const AdjustItem = () => {
     fetchParts();
   }, []);
 
+  const applyPartDetailsToRow = useCallback(
+    async (rowId: string, partId: string, isAddMode: boolean) => {
+      try {
+        const [stockRes, detailRes] = await Promise.all([
+          apiClient.getPartCostLookup(partId),
+          apiClient.getStockDetails(partId),
+        ]);
+
+        if ((stockRes as any)?.error) {
+          console.error("Error fetching part stock:", (stockRes as any).error);
+          return;
+        }
+        if ((detailRes as any)?.error) {
+          console.error("Error fetching part details:", (detailRes as any).error);
+          return;
+        }
+
+        const stock = stockRes as any;
+        const part = detailRes as any;
+        const qtyInStock = isAddMode
+          ? (stock.current_stock ?? 0)
+          : (stock.available_stock ?? stock.current_stock ?? 0);
+        const newRate = parseFloat(part.cost || 0);
+
+        setAdjustmentItems((items) =>
+          items.map((it) => {
+            if (it.id !== rowId) return it;
+            const newQty = !isAddMode ? qtyInStock : it.quantity || 0;
+            return {
+              ...it,
+              itemName: part.description || part.part_no,
+              qtyInStock,
+              lastPurchaseRate: parseFloat((part.avg_cost || stock.avg_cost || 0).toFixed(3)),
+              rate: newRate,
+              priceA: part.priceA || 0,
+              priceB: part.priceB || 0,
+              priceM: part.priceM || 0,
+              quantity: newQty,
+              total: newQty * newRate,
+            };
+          }),
+        );
+      } catch (err) {
+        console.error("Error loading part details for adjustment:", err);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
-    if (view === "create" || view === "edit") {
-      // Re-fetch or refresh if needed when store changes
-    }
-  }, [view, store, addInventory]);
+    if (view !== "create" && view !== "edit") return;
+    adjustmentItems.forEach((item) => {
+      if (item.itemId) {
+        applyPartDetailsToRow(item.id, item.itemId, !!addInventory);
+      }
+    });
+    // Intentionally omit adjustmentItems — only refresh when add/remove mode or view changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, addInventory, applyPartDetailsToRow]);
 
   useEffect(() => {
     if (store && (view === "create" || view === "edit")) {
@@ -577,43 +631,9 @@ export const AdjustItem = () => {
             }
           }
 
-          // When item is selected, populate fields using new optimized API
+          // When item is selected, use the same stock source as Sales Invoice / Stock In-Out
           if (field === "itemId" && value) {
-            apiClient.getStockDetails(value as string, store || undefined)
-              .then((res: any) => {
-                if (res.error) {
-                  console.error("Error fetching stock details:", res.error);
-                  return;
-                }
-
-                const part = res;
-                setAdjustmentItems((items) =>
-                  items.map((it) => {
-                    if (it.id === id) {
-                      const newRate = parseFloat(part.cost || 0);
-                      // If removing inventory, default to current stock. Else keep 0 or user input.
-                      const newQty = !addInventory ? part.current_stock : (it.quantity || 0);
-
-                      return {
-                        ...it,
-                        itemName: part.description || part.part_no,
-                        qtyInStock: part.current_stock,
-                        lastPurchaseRate: parseFloat((part.avg_cost || 0).toFixed(3)),
-                        rate: newRate,
-                        priceA: part.priceA || 0,
-                        priceB: part.priceB || 0,
-                        priceM: part.priceM || 0,
-                        quantity: newQty,
-                        total: newQty * newRate,
-                      };
-                    }
-                    return it;
-                  })
-                );
-              })
-              .catch((err) => {
-                console.error("Error connecting to stock-details API:", err);
-              });
+            applyPartDetailsToRow(id, value as string, !!addInventory);
           }
 
           return updated;
@@ -1697,51 +1717,6 @@ export const AdjustItem = () => {
                   // Remove mode should not use a selected store.
                   setStore("");
                 }
-                // Refetch balance for all currently selected items to update Qty in Stock
-                // based on the new mode (Total vs Available)
-                adjustmentItems.forEach((item) => {
-                  if (item.itemId) {
-                    apiClient
-                      .getStockBalances({
-                        part_id: item.itemId,
-                        store_id: store || undefined,
-                      })
-                      .then((res: any) => {
-                        const balanceData = res.data || res || [];
-                        const b = Array.isArray(balanceData)
-                          ? balanceData[0]
-                          : balanceData;
-                        if (b) {
-                          const freshQty = checked
-                            ? (b.current_stock ?? b.quantity ?? b.qty ?? 0)
-                            : (b.available_stock ??
-                              b.available_quantity ??
-                              b.current_stock ??
-                              b.quantity ??
-                              b.qty ??
-                              0);
-
-                          setAdjustmentItems((prevItems) =>
-                            prevItems.map((it) => {
-                              if (it.id === item.id) {
-                                return {
-                                  ...it,
-                                  qtyInStock: freshQty,
-                                  // Reset quantity logic:
-                                  // If switching to Add (checked=true) -> 0 or keep user input? User asked "show all quantity" implies resetting to 0 isn't explicitly asked but standard Add flow is empty.
-                                  // But user said "when user click on add it will show all quantity" referring to Stock Qty column.
-                                  // For Remove, "show quantity less of Reserved qty" refers to auto-fill Quantity input.
-                                  quantity: !checked ? freshQty : 0,
-                                  total: (!checked ? freshQty : 0) * it.rate,
-                                };
-                              }
-                              return it;
-                            }),
-                          );
-                        }
-                      });
-                  }
-                });
               }}
             />
             <Label

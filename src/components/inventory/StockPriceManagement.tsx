@@ -464,14 +464,14 @@ export const StockPriceManagement = () => {
           </div>
 
           {/* Bulk Price Update */}
-          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+          <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-4">
-              <RefreshCw className="w-4 h-4 text-orange-600" />
-              <h3 className="text-sm font-medium text-orange-800">Bulk Price Update</h3>
+              <RefreshCw className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-medium text-primary">Bulk Price Update</h3>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div>
-                <label className="text-xs font-medium text-orange-700 block mb-1.5">Price Field</label>
+                <label className="text-xs font-medium text-primary block mb-1.5">Price Field</label>
                 <Select value={priceField} onValueChange={setPriceField}>
                   <SelectTrigger className="h-9 bg-background">
                     <SelectValue />
@@ -485,7 +485,7 @@ export const StockPriceManagement = () => {
                 </Select>
               </div>
               <div>
-                <label className="text-xs font-medium text-orange-700 block mb-1.5">Update Type</label>
+                <label className="text-xs font-medium text-primary block mb-1.5">Update Type</label>
                 <Select value={updateType} onValueChange={setUpdateType}>
                   <SelectTrigger className="h-9 bg-background">
                     <SelectValue />
@@ -497,7 +497,7 @@ export const StockPriceManagement = () => {
                 </Select>
               </div>
               <div>
-                <label className="text-xs font-medium text-orange-700 block mb-1.5">Value ({updateType === "percentage" ? "%" : "Rs"})</label>
+                <label className="text-xs font-medium text-primary block mb-1.5">Value ({updateType === "percentage" ? "%" : "Rs"})</label>
                 <Input
                   type="number"
                   value={updateValue}
@@ -507,7 +507,7 @@ export const StockPriceManagement = () => {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-orange-700 block mb-1.5">Reason for Update *</label>
+                <label className="text-xs font-medium text-primary block mb-1.5">Reason for Update *</label>
                 <Input
                   value={updateReason}
                   onChange={(e) => setUpdateReason(e.target.value)}
@@ -524,7 +524,7 @@ export const StockPriceManagement = () => {
                 </Button>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4 pt-4 border-t border-orange-200">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4 pt-4 border-t border-primary/20">
               <p className="text-sm text-muted-foreground">
                 {selectedIds.size} items selected | {modifiedCount} items modified
               </p>

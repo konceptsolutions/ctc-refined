@@ -247,7 +247,7 @@ const ViewOrderDialog = ({ open, onOpenChange, order, statusColors, formatCurren
           .header-info label { color: #666; font-size: 12px; display: block; }
           .header-info span { font-weight: 600; }
           table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th { background-color: #f97316; color: white; padding: 10px; text-align: left; font-size: 12px; }
+          th { background-color: #1664da; color: white; padding: 10px; text-align: left; font-size: 12px; }
           td { border: 1px solid #ddd; padding: 8px; font-size: 12px; }
           tr:nth-child(even) { background-color: #f9f9f9; }
           .totals { text-align: right; margin-top: 10px; }

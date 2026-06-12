@@ -1294,7 +1294,7 @@ export const CurrentStock = () => {
                   selectedPartLocations.map((loc, index) => (
                     <TableRow
                       key={index}
-                      className={loc.isUnlocated ? "bg-orange-50/50" : ""}
+                      className={loc.isUnlocated ? "bg-primary/5" : ""}
                     >
                       <TableCell className="font-medium">{loc.store}</TableCell>
                       <TableCell>{loc.rack}</TableCell>
@@ -1302,7 +1302,7 @@ export const CurrentStock = () => {
                       <TableCell className="text-right font-bold">
                         {loc.quantity}{" "}
                         {loc.isUnlocated && (
-                          <span className="text-xs text-orange-600 font-normal ml-1">
+                          <span className="text-xs text-primary font-normal ml-1">
                             (Unlocated)
                           </span>
                         )}
@@ -1623,7 +1623,7 @@ export const CurrentStock = () => {
                             Tot: {row.currentStock}
                           </div>
                           <div
-                            className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded w-full text-center"
+                            className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded w-full text-center"
                             title="Unassigned Stock (No Rack/Shelf)"
                           >
                             Un: {row.unassignedStock}

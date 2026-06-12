@@ -1709,7 +1709,7 @@ export const StockInOut = () => {
                           <div className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded w-full text-center" title="Total Stock">
                             Tot: {row.currentStock}
                           </div>
-                          <div className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded w-full text-center" title="Unassigned Stock (No Rack/Shelf)">
+                          <div className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded w-full text-center" title="Unassigned Stock (No Rack/Shelf)">
                             Un: {row.unassignedStock}
                           </div>
                         </div>

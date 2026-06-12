@@ -44,7 +44,7 @@ const allPermissions = [
 ];
 
 const roleColors = [
-  "bg-orange-100 text-orange-600 border-orange-200",
+  "bg-primary/15 text-primary border-primary/20",
   "bg-emerald-100 text-emerald-600 border-emerald-200",
   "bg-blue-100 text-blue-600 border-blue-200",
   "bg-purple-100 text-purple-600 border-purple-200",

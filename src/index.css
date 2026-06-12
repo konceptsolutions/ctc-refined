@@ -17,7 +17,7 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    --primary: 24 95% 53%;
+    --primary: 216 82% 47%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 210 40% 96%;
@@ -26,7 +26,7 @@ All colors MUST be HSL.
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
 
-    --accent: 24 95% 53%;
+    --accent: 216 82% 47%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
@@ -34,21 +34,21 @@ All colors MUST be HSL.
 
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 24 95% 53%;
+    --ring: 216 82% 47%;
 
     --radius: 0.75rem;
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 215 16% 47%;
-    --sidebar-primary: 24 95% 53%;
+    --sidebar-primary: 216 82% 47%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 24 100% 97%;
-    --sidebar-accent-foreground: 24 95% 53%;
+    --sidebar-accent: 216 85% 96%;
+    --sidebar-accent-foreground: 216 82% 47%;
     --sidebar-border: 214 32% 91%;
-    --sidebar-ring: 24 95% 53%;
+    --sidebar-ring: 216 82% 47%;
 
     /* Custom colors for the admin panel */
-    --chart-orange: 24 95% 53%;
+    --chart-orange: 216 82% 47%;
     --chart-blue: 199 89% 48%;
     --chart-green: 142 71% 45%;
     --chart-yellow: 45 93% 47%;
@@ -75,7 +75,7 @@ All colors MUST be HSL.
     --popover: 222 47% 14%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 24 95% 53%;
+    --primary: 216 82% 47%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 217 33% 17%;
@@ -84,7 +84,7 @@ All colors MUST be HSL.
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
 
-    --accent: 24 95% 53%;
+    --accent: 216 82% 47%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 63% 31%;
@@ -92,18 +92,18 @@ All colors MUST be HSL.
 
     --border: 217 33% 17%;
     --input: 217 33% 17%;
-    --ring: 24 95% 53%;
+    --ring: 216 82% 47%;
 
     --sidebar-background: 222 47% 11%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 24 95% 53%;
+    --sidebar-primary: 216 82% 47%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 217 33% 17%;
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 24 95% 53%;
+    --sidebar-ring: 216 82% 47%;
 
-    --chart-orange: 24 95% 53%;
+    --chart-orange: 216 82% 47%;
     --chart-blue: 199 89% 48%;
     --chart-green: 142 71% 45%;
     --chart-yellow: 45 93% 47%;
@@ -139,6 +139,20 @@ All colors MUST be HSL.
     font-family: "Courier New", "Cascadia Mono", "Consolas", "Liberation Mono", monospace;
     font-weight: 700;
     letter-spacing: 0.02em;
+  }
+}
+
+@layer components {
+  /*
+   * Dropdown options: secondary lines use text-muted-foreground but the row
+   * highlights with bg-accent (blue). Keep description/brand/etc. readable.
+   */
+  .hover\:bg-accent:hover :is(.text-muted-foreground, [class*="text-muted-foreground"]),
+  .bg-accent.text-accent-foreground :is(.text-muted-foreground, [class*="text-muted-foreground"]),
+  .focus\:bg-accent:focus :is(.text-muted-foreground, [class*="text-muted-foreground"]),
+  [cmdk-item][data-selected="true"] :is(.text-muted-foreground, [class*="text-muted-foreground"]),
+  [data-highlighted] :is(.text-muted-foreground, [class*="text-muted-foreground"]) {
+    color: hsl(var(--accent-foreground));
   }
 }
 

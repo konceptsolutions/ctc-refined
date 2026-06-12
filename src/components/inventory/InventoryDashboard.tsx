@@ -283,8 +283,8 @@ export const InventoryDashboard = () => {
           value={statsData.totalParts}
           subtitle={`${statsData.activeParts} active`}
           icon={Package}
-          colorClass="text-orange-600"
-          bgClass="bg-orange-50 dark:bg-orange-950/30"
+          colorClass="text-primary"
+          bgClass="bg-primary/10 dark:bg-primary/20"
         />
         <StatCard
           title="TOTAL VALUE"
@@ -585,7 +585,7 @@ export const InventoryDashboard = () => {
                     <TableCell className="font-medium">{store.store}</TableCell>
                     <TableCell className="text-center">{store.items}</TableCell>
                     <TableCell className="text-center font-medium">{store.qty}</TableCell>
-                    <TableCell className="text-right text-orange-600 font-medium">
+                    <TableCell className="text-right text-primary font-medium">
                       Rs {store.value.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right">
@@ -613,8 +613,8 @@ export const InventoryDashboard = () => {
                 className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-950/50">
-                    <ClipboardEdit className="w-5 h-5 text-orange-600" />
+                  <div className="p-2 rounded-lg bg-primary/15 dark:bg-primary/20">
+                    <ClipboardEdit className="w-5 h-5 text-primary" />
                   </div>
                   <div>
                     <p className="font-medium text-sm">Adjustment #{adjustment.id}</p>

@@ -744,8 +744,8 @@ export const StoreManagementTab = () => {
                                         ) : (
                                           <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                                         )}
-                                        <div className="w-8 h-8 rounded bg-orange-500/10 flex items-center justify-center">
-                                          <Archive className="w-4 h-4 text-orange-600" />
+                                        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center">
+                                          <Archive className="w-4 h-4 text-primary" />
                                         </div>
                                         <div>
                                           <p className="font-medium text-sm">{rack.codeNo}</p>

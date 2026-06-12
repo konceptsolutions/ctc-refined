@@ -1855,7 +1855,7 @@ export const DirectPurchaseOrder = ({
       case "Received":
         return <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">{status}</Badge>;
       case "Order Receivable Pending":
-        return <Badge className="bg-orange-500/10 text-orange-500 hover:bg-orange-500/20">{status}</Badge>;
+        return <Badge className="bg-primary/10 text-primary hover:bg-primary/20">{status}</Badge>;
       case "Draft":
         return <Badge variant="secondary">{status}</Badge>;
       case "Cancelled":
@@ -1958,7 +1958,7 @@ export const DirectPurchaseOrder = ({
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => handleReturnClick(order)}
-                                  className="h-8 w-8 text-orange-500 hover:text-orange-600"
+                                  className="h-8 w-8 text-primary hover:text-primary"
                                 >
                                   <Undo2 className="h-4 w-4" />
                                 </Button>
@@ -2575,7 +2575,7 @@ export const DirectPurchaseOrder = ({
                                 className={cn(
                                   (Number(expense.amount) || 0) > 0 &&
                                     (!expense.description || expense.description.trim() === "") &&
-                                    "border-orange-500"
+                                    "border-primary"
                                 )}
                               />
                             </div>
@@ -2590,7 +2590,7 @@ export const DirectPurchaseOrder = ({
                                   const value = e.target.value === "" ? 0 : parseFloat(e.target.value) || 0;
                                   handleUpdateExpense(expense.id, "amount", value);
                                 }}
-                                className={cn("text-right", expense.amount <= 0 && "border-orange-500")}
+                                className={cn("text-right", expense.amount <= 0 && "border-primary")}
                                 placeholder="0.00"
                               />
                             </div>
@@ -2765,7 +2765,7 @@ export const DirectPurchaseOrder = ({
                 Reset
               </Button>
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                <Button onClick={handleSave} className="bg-orange-500 hover:bg-orange-600 text-white flex-1 sm:flex-initial">
+                <Button onClick={handleSave} className="bg-primary hover:bg-primary/90 text-white flex-1 sm:flex-initial">
                   <Save className="w-4 h-4 mr-2" />
                   Save
                 </Button>
@@ -3051,7 +3051,7 @@ export const DirectPurchaseOrder = ({
                           />
                           <div className="text-[10px] text-center space-y-0.5 font-medium">
                             <div className="text-muted-foreground">Purchased Qty: {item.purchasedQty}</div>
-                            <div className="text-orange-500">Returned Qty: {item.alreadyReturned}</div>
+                            <div className="text-primary">Returned Qty: {item.alreadyReturned}</div>
                             <div className="text-emerald-600">Remaining Qty: {item.availableToReturn}</div>
                           </div>
                         </div>

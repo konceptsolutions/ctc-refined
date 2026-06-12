@@ -152,7 +152,7 @@ export const TrialBalanceTab = () => {
       case "liability": return "bg-red-500/10 text-red-600 border-red-500/20";
       case "equity": return "bg-purple-500/10 text-purple-600 border-purple-500/20";
       case "revenue": return "bg-green-500/10 text-green-600 border-green-500/20";
-      case "expense": return "bg-orange-500/10 text-orange-600 border-orange-500/20";
+      case "expense": return "bg-primary/10 text-primary border-primary/20";
       default: return "bg-muted text-muted-foreground";
     }
   };

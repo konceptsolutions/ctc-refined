@@ -5120,7 +5120,7 @@ export const SalesInvoice = ({
       on_hold: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
       approved: "bg-indigo-600/10 text-indigo-700 border-indigo-600/20",
       partially_delivered:
-        "bg-orange-500/10 text-orange-600 border-orange-500/20",
+        "bg-primary/10 text-primary border-primary/20",
       partially_delivered_reversed:
         "bg-red-500/10 text-red-600 border-red-500/20",
       delivered: "bg-green-500/10 text-green-600 border-green-500/20",
@@ -5159,7 +5159,7 @@ export const SalesInvoice = ({
       sent: "bg-blue-500/10 text-blue-600 border-blue-500/20",
       accepted: "bg-green-500/10 text-green-600 border-green-500/20",
       rejected: "bg-red-500/10 text-red-600 border-red-500/20",
-      expired: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+      expired: "bg-primary/10 text-primary border-primary/20",
     };
     const labels: Record<string, string> = {
       draft: "Draft",
@@ -5183,7 +5183,7 @@ export const SalesInvoice = ({
   const getPaymentBadge = (status: "unpaid" | "partial" | "paid") => {
     const styles = {
       unpaid: "bg-red-500/10 text-red-600 border-red-500/20",
-      partial: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+      partial: "bg-primary/10 text-primary border-primary/20",
       paid: "bg-green-500/10 text-green-600 border-green-500/20",
     };
     return (
@@ -6049,7 +6049,7 @@ export const SalesInvoice = ({
                                     ...
                                   </span>
                                 ) : (
-                                  <span className="text-sm font-semibold text-orange-600 tabular-nums">
+                                  <span className="text-sm font-semibold text-primary tabular-nums">
                                     {item.selectedPartId ? reserved : "—"}
                                   </span>
                                 );
@@ -6112,7 +6112,7 @@ export const SalesInvoice = ({
                                         ...
                                       </span>
                                     ) : (
-                                      <span className="text-sm font-semibold text-orange-600 tabular-nums">
+                                      <span className="text-sm font-semibold text-primary tabular-nums">
                                         {item.selectedPartId ? reserved : "—"}
                                       </span>
                                     );
@@ -7724,7 +7724,7 @@ export const SalesInvoice = ({
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                  className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
                                   onClick={() => {
                                     // Show all items that still have pending (undelivered) quantity
                                     const itemsToProcess = inv.items?.filter(
@@ -7897,7 +7897,7 @@ export const SalesInvoice = ({
                           <TableCell className="text-center text-green-600">
                             {item.deliveredQty}
                           </TableCell>
-                          <TableCell className="text-center text-orange-600">
+                          <TableCell className="text-center text-primary">
                             {item.pendingQty}
                           </TableCell>
                           <TableCell className="text-center text-red-600">
@@ -7918,7 +7918,7 @@ export const SalesInvoice = ({
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                  className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
                                   onClick={() => {
                                     // Set only this item for reversal
                                     setItemsToReverse([item]);
@@ -7963,7 +7963,7 @@ export const SalesInvoice = ({
                     Rs {(selectedInvoice.subtotal || 0).toLocaleString()}
                   </p>
                   <p className="text-sm text-muted-foreground">Discount</p>
-                  <p className="text-base font-semibold text-orange-600">
+                  <p className="text-base font-semibold text-primary">
                     Rs {(selectedInvoice.overallDiscount || 0).toLocaleString()}
                   </p>
                   {Number(selectedInvoice.tax || 0) > 0 && (
@@ -8094,7 +8094,7 @@ export const SalesInvoice = ({
                   <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">
                     Discount
                   </p>
-                  <p className="text-lg font-bold text-orange-600">
+                  <p className="text-lg font-bold text-primary">
                     - Rs{" "}
                     {(selectedInvoice.overallDiscount || 0).toLocaleString()}
                   </p>
@@ -8413,7 +8413,7 @@ export const SalesInvoice = ({
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-orange-500" />
+              <Package className="w-5 h-5 text-primary" />
               Record Partial Delivery
             </DialogTitle>
           </DialogHeader>
@@ -8528,7 +8528,7 @@ export const SalesInvoice = ({
               Cancel
             </Button>
             <Button
-              className="bg-orange-500 hover:bg-orange-600"
+              className="bg-primary hover:bg-primary/90"
               onClick={async () => {
                 if (!selectedInvoice) return;
                 setShowPartialDeliveryDialog(false);
@@ -8583,7 +8583,7 @@ export const SalesInvoice = ({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-orange-600" />
+              <AlertTriangle className="w-5 h-5 text-primary" />
               Delete Invoice & Reverse Stock?
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -8611,7 +8611,7 @@ export const SalesInvoice = ({
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleSoftDeleteInvoice}
-              className="bg-orange-600 hover:bg-orange-700"
+              className="bg-primary hover:bg-primary/90"
             >
               Delete & Reverse Stock
             </AlertDialogAction>
@@ -9218,7 +9218,7 @@ export const SalesInvoice = ({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <RotateCcw className="w-5 h-5 text-orange-600" />
+              <RotateCcw className="w-5 h-5 text-primary" />
               Reverse Quantity to Stock
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -9261,7 +9261,7 @@ export const SalesInvoice = ({
             <AlertDialogAction
               onClick={handleReverseQuantity}
               disabled={reversing}
-              className="bg-orange-600 hover:bg-orange-700"
+              className="bg-primary hover:bg-primary/90"
             >
               {reversing ? "Reversing..." : "Yes, Reverse to Stock"}
             </AlertDialogAction>

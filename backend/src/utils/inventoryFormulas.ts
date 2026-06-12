@@ -7,6 +7,7 @@
  */
 
 import prisma from "../config/database";
+import { netStockFromMovements } from "./stockMovementBalance";
 
 // ============================================================================
 // 1. INVENTORY FORMULAS
@@ -23,18 +24,10 @@ export async function calculateStockQuantity(partId: string, tx?: any): Promise<
   const client = tx || prisma;
   const movements = await client.stockMovement.findMany({
     where: { partId },
-    select: { type: true, quantity: true },
+    select: { type: true, quantity: true, referenceType: true },
   });
 
-  const totalIn = movements
-    .filter((m: any) => m.type === "in")
-    .reduce((sum: number, m: any) => sum + m.quantity, 0);
-
-  const totalOut = movements
-    .filter((m: any) => m.type === "out")
-    .reduce((sum: number, m: any) => sum + m.quantity, 0);
-
-  return totalIn - totalOut;
+  return netStockFromMovements(movements);
 }
 
 /**

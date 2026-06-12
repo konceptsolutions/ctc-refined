@@ -11,9 +11,9 @@ interface ActionButtonTooltipProps {
 
 const variantStyles = {
   view: "bg-green-600 text-white border-green-700",
-  edit: "bg-orange-500 text-white border-orange-600",
+  edit: "bg-primary text-white border-primary",
   delete: "bg-red-600 text-white border-red-700",
-  lock: "bg-orange-500 text-white border-orange-600",
+  lock: "bg-primary text-white border-primary",
   copy: "bg-purple-600 text-white border-purple-700",
   more: "bg-gray-600 text-white border-gray-700",
   default: "bg-gray-600 text-white border-gray-700",

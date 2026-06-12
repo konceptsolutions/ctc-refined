@@ -458,10 +458,10 @@ export const DeliveryChallan = () => {
               .shop-name { font-weight: bold; font-size: 14px; }
               .title { text-align: right; }
               .title h1 { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-              .customer-section { background-color: #f97316; color: white; padding: 6px 12px; font-weight: bold; font-size: 12px; }
+              .customer-section { background-color: #1664da; color: white; padding: 6px 12px; font-weight: bold; font-size: 12px; }
               .customer-details { padding: 10px 12px; border: 1px solid #ddd; border-top: none; margin-bottom: 15px; }
               table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-              th { background-color: #f97316; color: white; padding: 8px; text-align: left; font-size: 11px; }
+              th { background-color: #1664da; color: white; padding: 8px; text-align: left; font-size: 11px; }
               td { border: 1px solid #ddd; padding: 8px; font-size: 11px; }
               .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border-radius: 4px; }
               .signature { margin-top: 60px; text-align: right; }
@@ -547,7 +547,7 @@ export const DeliveryChallan = () => {
         return <Badge className="bg-green-600 text-white hover:bg-green-700"><CheckCircle className="w-3 h-3 mr-1" />delivered</Badge>;
       case "pending":
       case "draft":
-        return <Badge className="bg-orange-500 text-white hover:bg-orange-600"><Clock className="w-3 h-3 mr-1" />pending</Badge>;
+        return <Badge className="bg-primary text-white hover:bg-primary/90"><Clock className="w-3 h-3 mr-1" />pending</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -601,7 +601,7 @@ export const DeliveryChallan = () => {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
+        <Card className="bg-gradient-to-r from-primary to-primary text-white">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-white/20 rounded-lg">
               <Clock className="w-5 h-5" />

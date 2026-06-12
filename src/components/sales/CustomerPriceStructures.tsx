@@ -518,11 +518,11 @@ export const CustomerPriceStructures = () => {
         <title>Customer Price Structures Report</title>
         <style>
           body { font-family: Arial, sans-serif; padding: 20px; }
-          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #f97316; padding-bottom: 20px; }
-          .header h1 { color: #f97316; margin: 0; }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #1664da; padding-bottom: 20px; }
+          .header h1 { color: #1664da; margin: 0; }
           .header p { color: #666; margin: 5px 0; }
           table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th { background: #f97316; color: white; padding: 12px; text-align: left; }
+          th { background: #1664da; color: white; padding: 12px; text-align: left; }
           td { padding: 10px; border-bottom: 1px solid #ddd; }
           tr:nth-child(even) { background: #f9f9f9; }
           .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; }

@@ -3768,6 +3768,10 @@ class ApiClient {
     }>(`/sales-returns${qs ? `?${qs}` : ""}`);
   }
 
+  async getSalesReturn(id: string) {
+    return this.request<Record<string, unknown>>(`/sales-returns/${id}`);
+  }
+
   async deleteSalesReturn(id: string) {
     return this.request<{ message?: string }>(`/sales-returns/${id}`, {
       method: "DELETE",
@@ -3815,6 +3819,62 @@ class ApiClient {
       salesReturn?: unknown;
     }>("/sales-returns", {
       method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createDirectSalesReturn(data: {
+    legacy_invoice_no: string;
+    return_date: string;
+    reason?: string;
+    customer_type: "walking" | "registered";
+    customer_id?: string;
+    legacy_customer_name?: string;
+    tax_percentage?: number;
+    created_by?: string;
+    deduction?: number;
+    payment_account_id?: string;
+    paid_amount?: number;
+    items: Array<{
+      part_id: string;
+      return_quantity: number;
+      unit_price: number;
+    }>;
+  }) {
+    return this.request<{
+      message?: string;
+      salesReturn?: unknown;
+    }>("/sales-returns/direct", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateDirectSalesReturn(
+    id: string,
+    data: {
+      legacy_invoice_no: string;
+      return_date: string;
+      reason?: string;
+      customer_type: "walking" | "registered";
+      customer_id?: string;
+      legacy_customer_name?: string;
+      tax_percentage?: number;
+      deduction?: number;
+      payment_account_id?: string;
+      paid_amount?: number;
+      items: Array<{
+        part_id: string;
+        return_quantity: number;
+        unit_price: number;
+      }>;
+    },
+  ) {
+    return this.request<{
+      message?: string;
+      salesReturn?: unknown;
+    }>(`/sales-returns/direct/${id}`, {
+      method: "PUT",
       body: JSON.stringify(data),
     });
   }

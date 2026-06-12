@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
 import { getCanonicalPartId } from "../services/partCanonical";
+import { netStockFromMovements } from "../utils/stockMovementBalance";
 
 const router = express.Router();
 const SALES_INVOICE_START_NO = 1641;
@@ -141,17 +142,10 @@ async function getNextTransferOutInvoiceNo(invoiceDate?: string | Date): Promise
 async function getStockBalance(partId: string): Promise<number> {
   const movements = await prisma.stockMovement.findMany({
     where: { partId },
-    select: { type: true, quantity: true },
+    select: { type: true, quantity: true, referenceType: true },
   });
 
-  const stockIn = movements
-    .filter((m) => m.type === "in")
-    .reduce((sum, m) => sum + m.quantity, 0);
-  const stockOut = movements
-    .filter((m) => m.type === "out")
-    .reduce((sum, m) => sum + m.quantity, 0);
-
-  return stockIn - stockOut;
+  return netStockFromMovements(movements);
 }
 
 // Helper function to get reserved quantity
@@ -3006,16 +3000,10 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
   }
 });
 
-/** Movement total minus PartRackShelf sum — same idea as inventory GET /part-locations unallocated row. */
-async function getPartUnallocatedExcessQty(
+async function getPartNetStockQty(
   tx: Prisma.TransactionClient,
   partId: string,
 ): Promise<number> {
-  const prsAgg = await tx.partRackShelf.aggregate({
-    where: { partId },
-    _sum: { quantity: true },
-  });
-  const assigned = prsAgg._sum.quantity || 0;
   const smIn = await tx.stockMovement.aggregate({
     where: { partId, type: "in" },
     _sum: { quantity: true },
@@ -3024,9 +3012,7 @@ async function getPartUnallocatedExcessQty(
     where: { partId, type: "out" },
     _sum: { quantity: true },
   });
-  const actual =
-    (smIn._sum.quantity || 0) - (smOut._sum.quantity || 0);
-  return actual - assigned;
+  return (smIn._sum.quantity || 0) - (smOut._sum.quantity || 0);
 }
 
 async function consumeReservationsForDelivery(
@@ -3126,6 +3112,12 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
       include: { SalesInvoiceItem: true },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+    if (invoice.status === "return" || invoice.status === "partially_return") {
+      return res.status(400).json({
+        error:
+          "Cannot record stock out on an invoice with sales returns (return / partially return).",
+      });
+    }
     // Delivery can be recorded for both Cash Sale (walking) and Party Sale (registered) invoices
     // Validate request items
     for (const item of items) {
@@ -3180,9 +3172,28 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
         },
       });
 
-      // Running balances when multiple lines pick the same location in one stock-out
-      const locationQtyRemaining = new Map<string, number>();
-      const unallocatedQtyRemaining = new Map<string, number>();
+      const qtyByPartInRequest = new Map<string, number>();
+      for (const item of items) {
+        const invoiceItem = await tx.salesInvoiceItem.findUnique({
+          where: { id: item.invoiceItemId },
+        });
+        if (!invoiceItem) {
+          throw new Error(`Item ${item.invoiceItemId} not found`);
+        }
+        const qtyToDeliver = Number(item.quantity);
+        qtyByPartInRequest.set(
+          invoiceItem.partId,
+          (qtyByPartInRequest.get(invoiceItem.partId) || 0) + qtyToDeliver,
+        );
+      }
+      for (const [partId, totalQty] of qtyByPartInRequest) {
+        const netStock = await getPartNetStockQty(tx, partId);
+        if (totalQty > netStock) {
+          throw new Error(
+            `Insufficient stock (available ${netStock}, requested ${totalQty}).`,
+          );
+        }
+      }
 
       // Update Items & Stock
       for (const item of items) {
@@ -3226,23 +3237,6 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
             if (embeddedPartId !== invoiceItem.partId) {
               throw new Error("Invalid rack/shelf location for this line item.");
             }
-            let unallocAvail = unallocatedQtyRemaining.get(embeddedPartId);
-            if (unallocAvail === undefined) {
-              unallocAvail = await getPartUnallocatedExcessQty(
-                tx,
-                invoiceItem.partId,
-              );
-              unallocatedQtyRemaining.set(embeddedPartId, unallocAvail);
-            }
-            if (qtyToDeliver > unallocAvail) {
-              throw new Error(
-                `Insufficient unallocated stock (available ${unallocAvail}, requested ${qtyToDeliver}).`,
-              );
-            }
-            unallocatedQtyRemaining.set(
-              embeddedPartId,
-              unallocAvail - qtyToDeliver,
-            );
             await tx.stockMovement.create({
               data: {
                 id: `sm_${Date.now()}_${invoiceItem.id}_unalloc`,
@@ -3269,20 +3263,6 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
             if (!prs || prs.partId !== invoiceItem.partId) {
               throw new Error("Invalid rack/shelf location for this line item.");
             }
-            let availableAtLocation = locationQtyRemaining.get(prsIdStr);
-            if (availableAtLocation === undefined) {
-              availableAtLocation = Number(prs.quantity);
-              locationQtyRemaining.set(prsIdStr, availableAtLocation);
-            }
-            if (qtyToDeliver > availableAtLocation) {
-              throw new Error(
-                `Insufficient stock at selected location (available ${availableAtLocation}, requested ${qtyToDeliver}).`,
-              );
-            }
-            locationQtyRemaining.set(
-              prsIdStr,
-              availableAtLocation - qtyToDeliver,
-            );
             await tx.partRackShelf.update({
               where: { id: prs.id },
               data: { quantity: { decrement: qtyToDeliver } },

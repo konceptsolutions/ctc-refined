@@ -129,7 +129,7 @@ export const DistributorAging = () => {
             td:first-child, th:first-child { text-align: left; }
             .text-green { color: #22c55e; }
             .text-yellow { color: #eab308; }
-            .text-orange { color: #f97316; }
+            .text-orange { color: #1664da; }
             .text-red { color: #ef4444; }
             .footer-row { background-color: #f5f5f5; font-weight: bold; }
             @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
@@ -199,7 +199,7 @@ export const DistributorAging = () => {
             <p className="text-xl font-bold text-white">Rs. {totalDue.toLocaleString()}</p>
           </CardContent>
         </Card>
-        <Card className="bg-orange-500 border-0">
+        <Card className="bg-primary border-0">
           <CardContent className="p-4 text-center">
             <p className="text-xs text-white/70 mb-1">Overdue Invoices</p>
             <p className="text-xl font-bold text-white">{filteredData.length}</p>

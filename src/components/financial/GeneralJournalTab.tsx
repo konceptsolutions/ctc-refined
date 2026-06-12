@@ -417,7 +417,7 @@ export const GeneralJournalTab = () => {
                       <span className="line-clamp-2">{entry.description}</span>
                     </TableCell>
                     <TableCell className="text-right font-mono font-semibold">
-                      <span className={entry.debit > 0 ? "text-orange-500" : "text-muted-foreground/50"}>
+                      <span className={entry.debit > 0 ? "text-primary" : "text-muted-foreground/50"}>
                         {entry.debit > 0 ? formatNumber(entry.debit) : "0"}
                       </span>
                     </TableCell>
@@ -434,7 +434,7 @@ export const GeneralJournalTab = () => {
                   Total
                 </TableCell>
                 <TableCell className="text-right font-mono text-base py-4">
-                  <span className="text-orange-500">{formatNumber(totalDebit)}</span>
+                  <span className="text-primary">{formatNumber(totalDebit)}</span>
                 </TableCell>
                 <TableCell className="text-right font-mono text-base py-4">
                   <span className="text-blue-500">{formatNumber(totalCredit)}</span>

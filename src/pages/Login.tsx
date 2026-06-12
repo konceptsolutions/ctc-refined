@@ -166,7 +166,7 @@ const Login = () => {
 
             <div className="z-10 w-full max-w-[440px] px-6 py-12">
                 <div className="text-center mb-10 animate-fade-in">
-                    <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-primary to-orange-600 mb-6 shadow-2xl shadow-primary/40 ring-4 ring-white/10 group hover:scale-110 transition-transform duration-500">
+                    <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-primary to-primary mb-6 shadow-2xl shadow-primary/40 ring-4 ring-white/10 group hover:scale-110 transition-transform duration-500">
                         <ShieldCheck className="w-10 h-10 text-white" />
                     </div>
                 </div>

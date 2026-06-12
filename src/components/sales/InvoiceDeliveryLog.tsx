@@ -115,8 +115,8 @@ export const InvoiceDeliveryLog = ({
               <p className="text-2xl font-bold text-green-600">{totalDelivered}</p>
               <p className="text-xs text-muted-foreground">Delivered</p>
             </div>
-            <div className="p-3 bg-orange-500/10 rounded-lg border border-orange-500/20 text-center">
-              <p className="text-2xl font-bold text-orange-600">{totalPending}</p>
+            <div className="p-3 bg-primary/10 rounded-lg border border-primary/20 text-center">
+              <p className="text-2xl font-bold text-primary">{totalPending}</p>
               <p className="text-xs text-muted-foreground">Pending</p>
             </div>
           </div>
@@ -177,7 +177,7 @@ export const InvoiceDeliveryLog = ({
                         <TableCell className="text-center text-green-600">
                           {item.deliveredQty}
                         </TableCell>
-                        <TableCell className="text-center text-orange-600">
+                        <TableCell className="text-center text-primary">
                           {item.pendingQty}
                         </TableCell>
                         <TableCell className="text-center">

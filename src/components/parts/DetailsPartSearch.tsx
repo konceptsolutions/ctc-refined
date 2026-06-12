@@ -456,7 +456,7 @@ export const DetailsPartSearch = () => {
                                                 <TableCell className="px-2 py-1 text-xs border-r">{item.brand}</TableCell>
                                                 <TableCell className="px-2 py-1 text-[10px] border-r max-w-[150px] truncate uppercase">{item.description}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs text-center border-r font-bold">{item.stock}</TableCell>
-                                                <TableCell className="px-2 py-1 text-xs text-center border-r font-bold text-orange-600 dark:text-orange-400">{item.reserved}</TableCell>
+                                                <TableCell className="px-2 py-1 text-xs text-center border-r font-bold text-primary dark:text-primary">{item.reserved}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs text-right border-r font-mono">{item.avgCost.toLocaleString()}</TableCell>
                                                 <TableCell className="px-2 py-1 text-[10px] text-center border-r font-bold text-green-600 dark:text-green-400">
                                                     {item.priceRevDate}

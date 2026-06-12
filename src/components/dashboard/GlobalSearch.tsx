@@ -280,7 +280,7 @@ export const GlobalSearch = ({ open, onOpenChange }: GlobalSearchProps) => {
                   { title: "New Invoice", path: "/sales", icon: Receipt, color: "text-emerald-500" },
                   { title: "Add Stock", path: "/inventory", icon: Package, color: "text-blue-500" },
                   { title: "View Reports", path: "/reports", icon: BarChart3, color: "text-purple-500" },
-                  { title: "Settings", path: "/settings", icon: Settings, color: "text-orange-500" },
+                  { title: "Settings", path: "/settings", icon: Settings, color: "text-primary" },
                 ].map((action) => {
                   const Icon = action.icon;
                   return (

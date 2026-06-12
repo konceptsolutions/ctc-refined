@@ -341,14 +341,14 @@ export const StockAnalysis = () => {
       </div>
 
       {/* Analysis Configuration */}
-      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+      <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
         <div className="flex items-center gap-2 mb-4">
-          <Settings className="w-4 h-4 text-orange-600" />
-          <h3 className="text-sm font-medium text-orange-800">Analysis Configuration</h3>
+          <Settings className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-medium text-primary">Analysis Configuration</h3>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="text-xs font-medium text-orange-700 block mb-1.5">Fast Moving (≤ days)</label>
+            <label className="text-xs font-medium text-primary block mb-1.5">Fast Moving (≤ days)</label>
             <Input
               type="number"
               value={fastMovingDays}
@@ -359,7 +359,7 @@ export const StockAnalysis = () => {
             <p className="text-xs text-muted-foreground mt-1">Items with activity within these days</p>
           </div>
           <div>
-            <label className="text-xs font-medium text-orange-700 block mb-1.5">Slow Moving (≥ days)</label>
+            <label className="text-xs font-medium text-primary block mb-1.5">Slow Moving (≥ days)</label>
             <Input
               type="number"
               value={slowMovingDays}
@@ -370,7 +370,7 @@ export const StockAnalysis = () => {
             <p className="text-xs text-muted-foreground mt-1">Items idle for these many days</p>
           </div>
           <div>
-            <label className="text-xs font-medium text-orange-700 block mb-1.5">Dead Stock (≥ days)</label>
+            <label className="text-xs font-medium text-primary block mb-1.5">Dead Stock (≥ days)</label>
             <Input
               type="number"
               value={deadStockDays}
@@ -381,7 +381,7 @@ export const StockAnalysis = () => {
             <p className="text-xs text-muted-foreground mt-1">Items with no movement</p>
           </div>
           <div>
-            <label className="text-xs font-medium text-orange-700 block mb-1.5">Analysis Period (months)</label>
+            <label className="text-xs font-medium text-primary block mb-1.5">Analysis Period (months)</label>
             <Input
               type="number"
               value={analysisPeriod}
@@ -427,16 +427,16 @@ export const StockAnalysis = () => {
         </div>
 
         {/* Slow Moving */}
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+        <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-medium text-orange-600 mb-1">Slow Moving</p>
+              <p className="text-xs font-medium text-primary mb-1">Slow Moving</p>
               <p className="text-2xl font-bold text-foreground">{stats.slow.count}</p>
-              <p className="text-sm text-orange-600 font-medium">{formatCurrency(stats.slow.value)}</p>
-              <p className="text-xs text-orange-600">{stats.slow.percentage}% of value</p>
+              <p className="text-sm text-primary font-medium">{formatCurrency(stats.slow.value)}</p>
+              <p className="text-xs text-primary">{stats.slow.percentage}% of value</p>
             </div>
-            <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-orange-600" />
+            <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-primary" />
             </div>
           </div>
         </div>

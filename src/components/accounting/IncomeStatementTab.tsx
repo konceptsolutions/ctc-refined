@@ -213,15 +213,15 @@ export const IncomeStatementTab = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/20 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
+        <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Cost</p>
-                <p className="text-2xl font-bold text-orange-600">Rs {totalCost.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-primary">Rs {totalCost.toLocaleString()}</p>
               </div>
-              <div className="h-12 w-12 rounded-full bg-orange-500/20 flex items-center justify-center">
-                <TrendingDown className="h-6 w-6 text-orange-600" />
+              <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <TrendingDown className="h-6 w-6 text-primary" />
               </div>
             </div>
           </CardContent>
@@ -422,7 +422,7 @@ export const IncomeStatementTab = () => {
                     </TableRow>
 
                     {/* Net Income */}
-                    <TableRow className={`font-bold ${netIncome >= 0 ? 'bg-orange-500/20 text-green-600' : 'bg-red-500/20 text-red-600'}`}>
+                    <TableRow className={`font-bold ${netIncome >= 0 ? 'bg-primary/20 text-green-600' : 'bg-red-500/20 text-red-600'}`}>
                       <TableCell>Net Income</TableCell>
                       <TableCell className="text-right font-mono">{netIncome.toLocaleString()}</TableCell>
                     </TableRow>

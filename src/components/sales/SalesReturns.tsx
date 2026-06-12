@@ -53,12 +53,15 @@ import {
   X,
   CheckCircle2,
   Ban,
+  Plus,
+  Pencil,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { getUserRole } from "@/utils/auth";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Badge } from "@/components/ui/badge";
 
 interface ReturnItem {
   id: string;
@@ -120,9 +123,78 @@ interface SalesReturn {
   saleType: string;
   items: ReturnItem[];
   originalInvoiceNo?: string;
+  isDirectReturn?: boolean;
   /** Server status: pending | completed | rejected */
   status?: string;
 }
+
+interface DirectPartItem {
+  id: string;
+  name: string;
+  partNo: string;
+  masterPartNo: string;
+  brand: string;
+  priceA: number | null;
+  priceB: number | null;
+  avgCost: number;
+  cost: number;
+}
+
+interface DirectReturnLine {
+  id: string;
+  partId: string;
+  returnQty: string;
+  unitPrice: string;
+  selectedPriceType?: "A" | "B" | "";
+  /** Saved line COGS snapshot when editing an existing return */
+  unitCostSnapshot?: number;
+}
+
+/** Matches backend resolveDirectReturnUnitCost — avg when > 0, else cost. */
+const resolveDirectReturnUnitCost = (
+  avgCost: number | null | undefined,
+  cost: number | null | undefined,
+): number => {
+  const avg = Number(avgCost);
+  if (Number.isFinite(avg) && avg > 0) return avg;
+  const c = Number(cost);
+  if (Number.isFinite(c) && c > 0) return c;
+  return 0;
+};
+
+const parseDirectMoneyDraft = (value: string): number => {
+  const n = parseFloat(String(value || "").replace(/[^\d.]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
+
+const inferDirectPriceType = (
+  unitPrice: number,
+  part?: Pick<DirectPartItem, "priceA" | "priceB">,
+): "A" | "B" | "" => {
+  if (!part) return "";
+  if (part.priceA != null && Math.abs(unitPrice - part.priceA) < 0.01) return "A";
+  if (part.priceB != null && Math.abs(unitPrice - part.priceB) < 0.01) return "B";
+  return "";
+};
+
+const pickDirectLinePrice = (
+  part: DirectPartItem,
+  customerPriceType: "A" | "B" | null,
+): { selectedPriceType: "A" | "B" | ""; unitPrice: string } => {
+  if (customerPriceType === "A" && part.priceA != null) {
+    return { selectedPriceType: "A", unitPrice: String(part.priceA) };
+  }
+  if (customerPriceType === "B" && part.priceB != null) {
+    return { selectedPriceType: "B", unitPrice: String(part.priceB) };
+  }
+  if (part.priceA != null) {
+    return { selectedPriceType: "A", unitPrice: String(part.priceA) };
+  }
+  if (part.priceB != null) {
+    return { selectedPriceType: "B", unitPrice: String(part.priceB) };
+  }
+  return { selectedPriceType: "", unitPrice: "" };
+};
 
 const formatDisplayDate = (value?: string | Date | null) => {
   if (!value) return "—";
@@ -209,15 +281,27 @@ function mapApiSalesReturn(row: any): SalesReturn {
     }
   }
 
-  const saleType =
-    inv.customerType === "walking" ? "Walk-in" : "Sale";
+  const isDirectReturn = Boolean(row.isDirectReturn);
+  const saleType = isDirectReturn
+    ? row.customerType === "registered"
+      ? "Party (direct)"
+      : "Walk-in (direct)"
+    : inv.customerType === "walking"
+      ? "Walk-in"
+      : "Sale";
+
+  const customerName = isDirectReturn
+    ? String(
+        row.legacyCustomerName || row.Customer?.name || "",
+      ).trim() || "—"
+    : String(inv.customerName || "").trim() || "—";
 
   return {
     id: String(row.id),
     salesInvoiceId: String(row.salesInvoiceId || "").trim(),
     invoiceNo: String(row.returnNumber || "").trim() || String(row.id),
     returnDate,
-    customerName: String(inv.customerName || "").trim() || "—",
+    customerName,
     remarks: row.reason != null && String(row.reason).trim() !== ""
       ? String(row.reason)
       : "—",
@@ -228,9 +312,14 @@ function mapApiSalesReturn(row: any): SalesReturn {
     amountAfterDiscount: net,
     saleType,
     items,
-    originalInvoiceNo: inv.invoiceNo
-      ? String(inv.invoiceNo)
-      : undefined,
+    originalInvoiceNo: isDirectReturn
+      ? row.legacyInvoiceNo
+        ? String(row.legacyInvoiceNo)
+        : undefined
+      : inv.invoiceNo
+        ? String(inv.invoiceNo)
+        : undefined,
+    isDirectReturn,
     status: row.status != null ? String(row.status) : undefined,
   };
 }
@@ -239,7 +328,7 @@ export const SalesReturns = () => {
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [selectedReturns, setSelectedReturns] = useState<string[]>([]);
   const [loadingReturns, setLoadingReturns] = useState(false);
-  const [availableItems, setAvailableItems] = useState<{ id: string; name: string; partNo: string }[]>([]);
+  const [availableItems, setAvailableItems] = useState<DirectPartItem[]>([]);
   const [availableCustomers, setAvailableCustomers] = useState<{ id: string; name: string }[]>([]);
 
   // Filter states
@@ -264,6 +353,44 @@ export const SalesReturns = () => {
   const [actionSubmittingId, setActionSubmittingId] = useState<string | null>(
     null,
   );
+
+  const [isDirectReturnOpen, setIsDirectReturnOpen] = useState(false);
+  const [editingDirectReturnId, setEditingDirectReturnId] = useState<
+    string | null
+  >(null);
+  const [editingDirectReturnNo, setEditingDirectReturnNo] = useState("");
+  const [loadingDirectReturnEdit, setLoadingDirectReturnEdit] = useState(false);
+  const [submittingDirectReturn, setSubmittingDirectReturn] = useState(false);
+  const [directLegacyInvoiceNo, setDirectLegacyInvoiceNo] = useState("");
+  const [directReturnDate, setDirectReturnDate] = useState(
+    () => new Date().toISOString().split("T")[0],
+  );
+  const [directCustomerType, setDirectCustomerType] = useState<
+    "walking" | "registered"
+  >("walking");
+  const [directCustomerId, setDirectCustomerId] = useState("");
+  const [directCustomerName, setDirectCustomerName] = useState("");
+  const [directTaxPct, setDirectTaxPct] = useState("0");
+  const [directReason, setDirectReason] = useState("");
+  const [directPaymentAccountId, setDirectPaymentAccountId] = useState("");
+  const [directDeductionDraft, setDirectDeductionDraft] = useState("");
+  const [directRefundPaidDraft, setDirectRefundPaidDraft] = useState("");
+  const [directRefundPaidTouched, setDirectRefundPaidTouched] = useState(false);
+  const [directLines, setDirectLines] = useState<DirectReturnLine[]>([
+    { id: "1", partId: "", returnQty: "", unitPrice: "", selectedPriceType: "" },
+  ]);
+  const [directCustomerPriceType, setDirectCustomerPriceType] = useState<
+    "A" | "B" | null
+  >(null);
+  const [directCustomers, setDirectCustomers] = useState<
+    { id: string; name: string; priceType: "A" | "B" | "M" | null }[]
+  >([]);
+  const [customerOptions, setCustomerOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [refundAccountOptions, setRefundAccountOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
 
   // Simple pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -329,14 +456,36 @@ export const SalesReturns = () => {
           partsDataArray = response.data as any[];
         }
 
-        const transformedItems = partsDataArray
+        const transformedItems: DirectPartItem[] = partsDataArray
           .filter((p: any) => p.status === 'active' || !p.status)
-          .map((p: any) => ({
-            id: p.id,
-            name: String(p.description || p.part_no || '').trim() || 'No description',
-            partNo: String(p.part_no || p.partNo || '').trim(),
-          }))
-          .filter((item: any) => item.partNo && item.partNo.trim() !== '');
+          .map((p: any) => {
+            const priceARaw = p.price_a ?? p.priceA;
+            const priceBRaw = p.price_b ?? p.priceB;
+            const priceA =
+              priceARaw != null && priceARaw !== ""
+                ? Number(priceARaw)
+                : null;
+            const priceB =
+              priceBRaw != null && priceBRaw !== ""
+                ? Number(priceBRaw)
+                : null;
+            const avgCost = Number(p.avg_cost ?? p.avgCost) || 0;
+            const cost = Number(p.cost) || 0;
+            return {
+              id: p.id,
+              name: String(p.description || p.part_no || '').trim() || 'No description',
+              partNo: String(p.part_no || p.partNo || '').trim(),
+              masterPartNo: String(
+                p.master_part_no || p.masterPartNo || '',
+              ).trim(),
+              brand: String(p.brand_name || p.brand || '').trim(),
+              priceA: Number.isFinite(priceA) ? priceA : null,
+              priceB: Number.isFinite(priceB) ? priceB : null,
+              avgCost,
+              cost,
+            };
+          })
+          .filter((item) => item.partNo && item.partNo.trim() !== '');
 
         setAvailableItems(transformedItems);
       } catch (error: any) {
@@ -345,6 +494,450 @@ export const SalesReturns = () => {
 
     fetchItems();
   }, []);
+
+  useEffect(() => {
+    if (!isDirectReturnOpen) return;
+    void (async () => {
+      try {
+        const [custRes, accRes] = await Promise.all([
+          apiClient.getCustomers({ limit: 2000, page: 1 }),
+          apiClient.getAccounts({ status: "Active" }),
+        ]);
+        const custRaw = Array.isArray(custRes)
+          ? custRes
+          : (custRes as { data?: unknown[] })?.data || [];
+        const customers = (custRaw as any[])
+          .map((c) => {
+            const pt = c.priceType || c.price_type || null;
+            const priceType =
+              pt === "A" || pt === "B" || pt === "M" ? pt : null;
+            return {
+              id: String(c.id),
+              name: String(c.name || c.companyName || "").trim(),
+              priceType,
+            };
+          })
+          .filter((c) => c.name);
+        setDirectCustomers(customers);
+        setCustomerOptions(
+          customers.map((c) => ({
+            value: c.id,
+            label: c.priceType ? `${c.name} (Price ${c.priceType})` : c.name,
+          })),
+        );
+        const accRaw = Array.isArray(accRes)
+          ? accRes
+          : (accRes as { data?: unknown[] })?.data || [];
+        setRefundAccountOptions(
+          (accRaw as any[])
+            .filter((acc) => {
+              const sg = String(acc.Subgroup?.code || "").trim();
+              return sg.startsWith("102") || sg.startsWith("103");
+            })
+            .map((acc) => ({
+              value: String(acc.id),
+              label: `${acc.code ? `${acc.code} — ` : ""}${acc.name || ""}`,
+            })),
+        );
+      } catch {
+        setDirectCustomers([]);
+        setCustomerOptions([]);
+        setRefundAccountOptions([]);
+      }
+    })();
+  }, [isDirectReturnOpen]);
+
+  const directPartOptions = useMemo(
+    () =>
+      availableItems.map((item) => ({
+        value: item.id,
+        label: `${item.masterPartNo || "—"} | ${item.partNo}`,
+        description: item.name,
+        listOnlyDescription: item.brand || undefined,
+      })),
+    [availableItems],
+  );
+
+  const directReturnTotals = useMemo(() => {
+    let subtotal = 0;
+    for (const line of directLines) {
+      const qty = parseInt(line.returnQty, 10) || 0;
+      const price = parseFloat(line.unitPrice) || 0;
+      if (qty > 0 && price >= 0) subtotal += qty * price;
+    }
+    subtotal = Math.round(subtotal * 100) / 100;
+    const taxPct = parseFloat(directTaxPct) || 0;
+    const tax =
+      taxPct > 0
+        ? Math.round(subtotal * (taxPct / 100) * 100) / 100
+        : 0;
+    const grossAfterTax = Math.round((subtotal + tax) * 100) / 100;
+    const maxDeduction = grossAfterTax;
+    let deduction = parseDirectMoneyDraft(directDeductionDraft);
+    if (deduction > maxDeduction) deduction = maxDeduction;
+    if (deduction < 0) deduction = 0;
+    deduction = Math.round(deduction * 100) / 100;
+    const net = Math.round((grossAfterTax - deduction) * 100) / 100;
+    return { subtotal, tax, grossAfterTax, deduction, maxDeduction, net };
+  }, [directLines, directTaxPct, directDeductionDraft]);
+
+  useEffect(() => {
+    if (!isDirectReturnOpen || directCustomerType !== "walking") return;
+    if (directRefundPaidTouched) return;
+    const net = directReturnTotals.net;
+    setDirectRefundPaidDraft(net > 0 ? String(net) : "");
+  }, [
+    isDirectReturnOpen,
+    directCustomerType,
+    directReturnTotals.net,
+    directRefundPaidTouched,
+  ]);
+
+  useEffect(() => {
+    if (!isDirectReturnOpen || !editingDirectReturnId) return;
+    if (directCustomerType === "registered" && directCustomerId) {
+      const customer = directCustomers.find((c) => c.id === directCustomerId);
+      if (customer?.priceType === "A" || customer?.priceType === "B") {
+        setDirectCustomerPriceType(customer.priceType);
+      }
+    }
+    if (!availableItems.length) return;
+    setDirectLines((prev) =>
+      prev.map((line) => {
+        if (!line.partId || line.selectedPriceType) return line;
+        const part = availableItems.find((p) => p.id === line.partId);
+        const unitPrice = parseFloat(line.unitPrice) || 0;
+        const selectedPriceType = inferDirectPriceType(unitPrice, part);
+        return selectedPriceType ? { ...line, selectedPriceType } : line;
+      }),
+    );
+  }, [
+    isDirectReturnOpen,
+    editingDirectReturnId,
+    availableItems,
+    directCustomers,
+    directCustomerId,
+    directCustomerType,
+  ]);
+
+  const applyDirectCustomerPriceType = (customerId: string) => {
+    const customer = directCustomers.find((c) => c.id === customerId);
+    const pt =
+      customer?.priceType === "A" || customer?.priceType === "B"
+        ? customer.priceType
+        : null;
+    setDirectCustomerPriceType(pt);
+    if (!pt) return;
+    setDirectLines((prev) =>
+      prev.map((row) => {
+        if (!row.partId) return row;
+        const part = availableItems.find((p) => p.id === row.partId);
+        if (!part) return { ...row, selectedPriceType: pt };
+        const picked = pickDirectLinePrice(part, pt);
+        return { ...row, ...picked };
+      }),
+    );
+  };
+
+  const handleDirectLinePartChange = (lineId: string, partId: string) => {
+    const part = availableItems.find((p) => p.id === partId);
+    setDirectLines((prev) =>
+      prev.map((row) => {
+        if (row.id !== lineId) return row;
+        if (!part) {
+          return {
+            ...row,
+            partId,
+            unitPrice: "",
+            selectedPriceType: "",
+          };
+        }
+        const picked = pickDirectLinePrice(part, directCustomerPriceType);
+        return { ...row, partId, ...picked };
+      }),
+    );
+  };
+
+  const resetDirectReturnForm = () => {
+    setEditingDirectReturnId(null);
+    setEditingDirectReturnNo("");
+    setDirectCustomerPriceType(null);
+    setDirectLegacyInvoiceNo("");
+    setDirectReturnDate(new Date().toISOString().split("T")[0]);
+    setDirectCustomerType("walking");
+    setDirectCustomerId("");
+    setDirectCustomerName("");
+    setDirectTaxPct("0");
+    setDirectReason("");
+    setDirectPaymentAccountId("");
+    setDirectDeductionDraft("");
+    setDirectRefundPaidDraft("");
+    setDirectRefundPaidTouched(false);
+    setDirectLines([
+      { id: "1", partId: "", returnQty: "", unitPrice: "", selectedPriceType: "" },
+    ]);
+  };
+
+  const populateDirectReturnFormFromApi = (row: Record<string, unknown>) => {
+    setDirectLegacyInvoiceNo(String(row.legacyInvoiceNo || ""));
+    if (row.returnDate) {
+      try {
+        setDirectReturnDate(
+          new Date(String(row.returnDate)).toISOString().split("T")[0],
+        );
+      } catch {
+        setDirectReturnDate(new Date().toISOString().split("T")[0]);
+      }
+    }
+    const ct = row.customerType === "registered" ? "registered" : "walking";
+    setDirectCustomerType(ct);
+    const customerId = String(row.customerId || "");
+    setDirectCustomerId(customerId);
+    if (ct === "registered" && customerId) {
+      const customer = directCustomers.find((c) => c.id === customerId);
+      setDirectCustomerPriceType(
+        customer?.priceType === "A" || customer?.priceType === "B"
+          ? customer.priceType
+          : null,
+      );
+    } else {
+      setDirectCustomerPriceType(null);
+    }
+    const customer = row.Customer as { name?: string } | undefined;
+    setDirectCustomerName(
+      String(row.legacyCustomerName || customer?.name || ""),
+    );
+    setDirectTaxPct(String(row.taxPercentage ?? 0));
+    const reason =
+      row.reason != null && String(row.reason).trim()
+        ? String(row.reason)
+        : "";
+    setDirectReason(reason);
+    setDirectPaymentAccountId(String(row.paymentAccountId || ""));
+    const ded = Number(row.deduction) || 0;
+    setDirectDeductionDraft(ded > 0 ? String(ded) : "");
+    const paid = Number(row.paidAmount) || 0;
+    setDirectRefundPaidDraft(paid > 0 ? String(paid) : "");
+    setDirectRefundPaidTouched(paid > 0);
+    const items = Array.isArray(row.SalesReturnItem) ? row.SalesReturnItem : [];
+    const lines: DirectReturnLine[] = items.map(
+      (it: Record<string, unknown>, idx: number) => {
+        const partId = String(it.partId || "");
+        const unitPrice = Number(it.originalSalePrice) || 0;
+        const part = availableItems.find((p) => p.id === partId);
+        return {
+          id: String(it.id || idx + 1),
+          partId,
+          returnQty: String(it.returnQuantity ?? ""),
+          unitPrice: String(it.originalSalePrice ?? ""),
+          selectedPriceType: inferDirectPriceType(unitPrice, part),
+          unitCostSnapshot: Number(it.avgCost) || 0,
+        };
+      },
+    );
+    setDirectLines(
+      lines.length > 0
+        ? lines
+        : [
+            {
+              id: "1",
+              partId: "",
+              returnQty: "",
+              unitPrice: "",
+              selectedPriceType: "",
+            },
+          ],
+    );
+  };
+
+  const handleEditDirectReturn = async (returnItem: SalesReturn) => {
+    if (!returnItem.isDirectReturn || returnItem.status !== "pending") return;
+    setLoadingDirectReturnEdit(true);
+    try {
+      const row = (await apiClient.getSalesReturn(returnItem.id)) as Record<
+        string,
+        unknown
+      > & { error?: string };
+      if (row?.error) throw new Error(row.error);
+      resetDirectReturnForm();
+      populateDirectReturnFormFromApi(row);
+      setEditingDirectReturnId(returnItem.id);
+      setEditingDirectReturnNo(
+        String(row.returnNumber || returnItem.invoiceNo || ""),
+      );
+      setIsDirectReturnOpen(true);
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load direct return";
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingDirectReturnEdit(false);
+    }
+  };
+
+  const handleSubmitDirectReturn = async () => {
+    const legacyNo = directLegacyInvoiceNo.trim();
+    if (!legacyNo) {
+      toast({
+        title: "Legacy invoice required",
+        description: "Enter the original invoice number from the old system.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (directCustomerType === "walking" && !directCustomerName.trim()) {
+      toast({
+        title: "Customer name required",
+        description: "Enter the customer name for this walk-in return.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (directCustomerType === "registered" && !directCustomerId) {
+      toast({
+        title: "Customer required",
+        description: "Select the registered customer for this return.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const items: {
+      part_id: string;
+      return_quantity: number;
+      unit_price: number;
+    }[] = [];
+    for (const line of directLines) {
+      const qty = parseInt(line.returnQty, 10) || 0;
+      const price = parseFloat(line.unitPrice);
+      if (!line.partId || qty <= 0) continue;
+      if (!Number.isFinite(price) || price < 0) {
+        toast({
+          title: "Invalid price",
+          description: "Each line needs a valid unit price.",
+          variant: "destructive",
+        });
+        return;
+      }
+      items.push({
+        part_id: line.partId,
+        return_quantity: qty,
+        unit_price: price,
+      });
+    }
+    if (items.length === 0) {
+      toast({
+        title: "No items",
+        description: "Add at least one item with return quantity.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const net = directReturnTotals.net;
+    const deduction = directReturnTotals.deduction;
+    const isWalking = directCustomerType === "walking";
+    let refundPaid = 0;
+    if (isWalking) {
+      if (net > 0) {
+        if (!directPaymentAccountId) {
+          toast({
+            title: "Refund account required",
+            description:
+              "Select cash or bank account to refund the walk-in customer.",
+            variant: "destructive",
+          });
+          return;
+        }
+        refundPaid = net;
+      }
+    } else {
+      refundPaid = parseDirectMoneyDraft(directRefundPaidDraft);
+      refundPaid = Math.max(0, Math.min(refundPaid, net));
+      if (refundPaid > 0 && !directPaymentAccountId) {
+        toast({
+          title: "Payment account required",
+          description:
+            "Select cash or bank account when entering an amount to pay the customer.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (refundPaid <= 0 && directPaymentAccountId) {
+        toast({
+          title: "Amount required",
+          description:
+            "Enter the amount to pay the customer or clear the payment account.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setSubmittingDirectReturn(true);
+    try {
+      const payload: Parameters<typeof apiClient.createDirectSalesReturn>[0] = {
+        legacy_invoice_no: legacyNo,
+        return_date: directReturnDate,
+        reason: directReason.trim() || undefined,
+        customer_type: directCustomerType,
+        customer_id:
+          directCustomerType === "registered" ? directCustomerId : undefined,
+        legacy_customer_name:
+          directCustomerType === "walking"
+            ? directCustomerName.trim()
+            : directCustomerName.trim() || undefined,
+        tax_percentage: parseFloat(directTaxPct) || 0,
+        items,
+      };
+      if (deduction > 0) payload.deduction = deduction;
+      if (refundPaid > 0 && directPaymentAccountId) {
+        payload.paid_amount = refundPaid;
+        payload.payment_account_id = directPaymentAccountId;
+      }
+
+      const res = editingDirectReturnId
+        ? ((await apiClient.updateDirectSalesReturn(
+            editingDirectReturnId,
+            payload,
+          )) as { error?: string; message?: string })
+        : ((await apiClient.createDirectSalesReturn(
+            payload,
+          )) as { error?: string; message?: string });
+
+      if (res?.error) throw new Error(res.error);
+
+      toast({
+        title: editingDirectReturnId
+          ? "Direct return updated"
+          : "Direct return created",
+        description:
+          res?.message ||
+          (editingDirectReturnId
+            ? "Changes saved. Approve when ready to post stock and accounts."
+            : "Return saved as pending. Approve it from this list to post stock and accounts."),
+      });
+      setIsDirectReturnOpen(false);
+      resetDirectReturnForm();
+      await loadReturns();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description:
+          error?.message ||
+          (editingDirectReturnId
+            ? "Failed to update direct return"
+            : "Failed to create direct return"),
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingDirectReturn(false);
+    }
+  };
 
   // Extract unique customers from returns for filter dropdown
   useEffect(() => {
@@ -624,11 +1217,11 @@ export const SalesReturns = () => {
               .invoice-title { text-align: right; }
               .invoice-title h1 { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
               .invoice-title p { font-size: 12px; margin: 3px 0; }
-              .customer-section { background-color: #f97316; color: white; padding: 6px 12px; font-weight: bold; font-size: 12px; margin-bottom: 0; }
+              .customer-section { background-color: #1664da; color: white; padding: 6px 12px; font-weight: bold; font-size: 12px; margin-bottom: 0; }
               .customer-details { padding: 10px 12px; border: 1px solid #ddd; border-top: none; margin-bottom: 15px; }
               .customer-details p { margin: 3px 0; font-size: 12px; }
               table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-              th { background-color: #f97316; color: white; padding: 8px; text-align: left; font-size: 11px; font-weight: 600; }
+              th { background-color: #1664da; color: white; padding: 8px; text-align: left; font-size: 11px; font-weight: 600; }
               td { border: 1px solid #ddd; padding: 8px; font-size: 11px; }
               tr:nth-child(even) { background-color: #f9f9f9; }
               .totals-section { display: flex; justify-content: space-between; margin-top: 20px; }
@@ -735,11 +1328,26 @@ export const SalesReturns = () => {
       {/* Header */}
       <Card className="shadow-sm">
         <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <RotateCcw className="w-5 h-5 text-primary" />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <RotateCcw className="w-5 h-5 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold text-foreground">
+                Return Sale Orders
+              </h2>
             </div>
-            <h2 className="text-xl font-semibold text-foreground">Return Sale Orders</h2>
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={() => {
+                resetDirectReturnForm();
+                setIsDirectReturnOpen(true);
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              Direct Return
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -849,7 +1457,19 @@ export const SalesReturns = () => {
                         />
                       </TableCell>
                       <TableCell className="text-xs">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
-                      <TableCell className="text-xs font-medium">{returnItem.invoiceNo}</TableCell>
+                      <TableCell className="text-xs font-medium">
+                        <div className="flex flex-col gap-0.5">
+                          <span>{returnItem.invoiceNo}</span>
+                          {returnItem.isDirectReturn ? (
+                            <Badge
+                              variant="outline"
+                              className="w-fit text-[10px] px-1 py-0"
+                            >
+                              Direct
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-xs">{returnItem.returnDate}</TableCell>
                       <TableCell className="text-xs">{returnItem.customerName}</TableCell>
                       <TableCell className="text-xs">{returnItem.remarks || "-"}</TableCell>
@@ -873,6 +1493,27 @@ export const SalesReturns = () => {
                           </ActionButtonTooltip>
                           {returnItem.status === "pending" && (
                             <>
+                              {returnItem.isDirectReturn ? (
+                                <ActionButtonTooltip
+                                  label="Edit direct return"
+                                  variant="view"
+                                >
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                    disabled={
+                                      loadingDirectReturnEdit ||
+                                      actionSubmittingId === returnItem.id
+                                    }
+                                    onClick={() =>
+                                      void handleEditDirectReturn(returnItem)
+                                    }
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                </ActionButtonTooltip>
+                              ) : null}
                               <ActionButtonTooltip
                                 label="Approve return"
                                 variant="view"
@@ -926,13 +1567,25 @@ export const SalesReturns = () => {
                               </DropdownMenuTrigger>
                             </ActionButtonTooltip>
                             <DropdownMenuContent align="end" className="bg-card border-border">
-                              <DropdownMenuItem
-                                onClick={() => handleViewOriginalInvoice(returnItem)}
-                                className="text-xs cursor-pointer"
-                              >
-                                <FileText className="w-4 h-4 mr-2" />
-                                View Original Invoice
-                              </DropdownMenuItem>
+                              {!returnItem.isDirectReturn ? (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    handleViewOriginalInvoice(returnItem)
+                                  }
+                                  className="text-xs cursor-pointer"
+                                >
+                                  <FileText className="w-4 h-4 mr-2" />
+                                  View Original Invoice
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  disabled
+                                  className="text-xs opacity-60"
+                                >
+                                  <FileText className="w-4 h-4 mr-2" />
+                                  Legacy invoice (not in system)
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -998,8 +1651,18 @@ export const SalesReturns = () => {
                   <p className="font-medium">{selectedReturn.returnDate}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Invoice No:</p>
+                  <p className="text-muted-foreground">
+                    {selectedReturn.isDirectReturn
+                      ? "Return / legacy invoice:"
+                      : "Invoice No:"}
+                  </p>
                   <p className="font-medium">{selectedReturn.invoiceNo}</p>
+                  {selectedReturn.isDirectReturn &&
+                  selectedReturn.originalInvoiceNo ? (
+                    <p className="text-[10px] text-muted-foreground">
+                      Legacy ref: {selectedReturn.originalInvoiceNo}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <p className="text-muted-foreground">Sale Type:</p>
@@ -1418,6 +2081,528 @@ export const SalesReturns = () => {
             >
               {actionSubmittingId ? "Working…" : "Reject return"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isDirectReturnOpen}
+        onOpenChange={(open) => {
+          setIsDirectReturnOpen(open);
+          if (!open) resetDirectReturnForm();
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingDirectReturnId
+                ? "Edit direct return"
+                : "Direct Return (legacy invoice)"}
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              {editingDirectReturnId
+                ? `Update pending return ${editingDirectReturnNo || ""} before approval. Stock and accounts post only when you approve.`
+                : "Use when the original sale was in the older system and there is no invoice in this app. Stock and accounts are posted when you approve the return from the list."}
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Legacy invoice no *</Label>
+                <Input
+                  className="h-9 text-xs"
+                  placeholder="e.g. 1834"
+                  value={directLegacyInvoiceNo}
+                  onChange={(e) => setDirectLegacyInvoiceNo(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Return date *</Label>
+                <Input
+                  type="date"
+                  className="h-9 text-xs"
+                  value={directReturnDate}
+                  onChange={(e) => setDirectReturnDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Sale type *</Label>
+                <Select
+                  value={directCustomerType}
+                  onValueChange={(v) => {
+                    const next = v as "walking" | "registered";
+                    setDirectCustomerType(next);
+                    if (next === "walking") {
+                      setDirectCustomerPriceType(null);
+                      setDirectCustomerId("");
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="walking">Walk-in (cash sale)</SelectItem>
+                    <SelectItem value="registered">Party sale</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {directCustomerType === "walking" ? (
+                <div className="space-y-1 sm:col-span-2">
+                  <Label className="text-xs">Customer name *</Label>
+                  <Input
+                    className="h-9 text-xs"
+                    value={directCustomerName}
+                    onChange={(e) => setDirectCustomerName(e.target.value)}
+                    placeholder="Customer name"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1 sm:col-span-2">
+                  <Label className="text-xs">Customer *</Label>
+                  <SearchableSelect
+                    options={customerOptions}
+                    value={directCustomerId}
+                    onValueChange={(v) => {
+                      setDirectCustomerId(v);
+                      applyDirectCustomerPriceType(v);
+                    }}
+                    placeholder="Search customer…"
+                    className="h-9 text-xs"
+                  />
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label className="text-xs">GST %</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="h-9 text-xs"
+                  value={directTaxPct}
+                  onChange={(e) => setDirectTaxPct(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-3">
+                <Label className="text-xs">Reason (optional)</Label>
+                <Textarea
+                  className="text-xs min-h-[64px]"
+                  value={directReason}
+                  onChange={(e) => setDirectReason(e.target.value)}
+                  placeholder="Notes about this legacy return…"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40">
+                    <TableHead className="text-xs min-w-[180px]">Part</TableHead>
+                    <TableHead className="text-xs w-[100px] text-right">
+                      Return qty
+                    </TableHead>
+                    <TableHead className="text-xs w-[88px] text-center">
+                      Price A
+                    </TableHead>
+                    <TableHead className="text-xs w-[88px] text-center">
+                      Price B
+                    </TableHead>
+                    <TableHead className="text-xs w-[120px] text-right">
+                      Unit price
+                    </TableHead>
+                    <TableHead className="text-xs w-[100px] text-right">
+                      Line total
+                    </TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {directLines.map((line) => {
+                    const qty = parseInt(line.returnQty, 10) || 0;
+                    const price = parseFloat(line.unitPrice) || 0;
+                    const lineTotal = Math.round(qty * price * 100) / 100;
+                    const part = availableItems.find((p) => p.id === line.partId);
+                    const priceAValue = part?.priceA ?? null;
+                    const priceBValue = part?.priceB ?? null;
+                    const returnUnitCost = part
+                      ? resolveDirectReturnUnitCost(part.avgCost, part.cost)
+                      : line.unitCostSnapshot ?? 0;
+                    const returnCostSource =
+                      part && part.avgCost > 0
+                        ? "avg"
+                        : part && part.cost > 0
+                          ? "cost"
+                          : returnUnitCost > 0
+                            ? "saved"
+                            : null;
+                    return (
+                      <TableRow key={line.id}>
+                        <TableCell className="align-top">
+                          <div className="space-y-1 min-w-[220px]">
+                            <SearchableSelect
+                              options={directPartOptions}
+                              value={line.partId}
+                              onValueChange={(v) =>
+                                handleDirectLinePartChange(line.id, v)
+                              }
+                              placeholder="Search master part, part no, brand…"
+                              className="h-8 text-xs"
+                              selectedDisplayLabelOnly
+                            />
+                            {line.partId ? (
+                              <div className="text-[10px] leading-snug text-muted-foreground space-y-0.5">
+                                <p className="tabular-nums">
+                                  Avg cost:{" "}
+                                  {part && part.avgCost > 0
+                                    ? part.avgCost.toLocaleString()
+                                    : "—"}
+                                </p>
+                                <p className="tabular-nums">
+                                  Cost price:{" "}
+                                  {part && part.cost > 0
+                                    ? part.cost.toLocaleString()
+                                    : "—"}
+                                </p>
+                                <p
+                                  className={
+                                    returnUnitCost > 0
+                                      ? "tabular-nums font-medium text-foreground"
+                                      : "text-destructive"
+                                  }
+                                >
+                                  Return cost:{" "}
+                                  {returnUnitCost > 0
+                                    ? `${returnUnitCost.toLocaleString()} (${
+                                        returnCostSource === "avg"
+                                          ? "uses avg"
+                                          : returnCostSource === "cost"
+                                            ? "uses cost"
+                                            : "saved"
+                                      })`
+                                    : "Missing — set avg or cost on part"}
+                                </p>
+                              </div>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={1}
+                            className="h-8 text-xs text-right"
+                            value={line.returnQty}
+                            onChange={(e) =>
+                              setDirectLines((prev) =>
+                                prev.map((row) =>
+                                  row.id === line.id
+                                    ? { ...row, returnQty: e.target.value }
+                                    : row,
+                                ),
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {priceAValue == null ? (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant={
+                                line.selectedPriceType === "A"
+                                  ? "default"
+                                  : "outline"
+                              }
+                              size="sm"
+                              className="h-8 w-full min-w-0 px-1 text-xs"
+                              onClick={() =>
+                                setDirectLines((prev) =>
+                                  prev.map((row) =>
+                                    row.id === line.id
+                                      ? {
+                                          ...row,
+                                          selectedPriceType: "A",
+                                          unitPrice: String(priceAValue),
+                                        }
+                                      : row,
+                                  ),
+                                )
+                              }
+                            >
+                              {priceAValue.toLocaleString()}
+                            </Button>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {priceBValue == null ? (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant={
+                                line.selectedPriceType === "B"
+                                  ? "default"
+                                  : "outline"
+                              }
+                              size="sm"
+                              className="h-8 w-full min-w-0 px-1 text-xs"
+                              onClick={() =>
+                                setDirectLines((prev) =>
+                                  prev.map((row) =>
+                                    row.id === line.id
+                                      ? {
+                                          ...row,
+                                          selectedPriceType: "B",
+                                          unitPrice: String(priceBValue),
+                                        }
+                                      : row,
+                                  ),
+                                )
+                              }
+                            >
+                              {priceBValue.toLocaleString()}
+                            </Button>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            className="h-8 text-xs text-right"
+                            value={line.unitPrice}
+                            onChange={(e) =>
+                              setDirectLines((prev) =>
+                                prev.map((row) =>
+                                  row.id === line.id
+                                    ? {
+                                        ...row,
+                                        unitPrice: e.target.value,
+                                        selectedPriceType: "",
+                                      }
+                                    : row,
+                                ),
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="text-xs text-right tabular-nums">
+                          {lineTotal.toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive"
+                            disabled={directLines.length <= 1}
+                            onClick={() =>
+                              setDirectLines((prev) =>
+                                prev.filter((row) => row.id !== line.id),
+                              )
+                            }
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              onClick={() =>
+                setDirectLines((prev) => [
+                  ...prev,
+                  {
+                    id: String(Date.now()),
+                    partId: "",
+                    returnQty: "",
+                    unitPrice: "",
+                    selectedPriceType: "",
+                  },
+                ])
+              }
+            >
+              <Plus className="w-4 h-4" />
+              Add item
+            </Button>
+
+            <div className="rounded-md border bg-muted/20 px-3 py-3 text-sm space-y-2">
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium tabular-nums">
+                  Rs {directReturnTotals.subtotal.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                <span className="text-muted-foreground">GST</span>
+                <span className="font-medium tabular-nums">
+                  Rs {directReturnTotals.tax.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-border pt-2">
+                <span className="text-muted-foreground">
+                  Total (incl. tax, before deduction)
+                </span>
+                <span className="font-medium tabular-nums">
+                  Rs {directReturnTotals.grossAfterTax.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-1">
+                <Label className="text-xs text-muted-foreground shrink-0">
+                  Deduction
+                </Label>
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    className="h-9 w-36 text-right text-xs tabular-nums"
+                    placeholder="0"
+                    value={directDeductionDraft}
+                    onChange={(e) => {
+                      let v = e.target.value.replace(/[^\d.]/g, "");
+                      const dot = v.indexOf(".");
+                      if (dot !== -1) {
+                        v =
+                          v.slice(0, dot + 1) +
+                          v.slice(dot + 1).replace(/\./g, "");
+                      }
+                      setDirectDeductionDraft(v);
+                    }}
+                    onBlur={() => {
+                      const cap = directReturnTotals.maxDeduction;
+                      let d = parseDirectMoneyDraft(directDeductionDraft);
+                      if (d > cap) d = cap;
+                      setDirectDeductionDraft(d > 0 ? String(d) : "");
+                    }}
+                  />
+                  <span className="text-[10px] text-muted-foreground">
+                    Max Rs {directReturnTotals.maxDeduction.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-border pt-2 font-semibold">
+                <span>Net return total</span>
+                <span className="tabular-nums text-primary">
+                  Rs {directReturnTotals.net.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-md border bg-muted/20 px-3 py-3 text-sm">
+              <p className="font-medium text-foreground">
+                {directCustomerType === "walking"
+                  ? "Refund to customer (walk-in)"
+                  : "Refund to customer (on approve)"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {directCustomerType === "walking"
+                  ? directReturnTotals.net > 0
+                    ? "Amount to pay matches the net return. Choose the cash or bank account to refund from."
+                    : "Add return line items to see the refund amount."
+                  : `Enter an amount to pay on approve, up to the net return (Rs ${directReturnTotals.net.toLocaleString()}). Leave blank for no payment.`}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    Cash / bank account
+                    {directCustomerType === "walking" &&
+                    directReturnTotals.net > 0
+                      ? " *"
+                      : ""}
+                  </Label>
+                  <SearchableSelect
+                    options={refundAccountOptions}
+                    value={directPaymentAccountId}
+                    onValueChange={setDirectPaymentAccountId}
+                    placeholder={
+                      directCustomerType === "walking" &&
+                      directReturnTotals.net <= 0
+                        ? "—"
+                        : "Select cash or bank…"
+                    }
+                    className="h-9 text-xs"
+                    disabled={
+                      directCustomerType === "walking" &&
+                      directReturnTotals.net <= 0
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Amount to pay</Label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    readOnly={directCustomerType === "walking"}
+                    className={
+                      directCustomerType === "walking"
+                        ? "h-9 text-xs text-right tabular-nums bg-muted/50 cursor-default"
+                        : "h-9 text-xs text-right tabular-nums"
+                    }
+                    placeholder="0"
+                    value={
+                      directCustomerType === "walking"
+                        ? directReturnTotals.net > 0
+                          ? String(directReturnTotals.net)
+                          : ""
+                        : directRefundPaidDraft
+                    }
+                    onChange={(e) => {
+                      if (directCustomerType === "walking") return;
+                      let v = e.target.value.replace(/[^\d.]/g, "");
+                      const dot = v.indexOf(".");
+                      if (dot !== -1) {
+                        v =
+                          v.slice(0, dot + 1) +
+                          v.slice(dot + 1).replace(/\./g, "");
+                      }
+                      setDirectRefundPaidDraft(v);
+                      setDirectRefundPaidTouched(true);
+                    }}
+                    onBlur={() => {
+                      if (directCustomerType === "walking") return;
+                      const cap = directReturnTotals.net;
+                      let p = parseDirectMoneyDraft(directRefundPaidDraft);
+                      if (p > cap) p = cap;
+                      setDirectRefundPaidDraft(p > 0 ? String(p) : "");
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDirectReturnOpen(false)}
+                disabled={submittingDirectReturn}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSubmitDirectReturn()}
+                disabled={submittingDirectReturn || loadingDirectReturnEdit}
+              >
+                {submittingDirectReturn
+                  ? "Saving…"
+                  : editingDirectReturnId
+                    ? "Save changes"
+                    : "Save direct return"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -90,7 +90,7 @@ const roleColors: Record<string, string> = {
   Admin: "bg-violet-100 text-violet-700",
   Manager: "bg-blue-100 text-blue-700",
   Staff: "bg-emerald-100 text-emerald-700",
-  Accountant: "bg-orange-100 text-orange-700",
+  Accountant: "bg-primary/15 text-primary",
   Viewer: "bg-gray-100 text-gray-700",
 };
 

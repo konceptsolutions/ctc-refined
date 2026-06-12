@@ -333,7 +333,7 @@ export const ReceivableReminders = () => {
       overdue: "bg-red-500 text-white",
       reminded: "bg-yellow-500 text-white",
       rescheduled: "bg-blue-500 text-white",
-      disputed: "bg-orange-500 text-white",
+      disputed: "bg-primary text-white",
     };
     return styles[status] || "bg-muted text-muted-foreground";
   };
@@ -381,7 +381,7 @@ export const ReceivableReminders = () => {
             <p className="text-xl font-bold text-white">{formatCurrency(totalReceivedAmount)}</p>
           </CardContent>
         </Card>
-        <Card className="bg-orange-400 border-0">
+        <Card className="bg-primary border-0">
           <CardContent className="p-4 text-center">
             <p className="text-xs text-white/70 mb-1">Overdue Invoices</p>
             <p className="text-xl font-bold text-white">{overdueCount}</p>
@@ -450,7 +450,7 @@ export const ReceivableReminders = () => {
                   <TableHead className="font-semibold">Term</TableHead>
                   <TableHead className="font-semibold">Due Date</TableHead>
                   <TableHead className="text-right font-semibold">Balance</TableHead>
-                  <TableHead className="text-center font-semibold text-orange-600">Days Overdue</TableHead>
+                  <TableHead className="text-center font-semibold text-primary">Days Overdue</TableHead>
                   <TableHead className="text-center font-semibold">Reminders</TableHead>
                   <TableHead className="text-center font-semibold">Status</TableHead>
                   <TableHead className="text-center font-semibold">Actions</TableHead>
@@ -498,7 +498,7 @@ export const ReceivableReminders = () => {
                     </TableCell>
                     <TableCell className="text-center">
                       {item.daysOverdue > 0 ? (
-                        <span className="text-orange-600 font-medium">{item.daysOverdue} days</span>
+                        <span className="text-primary font-medium">{item.daysOverdue} days</span>
                       ) : (
                         <span className="text-green-600">Current</span>
                       )}
@@ -507,7 +507,7 @@ export const ReceivableReminders = () => {
                       <div className="flex items-center justify-center gap-1">
                         <span className={cn(
                           "inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium",
-                          item.remindersSent > 0 ? "bg-orange-100 text-orange-600" : "bg-muted text-muted-foreground"
+                          item.remindersSent > 0 ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
                         )}>
                           {item.remindersSent}
                         </span>
@@ -526,7 +526,7 @@ export const ReceivableReminders = () => {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-orange-500 hover:text-orange-600 hover:bg-orange-50"
+                          className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
                           onClick={() => openReminderDialog(item)}
                           title="Send Reminder"
                         >
@@ -638,7 +638,7 @@ export const ReceivableReminders = () => {
               </div>
 
               <div className="flex gap-3 pt-2">
-                <Button onClick={handleRecordPayment} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white">
+                <Button onClick={handleRecordPayment} className="flex-1 bg-primary hover:bg-primary/90 text-white">
                   Record Payment
                 </Button>
                 <Button variant="outline" onClick={() => setIsPaymentOpen(false)}>
@@ -703,7 +703,7 @@ export const ReceivableReminders = () => {
               </div>
 
               <div className="flex gap-3 pt-2">
-                <Button onClick={handleReschedule} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white">
+                <Button onClick={handleReschedule} className="flex-1 bg-primary hover:bg-primary/90 text-white">
                   Reschedule
                 </Button>
                 <Button variant="outline" onClick={() => setIsRescheduleOpen(false)}>
@@ -735,7 +735,7 @@ export const ReceivableReminders = () => {
                   onClick={() => setReminderType("sms")}
                   className={cn(
                     "flex-1",
-                    reminderType === "sms" ? "bg-orange-500 hover:bg-orange-600" : "border-orange-500 text-orange-500"
+                    reminderType === "sms" ? "bg-primary hover:bg-primary/90" : "border-primary text-primary"
                   )}
                 >
                   SMS
@@ -746,7 +746,7 @@ export const ReceivableReminders = () => {
                   onClick={() => setReminderType("email")}
                   className={cn(
                     "flex-1",
-                    reminderType === "email" ? "bg-orange-500 hover:bg-orange-600" : "border-orange-500 text-orange-500"
+                    reminderType === "email" ? "bg-primary hover:bg-primary/90" : "border-primary text-primary"
                   )}
                 >
                   EMAIL
@@ -757,7 +757,7 @@ export const ReceivableReminders = () => {
                   onClick={() => setReminderType("whatsapp")}
                   className={cn(
                     "flex-1",
-                    reminderType === "whatsapp" ? "bg-orange-500 hover:bg-orange-600" : ""
+                    reminderType === "whatsapp" ? "bg-primary hover:bg-primary/90" : ""
                   )}
                 >
                   WHATSAPP
@@ -778,7 +778,7 @@ export const ReceivableReminders = () => {
                     className={cn(
                       "p-3 border rounded-lg cursor-pointer transition-all",
                       selectedTemplate === template.id
-                        ? "border-orange-500 bg-orange-50"
+                        ? "border-primary bg-primary/10"
                         : "border-border hover:border-muted-foreground"
                     )}
                   >

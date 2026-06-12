@@ -275,6 +275,16 @@ export const SalesInquiry = () => {
     return partIdMap[part.partNo] || null;
   };
 
+  const resolvePartStockQty = (
+    p: any,
+    stockMapData: Record<string, number>,
+  ): number => {
+    const fromParts = Number(p.current_stock ?? p.currentStock);
+    if (Number.isFinite(fromParts)) return fromParts;
+    if (stockMapData[p.id] !== undefined) return stockMapData[p.id];
+    return 0;
+  };
+
   // Correctly transform parts based on project convention (Swapped)
   const transformPart = (p: any, rackMapData: Record<string, string>, stockMapData: Record<string, number>): PartDetail => {
     // Format numbers properly
@@ -313,7 +323,7 @@ export const SalesInquiry = () => {
       status: (p.status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
       rackNo: rackMapData[p.id] || 'N/A',
       reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
-      quantity: stockMapData[p.id] !== undefined ? stockMapData[p.id] : 0,
+      quantity: resolvePartStockQty(p, stockMapData),
       reservedQty: Number(p.reserved_stock ?? p.reservedStock ?? p.reservedQty ?? 0) || 0,
     };
   };
@@ -1163,22 +1173,22 @@ export const SalesInquiry = () => {
       try {
         const [partResponse, stockResponse] = await Promise.all([
           apiClient.getPart(part.id).catch(() => ({ data: {}, error: 'Failed to fetch' })),
-          apiClient.getStockBalance(part.id).catch(() => ({ current_stock: 0, error: null }))
+          apiClient.getPartCostLookup(part.id).catch(() => ({ current_stock: 0, error: null }))
         ]);
 
         const p = (partResponse as any).data || partResponse;
         const stockData = (stockResponse as any).data || stockResponse;
-        const normalizedFetchedQty = Number(
-          (stockData as any).available_stock ??
-            (stockData as any).available_quantity ??
+        const fetchedQty = Math.max(
+          0,
+          Number(
             (stockData as any).current_stock ??
-            (stockData as any).qty,
+              (p as any).current_stock ??
+              (p as any).currentStock ??
+              part.quantity ??
+              0,
+          ),
         );
-        const fetchedQty = Number.isFinite(normalizedFetchedQty)
-          ? Math.max(0, normalizedFetchedQty)
-          : null;
-        const listQty = Math.max(0, Number(part.quantity || 0));
-        const bestQty = fetchedQty === null ? listQty : Math.max(fetchedQty, listQty);
+        const bestQty = fetchedQty;
 
         // Fetch and transform models as well
         const apiModels = p?.models || [];
@@ -1365,18 +1375,12 @@ export const SalesInquiry = () => {
     if (!partId) return;
     setLoadingStockBalances((prev) => ({ ...prev, [partId]: true }));
     try {
-      const resp: any = await apiClient.getStockBalance(partId);
+      const resp: any = await apiClient.getPartCostLookup(partId);
       const data = resp?.data || resp || {};
-      const current = Number(
-        data.current_stock ?? data.currentStock ?? data.stock ?? 0,
-      );
-      const reserved = Number(
-        data.reserved_stock ?? data.reservedStock ?? data.reserved ?? 0,
-      );
-      const available = Number.isFinite(
-        Number(data.available_stock ?? data.availableStock ?? data.available),
-      )
-        ? Number(data.available_stock ?? data.availableStock ?? data.available)
+      const current = Number(data.current_stock ?? 0);
+      const reserved = Number(data.reserved_stock ?? 0);
+      const available = Number.isFinite(Number(data.available_stock))
+        ? Number(data.available_stock)
         : Math.max(0, current - reserved);
       const avgCost = Number(data.avg_cost ?? data.avgCost ?? 0);
       setPartStockBalances((prev) => ({
@@ -1692,7 +1696,7 @@ export const SalesInquiry = () => {
             status: (p.status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
             rackNo: rackMapData[p.id] || 'N/A',
             reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
-            quantity: stockMapData[p.id] !== undefined ? stockMapData[p.id] : 0,
+            quantity: resolvePartStockQty(p, stockMapData),
           };
         })
         .filter((p: PartDetail) => p.partNo && p.partNo.trim() !== '');
@@ -2947,7 +2951,7 @@ export const SalesInquiry = () => {
                             </span>
                           </TableCell>
                           <TableCell className="text-center align-top">
-                            <span className="text-sm font-semibold text-orange-600">
+                            <span className="text-sm font-semibold text-primary">
                               {!row.partId
                                 ? "-"
                                 : stockLoading
