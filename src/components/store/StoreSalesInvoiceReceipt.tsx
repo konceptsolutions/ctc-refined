@@ -27,6 +27,13 @@ import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 
+interface InvoiceRackShelfEntry {
+  storeId?: string | null;
+  rackId?: string | null;
+  shelfId?: string | null;
+  quantity?: number;
+}
+
 interface SalesInvoiceItem {
   id: string;
   partId: string;
@@ -37,12 +44,78 @@ interface SalesInvoiceItem {
   unitPrice: number;
   avgCost?: number;
   lineTotal: number;
+  invoiceRackShelf?: InvoiceRackShelfEntry[];
 }
 
 interface PartLocationOption {
   id: string;
   label: string;
+  storeId?: string | null;
+  rackId?: string | null;
+  shelfId?: string | null;
+  isUnlocated?: boolean;
+  quantity?: number;
 }
+
+const pickDefaultLocationPrsId = (
+  partId: string,
+  locOptions: PartLocationOption[],
+  invoiceAssignments?: InvoiceRackShelfEntry[],
+  previousOut?: {
+    storeId?: string | null;
+    rackId?: string | null;
+    shelfId?: string | null;
+  },
+): string => {
+  if (!locOptions.length) return "";
+
+  const matchTriplet = (
+    storeId?: string | null,
+    rackId?: string | null,
+    shelfId?: string | null,
+  ) =>
+    locOptions.find(
+      (option) =>
+        String(option.storeId ?? "") === String(storeId ?? "") &&
+        String(option.rackId ?? "") === String(rackId ?? "") &&
+        String(option.shelfId ?? "") === String(shelfId ?? ""),
+    )?.id;
+
+  if (previousOut) {
+    const previousMatch = matchTriplet(
+      previousOut.storeId,
+      previousOut.rackId,
+      previousOut.shelfId,
+    );
+    if (previousMatch) return previousMatch;
+    if (!previousOut.rackId && !previousOut.shelfId && !previousOut.storeId) {
+      const unallocated = locOptions.find((option) =>
+        String(option.id).startsWith(`unallocated-${partId}`),
+      );
+      if (unallocated) return unallocated.id;
+    }
+  }
+
+  if (invoiceAssignments?.length) {
+    const bestAssignment = [...invoiceAssignments].sort(
+      (a, b) => Number(b.quantity || 0) - Number(a.quantity || 0),
+    )[0];
+    const assignmentMatch = matchTriplet(
+      bestAssignment.storeId,
+      bestAssignment.rackId,
+      bestAssignment.shelfId,
+    );
+    if (assignmentMatch) return assignmentMatch;
+  }
+
+  const located = locOptions.filter(
+    (option) =>
+      !option.isUnlocated && !String(option.id).startsWith("unallocated-"),
+  );
+  if (located.length > 0) return located[0].id;
+
+  return locOptions[0].id;
+};
 
 interface SalesInvoice {
   id: string;
@@ -75,6 +148,13 @@ export const StoreSalesInvoiceReceipt = ({
   const [partLocationsByPartId, setPartLocationsByPartId] = useState<
     Record<string, PartLocationOption[]>
   >({});
+  const [priorOutLocationByItemId, setPriorOutLocationByItemId] = useState<
+    Record<
+      string,
+      { storeId?: string | null; rackId?: string | null; shelfId?: string | null }
+    >
+  >({});
+  const [priorLocationsReady, setPriorLocationsReady] = useState(false);
   const [selectedPrsByItemId, setSelectedPrsByItemId] = useState<
     Record<string, string>
   >({});
@@ -94,6 +174,8 @@ export const StoreSalesInvoiceReceipt = ({
       });
       setDeliveryQuantities(initial);
       setSelectedPrsByItemId({});
+      setPriorOutLocationByItemId({});
+      setPriorLocationsReady(false);
       setPartStockInfo({});
       setLoadingPartStock({});
     }
@@ -129,7 +211,15 @@ export const StoreSalesInvoiceReceipt = ({
                 } else {
                   label = `${l.store || "—"} · ${l.rack || l.rack_code || "—"} / ${l.shelf || l.shelf_no || "—"}`;
                 }
-                return { id: idStr, label };
+                return {
+                  id: idStr,
+                  label,
+                  storeId: l.storeId ?? null,
+                  rackId: l.rackId ?? null,
+                  shelfId: l.shelfId ?? null,
+                  isUnlocated: Boolean(l.isUnlocated),
+                  quantity: Number(l.quantity || 0),
+                };
               });
             return [pid, locs] as [string, PartLocationOption[]];
           } catch {
@@ -145,6 +235,86 @@ export const StoreSalesInvoiceReceipt = ({
       cancelled = true;
     };
   }, [open, invoice.id, invoice.items]);
+
+  useEffect(() => {
+    if (!open || !invoice.items?.length) return;
+    if (!invoice.items.some((item) => item.deliveredQty > 0)) {
+      setPriorOutLocationByItemId({});
+      setPriorLocationsReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    setPriorLocationsReady(false);
+    void (async () => {
+      try {
+        const res = await apiClient.getStockMovements({
+          type: "out",
+          limit: 500,
+        });
+        if (cancelled) return;
+        const movements = Array.isArray((res as any)?.data) ? (res as any).data : [];
+        const next: Record<
+          string,
+          { storeId?: string | null; rackId?: string | null; shelfId?: string | null }
+        > = {};
+
+        for (const item of invoice.items!) {
+          if (item.deliveredQty <= 0) continue;
+          const priorMovement = movements.find(
+            (movement: any) =>
+              String(movement.reference_id || "") === String(invoice.id) &&
+              String(movement.reference_type || "") === "sales_invoice" &&
+              String(movement.part_id || "") === String(item.partId),
+          );
+          if (!priorMovement) continue;
+          next[item.id] = {
+            storeId: priorMovement.store_id ?? null,
+            rackId: priorMovement.rack_id ?? null,
+            shelfId: priorMovement.shelf_id ?? null,
+          };
+        }
+
+        setPriorOutLocationByItemId(next);
+      } catch {
+        if (!cancelled) {
+          setPriorOutLocationByItemId({});
+        }
+      } finally {
+        if (!cancelled) {
+          setPriorLocationsReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, invoice.id, invoice.items]);
+
+  useEffect(() => {
+    if (!open || !invoice.items?.length || !priorLocationsReady) return;
+    if (Object.keys(partLocationsByPartId).length === 0) return;
+
+    const defaults: Record<string, string> = {};
+    for (const item of invoice.items!) {
+      const pendingQty = item.orderedQty - item.deliveredQty;
+      if (pendingQty <= 0) continue;
+
+      const locOptions = partLocationsByPartId[String(item.partId)] || [];
+      const defaultId = pickDefaultLocationPrsId(
+        String(item.partId),
+        locOptions,
+        item.invoiceRackShelf,
+        priorOutLocationByItemId[item.id],
+      );
+      if (defaultId) {
+        defaults[item.id] = defaultId;
+      }
+    }
+
+    setSelectedPrsByItemId(defaults);
+  }, [open, invoice.items, partLocationsByPartId, priorOutLocationByItemId, priorLocationsReady]);
 
   useEffect(() => {
     if (!open || !invoice.items?.length) return;

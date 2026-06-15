@@ -154,6 +154,27 @@ All colors MUST be HSL.
   [data-highlighted] :is(.text-muted-foreground, [class*="text-muted-foreground"]) {
     color: hsl(var(--accent-foreground));
   }
+
+  /*
+   * Action menus / icon buttons: blue text or icons on blue hover backgrounds.
+   */
+  .hover\:bg-accent:hover :is(.text-primary, .text-primary\/80, .text-primary\/10),
+  .bg-accent.text-accent-foreground :is(.text-primary, .text-primary\/80, .text-primary\/10),
+  .focus\:bg-accent:focus :is(.text-primary, .text-primary\/80, .text-primary\/10),
+  [cmdk-item][data-selected="true"] :is(.text-primary, .text-primary\/80, .text-primary\/10),
+  [data-highlighted] :is(.text-primary, .text-primary\/80, .text-primary\/10),
+  .hover\:bg-accent:hover:is(.text-primary, .text-primary\/80, .text-primary\/10),
+  .bg-accent:is(.text-primary, .text-primary\/80, .text-primary\/10),
+  .focus\:bg-accent:focus:is(.text-primary, .text-primary\/80, .text-primary\/10),
+  [data-highlighted]:is(.text-primary, .text-primary\/80, .text-primary\/10) {
+    color: hsl(var(--accent-foreground));
+  }
+
+  .hover\:bg-primary:hover:is(.text-primary, .text-primary\/80, .text-primary\/10),
+  .hover\:bg-primary:hover :is(.text-primary, .text-primary\/80, .text-primary\/10),
+  .bg-primary:is(.text-primary, .text-primary\/80, .text-primary\/10) {
+    color: hsl(var(--primary-foreground));
+  }
 }
 
 /* Default "Caps Lock" behavior for the whole system (with safe exclusions). */

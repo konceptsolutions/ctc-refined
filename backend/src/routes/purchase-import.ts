@@ -529,6 +529,7 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
       batchRows.find((row: any) => row.id === requestId) ?? batchRows[0];
     const items = (selectedBatchRow?.PurchaseImportRequestItem || []).map(
       (item: any) => ({
+        id: item.id,
         partId: item.partId,
         demandQuantity:
           Number(item.khiQuantity || 0) +

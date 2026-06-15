@@ -901,6 +901,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             deliveredQty: item.deliveredQty || item.delivered_qty || 0,
             unitPrice: item.unitPrice || item.unit_price || 0,
             lineTotal: item.lineTotal || item.line_total || 0,
+            invoiceRackShelf: Array.isArray(item.InvoiceRackShelf)
+              ? item.InvoiceRackShelf.map((irs: any) => ({
+                  storeId: irs.storeId ?? irs.store_id ?? null,
+                  rackId: irs.rackId ?? irs.rack_id ?? null,
+                  shelfId: irs.shelfId ?? irs.shelf_id ?? null,
+                  quantity: Number(irs.quantity || 0),
+                }))
+              : [],
           })),
         };
         setSelectedStockOutOrder(orderWithItems as StockOutOrder);

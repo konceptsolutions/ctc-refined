@@ -4,7 +4,6 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
   ArrowRightLeft,
   Truck,
   BarChart3,
@@ -24,7 +23,6 @@ import {
 import { StockInOut } from "@/components/inventory/StockInOut";
 import { StockBalance } from "@/components/inventory/StockBalance";
 import { AdjustItem } from "@/components/inventory/AdjustItem";
-import { InventoryDashboard } from "@/components/inventory/InventoryDashboard";
 import { MultiDimensionalReport } from "@/components/inventory/MultiDimensionalReport";
 import { StockAnalysis } from "@/components/inventory/StockAnalysis";
 import { StockVerification } from "@/components/inventory/StockVerification";
@@ -57,8 +55,10 @@ interface TabConfig {
   description: string;
 }
 
+const defaultInventoryTab: InventoryTab = "current-stock";
+
 const tabs: TabConfig[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview & analytics" },
+  // { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview & analytics" }, // Hidden temporarily
   { id: "current-stock", label: "Current Stock", icon: Package, description: "View current stock with prices" },
   { id: "store-management", label: "Store Management", icon: Store, description: "Manage stores & locations" },
   { id: "stock-in-out", label: "Stock In/Out", icon: ArrowRightLeft, description: "Record stock movements" },
@@ -83,7 +83,7 @@ const Inventory = () => {
 
   const activeTab: InventoryTab = availableTabs.some((t) => t.id === tab)
     ? (tab as InventoryTab)
-    : (isStoreUser ? "current-stock" : "dashboard");
+    : defaultInventoryTab;
 
   // Ensure /inventory redirects to the default dedicated page.
   useEffect(() => {
@@ -93,15 +93,15 @@ const Inventory = () => {
       }
       return;
     }
-    if (!tab) navigate("/inventory/dashboard", { replace: true });
+    if (!tab || !tabs.some((t) => t.id === tab)) {
+      navigate(`/inventory/${defaultInventoryTab}`, { replace: true });
+    }
   }, [tab, navigate, isStoreUser]);
 
   const handleTabChange = (tabId: InventoryTab) => navigate(`/inventory/${tabId}`);
 
   const renderContent = () => {
     switch (activeTab) {
-      case "dashboard":
-        return <InventoryDashboard />;
       case "current-stock":
         return <CurrentStock />;
       case "store-management":
@@ -126,7 +126,7 @@ const Inventory = () => {
         return <DPOReturn />;
 
       default:
-        return <InventoryDashboard />;
+        return <CurrentStock />;
     }
   };
 

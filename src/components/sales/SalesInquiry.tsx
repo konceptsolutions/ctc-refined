@@ -327,6 +327,10 @@ export const SalesInquiry = () => {
   // Stable cache for parts brought in from external panels (alternates,
   // associations) so they aren't wiped by the debounced item-search effect
   // that resets `searchResults`.
+  const [lookupRowSearchResults, setLookupRowSearchResults] = useState<
+    PartDetail[]
+  >([]);
+  const [lookupRowSearchLoading, setLookupRowSearchLoading] = useState(false);
   const [externalLookupParts, setExternalLookupParts] = useState<PartDetail[]>(
     [],
   );
@@ -368,7 +372,7 @@ export const SalesInquiry = () => {
         const [partsResponse, balancesResponse] = await Promise.all([
           apiClient.getParts({
             status: 'active',
-            limit: 1000,
+            limit: 'all',
             page: 1
           }).catch((err: any) => {
             return { error: err.message || 'Failed to fetch parts', data: [] };
@@ -445,7 +449,7 @@ export const SalesInquiry = () => {
       try {
         const response: any = await apiClient.getParts({
           search: itemSearch,
-          limit: 50,
+          limit: 'all',
           status: 'active'
         });
 
@@ -743,7 +747,7 @@ export const SalesInquiry = () => {
     } else {
       filtered = [...filtered].sort(compareStockPriority);
     }
-    return filtered.slice(0, 150);
+    return filtered;
   }, [itemSearch, partsData, searchResults, partStockBalances, getPartStockDisplay]);
 
   // Pool of parts available to lookup rows (local + on-demand search results
@@ -756,8 +760,51 @@ export const SalesInquiry = () => {
     externalLookupParts.forEach((res) => {
       if (!pool.find((p) => p.id === res.id)) pool.push(res);
     });
+    lookupRowSearchResults.forEach((res) => {
+      if (!pool.find((p) => p.id === res.id)) pool.push(res);
+    });
     return pool;
-  }, [partsData, searchResults, externalLookupParts]);
+  }, [partsData, searchResults, externalLookupParts, lookupRowSearchResults]);
+
+  const activeLookupSearch = useMemo(() => {
+    for (const row of lookupRows) {
+      if (showLookupRowDropdown[row.id]) {
+        return (row.search || "").trim();
+      }
+    }
+    return "";
+  }, [lookupRows, showLookupRowDropdown]);
+
+  // Server search for lookup-row dropdown (parts beyond the in-memory catalog).
+  useEffect(() => {
+    if (activeLookupSearch.length < 2) {
+      setLookupRowSearchResults([]);
+      setLookupRowSearchLoading(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLookupRowSearchLoading(true);
+      try {
+        const response: any = await apiClient.getParts({
+          search: activeLookupSearch,
+          limit: "all",
+          status: "active",
+        });
+        const data = Array.isArray(response)
+          ? response
+          : response?.data || [];
+        const transformed = data.map((p: any) => transformPart(p, rackMap));
+        setLookupRowSearchResults(transformed);
+      } catch {
+        setLookupRowSearchResults([]);
+      } finally {
+        setLookupRowSearchLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [activeLookupSearch, rackMap]);
 
   // Top-level filter option memos (each filter is computed against the others
   // so the dropdowns stay coherent).
@@ -938,7 +985,7 @@ export const SalesInquiry = () => {
         list = [...list].sort(compareStockPriority);
       }
 
-      return list.slice(0, 150);
+      return list;
     },
     [
       lookupRows,
@@ -1652,7 +1699,7 @@ export const SalesInquiry = () => {
       const [partsResponse, balancesResponse] = await Promise.all([
         apiClient.getParts({
           status: 'active',
-          limit: 10000,
+          limit: 'all',
           page: 1
         }),
         apiClient.getStockBalances({ limit: 10000 }).catch(() => ({ data: [], error: null }))
@@ -2878,7 +2925,7 @@ export const SalesInquiry = () => {
                                     }}
                                     onMouseDown={(e) => e.preventDefault()}
                                   >
-                                    {loadingParts ? (
+                                    {loadingParts || lookupRowSearchLoading ? (
                                       <div className="px-4 py-3 text-sm text-muted-foreground text-center">
                                         Loading items...
                                       </div>
