@@ -31,6 +31,7 @@ export interface Voucher {
   id: string;
   voucherNumber: string;
   type: "receipt" | "payment" | "journal" | "contra";
+  mode?: "cash" | "online";
   date: string;
   narration: string;
   cashBankAccount: string;
@@ -146,14 +147,6 @@ export const VoucherManagement = () => {
         label: `${acc.code} - ${acc.name}`
       }));
   }, [rawAccounts]);
-
-  const formattedMainGroups = useMemo(() => {
-    return mainGroups.map(mg => ({ value: mg.id, label: `${mg.code} - ${mg.name}` }));
-  }, [mainGroups]);
-
-  const formattedSubgroups = useMemo(() => {
-    return subgroups.map(sg => ({ value: sg.id, label: `${sg.code} - ${sg.name}` }));
-  }, [subgroups]);
 
   // Fetch all data
   useEffect(() => {
@@ -765,8 +758,6 @@ export const VoucherManagement = () => {
           onAddSubgroup={handleAddSubgroup}
           onAddAccount={handleAddAccount}
           onSearch={handleSearch}
-          mainGroups={formattedMainGroups}
-          subGroups={formattedSubgroups}
         />
       )}
 

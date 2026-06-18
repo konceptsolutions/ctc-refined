@@ -63,6 +63,22 @@ const normalizeConsignee = (value: any): "ISB" | "KHI" | "Other" | null => {
   return null;
 };
 
+const normalizeRequestDate = (value: unknown): Date => {
+  if (value === undefined || value === null) return new Date();
+  const raw = String(value).trim();
+  if (!raw) return new Date();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [year, month, day] = raw.split("-").map(Number);
+    const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+  return new Date();
+};
+
 const resolveRequestConsignee = async (
   purchaseImportRequestModel: any,
   row: { batchId: string; consignee?: string | null },
@@ -353,6 +369,7 @@ router.post("/requests", async (req: Request, res: Response) => {
         : "";
     const rawConsignee = req.body?.consignee;
     const consignee = normalizeConsignee(rawConsignee);
+    const requestDate = normalizeRequestDate(req.body?.requestDate);
 
     const supplierIds = normalizeSupplierIds(supplierIdsRaw);
     const items = normalizeItems(itemsRaw);
@@ -435,7 +452,7 @@ router.post("/requests", async (req: Request, res: Response) => {
             consignee,
             status: "pending",
             notes: notes || null,
-            createdAt: new Date(),
+            createdAt: requestDate,
             updatedAt: new Date(),
           },
         });
@@ -455,7 +472,7 @@ router.post("/requests", async (req: Request, res: Response) => {
             otherQuantity: item.otherQuantity,
             weight,
             totalWeight,
-            createdAt: new Date(),
+            createdAt: requestDate,
             updatedAt: new Date(),
           };
         });
@@ -595,6 +612,13 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
         : "";
     const rawConsignee = req.body?.consignee;
     const consignee = normalizeConsignee(rawConsignee);
+    const hasRequestDate =
+      req.body?.requestDate !== undefined &&
+      req.body?.requestDate !== null &&
+      String(req.body.requestDate).trim() !== "";
+    const requestDate = hasRequestDate
+      ? normalizeRequestDate(req.body.requestDate)
+      : null;
 
     if (items.length === 0) {
       return res
@@ -667,6 +691,13 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
     let itemRecordCount = 0;
 
     await prisma.$transaction(async (tx) => {
+      if (requestDate) {
+        await (tx as any).purchaseImportRequest.updateMany({
+          where: { batchId },
+          data: { createdAt: requestDate, updatedAt: new Date() },
+        });
+      }
+
       const existingBatchRequests = await (tx as any).purchaseImportRequest.findMany({
         where: { batchId },
         orderBy: { createdAt: "asc" },
@@ -730,7 +761,7 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
             consignee,
             status: "pending",
             notes: notes || null,
-            createdAt: new Date(),
+            createdAt: requestDate || new Date(),
             updatedAt: new Date(),
           },
         });
@@ -774,7 +805,7 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
             otherQuantity: item.otherQuantity,
             weight,
             totalWeight,
-            createdAt: new Date(),
+            createdAt: requestDate || new Date(),
             updatedAt: new Date(),
           };
         });
@@ -1256,7 +1287,7 @@ router.get("/quotations", async (req: Request, res: Response) => {
     const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
     const limit = Math.max(
       1,
-      Math.min(100, parseInt(String(req.query.limit || "20"), 10) || 20),
+      Math.min(1000, parseInt(String(req.query.limit || "50"), 10) || 50),
     );
     const skip = (page - 1) * limit;
 
@@ -1793,7 +1824,7 @@ router.get("/requests", async (req: Request, res: Response) => {
     const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
     const limit = Math.max(
       1,
-      Math.min(100, parseInt(String(req.query.limit || "20"), 10) || 20),
+      Math.min(1000, parseInt(String(req.query.limit || "50"), 10) || 50),
     );
     const skip = (page - 1) * limit;
 

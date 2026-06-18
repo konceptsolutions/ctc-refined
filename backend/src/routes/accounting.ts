@@ -966,6 +966,294 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
   }
 });
 
+// ========== Daily Closing (Cash & Bank) ==========
+const cashBankAccountWhere = {
+  status: "Active" as const,
+  AND: [
+    {
+      Subgroup: {
+        MainGroup: { type: { in: ["Asset", "asset"] } },
+      },
+    },
+    {
+      OR: [
+        { Subgroup: { name: { contains: "Cash", mode: "insensitive" as const } } },
+        { Subgroup: { name: { contains: "Bank", mode: "insensitive" as const } } },
+      ],
+    },
+    {
+      NOT: {
+        Subgroup: {
+          name: { contains: "Receivable", mode: "insensitive" as const },
+        },
+      },
+    },
+  ],
+};
+
+router.get("/daily-closing/accounts", async (_req: Request, res: Response) => {
+  try {
+    const accounts = await prisma.account.findMany({
+      where: cashBankAccountWhere,
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        Subgroup: { select: { name: true, code: true } },
+      },
+      orderBy: [{ Subgroup: { code: "asc" } }, { code: "asc" }],
+    });
+
+    const options = accounts.map((account) => ({
+      id: account.id,
+      code: account.code,
+      name: account.name,
+      label: `${account.code} - ${account.name}`,
+      subgroupName: account.Subgroup?.name || "",
+    }));
+
+    res.json({ data: options });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/daily-closing", async (req: Request, res: Response) => {
+  try {
+    const dateStr = String(req.query.date || "").trim();
+    const accountIdsParam = String(req.query.account_ids || "").trim();
+    const singleAccountId = String(
+      req.query.account_id || req.query.accountId || "",
+    ).trim();
+
+    const accountIds = accountIdsParam
+      ? accountIdsParam
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : singleAccountId
+        ? [singleAccountId]
+        : Array.isArray(req.query.account_id)
+          ? (req.query.account_id as string[]).map(String).filter(Boolean)
+          : [];
+
+    if (!dateStr) {
+      return res.status(400).json({ error: "date is required (YYYY-MM-DD)" });
+    }
+
+    const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+    const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+
+    const accounts = await prisma.account.findMany({
+      where: {
+        ...cashBankAccountWhere,
+        ...(accountIds.length > 0 ? { id: { in: accountIds } } : {}),
+      },
+      include: {
+        Subgroup: { include: { MainGroup: true } },
+        VoucherEntry: {
+          where: {
+            Voucher: {
+              status: "posted",
+              OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+            },
+          },
+          include: { Voucher: true },
+          orderBy: [{ Voucher: { date: "asc" } }, { sortOrder: "asc" }],
+        },
+      },
+      orderBy: [{ Subgroup: { code: "asc" } }, { code: "asc" }],
+    });
+
+    if (accountIds.length > 0) {
+      const foundIds = new Set(accounts.map((account) => account.id));
+      const hasInvalid = accountIds.some((id) => !foundIds.has(id));
+      if (hasInvalid || accounts.length === 0) {
+        return res.status(404).json({
+          error:
+            "One or more selected accounts are not valid active cash or bank accounts.",
+        });
+      }
+    }
+
+    const classifyCashBank = (subgroupName: string): "cash" | "bank" => {
+      const normalized = subgroupName.toLowerCase();
+      if (normalized.includes("bank")) return "bank";
+      return "cash";
+    };
+
+    const closingAccounts = accounts.map((account) => {
+      const accountType = account.Subgroup?.MainGroup?.type || "Asset";
+      let openingBalance = account.openingBalance;
+      let receipts = 0;
+      let payments = 0;
+      const dayEntries: Array<{
+        id: string;
+        date: Date;
+        voucherNumber: string;
+        voucherType: string;
+        description: string;
+        debit: number;
+        credit: number;
+        sortOrder: number;
+      }> = [];
+
+      for (const entry of account.VoucherEntry || []) {
+        const voucherDate = entry.Voucher.date;
+        const balanceChange = calculateBalanceChange(
+          entry.debit,
+          entry.credit,
+          accountType,
+        );
+
+        if (voucherDate < dayStart) {
+          openingBalance += balanceChange;
+        } else if (voucherDate >= dayStart && voucherDate <= dayEnd) {
+          const debit = Number(entry.debit || 0);
+          const credit = Number(entry.credit || 0);
+          receipts += debit;
+          payments += credit;
+          dayEntries.push({
+            id: entry.id,
+            date: voucherDate,
+            voucherNumber: entry.Voucher.voucherNumber,
+            voucherType: entry.Voucher.type,
+            description: entry.description || entry.Voucher.narration || "",
+            debit,
+            credit,
+            sortOrder: entry.sortOrder ?? 0,
+          });
+        }
+      }
+
+      const closingBalance = openingBalance + receipts - payments;
+
+      return {
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        subgroupCode: account.Subgroup?.code || "",
+        subgroupName: account.Subgroup?.name || "",
+        accountType: classifyCashBank(account.Subgroup?.name || ""),
+        openingBalance,
+        receipts,
+        payments,
+        closingBalance,
+        dayEntries,
+      };
+    });
+
+    const sortedAccounts = [...closingAccounts].sort((a, b) => {
+      if (a.accountType !== b.accountType) {
+        return a.accountType === "cash" ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    const columns = sortedAccounts.map((account) => ({
+      id: account.id,
+      code: account.code,
+      name: account.name,
+      accountType: account.accountType,
+    }));
+
+    const openingBalances: Record<string, number> = {};
+    const totalReceipts: Record<string, number> = {};
+    const totalPayments: Record<string, number> = {};
+    const closingBalances: Record<string, number> = {};
+
+    for (const account of sortedAccounts) {
+      openingBalances[account.id] = account.openingBalance;
+      totalReceipts[account.id] = account.receipts;
+      totalPayments[account.id] = account.payments;
+      closingBalances[account.id] = account.closingBalance;
+    }
+
+    type MatrixRow = {
+      voucherNumber: string;
+      description: string;
+      amounts: Record<string, number>;
+      sortDate: number;
+      sortOrder: number;
+    };
+
+    const receiptRows: MatrixRow[] = [];
+    const paymentRows: MatrixRow[] = [];
+
+    for (const account of sortedAccounts) {
+      for (const entry of account.dayEntries) {
+        if (entry.debit > 0) {
+          receiptRows.push({
+            voucherNumber: entry.voucherNumber,
+            description: entry.description,
+            amounts: { [account.id]: entry.debit },
+            sortDate: entry.date.getTime(),
+            sortOrder: entry.sortOrder,
+          });
+        }
+        if (entry.credit > 0) {
+          paymentRows.push({
+            voucherNumber: entry.voucherNumber,
+            description: entry.description,
+            amounts: { [account.id]: entry.credit },
+            sortDate: entry.date.getTime(),
+            sortOrder: entry.sortOrder,
+          });
+        }
+      }
+    }
+
+    const sortMatrixRows = (a: MatrixRow, b: MatrixRow) => {
+      if (a.sortDate !== b.sortDate) return a.sortDate - b.sortDate;
+      const vA = parseInt(String(a.voucherNumber).match(/(\d+)/)?.[1] || "0", 10);
+      const vB = parseInt(String(b.voucherNumber).match(/(\d+)/)?.[1] || "0", 10);
+      if (vA !== vB) return vA - vB;
+      return a.sortOrder - b.sortOrder;
+    };
+
+    receiptRows.sort(sortMatrixRows);
+    paymentRows.sort(sortMatrixRows);
+
+    const receipts = receiptRows.map((row, index) => ({
+      serialNo: index + 1,
+      voucherNumber: row.voucherNumber,
+      description: row.description,
+      amounts: row.amounts,
+    }));
+
+    const payments = paymentRows.map((row, index) => ({
+      serialNo: index + 1,
+      voucherNumber: row.voucherNumber,
+      description: row.description,
+      amounts: row.amounts,
+    }));
+
+    const sumRecord = (record: Record<string, number>) =>
+      Object.values(record).reduce((sum, value) => sum + Number(value || 0), 0);
+
+    res.json({
+      data: {
+        date: dateStr,
+        columns,
+        openingBalances,
+        receipts,
+        payments,
+        totalReceipts,
+        totalPayments,
+        closingBalances,
+        totals: {
+          openingBalance: sumRecord(openingBalances),
+          receipts: sumRecord(totalReceipts),
+          payments: sumRecord(totalPayments),
+          closingBalance: sumRecord(closingBalances),
+        },
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ========== Trial Balance ==========
 router.get("/trial-balance", async (req: Request, res: Response) => {
   try {

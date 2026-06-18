@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
@@ -42,6 +42,76 @@ const PURCHASE_QUOTATION_TERMS = [
   "CFR",
   "CIF",
 ] as const;
+
+const PURCHASE_IMPORT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
+
+type ListPaginationProps = {
+  currentPage: number;
+  itemsPerPage: number;
+  totalRecords: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+};
+
+const PurchaseImportListPagination = ({
+  currentPage,
+  itemsPerPage,
+  totalRecords,
+  onPageChange,
+  onPageSizeChange,
+}: ListPaginationProps) => {
+  const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
+
+  return (
+    <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-muted-foreground">
+        Showing{" "}
+        {totalRecords === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} to{" "}
+        {Math.min(currentPage * itemsPerPage, totalRecords)} of {totalRecords}{" "}
+        entries
+      </p>
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(itemsPerPage)}
+          onValueChange={(value) => onPageSizeChange(Number(value))}
+        >
+          <SelectTrigger className="h-8 w-24">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PURCHASE_IMPORT_PAGE_SIZE_OPTIONS.map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+        >
+          Previous
+        </Button>
+        <span className="text-sm">
+          Page {currentPage} of {totalPages}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages || totalRecords === 0}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 const tabs: TabConfig[] = [
   {
@@ -1268,6 +1338,7 @@ const PurchaseImportRequestForm = ({
         supplierIds: selectedSupplierIds,
         partReference,
         notes,
+        requestDate: inquiryDate,
         items: validItems.map((row) => ({
           partId: row.partId,
           demandQuantity: getInquiryRowDemandQuantity(row),
@@ -1976,9 +2047,10 @@ const PurchaseImportRequestForm = ({
             <Input
               type="date"
               value={inquiryDate}
-              disabled
-              readOnly
-              className="bg-muted/40"
+              onChange={(e) => setInquiryDate(e.target.value)}
+              disabled={isViewMode}
+              readOnly={isViewMode}
+              className={isViewMode ? "bg-muted/40" : undefined}
             />
           </div>
         </div>
@@ -3948,20 +4020,25 @@ const PurchaseImportRequestTab = () => {
   const [confirmingRequestId, setConfirmingRequestId] = useState<string | null>(null);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requests, setRequests] = useState<PurchaseImportRequestRecord[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [totalRecords, setTotalRecords] = useState(0);
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     setLoadingRequests(true);
     try {
       const response = await apiClient.getPurchaseImportRequests({
-        page: 1,
-        limit: 100,
+        page: currentPage,
+        limit: itemsPerPage,
       });
       const rows = Array.isArray((response as any)?.data)
         ? (response as any).data
         : Array.isArray(response)
           ? response
           : [];
+      const pagination = (response as any)?.pagination;
       setRequests(rows);
+      setTotalRecords(pagination?.total ?? rows.length);
     } catch (error: any) {
       toast({
         title: "Failed to load inquiries",
@@ -3971,7 +4048,7 @@ const PurchaseImportRequestTab = () => {
     } finally {
       setLoadingRequests(false);
     }
-  };
+  }, [currentPage, itemsPerPage, toast]);
 
   useEffect(() => {
     const editId = searchParams.get("edit");
@@ -3989,9 +4066,9 @@ const PurchaseImportRequestTab = () => {
 
   useEffect(() => {
     if (!showQuotationForm && requestView === "list") {
-      fetchRequests();
+      void fetchRequests();
     }
-  }, [showQuotationForm, requestView]);
+  }, [showQuotationForm, requestView, fetchRequests]);
 
   const handleConfirmRequest = async (requestId: string) => {
     const row = requests.find((r) => r.id === requestId);
@@ -4261,6 +4338,19 @@ const PurchaseImportRequestTab = () => {
           </tbody>
         </table>
       </div>
+
+          {!loadingRequests && totalRecords > 0 && (
+            <PurchaseImportListPagination
+              currentPage={currentPage}
+              itemsPerPage={itemsPerPage}
+              totalRecords={totalRecords}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => {
+                setItemsPerPage(size);
+                setCurrentPage(1);
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -4274,20 +4364,25 @@ const PurchaseQuotationTab = () => {
   const [loadingQuotations, setLoadingQuotations] = useState(false);
   const [updatingQuotationId, setUpdatingQuotationId] = useState<string | null>(null);
   const [quotations, setQuotations] = useState<PurchaseQuotationRecord[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [totalRecords, setTotalRecords] = useState(0);
 
-  const fetchQuotations = async () => {
+  const fetchQuotations = useCallback(async () => {
     setLoadingQuotations(true);
     try {
       const response = await apiClient.getPurchaseQuotations({
-        page: 1,
-        limit: 100,
+        page: currentPage,
+        limit: itemsPerPage,
       });
       const rows = Array.isArray((response as any)?.data)
         ? (response as any).data
         : Array.isArray(response)
           ? response
           : [];
+      const pagination = (response as any)?.pagination;
       setQuotations(rows);
+      setTotalRecords(pagination?.total ?? rows.length);
     } catch (error: any) {
       toast({
         title: "Failed to load quotations",
@@ -4297,11 +4392,11 @@ const PurchaseQuotationTab = () => {
     } finally {
       setLoadingQuotations(false);
     }
-  };
+  }, [currentPage, itemsPerPage, toast]);
 
   useEffect(() => {
-    fetchQuotations();
-  }, []);
+    void fetchQuotations();
+  }, [fetchQuotations]);
 
   const handleConfirmQuotation = async (quotationId: string) => {
     setUpdatingQuotationId(quotationId);
@@ -4449,6 +4544,19 @@ const PurchaseQuotationTab = () => {
           </tbody>
         </table>
       </div>
+
+      {!loadingQuotations && totalRecords > 0 && (
+        <PurchaseImportListPagination
+          currentPage={currentPage}
+          itemsPerPage={itemsPerPage}
+          totalRecords={totalRecords}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setItemsPerPage(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
     </div>
   );
 };

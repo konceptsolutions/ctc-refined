@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { format } from "date-fns";
 import { apiClient } from "@/lib/api";
 import { useNotifications } from "@/contexts/NotificationContext";
@@ -73,7 +73,7 @@ import { StoreEditSalesInvoice } from "./StoreEditSalesInvoice";
 import { StoreLocationAssign } from "./StoreLocationAssign";
 import { StoreAdjustedItem } from "./StoreAdjustedItem";
 import { printDeliveryChallan } from "@/lib/printDeliveryChallan";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { getUserRole, isStoreUserRole } from "@/utils/auth";
 
 interface DirectPurchaseOrderItem {
@@ -175,6 +175,14 @@ const mapApiDpoToStoreOrder = (order: any): DirectPurchaseOrder => ({
       : 0),
   expenses_count: order.expenses_count || order.expenses?.length || 0,
   created_at: order.created_at || order.createdAt,
+  items: Array.isArray(order.items)
+    ? order.items.map((item: any) => ({
+        id: String(item.id || ""),
+        partId: String(item.part_id || item.partId || ""),
+        part_id: String(item.part_id || item.partId || ""),
+        quantity: Number(item.quantity) || 0,
+      }))
+    : [],
 });
 
 interface Store {
@@ -195,6 +203,8 @@ interface PurchaseOrder {
   created_at: string;
   items?: Array<{
     id: string;
+    partId?: string;
+    part_id?: string;
     quantity: number;
   }>;
 }
@@ -235,6 +245,84 @@ interface StorePanelProps {
   onStoreChange?: (storeName: string) => void;
 }
 
+type StorePartOption = {
+  id: string;
+  partNo: string;
+  masterPartNo: string;
+  description: string;
+  brand: string;
+};
+
+const mapRowToStorePartOption = (row: any): StorePartOption | null => {
+  const id = String(row?.id || "").trim();
+  if (!id) return null;
+
+  const partNo = String(row.part_no || row.partNo || "").trim();
+  const masterPartNo = String(row.master_part_no || row.masterPartNo || "").trim();
+  if (!partNo && !masterPartNo) return null;
+
+  return {
+    id,
+    partNo,
+    masterPartNo,
+    description: String(row.description || "").trim(),
+    brand: String(row.brand_name || row.brandName || row.brand || "").trim(),
+  };
+};
+
+const buildStorePartSelectOption = (part: StorePartOption): SearchableSelectOption => {
+  const partNo = part.partNo.trim();
+  const masterPartNo = part.masterPartNo.trim();
+  const label =
+    masterPartNo && partNo
+      ? `${masterPartNo} | ${partNo}`
+      : partNo || masterPartNo;
+  const descParts = [part.brand, part.description].filter(Boolean);
+
+  return {
+    value: part.id,
+    label,
+    description: descParts.length ? descParts.join(" · ") : undefined,
+  };
+};
+
+const mapInvoiceLineItems = (invoice: any) => {
+  const rawItems =
+    invoice.SalesInvoiceItem ||
+    invoice.salesInvoiceItem ||
+    invoice.items ||
+    [];
+  if (!Array.isArray(rawItems)) return [];
+  return rawItems.map((item: any) => ({
+    id: String(item.id || ""),
+    partId: String(item.partId || item.part_id || ""),
+    part_id: String(item.partId || item.part_id || ""),
+    partNo: item.partNo || item.part_no || "",
+    description: item.description || "",
+    orderedQty: Number(item.orderedQty ?? item.ordered_qty) || 0,
+    deliveredQty: Number(item.deliveredQty ?? item.delivered_qty) || 0,
+    pendingQty: Number(item.pendingQty ?? item.pending_qty) || 0,
+    unitPrice: Number(item.unitPrice ?? item.unit_price) || 0,
+    discount: Number(item.discount) || 0,
+    discountType: (item.discountType || item.discount_type || "percent") as
+      | "percent"
+      | "fixed",
+    lineTotal: Number(item.lineTotal ?? item.line_total) || 0,
+    grade: item.grade || "A",
+  }));
+};
+
+const orderContainsSelectedPart = (
+  partId: string,
+  items?: Array<{ partId?: string; part_id?: string }> | null,
+): boolean => {
+  if (!partId) return true;
+  if (!items?.length) return false;
+  return items.some(
+    (item) => String(item.partId || item.part_id || "") === partId,
+  );
+};
+
 export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const { addNotification } = useNotifications();
   const [searchParams] = useSearchParams();
@@ -245,12 +333,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [stockOutOrders, setStockOutOrders] = useState<StockOutOrder[]>([]);
   const [transferOutOrders, setTransferOutOrders] = useState<StockOutOrder[]>([]);
   const [adjustments, setAdjustments] = useState<any[]>([]);
-  const [partOptions, setPartOptions] = useState<Array<{
-    id: string;
-    partNo: string;
-    masterPartNo: string;
-    description: string;
-  }>>([]);
+  const [partOptions, setPartOptions] = useState<StorePartOption[]>([]);
   const [selectedAssociationPartId, setSelectedAssociationPartId] = useState("");
   const [associationRows, setAssociationRows] = useState<Array<{ model: string; qtyUsed: number }>>([]);
   const [associationLoading, setAssociationLoading] = useState(false);
@@ -259,6 +342,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterPartId, setFilterPartId] = useState("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -288,6 +372,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   // Fetch stores on mount
   useEffect(() => {
     fetchStores();
+    void loadPartOptions(true);
   }, []);
 
   // Notify parent when store changes
@@ -363,7 +448,17 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchStockOutOrders(true);
       }
     }
-  }, [selectedStoreId, statusFilter, typeFilter]);
+  }, [selectedStoreId, statusFilter, typeFilter, filterPartId]);
+
+  useEffect(() => {
+    if (!filterPartId) return;
+    setOrders([]);
+    setPurchaseOrders([]);
+    setStockOutOrders([]);
+    setTransferInOrders([]);
+    setTransferOutOrders([]);
+    setAdjustments([]);
+  }, [filterPartId]);
 
   // Support deep-linking to a specific filter, e.g. /store/orders?type=stock-out
   useEffect(() => {
@@ -424,9 +519,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [selectedStoreId, typeFilter, statusFilter, isStoreOnlyUser]);
+  }, [selectedStoreId, typeFilter, statusFilter, filterPartId, isStoreOnlyUser]);
 
-  const fetchAssociationParts = async (silent = false) => {
+  const loadPartOptions = async (silent = false) => {
     try {
       if (!silent) setAssociationLoading(true);
       const response = await apiClient.getPartEntryList({ limit: 10000, page: 1 });
@@ -436,13 +531,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           ? response
           : [];
       const mapped = rawRows
-        .map((row: any) => ({
-          id: String(row.id || "").trim(),
-          partNo: String(row.part_no || row.partNo || "").trim(),
-          masterPartNo: String(row.master_part_no || row.masterPartNo || "").trim(),
-          description: String(row.description || "").trim(),
-        }))
-        .filter((row: any) => row.id && row.partNo);
+        .map(mapRowToStorePartOption)
+        .filter((row): row is StorePartOption => row !== null);
       setPartOptions(mapped);
     } catch (error: any) {
       if (!silent) toast.error(error?.error || "Failed to load items");
@@ -450,6 +540,18 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       if (!silent) setAssociationLoading(false);
     }
   };
+
+  const fetchAssociationParts = async (silent = false) => {
+    await loadPartOptions(silent);
+  };
+
+  const itemFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [
+      { value: "", label: "All items" },
+      ...partOptions.map(buildStorePartSelectOption),
+    ],
+    [partOptions],
+  );
 
   const fetchPartAssociation = async (partId: string) => {
     if (!partId) {
@@ -503,6 +605,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       const response = await apiClient.getDirectPurchaseOrders({
         store_id: selectedStoreId === "all" ? undefined : selectedStoreId,
         status: statusFilter !== "all" ? statusFilter : undefined,
+        part_id: filterPartId || undefined,
+        page: 1,
+        limit: filterPartId ? 1000 : 200,
       });
 
       const ordersData = response.data || response;
@@ -550,6 +655,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         store_id: selectedStoreId === "all" ? undefined : selectedStoreId,
         status: statusFilter !== "all" ? statusFilter : undefined,
         order_type: "transfer_in",
+        part_id: filterPartId || undefined,
+        page: 1,
+        limit: filterPartId ? 1000 : 200,
       });
 
       const ordersData = response.data || response;
@@ -643,8 +751,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       if (!silent) setLoading(true);
       const response = await apiClient.getPurchaseOrders({
         status: statusFilter !== "all" ? statusFilter : undefined,
+        part_id: filterPartId || undefined,
         page: 1,
-        limit: 100,
+        limit: filterPartId ? 1000 : 200,
       });
 
       const responseData: any = response.data || response;
@@ -695,6 +804,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       const response = await apiClient.getAdjustmentsByStore({
         store_id: selectedStoreId,
         status: "all", // Show all adjustments (pending + approved)
+        part_id: filterPartId || undefined,
       });
 
       const adjustmentsData = response.data || [];
@@ -714,7 +824,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     try {
       if (!silent) setLoading(true);
       // Fetch ALL invoices (both walking/cash and registered/party) without status filter
-      const response = await apiClient.getSalesInvoices({});
+      const response = await apiClient.getSalesInvoices({
+        ...(filterPartId ? { partId: filterPartId } : {}),
+      });
 
       const invoicesData = Array.isArray(response) ? response : (response.data || []);
       if (Array.isArray(invoicesData)) {
@@ -740,6 +852,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             deliveredTo: invoice.deliveredTo || invoice.delivered_to,
             createdAt: invoice.createdAt || invoice.created_at,
             customerType: invoice.customerType || 'walking',
+            items: mapInvoiceLineItems(invoice),
           }));
 
         if (isStoreOnlyUser) {
@@ -803,6 +916,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       if (!silent) setLoading(true);
       const response = await apiClient.getSalesInvoices({
         customerType: "transfer",
+        ...(filterPartId ? { partId: filterPartId } : {}),
       });
 
       const invoicesData = Array.isArray(response) ? response : (response.data || []);
@@ -827,6 +941,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           deliveredTo: invoice.deliveredTo || invoice.delivered_to,
           createdAt: invoice.createdAt || invoice.created_at,
           customerType: "transfer",
+          items: mapInvoiceLineItems(invoice),
         }));
         setTransferOutOrders(formattedInvoices);
       } else {
@@ -1310,7 +1425,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       const matchesSearch =
         order.po_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.supplier_name?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
-      return inDateRange && matchesSearch;
+      const matchesPart = orderContainsSelectedPart(filterPartId, order.items);
+      return inDateRange && matchesSearch && matchesPart;
     })
     : [];
 
@@ -1321,7 +1437,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       const matchesSearch =
         order.dpo_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.store_name.toLowerCase().includes(searchTerm.toLowerCase());
-      return inDateRange && matchesSearch;
+      const matchesPart = orderContainsSelectedPart(filterPartId, order.items);
+      return inDateRange && matchesSearch && matchesPart;
     })
     : [];
 
@@ -1339,7 +1456,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     const matchesSearch =
       invoice.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.customerName.toLowerCase().includes(searchTerm.toLowerCase());
-    return inDateRange && matchesSearch;
+    const matchesPart = orderContainsSelectedPart(filterPartId, invoice.items);
+    return inDateRange && matchesSearch && matchesPart;
   });
 
   const filteredTransferInOrders = (transferInOrders || []).filter((order) => {
@@ -1348,7 +1466,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     const matchesSearch =
       order.dpo_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
       party.toLowerCase().includes(searchTerm.toLowerCase());
-    return inDateRange && matchesSearch;
+    const matchesPart = orderContainsSelectedPart(filterPartId, order.items);
+    return inDateRange && matchesSearch && matchesPart;
   });
 
   const filteredTransferOutOrders = (transferOutOrders || []).filter((invoice) => {
@@ -1356,7 +1475,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     const matchesSearch =
       invoice.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.customerName.toLowerCase().includes(searchTerm.toLowerCase());
-    return inDateRange && matchesSearch;
+    const matchesPart = orderContainsSelectedPart(filterPartId, invoice.items);
+    return inDateRange && matchesSearch && matchesPart;
+  });
+
+  const filteredAdjustments = (adjustments || []).filter((adjustment) => {
+    const inDateRange = isWithinDateRange(adjustment.date);
+    const matchesPart = orderContainsSelectedPart(filterPartId, adjustment.items);
+    return inDateRange && matchesPart;
   });
 
   const mixedOrders = [
@@ -1419,7 +1545,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <div className="space-y-2">
               <Label>Select Store</Label>
               <Select
@@ -1569,6 +1695,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   </div>
                 </PopoverContent>
               </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label>Item</Label>
+              <SearchableSelect
+                value={filterPartId}
+                onValueChange={setFilterPartId}
+                placeholder="All items"
+                className="w-full"
+                options={itemFilterOptions}
+              />
             </div>
             <div className="space-y-2">
               <Label>Search</Label>
@@ -2372,7 +2508,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
                 {/* Adjusted Items - Adjustments */}
                 {typeFilter === "adjusted" && (
-                  adjustments.length === 0 ? (
+                  filteredAdjustments.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       No adjustments found.
                     </div>
@@ -2391,7 +2527,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {adjustments.map((adjustment) => (
+                          {filteredAdjustments.map((adjustment) => (
                             <TableRow key={adjustment.id}>
                               <TableCell>
                                 {format(new Date(adjustment.date), "MMM dd, yyyy")}
@@ -2456,11 +2592,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       <div className="space-y-2">
                         <Label>Select Item</Label>
                         <SearchableSelect
-                          options={partOptions.map((part) => ({
-                            value: part.id,
-                            label: `${part.masterPartNo || "N/A"} | ${part.partNo}`,
-                            description: part.description || "No description",
-                          }))}
+                          options={partOptions.map(buildStorePartSelectOption)}
                           value={selectedAssociationPartId}
                           onValueChange={(value) => {
                             setSelectedAssociationPartId(value);

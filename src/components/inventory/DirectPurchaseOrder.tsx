@@ -122,7 +122,26 @@ interface ExpenseForm {
   amount: number;
 }
 
+type InquiryConversionDraft = {
+  source: "sales-inquiry";
+  target: "invoice" | "quotation" | "dpo";
+  inquiryNo?: string;
+  description?: string;
+  items?: Array<{
+    partId: string;
+    quantity: number;
+    purchasePrice?: number;
+    priceA?: number;
+    priceB?: number;
+    priceM?: number;
+    partNo?: string;
+    description?: string;
+  }>;
+};
+
 const DPO_FIXED_EXPENSE_ACCOUNT = "Local Purchase Freight";
+
+const DPO_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 type DirectPurchaseOrderVariant = "local-purchase" | "transfer-in";
 
@@ -225,6 +244,7 @@ export const DirectPurchaseOrder = ({
   const [paymentBankAccount, setPaymentBankAccount] = useState("");
   const [paymentDate, setPaymentDate] = useState<Date>(new Date());
   const [paymentDescription, setPaymentDescription] = useState("");
+  const [showBackToInquiry, setShowBackToInquiry] = useState(false);
   const [bankCashAccounts, setBankCashAccounts] = useState<{ id: string; value: string; label: string }[]>([]);
 
   // Form state
@@ -307,7 +327,7 @@ export const DirectPurchaseOrder = ({
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
   // Fetch orders
   const fetchOrders = async () => {
@@ -673,7 +693,7 @@ export const DirectPurchaseOrder = ({
   }, [orders]);
 
   // Pagination
-  const totalPages = Math.ceil(totalRecords / itemsPerPage);
+  const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
   const paginatedOrders = useMemo(() => {
     return filteredOrders;
   }, [filteredOrders]);
@@ -704,6 +724,74 @@ export const DirectPurchaseOrder = ({
     setPartHistory(null);
     setHistoryBasePrices({ priceA: null, priceB: null });
   };
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem("salesInquiryConversionDraft");
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as InquiryConversionDraft;
+      if (!draft || draft.source !== "sales-inquiry" || draft.target !== "dpo") {
+        return;
+      }
+      const mappedItems: OrderItemForm[] = (draft.items || [])
+        .filter((item) => item.partId && Number(item.quantity) > 0)
+        .map((item, idx) => ({
+          id:
+            typeof crypto !== "undefined" && (crypto as any).randomUUID
+              ? (crypto as any).randomUUID()
+              : `inq-dpo-${Date.now()}-${idx}`,
+          partId: item.partId,
+          quantity: Number(item.quantity) || "",
+          purchasePrice: Number(item.purchasePrice || 0),
+          priceA: Number(item.priceA || 0),
+          priceB: Number(item.priceB || 0),
+          priceM: Number(item.priceM || 0),
+          weight: 0,
+        }));
+      if (mappedItems.length === 0) return;
+
+      const seededParts = (draft.items || [])
+        .filter((item) => item.partId)
+        .map((item) => ({
+          id: item.partId,
+          partNo: item.partNo || `PART-${item.partId.slice(0, 6)}`,
+          masterPartNo: item.partNo || "",
+          description: item.description || "",
+          brand: "",
+          uom: "",
+          price:
+            Number(item.priceA || 0) ||
+            Number(item.priceB || 0) ||
+            Number(item.priceM || 0) ||
+            Number(item.purchasePrice || 0) ||
+            0,
+          weight: 0,
+        }));
+
+      if (seededParts.length > 0) {
+        setParts((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const toAdd = seededParts.filter((p) => !existingIds.has(p.id));
+          return toAdd.length > 0 ? [...toAdd, ...prev] : prev;
+        });
+      }
+
+      resetForm();
+      setViewMode("create");
+      setPageView("form");
+      setFormDescription(
+        draft.inquiryNo
+          ? `Converted from Inquiry ${draft.inquiryNo}`
+          : "Converted from Sales Inquiry",
+      );
+      setFormItems(mappedItems);
+      setShowBackToInquiry(true);
+      sessionStorage.removeItem("salesInquiryConversionDraft");
+      toast.success(`Loaded ${mappedItems.length} item(s) from Sales Inquiry`);
+    } catch {
+      sessionStorage.removeItem("salesInquiryConversionDraft");
+    }
+  }, []);
 
   // Open create view
   const handleNewOrder = () => {
@@ -2003,13 +2091,32 @@ export const DirectPurchaseOrder = ({
           )}
 
           {/* Pagination */}
-          {totalPages > 1 && (
+          {totalRecords > 0 && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
               <p className="text-sm text-muted-foreground text-center sm:text-left">
                 Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
                 {Math.min(currentPage * itemsPerPage, totalRecords)} of {totalRecords} entries
               </p>
               <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Rows per page:</span>
+                <Select
+                  value={String(itemsPerPage)}
+                  onValueChange={(value) => {
+                    setItemsPerPage(Number(value));
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-24 h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DPO_LIST_PAGE_SIZE_OPTIONS.map((size) => (
+                      <SelectItem key={size} value={String(size)}>
+                        {size}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button
                   variant="outline"
                   size="sm"
@@ -3161,13 +3268,18 @@ export const DirectPurchaseOrder = ({
 
   return (
     <div className="space-y-4">
-      <div className="mb-2">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <Tabs value={pageView} onValueChange={handlePageViewChange}>
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="form">{labels.formTabLabel}</TabsTrigger>
             <TabsTrigger value="list">{labels.listTabLabel}</TabsTrigger>
           </TabsList>
         </Tabs>
+        {showBackToInquiry && showForm && (
+          <Button variant="outline" size="sm" onClick={() => navigate("/sales/inquiry")}>
+            Back to Inquiry
+          </Button>
+        )}
       </div>
 
       {showList && renderListView()}

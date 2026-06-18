@@ -24,10 +24,137 @@ function normalizeVoucherTypeFilter(typeParam: unknown): string | undefined {
   return raw;
 }
 
+function isSentinel(value: unknown, sentinels: string[]): boolean {
+  const raw = String(value ?? '').trim();
+  return !raw || sentinels.includes(raw);
+}
+
+async function applyAccountFilters(
+  where: Record<string, unknown>,
+  query: Request['query'],
+): Promise<void> {
+  const accountId = isSentinel(query.account_id, ['_all', 'all'])
+    ? undefined
+    : String(query.account_id).trim();
+  const subgroupId = isSentinel(query.subgroup_id, ['_all', 'all'])
+    ? undefined
+    : String(query.subgroup_id).trim();
+  const mainGroupId = isSentinel(query.maingroup_id, ['_all', 'all'])
+    ? undefined
+    : String(query.maingroup_id).trim();
+  const category = isSentinel(query.category, ['default', 'all'])
+    ? undefined
+    : String(query.category).trim().toLowerCase();
+
+  const entryAccountWhere: Record<string, unknown> = {};
+
+  if (subgroupId) {
+    entryAccountWhere.subgroupId = subgroupId;
+  }
+
+  const subgroupFilter: Record<string, unknown> = {};
+  if (mainGroupId) {
+    subgroupFilter.mainGroupId = mainGroupId;
+  }
+
+  if (category === 'expense' || category === 'income') {
+    const mainGroupTypes =
+      category === 'expense'
+        ? ['expense', 'Expense', 'EXPENSE', 'cost', 'Cost', 'COST']
+        : ['Income', 'income', 'INCOME', 'Revenue', 'revenue', 'REVENUE'];
+    subgroupFilter.MainGroup = {
+      ...(typeof subgroupFilter.MainGroup === 'object' && subgroupFilter.MainGroup !== null
+        ? subgroupFilter.MainGroup
+        : {}),
+      type: { in: mainGroupTypes },
+    };
+  }
+
+  if (Object.keys(subgroupFilter).length > 0) {
+    entryAccountWhere.Subgroup = subgroupFilter;
+  }
+
+  const entrySome: Record<string, unknown> = {};
+  if (accountId) {
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { code: true },
+    });
+    const entryOr: Record<string, unknown>[] = [{ accountId }];
+    if (account?.code) {
+      entryOr.push({
+        accountName: { contains: account.code, mode: 'insensitive' },
+      });
+    }
+    entrySome.OR = entryOr;
+    if (Object.keys(entryAccountWhere).length > 0) {
+      entrySome.Account = entryAccountWhere;
+    }
+
+    const accountClause = {
+      OR: [
+        { VoucherEntry: { some: entrySome } },
+        { cashBankAccount: accountId },
+      ],
+    };
+
+    if (!Array.isArray(where.AND)) {
+      where.AND = [];
+    }
+    (where.AND as Record<string, unknown>[]).push(accountClause);
+    return;
+  }
+
+  if (Object.keys(entryAccountWhere).length > 0) {
+    entrySome.Account = entryAccountWhere;
+    if (!Array.isArray(where.AND)) {
+      where.AND = [];
+    }
+    (where.AND as Record<string, unknown>[]).push({
+      VoucherEntry: { some: entrySome },
+    });
+  }
+}
+
+function applyPostDatedFilter(
+  where: Record<string, unknown>,
+  isPostDated: unknown,
+): void {
+  const value = String(isPostDated ?? '').trim().toLowerCase();
+  if (value !== 'yes' && value !== 'no') return;
+
+  const dateFilter =
+    typeof where.date === 'object' && where.date !== null
+      ? { ...(where.date as Record<string, unknown>) }
+      : {};
+
+  if (value === 'yes') {
+    const startOfTomorrow = new Date();
+    startOfTomorrow.setHours(0, 0, 0, 0);
+    startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+    dateFilter.gte = startOfTomorrow;
+  } else {
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    dateFilter.lte = endOfToday;
+  }
+
+  where.date = dateFilter;
+}
+
 // Get all vouchers
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { type, status, from_date, to_date, search, search_by, page = '1', limit = '100' } = req.query;
+    const {
+      type,
+      status,
+      from_date,
+      to_date,
+      search,
+      search_by,
+      page = '1',
+      limit = '100',
+    } = req.query;
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
@@ -45,38 +172,45 @@ router.get('/', async (req: Request, res: Response) => {
 
     if (from_date || to_date) {
       where.date = {};
-      if (from_date) where.date.gte = new Date(from_date as string);
-      if (to_date) where.date.lte = new Date(to_date as string);
+      if (from_date) {
+        const fromDateObj = new Date(from_date as string);
+        fromDateObj.setHours(0, 0, 0, 0);
+        where.date.gte = fromDateObj;
+      }
+      if (to_date) {
+        const toDateObj = new Date(to_date as string);
+        toDateObj.setHours(23, 59, 59, 999);
+        where.date.lte = toDateObj;
+      }
     }
 
-    if (search) {
+    if (search && String(search).trim()) {
       const searchTerm = (search as string).trim();
-      const searchBy = search_by as string || 'voucher-no';
-      
-      // SQLite doesn't support case-insensitive mode, so we use contains directly
+      const searchBy = (search_by as string) || 'voucher-no';
+      const insensitiveContains = (field: string) => ({
+        [field]: { contains: searchTerm, mode: 'insensitive' as const },
+      });
+
       switch (searchBy) {
         case 'voucher-no':
-          where.OR = [
-            { voucherNumber: { contains: searchTerm } }
-          ];
+          where.OR = [insensitiveContains('voucherNumber')];
           break;
         case 'voucher-name':
-          where.OR = [
-            { narration: { contains: searchTerm } }
-          ];
+          where.OR = [insensitiveContains('narration')];
           break;
         case 'amount':
-          // For amount search, we need to search in voucher entries
-          // First get all vouchers, then filter by amount in entries
+          // Filtered in memory after fetch (debit/credit on entries)
           break;
         default:
-          // Default search both voucher number and narration
           where.OR = [
-            { voucherNumber: { contains: searchTerm } },
-            { narration: { contains: searchTerm } }
+            insensitiveContains('voucherNumber'),
+            insensitiveContains('narration'),
           ];
       }
     }
+
+    applyPostDatedFilter(where, req.query.is_post_dated);
+    await applyAccountFilters(where, req.query);
 
     const [vouchers, total] = await Promise.all([
       prisma.voucher.findMany({
@@ -101,12 +235,60 @@ router.get('/', async (req: Request, res: Response) => {
       prisma.voucher.count({ where }),
     ]);
 
+    const paymentReceiptVouchers = vouchers.filter(
+      (voucher) =>
+        (voucher.type === 'payment' || voucher.type === 'receipt') &&
+        Boolean(voucher.cashBankAccount),
+    );
+    const cashBankAccountIds = Array.from(
+      new Set(paymentReceiptVouchers.map((voucher) => voucher.cashBankAccount!).filter(Boolean)),
+    );
+    const cashBankAccounts = cashBankAccountIds.length
+      ? await prisma.account.findMany({
+          where: { id: { in: cashBankAccountIds } },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            Subgroup: {
+              select: {
+                code: true,
+                name: true,
+              },
+            },
+          },
+        })
+      : [];
+    const accountModeById = new Map<string, 'cash' | 'online'>();
+    for (const account of cashBankAccounts) {
+      const subgroupCode = String(account.Subgroup?.code ?? '').toLowerCase();
+      const subgroupName = String(account.Subgroup?.name ?? '').toLowerCase();
+      const accountCode = String(account.code ?? '').toLowerCase();
+      const accountName = String(account.name ?? '').toLowerCase();
+      const marker = `${subgroupCode} ${subgroupName} ${accountCode} ${accountName}`;
+      const isOnline = /\bbank\b|\bonline\b/.test(marker);
+      accountModeById.set(account.id, isOnline ? 'online' : 'cash');
+    }
+
     // Filter out vouchers linked to soft-deleted sales invoices
     let filteredVouchers = vouchers.filter((voucher) => {
       // This is a simple filter since we don't have entries loaded
       // In a real implementation, you'd need to check voucher entries for customer links
       return true; // For now, return all vouchers
     });
+
+    const requestedMode = String(req.query.mode ?? '').trim().toLowerCase();
+    if (
+      (requestedMode === 'cash' || requestedMode === 'online') &&
+      (normalizedType === 'payment' || normalizedType === 'receipt')
+    ) {
+      filteredVouchers = filteredVouchers.filter((voucher) => {
+        if (voucher.type !== 'payment' && voucher.type !== 'receipt') return false;
+        if (!voucher.cashBankAccount) return false;
+        const mode = accountModeById.get(voucher.cashBankAccount) ?? 'cash';
+        return mode === requestedMode;
+      });
+    }
 
     // Handle amount search if needed
     if (search && (search_by as string) === 'amount') {
@@ -129,6 +311,10 @@ router.get('/', async (req: Request, res: Response) => {
       date: voucher.date.toISOString().split('T')[0],
       narration: voucher.narration || '',
       cashBankAccount: voucher.cashBankAccount || '',
+      mode:
+        voucher.type === 'payment' || voucher.type === 'receipt'
+          ? accountModeById.get(voucher.cashBankAccount || '') ?? 'cash'
+          : undefined,
       chequeNumber: voucher.chequeNumber || undefined,
       chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
       checkClearDate: voucher.checkClearDate ? voucher.checkClearDate.toISOString().split('T')[0] : undefined,

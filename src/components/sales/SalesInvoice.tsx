@@ -7,6 +7,7 @@ import {
   useMemo,
 } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
 import {
   branchAccountDisplayName,
@@ -347,13 +348,38 @@ interface InlineItemRow {
   descriptionFallback?: string;
 }
 
+type InquiryConversionDraft = {
+  source: "sales-inquiry";
+  target: "invoice" | "quotation" | "dpo";
+  inquiryNo?: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  subject?: string;
+  description?: string;
+  items?: Array<{
+    partId: string;
+    quantity: number;
+    purchasePrice?: number;
+    priceA?: number;
+    priceB?: number;
+    priceM?: number;
+    partNo?: string;
+    description?: string;
+    location?: string;
+  }>;
+};
+
 type SalesDocumentKind = "invoice" | "quotation" | "transfer-out";
+
+const INVOICE_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 export const SalesInvoice = ({
   documentKind = "invoice",
 }: {
   documentKind?: SalesDocumentKind;
 }) => {
+  const navigate = useNavigate();
   const isQuotation = documentKind === "quotation";
   const isTransferOut = documentKind === "transfer-out";
   const docFormLabel = isQuotation
@@ -392,6 +418,8 @@ export const SalesInvoice = ({
     [],
   );
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [invoiceListPage, setInvoiceListPage] = useState(1);
+  const [invoiceListPageSize, setInvoiceListPageSize] = useState(50);
 
   const salesInvoicesQueryParams = useMemo(
     () => ({
@@ -613,8 +641,8 @@ export const SalesInvoice = ({
     new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
   );
   const [quotationStatus, setQuotationStatus] = useState<
-    "draft" | "sent" | "accepted" | "rejected" | "expired"
-  >("draft");
+    "pending" | "approved" | "converted"
+  >("pending");
   const [taxType, setTaxType] = useState("Without GST");
   const [gstPercentage, setGstPercentage] = useState(0);
   const [customGstPercentage, setCustomGstPercentage] = useState("");
@@ -691,6 +719,14 @@ export const SalesInvoice = ({
   const [showSoftDeleteConfirm, setShowSoftDeleteConfirm] = useState(false);
   const [invoiceToSoftDelete, setInvoiceToSoftDelete] =
     useState<Invoice | null>(null);
+  const [showQuotationInitiateConfirm, setShowQuotationInitiateConfirm] =
+    useState(false);
+  const [quotationToInitiate, setQuotationToInitiate] = useState<Invoice | null>(
+    null,
+  );
+  const [convertingQuotationId, setConvertingQuotationId] = useState<
+    string | null
+  >(null);
 
   // Partial Delivery Dialog
   const [showPartialDeliveryDialog, setShowPartialDeliveryDialog] =
@@ -706,6 +742,123 @@ export const SalesInvoice = ({
     Record<string, number>
   >({});
   const [reversing, setReversing] = useState(false);
+  const [showBackToInquiry, setShowBackToInquiry] = useState(false);
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem("salesInquiryConversionDraft");
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as InquiryConversionDraft;
+      if (!draft || draft.source !== "sales-inquiry") return;
+      if ((isQuotation && draft.target !== "quotation") || (!isQuotation && !isTransferOut && draft.target !== "invoice")) {
+        return;
+      }
+
+      const mappedItems: InlineItemRow[] = (draft.items || [])
+        .filter((item) => item.partId && Number(item.quantity) > 0)
+        .map((item, idx) => {
+          const priceA = Number(item.priceA || 0) || undefined;
+          const priceB = Number(item.priceB || 0) || undefined;
+          const priceM = Number(item.priceM || 0) || undefined;
+          const unitPrice =
+            priceA ??
+            priceB ??
+            priceM ??
+            (Number(item.purchasePrice || 0) || undefined);
+          const selectedPriceType: "A" | "B" | "M" | undefined = priceA
+            ? "A"
+            : priceB
+              ? "B"
+              : priceM
+                ? "M"
+                : undefined;
+          return {
+            id:
+              typeof crypto !== "undefined" && (crypto as any).randomUUID
+                ? (crypto as any).randomUUID()
+                : `inq-${Date.now()}-${idx}`,
+            selectedPartId: item.partId,
+            qty: Number(item.quantity) || 1,
+            priceA,
+            priceB,
+            priceM,
+            unitPrice,
+            selectedPriceType,
+            partNoFallback: item.partNo,
+            descriptionFallback: item.description,
+          };
+        });
+
+      if (mappedItems.length === 0) return;
+
+      const seededParts = (draft.items || [])
+        .filter((item) => item.partId)
+        .map((item) => ({
+          id: item.partId,
+          partNo: item.partNo || `PART-${item.partId.slice(0, 6)}`,
+          masterPartNo: item.partNo || undefined,
+          description: item.description || "",
+          application: "",
+          price:
+            Number(item.priceA || 0) ||
+            Number(item.priceB || 0) ||
+            Number(item.priceM || 0) ||
+            Number(item.purchasePrice || 0) ||
+            0,
+          priceA: Number(item.priceA || 0) || undefined,
+          priceB: Number(item.priceB || 0) || undefined,
+          priceM: Number(item.priceM || 0) || undefined,
+          stockQty: 0,
+          reservedQty: 0,
+          availableQty: 0,
+          grade: "A" as const,
+          category: "",
+          brands: [],
+        }));
+
+      if (seededParts.length > 0) {
+        setSelectedPartsMap((prev) => {
+          const next = { ...prev };
+          for (const part of seededParts) {
+            if (!next[part.id]) next[part.id] = part;
+          }
+          return next;
+        });
+        setParts((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const toAdd = seededParts.filter((p) => !existingIds.has(p.id));
+          return toAdd.length > 0 ? [...toAdd, ...prev] : prev;
+        });
+      }
+
+      setDocumentView("form");
+      setEditingInvoiceId(null);
+      setNewInvoice({
+        customerType: isTransferOut ? "transfer" : "registered",
+        items: [],
+        overallDiscount: 0,
+        overallDiscountType: "percent",
+      });
+      setSelectedCustomerId("");
+      setSelectedCustomerName(draft.customerName || "");
+      setInlineItems(mappedItems);
+      setRemarks(
+        draft.inquiryNo
+          ? `Converted from Inquiry ${draft.inquiryNo}`
+          : "Converted from Sales Inquiry",
+      );
+      setQuotationStatus("pending");
+      setShowBackToInquiry(true);
+      sessionStorage.removeItem("salesInquiryConversionDraft");
+      toast({
+        title: "Inquiry Loaded",
+        description: `Loaded ${mappedItems.length} item(s) from Sales Inquiry.`,
+      });
+    } catch {
+      // Ignore malformed draft and clear it
+      sessionStorage.removeItem("salesInquiryConversionDraft");
+    }
+  }, [isQuotation, isTransferOut]);
 
   const [showSaleReturnDialog, setShowSaleReturnDialog] = useState(false);
   const [saleReturnInvoice, setSaleReturnInvoice] = useState<Invoice | null>(null);
@@ -895,6 +1048,26 @@ export const SalesInvoice = ({
         b.invoiceNo.localeCompare(a.invoiceNo, undefined, { numeric: true }),
       );
   }, [invoices, searchTerm, filterInvoiceKind]);
+
+  const invoiceListTotalPages =
+    Math.ceil(filteredInvoices.length / invoiceListPageSize) || 1;
+  const paginatedInvoices = useMemo(() => {
+    const start = (invoiceListPage - 1) * invoiceListPageSize;
+    return filteredInvoices.slice(start, start + invoiceListPageSize);
+  }, [filteredInvoices, invoiceListPage, invoiceListPageSize]);
+
+  useEffect(() => {
+    setInvoiceListPage(1);
+  }, [
+    searchTerm,
+    filterInvoiceKind,
+    filterStatus,
+    filterCustomerType,
+    filterPartId,
+    filterBrandId,
+    isQuotation,
+    isTransferOut,
+  ]);
 
   // Add new inline item row
   const handleAddNewItem = useCallback((openDropdown = false) => {
@@ -2112,7 +2285,7 @@ export const SalesInvoice = ({
       q.taxPercentage != null ? Number(q.taxPercentage) : undefined,
     grandTotal: Number(q.totalAmount || 0),
     paidAmount: 0,
-    status: (q.status || "draft") as InvoiceStatus,
+    status: (q.status || "pending") as InvoiceStatus,
     paymentStatus: "unpaid",
     deliveryLog: [],
     createdAt: q.createdAt,
@@ -2173,6 +2346,7 @@ export const SalesInvoice = ({
           .map((inv: any) => ({
             id: inv.id,
             invoiceNo: inv.invoiceNo,
+            quotationId: inv.quotationId || null,
             invoiceDate: inv.invoiceDate,
             term: inv.term ?? null,
             customerType: inv.customerType as CustomerType,
@@ -2736,7 +2910,7 @@ export const SalesInvoice = ({
               ?.contactNo ||
             (selectedCustomer as { cellNumber?: string })?.cellNumber,
           customerAddress: selectedCustomer?.address,
-          status: quotationStatus,
+          status: editingInvoiceId ? quotationStatus : "pending",
           notes: remarks,
           subtotal,
           overallDiscount: discount,
@@ -3019,7 +3193,7 @@ export const SalesInvoice = ({
     setValidUntil(
       new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
     );
-    setQuotationStatus("draft");
+    setQuotationStatus("pending");
   };
 
   // Handle Edit Invoice
@@ -3067,7 +3241,7 @@ export const SalesInvoice = ({
         setQuotationStatus(
           (fullInvoice.status ||
             invoice.quotationStatus ||
-            "draft") as typeof quotationStatus,
+            "pending") as typeof quotationStatus,
         );
       }
       if (!isTransferOut) {
@@ -4479,12 +4653,109 @@ export const SalesInvoice = ({
     }
   };
 
+  const handleUpdateQuotationStatus = async (
+    quotation: Invoice,
+    status: "pending" | "approved",
+  ) => {
+    try {
+      const response = await apiClient.updateSalesQuotation(quotation.id, {
+        status,
+      });
+      if ((response as any)?.error) {
+        toast({
+          title: "Error",
+          description: (response as any).error || "Failed to update quotation",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Quotation Updated",
+        description: `Quotation ${quotation.invoiceNo} marked as ${status}.`,
+      });
+      setInvoiceListRefreshTick((t) => t + 1);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to update quotation",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleConfirmQuotationInitiate = async () => {
+    if (!quotationToInitiate) return;
+    try {
+      setConvertingQuotationId(quotationToInitiate.id);
+      const conversionResponse = await apiClient.convertQuotationToInvoice(
+        quotationToInitiate.id,
+        {
+          invoiceDate: new Date().toISOString().split("T")[0],
+        },
+      );
+      if ((conversionResponse as any)?.error) {
+        toast({
+          title: "Error",
+          description:
+            (conversionResponse as any).error ||
+            "Failed to convert quotation to invoice",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const convertedInvoice: any =
+        (conversionResponse as any)?.data || conversionResponse;
+      if (convertedInvoice?.id) {
+        const approveResponse = await apiClient.updateInvoiceStatus(
+          convertedInvoice.id,
+          "approved",
+        );
+        if ((approveResponse as any)?.error) {
+          toast({
+            title: "Converted (Pending Approval)",
+            description:
+              (approveResponse as any).error ||
+              "Quotation converted; invoice approval failed.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Quotation Initiated",
+            description:
+              "Quotation converted to sales invoice and approved successfully.",
+          });
+        }
+      }
+
+      setShowQuotationInitiateConfirm(false);
+      setQuotationToInitiate(null);
+      setInvoiceListRefreshTick((t) => t + 1);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to initiate quotation",
+        variant: "destructive",
+      });
+    } finally {
+      setConvertingQuotationId(null);
+    }
+  };
+
   // Update invoice status
   const handleUpdateStatus = async (
     invoice: Invoice,
     newStatus: InvoiceStatus,
     deliveredQtys?: Record<string, number>,
   ) => {
+    if (isQuotation) {
+      if (newStatus === "approved") {
+        await handleUpdateQuotationStatus(invoice, "approved");
+      } else if (newStatus === "pending") {
+        await handleUpdateQuotationStatus(invoice, "pending");
+      }
+      return;
+    }
     if (newStatus === "approved") {
       setApprovingInvoice(invoice.id);
     }
@@ -5155,18 +5426,16 @@ export const SalesInvoice = ({
 
   const getQuotationStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
-      draft: "bg-slate-500/10 text-slate-600 border-slate-500/20",
-      sent: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-      accepted: "bg-green-500/10 text-green-600 border-green-500/20",
-      rejected: "bg-red-500/10 text-red-600 border-red-500/20",
-      expired: "bg-primary/10 text-primary border-primary/20",
+      pending: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+      approved: "bg-green-500/10 text-green-600 border-green-500/20",
+      unapproved: "bg-red-500/10 text-red-600 border-red-500/20",
+      converted: "bg-purple-500/10 text-purple-700 border-purple-500/20",
     };
     const labels: Record<string, string> = {
-      draft: "Draft",
-      sent: "Sent",
-      accepted: "Accepted",
-      rejected: "Rejected",
-      expired: "Expired",
+      pending: "Pending",
+      approved: "Approved",
+      unapproved: "Unapproved",
+      converted: "Converted",
     };
     const style =
       styles[status] || "bg-gray-500/10 text-gray-600 border-gray-500/20";
@@ -5218,18 +5487,29 @@ export const SalesInvoice = ({
             <TabsTrigger value="list">{docListLabel}</TabsTrigger>
           </TabsList>
         </Tabs>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={refreshPartsData}
-          title="Refresh Stock Data"
-          disabled={partsLoading}
-          className={
-            partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
-          }
-        >
-          <RefreshCw className="w-4 h-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          {showBackToInquiry && showDocumentForm && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/sales/inquiry")}
+            >
+              Back to Inquiry
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={refreshPartsData}
+            title="Refresh Stock Data"
+            disabled={partsLoading}
+            className={
+              partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
+            }
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
       {!showDocumentForm && !isQuotation && (
@@ -5289,12 +5569,22 @@ export const SalesInvoice = ({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="partially_delivered">
-                      Partially Delivered
-                    </SelectItem>
-                    <SelectItem value="delivered">Delivered</SelectItem>
+                    {isQuotation ? (
+                      <>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="converted">Converted</SelectItem>
+                      </>
+                    ) : (
+                      <>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="partially_delivered">
+                          Partially Delivered
+                        </SelectItem>
+                        <SelectItem value="delivered">Delivered</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
                 <Select
@@ -7415,7 +7705,7 @@ export const SalesInvoice = ({
               </CardContent>
             </Card>
           )}
-        /* Invoices Table */
+          {/* Invoices Table */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">
@@ -7450,7 +7740,7 @@ export const SalesInvoice = ({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredInvoices.map((inv) => (
+                    {paginatedInvoices.map((inv) => (
                       <TableRow
                         key={inv.id}
                         className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-3 md:space-y-0 relative"
@@ -7459,7 +7749,17 @@ export const SalesInvoice = ({
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
                             {docNumberLabel}
                           </span>
-                          {inv.invoiceNo}
+                          <div className="flex flex-col gap-1">
+                            <span>{inv.invoiceNo}</span>
+                            {!isQuotation && inv.quotationId && (
+                              <Badge
+                                variant="outline"
+                                className="w-fit text-[10px] md:text-xs bg-purple-500/10 text-purple-700 border-purple-500/20"
+                              >
+                                Quotation Invoice
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
@@ -7531,7 +7831,8 @@ export const SalesInvoice = ({
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center pt-2 md:pt-4 border-t md:border-t-0">
                           <div className="flex items-center md:justify-center gap-1">
                             {/* Record Payment */}
-                            {!isTransferOut &&
+                            {!isQuotation &&
+                              !isTransferOut &&
                               inv.paymentStatus !== "paid" &&
                               inv.status !== "pending" && (
                                 <Button
@@ -7640,26 +7941,73 @@ export const SalesInvoice = ({
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
-                            {/* Approve — pending or on_hold */}
-                            {(inv.status === "pending" ||
-                              inv.status === "on_hold") && (
-                              <Button
-                                variant="default"
-                                size="sm"
-                                className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
-                                onClick={() =>
-                                  handleUpdateStatus(inv, "approved")
-                                }
-                                disabled={approvingInvoice === inv.id}
-                              >
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                {approvingInvoice === inv.id
-                                  ? "Approving..."
-                                  : "Approve"}
-                              </Button>
+                            {/* Status actions */}
+                            {isQuotation ? (
+                              <>
+                                {(inv.status as string) === "pending" && (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
+                                    onClick={() =>
+                                      void handleUpdateQuotationStatus(inv, "approved")
+                                    }
+                                  >
+                                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                                    Approve
+                                  </Button>
+                                )}
+                                {(inv.status as string) === "approved" && (
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 text-xs"
+                                      onClick={() =>
+                                        void handleUpdateQuotationStatus(inv, "pending")
+                                      }
+                                    >
+                                      <Ban className="w-3 h-3 mr-1" />
+                                      Pending
+                                    </Button>
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      className="h-8 text-xs bg-primary hover:bg-primary/90"
+                                      onClick={() => {
+                                        setQuotationToInitiate(inv);
+                                        setShowQuotationInitiateConfirm(true);
+                                      }}
+                                      disabled={convertingQuotationId === inv.id}
+                                    >
+                                      {convertingQuotationId === inv.id
+                                        ? "Initiating..."
+                                        : "Initiate"}
+                                    </Button>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              (inv.status === "pending" ||
+                                inv.status === "on_hold") && (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
+                                  onClick={() =>
+                                    handleUpdateStatus(inv, "approved")
+                                  }
+                                  disabled={approvingInvoice === inv.id}
+                                >
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  {approvingInvoice === inv.id
+                                    ? "Approving..."
+                                    : "Approve"}
+                                </Button>
+                              )
                             )}
                             {/* Print */}
-                            <DropdownMenu>
+                            {!isQuotation && <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
                                   variant="ghost"
@@ -7684,9 +8032,10 @@ export const SalesInvoice = ({
                                   Print Delivery Challan
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
-                            </DropdownMenu>
+                            </DropdownMenu>}
                             {/* Sale return once approved or in any delivery-complete state; reverse undelivered stock is the orange icon */}
-                            {!isTransferOut &&
+                            {!isQuotation &&
+                              !isTransferOut &&
                               (inv.status === "approved" ||
                                 inv.status === "partially_delivered" ||
                                 inv.status === "delivered" ||
@@ -7714,7 +8063,8 @@ export const SalesInvoice = ({
                               </Button>
                             )}
                             {/* Reverse Stock - for approved or partially delivered party sale (registered) only; not for cash sale */}
-                            {!isTransferOut &&
+                            {!isQuotation &&
+                              !isTransferOut &&
                               inv.customerType === "registered" &&
                               (inv.status === "approved" ||
                                 inv.status === "partially_delivered") &&
@@ -7798,6 +8148,67 @@ export const SalesInvoice = ({
                     )}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+            {!loadingInvoices && filteredInvoices.length > 0 && (
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Showing{" "}
+                  {(invoiceListPage - 1) * invoiceListPageSize + 1} to{" "}
+                  {Math.min(
+                    invoiceListPage * invoiceListPageSize,
+                    filteredInvoices.length,
+                  )}{" "}
+                  of {filteredInvoices.length} entries
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    Rows per page:
+                  </span>
+                  <Select
+                    value={String(invoiceListPageSize)}
+                    onValueChange={(value) => {
+                      setInvoiceListPageSize(Number(value));
+                      setInvoiceListPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-24 h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INVOICE_LIST_PAGE_SIZE_OPTIONS.map((size) => (
+                        <SelectItem key={size} value={String(size)}>
+                          {size}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setInvoiceListPage((page) => Math.max(page - 1, 1))
+                    }
+                    disabled={invoiceListPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm">
+                    Page {invoiceListPage} of {invoiceListTotalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setInvoiceListPage((page) =>
+                        Math.min(page + 1, invoiceListTotalPages),
+                      )
+                    }
+                    disabled={invoiceListPage === invoiceListTotalPages}
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -8614,6 +9025,34 @@ export const SalesInvoice = ({
               className="bg-primary hover:bg-primary/90"
             >
               Delete & Reverse Stock
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Quotation Initiate Confirmation */}
+      <AlertDialog
+        open={showQuotationInitiateConfirm}
+        onOpenChange={(open) => {
+          setShowQuotationInitiateConfirm(open);
+          if (!open) setQuotationToInitiate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Initiate Sales Invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              Do you want to convert this quotation to a sales invoice? This will
+              create the invoice and mark it approved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void handleConfirmQuotationInitiate()}
+              disabled={Boolean(convertingQuotationId)}
+            >
+              {convertingQuotationId ? "Converting..." : "Confirm"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

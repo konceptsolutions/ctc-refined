@@ -8,6 +8,7 @@ import {
   Fragment,
 } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -192,6 +193,7 @@ const extractPartModels = (part: any) => {
 };
 
 export const SalesInquiry = () => {
+  const navigate = useNavigate();
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -315,6 +317,12 @@ export const SalesInquiry = () => {
   const [loadingModelAssociations, setLoadingModelAssociations] = useState(false);
   const [alternateItems, setAlternateItems] = useState<PartDetail[]>([]);
   const [loadingAlternateItems, setLoadingAlternateItems] = useState(false);
+  const [lookupRowPriceBaselines, setLookupRowPriceBaselines] = useState<
+    Record<string, { priceA: number | null; priceB: number | null }>
+  >({});
+  const [savingLookupRowPrice, setSavingLookupRowPrice] = useState<
+    Record<string, boolean>
+  >({});
 
   const itemDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -1336,10 +1344,52 @@ export const SalesInquiry = () => {
     setLookupRows((prev) => [...prev, row]);
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey || event.key.toLowerCase() !== "z") return;
+      const target = event.target as HTMLElement | null;
+      const tag = String(target?.tagName || "").toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      event.preventDefault();
+      const row = {
+        id:
+          typeof crypto !== "undefined" && (crypto as any).randomUUID
+            ? (crypto as any).randomUUID()
+            : `lr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        partId: "",
+        search: "",
+        qty: 0,
+      };
+      setLookupRows((prev) => [...prev, row]);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const handleRemoveLookupRow = (rowId: string) => {
     setLookupRows((prev) => {
       const filtered = prev.filter((r) => r.id !== rowId);
       return filtered.length > 0 ? filtered : [makeLookupRow()];
+    });
+    setLookupRowPriceBaselines((prev) => {
+      if (!(rowId in prev)) return prev;
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
+    setSavingLookupRowPrice((prev) => {
+      if (!(rowId in prev)) return prev;
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
     });
     setShowLookupRowDropdown((prev) => {
       const next = { ...prev };
@@ -1536,7 +1586,132 @@ export const SalesInquiry = () => {
       return next;
     });
     if (part.id) fetchPartStockForRow(part.id);
+    setLookupRowPriceBaselines((prev) => ({
+      ...prev,
+      [rowId]: { priceA: priceA || null, priceB: priceB || null },
+    }));
     await handleSelectPart(part);
+  };
+
+  const applyPartPricesToCaches = useCallback(
+    (partId: string, priceA: number | null, priceB: number | null) => {
+      const patchPart = (part: PartDetail): PartDetail =>
+        part.id === partId
+          ? {
+              ...part,
+              priceA: priceA === null ? "" : formatPartNumber(priceA),
+              priceB: priceB === null ? "" : formatPartNumber(priceB),
+            }
+          : part;
+
+      setPartsData((prev) => prev.map(patchPart));
+      setSearchResults((prev) => prev.map(patchPart));
+      setExternalLookupParts((prev) => prev.map(patchPart));
+      setLookupRowSearchResults((prev) => prev.map(patchPart));
+      setAlternateItems((prev) => prev.map(patchPart));
+      setSelectedPart((prev) =>
+        prev?.id === partId ? patchPart(prev) : prev,
+      );
+      setLookupRows((prev) =>
+        prev.map((r) => {
+          if (r.partId !== partId) return r;
+          const next = {
+            ...r,
+            priceA: priceA ?? undefined,
+            priceB: priceB ?? undefined,
+          };
+          if (r.selectedPriceType === "A") {
+            next.unitPrice = priceA ?? undefined;
+          } else if (r.selectedPriceType === "B") {
+            next.unitPrice = priceB ?? undefined;
+          }
+          return next;
+        }),
+      );
+    },
+    [],
+  );
+
+  const handleLookupRowPriceChange = (
+    rowId: string,
+    field: "priceA" | "priceB",
+    raw: string,
+  ) => {
+    const parsed = raw === "" ? undefined : Number.parseFloat(raw);
+    const value =
+      raw === "" || parsed === undefined || Number.isNaN(parsed)
+        ? undefined
+        : parsed;
+    setLookupRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== rowId) return r;
+        const next = { ...r, [field]: value };
+        if (field === "priceA" && r.selectedPriceType === "A") {
+          next.unitPrice = value;
+        }
+        if (field === "priceB" && r.selectedPriceType === "B") {
+          next.unitPrice = value;
+        }
+        return next;
+      }),
+    );
+  };
+
+  const handleSaveLookupRowPrice = async (rowId: string) => {
+    const row = lookupRows.find((r) => r.id === rowId);
+    if (!row?.partId) return;
+
+    const baseline = lookupRowPriceBaselines[rowId] || {
+      priceA: null,
+      priceB: null,
+    };
+    const currentA = row.priceA ?? null;
+    const currentB = row.priceB ?? null;
+    const aChanged = currentA !== (baseline.priceA ?? null);
+    const bChanged = currentB !== (baseline.priceB ?? null);
+    if (!aChanged && !bChanged) return;
+
+    setSavingLookupRowPrice((prev) => ({ ...prev, [rowId]: true }));
+    try {
+      const payload: { priceA?: number; priceB?: number } = {};
+      if (aChanged && currentA !== null) payload.priceA = currentA;
+      if (bChanged && currentB !== null) payload.priceB = currentB;
+      if (Object.keys(payload).length === 0) return;
+
+      const response = (await apiClient.updatePartPrices(
+        row.partId,
+        payload,
+      )) as { error?: string };
+      if (response?.error) {
+        toast({
+          title: "Failed to update price",
+          description: response.error,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const nextA = aChanged ? currentA : baseline.priceA;
+      const nextB = bChanged ? currentB : baseline.priceB;
+      setLookupRowPriceBaselines((prev) => ({
+        ...prev,
+        [rowId]: { priceA: nextA, priceB: nextB },
+      }));
+      applyPartPricesToCaches(row.partId, nextA, nextB);
+      toast({ title: "Price updated" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to update price",
+        description: error?.message || String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSavingLookupRowPrice((prev) => {
+        const next = { ...prev };
+        delete next[rowId];
+        return next;
+      });
+    }
   };
 
   const handleUpdateLookupRow = (
@@ -2172,6 +2347,137 @@ export const SalesInquiry = () => {
     }
   };
 
+  type InquiryConvertTarget = "invoice" | "quotation" | "dpo";
+  type InquiryConvertItem = {
+    partId: string;
+    quantity: number;
+    purchasePrice?: number;
+    priceA?: number;
+    priceB?: number;
+    priceM?: number;
+    partNo?: string;
+    description?: string;
+    location?: string;
+  };
+  type InquirySelectionDraft = {
+    formData: typeof formData;
+    inquiryItems: InquiryItem[];
+    lookupRows: LookupRow[];
+  };
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem("salesInquirySelectionDraft");
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as InquirySelectionDraft;
+      if (draft.formData) setFormData(draft.formData);
+      if (Array.isArray(draft.inquiryItems)) setInquiryItems(draft.inquiryItems);
+
+      if (Array.isArray(draft.lookupRows) && draft.lookupRows.length > 0) {
+        const restoredRows = draft.lookupRows.map((row, idx) => ({
+          id: row.id || `restored-${Date.now()}-${idx}`,
+          partId: row.partId || "",
+          search: row.search || "",
+          qty: Number(row.qty) || 0,
+          unitPrice: row.unitPrice,
+          priceA: row.priceA,
+          priceB: row.priceB,
+          priceM: row.priceM,
+          selectedPriceType: row.selectedPriceType,
+        }));
+        setLookupRows(restoredRows);
+      }
+    } catch {
+      // ignore malformed restore payload
+    } finally {
+      sessionStorage.removeItem("salesInquirySelectionDraft");
+    }
+  }, []);
+
+  const getSelectedItemsForConversion = (): InquiryConvertItem[] => {
+    if (inquiryItems.length > 0) {
+      return inquiryItems
+        .filter((item) => item.partId)
+        .map((item) => {
+          const part = partsData.find((p) => p.id === item.partId);
+          return {
+            partId: item.partId,
+            quantity: Math.max(1, Number(item.quantity) || 1),
+            purchasePrice: Number(item.purchasePrice || 0),
+            priceA: Number(item.priceA || 0),
+            priceB: Number(item.priceB || 0),
+            priceM: Number(item.priceM || 0),
+            partNo: part?.partNo,
+            description: part?.description,
+            location: item.location,
+          };
+        });
+    }
+
+    return lookupRows
+      .filter((row) => row.partId)
+      .map((row) => {
+        const part = lookupPartsPool.find((p) => p.id === row.partId);
+        return {
+          partId: row.partId,
+          quantity: Math.max(1, Number(row.qty) || 1),
+          purchasePrice: Number(row.unitPrice || 0),
+          priceA: Number(row.priceA || 0),
+          priceB: Number(row.priceB || 0),
+          priceM: Number(row.priceM || 0),
+          partNo: part?.partNo,
+          description: part?.description,
+          location: part?.rackNo,
+        };
+      });
+  };
+
+  const handleConvertFromInquiry = (target: InquiryConvertTarget) => {
+    const items = getSelectedItemsForConversion();
+    if (items.length === 0) {
+      toast({
+        title: "No Items Selected",
+        description:
+          "Please add inquiry items (or set item quantities) before converting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const payload = {
+      source: "sales-inquiry",
+      target,
+      createdAt: new Date().toISOString(),
+      inquiryNo: generateInquiryNo(),
+      customerName: formData.customerName || "",
+      customerEmail: formData.customerEmail || "",
+      customerPhone: formData.customerPhone || "",
+      subject: formData.subject || "",
+      description: formData.description || "",
+      items,
+    };
+    const selectionDraft: InquirySelectionDraft = {
+      formData,
+      inquiryItems,
+      lookupRows,
+    };
+    sessionStorage.setItem(
+      "salesInquirySelectionDraft",
+      JSON.stringify(selectionDraft),
+    );
+    sessionStorage.setItem("salesInquiryConversionDraft", JSON.stringify(payload));
+
+    if (target === "invoice") {
+      navigate("/sales/invoice");
+      return;
+    }
+    if (target === "quotation") {
+      navigate("/sales/quotation");
+      return;
+    }
+    navigate("/inventory/direct-purchase-order");
+  };
+
   return (
     <div className="space-y-4">
       {/* View Inquiry Dialog */}
@@ -2567,16 +2873,45 @@ export const SalesInquiry = () => {
               </div>
               <p className="text-sm text-muted-foreground mt-1">Search for part details using Item filter</p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefreshParts}
-              disabled={loadingParts}
-              className="gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${loadingParts ? "animate-spin" : ""}`} />
-              {loadingParts ? "Loading..." : "Refresh"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                className="gap-2"
+                onClick={() => handleConvertFromInquiry("invoice")}
+              >
+                <FileText className="w-4 h-4" />
+                To Invoice
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="gap-2"
+                onClick={() => handleConvertFromInquiry("quotation")}
+              >
+                <ArrowRight className="w-4 h-4" />
+                To Quotation
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => handleConvertFromInquiry("dpo")}
+              >
+                <Truck className="w-4 h-4" />
+                To Local Purchase
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshParts}
+                disabled={loadingParts}
+                className="gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingParts ? "animate-spin" : ""}`} />
+                {loadingParts ? "Loading..." : "Refresh"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2616,7 +2951,7 @@ export const SalesInquiry = () => {
               className="gap-2 bg-primary h-8 shrink-0"
             >
               <Plus className="w-4 h-4" />
-              Add New Item
+              Add New Item (Alt + Z)
             </Button>
             {loadingPartDetails && (
               <Badge variant="outline" className="text-xs animate-pulse shrink-0">
@@ -2652,10 +2987,10 @@ export const SalesInquiry = () => {
                     <TableHead className="w-[95px] text-center font-bold text-foreground">
                       Cost Price
                     </TableHead>
-                    <TableHead className="w-[70px] text-center font-bold text-foreground">
+                    <TableHead className="w-[90px] text-center font-bold text-foreground">
                       Price A
                     </TableHead>
-                    <TableHead className="w-[70px] text-center font-bold text-foreground">
+                    <TableHead className="w-[90px] text-center font-bold text-foreground">
                       Price B
                     </TableHead>
                     <TableHead className="w-[70px] text-center font-bold text-foreground">
@@ -2686,9 +3021,6 @@ export const SalesInquiry = () => {
                     const balanceAvg = Number(stockBalance?.avg_cost ?? 0);
                     const partCost = parseFloat(rowPart?.cost || "") || 0;
                     const avgCost = balanceAvg > 0 ? balanceAvg : partCost;
-                    const priceA = row.priceA ?? 0;
-                    const priceB = row.priceB ?? 0;
-                    const priceM = row.priceM ?? 0;
                     const showQuantityUsed =
                       rowPart &&
                       rowModels.length > 0 &&
@@ -3109,54 +3441,80 @@ export const SalesInquiry = () => {
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="text-center align-top">
+                          <TableCell className="text-center align-top p-1">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
                                 -
                               </span>
                             ) : (
-                              <Button
-                                variant={
-                                  row.selectedPriceType === "A"
-                                    ? "default"
-                                    : "outline"
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={row.priceA ?? ""}
+                                onChange={(e) =>
+                                  handleLookupRowPriceChange(
+                                    row.id,
+                                    "priceA",
+                                    e.target.value,
+                                  )
                                 }
-                                size="sm"
-                                className="w-full min-w-0 px-2 text-xs"
-                                onClick={() =>
+                                onBlur={() => {
+                                  void handleSaveLookupRowPrice(row.id);
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   handleUpdateLookupRow(row.id, {
                                     selectedPriceType: "A",
-                                    unitPrice: priceA,
-                                  })
-                                }
-                              >
-                                {priceA.toFixed(0)}
-                              </Button>
+                                    unitPrice: row.priceA,
+                                  });
+                                }}
+                                disabled={!!savingLookupRowPrice[row.id]}
+                                className={cn(
+                                  "h-8 w-full min-w-[76px] px-1.5 text-xs text-center tabular-nums",
+                                  row.selectedPriceType === "A" &&
+                                    "border-primary ring-1 ring-primary/30",
+                                )}
+                                placeholder="A"
+                              />
                             )}
                           </TableCell>
-                          <TableCell className="text-center align-top">
+                          <TableCell className="text-center align-top p-1">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
                                 -
                               </span>
                             ) : (
-                              <Button
-                                variant={
-                                  row.selectedPriceType === "B"
-                                    ? "default"
-                                    : "outline"
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={row.priceB ?? ""}
+                                onChange={(e) =>
+                                  handleLookupRowPriceChange(
+                                    row.id,
+                                    "priceB",
+                                    e.target.value,
+                                  )
                                 }
-                                size="sm"
-                                className="w-full min-w-0 px-2 text-xs"
-                                onClick={() =>
+                                onBlur={() => {
+                                  void handleSaveLookupRowPrice(row.id);
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   handleUpdateLookupRow(row.id, {
                                     selectedPriceType: "B",
-                                    unitPrice: priceB,
-                                  })
-                                }
-                              >
-                                {priceB.toFixed(0)}
-                              </Button>
+                                    unitPrice: row.priceB,
+                                  });
+                                }}
+                                disabled={!!savingLookupRowPrice[row.id]}
+                                className={cn(
+                                  "h-8 w-full min-w-[76px] px-1.5 text-xs text-center tabular-nums",
+                                  row.selectedPriceType === "B" &&
+                                    "border-primary ring-1 ring-primary/30",
+                                )}
+                                placeholder="B"
+                              />
                             )}
                           </TableCell>
                           <TableCell className="text-center align-top">

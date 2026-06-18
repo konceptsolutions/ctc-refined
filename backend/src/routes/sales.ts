@@ -953,7 +953,7 @@ router.post("/quotations", async (req: Request, res: Response) => {
         customerEmail,
         customerPhone,
         customerAddress,
-        status: status || "draft",
+        status: status || "pending",
         notes,
         updatedAt: new Date(),
         SalesQuotationItem: {

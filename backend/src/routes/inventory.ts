@@ -2755,8 +2755,11 @@ router.get("/adjustments", async (req: Request, res: Response) => {
       limit,
     });
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitNum = Math.max(
+      1,
+      Math.min(1000, parseInt(limit as string, 10) || 50),
+    );
     const offset = (pageNum - 1) * limitNum;
 
     // Build where clause
@@ -3491,7 +3494,7 @@ router.post("/adjustments", async (req: Request, res: Response) => {
 // Get adjustments by store
 router.get("/adjustments/by-store", async (req: Request, res: Response) => {
   try {
-    const { store_id, status, page = "1", limit = "50" } = req.query;
+    const { store_id, status, part_id, page = "1", limit = "50" } = req.query;
 
     if (!store_id) {
       return res.status(400).json({ error: "store_id is required" });
@@ -3500,6 +3503,7 @@ router.get("/adjustments/by-store", async (req: Request, res: Response) => {
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
+    const partId = String(part_id || req.query.partId || "").trim();
 
     const where: any = {
       storeId: store_id as string,
@@ -3508,6 +3512,11 @@ router.get("/adjustments/by-store", async (req: Request, res: Response) => {
 
     if (status && status !== "all") {
       where.status = status;
+    }
+    if (partId) {
+      where.AdjustmentItem = {
+        some: { partId },
+      };
     }
 
     const [adjustments, total] = await Promise.all([
@@ -5029,11 +5038,12 @@ router.delete("/adjustments/:id", async (req: Request, res: Response) => {
 // Get purchase orders
 router.get("/purchase-orders", async (req: Request, res: Response) => {
   try {
-    const { status, from_date, to_date, page = "1", limit = "50" } = req.query;
+    const { status, from_date, to_date, part_id, page = "1", limit = "50" } = req.query;
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
+    const partId = String(part_id || req.query.partId || "").trim();
 
     const where: any = {};
     if (status) {
@@ -5047,6 +5057,11 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
       if (to_date) {
         where.date.lte = new Date(to_date as string);
       }
+    }
+    if (partId) {
+      where.PurchaseOrderItem = {
+        some: { partId },
+      };
     }
 
     const [orders, total] = await Promise.all([
@@ -7362,6 +7377,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
       to_date,
       store_id,
       order_type,
+      part_id,
       page = "1",
       limit = "50",
     } = req.query;
@@ -7369,6 +7385,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
+    const partId = String(part_id || req.query.partId || "").trim();
 
     const where: any = {};
     if (order_type && String(order_type).trim() !== "") {
@@ -7391,6 +7408,11 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
       if (to_date) {
         where.date.lte = new Date(to_date as string);
       }
+    }
+    if (partId) {
+      where.DirectPurchaseOrderItem = {
+        some: { partId },
+      };
     }
 
     const [orders, total] = await Promise.all([

@@ -737,7 +737,7 @@ export const SubgroupsTab = () => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Account Name *</Label>
+              <Label>Subgroup Name *</Label>
               <Input
                 value={formData.name}
                 onChange={(e) =>
@@ -749,16 +749,6 @@ export const SubgroupsTab = () => {
               {!formData.name.trim() && (
                 <p className="text-sm text-destructive">name</p>
               )}
-            </div>
-            <div className="space-y-2">
-              <Label>Code (Optional - Auto-generated if empty)</Label>
-              <Input
-                value={formData.code}
-                onChange={(e) =>
-                  setFormData({ ...formData, code: e.target.value })
-                }
-                placeholder="e.g., 101, 201 (leave empty to auto-generate)"
-              />
             </div>
           </div>
           <DialogFooter>
@@ -810,7 +800,7 @@ export const SubgroupsTab = () => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Account Name *</Label>
+              <Label>Subgroup Name *</Label>
               <Input
                 value={formData.name}
                 onChange={(e) =>

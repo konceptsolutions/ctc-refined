@@ -324,6 +324,8 @@ function mapApiSalesReturn(row: any): SalesReturn {
   };
 }
 
+const RETURN_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
+
 export const SalesReturns = () => {
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [selectedReturns, setSelectedReturns] = useState<string[]>([]);
@@ -394,8 +396,7 @@ export const SalesReturns = () => {
 
   // Simple pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const totalPages = Math.ceil(returns.length / itemsPerPage);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
   const approverLabel = () => {
     const role = getUserRole();
@@ -984,6 +985,7 @@ export const SalesReturns = () => {
     return matchesItem && matchesCustomer && matchesCustomerName;
   });
 
+  const totalPages = Math.ceil(filteredReturns.length / itemsPerPage) || 1;
   const paginatedReturns = filteredReturns.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
@@ -1598,13 +1600,38 @@ export const SalesReturns = () => {
           </div>
 
           {/* Simple Pagination */}
-          <div className="flex items-center justify-between px-2">
+          <div className="flex flex-col gap-3 px-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center space-x-2">
               <p className="text-sm text-muted-foreground">
-                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredReturns.length)} of {filteredReturns.length} entries
+                Showing{" "}
+                {filteredReturns.length === 0
+                  ? 0
+                  : (currentPage - 1) * itemsPerPage + 1}{" "}
+                to{" "}
+                {Math.min(currentPage * itemsPerPage, filteredReturns.length)}{" "}
+                of {filteredReturns.length} entries
               </p>
             </div>
             <div className="flex items-center space-x-2">
+              <span className="text-sm text-muted-foreground">Rows per page:</span>
+              <Select
+                value={String(itemsPerPage)}
+                onValueChange={(value) => {
+                  setItemsPerPage(Number(value));
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-24 h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RETURN_LIST_PAGE_SIZE_OPTIONS.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="outline"
                 size="sm"
@@ -1620,7 +1647,7 @@ export const SalesReturns = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
+                disabled={currentPage === totalPages || filteredReturns.length === 0}
               >
                 Next
               </Button>

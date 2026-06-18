@@ -5,6 +5,7 @@ import { TrialBalanceTab } from "./TrialBalanceTab";
 import { IncomeStatementTab } from "./IncomeStatementTab";
 import { BalanceSheetTab } from "./BalanceSheetTab";
 import { LedgersTab } from "./LedgersTab";
+import { DailyClosingTab } from "./DailyClosingTab";
 
 export const FinancialStatementsModule = () => {
   const [activeTab, setActiveTab] = useState("general-journal");
@@ -43,6 +44,12 @@ export const FinancialStatementsModule = () => {
           >
             <span className="mr-1">λ</span> Ledgers
           </TabsTrigger>
+          <TabsTrigger 
+            value="daily-closing"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-4 py-2 transition-all duration-200"
+          >
+            <span className="mr-1">λ</span> Daily Closing
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="general-journal" className="animate-fade-in mt-4">
@@ -63,6 +70,10 @@ export const FinancialStatementsModule = () => {
 
         <TabsContent value="ledgers" className="animate-fade-in mt-4">
           <LedgersTab />
+        </TabsContent>
+
+        <TabsContent value="daily-closing" className="animate-fade-in mt-4">
+          <DailyClosingTab />
         </TabsContent>
       </Tabs>
     </div>

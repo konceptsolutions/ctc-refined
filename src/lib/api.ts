@@ -1178,6 +1178,7 @@ class ApiClient {
   async getAdjustmentsByStore(params: {
     store_id: string;
     status?: string;
+    part_id?: string;
     page?: number;
     limit?: number;
   }) {
@@ -1213,6 +1214,7 @@ class ApiClient {
     status?: string;
     from_date?: string;
     to_date?: string;
+    part_id?: string;
     page?: number;
     limit?: number;
   }) {
@@ -1810,6 +1812,24 @@ class ApiClient {
     );
   }
 
+  async getDailyClosing(params?: { date?: string; account_ids?: string[] }) {
+    const queryParams = new URLSearchParams();
+    if (params?.date) {
+      queryParams.append("date", params.date);
+    }
+    if (params?.account_ids?.length) {
+      queryParams.append("account_ids", params.account_ids.join(","));
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/accounting/daily-closing${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
+  async getDailyClosingAccounts() {
+    return this.request("/accounting/daily-closing/accounts");
+  }
+
   async getIncomeStatement(params?: { from_date?: string; to_date?: string }) {
     const queryParams = new URLSearchParams();
     if (params) {
@@ -2197,6 +2217,7 @@ class ApiClient {
     partReference?: string;
     consignee?: "ISB" | "KHI" | "Other";
     notes?: string;
+    requestDate?: string;
     items: Array<{
       partId: string;
       demandQuantity: number;
@@ -2242,6 +2263,7 @@ class ApiClient {
       partReference?: string;
       consignee?: "ISB" | "KHI" | "Other";
       notes?: string;
+      requestDate?: string;
       items: Array<{
         partId: string;
         demandQuantity: number;
@@ -3138,6 +3160,7 @@ class ApiClient {
   // Vouchers API
   async getVouchers(params?: {
     type?: string;
+    mode?: string;
     status?: string;
     from_date?: string;
     to_date?: string;

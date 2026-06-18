@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { format } from "date-fns";
 import { Search, Edit, Trash2, MoreVertical, Printer, CheckCircle, Clock, X, Plus, CalendarIcon, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -52,11 +52,18 @@ interface ViewVouchersTabProps {
   onAddSubgroup: () => void;
   onAddAccount: () => void;
   onSearch: (filters: any) => void;
-  mainGroups: { value: string; label: string }[];
-  subGroups: { value: string; label: string }[];
+}
+
+interface FilterAccountGroup {
+  id: string;
+  name: string;
+  mainGroup?: string;
+  subGroup?: string;
 }
 
 // Hardcoded values removed - now passed via props
+
+const VOUCHER_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 export const ViewVouchersTab = ({
   vouchers,
@@ -66,27 +73,101 @@ export const ViewVouchersTab = ({
   onAddSubgroup,
   onAddAccount,
   onSearch,
-  mainGroups,
-  subGroups
 }: ViewVouchersTabProps) => {
   const { toast } = useToast();
 
+  const [filterMainGroups, setFilterMainGroups] = useState<FilterAccountGroup[]>([]);
+  const [filterSubGroups, setFilterSubGroups] = useState<FilterAccountGroup[]>([]);
+  const [filterAccounts, setFilterAccounts] = useState<FilterAccountGroup[]>([]);
+
   // Filter states
   const [typeFilter, setTypeFilter] = useState("all");
+  const [modeFilter, setModeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("default");
   const [postDatedFilter, setPostDatedFilter] = useState("default");
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
-  const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
   const [mainGroupFilter, setMainGroupFilter] = useState("_all");
   const [subGroupFilter, setSubGroupFilter] = useState("_all");
   const [accountFilter, setAccountFilter] = useState("_all");
   const [searchBy, setSearchBy] = useState("voucher-no");
   const [searchQuery, setSearchQuery] = useState("");
 
+  useEffect(() => {
+    const fetchFilterGroups = async () => {
+      try {
+        const response = await apiClient.getAccountGroups();
+        if (response.data) {
+          setFilterMainGroups(response.data.mainGroups || []);
+          setFilterSubGroups(response.data.subGroups || []);
+          setFilterAccounts(response.data.accounts || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch account groups for voucher filters:", error);
+      }
+    };
+    fetchFilterGroups();
+  }, []);
+
+  const visibleSubGroups = useMemo(() => {
+    if (mainGroupFilter === "_all") return filterSubGroups;
+    return filterSubGroups.filter((sg) => sg.mainGroup === mainGroupFilter);
+  }, [filterSubGroups, mainGroupFilter]);
+
+  const visibleAccounts = useMemo(() => {
+    if (subGroupFilter !== "_all") {
+      return filterAccounts.filter((acc) => acc.subGroup === subGroupFilter);
+    }
+    if (mainGroupFilter !== "_all") {
+      const subgroupIds = new Set(visibleSubGroups.map((sg) => sg.id));
+      return filterAccounts.filter((acc) => subgroupIds.has(acc.subGroup || ""));
+    }
+    return filterAccounts;
+  }, [filterAccounts, subGroupFilter, mainGroupFilter, visibleSubGroups]);
+
+  const handleMainGroupFilterChange = (value: string) => {
+    setMainGroupFilter(value);
+    setSubGroupFilter("_all");
+    setAccountFilter("_all");
+  };
+
+  const handleSubGroupFilterChange = (value: string) => {
+    setSubGroupFilter(value);
+    setAccountFilter("_all");
+    if (value !== "_all") {
+      const subgroup = filterSubGroups.find((sg) => sg.id === value);
+      if (subgroup?.mainGroup) {
+        setMainGroupFilter(subgroup.mainGroup);
+      }
+    }
+  };
+
+  const handleAccountFilterChange = (value: string) => {
+    setAccountFilter(value);
+    if (value !== "_all") {
+      const account = filterAccounts.find((acc) => acc.id === value);
+      if (account?.subGroup) {
+        setSubGroupFilter(account.subGroup);
+        const subgroup = filterSubGroups.find((sg) => sg.id === account.subGroup);
+        if (subgroup?.mainGroup) {
+          setMainGroupFilter(subgroup.mainGroup);
+        }
+      }
+    }
+  };
+
+  const isModeFilterEnabled =
+    typeFilter === "payment" || typeFilter === "receipt";
+
+  useEffect(() => {
+    if (!isModeFilterEnabled && modeFilter !== "all") {
+      setModeFilter("all");
+    }
+  }, [isModeFilterEnabled, modeFilter]);
+
   // Simple pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const totalPages = Math.ceil(vouchers.length / itemsPerPage);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
   // Selection
   const [selectedVouchers, setSelectedVouchers] = useState<string[]>([]);
@@ -428,27 +509,31 @@ export const ViewVouchersTab = ({
 
   // Handle Search button
   const handleSearch = () => {
+    const trimmedQuery = searchQuery.trim();
     onSearch({
-      type: typeFilter,
-      category: categoryFilter,
-      is_post_dated: postDatedFilter,
+      type: typeFilter !== "all" ? typeFilter : undefined,
+      mode:
+        isModeFilterEnabled && modeFilter !== "all" ? modeFilter : undefined,
+      category: categoryFilter !== "default" ? categoryFilter : undefined,
+      is_post_dated: postDatedFilter !== "default" ? postDatedFilter : undefined,
       from_date: fromDate ? format(fromDate, "yyyy-MM-dd") : undefined,
       to_date: toDate ? format(toDate, "yyyy-MM-dd") : undefined,
-      maingroup_id: mainGroupFilter,
-      subgroup_id: subGroupFilter,
-      account_id: accountFilter,
-      search_by: searchBy,
-      search: searchQuery
+      maingroup_id: mainGroupFilter !== "_all" ? mainGroupFilter : undefined,
+      subgroup_id: subGroupFilter !== "_all" ? subGroupFilter : undefined,
+      account_id: accountFilter !== "_all" ? accountFilter : undefined,
+      search_by: trimmedQuery ? searchBy : undefined,
+      search: trimmedQuery || undefined,
     });
     setCurrentPage(1);
   };
 
   const clearFilters = () => {
     setTypeFilter("all");
+    setModeFilter("all");
     setCategoryFilter("default");
     setPostDatedFilter("default");
     setFromDate(undefined);
-    setToDate(new Date());
+    setToDate(undefined);
     setMainGroupFilter("_all");
     setSubGroupFilter("_all");
     setAccountFilter("_all");
@@ -457,11 +542,19 @@ export const ViewVouchersTab = ({
 
     onSearch({});
     setCurrentPage(1);
-    setItemsPerPage(10);
+    setItemsPerPage(50);
   };
 
   // Skip local filtering, use vouchers directly as they will come filtered from server
   const filteredVouchers = vouchers;
+  const getVoucherMode = (voucher: Voucher): "cash" | "online" | "-" => {
+    if (voucher.type !== "payment" && voucher.type !== "receipt") return "-";
+    if (!voucher.cashBankAccount) return "-";
+    const label = getAccountLabel(voucher.cashBankAccount).toLowerCase();
+    if (/\bbank\b|\bonline\b/.test(label)) return "online";
+    return "cash";
+  };
+  const totalPages = Math.ceil(filteredVouchers.length / itemsPerPage) || 1;
   const paginatedVouchers = filteredVouchers.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
@@ -813,7 +906,7 @@ export const ViewVouchersTab = ({
       {/* Filters */}
       <div className="bg-card border border-border rounded-lg p-4 space-y-4">
         {/* First row of filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Type</Label>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
@@ -826,6 +919,30 @@ export const ViewVouchersTab = ({
                 <SelectItem value="receipt">Receipt</SelectItem>
                 <SelectItem value="journal">Journal</SelectItem>
                 <SelectItem value="contra">Contra</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Mode</Label>
+            <Select
+              value={modeFilter}
+              onValueChange={setModeFilter}
+              disabled={!isModeFilterEnabled}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    isModeFilterEnabled
+                      ? "All"
+                      : "Select Payment/Receipt type first"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="online">Online</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -920,10 +1037,13 @@ export const ViewVouchersTab = ({
             <SearchableSelect
               options={[
                 { value: "_all", label: "All" },
-                ...mainGroups.map((group) => ({ value: group.value, label: group.label })),
+                ...filterMainGroups.map((group) => ({
+                  value: group.id,
+                  label: group.name,
+                })),
               ]}
               value={mainGroupFilter}
-              onValueChange={setMainGroupFilter}
+              onValueChange={handleMainGroupFilterChange}
               placeholder="Search main group..."
               className="h-9"
             />
@@ -934,10 +1054,13 @@ export const ViewVouchersTab = ({
             <SearchableSelect
               options={[
                 { value: "_all", label: "All" },
-                ...subGroups.map((group) => ({ value: group.value, label: group.label })),
+                ...visibleSubGroups.map((group) => ({
+                  value: group.id,
+                  label: group.name,
+                })),
               ]}
               value={subGroupFilter}
-              onValueChange={setSubGroupFilter}
+              onValueChange={handleSubGroupFilterChange}
               placeholder="Search sub group..."
               className="h-9"
             />
@@ -948,10 +1071,13 @@ export const ViewVouchersTab = ({
             <SearchableSelect
               options={[
                 { value: "_all", label: "All" },
-                ...accounts.map((acc) => ({ value: acc.value, label: acc.label })),
+                ...visibleAccounts.map((acc) => ({
+                  value: acc.id,
+                  label: acc.name,
+                })),
               ]}
               value={accountFilter}
-              onValueChange={setAccountFilter}
+              onValueChange={handleAccountFilterChange}
               placeholder="Search account..."
               className="h-9"
             />
@@ -1015,6 +1141,7 @@ export const ViewVouchersTab = ({
                 <TableHead className="font-semibold text-primary">Sr No</TableHead>
                 <TableHead className="font-semibold text-primary">Voucher no</TableHead>
                 <TableHead className="font-semibold text-primary">Voucher Name</TableHead>
+                <TableHead className="font-semibold text-primary">Mode</TableHead>
                 <TableHead className="font-semibold text-primary">Date</TableHead>
                 <TableHead className="font-semibold text-primary">Clear Date</TableHead>
                 <TableHead className="font-semibold text-primary">Is Cleared</TableHead>
@@ -1026,7 +1153,7 @@ export const ViewVouchersTab = ({
             <TableBody>
               {paginatedVouchers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                     No vouchers found
                   </TableCell>
                 </TableRow>
@@ -1056,6 +1183,7 @@ export const ViewVouchersTab = ({
                       </div>
                     </TableCell>
                     <TableCell className="text-primary">{voucher.narration || "-"}</TableCell>
+                    <TableCell className="uppercase">{getVoucherMode(voucher)}</TableCell>
                     <TableCell>{formatDisplayDate(voucher.date)}</TableCell>
                     <TableCell>{formatDisplayDate(voucher.checkClearDate || "")}</TableCell>
                     <TableCell>
@@ -1140,13 +1268,32 @@ export const ViewVouchersTab = ({
         </div>
 
         {/* Simple Pagination */}
-        <div className="flex items-center justify-between px-2">
+        <div className="flex flex-col gap-3 px-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center space-x-2">
             <p className="text-sm text-muted-foreground">
-              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredVouchers.length)} of {filteredVouchers.length} entries
+              Showing {filteredVouchers.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredVouchers.length)} of {filteredVouchers.length} entries
             </p>
           </div>
           <div className="flex items-center space-x-2">
+            <span className="text-sm text-muted-foreground">Rows per page:</span>
+            <Select
+              value={String(itemsPerPage)}
+              onValueChange={(value) => {
+                setItemsPerPage(Number(value));
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="w-24 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {VOUCHER_PAGE_SIZE_OPTIONS.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"
@@ -1162,7 +1309,7 @@ export const ViewVouchersTab = ({
               variant="outline"
               size="sm"
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
+              disabled={currentPage === totalPages || filteredVouchers.length === 0}
             >
               Next
             </Button>

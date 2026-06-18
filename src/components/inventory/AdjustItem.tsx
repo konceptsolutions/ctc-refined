@@ -90,6 +90,8 @@ interface AdjustmentRecord {
   createdAt?: string;
 }
 
+const ADJUST_ITEM_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
+
 export const AdjustItem = () => {
   const [view, setView] = useState<"list" | "create" | "edit">("list");
   const [selectedRecord, setSelectedRecord] = useState<AdjustmentRecord | null>(
@@ -113,7 +115,7 @@ export const AdjustItem = () => {
   >([]);
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
   const [totalRecords, setTotalRecords] = useState(0);
 
   // Form state
@@ -543,7 +545,7 @@ export const AdjustItem = () => {
   }, [records, filterAdjustType]);
 
   // Pagination logic
-  const totalPages = Math.ceil(totalRecords / itemsPerPage);
+  const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
 
   // Total amount calculation
@@ -1230,11 +1232,31 @@ export const AdjustItem = () => {
           {/* Pagination */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-3 py-2 border-t border-border">
             <p className="text-xs text-muted-foreground">
-              Showing {startIndex + 1} to{" "}
+              Showing{" "}
+              {totalRecords === 0 ? 0 : startIndex + 1} to{" "}
               {Math.min(startIndex + itemsPerPage, totalRecords)} of{" "}
-              {totalRecords} Records
+              {totalRecords} records
             </p>
             <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Rows per page:</span>
+              <Select
+                value={itemsPerPage.toString()}
+                onValueChange={(v) => {
+                  setItemsPerPage(parseInt(v));
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-24 h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ADJUST_ITEM_PAGE_SIZE_OPTIONS.map((size) => (
+                    <SelectItem key={size} value={String(size)} className="text-xs">
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="outline"
                 size="sm"
@@ -1288,31 +1310,6 @@ export const AdjustItem = () => {
               >
                 Last
               </Button>
-              <Select
-                value={itemsPerPage.toString()}
-                onValueChange={(v) => {
-                  setItemsPerPage(parseInt(v));
-                  setCurrentPage(1);
-                }}
-              >
-                <SelectTrigger className="w-14 h-7 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="10" className="text-xs">
-                    10
-                  </SelectItem>
-                  <SelectItem value="25" className="text-xs">
-                    25
-                  </SelectItem>
-                  <SelectItem value="50" className="text-xs">
-                    50
-                  </SelectItem>
-                  <SelectItem value="100" className="text-xs">
-                    100
-                  </SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
         </div>
