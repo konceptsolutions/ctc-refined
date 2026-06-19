@@ -27,6 +27,7 @@ import DetailsPartSearchPage from "./pages/DetailsPartSearch";
 import NotFound from "./pages/NotFound";
 import Documentation from "./pages/Documentation";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { AppAIAssistant } from "./components/chatbot/AppAIAssistant";
 
 const queryClient = new QueryClient();
 
@@ -74,6 +75,7 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<ProtectedRoute><NotFound /></ProtectedRoute>} />
           </Routes>
+          <AppAIAssistant />
         </BrowserRouter>
       </TooltipProvider>
     </NotificationProvider>

@@ -537,7 +537,8 @@ model PurchaseQuotation {
   updatedAt               DateTime               @updatedAt
   PurchaseImportRequest   PurchaseImportRequest  @relation(fields: [purchaseImportRequestId], references: [id], onDelete: Cascade)
   Supplier                Supplier               @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  PurchaseQuotationItem   PurchaseQuotationItem[]
+  PurchaseQuotationItem     PurchaseQuotationItem[]
+  PurchaseOrder             PurchaseOrder?
 
   @@index([purchaseImportRequestId])
   @@index([supplierId])
@@ -603,18 +604,20 @@ model PriceHistory {
 }
 
 model PurchaseOrder {
-  id                String              @id @default(uuid())
-  poNumber          String              @unique
-  date              DateTime
-  supplierId        String?
-  status            String              @default("Draft")
-  expectedDate      DateTime?
-  notes             String?
-  totalAmount       Float               @default(0)
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  Supplier          Supplier?           @relation(fields: [supplierId], references: [id])
-  PurchaseOrderItem PurchaseOrderItem[]
+  id                  String              @id @default(uuid())
+  poNumber            String              @unique
+  date                DateTime
+  supplierId          String?
+  purchaseQuotationId String?             @unique
+  status              String              @default("Draft")
+  expectedDate        DateTime?
+  notes               String?
+  totalAmount         Float               @default(0)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  Supplier            Supplier?           @relation(fields: [supplierId], references: [id])
+  PurchaseQuotation   PurchaseQuotation?  @relation(fields: [purchaseQuotationId], references: [id], onDelete: SetNull)
+  PurchaseOrderItem   PurchaseOrderItem[]
 }
 
 model PurchaseOrderItem {

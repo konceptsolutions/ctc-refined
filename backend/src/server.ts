@@ -66,6 +66,7 @@ import backupsRoutes from "./routes/backups";
 import companyProfileRoutes from "./routes/company-profile";
 import whatsappSettingsRoutes from "./routes/whatsapp-settings";
 import longcatSettingsRoutes from "./routes/longcat-settings";
+import aiAssistantRoutes from "./routes/ai-assistant";
 import vouchersRoutes from "./routes/vouchers";
 import salesRoutes from "./routes/sales";
 import dpoReturnsRoutes from "./routes/dpo-returns";
@@ -79,13 +80,13 @@ import { authenticateJWT } from "./middleware/authMiddleware";
 
 // Trigger restart for environment variable update
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Middleware - CORS configuration
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
   : [
-      "http://localhost:5173",
+      "http://localhost:5174",
       "http://localhost:8080",
       "http://localhost:8081",
       "http://localhost:83",
@@ -593,6 +594,7 @@ app.use("/api/backups", authenticateJWT, backupsRoutes);
 app.use("/api/company-profile", authenticateJWT, companyProfileRoutes);
 app.use("/api/whatsapp-settings", authenticateJWT, whatsappSettingsRoutes);
 app.use("/api/longcat-settings", authenticateJWT, longcatSettingsRoutes);
+app.use("/api/ai-assistant", authenticateJWT, aiAssistantRoutes);
 app.use("/api/vouchers", authenticateJWT, vouchersRoutes);
 // Legacy/compat alias (some clients call this path directly)
 app.use("/api/getVouchers", authenticateJWT, vouchersRoutes);
@@ -639,6 +641,11 @@ app.use(
   "/dev-koncepts/api/longcat-settings",
   authenticateJWT,
   longcatSettingsRoutes,
+);
+app.use(
+  "/dev-koncepts/api/ai-assistant",
+  authenticateJWT,
+  aiAssistantRoutes,
 );
 app.use("/dev-koncepts/api/vouchers", authenticateJWT, vouchersRoutes);
 app.use("/dev-koncepts/api/getVouchers", authenticateJWT, vouchersRoutes);

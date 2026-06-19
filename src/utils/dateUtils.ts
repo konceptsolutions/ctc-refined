@@ -120,3 +120,39 @@ export function formatDateYYYYMMDD(date: string | Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Pakistan financial year: 1 July – 30 June */
+export function getPakistanFinancialYearStartYear(
+  asOfDate: string = getCurrentDatePakistan(),
+): number {
+  const [year, month] = asOfDate.split('-').map(Number);
+  return month >= 7 ? year : year - 1;
+}
+
+export function getPakistanFinancialYearRange(options?: {
+  fyStartYear?: number;
+  throughToday?: boolean;
+}): { from: string; to: string; label: string } {
+  const today = getCurrentDatePakistan();
+  const fyStartYear =
+    options?.fyStartYear ?? getPakistanFinancialYearStartYear(today);
+  const fyEndYear = fyStartYear + 1;
+  const from = `${fyStartYear}-07-01`;
+  const fyEnd = `${fyEndYear}-06-30`;
+  const throughToday = options?.throughToday !== false;
+  const to = throughToday && today < fyEnd ? today : fyEnd;
+  const label = `FY ${fyStartYear}-${String(fyEndYear).slice(-2)} (1 Jul ${fyStartYear} – ${to})`;
+  return { from, to, label };
+}
+
+export function getCurrentPakistanFinancialYearRange() {
+  return getPakistanFinancialYearRange({ throughToday: true });
+}
+
+export function getPreviousPakistanFinancialYearRange() {
+  const currentStart = getPakistanFinancialYearStartYear();
+  return getPakistanFinancialYearRange({
+    fyStartYear: currentStart - 1,
+    throughToday: false,
+  });
+}
+

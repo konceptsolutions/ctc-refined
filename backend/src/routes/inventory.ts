@@ -1435,7 +1435,7 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
     const partCosts: any[] = await prisma.$queryRaw`
       SELECT cost, "purchasePrice", "avgCost", "priceA" 
       FROM "Part" 
-      WHERE id = ${partId}::uuid
+      WHERE id = ${partId}
     `;
 
     const rawPartData = partCosts[0] || {};
@@ -1977,7 +1977,7 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
           WHERE status = 'reserved'
           GROUP BY "partId"
       ) rs ON p.id = rs."partId"
-      WHERE p.id = ${partId}::uuid
+      WHERE p.id = ${partId}
     `) as any[];
 
     if (!result || result.length === 0) {

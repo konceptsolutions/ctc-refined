@@ -25,6 +25,8 @@ interface SearchableSelectProps {
   createLabel?: string;
   /** When true, the closed input shows only the label (not description). */
   selectedDisplayLabelOnly?: boolean;
+  /** Fired when the user types in the search field (remote / async option loading). */
+  onSearchChange?: (query: string) => void;
 }
 
 export const SearchableSelect = ({
@@ -38,6 +40,7 @@ export const SearchableSelect = ({
   onCreate,
   createLabel = "item",
   selectedDisplayLabelOnly = false,
+  onSearchChange,
   ...props
 }: SearchableSelectProps & React.ComponentProps<typeof Input>) => {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -258,6 +261,7 @@ export const SearchableSelect = ({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setSearchQuery(newValue);
+    onSearchChange?.(newValue);
     
     // Only open dropdown if user is actually typing (not empty)
     if (newValue.trim()) {

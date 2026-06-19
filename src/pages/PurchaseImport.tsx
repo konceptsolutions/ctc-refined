@@ -3,7 +3,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Package, BarChart3, Plus, Trash2, Pencil, Check, Eye } from "lucide-react";
+import { FileText, Plus, Trash2, Pencil, Check, Eye, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +26,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 
-type PurchaseImportTab = "inquiry" | "quotation" | "costing" | "history";
+type PurchaseImportTab = "inquiry" | "quotation" | "purchase-order";
 
 interface TabConfig {
   id: PurchaseImportTab;
@@ -127,16 +127,10 @@ const tabs: TabConfig[] = [
     description: "Review and update purchase quotations",
   },
   {
-    id: "costing",
-    label: "Landed Cost",
-    icon: Package,
-    description: "Manage landed costs and allocations",
-  },
-  {
-    id: "history",
-    label: "Import History",
-    icon: BarChart3,
-    description: "Review past purchase import records",
+    id: "purchase-order",
+    label: "Purchase Order",
+    icon: ShoppingCart,
+    description: "Purchase orders created from confirmed quotations",
   },
 ];
 
@@ -239,6 +233,32 @@ type PurchaseQuotationRecord = {
     quotationQuantity: number;
     totalWeight: number;
   }>;
+  PurchaseOrder?: {
+    id: string;
+    poNumber: string;
+    status: string;
+  } | null;
+};
+
+type ImportPurchaseOrderRecord = {
+  id: string;
+  poNumber: string;
+  date: string;
+  status: string;
+  totalAmount: number;
+  notes?: string | null;
+  itemsCount: number;
+  supplier?: {
+    id: string;
+    code?: string | null;
+    name?: string | null;
+  } | null;
+  quotation?: {
+    id: string;
+    quotationNo: string;
+    currency?: string;
+    requestNo?: string | null;
+  } | null;
 };
 
 type PurchaseQuotationDetailItem = {
@@ -4401,10 +4421,13 @@ const PurchaseQuotationTab = () => {
   const handleConfirmQuotation = async (quotationId: string) => {
     setUpdatingQuotationId(quotationId);
     try {
-      await apiClient.updatePurchaseQuotationStatus(quotationId, "confirm");
+      const response = await apiClient.updatePurchaseQuotationStatus(quotationId, "confirm");
+      const purchaseOrder = (response as { purchaseOrder?: { poNumber?: string } }).purchaseOrder;
       toast({
         title: "Quotation confirmed",
-        description: "Quotation status has been updated to confirm.",
+        description: purchaseOrder?.poNumber
+          ? `Purchase order ${purchaseOrder.poNumber} has been created automatically.`
+          : "Quotation status has been updated to confirm.",
       });
       await fetchQuotations();
     } catch (error: any) {
@@ -4444,7 +4467,7 @@ const PurchaseQuotationTab = () => {
         <div>
           <h2 className="text-base font-semibold">Purchase Quotations</h2>
           <p className="text-sm text-muted-foreground">
-            Review supplier quotations and update them to confirm or revise.
+            Review supplier quotations. Confirming a quotation automatically creates a purchase order.
           </p>
         </div>
       </div>
@@ -4462,19 +4485,20 @@ const PurchaseQuotationTab = () => {
               <th className="text-right p-2 border-b">LC Total</th>
               <th className="text-left p-2 border-b">Type</th>
               <th className="text-left p-2 border-b">Status</th>
+              <th className="text-left p-2 border-b">PO No</th>
               <th className="text-center p-2 border-b">Action</th>
             </tr>
           </thead>
           <tbody>
             {loadingQuotations ? (
               <tr>
-                <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                <td colSpan={11} className="p-4 text-center text-muted-foreground">
                   Loading quotations...
                 </td>
               </tr>
             ) : quotations.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                <td colSpan={11} className="p-4 text-center text-muted-foreground">
                   No quotations found yet.
                 </td>
               </tr>
@@ -4511,6 +4535,9 @@ const PurchaseQuotationTab = () => {
                     <td className="p-2 text-right">{Number(row.lcTotal || 0).toFixed(2)}</td>
                     <td className="p-2 capitalize">{row.quotationType || "original"}</td>
                     <td className="p-2 capitalize">{row.status || "pending"}</td>
+                    <td className="p-2 font-mono text-xs">
+                      {row.PurchaseOrder?.poNumber || "-"}
+                    </td>
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <Button
@@ -4561,6 +4588,229 @@ const PurchaseQuotationTab = () => {
   );
 };
 
+const PurchaseOrderTab = () => {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<ImportPurchaseOrderRecord[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [viewOrderId, setViewOrderId] = useState<string | null>(null);
+  const [viewOrder, setViewOrder] = useState<any>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.getImportPurchaseOrders({
+        page: currentPage,
+        limit: itemsPerPage,
+      });
+      const rows = Array.isArray((response as any)?.data)
+        ? (response as any).data
+        : Array.isArray(response)
+          ? response
+          : [];
+      const pagination = (response as any)?.pagination;
+      setOrders(rows);
+      setTotalRecords(pagination?.total ?? rows.length);
+    } catch (error: any) {
+      toast({
+        title: "Failed to load purchase orders",
+        description: error?.message || "Could not fetch import purchase orders.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, itemsPerPage, toast]);
+
+  useEffect(() => {
+    void fetchOrders();
+  }, [fetchOrders]);
+
+  const openOrderDetail = async (orderId: string) => {
+    setViewOrderId(orderId);
+    setLoadingDetail(true);
+    setViewOrder(null);
+    try {
+      const response = await apiClient.getPurchaseOrder(orderId);
+      setViewOrder(response);
+    } catch (error: any) {
+      toast({
+        title: "Failed to load purchase order",
+        description: error?.message || "Could not load order details.",
+        variant: "destructive",
+      });
+      setViewOrderId(null);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold">Import Purchase Orders</h2>
+        <p className="text-sm text-muted-foreground">
+          Orders created automatically when a purchase quotation is confirmed.
+        </p>
+      </div>
+
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40">
+            <tr>
+              <th className="text-left p-2 border-b">Date</th>
+              <th className="text-left p-2 border-b">PO No</th>
+              <th className="text-left p-2 border-b">Quotation No</th>
+              <th className="text-left p-2 border-b">Inquiry No</th>
+              <th className="text-left p-2 border-b">Supplier</th>
+              <th className="text-right p-2 border-b">Items</th>
+              <th className="text-right p-2 border-b">Total (LC)</th>
+              <th className="text-left p-2 border-b">Status</th>
+              <th className="text-center p-2 border-b">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={9} className="p-4 text-center text-muted-foreground">
+                  Loading purchase orders...
+                </td>
+              </tr>
+            ) : orders.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="p-4 text-center text-muted-foreground">
+                  No purchase orders yet. Confirm a quotation to create one.
+                </td>
+              </tr>
+            ) : (
+              orders.map((row) => (
+                <tr key={row.id} className="border-b hover:bg-muted/20">
+                  <td className="p-2">
+                    {row.date ? new Date(row.date).toLocaleDateString() : "-"}
+                  </td>
+                  <td className="p-2 font-mono text-xs">{row.poNumber || "-"}</td>
+                  <td className="p-2 font-mono text-xs">
+                    {row.quotation?.quotationNo || "-"}
+                  </td>
+                  <td className="p-2 font-mono text-xs">
+                    {row.quotation?.requestNo || "-"}
+                  </td>
+                  <td className="p-2">{row.supplier?.name || "-"}</td>
+                  <td className="p-2 text-right">{row.itemsCount}</td>
+                  <td className="p-2 text-right">
+                    {Number(row.totalAmount || 0).toLocaleString("en-PK", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                  <td className="p-2 capitalize">{row.status || "-"}</td>
+                  <td className="p-2 text-center">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openOrderDetail(row.id)}
+                    >
+                      <Eye className="w-3.5 h-3.5 mr-1" />
+                      View
+                    </Button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {!loading && totalRecords > 0 && (
+        <PurchaseImportListPagination
+          currentPage={currentPage}
+          itemsPerPage={itemsPerPage}
+          totalRecords={totalRecords}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setItemsPerPage(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
+
+      <Dialog open={!!viewOrderId} onOpenChange={(open) => !open && setViewOrderId(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Purchase Order {viewOrder?.po_number || viewOrder?.poNumber || ""}
+            </DialogTitle>
+          </DialogHeader>
+          {loadingDetail ? (
+            <p className="text-sm text-muted-foreground">Loading order details...</p>
+          ) : viewOrder ? (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-muted-foreground">Supplier:</span>{" "}
+                  {viewOrder.supplier_name || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Status:</span>{" "}
+                  {viewOrder.status || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Date:</span>{" "}
+                  {viewOrder.date
+                    ? new Date(viewOrder.date).toLocaleDateString()
+                    : "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Total:</span>{" "}
+                  {Number(viewOrder.total_amount || viewOrder.totalAmount || 0).toLocaleString(
+                    "en-PK",
+                    { minimumFractionDigits: 2 },
+                  )}
+                </div>
+              </div>
+              {viewOrder.notes ? (
+                <p className="text-muted-foreground">{viewOrder.notes}</p>
+              ) : null}
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      <th className="text-left p-2">Part No</th>
+                      <th className="text-left p-2">Description</th>
+                      <th className="text-right p-2">Qty</th>
+                      <th className="text-right p-2">Unit Cost</th>
+                      <th className="text-right p-2">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(viewOrder.items || []).map((item: any) => (
+                      <tr key={item.id} className="border-t">
+                        <td className="p-2 font-mono">{item.part_no || "-"}</td>
+                        <td className="p-2">{item.part_description || "-"}</td>
+                        <td className="p-2 text-right">{item.quantity}</td>
+                        <td className="p-2 text-right">
+                          {Number(item.unit_cost || 0).toFixed(2)}
+                        </td>
+                        <td className="p-2 text-right">
+                          {Number(item.total_cost || 0).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
 const PurchaseImport = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
@@ -4577,6 +4827,10 @@ const PurchaseImport = () => {
     }
     if (tab === "request") {
       navigate("/purchase-import/inquiry", { replace: true });
+      return;
+    }
+    if (tab === "costing" || tab === "history") {
+      navigate("/purchase-import/inquiry", { replace: true });
     }
   }, [tab, navigate]);
 
@@ -4590,24 +4844,8 @@ const PurchaseImport = () => {
         return <PurchaseImportRequestTab />;
       case "quotation":
         return <PurchaseQuotationTab />;
-      case "costing":
-        return (
-          <div className="rounded-lg border border-border bg-card p-6">
-            <h2 className="text-base font-semibold">Landed Cost</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Track and allocate landed cost against imported items.
-            </p>
-          </div>
-        );
-      case "history":
-        return (
-          <div className="rounded-lg border border-border bg-card p-6">
-            <h2 className="text-base font-semibold">Import History</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              View historical purchase import transactions and summaries.
-            </p>
-          </div>
-        );
+      case "purchase-order":
+        return <PurchaseOrderTab />;
       default:
         return null;
     }

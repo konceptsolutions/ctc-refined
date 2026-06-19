@@ -6,6 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Plus, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import apiClient from '@/lib/api';
+import {
+  ITEM_REPORT_TYPE_OPTIONS,
+  type ItemReportOrder,
+  type ItemReportSort,
+} from '@/lib/ai/reportQueryUtils';
 
 interface ItemDropdownProps {
   onSelect: (partId: string, partNo: string, description?: string) => void;
@@ -13,28 +18,109 @@ interface ItemDropdownProps {
   disabled?: boolean;
 }
 
+function partNoFromRow(part: Record<string, unknown>): string {
+  return String(part.part_no ?? part.partNo ?? "").trim();
+}
+
+function masterPartNoFromRow(part: Record<string, unknown>): string {
+  return String(part.master_part_no ?? part.masterPartNo ?? "").trim();
+}
+
+function brandFromRow(part: Record<string, unknown>): string {
+  return String(part.brand_name ?? part.brand ?? "").trim();
+}
+
+type PartOptionMeta = {
+  partNo: string;
+  masterPartNo: string;
+  brand: string;
+  description: string;
+};
+
+function buildPartOptions(parts: Array<Record<string, unknown>>): {
+  options: SearchableSelectOption[];
+  meta: Map<string, PartOptionMeta>;
+} {
+  const meta = new Map<string, PartOptionMeta>();
+  const options = parts.map((part) => {
+    const partNo = partNoFromRow(part) || "—";
+    const masterPartNo = masterPartNoFromRow(part) || "—";
+    const brand = brandFromRow(part) || "—";
+    const description = String(part.description ?? "No description").trim();
+    const id = String(part.id);
+
+    meta.set(id, { partNo, masterPartNo, brand, description });
+
+    return {
+      value: id,
+      label: `${partNo} | ${masterPartNo} | ${brand}`,
+      description,
+    };
+  });
+
+  return { options, meta };
+}
+
 export const ItemDropdown: React.FC<ItemDropdownProps> = ({ onSelect, selectedItems = [], disabled }) => {
   const [options, setOptions] = useState<SearchableSelectOption[]>([]);
+  const [initialOptions, setInitialOptions] = useState<SearchableSelectOption[]>([]);
+  const [partMetaById, setPartMetaById] = useState<Map<string, PartOptionMeta>>(new Map());
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const fetchParts = async () => {
-      if (searchTerm.length < 2) {
-        setOptions([]);
-        return;
-      }
+    const fetchInitialParts = async () => {
       setLoading(true);
       try {
-        const response = await apiClient.getParts({ search: searchTerm, limit: 50 });
-        if (response.data && Array.isArray(response.data)) {
-          const parts = response.data.map((part: any) => ({
-            value: part.id,
-            label: `${part.partNo} - ${part.description || 'No description'}`,
-          }));
-          setOptions(parts);
+        const response = await apiClient.getParts({ status: 'active', limit: 100 });
+        const list = Array.isArray(response)
+          ? response
+          : (response as { data?: Array<Record<string, unknown>> }).data;
+        if (Array.isArray(list)) {
+          const { options: mapped, meta } = buildPartOptions(list);
+          setInitialOptions(mapped);
+          setOptions(mapped);
+          setPartMetaById(meta);
         }
-      } catch (error) {
+      } catch {
+        setInitialOptions([]);
+        setOptions([]);
+        setPartMetaById(new Map());
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInitialParts();
+  }, []);
+
+  useEffect(() => {
+    if (searchTerm.length < 2) {
+      setOptions(initialOptions);
+      return;
+    }
+
+    const fetchParts = async () => {
+      setLoading(true);
+      try {
+        const response = await apiClient.getParts({
+          search: searchTerm,
+          status: 'active',
+          limit: 50,
+        });
+        const list = Array.isArray(response)
+          ? response
+          : (response as { data?: Array<Record<string, unknown>> }).data;
+        if (Array.isArray(list)) {
+          const { options: mapped, meta } = buildPartOptions(list);
+          setOptions(mapped);
+          setPartMetaById((prev) => {
+            const next = new Map(prev);
+            meta.forEach((value, key) => next.set(key, value));
+            return next;
+          });
+        }
+      } catch {
+        setOptions([]);
       } finally {
         setLoading(false);
       }
@@ -42,14 +128,19 @@ export const ItemDropdown: React.FC<ItemDropdownProps> = ({ onSelect, selectedIt
 
     const debounceTimer = setTimeout(fetchParts, 300);
     return () => clearTimeout(debounceTimer);
-  }, [searchTerm]);
+  }, [searchTerm, initialOptions]);
 
   const handleSelect = (value: string) => {
-    const option = options.find(opt => opt.value === value);
+    const meta = partMetaById.get(value);
+    if (meta) {
+      onSelect(value, meta.partNo, meta.description);
+      return;
+    }
+
+    const option = options.find((opt) => opt.value === value)
+      || initialOptions.find((opt) => opt.value === value);
     if (option) {
-      const partNo = option.label.split(' - ')[0];
-      const description = option.label.split(' - ')[1];
-      onSelect(value, partNo, description);
+      onSelect(value, option.label.split(' | ')[0] || option.label, option.description);
     }
   };
 
@@ -61,9 +152,11 @@ export const ItemDropdown: React.FC<ItemDropdownProps> = ({ onSelect, selectedIt
         onValueChange={(value) => {
           if (value) handleSelect(value);
         }}
-        placeholder={loading ? "Loading..." : "Type to search items..."}
+        onSearchChange={setSearchTerm}
+        placeholder={loading ? "Loading..." : "Search or select item..."}
         disabled={disabled || loading}
         allowCustom={false}
+        selectedDisplayLabelOnly
       />
     </div>
   );
@@ -526,4 +619,181 @@ export const HistoryButton: React.FC<HistoryButtonProps> = ({ partId, partNo, on
     </Button>
   );
 };
+
+interface CustomerTypeButtonsProps {
+  onSelect: (type: "walking" | "registered") => void;
+  disabled?: boolean;
+}
+
+export const CustomerTypeButtons: React.FC<CustomerTypeButtonsProps> = ({
+  onSelect,
+  disabled,
+}) => (
+  <div className="flex flex-col sm:flex-row gap-2">
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-8 text-xs flex-1"
+      disabled={disabled}
+      onClick={() => onSelect("walking")}
+    >
+      Cash Sale (Walk-in)
+    </Button>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-8 text-xs flex-1"
+      disabled={disabled}
+      onClick={() => onSelect("registered")}
+    >
+      Party Sale (Credit)
+    </Button>
+  </div>
+);
+
+interface CustomerDropdownProps {
+  onSelect: (customerId: string, customerName: string) => void;
+  disabled?: boolean;
+}
+
+export const CustomerDropdown: React.FC<CustomerDropdownProps> = ({ onSelect, disabled }) => {
+  const [options, setOptions] = useState<SearchableSelectOption[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      setLoading(true);
+      try {
+        const response = await apiClient.getCustomers({
+          status: "active",
+          limit: 1000,
+        });
+        const list = Array.isArray(response)
+          ? response
+          : (response as { data?: unknown }).data;
+        if (Array.isArray(list)) {
+          setOptions(
+            list.map((customer: { id: string; name: string; code?: string }) => ({
+              value: customer.id,
+              label: customer.code ? `${customer.code} - ${customer.name}` : customer.name,
+            })),
+          );
+        }
+      } catch {
+        setOptions([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCustomers();
+  }, []);
+
+  const handleSelect = (value: string) => {
+    const option = options.find((opt) => opt.value === value);
+    if (option) {
+      const name = option.label.includes(" - ")
+        ? option.label.split(" - ").slice(1).join(" - ")
+        : option.label;
+      onSelect(value, name);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">Select registered customer</Label>
+      <SearchableSelect
+        options={options}
+        onValueChange={(value) => {
+          if (value) handleSelect(value);
+        }}
+        placeholder={loading ? "Loading..." : "Search or select customer..."}
+        disabled={disabled || loading}
+      />
+    </div>
+  );
+};
+
+interface WalkingCustomerNameInputProps {
+  onSubmit: (name: string) => void;
+  disabled?: boolean;
+}
+
+export const WalkingCustomerNameInput: React.FC<WalkingCustomerNameInputProps> = ({
+  onSubmit,
+  disabled,
+}) => {
+  const [name, setName] = useState("");
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">Enter walk-in customer name</Label>
+      <div className="flex gap-2">
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Customer name as on invoice"
+          disabled={disabled}
+          className="h-8 text-xs"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && name.trim()) onSubmit(name.trim());
+          }}
+        />
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 text-xs shrink-0"
+          disabled={disabled || !name.trim()}
+          onClick={() => onSubmit(name.trim())}
+        >
+          Generate
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+interface CustomerWiseReportTypeButtonsProps {
+  onSelect: (sortBy: ItemReportSort, order: ItemReportOrder, label: string) => void;
+  onInvoiceSummary?: () => void;
+  disabled?: boolean;
+}
+
+export const CustomerWiseReportTypeButtons: React.FC<CustomerWiseReportTypeButtonsProps> = ({
+  onSelect,
+  onInvoiceSummary,
+  disabled,
+}) => (
+  <div className="space-y-2">
+    <Label className="text-xs">Select report type</Label>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+      {ITEM_REPORT_TYPE_OPTIONS.map((opt) => (
+        <Button
+          key={opt.value}
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs justify-start"
+          disabled={disabled}
+          onClick={() => onSelect(opt.sort_by, opt.order, opt.label)}
+        >
+          {opt.label}
+        </Button>
+      ))}
+      {onInvoiceSummary && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-8 text-xs justify-start sm:col-span-2"
+          disabled={disabled}
+          onClick={onInvoiceSummary}
+        >
+          Sales invoice summary
+        </Button>
+      )}
+    </div>
+  </div>
+);
 

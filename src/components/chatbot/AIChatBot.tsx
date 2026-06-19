@@ -18,176 +18,52 @@ import {
   ExpenseForm,
   ConfirmationButtons,
   HistoryButton,
+  CustomerTypeButtons,
+  CustomerDropdown,
+  WalkingCustomerNameInput,
+  CustomerWiseReportTypeButtons,
 } from './InteractiveComponents';
 import { HistoryPopup } from './HistoryPopup';
+import { getLocalHelpForQuery } from '@/lib/ai/localErpHelp';
+import {
+  extractCustomerNameFromInvoiceQuery,
+  formatInvoiceDate,
+  isCustomerInvoiceLookupQuery,
+} from '@/lib/ai/customerInvoiceQueryUtils';
+import {
+  extractPartSearchFromStockQuery,
+  isItemStockLookupQuery,
+} from '@/lib/ai/itemStockQueryUtils';
+import {
+  isItemAnalyticsReportQuery,
+  parseItemAnalyticsReportQuery,
+  printItemAnalyticsPdf,
+  isCustomerWiseReportQuery,
+  isCustomerWiseItemAnalyticsQuery,
+  isCustomerWiseInvoiceReportQuery,
+  parseCustomerTypeFromText,
+  parseReportDateRange,
+  parseItemReportSpecFromQuery,
+  hasExplicitItemReportDirection,
+  buildItemReportSpec,
+  printCustomerWiseSalesPdf,
+  printCustomerWiseItemAnalyticsPdf,
+  type SalesItemAnalyticsRow,
+  type CustomerWiseSalesReport,
+  type ItemReportSort,
+  type ItemReportOrder,
+  ITEM_REPORT_TYPE_OPTIONS,
+} from '@/lib/ai/reportQueryUtils';
+import { getCurrentPakistanFinancialYearRange } from '@/utils/dateUtils';
  
 const CHAT_STORAGE_KEY = 'ai-assistant-chat-history';
 const MAX_STORED_MESSAGES = 50;
 
-// Comprehensive system prompt for ERP training
-const SYSTEM_PROMPT = `You are an intelligent AI assistant for a comprehensive Inventory ERP System. Your role is to help users navigate, understand, and use the system effectively.
+const resolveNavigationPath = (nav: { path: string; tab?: string }) =>
+  nav.tab ? `${nav.path.replace(/\/$/, '')}/${nav.tab}` : nav.path;
 
-**SYSTEM OVERVIEW:**
-This is a full-featured ERP system for inventory management, sales, accounting, and business operations.
-
-**AVAILABLE MODULES & FEATURES:**
-
-1. **DASHBOARD** (/)
-   - Main overview with key statistics
-   - Quick access to all modules
-   - Recent activity monitoring
-
-2. **PARTS MANAGEMENT** (/parts)
-   - Add/Edit/Delete parts (inventory items)
-   - Parts list with search and filters
-   - Kits management (product bundles)
-   - Features: Part codes, descriptions, categories, brands, pricing (Price A, B, M), stock levels, images
-
-3. **SALES MODULE** (/sales)
-   - Sales Invoice: Create customer invoices
-   - Quotation: Generate price quotes
-   - Delivery Challan: Delivery documentation
-   - Sales Returns: Process returns
-   - Features: Customer selection, item search, discounts, taxes, payment tracking
-
-4. **INVENTORY MANAGEMENT** (/inventory)
-   - Stock Balance: View current stock levels
-   - Stock Transfer: Move stock between stores/locations
-   - Stock Adjustment: Correct stock quantities
-   - Purchase Orders: Order from suppliers
-   - Features: Multi-location support, rack/shelf management, stock movements tracking
-
-5. **VOUCHERS** (/vouchers)
-   - Payment Voucher: Record outgoing payments
-   - Receipt Voucher: Record incoming payments
-   - Journal Voucher: General accounting entries
-   - Contra Voucher: Cash/bank transfers
-   - Features: Account selection, narration, audit trail
-
-6. **ACCOUNTING** (/accounting)
-   - Chart of Accounts: Account structure
-   - General Ledger: Account-wise transactions
-   - Trial Balance: Financial summary
-   - Features: Double-entry bookkeeping, account groups
-
-7. **FINANCIAL STATEMENTS** (/financial-statements)
-   - Income Statement: Profit & Loss
-   - Features: Period-based reporting, financial analysis
-
-8. **EXPENSES** (/expenses)
-   - Expense Types: Categorize expenses
-   - Posted Expenses: Record operational expenses
-   - Features: Budget tracking, expense reporting
-
-9. **CUSTOMERS & SUPPLIERS** (/manage)
-   - Customer Management: Add/edit customers, credit limits, balances
-   - Supplier Management: Add/edit suppliers, payment terms
-   - Features: Contact info, addresses, credit management
-
-10. **REPORTS** (/reports)
-    - Sales Reports: Sales analysis and trends
-    - Expense Reports: Expense breakdown
-    - Inventory Reports: Stock analysis
-    - Customer Reports: Customer performance
-    - Supplier Reports: Supplier analysis
-
-11. **SETTINGS** (/settings)
-    - User Management: Create/edit users, roles
-    - Roles & Permissions: Configure access control
-    - Company Profile: Company information
-    - WhatsApp Integration: Messaging configuration
-    - LongCat AI: AI assistant settings
-    - Backup & Restore: Data management
-
-**NAVIGATION COMMANDS:**
-Users can say things like:
-- "Go to sales" → Navigate to /sales
-- "Open inventory" → Navigate to /inventory
-- "Show me parts" → Navigate to /parts
-- "Take me to settings" → Navigate to /settings
-
-**CREATION COMMANDS:**
-- "Create invoice" → Navigate to /sales with invoice tab
-- "Add new part" → Navigate to /parts with add tab
-- "New customer" → Navigate to /manage with customers tab
-
-**KEY FEATURES TO EXPLAIN:**
-
-**Parts Management:**
-- Each part has a unique part number
-- Parts belong to categories, subcategories, and applications
-- Pricing: Price A (retail), Price B (wholesale), Price M (margin)
-- Stock tracking with reorder levels
-- Image support (P1, P2)
-- Master parts for grouping variants
-
-**Sales Process:**
-1. Select customer
-2. Add items from parts list
-3. Set quantities and prices
-4. Apply discounts if needed
-5. Review and save invoice
-6. Print or email invoice
-
-**Inventory Operations:**
-- Stock Balance: Real-time stock levels by location
-- Transfer: Move stock between stores/racks/shelves
-- Adjustment: Correct discrepancies
-- Purchase Orders: Order from suppliers, track receipts
-
-**Accounting:**
-- Double-entry bookkeeping system
-- Chart of Accounts with main groups and subgroups
-- Vouchers: Payment (outgoing), Receipt (incoming), Journal (general), Contra (bank transfers)
-- Trial Balance: Ensures debits = credits
-- Financial Statements: P&L, Trial Balance
-
-**Best Practices:**
-- Always verify stock before creating sales
-- Use proper account codes for accounting entries
-- Regular stock verification prevents discrepancies
-- Backup data regularly
-- Use kits for bundled products
-
-**YOUR CAPABILITIES:**
-1. **Navigation**: Help users navigate to any module or feature
-2. **Guidance**: Explain how to use features, step-by-step instructions
-3. **Troubleshooting**: Help solve problems and answer questions
-4. **Best Practices**: Suggest efficient workflows
-5. **Data Insights**: Help interpret reports and data (when available)
-6. **Feature Explanation**: Explain what each feature does and when to use it
-
-**RESPONSE STYLE:**
-- Be friendly, professional, and helpful
-- Use clear, concise language
-- Provide step-by-step instructions when needed
-- Use emojis sparingly for visual clarity (✅ ❌ 📊 💡 ⚠️)
-- Format lists with bullet points
-- Always offer to help further
-
-**NAVIGATION DETECTION:**
-When users say things like:
-- "Go to...", "Open...", "Show me...", "Take me to..." → These are navigation commands
-- "How do I...", "How to...", "What is...", "Explain..." → These need detailed explanations
-- "Create...", "Add...", "New..." → These might be navigation or instructions
-
-**IMPORTANT RULES:**
-1. If user asks about navigation, provide clear path and offer to navigate
-2. If user asks "how to", provide detailed step-by-step guidance
-3. If user asks about features, explain clearly with examples
-4. If user asks "what is", provide clear definitions
-5. Always maintain context of the conversation
-6. Be proactive in offering help
-7. If unsure, ask clarifying questions
-8. Always be helpful and encouraging
-
-**CURRENT CONTEXT:**
-The user is currently on: {CURRENT_PATH}
-
-**CONVERSATION HISTORY:**
-{CONVERSATION_HISTORY}
-
-Remember: You are here to make the ERP system easy to use and help users be productive! Be conversational, helpful, and always aim to solve the user's problem.`;
+// Legacy inline prompt — server-side knowledge base is authoritative via /api/ai-assistant/chat
+const SYSTEM_PROMPT = `You are Koncepts AI Assistant for the Inventory ERP system.`;
 
 interface StoredMessage {
   id: string;
@@ -223,7 +99,13 @@ interface QuickAction {
 }
 
 interface ConversationFlow {
-  type: 'purchase_order_creation' | 'purchase_order_receiving' | null;
+  type:
+    | 'purchase_order_creation'
+    | 'purchase_order_receiving'
+    | 'customer_wise_sales_report'
+    | 'customer_last_invoice'
+    | 'item_stock_lookup'
+    | null;
   step: number;
   data: {
     items?: Array<{ partId: string; partNo: string; description?: string; quantity: number; unitCost?: number }>;
@@ -239,7 +121,18 @@ interface ConversationFlow {
     prices?: { priceA: number; priceB: number; priceM: number };
     expenses?: Array<{ type: string; amount: number; account: string }>;
     receivedQuantities?: Record<string, number>;
-    currentItemIndex?: number; // For tracking which item we're processing in receiving flow
+    currentItemIndex?: number;
+    customerType?: 'walking' | 'registered';
+    customerId?: string;
+    customerName?: string;
+    fromDate?: string;
+    toDate?: string;
+    rangeLabel?: string;
+    reportMode?: 'invoices' | 'items';
+    sortBy?: ItemReportSort;
+    order?: ItemReportOrder;
+    lastReport?: CustomerWiseSalesReport;
+    lastItemReport?: SalesItemAnalyticsRow[];
   };
 }
 
@@ -301,18 +194,27 @@ const AIChatBot: React.FC = () => {
   const location = useLocation();
   const pathname = location.pathname;
 
-  // Check if LongCat is configured
+  // Check if AI assistant is configured
   useEffect(() => {
-    const checkLongCatConfig = async () => {
+    const checkAiConfig = async () => {
       try {
-        const response = await apiClient.getLongCatSettings();
-        if (response.data?.apiKey) {
+        const response = await apiClient.getAiAssistantStatus();
+        if (response.data?.configured) {
           setLongCatConfigured(true);
         }
-      } catch (error) {
+      } catch {
+        // Fallback: check LongCat settings directly
+        try {
+          const response = await apiClient.getLongCatSettings();
+          if (response.data?.apiKey) {
+            setLongCatConfigured(true);
+          }
+        } catch {
+          // ignore
+        }
       }
     };
-    checkLongCatConfig();
+    checkAiConfig();
   }, []);
 
   // Smart navigation mapping with enhanced context
@@ -325,35 +227,54 @@ const AIChatBot: React.FC = () => {
     'documentation': { path: '/docs', description: 'Developer documentation (API, database, etc.)' },
     
     // Parts
-    'parts': { path: '/parts', description: 'Parts management' },
-    'add part': { path: '/parts', tab: 'add', description: 'Add new part' },
-    'new part': { path: '/parts', tab: 'add', description: 'Create new part' },
-    'create part': { path: '/parts', tab: 'add', description: 'Create new part' },
-    'parts list': { path: '/parts', tab: 'list', description: 'View all parts' },
-    'view parts': { path: '/parts', tab: 'list', description: 'View parts list' },
-    'kits': { path: '/parts', tab: 'kits', description: 'Manage kits' },
-    'create kit': { path: '/parts', tab: 'kits', description: 'Create new kit' },
+    'parts': { path: '/partentry', description: 'Parts management' },
+    'part entry': { path: '/partentry', description: 'Part entry' },
+    'add part': { path: '/partentry', description: 'Add new part' },
+    'new part': { path: '/partentry', description: 'Create new part' },
+    'create part': { path: '/partentry', description: 'Create new part' },
+    'parts list': { path: '/partentry/itemslist', description: 'View all parts' },
+    'view parts': { path: '/partentry/itemslist', description: 'View parts list' },
+    'attributes': { path: '/partentry/attributes', description: 'Part attributes' },
+    'models': { path: '/partentry/models', description: 'Machine models' },
     
     // Sales
-    'sales': { path: '/sales', description: 'Sales module' },
+    'sales': { path: '/sales', tab: 'inquiry', description: 'Sales module' },
+    'sales inquiry': { path: '/sales', tab: 'inquiry', description: 'Sales inquiry' },
+    'inquiry': { path: '/sales', tab: 'inquiry', description: 'Sales inquiry' },
     'invoice': { path: '/sales', tab: 'invoice', description: 'Sales invoice' },
-    'create invoice': { path: '/sales', tab: 'invoice', description: 'Create new invoice' },
-    'new invoice': { path: '/sales', tab: 'invoice', description: 'Create sales invoice' },
+    'sales invoice': { path: '/sales', tab: 'invoice', description: 'Create sales invoice' },
+    'create invoice': { path: '/sales', tab: 'invoice', description: 'Create sales invoice' },
     'quotation': { path: '/sales', tab: 'quotation', description: 'Sales quotation' },
-    'quote': { path: '/sales', tab: 'quotation', description: 'Create quotation' },
-    'delivery': { path: '/sales', tab: 'delivery', description: 'Delivery challan' },
-    'challan': { path: '/sales', tab: 'delivery', description: 'Delivery challan' },
-    'sales returns': { path: '/sales', tab: 'returns', description: 'Sales returns' },
-    'returns': { path: '/sales', tab: 'returns', description: 'Process returns' },
+    'sales quotation': { path: '/sales', tab: 'quotation', description: 'Sales quotation' },
+    'sales return': { path: '/sales', tab: 'returns', description: 'Sales returns' },
+    'returns': { path: '/sales', tab: 'returns', description: 'Sales returns' },
+    'aging': { path: '/sales', tab: 'distributor-aging', description: 'Distributor aging' },
+    'receivables': { path: '/sales', tab: 'receivable-reminders', description: 'Receivable reminders' },
+    
+    // Purchase Import
+    'purchase import': { path: '/purchase-import', tab: 'inquiry', description: 'Purchase import inquiry' },
+    'import inquiry': { path: '/purchase-import', tab: 'inquiry', description: 'Import purchase inquiry' },
+    'import quotation': { path: '/purchase-import', tab: 'quotation', description: 'Import quotation' },
+    'import costing': { path: '/purchase-import', tab: 'costing', description: 'Import costing' },
     
     // Inventory
-    'inventory': { path: '/inventory', description: 'Inventory management' },
-    'stock': { path: '/inventory', description: 'Stock management' },
-    'stock balance': { path: '/inventory', tab: 'balance', description: 'View stock balance' },
-    'stock transfer': { path: '/inventory', tab: 'transfer', description: 'Transfer stock' },
-    'adjust stock': { path: '/inventory', tab: 'adjust', description: 'Adjust stock levels' },
-    'purchase order': { path: '/inventory', tab: 'purchase', description: 'Create purchase order' },
-    'po': { path: '/inventory', tab: 'purchase', description: 'Purchase order' },
+    'inventory': { path: '/inventory', tab: 'current-stock', description: 'Inventory management' },
+    'stock': { path: '/inventory', tab: 'current-stock', description: 'Stock management' },
+    'current stock': { path: '/inventory', tab: 'current-stock', description: 'View current stock' },
+    'stock in out': { path: '/inventory', tab: 'stock-in-out', description: 'Stock in/out' },
+    'adjust stock': { path: '/inventory', tab: 'adjust-item', description: 'Adjust stock levels' },
+    'adjust item': { path: '/inventory', tab: 'adjust-item', description: 'Adjust item (stock correction)' },
+    'local purchase': { path: '/inventory', tab: 'direct-purchase-order', description: 'Local purchase (DPO)' },
+    'direct purchase': { path: '/inventory', tab: 'direct-purchase-order', description: 'Direct purchase order' },
+    'dpo': { path: '/inventory', tab: 'direct-purchase-order', description: 'Direct purchase order' },
+    'dpo return': { path: '/inventory', tab: 'dpo-return', description: 'DPO return' },
+    'store management': { path: '/inventory', tab: 'store-management', description: 'Store management' },
+    'new invoice': { path: '/sales', tab: 'invoice', description: 'Create sales invoice' },
+    'quote': { path: '/sales', tab: 'quotation', description: 'Create quotation' },
+    
+    // Transfer & Store
+    'transfer': { path: '/transfer', description: 'Stock transfer' },
+    'store panel': { path: '/store', description: 'Store panel' },
     
     // Vouchers
     'vouchers': { path: '/vouchers', description: 'Voucher management' },
@@ -368,6 +289,8 @@ const AIChatBot: React.FC = () => {
     // Reports
     'reports': { path: '/reports', description: 'Reports & analytics' },
     'analytics': { path: '/reports', description: 'View analytics' },
+    'top selling': { path: '/reports', description: 'Top selling items report' },
+    'most selling': { path: '/reports', description: 'Top selling items report' },
     'sales report': { path: '/reports', tab: 'sales', description: 'Sales reports' },
     'expense report': { path: '/reports', tab: 'expenses', description: 'Expense reports' },
     
@@ -421,8 +344,19 @@ const AIChatBot: React.FC = () => {
     if (conversationFlow.type) {
       return { type: 'flow_response', data: { message, flow: conversationFlow }, confidence: 0.95 };
     }
-    
-    // Purchase order creation intent
+
+    // Live data lookups — before help keywords ("tell me", "what is", etc.)
+    if (isCustomerInvoiceLookupQuery(message)) {
+      return { type: 'customer_last_invoice', data: { query: message }, confidence: 0.98 };
+    }
+
+    if (isItemStockLookupQuery(message)) {
+      return { type: 'item_stock_lookup', data: { query: message }, confidence: 0.98 };
+    }
+
+    if (isCustomerWiseReportQuery(message)) {
+      return { type: 'customer_wise_report', data: { query: message }, confidence: 0.98 };
+    }
     const poCreationKeywords = [
       'create purchase order', 'create me purchase order', 'create po', 'make purchase order',
       'new purchase order', 'add purchase order', 'purchase order create'
@@ -447,9 +381,25 @@ const AIChatBot: React.FC = () => {
     // Navigation intent detection
     const navigationKeywords = ['go to', 'open', 'show me', 'take me to', 'navigate to', 'switch to', 'view', 'access'];
     const createKeywords = ['create', 'add', 'new', 'make', 'generate'];
-    const helpKeywords = ['help', 'how to', 'how do i', 'what is', 'explain', 'guide'];
+    const helpKeywords = ['help', 'how to', 'how do', 'how does', 'what is', 'explain', 'guide', 'tell me', 'works', 'work'];
     const actionKeywords = ['do', 'perform', 'execute', 'run', 'process'];
     
+    // Help / how-it-works — before navigation so "how does adjust item work" gets an answer
+    for (const keyword of helpKeywords) {
+      if (lowerMessage.includes(keyword)) {
+        const localHelp = getLocalHelpForQuery(message);
+        if (localHelp) {
+          return { type: 'topic_help', data: { query: message, content: localHelp }, confidence: 0.95 };
+        }
+        return { type: 'help', data: { query: message }, confidence: 0.8 };
+      }
+    }
+
+    const directHelp = getLocalHelpForQuery(message);
+    if (directHelp) {
+      return { type: 'topic_help', data: { query: message, content: directHelp }, confidence: 0.85 };
+    }
+
     // Check for navigation intent
     for (const keyword of navigationKeywords) {
       if (lowerMessage.includes(keyword)) {
@@ -472,20 +422,13 @@ const AIChatBot: React.FC = () => {
       }
     }
     
-    // Direct module matching
+    // Direct module matching (navigation by name only)
     for (const [key, value] of Object.entries(navigationMap)) {
       if (lowerMessage === key || lowerMessage.includes(key)) {
         return { type: 'navigate', data: { ...value, key }, confidence: 0.75 };
       }
     }
-    
-    // Help intent
-    for (const keyword of helpKeywords) {
-      if (lowerMessage.startsWith(keyword) || lowerMessage.includes(keyword)) {
-        return { type: 'help', data: { query: message }, confidence: 0.8 };
-      }
-    }
-    
+
     return { type: 'general', data: { message }, confidence: 0.5 };
   }, [conversationFlow]);
 
@@ -500,7 +443,7 @@ const AIChatBot: React.FC = () => {
             {
               label: `Go to ${navData.key}`,
               action: () => {
-                navigate(navData.path);
+                navigate(resolveNavigationPath(navData));
                 toast.success(`Navigated to ${navData.description}`);
               },
               variant: 'default',
@@ -517,7 +460,7 @@ const AIChatBot: React.FC = () => {
             {
               label: `Create in ${createData.key}`,
               action: () => {
-                navigate(createData.path);
+                navigate(resolveNavigationPath(createData));
                 toast.success(`Ready to create in ${createData.description}`);
               },
               variant: 'default',
@@ -526,10 +469,15 @@ const AIChatBot: React.FC = () => {
           ]
         };
       
-      case 'help':
+      case 'topic_help':
+        return { content: intent.data.content };
+
+      case 'help': {
+        const fromQuery = getLocalHelpForQuery(intent.data.query || '');
         return {
-          content: getContextualHelp(pathname),
+          content: fromQuery || getContextualHelp(pathname),
         };
+      }
       
       default:
         return {
@@ -542,18 +490,25 @@ const AIChatBot: React.FC = () => {
   const getContextualHelp = (path: string): string => {
     const helpGuides: Record<string, string> = {
       '/': `🏠 **Dashboard Guide**\n\nYou're on the main dashboard. Here you can:\n• View key statistics and metrics\n• Access quick actions\n• See recent activity\n• Monitor inventory levels\n\n💡 **Pro tip**: Click any quick action button below to get started!`,
-      '/parts': `📦 **Parts Management Guide**\n\n• **Add Part**: Create new inventory items\n• **Parts List**: View and search all parts\n• **Kits**: Create product bundles\n\n💡 Use the search to quickly find parts by code or name.`,
+      '/partentry': `📦 **Part Entry Guide**\n\n• **Add Part**: Create new inventory items\n• **Parts List**: View and search all parts\n• **Kits**: Create product bundles\n\n💡 Use the search to quickly find parts by code or name.`,
       '/sales': `💰 **Sales Module Guide**\n\n• **Invoice**: Create sales invoices\n• **Quotation**: Generate quotes\n• **Delivery**: Manage deliveries\n• **Returns**: Process returns\n\n💡 Always select customer first before adding items.`,
       '/inventory': `📊 **Inventory Guide**\n\n• **Stock Balance**: View current stock levels\n• **Transfer**: Move stock between locations\n• **Adjust**: Correct stock quantities\n• **Purchase Order**: Order from suppliers\n\n💡 Regularly verify stock to maintain accuracy.`,
       '/vouchers': `📝 **Vouchers Guide**\n\n• **Payment**: Record outgoing payments\n• **Receipt**: Record incoming payments\n• **Journal**: General journal entries\n• **Contra**: Cash/bank transfers\n\n💡 Ensure proper narration for audit trail.`,
       '/settings': `⚙️ **Settings Guide**\n\n• **Users**: Manage user accounts\n• **Roles**: Configure permissions\n• **Company**: Update company profile\n• **WhatsApp**: Configure messaging\n\n💡 Backup regularly to prevent data loss.`,
     };
     
+    if (path.startsWith('/partentry')) {
+      return helpGuides['/partentry'];
+    }
+
     return helpGuides[path] || `📖 **Help Guide**\n\nI can help you with:\n• Navigating the system\n• Creating records\n• Understanding features\n• Completing tasks\n\nJust tell me what you need!`;
   };
 
   // Intelligent response based on context
   const getIntelligentResponse = (message: string, path: string): string => {
+    const localHelp = getLocalHelpForQuery(message);
+    if (localHelp) return localHelp;
+
     const lowerMessage = message.toLowerCase();
     
     // Greeting responses
@@ -576,8 +531,8 @@ const AIChatBot: React.FC = () => {
   };
 
   // Execute navigation with smooth transition
-  const executeNavigation = useCallback((path: string, description: string) => {
-    navigate(path);
+  const executeNavigation = useCallback((nav: { path: string; tab?: string }, description: string) => {
+    navigate(resolveNavigationPath(nav));
     toast.success(`Navigated to ${description}`, {
       icon: <Navigation className="h-4 w-4" />,
     });
@@ -588,17 +543,17 @@ const AIChatBot: React.FC = () => {
     const pageActions: Record<string, QuickAction[]> = {
       '/': [
         { label: 'Invoice', icon: <FileText className="h-3 w-3" />, action: 'create_invoice', path: '/sales' },
-        { label: 'Add Part', icon: <Package className="h-3 w-3" />, action: 'add_part', path: '/parts' },
+        { label: 'Add Part', icon: <Package className="h-3 w-3" />, action: 'add_part', path: '/partentry' },
         { label: 'Reports', icon: <BarChart3 className="h-3 w-3" />, action: 'view_reports', path: '/reports' },
         { label: 'Expenses', icon: <DollarSign className="h-3 w-3" />, action: 'expenses', path: '/expenses' },
         { label: 'Stock', icon: <Warehouse className="h-3 w-3" />, action: 'stock', path: '/inventory' },
         { label: 'Voucher', icon: <Receipt className="h-3 w-3" />, action: 'voucher', path: '/vouchers' },
       ],
-      '/parts': [
-        { label: 'New Part', icon: <Package className="h-3 w-3" />, action: 'add_part' },
-        { label: 'Create Kit', icon: <Sparkles className="h-3 w-3" />, action: 'create_kit' },
-        { label: 'Parts List', icon: <ClipboardList className="h-3 w-3" />, action: 'parts_list' },
-        { label: 'Inventory', icon: <Warehouse className="h-3 w-3" />, action: 'inventory', path: '/inventory' },
+      '/partentry': [
+        { label: 'New Part', icon: <Package className="h-3 w-3" />, action: 'add_part', path: '/partentry' },
+        { label: 'Create Kit', icon: <Sparkles className="h-3 w-3" />, action: 'create_kit', path: '/partentry' },
+        { label: 'Parts List', icon: <ClipboardList className="h-3 w-3" />, action: 'parts_list', path: '/partentry/itemslist' },
+        { label: 'Inventory', icon: <Warehouse className="h-3 w-3" />, action: 'inventory', path: '/inventory/current-stock' },
       ],
       '/sales': [
         { label: 'Invoice', icon: <FileText className="h-3 w-3" />, action: 'invoice' },
@@ -627,6 +582,10 @@ const AIChatBot: React.FC = () => {
       ],
     };
     
+    if (pathname.startsWith('/partentry')) {
+      return pageActions['/partentry'];
+    }
+
     return pageActions[pathname] || pageActions['/'];
   };
 
@@ -694,13 +653,13 @@ const AIChatBot: React.FC = () => {
       if (messages.length === 0) {
         // First time user - show greeting
         const aiStatus = longCatConfigured 
-          ? '✨ **Powered by LongCat AI** - Advanced AI responses enabled'
-          : '⚠️ **Basic Mode** - Configure LongCat AI in Settings for enhanced responses';
+          ? '✨ **AI Enabled** — Trained on all Koncepts ERP modules'
+          : '⚠️ **Basic Mode** — Add API key in Settings → LongCat AI for full AI answers';
         
         const greeting: Message = {
           id: '1',
           role: 'assistant',
-          content: `🤖 **AI Control Center Active**\n\n${aiStatus}\n\nI'm your intelligent assistant with **full system control**. I can:\n\n🧭 **Navigate** - "Go to sales" or "Open inventory"\n✨ **Create** - "Add new part" or "Create invoice"\n📊 **Analyze** - "Show reports" or "View dashboard"\n🔧 **Guide** - "Help with vouchers"\n💬 **Answer Questions** - Ask me anything about the system\n\n*Try saying: "Go to invoice" or "How do I create a customer?"*`,
+          content: `🤖 **Koncepts AI Assistant**\n\n${aiStatus}\n\nI know this entire ERP system. I can:\n\n🧭 **Navigate** — "Go to sales invoice" or "Open purchase import"\n📖 **Guide** — "How do I create a quotation?" or "Explain vouchers"\n🔧 **Troubleshoot** — Filters, statuses, stock, approvals\n💬 **Answer** — Any module: sales, inventory, accounting, import purchase\n\n*Try: "How does sales inquiry conversion work?" or "Go to vouchers"*`,
           timestamp: new Date(),
         };
         setMessages([greeting]);
@@ -726,13 +685,13 @@ const AIChatBot: React.FC = () => {
     
     // Show fresh greeting
     const aiStatus = longCatConfigured 
-      ? '✨ **Powered by LongCat AI** - Advanced AI responses enabled'
-      : '⚠️ **Basic Mode** - Configure LongCat AI in Settings for enhanced responses';
+      ? '✨ **AI Enabled** — Trained on all Koncepts ERP modules'
+      : '⚠️ **Basic Mode** — Configure API key in Settings → LongCat AI';
     
     const greeting: Message = {
       id: Date.now().toString(),
       role: 'assistant',
-      content: `🤖 **AI Control Center Active**\n\n${aiStatus}\n\nI'm your intelligent assistant with **full system control**. I can:\n\n🧭 **Navigate** - "Go to sales" or "Open inventory"\n✨ **Create** - "Add new part" or "Create invoice"\n📊 **Analyze** - "Show reports" or "View dashboard"\n🔧 **Guide** - "Help with vouchers"\n💬 **Answer Questions** - Ask me anything about the system\n\n*Try saying: "Go to invoice" or "How do I create a customer?"*`,
+      content: `🤖 **Koncepts AI Assistant**\n\n${aiStatus}\n\nHow can I help you today?`,
       timestamp: new Date(),
     };
     setMessages([greeting]);
@@ -1412,6 +1371,969 @@ const AIChatBot: React.FC = () => {
     }
   }, [conversationFlow, scrollToBottom]);
 
+  const handleItemAnalyticsReportRequest = useCallback(
+    async (query: string) => {
+      const parsed = parseItemAnalyticsReportQuery(query);
+      if (!parsed) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `📊 **Item Sales Analytics**\n\nI can generate reports for a **month**, the **current Pakistan financial year (1 Jul – 30 Jun)**, or a custom range.\n\nExamples:\n\n• "Most selling items in **May**"\n• "Least revenue items for **current financial year**"\n• "Max profitability PDF for **FY 2025-26**"\n• "Most selling items" *(defaults to current FY)*\n\nPakistan FY runs **1 July to 30 June**. Current FY is used automatically when no month is specified.\n\nOr open **Reports → Sales Reports → Item Sales Analytics**.`,
+          timestamp: new Date(),
+          actions: [
+            {
+              label: 'Open Reports',
+              action: () => {
+                navigate('/reports');
+                toast.success('Open Sales Reports → Item Sales Analytics');
+              },
+              variant: 'outline',
+              icon: <BarChart3 className="h-3 w-3" />,
+            },
+          ],
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+        return;
+      }
+
+      const { from, to, label, title, sortBy, order, previewMetric } = parsed;
+
+      try {
+        const response = await apiClient.getTopSellingItemsReport({
+          from_date: from,
+          to_date: to,
+          limit: 50,
+          sort_by: sortBy,
+          order,
+        });
+
+        if (response.error) {
+          throw new Error(response.error);
+        }
+
+        const items = (response.data || []) as SalesItemAnalyticsRow[];
+
+        if (items.length === 0) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `📊 **${title} — ${label}**\n\nNo approved sales invoice items were found for this period (${from} to ${to}).`,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+          setIsTyping(false);
+          setTimeout(() => scrollToBottom(true), 200);
+          return;
+        }
+
+        const preview = items
+          .slice(0, 10)
+          .map((item) => `${item.rank}. **${item.partNo}** — ${previewMetric(item)}`)
+          .join('\n');
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `📊 **${title} — ${label}**\n\nTop ${Math.min(items.length, 10)} of **${items.length}** parts sold in period:\n\n${preview}${items.length > 10 ? `\n\n…and ${items.length - 10} more.` : ''}\n\n*Profit = Revenue − Cost (from invoice avg cost). Only items with sales in this period are included.*\n\nUse **Print PDF** for the full report.`,
+          timestamp: new Date(),
+          actions: [
+            {
+              label: 'Print PDF',
+              action: () => {
+                printItemAnalyticsPdf(items, parsed, label, from, to);
+              },
+              variant: 'default',
+              icon: <FileText className="h-3 w-3" />,
+            },
+            {
+              label: 'Open Reports',
+              action: () => navigate('/reports'),
+              variant: 'outline',
+              icon: <BarChart3 className="h-3 w-3" />,
+            },
+          ],
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (error: any) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `❌ Could not generate the report: ${error.message || 'Unknown error'}\n\nTry **Reports → Sales Reports → Item Sales Analytics** manually.`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } finally {
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+      }
+    },
+    [navigate, scrollToBottom],
+  );
+
+  const lookupCustomerLastInvoice = useCallback(
+    async (customerName: string, customerId?: string) => {
+      try {
+        setIsTyping(true);
+
+        let matchedCustomer: { id: string; name: string } | null = null;
+
+        if (customerId) {
+          matchedCustomer = { id: customerId, name: customerName };
+        } else {
+          const customersRes = await apiClient.getCustomers({
+            search: customerName,
+            limit: 20,
+          });
+          const customersList = Array.isArray(customersRes)
+            ? customersRes
+            : (customersRes as { data?: Array<{ id: string; name: string }> }).data;
+
+          const normalized = customerName.toLowerCase();
+          if (Array.isArray(customersList) && customersList.length > 0) {
+            matchedCustomer =
+              customersList.find((c) => c.name.toLowerCase() === normalized) ||
+              customersList.find(
+                (c) =>
+                  c.name.toLowerCase().includes(normalized) ||
+                  normalized.includes(c.name.toLowerCase()),
+              ) ||
+              customersList[0];
+          }
+        }
+
+        const response = await apiClient.getLatestCustomerInvoice(
+          matchedCustomer
+            ? {
+                customer_id: matchedCustomer.id,
+                customer_name: matchedCustomer.name,
+              }
+            : { customer_name: customerName },
+        );
+
+        if (response.error) {
+          throw new Error(response.error);
+        }
+
+        const invoice = (response as { data?: null | Record<string, unknown> }).data;
+
+        if (!invoice) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `📄 No sales invoices found for customer **${matchedCustomer?.name || customerName}**.`,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+          return;
+        }
+
+        const inv = invoice as {
+          id: string;
+          invoiceNo: string;
+          invoiceDate: string;
+          customerName: string;
+          status: string;
+          paymentStatus: string;
+          grandTotal: number;
+          paidAmount: number;
+          itemCount: number;
+        };
+
+        const balance = Math.max(0, inv.grandTotal - inv.paidAmount);
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `📄 **Latest invoice — ${inv.customerName}**\n\n• **Invoice No:** ${inv.invoiceNo}\n• **Date:** ${formatInvoiceDate(inv.invoiceDate)}\n• **Status:** ${inv.status}\n• **Payment:** ${inv.paymentStatus}\n• **Grand Total:** Rs ${inv.grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}\n• **Paid:** Rs ${inv.paidAmount.toLocaleString('en-PK', { minimumFractionDigits: 2 })}\n• **Balance:** Rs ${balance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}\n• **Line items:** ${inv.itemCount}`,
+          timestamp: new Date(),
+          actions: [
+            {
+              label: 'Open Sales Invoices',
+              action: () => navigate('/sales/invoice'),
+              variant: 'outline',
+              icon: <FileText className="h-3 w-3" />,
+            },
+          ],
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (error: any) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `❌ Could not look up the invoice: ${error.message || 'Unknown error'}`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } finally {
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+      }
+    },
+    [navigate, scrollToBottom],
+  );
+
+  const startCustomerLastInvoiceFlow = useCallback(() => {
+    setConversationFlow({
+      type: 'customer_last_invoice',
+      step: 1,
+      data: {},
+    });
+
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content:
+        '📄 **Customer last invoice**\n\nWhich customer? **Select from the list below**, or type the customer name in the chat box and press Enter.\n\n_Example: NETCO (PVT) LTD_',
+      timestamp: new Date(),
+      interactiveComponent: 'customer_last_invoice_selection',
+    };
+    setMessages((prev) => [...prev, assistantMessage]);
+    setIsTyping(false);
+    setTimeout(() => scrollToBottom(true), 200);
+  }, [scrollToBottom]);
+
+  const handleCustomerLastInvoiceFlowResponse = useCallback(
+    async (text: string) => {
+      const name = text.trim();
+      if (!name) {
+        setIsTyping(false);
+        return;
+      }
+
+      setConversationFlow({ type: null, step: 0, data: {} });
+      await lookupCustomerLastInvoice(name);
+    },
+    [lookupCustomerLastInvoice],
+  );
+
+  const handleCustomerSelectedForLastInvoice = useCallback(
+    async (customerId: string, customerName: string) => {
+      setConversationFlow({ type: null, step: 0, data: {} });
+
+      const message: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `✅ Customer: **${customerName}**\n\nLooking up latest invoice…`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, message]);
+      await lookupCustomerLastInvoice(customerName, customerId);
+    },
+    [lookupCustomerLastInvoice],
+  );
+
+  const handleCustomerLastInvoiceQuery = useCallback(
+    async (query: string) => {
+      const customerName = extractCustomerNameFromInvoiceQuery(query);
+
+      if (!customerName) {
+        startCustomerLastInvoiceFlow();
+        return;
+      }
+
+      setConversationFlow({ type: null, step: 0, data: {} });
+      await lookupCustomerLastInvoice(customerName);
+    },
+    [lookupCustomerLastInvoice, startCustomerLastInvoiceFlow],
+  );
+
+  const lookupItemStock = useCallback(
+    async (searchTerm: string, partId?: string, partNo?: string) => {
+      try {
+        setIsTyping(true);
+
+        let matchedPart: { id: string; partNo: string; description?: string } | null = null;
+
+        if (partId) {
+          matchedPart = { id: partId, partNo: partNo || searchTerm };
+        } else {
+          const normalized = searchTerm.toLowerCase().trim();
+
+          try {
+            const byPartNoRes: any = await apiClient.getPartByPartNo(searchTerm);
+            const byPartNo = byPartNoRes?.data || byPartNoRes;
+            if (byPartNo?.id) {
+              matchedPart = {
+                id: byPartNo.id,
+                partNo: byPartNo.partNo || byPartNo.part_no || searchTerm,
+                description: byPartNo.description,
+              };
+            }
+          } catch {
+            // fall through to search
+          }
+
+          if (!matchedPart) {
+            const partsRes = await apiClient.getParts({ search: searchTerm, limit: 20 });
+            const partsList = Array.isArray(partsRes)
+              ? partsRes
+              : (partsRes as { data?: Array<{ id: string; part_no?: string; partNo?: string; description?: string }> }).data;
+
+            if (Array.isArray(partsList) && partsList.length > 0) {
+              const partNoOf = (p: { part_no?: string; partNo?: string }) =>
+                String(p.part_no ?? p.partNo ?? "").trim();
+              matchedPart =
+                partsList.find((p) => partNoOf(p).toLowerCase() === normalized) ||
+                partsList.find(
+                  (p) =>
+                    partNoOf(p).toLowerCase().includes(normalized) ||
+                    (p.description || '').toLowerCase().includes(normalized),
+                ) ||
+                {
+                  id: partsList[0].id,
+                  partNo: partNoOf(partsList[0]) || searchTerm,
+                  description: partsList[0].description,
+                };
+            }
+          }
+        }
+
+        if (!matchedPart) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `📦 No item found matching **${searchTerm}**. Try the exact part number or pick from the list.`,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+          return;
+        }
+
+        const balanceRes: any = await apiClient.getStockBalance(matchedPart.id);
+        const balance = balanceRes?.data || balanceRes;
+
+        if (balanceRes?.error || !balance) {
+          throw new Error(balanceRes?.error || 'Could not load stock balance');
+        }
+
+        const currentStock = balance.current_stock ?? balance.currentStock ?? 0;
+        const availableStock = balance.available_stock ?? balance.availableStock ?? 0;
+        const reservedStock = balance.reserved_stock ?? balance.reservedStock ?? 0;
+        const reorderLevel = balance.reorder_level ?? balance.reorderLevel ?? 0;
+        const description =
+          balance.part_description || matchedPart.description || 'No description';
+        const partNoLabel = balance.part_no || matchedPart.partNo;
+        const stockPageSearch = encodeURIComponent(partNoLabel || matchedPart.partNo || searchTerm);
+
+        let statusLine = '✅ In stock';
+        if (balance.is_out_of_stock || currentStock <= 0) {
+          statusLine = '🔴 Out of stock';
+        } else if (balance.is_low_stock) {
+          statusLine = '⚠️ Low stock';
+        }
+
+        const brandLine = balance.brand ? `\n• **Brand:** ${balance.brand}` : '';
+        const categoryLine = balance.category ? `\n• **Category:** ${balance.category}` : '';
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `📦 **Stock — ${partNoLabel}**\n_${description}_\n\n• **Current stock:** ${currentStock.toLocaleString('en-PK')}\n• **Available:** ${availableStock.toLocaleString('en-PK')}\n• **Reserved:** ${reservedStock.toLocaleString('en-PK')}\n• **Reorder level:** ${reorderLevel.toLocaleString('en-PK')}\n• **Status:** ${statusLine}${brandLine}${categoryLine}`,
+          timestamp: new Date(),
+          actions: [
+            {
+              label: 'Open Current Stock',
+              action: () => navigate(`/inventory/current-stock?search=${stockPageSearch}`),
+              variant: 'outline',
+              icon: <Package className="h-3 w-3" />,
+            },
+          ],
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (error: any) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `❌ Could not look up stock: ${error.message || 'Unknown error'}`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } finally {
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+      }
+    },
+    [navigate, scrollToBottom],
+  );
+
+  const startItemStockFlow = useCallback(() => {
+    setConversationFlow({
+      type: 'item_stock_lookup',
+      step: 1,
+      data: {},
+    });
+
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content:
+        '📦 **Item stock lookup**\n\nWhich item? **Search and select from the list below**, or type the part number / description in the chat box and press Enter.\n\n_Example: ABC-123 or oil filter_',
+      timestamp: new Date(),
+      interactiveComponent: 'item_stock_selection',
+    };
+    setMessages((prev) => [...prev, assistantMessage]);
+    setIsTyping(false);
+    setTimeout(() => scrollToBottom(true), 200);
+  }, [scrollToBottom]);
+
+  const handleItemStockFlowResponse = useCallback(
+    async (text: string) => {
+      const term = text.trim();
+      if (!term) {
+        setIsTyping(false);
+        return;
+      }
+
+      setConversationFlow({ type: null, step: 0, data: {} });
+      await lookupItemStock(term);
+    },
+    [lookupItemStock],
+  );
+
+  const handleItemSelectedForStock = useCallback(
+    async (partId: string, partNo: string, description?: string) => {
+      setConversationFlow({ type: null, step: 0, data: {} });
+
+      const message: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `✅ Item selected: **${partNo}**${description ? `\n_${description}_` : ''}\n\nLooking up stock…`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, message]);
+      await lookupItemStock(partNo, partId, partNo);
+    },
+    [lookupItemStock],
+  );
+
+  const handleItemStockQuery = useCallback(
+    async (query: string) => {
+      const partTerm = extractPartSearchFromStockQuery(query);
+
+      if (!partTerm) {
+        startItemStockFlow();
+        return;
+      }
+
+      setConversationFlow({ type: null, step: 0, data: {} });
+      await lookupItemStock(partTerm);
+    },
+    [lookupItemStock, startItemStockFlow],
+  );
+
+  const generateCustomerWiseItemAnalyticsReport = useCallback(
+    async (flow: ConversationFlow) => {
+      const {
+        customerType,
+        customerId,
+        customerName,
+        fromDate,
+        toDate,
+        rangeLabel,
+        sortBy,
+        order,
+      } = flow.data;
+      if (!customerType || !fromDate || !toDate || !sortBy || !order) return;
+
+      const spec = buildItemReportSpec(sortBy, order);
+
+      try {
+        setIsTyping(true);
+        const response = await apiClient.getCustomerWiseTopItemsReport({
+          from_date: fromDate,
+          to_date: toDate,
+          customer_type: customerType,
+          customer_id: customerType === 'registered' ? customerId : undefined,
+          customer_name: customerType === 'walking' ? customerName : undefined,
+          limit: 50,
+          sort_by: sortBy,
+          order,
+        });
+
+        if (response.error) {
+          throw new Error(response.error);
+        }
+
+        const items = (response.data || []) as SalesItemAnalyticsRow[];
+        const meta = (response as { meta?: { customer_name?: string } }).meta;
+        const displayCustomer =
+          customerName ||
+          (meta?.customer_name && meta.customer_name !== 'Unknown'
+            ? meta.customer_name
+            : null) ||
+          meta?.customer_name ||
+          'Customer';
+
+        setConversationFlow({
+          type: null,
+          step: 0,
+          data: { lastItemReport: items },
+        });
+
+        if (items.length === 0) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `📊 **${spec.title} — ${displayCustomer}**\n\nNo sales items found for **${rangeLabel || 'selected period'}** (${fromDate} to ${toDate}).\n\n_Includes approved, delivered, and return invoices._`,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+          return;
+        }
+
+        const preview = items
+          .slice(0, 10)
+          .map((item) => `${item.rank}. **${item.partNo}** — ${spec.previewMetric(item)}`)
+          .join('\n');
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `📊 **${spec.title} — ${displayCustomer}**\n**Period:** ${rangeLabel} (${fromDate} to ${toDate})\n\nTop ${Math.min(items.length, 10)} of **${items.length}** parts for this customer:\n\n${preview}${items.length > 10 ? `\n\n…and ${items.length - 10} more.` : ''}\n\nUse **Print PDF** for the full report.`,
+          timestamp: new Date(),
+          actions: [
+            {
+              label: 'Print PDF',
+              action: () => {
+                printCustomerWiseItemAnalyticsPdf(
+                  items,
+                  spec,
+                  displayCustomer,
+                  rangeLabel || 'Selected period',
+                  fromDate,
+                  toDate,
+                );
+              },
+              variant: 'default',
+              icon: <FileText className="h-3 w-3" />,
+            },
+          ],
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (error: any) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `❌ Could not generate customer item report: ${error.message || 'Unknown error'}`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } finally {
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+      }
+    },
+    [scrollToBottom],
+  );
+
+  const generateCustomerWiseSalesReport = useCallback(
+    async (flow: ConversationFlow) => {
+      const { customerType, customerId, customerName, fromDate, toDate, rangeLabel } =
+        flow.data;
+      if (!customerType || !fromDate || !toDate) return;
+
+      try {
+        setIsTyping(true);
+        const response = await apiClient.getCustomerWiseSalesReport({
+          from_date: fromDate,
+          to_date: toDate,
+          customer_type: customerType,
+          customer_id: customerType === 'registered' ? customerId : undefined,
+          customer_name: customerType === 'walking' ? customerName : undefined,
+        });
+
+        if (response.error) {
+          throw new Error(response.error);
+        }
+
+        const report = (response.data || response) as CustomerWiseSalesReport;
+        const invoices = report.invoices || [];
+
+        setConversationFlow({ type: null, step: 0, data: { lastReport: report } });
+
+        if (invoices.length === 0) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `📊 **Customer-wise Sales — ${report.customerName || customerName}**\n\nNo approved sales invoices found for **${rangeLabel || 'selected period'}** (${fromDate} to ${toDate}).`,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+          return;
+        }
+
+        const preview = invoices
+          .slice(0, 8)
+          .map(
+            (inv) =>
+              `• **${inv.invoiceNo}** (${inv.invoiceDate}) — Rs ${inv.grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2 })} | ${inv.itemCount} item(s) | ${inv.paymentStatus}`,
+          )
+          .join('\n');
+
+        const typeLabel =
+          customerType === 'walking' ? 'Cash Sale' : 'Party Sale (Credit)';
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `📊 **Customer-wise Sales Report**\n\n**Customer:** ${report.customerName} (${typeLabel})\n**Period:** ${rangeLabel} (${fromDate} to ${toDate})\n\n**Summary:** ${report.summary.invoiceCount} invoice(s) | Total Rs ${report.summary.totalAmount.toLocaleString('en-PK', { minimumFractionDigits: 2 })} | Paid Rs ${report.summary.totalPaid.toLocaleString('en-PK', { minimumFractionDigits: 2 })} | Balance Rs ${report.summary.totalBalance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}\n\n**Invoices:**\n${preview}${invoices.length > 8 ? `\n\n…and ${invoices.length - 8} more.` : ''}\n\nUse **Print PDF** for the full report with line items.`,
+          timestamp: new Date(),
+          actions: [
+            {
+              label: 'Print PDF',
+              action: () => {
+                printCustomerWiseSalesPdf(
+                  report,
+                  rangeLabel || 'Selected period',
+                  fromDate,
+                  toDate,
+                );
+              },
+              variant: 'default',
+              icon: <FileText className="h-3 w-3" />,
+            },
+            {
+              label: 'Open Reports',
+              action: () => navigate('/reports'),
+              variant: 'outline',
+              icon: <BarChart3 className="h-3 w-3" />,
+            },
+          ],
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (error: any) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `❌ Could not generate customer sales report: ${error.message || 'Unknown error'}`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } finally {
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+      }
+    },
+    [navigate, scrollToBottom],
+  );
+
+  const promptReportTypeSelection = useCallback(
+    (flow: ConversationFlow, customerName: string) => {
+      const message: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `✅ Customer: **${customerName}**\n\nChoose the **report type** for this customer:`,
+        timestamp: new Date(),
+        interactiveComponent: 'customer_item_report_type',
+      };
+      setMessages((prev) => [...prev, message]);
+      scrollToBottom();
+    },
+    [scrollToBottom],
+  );
+
+  const finalizeCustomerWiseReport = useCallback(
+    (updatedFlow: ConversationFlow) => {
+      const { reportMode, sortBy, order, customerName } = updatedFlow.data;
+
+      if (reportMode === 'invoices') {
+        const message: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `✅ Customer: **${customerName}**\n\nGenerating sales report…`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, message]);
+        generateCustomerWiseSalesReport(updatedFlow);
+        return;
+      }
+
+      if (reportMode === 'items' && sortBy && order) {
+        const message: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `✅ Customer: **${customerName}**\n\nGenerating item analytics…`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, message]);
+        generateCustomerWiseItemAnalyticsReport(updatedFlow);
+        return;
+      }
+
+      setConversationFlow({ ...updatedFlow, step: 3 });
+      promptReportTypeSelection(updatedFlow, customerName || 'Customer');
+    },
+    [
+      generateCustomerWiseSalesReport,
+      generateCustomerWiseItemAnalyticsReport,
+      promptReportTypeSelection,
+    ],
+  );
+
+  const handleReportTypeSelected = useCallback(
+    (sortBy: ItemReportSort, order: ItemReportOrder, label: string) => {
+      const flow = conversationFlow;
+      if (flow.type !== 'customer_wise_sales_report') return;
+
+      const updatedFlow: ConversationFlow = {
+        ...flow,
+        step: 4,
+        data: {
+          ...flow.data,
+          reportMode: 'items',
+          sortBy,
+          order,
+        },
+      };
+      setConversationFlow(updatedFlow);
+
+      const message: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `✅ Report type: **${label}**\n\nGenerating report…`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, message]);
+      generateCustomerWiseItemAnalyticsReport(updatedFlow);
+    },
+    [conversationFlow, generateCustomerWiseItemAnalyticsReport],
+  );
+
+  const handleInvoiceSummarySelected = useCallback(() => {
+    const flow = conversationFlow;
+    if (flow.type !== 'customer_wise_sales_report') return;
+
+    const updatedFlow: ConversationFlow = {
+      ...flow,
+      step: 4,
+      data: { ...flow.data, reportMode: 'invoices' },
+    };
+    setConversationFlow(updatedFlow);
+
+    const message: Message = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: `✅ Report type: **Sales invoice summary**\n\nGenerating report…`,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, message]);
+    generateCustomerWiseSalesReport(updatedFlow);
+  }, [conversationFlow, generateCustomerWiseSalesReport]);
+
+  const promptCustomerSelection = useCallback(
+    (flow: ConversationFlow, customerType: 'walking' | 'registered') => {
+      const typeLabel = customerType === 'walking' ? 'Cash Sale (Walk-in)' : 'Party Sale (Credit)';
+      const message: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content:
+          customerType === 'walking'
+            ? `✅ Customer type: **${typeLabel}**\n\nEnter the walk-in customer name (as recorded on invoices):`
+            : `✅ Customer type: **${typeLabel}**\n\nSelect the registered customer from the list:`,
+        timestamp: new Date(),
+        interactiveComponent:
+          customerType === 'walking'
+            ? 'walking_customer_name_input'
+            : 'registered_customer_selection',
+      };
+      setMessages((prev) => [...prev, message]);
+      scrollToBottom();
+    },
+    [scrollToBottom],
+  );
+
+  const handleCustomerTypeSelected = useCallback(
+    (customerType: 'walking' | 'registered') => {
+      const flow = conversationFlow;
+      if (flow.type !== 'customer_wise_sales_report') return;
+
+      setConversationFlow({
+        ...flow,
+        step: 2,
+        data: { ...flow.data, customerType },
+      });
+      promptCustomerSelection(flow, customerType);
+    },
+    [conversationFlow, promptCustomerSelection],
+  );
+
+  const handleRegisteredCustomerSelected = useCallback(
+    (customerId: string, customerName: string) => {
+      const flow = conversationFlow;
+      if (flow.type !== 'customer_wise_sales_report') return;
+
+      const updatedFlow: ConversationFlow = {
+        ...flow,
+        step: 3,
+        data: { ...flow.data, customerId, customerName },
+      };
+      setConversationFlow(updatedFlow);
+      finalizeCustomerWiseReport(updatedFlow);
+    },
+    [conversationFlow, finalizeCustomerWiseReport],
+  );
+
+  const handleWalkingCustomerNameSubmitted = useCallback(
+    (customerName: string) => {
+      const flow = conversationFlow;
+      if (flow.type !== 'customer_wise_sales_report') return;
+
+      const updatedFlow: ConversationFlow = {
+        ...flow,
+        step: 3,
+        data: { ...flow.data, customerName },
+      };
+      setConversationFlow(updatedFlow);
+      finalizeCustomerWiseReport(updatedFlow);
+    },
+    [conversationFlow, finalizeCustomerWiseReport],
+  );
+
+  const startCustomerWiseSalesFlow = useCallback(
+    (query: string) => {
+      const range =
+        parseReportDateRange(query) ?? getCurrentPakistanFinancialYearRange();
+
+      const itemMode = isCustomerWiseItemAnalyticsQuery(query);
+      const explicitDirection = hasExplicitItemReportDirection(query);
+      const itemSpec = itemMode ? parseItemReportSpecFromQuery(query) : null;
+
+      let reportMode: 'invoices' | 'items' | undefined;
+      if (itemMode) {
+        reportMode = 'items';
+      } else if (isCustomerWiseInvoiceReportQuery(query)) {
+        reportMode = 'invoices';
+      }
+
+      const flowData: ConversationFlow['data'] = {
+        fromDate: range.from,
+        toDate: range.to,
+        rangeLabel: range.label,
+        reportMode,
+      };
+
+      if (itemMode && explicitDirection && itemSpec) {
+        flowData.sortBy = itemSpec.sortBy;
+        flowData.order = itemSpec.order;
+      }
+
+      setConversationFlow({
+        type: 'customer_wise_sales_report',
+        step: 1,
+        data: flowData,
+      });
+
+      const reportHint = itemMode
+        ? '\n\n_Item analytics report — you will pick the customer next._'
+        : '';
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `📊 **Customer-wise Report**\n\nPeriod: **${range.label}** (${range.from} to ${range.to})${reportHint}\n\nFirst, select the **customer type**:\n\n• **Cash Sale** — walk-in customers (name typed on invoice)\n• **Party Sale** — registered credit customers from your customer list`,
+        timestamp: new Date(),
+        interactiveComponent: 'customer_type_selection',
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+      setIsTyping(false);
+      setTimeout(() => scrollToBottom(true), 200);
+    },
+    [scrollToBottom],
+  );
+
+  const handleCustomerWiseFlowResponse = useCallback(
+    async (text: string) => {
+      const flow = conversationFlow;
+      if (flow.type !== 'customer_wise_sales_report') return;
+
+      if (flow.step === 1) {
+        const customerType = parseCustomerTypeFromText(text);
+        if (!customerType) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content:
+              'Please choose **Cash Sale** or **Party Sale**, or type "cash sale" / "party sale".',
+            timestamp: new Date(),
+            interactiveComponent: 'customer_type_selection',
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+          setIsTyping(false);
+          return;
+        }
+        handleCustomerTypeSelected(customerType);
+        setIsTyping(false);
+        return;
+      }
+
+      if (flow.step === 2 && flow.data.customerType === 'walking') {
+        if (!text.trim()) {
+          setIsTyping(false);
+          return;
+        }
+        handleWalkingCustomerNameSubmitted(text.trim());
+        return;
+      }
+
+      if (flow.step === 2 && flow.data.customerType === 'registered') {
+        try {
+          setIsTyping(true);
+          const response = await apiClient.getCustomers({
+            search: text.trim(),
+            status: 'active',
+            limit: 5,
+          });
+          const list = Array.isArray(response)
+            ? response
+            : (response as { data?: Array<{ id: string; name: string }> }).data;
+          const match = Array.isArray(list)
+            ? list.find((c) => c.name.toLowerCase() === text.trim().toLowerCase()) ||
+              list[0]
+            : null;
+          if (match) {
+            handleRegisteredCustomerSelected(match.id, match.name);
+          } else {
+            const assistantMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: `No customer found matching "**${text.trim()}**". Please select from the dropdown or try another name.`,
+              timestamp: new Date(),
+              interactiveComponent: 'registered_customer_selection',
+            };
+            setMessages((prev) => [...prev, assistantMessage]);
+          }
+        } finally {
+          setIsTyping(false);
+        }
+        return;
+      }
+
+      if (flow.step === 3) {
+        const lower = text.toLowerCase();
+        if (lower.includes('invoice') || lower.includes('summary')) {
+          handleInvoiceSummarySelected();
+          setIsTyping(false);
+          return;
+        }
+        const { sortBy, order } = parseItemReportSpecFromQuery(text);
+        const option = ITEM_REPORT_TYPE_OPTIONS.find(
+          (o) => o.sort_by === sortBy && o.order === order,
+        );
+        handleReportTypeSelected(sortBy, order, option?.label || 'Item analytics');
+        setIsTyping(false);
+      }
+    },
+    [
+      conversationFlow,
+      handleCustomerTypeSelected,
+      handleWalkingCustomerNameSubmitted,
+      handleRegisteredCustomerSelected,
+      handleReportTypeSelected,
+      handleInvoiceSummarySelected,
+    ],
+  );
+
   // Handle message send with LongCat AI integration
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;
@@ -1433,6 +2355,41 @@ const AIChatBot: React.FC = () => {
     setTimeout(() => scrollToBottom(true), 100);
 
     try {
+      if (conversationFlow.type === 'customer_last_invoice') {
+        await handleCustomerLastInvoiceFlowResponse(currentInput);
+        return;
+      }
+
+      if (conversationFlow.type === 'item_stock_lookup') {
+        await handleItemStockFlowResponse(currentInput);
+        return;
+      }
+
+      if (conversationFlow.type === 'customer_wise_sales_report') {
+        await handleCustomerWiseFlowResponse(currentInput);
+        return;
+      }
+
+      if (isCustomerWiseReportQuery(currentInput)) {
+        startCustomerWiseSalesFlow(currentInput);
+        return;
+      }
+
+      if (isItemAnalyticsReportQuery(currentInput)) {
+        await handleItemAnalyticsReportRequest(currentInput);
+        return;
+      }
+
+      if (isCustomerInvoiceLookupQuery(currentInput)) {
+        await handleCustomerLastInvoiceQuery(currentInput);
+        return;
+      }
+
+      if (isItemStockLookupQuery(currentInput)) {
+        await handleItemStockQuery(currentInput);
+        return;
+      }
+
       // First, check if it's a navigation/action command (high confidence)
       const intent = processUserIntent(currentInput);
       
@@ -1455,8 +2412,43 @@ const AIChatBot: React.FC = () => {
         setIsTyping(false);
         return;
       }
+
+      if (intent.type === 'customer_last_invoice') {
+        await handleCustomerLastInvoiceQuery(currentInput);
+        return;
+      }
+
+      if (intent.type === 'item_stock_lookup') {
+        await handleItemStockQuery(currentInput);
+        return;
+      }
+
+      if (intent.type === 'customer_wise_report') {
+        startCustomerWiseSalesFlow(currentInput);
+        return;
+      }
       
-      // If it's a high-confidence navigation, handle it immediately
+      // Topic help and other high-confidence non-navigation intents (basic mode + AI fallback)
+      if (
+        intent.type === 'topic_help' ||
+        intent.type === 'help' ||
+        (intent.type === 'create' && intent.confidence >= 0.85)
+      ) {
+        const response = generateSmartResponse(intent);
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: response.content,
+          timestamp: new Date(),
+          actions: response.actions,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+        return;
+      }
+
+      // High-confidence navigation only when user clearly wants to go somewhere
       if (intent.type === 'navigate' && intent.confidence >= 0.9) {
         const response = generateSmartResponse(intent);
         const assistantMessage: Message = {
@@ -1474,83 +2466,63 @@ const AIChatBot: React.FC = () => {
       setTimeout(() => scrollToBottom(true), 200);
       
       // Auto-execute navigation
-      if (response.actions?.[0]) {
+      if (response.actions?.[0] && intent.data) {
         setTimeout(() => {
-          response.actions![0].action();
+          navigate(resolveNavigationPath(intent.data));
+          toast.success(`Navigated to ${intent.data.description}`);
         }, 500);
       }
       return;
     }
 
-      // For other queries, use LongCat AI if configured
+      // For other queries, use Koncepts AI assistant if configured
       if (!longCatConfigured) {
-        // Fallback to rule-based response
-        const intent = processUserIntent(currentInput);
-        const response = generateSmartResponse(intent);
-        
+        const fallbackIntent = processUserIntent(currentInput);
+        const response = generateSmartResponse(fallbackIntent);
+
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: response.content + '\n\n💡 *Tip: Configure LongCat AI in Settings → LongCat AI for enhanced AI-powered responses.*',
+          content:
+            response.content +
+            (fallbackIntent.type === 'general'
+              ? '\n\n💡 *Tip: Configure your AI API key in Settings → LongCat AI for broader answers beyond built-in guides.*'
+              : ''),
           timestamp: new Date(),
           actions: response.actions,
         };
-        
+
         setMessages(prev => [...prev, assistantMessage]);
         setIsTyping(false);
-        
-        // Smooth scroll to show response
         setTimeout(() => scrollToBottom(true), 100);
         return;
       }
 
-      // Build conversation history for context
       const conversationHistory = messages
-        .slice(-10) // Last 10 messages for context
+        .slice(-10)
         .map(msg => ({
-          role: msg.role,
+          role: msg.role as 'user' | 'assistant',
           content: msg.content,
         }));
 
-      // Add system message
-      const systemMessage = {
-        role: 'system',
-        content: getSystemPrompt(),
-      };
-
-      // Add current user message
-      const messagesForAPI = [
-        systemMessage,
-        ...conversationHistory,
-        {
-          role: 'user',
-          content: currentInput,
-        },
-      ];
-
-      // Call LongCat API
-      const response = await apiClient.sendLongCatChat({
-        messages: messagesForAPI,
-        max_tokens: 1000,
-        temperature: 0.7,
+      const response = await apiClient.sendAssistantChat({
+        messages: [
+          ...conversationHistory,
+          { role: 'user', content: currentInput },
+        ],
+        currentPath: pathname,
+        conversationSummary: conversationContext.slice(-3).join('\n'),
+        max_tokens: 1200,
+        temperature: 0.6,
       });
 
       if (response.error) {
         throw new Error(response.error);
       }
 
-      let aiResponse = '';
-      if (response.data?.choices?.[0]?.message?.content) {
-        aiResponse = response.data.choices[0].message.content;
-      } else if (response.data?.content) {
-        // Handle Anthropic format
-        const content = Array.isArray(response.data.content) 
-          ? response.data.content.find((c: any) => c.type === 'text')?.text 
-          : response.data.content;
-        aiResponse = content || 'I apologize, but I couldn\'t generate a response.';
-      } else {
-        aiResponse = 'I apologize, but I couldn\'t generate a response.';
-      }
+      const aiResponse =
+        response.data?.content ||
+        'I apologize, but I could not generate a response.';
 
       // Check if AI response suggests navigation
       const navIntent = processUserIntent(aiResponse);
@@ -1597,7 +2569,7 @@ const AIChatBot: React.FC = () => {
       
       toast.error('AI service unavailable. Using fallback mode.');
     }
-  }, [input, messages, processUserIntent, generateSmartResponse, getSystemPrompt, navigate, longCatConfigured, scrollToBottom, conversationFlow, handlePurchaseOrderCreationFlow, handlePurchaseOrderReceivingFlow]);
+  }, [input, messages, processUserIntent, generateSmartResponse, getSystemPrompt, navigate, longCatConfigured, scrollToBottom, conversationFlow, handlePurchaseOrderCreationFlow, handlePurchaseOrderReceivingFlow, handleItemAnalyticsReportRequest, handleCustomerWiseFlowResponse, startCustomerWiseSalesFlow, handleCustomerLastInvoiceQuery, handleCustomerLastInvoiceFlowResponse, handleCustomerSelectedForLastInvoice, handleItemStockQuery, handleItemStockFlowResponse, handleItemSelectedForStock]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1701,7 +2673,7 @@ const AIChatBot: React.FC = () => {
           </div>
           <div className="min-w-0">
             <p className="font-semibold text-xs sm:text-sm text-foreground flex items-center gap-1.5 truncate">
-              AI Control Center
+              Koncepts AI
               <Sparkles className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-primary shrink-0" />
             </p>
             <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Intelligent System Assistant</p>
@@ -1879,6 +2851,27 @@ const AIChatBot: React.FC = () => {
                               toast.info('Cancelled');
                             }}
                             saveLabel={message.flowData.type === 'purchase_order' ? 'Create PO' : 'Receive Order'}
+                          />
+                        )}
+                        {message.interactiveComponent === 'customer_type_selection' && (
+                          <CustomerTypeButtons onSelect={handleCustomerTypeSelected} />
+                        )}
+                        {message.interactiveComponent === 'registered_customer_selection' && (
+                          <CustomerDropdown onSelect={handleRegisteredCustomerSelected} />
+                        )}
+                        {message.interactiveComponent === 'customer_last_invoice_selection' && (
+                          <CustomerDropdown onSelect={handleCustomerSelectedForLastInvoice} />
+                        )}
+                        {message.interactiveComponent === 'item_stock_selection' && (
+                          <ItemDropdown onSelect={handleItemSelectedForStock} />
+                        )}
+                        {message.interactiveComponent === 'walking_customer_name_input' && (
+                          <WalkingCustomerNameInput onSubmit={handleWalkingCustomerNameSubmitted} />
+                        )}
+                        {message.interactiveComponent === 'customer_item_report_type' && (
+                          <CustomerWiseReportTypeButtons
+                            onSelect={handleReportTypeSelected}
+                            onInvoiceSummary={handleInvoiceSummarySelected}
                           />
                         )}
                       </div>

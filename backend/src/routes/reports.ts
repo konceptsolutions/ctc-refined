@@ -3,6 +3,67 @@ import prisma from '../config/database';
 
 const router = express.Router();
 
+/** Counts as a sale in reports — excludes pending, on hold, cancelled */
+const SALES_REPORT_INVOICE_STATUSES = [
+  'approved',
+  'partially_delivered',
+  'fully_delivered',
+  'delivered',
+  'return',
+  'partially_return',
+  'completed',
+];
+
+async function buildCustomerSalesInvoiceWhere(params: {
+  from_date: string;
+  to_date: string;
+  customer_type: string;
+  customer_id?: string;
+  customer_name?: string;
+}) {
+  const fromDate = new Date(params.from_date);
+  fromDate.setHours(0, 0, 0, 0);
+  const toDate = new Date(params.to_date);
+  toDate.setHours(23, 59, 59, 999);
+
+  const type = String(params.customer_type).toLowerCase();
+  const where: any = {
+    invoiceDate: { gte: fromDate, lte: toDate },
+    status: { in: SALES_REPORT_INVOICE_STATUSES },
+    customerType: type,
+    NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+  };
+
+  let resolvedCustomerName = '';
+
+  if (type === 'registered' && params.customer_id) {
+    const customer = await prisma.customer.findUnique({
+      where: { id: String(params.customer_id) },
+      select: { name: true },
+    });
+    resolvedCustomerName = customer?.name?.trim() || '';
+    const customerId = String(params.customer_id);
+    if (resolvedCustomerName) {
+      where.OR = [
+        { customerId },
+        {
+          customerName: { contains: resolvedCustomerName, mode: 'insensitive' },
+        },
+      ];
+    } else {
+      where.customerId = customerId;
+    }
+  } else if (type === 'walking' && params.customer_name) {
+    resolvedCustomerName = String(params.customer_name).trim();
+    where.customerName = {
+      contains: resolvedCustomerName,
+      mode: 'insensitive',
+    };
+  }
+
+  return { where, fromDate, toDate, type, resolvedCustomerName };
+}
+
 // Helper functions for accounting calculations
 function isDebitNormal(accountType: string): boolean {
   const type = accountType.toLowerCase();
@@ -220,6 +281,457 @@ router.get('/dashboard/top-selling', async (req: Request, res: Response) => {
       .slice(0, 10);
 
     res.json({ data: result });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Item sales analytics by date range (from approved sales invoices)
+router.get('/sales/top-items', async (req: Request, res: Response) => {
+  try {
+    const { from_date, to_date, limit = '50', sort_by, order } = req.query;
+
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
+    }
+
+    const fromDate = new Date(from_date as string);
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(to_date as string);
+    toDate.setHours(23, 59, 59, 999);
+    const limitNum = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 500);
+
+    const sortKey = String(sort_by || 'demand').toLowerCase();
+    const sortBy: 'demand' | 'revenue' | 'profit' =
+      sortKey === 'revenue' || sortKey === 'profit' ? sortKey : 'demand';
+    const sortOrder = String(order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    const invoiceItems = await prisma.salesInvoiceItem.findMany({
+      where: {
+        SalesInvoice: {
+          invoiceDate: { gte: fromDate, lte: toDate },
+          status: { in: SALES_REPORT_INVOICE_STATUSES },
+        },
+      },
+      select: {
+        partId: true,
+        partNo: true,
+        description: true,
+        brand: true,
+        orderedQty: true,
+        deliveredQty: true,
+        lineTotal: true,
+        avgCost: true,
+        invoiceId: true,
+      },
+    });
+
+    const partMap = new Map<
+      string,
+      {
+        partId: string;
+        partNo: string;
+        description: string;
+        brand: string;
+        quantity: number;
+        totalAmount: number;
+        totalCost: number;
+        invoiceIds: Set<string>;
+      }
+    >();
+
+    for (const item of invoiceItems) {
+      const qty =
+        Number(item.deliveredQty) > 0
+          ? Number(item.deliveredQty)
+          : Number(item.orderedQty) || 0;
+      const lineTotal = Number(item.lineTotal) || 0;
+      const lineCost = (Number(item.avgCost) || 0) * qty;
+      const existing = partMap.get(item.partId);
+      if (!existing) {
+        partMap.set(item.partId, {
+          partId: item.partId,
+          partNo: item.partNo,
+          description: item.description || '',
+          brand: item.brand || '',
+          quantity: qty,
+          totalAmount: lineTotal,
+          totalCost: lineCost,
+          invoiceIds: new Set([item.invoiceId]),
+        });
+      } else {
+        existing.quantity += qty;
+        existing.totalAmount += lineTotal;
+        existing.totalCost += lineCost;
+        existing.invoiceIds.add(item.invoiceId);
+      }
+    }
+
+    const aggregated = Array.from(partMap.values()).map((row) => {
+      const totalProfit = row.totalAmount - row.totalCost;
+      const marginPercent =
+        row.totalAmount > 0 ? (totalProfit / row.totalAmount) * 100 : 0;
+      return {
+        partId: row.partId,
+        partNo: row.partNo,
+        description: row.description,
+        brand: row.brand,
+        quantity: row.quantity,
+        totalAmount: row.totalAmount,
+        totalCost: row.totalCost,
+        totalProfit,
+        marginPercent,
+        invoiceCount: row.invoiceIds.size,
+      };
+    });
+
+    const dir = sortOrder === 'asc' ? 1 : -1;
+    aggregated.sort((a, b) => {
+      const metricA =
+        sortBy === 'revenue'
+          ? a.totalAmount
+          : sortBy === 'profit'
+            ? a.totalProfit
+            : a.quantity;
+      const metricB =
+        sortBy === 'revenue'
+          ? b.totalAmount
+          : sortBy === 'profit'
+            ? b.totalProfit
+            : b.quantity;
+      if (metricA !== metricB) return (metricA - metricB) * dir;
+      return (b.totalAmount - a.totalAmount) * dir;
+    });
+
+    const result = aggregated.slice(0, limitNum).map((row, index) => ({
+      rank: index + 1,
+      ...row,
+    }));
+
+    res.json({
+      data: result,
+      meta: {
+        from_date,
+        to_date,
+        sort_by: sortBy,
+        order: sortOrder,
+        totalParts: result.length,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Customer-wise sales report (approved sales invoices for one customer)
+router.get('/sales/customer-wise', async (req: Request, res: Response) => {
+  try {
+    const {
+      from_date,
+      to_date,
+      customer_type,
+      customer_id,
+      customer_name,
+    } = req.query;
+
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
+    }
+
+    const type = String(customer_type || '').toLowerCase();
+    if (type !== 'walking' && type !== 'registered') {
+      return res.status(400).json({ error: 'customer_type must be walking or registered.' });
+    }
+
+    if (type === 'registered' && !customer_id) {
+      return res.status(400).json({ error: 'customer_id is required for registered customers.' });
+    }
+
+    if (type === 'walking' && !customer_name) {
+      return res.status(400).json({ error: 'customer_name is required for cash sale customers.' });
+    }
+
+    const fromDate = new Date(from_date as string);
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(to_date as string);
+    toDate.setHours(23, 59, 59, 999);
+
+    const { where, resolvedCustomerName } = await buildCustomerSalesInvoiceWhere({
+      from_date: from_date as string,
+      to_date: to_date as string,
+      customer_type: type,
+      customer_id: customer_id as string | undefined,
+      customer_name: customer_name as string | undefined,
+    });
+
+    const invoices = await prisma.salesInvoice.findMany({
+      where,
+      orderBy: { invoiceDate: 'desc' },
+      include: {
+        SalesInvoiceItem: {
+          select: {
+            partNo: true,
+            description: true,
+            orderedQty: true,
+            deliveredQty: true,
+            unitPrice: true,
+            discount: true,
+            lineTotal: true,
+            brand: true,
+          },
+        },
+        Customer: {
+          select: { id: true, name: true, code: true, contactNo: true },
+        },
+      },
+    });
+
+    const filtered = invoices.filter(
+      (inv) => !inv.customerName.toLowerCase().includes('demo'),
+    );
+
+    const displayName =
+      type === 'registered'
+        ? resolvedCustomerName ||
+          filtered[0]?.Customer?.name ||
+          filtered[0]?.customerName ||
+          'Unknown'
+        : String(customer_name).trim();
+
+    const rows = filtered.map((inv) => {
+      const items = inv.SalesInvoiceItem.map((line) => {
+        const qty =
+          Number(line.deliveredQty) > 0
+            ? Number(line.deliveredQty)
+            : Number(line.orderedQty) || 0;
+        return {
+          partNo: line.partNo,
+          description: line.description || '',
+          brand: line.brand || '',
+          quantity: qty,
+          unitPrice: Number(line.unitPrice) || 0,
+          discount: Number(line.discount) || 0,
+          lineTotal: Number(line.lineTotal) || 0,
+        };
+      });
+      const itemQty = items.reduce((sum, i) => sum + i.quantity, 0);
+      return {
+        id: inv.id,
+        invoiceNo: inv.invoiceNo,
+        invoiceDate: inv.invoiceDate.toISOString().split('T')[0],
+        status: inv.status,
+        paymentStatus: inv.paymentStatus,
+        customerName: inv.customerName,
+        itemCount: items.length,
+        itemQty,
+        subtotal: Number(inv.subtotal) || 0,
+        tax: Number(inv.tax) || 0,
+        grandTotal: Number(inv.grandTotal) || 0,
+        paidAmount: Number(inv.paidAmount) || 0,
+        balance: Math.max(0, (Number(inv.grandTotal) || 0) - (Number(inv.paidAmount) || 0)),
+        items,
+      };
+    });
+
+    const summary = {
+      invoiceCount: rows.length,
+      totalItems: rows.reduce((sum, r) => sum + r.itemCount, 0),
+      totalQty: rows.reduce((sum, r) => sum + r.itemQty, 0),
+      totalAmount: rows.reduce((sum, r) => sum + r.grandTotal, 0),
+      totalPaid: rows.reduce((sum, r) => sum + r.paidAmount, 0),
+      totalBalance: rows.reduce((sum, r) => sum + r.balance, 0),
+    };
+
+    res.json({
+      data: {
+        customerType: type,
+        customerName: displayName,
+        customerId: type === 'registered' ? String(customer_id) : null,
+        invoices: rows,
+        summary,
+      },
+      meta: { from_date, to_date },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Customer-wise item analytics (top items for one customer)
+router.get('/sales/customer-wise/top-items', async (req: Request, res: Response) => {
+  try {
+    const {
+      from_date,
+      to_date,
+      customer_type,
+      customer_id,
+      customer_name,
+      limit = '50',
+      sort_by,
+      order,
+    } = req.query;
+
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
+    }
+
+    const type = String(customer_type || '').toLowerCase();
+    if (type !== 'walking' && type !== 'registered') {
+      return res.status(400).json({ error: 'customer_type must be walking or registered.' });
+    }
+
+    if (type === 'registered' && !customer_id) {
+      return res.status(400).json({ error: 'customer_id is required for registered customers.' });
+    }
+
+    if (type === 'walking' && !customer_name) {
+      return res.status(400).json({ error: 'customer_name is required for cash sale customers.' });
+    }
+
+    const { where: invoiceWhere, resolvedCustomerName } =
+      await buildCustomerSalesInvoiceWhere({
+      from_date: from_date as string,
+      to_date: to_date as string,
+      customer_type: type,
+      customer_id: customer_id as string | undefined,
+      customer_name: customer_name as string | undefined,
+    });
+
+    const limitNum = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 500);
+    const sortKey = String(sort_by || 'demand').toLowerCase();
+    const sortBy: 'demand' | 'revenue' | 'profit' =
+      sortKey === 'revenue' || sortKey === 'profit' ? sortKey : 'demand';
+    const sortOrder = String(order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    const invoiceItems = await prisma.salesInvoiceItem.findMany({
+      where: { SalesInvoice: invoiceWhere },
+      select: {
+        partId: true,
+        partNo: true,
+        description: true,
+        brand: true,
+        orderedQty: true,
+        deliveredQty: true,
+        lineTotal: true,
+        avgCost: true,
+        invoiceId: true,
+        SalesInvoice: {
+          select: {
+            customerName: true,
+            customerId: true,
+            Customer: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    const partMap = new Map<
+      string,
+      {
+        partId: string;
+        partNo: string;
+        description: string;
+        brand: string;
+        quantity: number;
+        totalAmount: number;
+        totalCost: number;
+        invoiceIds: Set<string>;
+      }
+    >();
+
+    let displayName =
+      type === 'walking'
+        ? String(customer_name).trim()
+        : resolvedCustomerName || 'Unknown';
+
+    for (const item of invoiceItems) {
+      if (type === 'registered' && displayName === 'Unknown') {
+        displayName =
+          item.SalesInvoice.Customer?.name ||
+          item.SalesInvoice.customerName ||
+          'Unknown';
+      }
+
+      const qty =
+        Number(item.deliveredQty) > 0
+          ? Number(item.deliveredQty)
+          : Number(item.orderedQty) || 0;
+      const lineTotal = Number(item.lineTotal) || 0;
+      const lineCost = (Number(item.avgCost) || 0) * qty;
+      const existing = partMap.get(item.partId);
+      if (!existing) {
+        partMap.set(item.partId, {
+          partId: item.partId,
+          partNo: item.partNo,
+          description: item.description || '',
+          brand: item.brand || '',
+          quantity: qty,
+          totalAmount: lineTotal,
+          totalCost: lineCost,
+          invoiceIds: new Set([item.invoiceId]),
+        });
+      } else {
+        existing.quantity += qty;
+        existing.totalAmount += lineTotal;
+        existing.totalCost += lineCost;
+        existing.invoiceIds.add(item.invoiceId);
+      }
+    }
+
+    const aggregated = Array.from(partMap.values()).map((row) => {
+      const totalProfit = row.totalAmount - row.totalCost;
+      const marginPercent =
+        row.totalAmount > 0 ? (totalProfit / row.totalAmount) * 100 : 0;
+      return {
+        partId: row.partId,
+        partNo: row.partNo,
+        description: row.description,
+        brand: row.brand,
+        quantity: row.quantity,
+        totalAmount: row.totalAmount,
+        totalCost: row.totalCost,
+        totalProfit,
+        marginPercent,
+        invoiceCount: row.invoiceIds.size,
+      };
+    });
+
+    const dir = sortOrder === 'asc' ? 1 : -1;
+    aggregated.sort((a, b) => {
+      const metricA =
+        sortBy === 'revenue'
+          ? a.totalAmount
+          : sortBy === 'profit'
+            ? a.totalProfit
+            : a.quantity;
+      const metricB =
+        sortBy === 'revenue'
+          ? b.totalAmount
+          : sortBy === 'profit'
+            ? b.totalProfit
+            : b.quantity;
+      if (metricA !== metricB) return (metricA - metricB) * dir;
+      return (b.totalAmount - a.totalAmount) * dir;
+    });
+
+    const result = aggregated.slice(0, limitNum).map((row, index) => ({
+      rank: index + 1,
+      ...row,
+    }));
+
+    res.json({
+      data: result,
+      meta: {
+        from_date,
+        to_date,
+        customer_type: type,
+        customer_id: type === 'registered' ? customer_id : null,
+        customer_name: displayName,
+        sort_by: sortBy,
+        order: sortOrder,
+        totalParts: result.length,
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

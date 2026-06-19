@@ -1522,6 +1522,88 @@ router.get("/invoices", async (req: Request, res: Response) => {
   }
 });
 
+// Latest sales invoice for a customer (by invoice date)
+router.get("/invoices/latest-by-customer", async (req: Request, res: Response) => {
+  try {
+    const { customer_id, customer_name } = req.query;
+
+    if (!customer_id && !customer_name) {
+      return res.status(400).json({
+        error: "customer_id or customer_name is required.",
+      });
+    }
+
+    const where: any = {
+      customerType: { not: "transfer" },
+      NOT: { customerName: { contains: "demo", mode: "insensitive" } },
+    };
+
+    if (customer_id) {
+      const customer = await prisma.customer.findUnique({
+        where: { id: String(customer_id) },
+        select: { name: true },
+      });
+      const id = String(customer_id);
+      if (customer?.name) {
+        where.OR = [
+          { customerId: id },
+          {
+            customerName: {
+              contains: customer.name.trim(),
+              mode: "insensitive",
+            },
+          },
+        ];
+      } else {
+        where.customerId = id;
+      }
+    } else {
+      where.customerName = {
+        contains: String(customer_name).trim(),
+        mode: "insensitive",
+      };
+    }
+
+    const invoice = await prisma.salesInvoice.findFirst({
+      where,
+      orderBy: [{ invoiceDate: "desc" }, { invoiceNo: "desc" }],
+      include: {
+        Customer: { select: { id: true, name: true, code: true } },
+        _count: { select: { SalesInvoiceItem: true } },
+      },
+    });
+
+    if (!invoice) {
+      return res.json({ data: null });
+    }
+
+    const invoiceDate =
+      invoice.invoiceDate instanceof Date
+        ? invoice.invoiceDate.toISOString().split("T")[0]
+        : String(invoice.invoiceDate).split("T")[0];
+
+    res.json({
+      data: {
+        id: invoice.id,
+        invoiceNo: invoice.invoiceNo,
+        invoiceDate,
+        customerId: invoice.customerId,
+        customerName:
+          invoice.Customer?.name || invoice.customerName || "Unknown",
+        customerType: invoice.customerType,
+        status: invoice.status,
+        paymentStatus: invoice.paymentStatus,
+        grandTotal: Number(invoice.grandTotal) || 0,
+        paidAmount: Number(invoice.paidAmount) || 0,
+        itemCount: invoice._count.SalesInvoiceItem,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error in GET /invoices/latest-by-customer:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get invoice by ID
 router.get("/invoices/:id", async (req: Request, res: Response) => {
   try {

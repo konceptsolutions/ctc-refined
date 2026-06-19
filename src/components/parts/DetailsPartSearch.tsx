@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,29 +84,6 @@ export const DetailsPartSearch = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState("");
     const itemsPerPage = 50;
-
-    useEffect(() => {
-        fetchInitialData();
-    }, []);
-
-    const fetchInitialData = async () => {
-        try {
-            const [catsRes, subCatsRes, brandsRes] = await Promise.all([
-                apiClient.getCategories(),
-                apiClient.getSubcategories(),
-                apiClient.getBrands()
-            ]);
-
-            setCategories((catsRes as any).data || catsRes || []);
-            setSubCategories((subCatsRes as any).data || subCatsRes || []);
-            setBrands((brandsRes as any).data || brandsRes || []);
-
-            fetchParts();
-            fetchHistory();
-        } catch (error) {
-            console.error("Failed to fetch initial data", error);
-        }
-    };
 
     const fetchParts = async () => {
         setLoading(true);
@@ -218,6 +195,32 @@ export const DetailsPartSearch = () => {
             setHistoryLoading(false);
         }
     };
+
+    const fetchPartsRef = useRef(fetchParts);
+    fetchPartsRef.current = fetchParts;
+    const fetchHistoryRef = useRef(fetchHistory);
+    fetchHistoryRef.current = fetchHistory;
+
+    useEffect(() => {
+        void (async () => {
+            try {
+                const [catsRes, subCatsRes, brandsRes] = await Promise.all([
+                    apiClient.getCategories(),
+                    apiClient.getSubcategories(),
+                    apiClient.getBrands(),
+                ]);
+
+                setCategories((catsRes as any).data || catsRes || []);
+                setSubCategories((subCatsRes as any).data || subCatsRes || []);
+                setBrands((brandsRes as any).data || brandsRes || []);
+
+                await fetchPartsRef.current();
+                await fetchHistoryRef.current();
+            } catch (error) {
+                console.error("Failed to fetch initial data", error);
+            }
+        })();
+    }, []);
 
     const handleApplyGroupUpdate = async () => {
         if (!percentage || isNaN(parseFloat(percentage))) {

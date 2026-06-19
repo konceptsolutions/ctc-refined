@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -72,7 +73,10 @@ interface StockItem {
 type StockStatusFilter = "all" | "in_stock" | "out_of_stock" | "low_stock";
 
 export const CurrentStock = () => {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(
+    () => searchParams.get("search")?.trim() || "",
+  );
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [stockStatusFilter, setStockStatusFilter] =
     useState<StockStatusFilter>("all");
@@ -236,6 +240,15 @@ export const CurrentStock = () => {
   useEffect(() => {
     searchQueryRef.current = searchQuery;
   }, [searchQuery]);
+
+  // Apply search from URL (e.g. AI chat "Open Current Stock" with ?search=...)
+  useEffect(() => {
+    const fromUrl = searchParams.get("search")?.trim() || "";
+    if (fromUrl !== searchQueryRef.current) {
+      setSearchQuery(fromUrl);
+      setCurrentPage(1);
+    }
+  }, [searchParams]);
 
   // Fetch stock data when filters change
   useEffect(() => {
@@ -1159,6 +1172,9 @@ export const CurrentStock = () => {
                 setStockStatusFilter("all");
                 setStockAsOfDate("");
                 setCurrentPage(1);
+                if (searchParams.get("search")) {
+                  setSearchParams({}, { replace: true });
+                }
               }}
               className="text-muted-foreground hover:text-foreground"
             >

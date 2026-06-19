@@ -2403,6 +2403,27 @@ class ApiClient {
     });
   }
 
+  async convertPurchaseQuotationToPurchaseOrder(quotationId: string) {
+    return this.request(`/purchase-import/quotations/${quotationId}/convert-to-po`, {
+      method: "POST",
+    });
+  }
+
+  async getImportPurchaseOrders(params?: { page?: number; limit?: number }) {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/purchase-import/purchase-orders${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
   // Reports API
   async getDashboardMetrics() {
     return this.request("/reports/dashboard/metrics");
@@ -2415,6 +2436,66 @@ class ApiClient {
   async getTopSelling(limit?: number) {
     const queryParams = limit ? `?limit=${limit}` : "";
     return this.request(`/reports/dashboard/top-selling${queryParams}`);
+  }
+
+  async getTopSellingItemsReport(params: {
+    from_date: string;
+    to_date: string;
+    limit?: number;
+    sort_by?: "demand" | "revenue" | "profit";
+    order?: "asc" | "desc";
+  }) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value) !== "") {
+        queryParams.append(key, String(value));
+      }
+    });
+    const queryString = queryParams.toString();
+    return this.request(
+      `/reports/sales/top-items${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
+  async getCustomerWiseSalesReport(params: {
+    from_date: string;
+    to_date: string;
+    customer_type: "walking" | "registered";
+    customer_id?: string;
+    customer_name?: string;
+  }) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value) !== "") {
+        queryParams.append(key, String(value));
+      }
+    });
+    const queryString = queryParams.toString();
+    return this.request(
+      `/reports/sales/customer-wise${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
+  async getCustomerWiseTopItemsReport(params: {
+    from_date: string;
+    to_date: string;
+    customer_type: "walking" | "registered";
+    customer_id?: string;
+    customer_name?: string;
+    limit?: number;
+    sort_by?: "demand" | "revenue" | "profit";
+    order?: "asc" | "desc";
+  }) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value) !== "") {
+        queryParams.append(key, String(value));
+      }
+    });
+    const queryString = queryParams.toString();
+    return this.request(
+      `/reports/sales/customer-wise/top-items${queryString ? `?${queryString}` : ""}`,
+    );
   }
 
   async getRecentActivity(limit?: number) {
@@ -3081,6 +3162,24 @@ class ApiClient {
     });
   }
 
+  // AI Assistant (Koncepts ERP-trained chat)
+  async getAiAssistantStatus() {
+    return this.request("/ai-assistant/status");
+  }
+
+  async sendAssistantChat(data: {
+    messages: Array<{ role: "user" | "assistant"; content: string }>;
+    currentPath?: string;
+    conversationSummary?: string;
+    max_tokens?: number;
+    temperature?: number;
+  }) {
+    return this.request("/ai-assistant/chat", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Kits API
   async getKits(params?: {
     search?: string;
@@ -3505,6 +3604,22 @@ class ApiClient {
 
   async getSalesInvoice(id: string) {
     return this.request(`/sales/invoices/${id}`);
+  }
+
+  async getLatestCustomerInvoice(params: {
+    customer_id?: string;
+    customer_name?: string;
+  }) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value) !== "") {
+        queryParams.append(key, String(value));
+      }
+    });
+    const queryString = queryParams.toString();
+    return this.request(
+      `/sales/invoices/latest-by-customer${queryString ? `?${queryString}` : ""}`,
+    );
   }
 
   async getSalesInvoicesByPart(

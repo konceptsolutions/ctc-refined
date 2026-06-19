@@ -107,6 +107,137 @@ const normalizeQuotationStatus = (value: any): "pending" | "confirm" | "revise" 
   return "pending";
 };
 
+async function generateImportPoNumber(): Promise<string> {
+  const now = new Date();
+  const year = String(now.getFullYear()).slice(-2);
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const prefix = `PO-${year}${month}-`;
+
+  const existingOrders = await prisma.purchaseOrder.findMany({
+    where: { poNumber: { startsWith: prefix } },
+    orderBy: { poNumber: "desc" },
+    select: { poNumber: true },
+  });
+
+  const numbers = existingOrders
+    .map((order) => {
+      const match = order.poNumber.match(new RegExp(`^${prefix}(\\d+)$`));
+      return match ? parseInt(match[1], 10) : 0;
+    })
+    .filter((num) => num > 0);
+
+  const nextNum = (numbers.length > 0 ? Math.max(...numbers) : 0) + 1;
+  return `${prefix}${String(nextNum).padStart(3, "0")}`;
+}
+
+async function createPurchaseOrderFromQuotation(quotationId: string) {
+  const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+  if (!purchaseQuotationModel) {
+    throw new Error(
+      "Purchase quotation model is unavailable in Prisma client. Restart backend and regenerate Prisma client.",
+    );
+  }
+
+  const quotation = await purchaseQuotationModel.findUnique({
+    where: { id: quotationId },
+    include: {
+      PurchaseQuotationItem: true,
+      PurchaseImportRequest: { select: { requestNo: true } },
+      PurchaseOrder: {
+        select: {
+          id: true,
+          poNumber: true,
+          status: true,
+          totalAmount: true,
+        },
+      },
+    },
+  });
+
+  if (!quotation) {
+    throw new Error("Purchase quotation not found.");
+  }
+
+  if (String(quotation.status || "").toLowerCase() !== "confirm") {
+    throw new Error("Quotation must be confirmed before creating a purchase order.");
+  }
+
+  if (quotation.PurchaseOrder) {
+    return quotation.PurchaseOrder;
+  }
+
+  const lineItems = (quotation.PurchaseQuotationItem || []).filter(
+    (item: any) => Number(item.quotationQuantity || 0) > 0,
+  );
+
+  if (lineItems.length === 0) {
+    throw new Error("Quotation has no items with quantity to order.");
+  }
+
+  const useRevisedRates = String(quotation.quotationType || "").toLowerCase() === "revised";
+  const poItems = lineItems.map((item: any) => {
+    const quantity = Number(item.quotationQuantity || 0);
+    const revisedLcRate = Number(item.revisedLcRate || 0);
+    const lcRate = Number(item.lcRate || 0);
+    const unitCost =
+      useRevisedRates && revisedLcRate > 0 ? revisedLcRate : lcRate;
+    const totalCost = unitCost * quantity;
+    return {
+      partId: item.partId,
+      quantity,
+      unitCost,
+      totalCost,
+    };
+  });
+
+  const totalAmount = poItems.reduce(
+    (sum: number, item: { totalCost: number }) => sum + item.totalCost,
+    0,
+  );
+  const poNumber = await generateImportPoNumber();
+  const requestNo = quotation.PurchaseImportRequest?.requestNo || "";
+  const notes = `Created from purchase quotation ${quotation.quotationNo}${
+    requestNo ? ` (Inquiry ${requestNo})` : ""
+  }`;
+
+  const order = await prisma.$transaction(async (tx) => {
+    const created = await tx.purchaseOrder.create({
+      data: {
+        id: randomUUID(),
+        poNumber,
+        date: new Date(),
+        supplierId: quotation.supplierId,
+        purchaseQuotationId: quotationId,
+        status: "Pending",
+        notes,
+        totalAmount,
+        updatedAt: new Date(),
+      } as any,
+    });
+
+    await tx.purchaseOrderItem.createMany({
+      data: poItems.map((item: any) => ({
+        id: randomUUID(),
+        purchaseOrderId: created.id,
+        partId: item.partId,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        totalCost: item.totalCost,
+        receivedQty: 0,
+      })),
+    });
+
+    return created;
+  });
+
+  return {
+    id: order.id,
+    poNumber: order.poNumber,
+    status: order.status,
+    totalAmount: order.totalAmount,
+  };
+}
+
 const PURCHASE_QUOTATION_TERMS = [
   "EX-Works",
   "F.O.B",
@@ -1319,6 +1450,13 @@ router.get("/quotations", async (req: Request, res: Response) => {
               totalWeight: true,
             },
           },
+          PurchaseOrder: {
+            select: {
+              id: true,
+              poNumber: true,
+              status: true,
+            },
+          },
         },
       }),
       purchaseQuotationModel.count(),
@@ -1805,7 +1943,129 @@ router.put("/quotations/:quotationId/status", async (req: Request, res: Response
       },
     });
 
-    res.json({ data: updated });
+    let purchaseOrder: {
+      id: string;
+      poNumber: string;
+      status: string;
+      totalAmount?: number;
+    } | null = null;
+
+    if (status === "confirm") {
+      try {
+        purchaseOrder = await createPurchaseOrderFromQuotation(quotationId);
+      } catch (convertError: any) {
+        return res.status(400).json({
+          error:
+            convertError?.message ||
+            "Quotation was confirmed but purchase order could not be created.",
+          data: updated,
+        });
+      }
+    }
+
+    res.json({ data: updated, purchaseOrder });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/quotations/:quotationId/convert-to-po", async (req: Request, res: Response) => {
+  try {
+    const quotationId = String(req.params.quotationId || "").trim();
+    if (!quotationId) {
+      return res.status(400).json({ error: "Quotation id is required." });
+    }
+
+    const purchaseOrder = await createPurchaseOrderFromQuotation(quotationId);
+    res.status(201).json({ data: purchaseOrder });
+  } catch (error: any) {
+    const message = error?.message || "Failed to create purchase order.";
+    const status = message.includes("not found") ? 404 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+router.get("/purchase-orders", async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+    const limit = Math.max(
+      1,
+      Math.min(1000, parseInt(String(req.query.limit || "50"), 10) || 50),
+    );
+    const skip = (page - 1) * limit;
+
+    const where = {
+      purchaseQuotationId: { not: null },
+    } as any;
+
+    const [orders, total] = await Promise.all([
+      prisma.purchaseOrder.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          Supplier: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              companyName: true,
+            },
+          },
+          PurchaseQuotation: {
+            select: {
+              id: true,
+              quotationNo: true,
+              currency: true,
+              PurchaseImportRequest: {
+                select: {
+                  id: true,
+                  requestNo: true,
+                },
+              },
+            },
+          },
+          PurchaseOrderItem: {
+            select: { id: true },
+          },
+        } as any,
+      }),
+      prisma.purchaseOrder.count({ where }),
+    ]);
+
+    res.json({
+      data: orders.map((po: any) => ({
+        id: po.id,
+        poNumber: po.poNumber,
+        date: po.date,
+        status: po.status,
+        totalAmount: po.totalAmount,
+        notes: po.notes,
+        supplier: po.Supplier
+          ? {
+              id: po.Supplier.id,
+              code: po.Supplier.code,
+              name: po.Supplier.companyName || po.Supplier.name || po.Supplier.code,
+            }
+          : null,
+        quotation: po.PurchaseQuotation
+          ? {
+              id: po.PurchaseQuotation.id,
+              quotationNo: po.PurchaseQuotation.quotationNo,
+              currency: po.PurchaseQuotation.currency,
+              requestNo: po.PurchaseQuotation.PurchaseImportRequest?.requestNo || null,
+            }
+          : null,
+        itemsCount: po.PurchaseOrderItem.length,
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

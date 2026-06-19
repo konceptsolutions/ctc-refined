@@ -30,7 +30,8 @@ import ImportCostSummaryTab from "./ImportCostSummaryTab";
 import ExpensesReportTab from "./ExpensesReportTab";
 import CustomerAnalysisTab from "./CustomerAnalysisTab";
 import CustomerAgingTab from "./CustomerAgingTab";
-import SupplierPerformanceTab from "./SupplierPerformanceTab"; 
+import SupplierPerformanceTab from "./SupplierPerformanceTab";
+import TopSellingItemsTab from "./TopSellingItemsTab";
 
 type CategoryType = "overview" | "sales" | "inventory" | "financial" | "analytics";
 
@@ -54,6 +55,7 @@ const subTabs: Record<CategoryType, SubTab[]> = {
     { id: "sales-report", label: "Sales Report", icon: FileText },
   ],
   sales: [
+    { id: "top-selling-items", label: "Item Sales Analytics", icon: BarChart3 },
     { id: "periodic-sales", label: "Periodic Sales", icon: Calendar },
     { id: "sales-by-type", label: "Sales by Type", icon: CreditCard },
     { id: "target-achievement", label: "Target vs Achievement", icon: Target },
@@ -93,6 +95,8 @@ const ReportsAnalytics = () => {
         return <SalesReportTab />;
       case "periodic-sales":
         return <PeriodicSalesTab />;
+      case "top-selling-items":
+        return <TopSellingItemsTab />;
       case "sales-by-type":
         return <SalesByTypeTab />;
       case "target-achievement":
