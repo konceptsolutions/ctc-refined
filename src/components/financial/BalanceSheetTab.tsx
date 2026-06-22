@@ -110,6 +110,29 @@ export const BalanceSheetTab = () => {
     return account.balance?.balance ?? null;
   };
 
+  const ZERO_BALANCE_EPSILON = 0.01;
+
+  const isEffectivelyZero = (balance: number | null | undefined): boolean => {
+    if (balance === null || balance === undefined) return true;
+    const num = typeof balance === "number" ? balance : parseFloat(String(balance));
+    if (isNaN(num)) return true;
+    return Math.abs(num) < ZERO_BALANCE_EPSILON;
+  };
+
+  const getVisibleAccounts = (
+    accounts: BalanceSheetAccount[] | undefined,
+  ): BalanceSheetAccount[] =>
+    (accounts ?? []).filter(
+      (account) => !isEffectivelyZero(getAccountBalance(account)),
+    );
+
+  const getVisibleSubgroups = (
+    subgroups: BalanceSheetSubgroup[] | undefined,
+  ): BalanceSheetSubgroup[] =>
+    (subgroups ?? []).filter(
+      (subgroup) => getVisibleAccounts(subgroup.coa_accounts).length > 0,
+    );
+
   const calculateSubgroupTotal = (subgroup: BalanceSheetSubgroup): number => {
     return (
       subgroup.coa_accounts?.reduce((sum, acc) => {
@@ -233,6 +256,11 @@ export const BalanceSheetTab = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             {balanceSheetData.assets?.map((mainGroup) => {
+              const visibleSubgroups = getVisibleSubgroups(
+                mainGroup.non_depreciation_sub_groups,
+              );
+              if (visibleSubgroups.length === 0) return null;
+
               const mainGroupTotal = calculateMainGroupTotal(mainGroup);
               return (
                 <div key={mainGroup.id} className="ml-4">
@@ -240,18 +268,19 @@ export const BalanceSheetTab = () => {
                     {mainGroup.code}-{mainGroup.name}
                   </h3>
 
-                  {(mainGroup.non_depreciation_sub_groups || []).map(
-                    (subgroup) => {
+                  {visibleSubgroups.map((subgroup) => {
                       const subgroupTotal = calculateSubgroupTotal(subgroup);
+                      const visibleAccounts = getVisibleAccounts(
+                        subgroup.coa_accounts,
+                      );
                       return (
                         <div key={subgroup.id} className="mb-4 ml-4">
                           <h4 className="text-sm font-medium mb-1 text-gray-700">
                             {subgroup.code}-{subgroup.name}
                           </h4>
 
-                          {subgroup.coa_accounts?.map((account) => {
+                          {visibleAccounts.map((account) => {
                             const accountBalance = getAccountBalance(account);
-                            // Show all accounts, even with zero balance (matching autohub behavior)
                             return (
                               <div
                                 key={account.id}
@@ -277,8 +306,7 @@ export const BalanceSheetTab = () => {
                           </div>
                         </div>
                       );
-                    },
-                  )}
+                  })}
 
                   <div className="border-t-2 border-gray-400 pt-1 flex justify-between items-center mt-2 mb-4">
                     <span className="text-base font-semibold">
@@ -310,6 +338,11 @@ export const BalanceSheetTab = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             {balanceSheetData.liabilities?.map((mainGroup) => {
+              const visibleSubgroups = getVisibleSubgroups(
+                mainGroup.coa_sub_groups,
+              );
+              if (visibleSubgroups.length === 0) return null;
+
               const mainGroupTotal = calculateMainGroupTotal(mainGroup);
               return (
                 <div key={mainGroup.id} className="ml-4">
@@ -317,15 +350,18 @@ export const BalanceSheetTab = () => {
                     {mainGroup.code}-{mainGroup.name}
                   </h3>
 
-                  {(mainGroup.coa_sub_groups || []).map((subgroup) => {
+                  {visibleSubgroups.map((subgroup) => {
                     const subgroupTotal = calculateSubgroupTotal(subgroup);
+                    const visibleAccounts = getVisibleAccounts(
+                      subgroup.coa_accounts,
+                    );
                     return (
                       <div key={subgroup.id} className="mb-4 ml-4">
                         <h4 className="text-sm font-medium mb-1 text-gray-700">
                           {subgroup.code}-{subgroup.name}
                         </h4>
 
-                        {subgroup.coa_accounts?.map((account) => {
+                        {visibleAccounts.map((account) => {
                           const accountBalance = getAccountBalance(account);
                           return (
                             <div
@@ -376,11 +412,22 @@ export const BalanceSheetTab = () => {
             </div>
 
             {/* Supplier Accounts Section */}
-            {balanceSheetData.supplierAccounts && balanceSheetData.supplierAccounts.length > 0 && (
+            {(() => {
+              const visibleSupplierAccounts =
+                balanceSheetData.supplierAccounts?.filter((account) => {
+                  const bal =
+                    typeof account.balance === "number"
+                      ? account.balance
+                      : account.balance?.balance ?? 0;
+                  return !isEffectivelyZero(bal);
+                }) ?? [];
+              if (visibleSupplierAccounts.length === 0) return null;
+
+              return (
               <div className="mt-6">
                 <h2 className="text-lg font-bold mb-3">Supplier Accounts (Payables)</h2>
                 <div className="ml-4">
-                  {balanceSheetData.supplierAccounts.map((account) => {
+                  {visibleSupplierAccounts.map((account) => {
                     const bal = typeof account.balance === "number" ? account.balance : account.balance?.balance ?? 0;
                     return (
                       <div
@@ -403,7 +450,7 @@ export const BalanceSheetTab = () => {
                     <span className="text-sm font-medium">Total Supplier Payables</span>
                     <span className="text-sm font-medium text-right">
                       {formatBalance(
-                        balanceSheetData.supplierAccounts.reduce((sum, a) => {
+                        visibleSupplierAccounts.reduce((sum, a) => {
                           const b = typeof a.balance === "number" ? a.balance : a.balance?.balance ?? 0;
                           return sum + b;
                         }, 0),
@@ -413,12 +460,18 @@ export const BalanceSheetTab = () => {
                   </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             <div className="mt-8">
               <h2 className="text-lg font-bold mb-4">Capital</h2>
 
               {balanceSheetData.capital?.map((mainGroup) => {
+                const visibleSubgroups = getVisibleSubgroups(
+                  mainGroup.coa_sub_groups,
+                );
+                if (visibleSubgroups.length === 0) return null;
+
                 const mainGroupTotal = calculateMainGroupTotal(mainGroup);
                 return (
                   <div key={mainGroup.id} className="ml-4">
@@ -426,15 +479,18 @@ export const BalanceSheetTab = () => {
                       {mainGroup.code}-{mainGroup.name}
                     </h3>
 
-                    {(mainGroup.coa_sub_groups || []).map((subgroup) => {
+                    {visibleSubgroups.map((subgroup) => {
                       const subgroupTotal = calculateSubgroupTotal(subgroup);
+                      const visibleAccounts = getVisibleAccounts(
+                        subgroup.coa_accounts,
+                      );
                       return (
                         <div key={subgroup.id} className="mb-4 ml-4">
                           <h4 className="text-sm font-medium mb-1 text-gray-700">
                             {subgroup.code}-{subgroup.name}
                           </h4>
 
-                          {subgroup.coa_accounts?.map((account) => {
+                          {visibleAccounts.map((account) => {
                             const accountBalance = getAccountBalance(account);
                             return (
                               <div

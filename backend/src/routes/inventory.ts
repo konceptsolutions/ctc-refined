@@ -1496,6 +1496,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       category_id,
       store_id,
       stock_as_of_date,
+      brand_name,
       page = "1",
       limit = "50",
     } = req.query;
@@ -1527,11 +1528,30 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       params.push(category_id);
     }
 
+    if (brand_name && String(brand_name).trim() !== "") {
+      whereClause += ` AND b.name = $${paramIdx++}`;
+      params.push(String(brand_name).trim());
+    }
+
     if (search) {
       whereClause += ` AND (p."partNo" ILIKE $${paramIdx} OR p.description ILIKE $${paramIdx} OR b.name ILIKE $${paramIdx} OR mp."masterPartNo" ILIKE $${paramIdx})`;
       params.push(`%${search}%`);
       paramIdx++;
     }
+
+    const hasActiveFilter = !!(
+      (search && String(search).trim()) ||
+      category_id ||
+      (brand_name && String(brand_name).trim()) ||
+      store_id ||
+      stock_as_of_date ||
+      req.query.sort_stock_first === "true" ||
+      req.query.sort_stock_first === "1"
+    );
+
+    const orderByClause = hasActiveFilter
+      ? `ORDER BY COALESCE(sm_agg.current_stock, 0) DESC, p."updatedAt" DESC`
+      : `ORDER BY p."updatedAt" DESC`;
 
     const stockDateFilterClause = stockAsOfDate
       ? `WHERE "createdAt" <= '${stockAsOfDate.toISOString()}'`
@@ -1576,7 +1596,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
         GROUP BY prs."partId"
       ) loc ON true
       ${whereClause}
-      ORDER BY p."updatedAt" DESC
+      ${orderByClause}
       LIMIT ${limitNum} OFFSET ${skip}
     `;
 

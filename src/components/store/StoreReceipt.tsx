@@ -36,6 +36,9 @@ interface StoreReceiptProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const formatMoney = (value: number | undefined | null) =>
+  Number(value ?? 0).toFixed(2);
+
 export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) => {
   const receiptRef = useRef<HTMLDivElement>(null);
 
@@ -183,10 +186,10 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
                         <TableCell className="align-middle">{item.brand}</TableCell>
                         <TableCell className="text-right align-middle">{item.quantity}</TableCell>
                         <TableCell className="text-right align-middle">
-                          Rs {item.purchasePrice.toFixed(2)}
+                          Rs {formatMoney(item.purchasePrice)}
                         </TableCell>
                         <TableCell className="text-right align-middle">
-                          Rs {item.amount.toFixed(2)}
+                          Rs {formatMoney(item.amount)}
                         </TableCell>
                         <TableCell className="align-middle">
                           {item.rackCode && item.shelfNo
@@ -208,7 +211,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
 
             {/* Total */}
             <div className="total">
-              <p>Total Amount: Rs {order.total_amount.toFixed(2)}</p>
+              <p>Total Amount: Rs {formatMoney(order.total_amount)}</p>
             </div>
 
             {/* Footer */}

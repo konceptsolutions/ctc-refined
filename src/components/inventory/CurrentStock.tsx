@@ -78,6 +78,8 @@ export const CurrentStock = () => {
     () => searchParams.get("search")?.trim() || "",
   );
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedBrand, setSelectedBrand] = useState("all");
+  const [brands, setBrands] = useState<string[]>([]);
   const [stockStatusFilter, setStockStatusFilter] =
     useState<StockStatusFilter>("all");
   const [stockAsOfDate, setStockAsOfDate] = useState("");
@@ -169,6 +171,23 @@ export const CurrentStock = () => {
     }
   };
 
+  const fetchBrands = async () => {
+    try {
+      const response = await apiClient.getBrands();
+      const data = Array.isArray(response)
+        ? response
+        : (response as any).data || [];
+      const brandNames = data
+        .map((brand: any) => brand.name)
+        .filter((name: string) => name && name.trim() !== "")
+        .sort((a: string, b: string) => a.localeCompare(b));
+      setBrands(brandNames);
+    } catch (error) {
+      console.error("Failed to fetch brands:", error);
+      setBrands([]);
+    }
+  };
+
   const fetchStockData = useCallback(async (searchTerm?: string) => {
     try {
       setTableLoading(true);
@@ -195,6 +214,10 @@ export const CurrentStock = () => {
         }
       }
 
+      if (selectedBrand !== "all") {
+        params.brand_name = selectedBrand;
+      }
+
       if (stockStatusFilter === "in_stock") {
         params.in_stock = true;
       } else if (stockStatusFilter === "out_of_stock") {
@@ -206,6 +229,17 @@ export const CurrentStock = () => {
       const effectiveSearch = ((searchTerm ?? searchQueryRef.current) || "").trim();
       if (effectiveSearch) {
         params.search = effectiveSearch;
+      }
+
+      const hasActiveFilters =
+        !!effectiveSearch ||
+        selectedCategory !== "all" ||
+        selectedBrand !== "all" ||
+        !!stockAsOfDate ||
+        stockStatusFilter !== "all";
+
+      if (hasActiveFilters) {
+        params.sort_stock_first = true;
       }
 
       const response = await apiClient.getPartRackShelfSummary(params);
@@ -228,11 +262,12 @@ export const CurrentStock = () => {
     } finally {
       setTableLoading(false);
     }
-  }, [currentPage, itemsPerPage, selectedCategory, stockStatusFilter, stockAsOfDate]);
+  }, [currentPage, itemsPerPage, selectedCategory, selectedBrand, stockStatusFilter, stockAsOfDate]);
 
   // Fetch initial data
   useEffect(() => {
     fetchCategories();
+    fetchBrands();
     fetchStores();
     fetchParts();
   }, []);
@@ -915,6 +950,10 @@ export const CurrentStock = () => {
         }
       }
 
+      if (selectedBrand !== "all") {
+        exportParams.brand_name = selectedBrand;
+      }
+
       if (stockStatusFilter === "in_stock") {
         exportParams.in_stock = true;
       } else if (stockStatusFilter === "out_of_stock") {
@@ -926,6 +965,17 @@ export const CurrentStock = () => {
       const effectiveSearch = (searchQueryRef.current || "").trim();
       if (effectiveSearch) {
         exportParams.search = effectiveSearch;
+      }
+
+      const hasActiveFilters =
+        !!effectiveSearch ||
+        selectedCategory !== "all" ||
+        selectedBrand !== "all" ||
+        !!stockAsOfDate ||
+        stockStatusFilter !== "all";
+
+      if (hasActiveFilters) {
+        exportParams.sort_stock_first = true;
       }
 
       if (stockAsOfDate) {
@@ -1113,6 +1163,26 @@ export const CurrentStock = () => {
           </div>
 
           <Select
+            value={selectedBrand}
+            onValueChange={(v) => {
+              setSelectedBrand(v);
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="All Brands" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Brands</SelectItem>
+              {brands.map((brand) => (
+                <SelectItem key={brand} value={brand}>
+                  {brand}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
             value={selectedCategory}
             onValueChange={(v) => {
               setSelectedCategory(v);
@@ -1161,6 +1231,7 @@ export const CurrentStock = () => {
 
           {(searchQuery ||
             selectedCategory !== "all" ||
+            selectedBrand !== "all" ||
             stockStatusFilter !== "all" ||
             stockAsOfDate) && (
             <Button
@@ -1169,6 +1240,7 @@ export const CurrentStock = () => {
               onClick={() => {
                 setSearchQuery("");
                 setSelectedCategory("all");
+                setSelectedBrand("all");
                 setStockStatusFilter("all");
                 setStockAsOfDate("");
                 setCurrentPage(1);

@@ -150,6 +150,7 @@ export const AdjustItem = () => {
   const [filterAdjustType, setFilterAdjustType] = useState<
     "all" | "add" | "remove"
   >("all");
+  const [brandFilter, setBrandFilter] = useState("all");
   const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
   const [parts, setParts] = useState<
     {
@@ -456,6 +457,52 @@ export const AdjustItem = () => {
   useEffect(() => {
     fetchParts();
   }, []);
+
+  const brandOptions = useMemo(() => {
+    return [...new Set(parts.map((p) => p.brand).filter(Boolean))].sort(
+      (a, b) => a.localeCompare(b),
+    );
+  }, [parts]);
+
+  const filteredParts = useMemo(() => {
+    if (brandFilter === "all") return parts;
+    return parts.filter((p) => p.brand === brandFilter);
+  }, [parts, brandFilter]);
+
+  const buildPartSelectOptions = useCallback(
+    (selectedPartId?: string, includeDescription = true) => {
+      let list = filteredParts;
+      if (selectedPartId && !list.some((p) => p.id === selectedPartId)) {
+        const selected = parts.find((p) => p.id === selectedPartId);
+        if (selected) list = [selected, ...list];
+      }
+      return list.map((p) => {
+        const master = p.masterPartNo || "";
+        const partNo = p.partNo || "";
+        const both =
+          master && partNo ? `${master} | ${partNo}` : master || partNo;
+        const brand = p.brand ? ` (${p.brand})` : "";
+        return {
+          value: p.id,
+          label: includeDescription
+            ? `${both}${brand} - ${p.description}`
+            : `${both}${brand}`,
+        };
+      });
+    },
+    [filteredParts, parts],
+  );
+
+  const handleBrandFilterChange = (value: string) => {
+    setBrandFilter(value);
+    if (value !== "all" && filterPartId) {
+      const selected = parts.find((p) => p.id === filterPartId);
+      if (selected && selected.brand !== value) {
+        setFilterPartId("");
+        setCurrentPage(1);
+      }
+    }
+  };
 
   const applyPartDetailsToRow = useCallback(
     async (rowId: string, partId: string, isAddMode: boolean) => {
@@ -1016,18 +1063,24 @@ export const AdjustItem = () => {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <div className="w-[160px]">
+            <Select value={brandFilter} onValueChange={handleBrandFilterChange}>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="All Brands" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Brands</SelectItem>
+                {brandOptions.map((brand) => (
+                  <SelectItem key={brand} value={brand}>
+                    {brand}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex-1 max-w-[250px]">
             <SearchableSelect
-              options={parts.map((p) => {
-                const master = p.masterPartNo || "";
-                const partNo = p.partNo || "";
-                const both = master && partNo ? `${master} | ${partNo}` : master || partNo;
-                const brand = p.brand ? ` (${p.brand})` : "";
-                return {
-                  value: p.id,
-                  label: `${both}${brand}`,
-                };
-              })}
+              options={buildPartSelectOptions(filterPartId, false)}
               value={filterPartId}
               onValueChange={(value) => {
                 console.log("SearchableSelect onValueChange:", value);
@@ -1781,6 +1834,24 @@ export const AdjustItem = () => {
                 <Plus className="w-3.5 h-3.5 mr-1.5" />
                 Add (Alt + Z)
               </Button>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                  Brand
+                </Label>
+                <Select value={brandFilter} onValueChange={setBrandFilter}>
+                  <SelectTrigger className="h-7 w-[180px] text-xs">
+                    <SelectValue placeholder="All Brands" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Brands</SelectItem>
+                    {brandOptions.map((brand) => (
+                      <SelectItem key={brand} value={brand}>
+                        {brand}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Items Table */}
@@ -1831,16 +1902,7 @@ export const AdjustItem = () => {
                     <TableRow key={item.id}>
                       <TableCell>
                         <SearchableSelect
-                          options={parts.map((p) => {
-                            const master = p.masterPartNo || "";
-                            const partNo = p.partNo || "";
-                            const both = master && partNo ? `${master} | ${partNo}` : master || partNo;
-                            const brand = p.brand ? ` (${p.brand})` : "";
-                            return {
-                              value: p.id,
-                              label: `${both}${brand} - ${p.description}`,
-                            };
-                          })}
+                          options={buildPartSelectOptions(item.itemId)}
                           value={item.itemId}
                           onValueChange={(v) =>
                             handleItemChange(item.id, "itemId", v)

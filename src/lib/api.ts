@@ -894,6 +894,8 @@ class ApiClient {
     category_id?: string;
     store_id?: string;
     stock_as_of_date?: string;
+    brand_name?: string;
+    sort_stock_first?: boolean;
     page?: number;
     limit?: number;
   }) {

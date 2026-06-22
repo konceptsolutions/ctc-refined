@@ -1977,6 +1977,29 @@ export const SalesInvoice = ({
     [addItemApplicationOptions],
   );
 
+  const selectedRegisteredCustomer = useMemo(
+    () =>
+      selectedCustomerId
+        ? customers.find((c) => c.id === selectedCustomerId) ?? null
+        : null,
+    [customers, selectedCustomerId],
+  );
+
+  const selectedCustomerAddressLine = useMemo(() => {
+    if (!selectedRegisteredCustomer) return "";
+    return [selectedRegisteredCustomer.address, selectedRegisteredCustomer.area]
+      .filter(Boolean)
+      .join(", ");
+  }, [selectedRegisteredCustomer]);
+
+  const selectedCustomerPriceLabel = useMemo(() => {
+    const pt = selectedRegisteredCustomer?.priceType;
+    if (pt === "A") return "Price A";
+    if (pt === "B") return "Price B";
+    if (pt === "M") return "Price M";
+    return null;
+  }, [selectedRegisteredCustomer]);
+
   // Background stock polling (every 60 seconds)
   useEffect(() => {
     // Only start polling if we have initial data and we are not currently searching
@@ -5611,7 +5634,7 @@ export const SalesInvoice = ({
       {showDocumentForm ? (
         <Card className="relative">
           <CardContent className="space-y-6 p-4 pt-4">
-            <div className="flex flex-wrap items-end justify-start gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
               {isTransferOut ? (
                 <div className="space-y-1.5 w-[26rem]">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
@@ -5657,9 +5680,7 @@ export const SalesInvoice = ({
                         <SearchableSelect
                           options={customers.map((customer) => ({
                             value: customer.id,
-                            label: customer.priceType
-                              ? `${customer.name} (Price ${customer.priceType})`
-                              : customer.name,
+                            label: customer.name,
                           }))}
                           value={selectedCustomerId || ""}
                           onValueChange={(value) => {
@@ -5762,6 +5783,27 @@ export const SalesInvoice = ({
                   className="bg-background border-primary/20 h-9 text-sm"
                 />
               </div>
+              {!isTransferOut &&
+                newInvoice.customerType === "registered" &&
+                selectedRegisteredCustomer && (
+                  <div className="ml-auto min-w-[14rem] max-w-md flex-1 space-y-1 rounded-md border border-primary/20 bg-muted/30 px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Address
+                    </p>
+                    <p className="text-sm leading-snug text-foreground">
+                      {selectedCustomerAddressLine || (
+                        <span className="text-muted-foreground italic">
+                          No address on file
+                        </span>
+                      )}
+                    </p>
+                    {selectedCustomerPriceLabel && (
+                      <Badge variant="secondary" className="text-xs font-semibold">
+                        {selectedCustomerPriceLabel}
+                      </Badge>
+                    )}
+                  </div>
+                )}
             </div>
 
             {/* Items Section - Inline Table Like Reference */}

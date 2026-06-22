@@ -180,7 +180,18 @@ const mapApiDpoToStoreOrder = (order: any): DirectPurchaseOrder => ({
         id: String(item.id || ""),
         partId: String(item.part_id || item.partId || ""),
         part_id: String(item.part_id || item.partId || ""),
+        partNo: item.part_no || item.partNo || item.part?.partNo || "N/A",
+        description:
+          item.part_description || item.description || item.part?.description || "",
+        brand: item.brand || item.part?.brand?.name || "N/A",
         quantity: Number(item.quantity) || 0,
+        purchasePrice: Number(item.purchase_price ?? item.purchasePrice ?? 0),
+        salePrice: Number(item.sale_price ?? item.salePrice ?? 0),
+        amount: Number(
+          item.amount ??
+            (item.purchase_price ?? item.purchasePrice ?? 0) *
+              (item.quantity ?? 0),
+        ),
       }))
     : [],
 });
@@ -2696,8 +2707,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         />
       )}
 
-      {/* Print Receipt Dialog */}
-      {selectedOrder && (
+      {/* Print Receipt Dialog — only mount when open; selectedOrder is shared with receive/edit */}
+      {selectedOrder && receiptDialogOpen && (
         <StoreReceipt
           order={selectedOrder}
           open={receiptDialogOpen}
