@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { BookOpen, ArrowUpDown, Search, Calendar as CalendarIcon, Filter, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -360,6 +361,7 @@ export const GeneralJournalTab = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <ListNumberHeader />
                 <TableHead className="w-20">
                   <SortableHeader field="tId">T_Id</SortableHeader>
                 </TableHead>
@@ -386,13 +388,13 @@ export const GeneralJournalTab = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : entries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     No entries found
                   </TableCell>
                 </TableRow>
@@ -405,6 +407,7 @@ export const GeneralJournalTab = () => {
                     ${index % 2 === 0 ? 'bg-background' : 'bg-muted/20'}
                   `}
                   >
+                    <ListNumberCell index={index} page={page} pageSize={limit} />
                     <TableCell className="font-medium text-foreground">{entry.tId}</TableCell>
                     <TableCell>
                       <span className="px-2 py-1 bg-primary/10 text-primary rounded-md text-sm font-medium">
@@ -430,7 +433,7 @@ export const GeneralJournalTab = () => {
                 )))}
               {/* Total Row */}
               <TableRow className="bg-muted/60 border-t-2 border-border font-bold hover:bg-muted/60">
-                <TableCell colSpan={5} className="text-right text-base py-4">
+                <TableCell colSpan={6} className="text-right text-base py-4">
                   Total
                 </TableCell>
                 <TableCell className="text-right font-mono text-base py-4">

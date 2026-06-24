@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Calendar as CalendarIcon, Download, Printer, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { format } from "date-fns";
@@ -350,6 +351,7 @@ export const IncomeStatementTab = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
+                      <ListNumberHeader />
                       <TableHead className="font-semibold">Account</TableHead>
                       <TableHead className="text-right font-semibold">Amount</TableHead>
                     </TableRow>
@@ -358,8 +360,9 @@ export const IncomeStatementTab = () => {
                     {/* Revenue Section */}
                     {revenueData.length > 0 ? (
                       revenueData.map((category) => (
-                        category.items.map((item) => (
+                        category.items.map((item, index) => (
                           <TableRow key={`rev-${item.name}`}>
+                            <ListNumberCell index={index} />
                             <TableCell className="pl-8">{item.name}</TableCell>
                             <TableCell className="text-right font-mono">{item.amount.toLocaleString()}</TableCell>
                           </TableRow>
@@ -367,10 +370,11 @@ export const IncomeStatementTab = () => {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={2} className="text-center text-muted-foreground py-4">No revenue accounts</TableCell>
+                        <TableCell colSpan={3} className="text-center text-muted-foreground py-4">No revenue accounts</TableCell>
                       </TableRow>
                     )}
                     <TableRow className="bg-muted/30 font-semibold">
+                      <TableCell />
                       <TableCell>Total Revenue</TableCell>
                       <TableCell className="text-right font-mono">{totalRevenue.toLocaleString()}</TableCell>
                     </TableRow>
@@ -378,8 +382,9 @@ export const IncomeStatementTab = () => {
                     {/* Cost Section */}
                     {costData.length > 0 ? (
                       costData.map((category) => (
-                        category.items.map((item) => (
+                        category.items.map((item, index) => (
                           <TableRow key={`cost-${item.name}`}>
+                            <ListNumberCell index={index} />
                             <TableCell className="pl-8">{item.name}</TableCell>
                             <TableCell className="text-right font-mono">{item.amount.toLocaleString()}</TableCell>
                           </TableRow>
@@ -387,16 +392,18 @@ export const IncomeStatementTab = () => {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={2} className="text-center text-muted-foreground py-4">No cost accounts</TableCell>
+                        <TableCell colSpan={3} className="text-center text-muted-foreground py-4">No cost accounts</TableCell>
                       </TableRow>
                     )}
                     <TableRow className="bg-muted/30 font-semibold">
+                      <TableCell />
                       <TableCell>Total Cost</TableCell>
                       <TableCell className="text-right font-mono">{totalCost.toLocaleString()}</TableCell>
                     </TableRow>
 
                     {/* Gross Profit */}
                     <TableRow className="bg-green-500/10 font-semibold">
+                      <TableCell />
                       <TableCell className="text-green-600">Gross Profit</TableCell>
                       <TableCell className="text-right font-mono text-green-600">{grossProfit.toLocaleString()}</TableCell>
                     </TableRow>
@@ -404,8 +411,9 @@ export const IncomeStatementTab = () => {
                     {/* Expenses Section */}
                     {expenseData.length > 0 ? (
                       expenseData.map((category) => (
-                        category.items.map((item) => (
+                        category.items.map((item, index) => (
                           <TableRow key={`exp-${item.name}`}>
+                            <ListNumberCell index={index} />
                             <TableCell className="pl-8">{item.name}</TableCell>
                             <TableCell className="text-right font-mono">{item.amount.toLocaleString()}</TableCell>
                           </TableRow>
@@ -413,16 +421,18 @@ export const IncomeStatementTab = () => {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={2} className="text-center text-muted-foreground py-4">No expense accounts</TableCell>
+                        <TableCell colSpan={3} className="text-center text-muted-foreground py-4">No expense accounts</TableCell>
                       </TableRow>
                     )}
                     <TableRow className="bg-muted/30 font-semibold">
+                      <TableCell />
                       <TableCell>Total Expenses</TableCell>
                       <TableCell className="text-right font-mono">{totalExpenses.toLocaleString()}</TableCell>
                     </TableRow>
 
                     {/* Net Income */}
                     <TableRow className={`font-bold ${netIncome >= 0 ? 'bg-primary/20 text-green-600' : 'bg-red-500/20 text-red-600'}`}>
+                      <TableCell />
                       <TableCell>Net Income</TableCell>
                       <TableCell className="text-right font-mono">{netIncome.toLocaleString()}</TableCell>
                     </TableRow>

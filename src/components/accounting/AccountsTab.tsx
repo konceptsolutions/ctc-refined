@@ -28,6 +28,11 @@ import {
 import { Users, Plus, Pencil, Trash2, MoreVertical, Save, RotateCcw, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import {
+  getListRowNumber,
+  LIST_NUMBER_HEAD_CLASS,
+  LIST_NUMBER_CELL_CLASS,
+} from "@/components/ui/list-table-number";
 import { apiClient } from "@/lib/api";
 
 interface Account {
@@ -782,6 +787,7 @@ export const AccountsTab = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
+                  <th className={LIST_NUMBER_HEAD_CLASS}>#</th>
                   <th className="p-3 text-left w-12">
                     <Checkbox
                       checked={selectedItems.length === paginatedAccounts.length && paginatedAccounts.length > 0}
@@ -812,13 +818,13 @@ export const AccountsTab = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="p-8 text-center text-muted-foreground">
                       Loading accounts...
                     </td>
                   </tr>
                 ) : paginatedAccounts.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="p-8 text-center text-muted-foreground">
                       No accounts found. Click "Add New Account" to create one.
                     </td>
                   </tr>
@@ -829,6 +835,9 @@ export const AccountsTab = () => {
                       className={`border-b border-border/50 transition-colors duration-200 hover:bg-muted/30 ${index % 2 === 0 ? "bg-muted/10" : ""
                         }`}
                     >
+                      <td className={`p-3 ${LIST_NUMBER_CELL_CLASS}`}>
+                        {getListRowNumber(index, currentPage, parseInt(pageSize))}
+                      </td>
                       <td className="p-3">
                         <Checkbox
                           checked={selectedItems.includes(account.id)}

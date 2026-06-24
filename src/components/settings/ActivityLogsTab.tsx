@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Dialog,
   DialogContent,
@@ -280,6 +281,7 @@ export const ActivityLogsTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>TIMESTAMP</TableHead>
                 <TableHead>USER</TableHead>
                 <TableHead>ACTION</TableHead>
@@ -293,19 +295,20 @@ export const ActivityLogsTab = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">
+                  <TableCell colSpan={9} className="text-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
               ) : logs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     No activity logs found
                   </TableCell>
                 </TableRow>
               ) : (
-                logs.map((log) => (
+                logs.map((log, index) => (
                 <TableRow key={log.id}>
+                  <ListNumberCell index={index} page={page} pageSize={limit} />
                   <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />

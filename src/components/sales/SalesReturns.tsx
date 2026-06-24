@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiClient } from "@/lib/api";
+import { getCustomerTypeLabel } from "@/types/invoice";
 import {
   Table,
   TableBody,
@@ -13,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -229,8 +231,7 @@ const mapOriginalInvoiceFromApi = (fullInv: any): OriginalInvoiceDetails => {
     invoiceNo: String(fullInv.invoiceNo || "").trim() || "—",
     invoiceDate: formatDisplayDate(fullInv.invoiceDate),
     customerName: String(fullInv.customerName || "").trim() || "—",
-    customerType:
-      fullInv.customerType === "walking" ? "Walk-in" : "Registered",
+    customerType: getCustomerTypeLabel(fullInv.customerType),
     salesPerson: String(fullInv.salesPerson || "").trim() || "—",
     status: String(fullInv.status || "").trim() || "—",
     paymentStatus: String(fullInv.paymentStatus || "").trim() || "—",
@@ -489,7 +490,8 @@ export const SalesReturns = () => {
           .filter((item) => item.partNo && item.partNo.trim() !== '');
 
         setAvailableItems(transformedItems);
-      } catch (error: any) {
+      } catch (error: unknown) {
+        console.error("Failed to load parts for filters:", error);
       }
     };
 
@@ -1416,13 +1418,13 @@ export const SalesReturns = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <ListNumberHeader />
                   <TableHead className="w-12">
                     <Checkbox
                       checked={selectedReturns.length === paginatedReturns.length && paginatedReturns.length > 0}
                       onCheckedChange={handleSelectAll}
                     />
                   </TableHead>
-                  <TableHead className="text-xs font-semibold">S.NO</TableHead>
                   <TableHead className="text-xs font-semibold">Invoice No</TableHead>
                   <TableHead className="text-xs font-semibold">Return Date</TableHead>
                   <TableHead className="text-xs font-semibold">Customer Name</TableHead>
@@ -1437,13 +1439,13 @@ export const SalesReturns = () => {
               <TableBody>
                 {loadingReturns ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground text-xs">
+                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground text-xs">
                       Loading returns...
                     </TableCell>
                   </TableRow>
                 ) : paginatedReturns.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground text-xs">
+                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground text-xs">
                       {filterItem !== "all" || filterCustomer !== "all" || customerNameSearch
                         ? "No return orders found matching your filters"
                         : "No return orders found. Returns will appear here once created."}
@@ -1452,13 +1454,17 @@ export const SalesReturns = () => {
                 ) : (
                   paginatedReturns.map((returnItem, index) => (
                     <TableRow key={returnItem.id}>
+                      <ListNumberCell
+                        index={index}
+                        page={currentPage}
+                        pageSize={itemsPerPage}
+                      />
                       <TableCell>
                         <Checkbox
                           checked={selectedReturns.includes(returnItem.id)}
                           onCheckedChange={(checked) => handleSelectReturn(returnItem.id, checked as boolean)}
                         />
                       </TableCell>
-                      <TableCell className="text-xs">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                       <TableCell className="text-xs font-medium">
                         <div className="flex flex-col gap-0.5">
                           <span>{returnItem.invoiceNo}</span>
@@ -2170,8 +2176,8 @@ export const SalesReturns = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="walking">Walk-in (cash sale)</SelectItem>
-                    <SelectItem value="registered">Party sale</SelectItem>
+                    <SelectItem value="walking">Walk-in</SelectItem>
+                    <SelectItem value="registered">Party</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -102,7 +102,7 @@ export async function parseDirectReturnBody(
 
   if (!isWalkingCustomer) {
     if (!customerId) {
-      throw new Error('Party sale direct return requires customer_id');
+      throw new Error('Credit sale direct return requires customer_id');
     }
     const customer = await prisma.customer.findUnique({
       where: { id: customerId },

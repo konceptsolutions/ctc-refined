@@ -26,6 +26,8 @@ model Account {
   Subgroup            Subgroup       @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
   Supplier            Supplier?      @relation(fields: [supplierId], references: [id])
   SalesInvoice              SalesInvoice[]
+  SalesInvoiceBankPayments  SalesInvoice[]         @relation("SalesInvoiceBankAccount")
+  SalesInvoiceCashPayments  SalesInvoice[]         @relation("SalesInvoiceCashAccount")
   SalesReturnPayments       SalesReturn[]          @relation("SalesReturnPaymentAccount")
   VoucherEntry              VoucherEntry[]
   DirectPurchaseOrderBranch DirectPurchaseOrder[]  @relation("DirectPurchaseOrderBranchAccount")
@@ -533,12 +535,13 @@ model PurchaseQuotation {
   quotationType           String                 @default("original")
   terms                   String?
   status                  String                 @default("pending")
+  confirmationDate        DateTime?
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
   PurchaseImportRequest   PurchaseImportRequest  @relation(fields: [purchaseImportRequestId], references: [id], onDelete: Cascade)
   Supplier                Supplier               @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   PurchaseQuotationItem     PurchaseQuotationItem[]
-  PurchaseOrder             PurchaseOrder?
+  PurchaseOrder             PurchaseOrder[]
 
   @@index([purchaseImportRequestId])
   @@index([supplierId])
@@ -608,7 +611,8 @@ model PurchaseOrder {
   poNumber            String              @unique
   date                DateTime
   supplierId          String?
-  purchaseQuotationId String?             @unique
+  purchaseQuotationId String?
+  consignee           String?
   status              String              @default("Draft")
   expectedDate        DateTime?
   notes               String?
@@ -618,6 +622,8 @@ model PurchaseOrder {
   Supplier            Supplier?           @relation(fields: [supplierId], references: [id])
   PurchaseQuotation   PurchaseQuotation?  @relation(fields: [purchaseQuotationId], references: [id], onDelete: SetNull)
   PurchaseOrderItem   PurchaseOrderItem[]
+
+  @@index([purchaseQuotationId])
 }
 
 model PurchaseOrderItem {
@@ -732,6 +738,10 @@ model SalesInvoice {
   status           String             @default("pending")
   paymentStatus    String             @default("unpaid")
   accountId        String?
+  bankAccountId    String?
+  cashAccountId    String?
+  bankAmount       Float              @default(0)
+  cashAmount       Float              @default(0)
   deliveredTo      String?
   remarks          String?
   quotationId      String?
@@ -742,6 +752,8 @@ model SalesInvoice {
   DeliveryLog      DeliveryLog[]
   Receivable       Receivable?
   Account          Account?           @relation(fields: [accountId], references: [id])
+  BankAccount      Account?           @relation("SalesInvoiceBankAccount", fields: [bankAccountId], references: [id])
+  CashAccount      Account?           @relation("SalesInvoiceCashAccount", fields: [cashAccountId], references: [id])
   Customer         Customer?          @relation(fields: [customerId], references: [id])
   SalesInvoiceItem SalesInvoiceItem[]
   SalesQuotation   SalesQuotation?

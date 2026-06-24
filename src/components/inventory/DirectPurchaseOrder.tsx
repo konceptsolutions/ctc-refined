@@ -38,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -2002,7 +2003,7 @@ export const DirectPurchaseOrder = ({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">S.NO</TableHead>
+                      <ListNumberHeader />
                       <TableHead className="min-w-[120px]">{labels.orderNumberLabel}</TableHead>
                       <TableHead className="min-w-[120px]">Invoice No.</TableHead>
                       <TableHead className="min-w-[110px]">Invoice Date</TableHead>
@@ -2017,7 +2018,11 @@ export const DirectPurchaseOrder = ({
                   <TableBody>
                     {paginatedOrders.map((order, index) => (
                       <TableRow key={order.id}>
-                        <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
+                        <ListNumberCell
+                          index={index}
+                          page={currentPage}
+                          pageSize={itemsPerPage}
+                        />
                         <TableCell className="font-medium">{order.dpoNo}</TableCell>
                         <TableCell>{order.invoiceNo || "-"}</TableCell>
                         <TableCell>{order.invoiceDate || "-"}</TableCell>
@@ -2398,7 +2403,7 @@ export const DirectPurchaseOrder = ({
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-12">#</TableHead>
+                              <ListNumberHeader />
                               <TableHead className="min-w-[200px]">Part</TableHead>
                               <TableHead className="min-w-[80px]">Brand</TableHead>
                               <TableHead className="min-w-[60px]">UoM</TableHead>
@@ -2424,7 +2429,7 @@ export const DirectPurchaseOrder = ({
                                     selectedHistoryRowId === item.id && "bg-muted/40",
                                   )}
                                 >
-                                  <TableCell>{index + 1}</TableCell>
+                                  <ListNumberCell index={index} />
                                   <TableCell>
                                     <SearchableSelect
                                       options={parts.map(p => ({
@@ -2946,7 +2951,7 @@ export const DirectPurchaseOrder = ({
                   <table className="w-full caption-bottom text-sm">
                     <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm shadow-sm">
                       <TableRow>
-                        <TableHead>#</TableHead>
+                        <ListNumberHeader />
                         <TableHead className="min-w-[120px]">Part No</TableHead>
                         <TableHead className="min-w-[150px]">Description</TableHead>
                         <TableHead className="min-w-[80px]">Brand</TableHead>
@@ -2959,7 +2964,7 @@ export const DirectPurchaseOrder = ({
                     <TableBody>
                       {selectedOrder.items.map((item, index) => (
                         <TableRow key={item.id} className="hover:bg-muted/30">
-                          <TableCell>{index + 1}</TableCell>
+                          <ListNumberCell index={index} />
                           <TableCell className="font-medium">
                             {item.partNo}
                             {item.returnedQuantity > 0 && (

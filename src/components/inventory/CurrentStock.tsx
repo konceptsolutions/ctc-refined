@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Filter,
   X,
@@ -1263,6 +1264,7 @@ export const CurrentStock = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead className="w-[100px]">Part No</TableHead>
                 <TableHead className="w-[120px]">Master Part No</TableHead>
                 <TableHead className="w-[100px]">Brand</TableHead>
@@ -1278,7 +1280,7 @@ export const CurrentStock = () => {
             <TableBody>
               {tableLoading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8">
+                  <TableCell colSpan={11} className="text-center py-8">
                     <div className="flex items-center justify-center">
                       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                       <span className="ml-2">Loading...</span>
@@ -1288,15 +1290,20 @@ export const CurrentStock = () => {
               ) : stockData.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={11}
                     className="text-center py-8 text-muted-foreground"
                   >
                     No stock data found
                   </TableCell>
                 </TableRow>
               ) : (
-                stockData.map((item) => (
+                stockData.map((item, index) => (
                   <TableRow key={item.part_id}>
+                    <ListNumberCell
+                      index={index}
+                      page={currentPage}
+                      pageSize={itemsPerPage}
+                    />
                     <TableCell className="font-medium">
                       {item.part_no || "-"}
                     </TableCell>

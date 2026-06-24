@@ -31,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -1903,10 +1904,10 @@ export const PurchaseOrder = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
+                <ListNumberHeader />
                 <TableHead className="w-10">
                   <Checkbox />
                 </TableHead>
-                <TableHead className="text-xs font-medium w-12">S.NO</TableHead>
                 <TableHead className="text-xs font-medium">PO.No</TableHead>
                 <TableHead className="text-xs font-medium">Suppliers</TableHead>
                 <TableHead className="text-xs font-medium">Store</TableHead>
@@ -1920,11 +1921,13 @@ export const PurchaseOrder = () => {
             <TableBody>
               {paginatedOrders.map((order, index) => (
                 <TableRow key={order.id} className="hover:bg-muted/20 transition-colors">
+                  <ListNumberCell
+                    index={index}
+                    page={currentPage}
+                    pageSize={itemsPerPage}
+                  />
                   <TableCell>
                     <Checkbox />
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {(currentPage - 1) * itemsPerPage + index + 1}
                   </TableCell>
                   <TableCell className="text-sm font-medium text-foreground">{order.poNo}</TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-[120px] truncate">{order.supplier}</TableCell>

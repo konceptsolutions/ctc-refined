@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Truck, Package, Calendar, User, FileText } from "lucide-react";
 import { InvoiceItem, DeliveryLogEntry } from "@/types/invoice";
 
@@ -158,6 +159,7 @@ export const InvoiceDeliveryLog = ({
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <ListNumberHeader />
                       <TableHead>Part No</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead className="text-center">Ordered</TableHead>
@@ -167,8 +169,9 @@ export const InvoiceDeliveryLog = ({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pendingItems.map((item) => (
+                    {pendingItems.map((item, index) => (
                       <TableRow key={item.partId}>
+                        <ListNumberCell index={index} />
                         <TableCell className="font-medium">{item.partNo}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {item.description}

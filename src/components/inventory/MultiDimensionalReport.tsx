@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Badge } from "@/components/ui/badge";
 import { 
   FileText, 
@@ -556,6 +557,7 @@ export const MultiDimensionalReport = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <ListNumberHeader />
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase pl-4">{primaryDimension}</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-center">Items</TableHead>
                   <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-center">Quantity</TableHead>
@@ -565,8 +567,9 @@ export const MultiDimensionalReport = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedData.map((row) => (
+                {sortedData.map((row, index) => (
                   <TableRow key={row.id} className="hover:bg-muted/20">
+                    <ListNumberCell index={index} />
                     <TableCell className="text-sm font-medium text-foreground pl-4">{row.dimension}</TableCell>
                     <TableCell className="text-sm text-muted-foreground text-center">{row.items}</TableCell>
                     <TableCell className="text-sm font-semibold text-foreground text-center">{row.quantity}</TableCell>
@@ -587,6 +590,7 @@ export const MultiDimensionalReport = () => {
                 ))}
                 {/* Total Row */}
                 <TableRow className="bg-primary/5 border-t-2 border-primary hover:bg-primary/5">
+                  <TableCell />
                   <TableCell className="text-sm font-bold text-foreground pl-4">TOTAL</TableCell>
                   <TableCell className="text-sm font-bold text-foreground text-center">{totals.items}</TableCell>
                   <TableCell className="text-sm font-bold text-foreground text-center">{totals.quantity}</TableCell>

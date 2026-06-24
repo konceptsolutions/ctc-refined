@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, Download, Printer, RefreshCw, Scale, CheckCircle2, AlertCircle } from "lucide-react";
 import { getCurrentDatePakistan, getStartOfCurrentMonthPakistan } from "@/utils/dateUtils";
@@ -275,6 +276,7 @@ export const TrialBalanceTab = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <ListNumberHeader />
                   <TableHead className="font-semibold cursor-pointer hover:text-primary">Account</TableHead>
                   <TableHead className="text-right font-semibold cursor-pointer hover:text-primary">Dr</TableHead>
                   <TableHead className="text-right font-semibold cursor-pointer hover:text-primary">Cr</TableHead>
@@ -283,13 +285,13 @@ export const TrialBalanceTab = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : filteredData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                       No data found
                     </TableCell>
                   </TableRow>
@@ -299,6 +301,7 @@ export const TrialBalanceTab = () => {
                       if (row.type === 'mainGroup') {
                         return (
                           <TableRow key={`main-${row.code}-${index}`} className="bg-muted/30 font-semibold">
+                            <TableCell />
                             <TableCell className="font-bold">{row.name}</TableCell>
                             <TableCell className="text-right font-mono">0</TableCell>
                             <TableCell className="text-right font-mono">0</TableCell>
@@ -307,6 +310,7 @@ export const TrialBalanceTab = () => {
                       } else if (row.type === 'subgroup') {
                         return (
                           <TableRow key={`sub-${row.code}-${index}`} className="bg-muted/20 font-medium">
+                            <TableCell />
                             <TableCell className="pl-4">{row.name}</TableCell>
                             <TableCell className="text-right font-mono">0</TableCell>
                             <TableCell className="text-right font-mono">0</TableCell>
@@ -318,6 +322,7 @@ export const TrialBalanceTab = () => {
                             key={`acc-${row.accountCode}-${index}`}
                             className="transition-all duration-200 hover:bg-muted/50"
                           >
+                            <ListNumberCell index={index} />
                             <TableCell className="pl-8 font-medium">{row.accountName}</TableCell>
                             <TableCell className="text-right font-mono">
                               {row.debit > 0 ? row.debit.toLocaleString() : '0'}
@@ -331,6 +336,7 @@ export const TrialBalanceTab = () => {
                     })}
                     {/* Total Row */}
                     <TableRow className="bg-primary/5 font-bold border-t-2 border-primary/20">
+                      <TableCell />
                       <TableCell className="text-right">Total</TableCell>
                       <TableCell className="text-right font-mono text-primary">{totalDebit.toLocaleString()}</TableCell>
                       <TableCell className="text-right font-mono text-primary">{totalCredit.toLocaleString()}</TableCell>

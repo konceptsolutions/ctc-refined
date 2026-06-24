@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -187,6 +188,7 @@ export const InventoryAging = () => {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/30">
+              <ListNumberHeader />
               <TableHead className="text-xs font-medium">Part No</TableHead>
               <TableHead className="text-xs font-medium">Description</TableHead>
               <TableHead className="text-xs font-medium">Category</TableHead>
@@ -199,8 +201,9 @@ export const InventoryAging = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredItems.map((item) => (
+            {filteredItems.map((item, index) => (
               <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
+                <ListNumberCell index={index} />
                 <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{item.category}</TableCell>

@@ -45,6 +45,8 @@ export const SearchableSelect = ({
 }: SearchableSelectProps & React.ComponentProps<typeof Input>) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [isFocused, setIsFocused] = React.useState(false);
+  const searchQueryRef = React.useRef(searchQuery);
   /** Keyboard highlight row index within filteredOptions */
   const [highlightIndex, setHighlightIndex] = React.useState(0);
   const highlightIndexRef = React.useRef(0);
@@ -58,7 +60,13 @@ export const SearchableSelect = ({
     width: 0,
   });
 
-  const selectedOption = options.find((opt) => opt.value === value);
+  React.useEffect(() => {
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
+
+  const selectedOption = value
+    ? options.find((opt) => opt.value === value)
+    : undefined;
   const displayValue = selectedOption
     ? selectedDisplayLabelOnly
       ? selectedOption.label
@@ -66,6 +74,9 @@ export const SearchableSelect = ({
           .filter(Boolean)
           .join(" - ")
     : value || "";
+
+  // While focused, always show what the user is typing (even when empty).
+  const inputValue = isFocused || isOpen ? searchQuery : displayValue;
 
   const filteredOptions = React.useMemo(() => {
     if (!searchQuery) return options;
@@ -247,6 +258,7 @@ export const SearchableSelect = ({
       ) {
         setIsOpen(false);
         setSearchQuery("");
+        setIsFocused(false);
       }
     };
 
@@ -262,14 +274,13 @@ export const SearchableSelect = ({
     const newValue = e.target.value;
     setSearchQuery(newValue);
     onSearchChange?.(newValue);
-    
-    // Only open dropdown if user is actually typing (not empty)
+
     if (newValue.trim()) {
       setIsOpen(true);
     } else {
       setIsOpen(false);
     }
-    
+
     // DO NOT call onValueChange here when allowCustom is true
     // This prevents the parent filter from updating while the user is just typing to search
   };
@@ -291,7 +302,7 @@ export const SearchableSelect = ({
   }
 
   const handleInputFocus = () => {
-    // Don't auto-open on focus - only open when user clicks dropdown button or starts typing
+    setIsFocused(true);
     setIsOpen(false);
     setSearchQuery("");
   };
@@ -300,6 +311,7 @@ export const SearchableSelect = ({
     e.stopPropagation();
     onValueChange("");
     setSearchQuery("");
+    setIsOpen(false);
     inputRef.current?.focus();
   };
 
@@ -313,7 +325,9 @@ export const SearchableSelect = ({
         return;
       }
 
-      const query = searchQuery.trim();
+      setIsFocused(false);
+
+      const query = searchQueryRef.current.trim();
       if (query) {
         const exact = options.find(
           (opt) =>
@@ -408,7 +422,7 @@ export const SearchableSelect = ({
       <div className="relative">
         <Input
           ref={inputRef}
-          value={isOpen ? searchQuery : displayValue}
+          value={inputValue}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
           onBlur={handleInputBlur}
@@ -430,7 +444,7 @@ export const SearchableSelect = ({
           className={cn(
             "pr-16 h-8 text-xs",
             partCodeContext && "part-code-font font-mono",
-            selectedDisplayLabelOnly && value && !isOpen && "truncate",
+            selectedDisplayLabelOnly && value && !isOpen && !isFocused && "truncate",
           )}
           {...props}
         />

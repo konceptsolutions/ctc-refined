@@ -10,6 +10,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  ListNumberHeader,
+  ListNumberCell,
+  getListRowNumber,
+  LIST_NUMBER_HEAD_CLASS,
+  LIST_NUMBER_CELL_CLASS,
+} from "@/components/ui/list-table-number";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -265,7 +272,7 @@ export const StockAnalysis = () => {
           <table>
             <thead>
               <tr>
-                <th>SR.</th>
+                <th class="w-12 min-w-[3rem] text-center text-xs font-medium whitespace-nowrap">#</th>
                 <th>Part No</th>
                 <th>Description</th>
                 <th>Category</th>
@@ -522,7 +529,7 @@ export const StockAnalysis = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
-                <TableHead className="text-xs font-medium w-12">SR.</TableHead>
+                <ListNumberHeader />
                 <TableHead className="text-xs font-medium">PART NO</TableHead>
                 <TableHead className="text-xs font-medium">DESCRIPTION</TableHead>
                 <TableHead className="text-xs font-medium">CATEGORY</TableHead>
@@ -543,7 +550,11 @@ export const StockAnalysis = () => {
               ) : paginatedItems.length > 0 ? (
                 paginatedItems.map((item, index) => (
                   <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
-                    <TableCell className="text-sm text-muted-foreground">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
+                    <ListNumberCell
+                      index={index}
+                      page={currentPage}
+                      pageSize={itemsPerPage}
+                    />
                     <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{item.category}</TableCell>

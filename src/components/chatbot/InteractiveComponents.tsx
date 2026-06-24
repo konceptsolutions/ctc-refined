@@ -638,7 +638,7 @@ export const CustomerTypeButtons: React.FC<CustomerTypeButtonsProps> = ({
       disabled={disabled}
       onClick={() => onSelect("walking")}
     >
-      Cash Sale (Walk-in)
+      Walk-in
     </Button>
     <Button
       type="button"
@@ -648,7 +648,7 @@ export const CustomerTypeButtons: React.FC<CustomerTypeButtonsProps> = ({
       disabled={disabled}
       onClick={() => onSelect("registered")}
     >
-      Party Sale (Credit)
+      Party
     </Button>
   </div>
 );

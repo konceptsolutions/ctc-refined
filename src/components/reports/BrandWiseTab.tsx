@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, TrendingUp, TrendingDown, Minus, BarChart3, Table as TableIcon } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -243,6 +244,7 @@ const BrandWiseTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>BRAND</TableHead>
                 <TableHead className="text-center">PRODUCTS</TableHead>
                 <TableHead className="text-right">TOTAL SALES</TableHead>
@@ -255,6 +257,7 @@ const BrandWiseTab = () => {
             <TableBody>
               {brandData.map((brand, index) => (
                 <TableRow key={brand.brand}>
+                  <ListNumberCell index={index} />
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${getBrandColor(index)}`}>

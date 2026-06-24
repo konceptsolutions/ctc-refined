@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, Truck, DollarSign, Percent, Package } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -208,6 +209,7 @@ const ImportCostSummaryTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>DATE</TableHead>
                 <TableHead>LC NUMBER</TableHead>
                 <TableHead>SUPPLIER</TableHead>
@@ -222,7 +224,7 @@ const ImportCostSummaryTab = () => {
             <TableBody>
               {importData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-32 text-center">
+                  <TableCell colSpan={10} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <Truck className="w-10 h-10 opacity-50" />
                       <p>No import records found</p>
@@ -231,8 +233,9 @@ const ImportCostSummaryTab = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                importData.map((record) => (
+                importData.map((record, index) => (
                   <TableRow key={record.id}>
+                    <ListNumberCell index={index} />
                     <TableCell>{record.date}</TableCell>
                     <TableCell className="font-medium text-primary">{record.lcNumber}</TableCell>
                     <TableCell>{record.supplier}</TableCell>

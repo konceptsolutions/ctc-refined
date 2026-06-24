@@ -19,6 +19,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
@@ -291,6 +292,7 @@ export const StoreAdjustedItem = ({
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <ListNumberHeader />
                       <TableHead>Part No</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead>Brand</TableHead>
@@ -302,13 +304,14 @@ export const StoreAdjustedItem = ({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {adjustment.items.map((item) => {
+                    {adjustment.items.map((item, index) => {
                       const location = itemLocations[item.id] || {};
                       const shelves = location.rackId ? getShelvesForRack(location.rackId) : [];
                       const hasLocation = item.rack_id && item.shelf_id;
 
                       return (
                         <TableRow key={item.id}>
+                          <ListNumberCell index={index} />
                           <TableCell className="font-medium">{item.part_no}</TableCell>
                           <TableCell className="max-w-[200px] truncate">
                             {item.part_description || "-"}

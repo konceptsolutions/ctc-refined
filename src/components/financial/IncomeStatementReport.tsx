@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Users, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -312,19 +313,20 @@ export const IncomeStatementReport = () => {
             <TableBody>
               {/* Header */}
               <TableRow className="bg-muted/50">
-                <TableCell className="font-semibold underline w-3/4">
+                <ListNumberHeader className="font-semibold underline" />
+                <TableHead className="font-semibold underline w-3/4">
                   Account
-                </TableCell>
-                <TableCell className="font-semibold underline text-right">
+                </TableHead>
+                <TableHead className="font-semibold underline text-right">
                   Amount
-                </TableCell>
+                </TableHead>
               </TableRow>
 
               {/* Revenue Section */}
               {loading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={2}
+                    colSpan={3}
                     className="text-center py-8 text-muted-foreground"
                   >
                     Loading...
@@ -337,6 +339,7 @@ export const IncomeStatementReport = () => {
                       key={`rev-${index}`}
                       className="hover:bg-muted/30"
                     >
+                      <ListNumberCell index={index} />
                       <TableCell style={getIndent(account.level || 0)}>
                         {account.code}-{account.name}
                       </TableCell>
@@ -348,6 +351,7 @@ export const IncomeStatementReport = () => {
 
                   {/* Total Revenue */}
                   <TableRow className="bg-muted/20">
+                    <TableCell />
                     <TableCell className="text-right font-semibold">
                       Total Revenue
                     </TableCell>
@@ -358,7 +362,7 @@ export const IncomeStatementReport = () => {
 
                   {/* Empty row for spacing */}
                   <TableRow>
-                    <TableCell colSpan={2} className="py-2"></TableCell>
+                    <TableCell colSpan={3} className="py-2"></TableCell>
                   </TableRow>
 
                   {/* Cost of Goods Sold Section */}
@@ -367,6 +371,7 @@ export const IncomeStatementReport = () => {
                       key={`cost-${index}`}
                       className="hover:bg-muted/30"
                     >
+                      <ListNumberCell index={index} />
                       <TableCell style={getIndent(account.level || 0)}>
                         {account.code}-{account.name}
                       </TableCell>
@@ -378,6 +383,7 @@ export const IncomeStatementReport = () => {
 
                   {/* Total Cost */}
                   <TableRow className="bg-muted/20">
+                    <TableCell />
                     <TableCell className="text-right font-semibold">
                       Total Cost
                     </TableCell>
@@ -388,6 +394,7 @@ export const IncomeStatementReport = () => {
 
                   {/* Gross Profit/Loss */}
                   <TableRow className="bg-muted/30">
+                    <TableCell />
                     <TableCell className="text-right font-bold">
                       {grossProfit >= 0 ? "Gross Profit" : "Gross Loss"}
                     </TableCell>
@@ -401,7 +408,7 @@ export const IncomeStatementReport = () => {
 
                   {/* Empty row for spacing */}
                   <TableRow>
-                    <TableCell colSpan={2} className="py-2"></TableCell>
+                    <TableCell colSpan={3} className="py-2"></TableCell>
                   </TableRow>
 
                   {/* Operating Expenses Section */}
@@ -410,6 +417,7 @@ export const IncomeStatementReport = () => {
                       key={`exp-${index}`}
                       className="hover:bg-muted/30"
                     >
+                      <ListNumberCell index={index} />
                       <TableCell style={getIndent(account.level || 0)}>
                         {account.code}-{account.name}
                       </TableCell>
@@ -421,6 +429,7 @@ export const IncomeStatementReport = () => {
 
                   {/* Total Expenses */}
                   <TableRow className="bg-muted/20">
+                    <TableCell />
                     <TableCell className="text-right font-semibold">
                       Total Expenses
                     </TableCell>
@@ -431,6 +440,7 @@ export const IncomeStatementReport = () => {
 
                   {/* Net Income/Loss */}
                   <TableRow className="bg-primary/10 border-t-2 border-primary">
+                    <TableCell />
                     <TableCell className="text-right font-bold text-lg">
                       {netIncome >= 0 ? "Net Income" : "Net Loss"}
                     </TableCell>

@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Label } from "@/components/ui/label";
 import { 
   Database,
@@ -502,6 +503,7 @@ export const BackupRestoreTab = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <ListNumberHeader />
                   <TableHead>BACKUP NAME</TableHead>
                   <TableHead>TYPE</TableHead>
                   <TableHead>SIZE</TableHead>
@@ -514,19 +516,20 @@ export const BackupRestoreTab = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={8} className="text-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : backups.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No backups found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  backups.map((backup) => (
+                  backups.map((backup, index) => (
                   <TableRow key={backup.id} className={backup.status === "in_progress" ? "bg-amber-50/30" : ""}>
+                    <ListNumberCell index={index} />
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {backup.status === "in_progress" ? (
@@ -643,6 +646,7 @@ export const BackupRestoreTab = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <ListNumberHeader />
                   <TableHead>SCHEDULE NAME</TableHead>
                   <TableHead>FREQUENCY</TableHead>
                   <TableHead>TIME</TableHead>
@@ -653,8 +657,9 @@ export const BackupRestoreTab = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {schedules.map((schedule) => (
+                {schedules.map((schedule, index) => (
                   <TableRow key={schedule.id}>
+                    <ListNumberCell index={index} />
                     <TableCell className="font-medium text-sm">{schedule.name}</TableCell>
                     <TableCell className="text-sm">{schedule.frequency}</TableCell>
                     <TableCell className="text-sm">{schedule.time}</TableCell>

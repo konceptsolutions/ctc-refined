@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, TrendingUp, TrendingDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 import { toast } from "sonner";
@@ -292,6 +293,7 @@ const PeriodicSalesTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>PERIOD</TableHead>
                 <TableHead className="text-right">GROSS SALES</TableHead>
                 <TableHead className="text-right">ORDERS</TableHead>
@@ -305,19 +307,20 @@ const PeriodicSalesTab = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">
+                  <TableCell colSpan={9} className="text-center py-8">
                     <p className="text-muted-foreground">Loading data...</p>
                   </TableCell>
                 </TableRow>
               ) : monthlyData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">
+                  <TableCell colSpan={9} className="text-center py-8">
                     <p className="text-muted-foreground">No data available</p>
                   </TableCell>
                 </TableRow>
               ) : (
-                monthlyData.map((row) => (
+                monthlyData.map((row, index) => (
                 <TableRow key={row.period}>
+                  <ListNumberCell index={index} />
                   <TableCell className="font-medium">{row.period}</TableCell>
                   <TableCell className="text-right">Rs {row.grossSales.toLocaleString()}</TableCell>
                   <TableCell className="text-right">{row.orders}</TableCell>

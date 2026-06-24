@@ -1,4 +1,9 @@
 import { useState, useEffect } from "react";
+import {
+  getListRowNumber,
+  LIST_NUMBER_HEAD_CLASS,
+  LIST_NUMBER_CELL_CLASS,
+} from "@/components/ui/list-table-number";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -486,6 +491,7 @@ export const SubgroupsTab = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
+                  <th className={LIST_NUMBER_HEAD_CLASS}>#</th>
                   <th className="p-3 text-left w-12">
                     <Checkbox
                       checked={
@@ -514,7 +520,7 @@ export const SubgroupsTab = () => {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="p-8 text-center text-muted-foreground"
                     >
                       Loading subgroups...
@@ -523,7 +529,7 @@ export const SubgroupsTab = () => {
                 ) : paginatedSubgroups.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="p-8 text-center text-muted-foreground"
                     >
                       No subgroups found. Click "Add New Subgroup" to create
@@ -551,6 +557,13 @@ export const SubgroupsTab = () => {
                         className={`border-b border-border/50 transition-colors duration-200 hover:bg-muted/30 ${index % 2 === 0 ? "bg-muted/10" : ""
                           }`}
                       >
+                        <td className={LIST_NUMBER_CELL_CLASS}>
+                          {getListRowNumber(
+                            index,
+                            currentPage,
+                            parseInt(pageSize),
+                          )}
+                        </td>
                         <td className="p-3">
                           <Checkbox
                             checked={selectedItems.includes(subgroup.id)}

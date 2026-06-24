@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -92,6 +93,7 @@ const balanceRow = (
   <TableRow className={cn(bold && "bg-muted/30 font-semibold")}>
     <TableCell />
     <TableCell />
+    <TableCell />
     <TableCell className={cn("whitespace-nowrap", bold && "font-semibold")}>{label}</TableCell>
     {columns.map((column) => {
       const value = Number(values[column.id] || 0);
@@ -112,7 +114,7 @@ const balanceRow = (
 
 const sectionHeaderRow = (columns: DailyClosingColumn[], title: string) => (
   <TableRow className="bg-slate-100 dark:bg-slate-800">
-    <TableCell colSpan={3 + columns.length} className="font-bold text-center">
+    <TableCell colSpan={4 + columns.length} className="font-bold text-center">
       {title}
     </TableCell>
   </TableRow>
@@ -450,7 +452,7 @@ export const DailyClosingTab = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-[#1e3a8a] hover:bg-[#1e3a8a]">
-                <TableHead className="text-white w-12 text-center">S no</TableHead>
+                <ListNumberHeader className="text-white" />
                 <TableHead className="text-white w-20">V no</TableHead>
                 <TableHead className="text-white min-w-[220px]">Desc</TableHead>
                 {columns.map((column) => (
@@ -469,14 +471,14 @@ export const DailyClosingTab = () => {
               {sectionHeaderRow(columns, "Receipts")}
               {data.receipts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3 + columns.length} className="text-center text-muted-foreground">
+                  <TableCell colSpan={4 + columns.length} className="text-center text-muted-foreground">
                     No receipts for this date
                   </TableCell>
                 </TableRow>
               ) : (
-                data.receipts.map((row) => (
+                data.receipts.map((row, index) => (
                   <TableRow key={`r-${row.serialNo}-${row.voucherNumber}`}>
-                    <TableCell className="text-center tabular-nums">{row.serialNo}</TableCell>
+                    <ListNumberCell index={index} />
                     <TableCell className="font-mono text-xs whitespace-nowrap">
                       {row.voucherNumber}
                     </TableCell>
@@ -490,14 +492,14 @@ export const DailyClosingTab = () => {
               {sectionHeaderRow(columns, "Payments")}
               {data.payments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3 + columns.length} className="text-center text-muted-foreground">
+                  <TableCell colSpan={4 + columns.length} className="text-center text-muted-foreground">
                     No payments for this date
                   </TableCell>
                 </TableRow>
               ) : (
-                data.payments.map((row) => (
+                data.payments.map((row, index) => (
                   <TableRow key={`p-${row.serialNo}-${row.voucherNumber}`}>
-                    <TableCell className="text-center tabular-nums">{row.serialNo}</TableCell>
+                    <ListNumberCell index={index} />
                     <TableCell className="font-mono text-xs whitespace-nowrap">
                       {row.voucherNumber}
                     </TableCell>

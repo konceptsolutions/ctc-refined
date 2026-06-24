@@ -69,6 +69,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -1850,6 +1851,7 @@ export const ItemsListView = ({
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/30 hover:bg-muted/30">
+                        <ListNumberHeader className="pl-4" />
                         <TableHead className="w-10 pl-4">
                           <Checkbox
                             checked={
@@ -1895,7 +1897,7 @@ export const ItemsListView = ({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredItems.map((item) => (
+                      {filteredItems.map((item, index) => (
                         <TableRow
                           key={item.id}
                           className="hover:bg-muted/20 cursor-pointer"
@@ -1913,6 +1915,12 @@ export const ItemsListView = ({
                             onItemSelect?.(item);
                           }}
                         >
+                          <ListNumberCell
+                            index={index}
+                            page={currentPage}
+                            pageSize={itemsPerPage}
+                            className="pl-4"
+                          />
                           <TableCell className="pl-4">
                             <Checkbox
                               checked={selectedItems.includes(item.id)}
@@ -2236,7 +2244,7 @@ export const ItemsListView = ({
                       {filteredItems.length === 0 && (
                         <TableRow>
                           <TableCell
-                            colSpan={12}
+                            colSpan={13}
                             className="h-24 text-center text-xs text-muted-foreground"
                           >
                             No parts found matching your filters.

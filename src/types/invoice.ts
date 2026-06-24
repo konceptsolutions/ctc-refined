@@ -2,6 +2,22 @@
 
 export type CustomerType = "walking" | "registered" | "transfer";
 
+/** Display label for sale / customer type (API values stay walking | registered). */
+export function getCustomerTypeLabel(
+  customerType: CustomerType | string | null | undefined,
+): string {
+  switch (customerType) {
+    case "walking":
+      return "Walk-in";
+    case "registered":
+      return "Party";
+    case "transfer":
+      return "Transfer Out";
+    default:
+      return customerType?.trim() ? String(customerType) : "N/A";
+  }
+}
+
 export type StockStatus = "available" | "reserved" | "out";
 
 export type InvoiceStatus =
@@ -73,6 +89,7 @@ export interface PartItem {
   machineModels?: MachineModel[];
   locations?: StockLocation[];
   unlocatedStock?: number;
+  images?: string[];
 }
 
 export interface StockLocation {
@@ -145,6 +162,10 @@ export interface Invoice {
   grandTotal: number;
   paidAmount: number;
   accountId?: string;
+  bankAccountId?: string | null;
+  cashAccountId?: string | null;
+  bankAmount?: number;
+  cashAmount?: number;
   status: InvoiceStatus;
   paymentStatus: PaymentStatus;
   deliveryLog: DeliveryLogEntry[];
@@ -157,6 +178,7 @@ export interface Invoice {
   quotationStatus?: string;
   /** Present on sales invoices converted from quotations */
   quotationId?: string | null;
+  remarks?: string | null;
 }
 
 export interface StockReservation {

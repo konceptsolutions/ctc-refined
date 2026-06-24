@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -530,6 +531,7 @@ export const StoreSalesInvoiceReceipt = ({
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <ListNumberHeader className="font-semibold" />
                 <TableHead className="font-semibold min-w-[140px]">Item</TableHead>
                 <TableHead className="text-center w-[72px] font-semibold">
                   Ordered
@@ -547,7 +549,7 @@ export const StoreSalesInvoiceReceipt = ({
             </TableHeader>
             <TableBody>
               {invoice.items && invoice.items.length > 0 ? (
-                invoice.items.map((item) => {
+                invoice.items.map((item, index) => {
                   const pendingQty = item.orderedQty - item.deliveredQty;
                   const isFullyDelivered = pendingQty <= 0;
                   const locOptions =
@@ -561,6 +563,7 @@ export const StoreSalesInvoiceReceipt = ({
                       key={item.id}
                       className={isFullyDelivered ? "opacity-50" : ""}
                     >
+                      <ListNumberCell index={index} className="align-middle" />
                       <TableCell className="align-middle">
                         <p className="font-medium text-sm">{item.partNo}</p>
                         {item.description && (
@@ -656,7 +659,7 @@ export const StoreSalesInvoiceReceipt = ({
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="text-center text-muted-foreground py-8"
                   >
                     No items found for this invoice.

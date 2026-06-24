@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { format } from "date-fns";
 import { Printer } from "lucide-react";
 import { useRef } from "react";
@@ -168,6 +169,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <ListNumberHeader />
                     <TableHead className="w-[150px]">Part No</TableHead>
                     <TableHead className="min-w-[200px]">Description</TableHead>
                     <TableHead className="w-[120px]">Brand</TableHead>
@@ -179,8 +181,9 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
                 </TableHeader>
                 <TableBody>
                   {order.items && order.items.length > 0 ? (
-                    order.items.map((item) => (
+                    order.items.map((item, index) => (
                       <TableRow key={item.id} className="h-12">
+                        <ListNumberCell index={index} />
                         <TableCell className="font-medium align-middle">{item.partNo}</TableCell>
                         <TableCell className="align-middle">{item.description || "-"}</TableCell>
                         <TableCell className="align-middle">{item.brand}</TableCell>
@@ -200,7 +203,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                         No items found in this order
                       </TableCell>
                     </TableRow>

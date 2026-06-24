@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, Users } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -177,6 +178,7 @@ const CustomerAnalysisTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>CUSTOMER</TableHead>
                 <TableHead>CONTACT</TableHead>
                 <TableHead className="text-center">TOTAL ORDERS</TableHead>
@@ -188,7 +190,7 @@ const CustomerAnalysisTab = () => {
             <TableBody>
               {customerData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center">
+                  <TableCell colSpan={7} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <Users className="w-10 h-10 opacity-50" />
                       <p>No customer data found</p>
@@ -197,8 +199,9 @@ const CustomerAnalysisTab = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                customerData.map((record) => (
+                customerData.map((record, index) => (
                   <TableRow key={record.id}>
+                    <ListNumberCell index={index} />
                     <TableCell className="font-medium">{record.customer}</TableCell>
                     <TableCell>{record.contact}</TableCell>
                     <TableCell className="text-center">{record.totalOrders}</TableCell>

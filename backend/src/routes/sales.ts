@@ -20,6 +20,103 @@ async function setInvoiceFreightCharges(
   `;
 }
 
+type SalesInvoicePaymentInput = {
+  customerType: string;
+  grandTotal: number;
+  bankAccountId?: string | null;
+  cashAccountId?: string | null;
+  bankAmount?: number | null;
+  cashAmount?: number | null;
+  paidAmount?: number | null;
+  accountId?: string | null;
+};
+
+function normalizeSalesInvoicePayments(input: SalesInvoicePaymentInput) {
+  const bankAmt = Math.max(0, Number(input.bankAmount || 0));
+  const cashAmt = Math.max(0, Number(input.cashAmount || 0));
+  let totalPaid = bankAmt + cashAmt;
+  if (totalPaid <= 0 && input.paidAmount != null) {
+    totalPaid = Math.max(0, Number(input.paidAmount || 0));
+  }
+
+  const errors: string[] = [];
+  if (bankAmt > 0 && !input.bankAccountId) {
+    errors.push("Bank account is required when bank amount is greater than zero.");
+  }
+  if (cashAmt > 0 && !input.cashAccountId) {
+    errors.push("Cash account is required when cash amount is greater than zero.");
+  }
+
+  if (input.customerType === "walking") {
+    if (bankAmt + cashAmt <= 0) {
+      errors.push(
+        "Walk-in invoices require payment amounts on cash and/or bank accounts.",
+      );
+    } else if (Math.abs(bankAmt + cashAmt - Number(input.grandTotal || 0)) > 0.01) {
+      errors.push(
+        `For walk-in customers, cash and bank payments combined (${(bankAmt + cashAmt).toFixed(2)}) must equal grand total (${Number(input.grandTotal || 0).toFixed(2)}).`,
+      );
+    }
+  }
+
+  const walkInTerm =
+    bankAmt > 0 && cashAmt > 0
+      ? "cash+online"
+      : bankAmt > 0
+        ? "online"
+        : cashAmt > 0
+          ? "cash"
+          : null;
+
+  const legacyAccountId =
+    input.bankAccountId || input.cashAccountId || input.accountId || null;
+
+  return {
+    bankAmt,
+    cashAmt,
+    totalPaid,
+    walkInTerm,
+    legacyAccountId,
+    errors,
+  };
+}
+
+function getSalesInvoicePaymentDebits(invoice: {
+  bankAccountId?: string | null;
+  cashAccountId?: string | null;
+  bankAmount?: number | null;
+  cashAmount?: number | null;
+  accountId?: string | null;
+  paidAmount?: number | null;
+  grandTotal?: number | null;
+  customerType?: string | null;
+}) {
+  const bankAmt = Math.max(0, Number(invoice.bankAmount || 0));
+  const cashAmt = Math.max(0, Number(invoice.cashAmount || 0));
+  const lines: Array<{ accountId: string; amount: number }> = [];
+
+  if (bankAmt > 0 && invoice.bankAccountId) {
+    lines.push({ accountId: invoice.bankAccountId, amount: bankAmt });
+  }
+  if (cashAmt > 0 && invoice.cashAccountId) {
+    lines.push({ accountId: invoice.cashAccountId, amount: cashAmt });
+  }
+
+  if (lines.length === 0 && invoice.accountId) {
+    const amount =
+      Number(invoice.paidAmount || 0) > 0
+        ? Number(invoice.paidAmount)
+        : invoice.customerType === "walking"
+          ? Number(invoice.grandTotal || 0)
+          : Number(invoice.paidAmount || 0);
+    if (amount > 0) {
+      lines.push({ accountId: invoice.accountId, amount });
+    }
+  }
+
+  return lines;
+}
+
 async function setQuotationFinancialFields(
   quotationId: string,
   data: {
@@ -1649,6 +1746,13 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
             },
           },
         },
+        StockReservation: {
+          include: {
+            Rack: true,
+            Shelf: true,
+            Store: true,
+          },
+        },
       },
     });
 
@@ -1656,7 +1760,21 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
-    res.json(invoice);
+    const stockMovements = await prisma.stockMovement.findMany({
+      where: {
+        referenceType: "sales_invoice",
+        referenceId: id,
+        type: "out",
+      },
+      include: {
+        Rack: true,
+        Shelf: true,
+        Store: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json({ ...invoice, stockMovements });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1812,16 +1930,26 @@ router.post("/invoices", async (req: Request, res: Response) => {
     } = req.body;
 
     const normalizedCustomerType = customerType || "registered";
-    const parsedBankAmount = Number(bankAmount || 0);
-    const parsedCashAmount = Number(cashAmount || 0);
+    const payment = normalizeSalesInvoicePayments({
+      customerType: normalizedCustomerType,
+      grandTotal: Number(grandTotal || 0),
+      bankAccountId,
+      cashAccountId,
+      bankAmount,
+      cashAmount,
+      paidAmount,
+      accountId,
+    });
+    if (payment.errors.length > 0) {
+      return res.status(400).json({ error: payment.errors[0] });
+    }
+    const parsedBankAmount = payment.bankAmt;
+    const parsedCashAmount = payment.cashAmt;
+    const resolvedPaidAmount = payment.totalPaid;
     const resolvedTerm =
       normalizedCustomerType === "registered"
         ? String(term ?? "").trim() || null
-        : parsedBankAmount > 0
-          ? "online"
-          : parsedCashAmount > 0
-            ? "cash"
-            : null;
+        : payment.walkInTerm;
 
     // Check stock availability
     for (const item of items) {
@@ -1841,8 +1969,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
         ? await getNextTransferOutInvoiceNo(invoiceDate)
         : await getNextSalesInvoiceNo();
 
-    // Determine which account ID to store (prefer bank, then cash, then legacy accountId)
-    const finalAccountId = bankAccountId || cashAccountId || accountId;
+    const finalAccountId = payment.legacyAccountId;
 
     const freightAmount = Number(freightCharges || 0);
 
@@ -1861,12 +1988,14 @@ router.post("/invoices", async (req: Request, res: Response) => {
         tax: tax || 0,
         taxPercentage: taxPercentage != null ? Number(taxPercentage) : null,
         grandTotal: grandTotal || 0,
-        paidAmount: paidAmount || 0,
+        paidAmount: resolvedPaidAmount,
+        bankAmount: parsedBankAmount,
+        cashAmount: parsedCashAmount,
         status: "pending",
         paymentStatus:
-          paidAmount >= grandTotal
+          resolvedPaidAmount >= grandTotal
             ? "paid"
-            : paidAmount > 0
+            : resolvedPaidAmount > 0
               ? "partial"
               : "unpaid",
         deliveredTo,
@@ -1875,6 +2004,12 @@ router.post("/invoices", async (req: Request, res: Response) => {
         ...(customerId ? { Customer: { connect: { id: customerId } } } : {}),
         ...(finalAccountId
           ? { Account: { connect: { id: finalAccountId } } }
+          : {}),
+        ...(bankAccountId
+          ? { BankAccount: { connect: { id: bankAccountId } } }
+          : {}),
+        ...(cashAccountId
+          ? { CashAccount: { connect: { id: cashAccountId } } }
           : {}),
         SalesInvoiceItem: {
           create: await Promise.all(
@@ -1955,7 +2090,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
             }),
           ),
         },
-      },
+      } as any,
       include: {
         SalesInvoiceItem: {
           include: {
@@ -2827,41 +2962,72 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
       updateData.taxPercentage = taxPercentage != null ? Number(taxPercentage) : null;
     }
 
-    // Determine which account ID to store
+    const effectiveCustomerType =
+      customerType !== undefined ? customerType : existingInvoice.customerType;
+    const effectiveGrandTotal =
+      grandTotal !== undefined ? grandTotal : existingInvoice.grandTotal;
+
     if (
       bankAccountId !== undefined ||
       cashAccountId !== undefined ||
-      accountId !== undefined
+      bankAmount !== undefined ||
+      cashAmount !== undefined ||
+      accountId !== undefined ||
+      paidAmount !== undefined
     ) {
-      updateData.accountId =
-        bankAccountId || cashAccountId || accountId || null;
-    }
+      const payment = normalizeSalesInvoicePayments({
+        customerType: effectiveCustomerType,
+        grandTotal: Number(effectiveGrandTotal || 0),
+        bankAccountId:
+          bankAccountId !== undefined
+            ? bankAccountId
+            : (existingInvoice as any).bankAccountId,
+        cashAccountId:
+          cashAccountId !== undefined
+            ? cashAccountId
+            : (existingInvoice as any).cashAccountId,
+        bankAmount:
+          bankAmount !== undefined
+            ? bankAmount
+            : (existingInvoice as any).bankAmount,
+        cashAmount:
+          cashAmount !== undefined
+            ? cashAmount
+            : (existingInvoice as any).cashAmount,
+        paidAmount:
+          paidAmount !== undefined ? paidAmount : existingInvoice.paidAmount,
+        accountId:
+          accountId !== undefined ? accountId : existingInvoice.accountId,
+      });
+      if (payment.errors.length > 0) {
+        return res.status(400).json({ error: payment.errors[0] });
+      }
 
-    if (paidAmount !== undefined) {
-      updateData.paidAmount = paidAmount;
-    }
+      updateData.paidAmount = payment.totalPaid;
+      updateData.bankAmount = payment.bankAmt;
+      updateData.cashAmount = payment.cashAmt;
+      updateData.accountId = payment.legacyAccountId;
+      if (bankAccountId !== undefined) {
+        updateData.bankAccountId = bankAccountId || null;
+      }
+      if (cashAccountId !== undefined) {
+        updateData.cashAccountId = cashAccountId || null;
+      }
 
-    // For walking customer invoices, always store payment term as cash/online
-    if (existingInvoice.customerType === "walking") {
-      const parsedBankAmount = Number(bankAmount || 0);
-      const parsedCashAmount = Number(cashAmount || 0);
-      updateData.term =
-        parsedBankAmount > 0
-          ? "online"
-          : parsedCashAmount > 0
-            ? "cash"
-            : (existingInvoice as any).term || null;
-    }
+      if (effectiveCustomerType === "walking") {
+        updateData.term = payment.walkInTerm;
+      }
 
-    // Recalculate payment status if relevant fields changed
-    const currentPaid =
-      paidAmount !== undefined ? paidAmount : existingInvoice.paidAmount;
-    const currentGrand =
-      grandTotal !== undefined ? grandTotal : existingInvoice.grandTotal;
-
-    if (paidAmount !== undefined || grandTotal !== undefined) {
       updateData.paymentStatus =
-        currentPaid >= currentGrand
+        payment.totalPaid >= Number(effectiveGrandTotal || 0)
+          ? "paid"
+          : payment.totalPaid > 0
+            ? "partial"
+            : "unpaid";
+    } else if (grandTotal !== undefined) {
+      const currentPaid = existingInvoice.paidAmount;
+      updateData.paymentStatus =
+        currentPaid >= Number(effectiveGrandTotal || 0)
           ? "paid"
           : currentPaid > 0
             ? "partial"
@@ -3224,7 +3390,7 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
     ) {
       return res.status(400).json({
         error:
-          "Approve the invoice before recording delivery (Party Sale). Stock is reserved on approval.",
+          "Approve the invoice before recording delivery (Credit Sale). Stock is reserved on approval.",
       });
     }
 
@@ -4309,7 +4475,10 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
         // ── RV Voucher — walking: always (full amount); registered: only when an amount was actually received (paidAmount > 0)
         const createRV =
           isWalking ||
-          (!isTransferOut && paidAmount > 0 && paymentAccount && customerAccount);
+          (!isTransferOut &&
+            paidAmount > 0 &&
+            customerAccount &&
+            (getSalesInvoicePaymentDebits(invoice).length > 0 || !!paymentAccount));
         if (createRV) {
           const rvNo = await getNextNumberForPrefix({
             prefix: "RV",
@@ -4318,8 +4487,17 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
           const rvEntries: any[] = [];
 
           if (isWalking) {
-            // Walking customer RV: use amount actually received (paidAmount saved on invoice), fallback to grandTotal
-            const amountReceived = Math.round((paidAmount > 0 ? paidAmount : grandTotal) * 100) / 100;
+            const splitPaid =
+              Number((invoice as any).bankAmount || 0) +
+              Number((invoice as any).cashAmount || 0);
+            const amountReceived =
+              Math.round(
+                (splitPaid > 0
+                  ? splitPaid
+                  : paidAmount > 0
+                    ? paidAmount
+                    : grandTotal) * 100,
+              ) / 100;
             const discountRounded = Math.round(discountAmount * 100) / 100;
             const totalRevenueRounded = Math.round(totalRevenue * 100) / 100;
             // Credits: Revenue (excl GST) + GST; Debits: Discount + Cash/Bank. Balance: totalRevenue = discount + amountReceived.
@@ -4375,7 +4553,24 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
                 sortOrder: rvSort++,
               });
             }
-            if (paymentAccount) {
+            const paymentDebits = getSalesInvoicePaymentDebits(invoice);
+            if (paymentDebits.length > 0) {
+              for (const line of paymentDebits) {
+                const payAcc = await prisma.account.findUnique({
+                  where: { id: line.accountId },
+                  include: { Subgroup: { include: { MainGroup: true } } },
+                });
+                if (!payAcc) continue;
+                rvEntries.push({
+                  accountId: payAcc.id,
+                  accountName: `${(payAcc as any).code}-${payAcc.name}`,
+                  description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
+                  debit: Math.round(line.amount * 100) / 100,
+                  credit: 0,
+                  sortOrder: rvSort++,
+                });
+              }
+            } else if (paymentAccount) {
               rvEntries.push({
                 accountId: paymentAccount.id,
                 accountName: `${(paymentAccount as any).code}-${paymentAccount.name}`,
@@ -4385,15 +4580,17 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
                 sortOrder: rvSort++,
               });
             } else {
-              // No payment account — frontend must send accountId (cash/bank) in approve request
               console.warn(
-                `[Voucher] Walk-in RV skipped for ${invoice.invoiceNo}: no payment account. Send accountId (cash/bank account) in the status update request body.`,
+                `[Voucher] Walk-in RV skipped for ${invoice.invoiceNo}: no payment account. Save cash/bank accounts on the invoice.`,
               );
             }
           } else {
-            // Registered customer RV: only the amount actually received (cash/bank) — DR Cash/Bank, CR Customer
-            const receivedAmount = paidAmount;
-            if (customerAccount && paymentAccount && receivedAmount > 0) {
+            // Registered customer RV: amount received — DR Cash/Bank (split or single), CR Customer
+            const paymentDebits = getSalesInvoicePaymentDebits(invoice);
+            const receivedAmount =
+              paymentDebits.reduce((sum, line) => sum + line.amount, 0) ||
+              paidAmount;
+            if (customerAccount && receivedAmount > 0) {
               rvEntries.push({
                 accountId: customerAccount.id,
                 accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
@@ -4402,14 +4599,33 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
                 credit: receivedAmount,
                 sortOrder: 0,
               });
-              rvEntries.push({
-                accountId: paymentAccount.id,
-                accountName: `${(paymentAccount as any).code}-${paymentAccount.name}`,
-                description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
-                debit: receivedAmount,
-                credit: 0,
-                sortOrder: 1,
-              });
+              if (paymentDebits.length > 0) {
+                let sortOrder = 1;
+                for (const line of paymentDebits) {
+                  const payAcc = await prisma.account.findUnique({
+                    where: { id: line.accountId },
+                    include: { Subgroup: { include: { MainGroup: true } } },
+                  });
+                  if (!payAcc) continue;
+                  rvEntries.push({
+                    accountId: payAcc.id,
+                    accountName: `${(payAcc as any).code}-${payAcc.name}`,
+                    description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
+                    debit: line.amount,
+                    credit: 0,
+                    sortOrder: sortOrder++,
+                  });
+                }
+              } else if (paymentAccount) {
+                rvEntries.push({
+                  accountId: paymentAccount.id,
+                  accountName: `${(paymentAccount as any).code}-${paymentAccount.name}`,
+                  description: `INV: ${invoice.invoiceNo} - Cash/Bank Received`,
+                  debit: receivedAmount,
+                  credit: 0,
+                  sortOrder: 1,
+                });
+              }
             }
           }
 

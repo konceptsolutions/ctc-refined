@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -310,6 +311,7 @@ export const KitAssembly = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <ListNumberHeader />
                   <TableHead className="text-xs font-medium">Date</TableHead>
                   <TableHead className="text-xs font-medium">Kit No</TableHead>
                   <TableHead className="text-xs font-medium">Kit Name</TableHead>
@@ -320,8 +322,9 @@ export const KitAssembly = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {operations.map((op) => (
+                {operations.map((op, index) => (
                   <TableRow key={op.id} className="hover:bg-muted/20 transition-colors">
+                    <ListNumberCell index={index} />
                     <TableCell className="text-sm text-muted-foreground">{op.date}</TableCell>
                     <TableCell className="text-sm font-medium text-foreground">{op.kitNo}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{op.kitName}</TableCell>

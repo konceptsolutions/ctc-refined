@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
 import { format } from "date-fns";
@@ -312,6 +313,7 @@ export const TrialBalanceTab = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <ListNumberHeader />
                   <TableHead className="font-semibold underline">Account</TableHead>
                   <TableHead className="font-semibold underline text-right">Dr</TableHead>
                   <TableHead className="font-semibold underline text-right">Cr</TableHead>
@@ -320,13 +322,13 @@ export const TrialBalanceTab = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                       Loading trial balance data...
                     </TableCell>
                   </TableRow>
                 ) : !data || data.rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                       No data available
                     </TableCell>
                   </TableRow>
@@ -336,6 +338,7 @@ export const TrialBalanceTab = () => {
                       <React.Fragment key={subgroup.subGroupLabel}>
                         {/* Subgroup Header Row */}
                         <TableRow className="bg-muted/20 font-medium">
+                          <TableCell />
                           <TableCell className="font-semibold">
                             {subgroup.subGroupLabel}
                           </TableCell>
@@ -346,6 +349,7 @@ export const TrialBalanceTab = () => {
                         {/* Account Rows under Subgroup */}
                         {subgroup.accounts.map((account, accIdx) => (
                           <TableRow key={`${account.accountId}-${accIdx}`} className="hover:bg-muted/30">
+                            <ListNumberCell index={accIdx} />
                             <TableCell className="pl-8 text-sm">
                               {account.label}
                             </TableCell>
@@ -362,6 +366,7 @@ export const TrialBalanceTab = () => {
 
                     {/* Total Row */}
                     <TableRow className="bg-muted/40 font-bold border-t-2 border-border">
+                      <TableCell />
                       <TableCell className="font-bold">Total</TableCell>
                       <TableCell className="text-right font-bold font-mono">
                         {formatNumber(data.totalDebit)}

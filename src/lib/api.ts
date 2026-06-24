@@ -2296,6 +2296,24 @@ class ApiClient {
     return this.request(`/purchase-import/requests/${requestId}/quotation-context`);
   }
 
+  async getLastSupplierQuotationFcRates(
+    supplierId: string,
+    partIds: string[],
+    excludeQuotationId?: string,
+  ) {
+    const queryParams = new URLSearchParams();
+    if (partIds.length > 0) {
+      queryParams.set("part_ids", partIds.join(","));
+    }
+    if (excludeQuotationId) {
+      queryParams.set("exclude_quotation_id", excludeQuotationId);
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/purchase-import/suppliers/${supplierId}/last-fc-rates${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
   async createPurchaseQuotation(
     requestId: string,
     data: {
@@ -2322,15 +2340,15 @@ class ApiClient {
     });
   }
 
-  async getPurchaseQuotations(params?: { page?: number; limit?: number }) {
+  async getPurchaseQuotations(params?: {
+    page?: number;
+    limit?: number;
+    status?: "open" | "confirm";
+  }) {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (
-          value !== undefined &&
-          value !== null &&
-          (typeof value !== "string" || value !== "")
-        ) {
+        if (value !== undefined && value !== null && String(value) !== "") {
           queryParams.append(key, String(value));
         }
       });
@@ -2376,6 +2394,22 @@ class ApiClient {
     return this.request(`/purchase-import/quotations/${quotationId}/status`, {
       method: "PUT",
       body: JSON.stringify({ status }),
+    });
+  }
+
+  async confirmPurchaseQuotation(
+    quotationId: string,
+    data: {
+      confirmationDate: string;
+      items: Array<{
+        partId: string;
+        confirmQuantity: number;
+      }>;
+    },
+  ) {
+    return this.request(`/purchase-import/quotations/${quotationId}/confirm`, {
+      method: "POST",
+      body: JSON.stringify(data),
     });
   }
 

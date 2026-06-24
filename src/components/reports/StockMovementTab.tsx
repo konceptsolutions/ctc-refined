@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, Printer, TrendingUp, TrendingDown, Minus, Info, AlertTriangle, RefreshCw, Bell } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from "recharts";
 import { toast } from "sonner";
@@ -339,6 +340,7 @@ const StockMovementTab = () => {
           <Table id="stock-movement-table">
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>PART DETAILS</TableHead>
                 <TableHead>CATEGORY</TableHead>
                 <TableHead className="text-center">STOCK</TableHead>
@@ -353,19 +355,20 @@ const StockMovementTab = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
+                  <TableCell colSpan={10} className="text-center py-8">
                     <p className="text-muted-foreground">Loading data...</p>
                   </TableCell>
                 </TableRow>
               ) : filteredData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
+                  <TableCell colSpan={10} className="text-center py-8">
                     <p className="text-muted-foreground">No data available</p>
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredData.map((item) => (
+                filteredData.map((item, index) => (
                 <TableRow key={item.id}>
+                  <ListNumberCell index={index} />
                   <TableCell>
                     <div>
                       <p className="font-medium text-primary">{item.partNumber}</p>

@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 
 export interface Part {
   id: string;
@@ -92,6 +93,7 @@ export const PartsList = ({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/30">
+              <ListNumberHeader />
               <TableHead className="font-bold text-foreground text-xs py-2">
                 Part No
               </TableHead>
@@ -125,12 +127,17 @@ export const PartsList = ({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedParts.map((part) => (
+            {paginatedParts.map((part, index) => (
               <TableRow
                 key={part.id}
                 className="hover:bg-muted/50 cursor-pointer"
                 onClick={() => onSelectPart?.(part)}
               >
+                <ListNumberCell
+                  index={index}
+                  page={currentPage}
+                  pageSize={ITEMS_PER_PAGE}
+                />
                 <TableCell className="font-medium text-foreground text-xs py-1.5 part-code-font font-mono">
                   {part.partNo}
                 </TableCell>

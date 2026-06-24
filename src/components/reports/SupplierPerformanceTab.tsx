@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, Star, TrendingUp, TrendingDown, Minus, Clock, Package, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -268,6 +269,7 @@ const SupplierPerformanceTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>SUPPLIER</TableHead>
                 <TableHead className="text-center">ORDERS</TableHead>
                 <TableHead className="text-right">TOTAL VALUE</TableHead>
@@ -279,8 +281,9 @@ const SupplierPerformanceTab = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {supplierData.map((row) => (
+              {supplierData.map((row, index) => (
                 <TableRow key={row.id}>
+                  <ListNumberCell index={index} />
                   <TableCell className="font-medium">{row.supplier}</TableCell>
                   <TableCell className="text-center">{row.totalOrders}</TableCell>
                   <TableCell className="text-right">Rs {row.totalValue.toLocaleString()}</TableCell>

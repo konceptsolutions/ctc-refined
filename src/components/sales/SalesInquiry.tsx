@@ -29,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +61,11 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { PrintableDocument, printDocument } from "./PrintableDocument";
 import { apiClient } from "@/lib/api";
+import {
+  extractLatestPriceDatesFromHistory,
+  formatPriceLastUpdatedLabel,
+} from "@/lib/part-price-dates";
+import { getCustomerTypeLabel } from "@/types/invoice";
 
 interface Inquiry {
   id: string;
@@ -117,6 +123,7 @@ interface PartDetail {
   quantity?: number; // Available stock quantity
   /** From parts API when present; used in dropdown before available qty */
   reservedQty?: number;
+  images?: string[];
 }
 
 interface ModelAssociationItem {
@@ -142,6 +149,39 @@ const formatPartNumber = (val: any): string => {
   const num = parseFloat(val);
   if (isNaN(num)) return "0";
   return num % 1 === 0 ? String(num) : num.toFixed(2);
+};
+
+const formatPartImageSrc = (img?: string | null): string | null => {
+  if (!img || !String(img).trim()) return null;
+  const trimmed = String(img).trim();
+  if (
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("http")
+  ) {
+    return trimmed;
+  }
+  return `data:image/jpeg;base64,${trimmed}`;
+};
+
+const getPartImageList = (
+  part?: {
+    images?: string[];
+    imageP1?: string | null;
+    imageP2?: string | null;
+    image_p1?: string | null;
+    image_p2?: string | null;
+  } | null,
+): string[] => {
+  if (!part) return [];
+  if (part.images?.length) {
+    return part.images
+      .map((img) => formatPartImageSrc(img))
+      .filter((img): img is string => Boolean(img));
+  }
+  return [part.imageP1, part.imageP2, part.image_p1, part.image_p2]
+    .map((img) => formatPartImageSrc(img))
+    .filter((img): img is string => Boolean(img));
 };
 
 // Correctly transform parts based on project convention (Swapped)
@@ -179,6 +219,12 @@ const transformPart = (
   quantity: resolvePartStockQty(p),
   reservedQty:
     Number(p.reserved_stock ?? p.reservedStock ?? p.reservedQty ?? 0) || 0,
+  images: getPartImageList({
+    image_p1: p.image_p1,
+    image_p2: p.image_p2,
+    imageP1: p.imageP1,
+    imageP2: p.imageP2,
+  }),
 });
 
 const extractPartModels = (part: any) => {
@@ -299,6 +345,21 @@ export const SalesInquiry = () => {
   const [loadingStockBalances, setLoadingStockBalances] = useState<
     Record<string, boolean>
   >({});
+  const [partImagesByPartId, setPartImagesByPartId] = useState<
+    Record<string, string[]>
+  >({});
+  const loadedPartImagesRef = useRef<Set<string>>(new Set());
+  const [partImageModalOpen, setPartImageModalOpen] = useState(false);
+  const [partImageModalImages, setPartImageModalImages] = useState<string[]>(
+    [],
+  );
+  const [partImageModalIndex, setPartImageModalIndex] = useState(0);
+  const [partImageModalTitle, setPartImageModalTitle] = useState("");
+  const [partPriceLastUpdatedByPartId, setPartPriceLastUpdatedByPartId] =
+    useState<Record<string, { priceA: string | null; priceB: string | null }>>(
+      {},
+    );
+  const loadedPartPriceDatesRef = useRef<Set<string>>(new Set());
   const [loadingPartDetails, setLoadingPartDetails] = useState(false);
   const [purchaseOrderHistory, setPurchaseOrderHistory] = useState<any[]>([]);
   const [loadingPOHistory, setLoadingPOHistory] = useState(false);
@@ -342,6 +403,139 @@ export const SalesInquiry = () => {
   const [externalLookupParts, setExternalLookupParts] = useState<PartDetail[]>(
     [],
   );
+
+  const openPartImageModal = useCallback(
+    (images: string[], title = "Part Image", startIndex = 0) => {
+      const valid = images.filter((img) => img && img.trim() !== "");
+      if (valid.length === 0) return;
+      setPartImageModalImages(valid);
+      setPartImageModalIndex(
+        Math.min(Math.max(startIndex, 0), valid.length - 1),
+      );
+      setPartImageModalTitle(title);
+      setPartImageModalOpen(true);
+    },
+    [],
+  );
+
+  const fetchPartImages = useCallback(
+    async (partId: string) => {
+      if (!partId || loadedPartImagesRef.current.has(partId)) return;
+
+      const cachedPart =
+        partsData.find((p) => p.id === partId) ||
+        searchResults.find((p) => p.id === partId);
+      const cachedImages = getPartImageList(cachedPart);
+      if (cachedImages.length > 0) {
+        loadedPartImagesRef.current.add(partId);
+        setPartImagesByPartId((prev) =>
+          prev[partId]?.length ? prev : { ...prev, [partId]: cachedImages },
+        );
+        return;
+      }
+
+      loadedPartImagesRef.current.add(partId);
+      try {
+        const response = (await apiClient.getPart(partId)) as any;
+        const data = response?.data || response;
+        const images = getPartImageList(data);
+        if (images.length > 0) {
+          setPartImagesByPartId((prev) => ({ ...prev, [partId]: images }));
+          setPartsData((prev) =>
+            prev.map((p) => (p.id === partId ? { ...p, images } : p)),
+          );
+        }
+      } catch {
+        // Images are optional.
+      }
+    },
+    [partsData, searchResults],
+  );
+
+  const fetchPartPriceLastUpdated = useCallback(async (partId: string) => {
+    if (!partId || loadedPartPriceDatesRef.current.has(partId)) return;
+    loadedPartPriceDatesRef.current.add(partId);
+    try {
+      const response = (await apiClient.getPriceHistory({
+        partId,
+        page: 1,
+        limit: 100,
+      })) as any;
+      const rows = Array.isArray(response?.data) ? response.data : [];
+      const dates = extractLatestPriceDatesFromHistory(rows);
+      setPartPriceLastUpdatedByPartId((prev) => ({
+        ...prev,
+        [partId]: dates,
+      }));
+    } catch {
+      setPartPriceLastUpdatedByPartId((prev) => ({
+        ...prev,
+        [partId]: { priceA: null, priceB: null },
+      }));
+    }
+  }, []);
+
+  const renderPartImageThumbnail = (
+    partId: string | undefined,
+    part: PartDetail | null | undefined,
+    className = "w-10 h-10",
+    titleOverride?: string,
+  ) => {
+    const images = partId
+      ? partImagesByPartId[partId] || getPartImageList(part)
+      : [];
+    const src = images[0];
+    if (!src) {
+      return (
+        <div
+          className={cn(
+            "mx-auto rounded border border-dashed border-muted-foreground/30 bg-muted/30 flex items-center justify-center text-[9px] text-muted-foreground",
+            className,
+          )}
+        >
+          —
+        </div>
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="mx-auto block rounded border border-border overflow-hidden hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        onClick={(e) => {
+          e.stopPropagation();
+          openPartImageModal(
+            images,
+            titleOverride || part?.partNo || "Part Image",
+          );
+        }}
+        title="View image"
+      >
+        <img
+          src={src}
+          alt={part?.partNo || "Part"}
+          className={cn("object-cover", className)}
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.visibility = "hidden";
+          }}
+        />
+      </button>
+    );
+  };
+
+  useEffect(() => {
+    lookupRows.forEach((row) => {
+      if (row.partId) void fetchPartImages(row.partId);
+    });
+    lookupRows.forEach((row) => {
+      if (row.partId) void fetchPartPriceLastUpdated(row.partId);
+    });
+    inquiryItems.forEach((item) => {
+      if (item.partId) void fetchPartImages(item.partId);
+    });
+    fullInquiryData?.items?.forEach((item) => {
+      if (item.partId) void fetchPartImages(item.partId);
+    });
+  }, [lookupRows, inquiryItems, fullInquiryData, fetchPartImages, fetchPartPriceLastUpdated]);
 
   const resolveSelectedPartId = useCallback(
     (part: PartDetail | null): string | null => {
@@ -435,6 +629,19 @@ export const SalesInquiry = () => {
         setPartIdMap(idMap);
         setPartsData(transformedParts);
         setPartModelsByPartId((prev) => ({ ...prev, ...modelMapUpdates }));
+        const withImages = transformedParts.filter((p) => p.images?.length);
+        if (withImages.length > 0) {
+          setPartImagesByPartId((prev) => {
+            const next = { ...prev };
+            withImages.forEach((p) => {
+              if (p.id && !next[p.id]?.length && p.images?.length) {
+                next[p.id] = p.images;
+                loadedPartImagesRef.current.add(p.id);
+              }
+            });
+            return next;
+          });
+        }
       } catch (error: any) {
         toast({ title: "Error", description: "Failed to load parts", variant: "destructive" });
       } finally {
@@ -1309,7 +1516,16 @@ export const SalesInquiry = () => {
           rackNo: (rackMap[(p as any).id] && rackMap[(p as any).id] !== 'N/A') ? rackMap[(p as any).id] : 'N/A',
           reOrderLevel: formatNumber((p as any).reorder_level || (p as any).reorderLevel),
           quantity: bestQty,
+          images: getPartImageList(p),
         };
+
+        if (part.id) {
+          const images = fullPartDetails.images || [];
+          if (images.length > 0) {
+            loadedPartImagesRef.current.add(part.id);
+            setPartImagesByPartId((prev) => ({ ...prev, [part.id!]: images }));
+          }
+        }
 
         setSelectedPart(fullPartDetails);
         setItemSearch(getItemLabel(fullPartDetails));
@@ -1585,7 +1801,11 @@ export const SalesInquiry = () => {
       delete next[rowId];
       return next;
     });
-    if (part.id) fetchPartStockForRow(part.id);
+    if (part.id) {
+      fetchPartStockForRow(part.id);
+      void fetchPartImages(part.id);
+      void fetchPartPriceLastUpdated(part.id);
+    }
     setLookupRowPriceBaselines((prev) => ({
       ...prev,
       [rowId]: { priceA: priceA || null, priceB: priceB || null },
@@ -1698,6 +1918,14 @@ export const SalesInquiry = () => {
         [rowId]: { priceA: nextA, priceB: nextB },
       }));
       applyPartPricesToCaches(row.partId, nextA, nextB);
+      const now = new Date().toISOString();
+      setPartPriceLastUpdatedByPartId((prev) => ({
+        ...prev,
+        [row.partId]: {
+          priceA: aChanged ? now : (prev[row.partId]?.priceA ?? null),
+          priceB: bChanged ? now : (prev[row.partId]?.priceB ?? null),
+        },
+      }));
       toast({ title: "Price updated" });
     } catch (error: any) {
       toast({
@@ -2545,6 +2773,7 @@ export const SalesInquiry = () => {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/50">
+                          <ListNumberHeader className="font-semibold" />
                           <TableHead className="font-semibold">Part No</TableHead>
                           <TableHead className="font-semibold">Description</TableHead>
                           <TableHead className="font-semibold text-center">Requested Qty</TableHead>
@@ -2554,6 +2783,9 @@ export const SalesInquiry = () => {
                           <TableHead className="font-semibold text-right">Price M</TableHead>
                           <TableHead className="font-semibold">Location</TableHead>
                           <TableHead className="font-semibold text-center">Available Qty</TableHead>
+                          <TableHead className="font-semibold text-center w-[70px]">
+                            Image
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2561,9 +2793,13 @@ export const SalesInquiry = () => {
                           const stock = item.stock || 0;
                           const reserved = item.reservedQty || 0;
                           const availableQty = Math.max(0, stock - reserved);
+                          const viewPart = partsData.find(
+                            (p) => p.id === item.partId,
+                          );
 
                           return (
                             <TableRow key={item.id || index}>
+                              <ListNumberCell index={index} />
                               <TableCell className="font-medium">{item.part?.partNo || 'N/A'}</TableCell>
                               <TableCell className="max-w-xs">
                                 <div>{item.part?.description || 'N/A'}</div>
@@ -2584,6 +2820,14 @@ export const SalesInquiry = () => {
                                 availableQty > 0 ? "text-blue-600" : "text-red-600"
                               )}>
                                 {availableQty.toLocaleString('en-US')}
+                              </TableCell>
+                              <TableCell className="text-center align-top">
+                                {renderPartImageThumbnail(
+                                  item.partId,
+                                  viewPart ?? null,
+                                  "w-9 h-9",
+                                  item.part?.partNo || undefined,
+                                )}
                               </TableCell>
                             </TableRow>
                           );
@@ -2782,6 +3026,7 @@ export const SalesInquiry = () => {
                         <TableHead>Price B</TableHead>
                         <TableHead>Price M</TableHead>
                         <TableHead>Location</TableHead>
+                        <TableHead className="text-center w-[70px]">Image</TableHead>
                         <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2810,6 +3055,9 @@ export const SalesInquiry = () => {
                             <TableCell>Rs {item.priceB?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>Rs {item.priceM?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>{item.location || 'N/A'}</TableCell>
+                            <TableCell className="text-center align-top">
+                              {renderPartImageThumbnail(item.partId, part, "w-9 h-9")}
+                            </TableCell>
                             <TableCell>
                               <Button
                                 variant="ghost"
@@ -2966,6 +3214,7 @@ export const SalesInquiry = () => {
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow className="border-b">
+                    <ListNumberHeader className="font-bold text-foreground" />
                     <TableHead className="w-[300px] font-bold text-foreground">
                       Part Details
                     </TableHead>
@@ -2994,12 +3243,15 @@ export const SalesInquiry = () => {
                       Price B
                     </TableHead>
                     <TableHead className="w-[70px] text-center font-bold text-foreground">
+                      Image
+                    </TableHead>
+                    <TableHead className="w-[70px] text-center font-bold text-foreground">
                       Action
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lookupRows.map((row) => {
+                  {lookupRows.map((row, index) => {
                     const rowPart =
                       lookupPartsPool.find((p) => p.id === row.partId) || null;
                     const rowFiltered = getFilteredPartsForLookupRow(row.id);
@@ -3025,6 +3277,9 @@ export const SalesInquiry = () => {
                       rowPart &&
                       rowModels.length > 0 &&
                       !lookupModelFilter.trim();
+                    const priceDates = row.partId
+                      ? partPriceLastUpdatedByPartId[row.partId]
+                      : undefined;
                     return (
                       <Fragment key={row.id}>
                         <TableRow
@@ -3070,6 +3325,7 @@ export const SalesInquiry = () => {
                             });
                           }}
                         >
+                          <ListNumberCell index={index} className="align-top" />
                           <TableCell className="align-top">
                             <div
                               ref={(el) => {
@@ -3447,36 +3703,41 @@ export const SalesInquiry = () => {
                                 -
                               </span>
                             ) : (
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={row.priceA ?? ""}
-                                onChange={(e) =>
-                                  handleLookupRowPriceChange(
-                                    row.id,
-                                    "priceA",
-                                    e.target.value,
-                                  )
-                                }
-                                onBlur={() => {
-                                  void handleSaveLookupRowPrice(row.id);
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleUpdateLookupRow(row.id, {
-                                    selectedPriceType: "A",
-                                    unitPrice: row.priceA,
-                                  });
-                                }}
-                                disabled={!!savingLookupRowPrice[row.id]}
-                                className={cn(
-                                  "h-8 w-full min-w-[76px] px-1.5 text-xs text-center tabular-nums",
-                                  row.selectedPriceType === "A" &&
-                                    "border-primary ring-1 ring-primary/30",
-                                )}
-                                placeholder="A"
-                              />
+                              <div className="space-y-1">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={row.priceA ?? ""}
+                                  onChange={(e) =>
+                                    handleLookupRowPriceChange(
+                                      row.id,
+                                      "priceA",
+                                      e.target.value,
+                                    )
+                                  }
+                                  onBlur={() => {
+                                    void handleSaveLookupRowPrice(row.id);
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateLookupRow(row.id, {
+                                      selectedPriceType: "A",
+                                      unitPrice: row.priceA,
+                                    });
+                                  }}
+                                  disabled={!!savingLookupRowPrice[row.id]}
+                                  className={cn(
+                                    "h-8 w-full min-w-[76px] px-1.5 text-xs text-center tabular-nums",
+                                    row.selectedPriceType === "A" &&
+                                      "border-primary ring-1 ring-primary/30",
+                                  )}
+                                  placeholder="A"
+                                />
+                                <span className="block text-[9px] leading-tight text-muted-foreground font-bold">
+                                  {formatPriceLastUpdatedLabel(priceDates?.priceA)}
+                                </span>
+                              </div>
                             )}
                           </TableCell>
                           <TableCell className="text-center align-top p-1">
@@ -3485,37 +3746,45 @@ export const SalesInquiry = () => {
                                 -
                               </span>
                             ) : (
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={row.priceB ?? ""}
-                                onChange={(e) =>
-                                  handleLookupRowPriceChange(
-                                    row.id,
-                                    "priceB",
-                                    e.target.value,
-                                  )
-                                }
-                                onBlur={() => {
-                                  void handleSaveLookupRowPrice(row.id);
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleUpdateLookupRow(row.id, {
-                                    selectedPriceType: "B",
-                                    unitPrice: row.priceB,
-                                  });
-                                }}
-                                disabled={!!savingLookupRowPrice[row.id]}
-                                className={cn(
-                                  "h-8 w-full min-w-[76px] px-1.5 text-xs text-center tabular-nums",
-                                  row.selectedPriceType === "B" &&
-                                    "border-primary ring-1 ring-primary/30",
-                                )}
-                                placeholder="B"
-                              />
+                              <div className="space-y-1">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={row.priceB ?? ""}
+                                  onChange={(e) =>
+                                    handleLookupRowPriceChange(
+                                      row.id,
+                                      "priceB",
+                                      e.target.value,
+                                    )
+                                  }
+                                  onBlur={() => {
+                                    void handleSaveLookupRowPrice(row.id);
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateLookupRow(row.id, {
+                                      selectedPriceType: "B",
+                                      unitPrice: row.priceB,
+                                    });
+                                  }}
+                                  disabled={!!savingLookupRowPrice[row.id]}
+                                  className={cn(
+                                    "h-8 w-full min-w-[76px] px-1.5 text-xs text-center tabular-nums",
+                                    row.selectedPriceType === "B" &&
+                                      "border-primary ring-1 ring-primary/30",
+                                  )}
+                                  placeholder="B"
+                                />
+                                <span className="block text-[9px] leading-tight text-muted-foreground font-bold">
+                                  {formatPriceLastUpdatedLabel(priceDates?.priceB)}
+                                </span>
+                              </div>
                             )}
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            {renderPartImageThumbnail(row.partId, rowPart)}
                           </TableCell>
                           <TableCell className="text-center align-top">
                             <div className="flex items-center justify-center gap-1">
@@ -3552,7 +3821,7 @@ export const SalesInquiry = () => {
                             key={`${row.id}-qty-used`}
                             className="border-b bg-muted/20"
                           >
-                            <TableCell colSpan={10} className="px-4 pt-0 pb-2">
+                            <TableCell colSpan={12} className="px-4 pt-0 pb-2">
                               <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
                                   Quantity Used
@@ -3641,7 +3910,7 @@ export const SalesInquiry = () => {
                 <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <TableHead className="text-xs w-9 px-2">Item</TableHead>
+                      <ListNumberHeader className="text-xs w-9 px-2" />
                       <TableHead className="text-xs w-[22%] px-2">Part</TableHead>
                       <TableHead className="text-xs w-[28%] px-2">Description</TableHead>
                       <TableHead className="text-xs w-14 px-2">Brand</TableHead>
@@ -3674,7 +3943,7 @@ export const SalesInquiry = () => {
                     ) : (
                       alternateItems.map((item, index) => (
                         <TableRow key={`${item.id || item.partNo}-${index}`} className="hover:bg-muted/20">
-                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">{index + 1}</TableCell>
+                          <ListNumberCell index={index} className="text-xs px-2 py-1.5 whitespace-nowrap" />
                           <TableCell
                             className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
                             title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
@@ -3733,6 +4002,7 @@ export const SalesInquiry = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
+                      <ListNumberHeader className="text-xs" />
                       <TableHead className="text-xs">Invoice No</TableHead>
                       <TableHead className="text-xs">Date</TableHead>
                       <TableHead className="text-xs">Customer</TableHead>
@@ -3745,13 +4015,13 @@ export const SalesInquiry = () => {
                   <TableBody>
                     {!selectedPart ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm opacity-50">
+                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm opacity-50">
                           Select a part to view sales history
                         </TableCell>
                       </TableRow>
                     ) : loadingSalesInvoiceHistory ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
+                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
                           <div className="flex items-center justify-center gap-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                             Loading sales invoice history...
@@ -3760,13 +4030,14 @@ export const SalesInquiry = () => {
                       </TableRow>
                     ) : salesInvoiceHistory.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm italic">
+                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm italic">
                           No sales invoice history available for this part
                         </TableCell>
                       </TableRow>
                     ) : (
-                      salesInvoiceHistory.map((invoice) => (
+                      salesInvoiceHistory.map((invoice, index) => (
                         <TableRow key={invoice.id} className="hover:bg-muted/20">
+                          <ListNumberCell index={index} className="text-xs" />
                           <TableCell className="text-xs font-medium">{invoice.invoice_no || 'N/A'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : 'N/A'}
@@ -3774,7 +4045,7 @@ export const SalesInquiry = () => {
                           <TableCell className="text-xs text-muted-foreground">{invoice.customer_name || 'N/A'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             <Badge variant={invoice.customer_type === 'walking' ? 'secondary' : 'default'} className="text-xs">
-                              {invoice.customer_type === 'walking' ? 'Party Sale' : invoice.customer_type === 'registered' ? 'Cash Sale' : invoice.customer_type || 'N/A'}
+                              {getCustomerTypeLabel(invoice.customer_type)}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
@@ -3800,6 +4071,7 @@ export const SalesInquiry = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
+                      <ListNumberHeader className="text-xs" />
                       <TableHead className="text-xs">DPO No</TableHead>
                       <TableHead className="text-xs">Date</TableHead>
                       <TableHead className="text-xs">Customer</TableHead>
@@ -3811,13 +4083,13 @@ export const SalesInquiry = () => {
                   <TableBody>
                     {!selectedPart ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm opacity-50">
+                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm opacity-50">
                           Select a part to view purchase history
                         </TableCell>
                       </TableRow>
                     ) : loadingDpoHistory ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
+                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
                           <div className="flex items-center justify-center gap-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                             Loading local purchase order history...
@@ -3826,13 +4098,14 @@ export const SalesInquiry = () => {
                       </TableRow>
                     ) : dpoHistory.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm italic">
+                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm italic">
                           No local purchase order history available for this part
                         </TableCell>
                       </TableRow>
                     ) : (
-                      dpoHistory.map((dpo) => (
+                      dpoHistory.map((dpo, index) => (
                         <TableRow key={dpo.id} className="hover:bg-muted/20">
+                          <ListNumberCell index={index} className="text-xs" />
                           <TableCell className="text-xs font-medium">{dpo.dpo_no || 'N/A'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {dpo.date ? format(new Date(dpo.date), 'dd MMM yyyy') : 'N/A'}
@@ -3866,7 +4139,7 @@ export const SalesInquiry = () => {
                 <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <TableHead className="text-xs w-9 px-2">Item</TableHead>
+                      <ListNumberHeader className="text-xs w-9 px-2" />
                       <TableHead className="text-xs w-[22%] px-2">Part</TableHead>
                       <TableHead className="text-xs w-[28%] px-2">Description</TableHead>
                       <TableHead className="text-xs w-14 px-2">Brand</TableHead>
@@ -3894,7 +4167,7 @@ export const SalesInquiry = () => {
                     ) : (
                       modelAssociations.map((item, index) => (
                         <TableRow key={`${item.partId}-${index}`} className="hover:bg-muted/20">
-                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">{index + 1}</TableCell>
+                          <ListNumberCell index={index} className="text-xs px-2 py-1.5 whitespace-nowrap" />
                           <TableCell
                             className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
                             title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
@@ -3965,6 +4238,74 @@ export const SalesInquiry = () => {
         )
       }
 
+
+      {/* Part image preview */}
+      <Dialog open={partImageModalOpen} onOpenChange={setPartImageModalOpen}>
+        <DialogContent className="max-w-2xl p-0 overflow-hidden bg-background border-border">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{partImageModalTitle || "Part Image"}</DialogTitle>
+          </DialogHeader>
+          <div className="relative">
+            {partImageModalImages.length > 0 &&
+              partImageModalImages[partImageModalIndex] && (
+                <img
+                  src={partImageModalImages[partImageModalIndex]}
+                  alt={partImageModalTitle || "Part"}
+                  className="w-full h-auto max-h-[70vh] object-contain bg-muted/20"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src =
+                      'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23ddd" width="400" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="20" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage not available%3C/text%3E%3C/svg%3E';
+                  }}
+                />
+              )}
+            {partImageModalImages.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                {partImageModalImages.map((_, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => setPartImageModalIndex(index)}
+                    className={cn(
+                      "w-2 h-2 rounded-full transition-all",
+                      partImageModalIndex === index
+                        ? "bg-primary w-4"
+                        : "bg-muted-foreground/50 hover:bg-muted-foreground",
+                    )}
+                    aria-label={`View image ${index + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          {partImageModalImages.length > 1 && (
+            <div className="p-3 border-t border-border flex gap-2 overflow-x-auto">
+              {partImageModalImages.map((img, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => setPartImageModalIndex(index)}
+                  className={cn(
+                    "flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-all",
+                    partImageModalIndex === index
+                      ? "border-primary"
+                      : "border-transparent hover:border-muted-foreground/50",
+                  )}
+                >
+                  <img
+                    src={img}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src =
+                        'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="56" height="56"%3E%3Crect fill="%23ddd" width="56" height="56"/%3E%3C/svg%3E';
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
     </div >
   );

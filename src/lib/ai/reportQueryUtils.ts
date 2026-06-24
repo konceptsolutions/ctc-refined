@@ -532,6 +532,7 @@ export function parseCustomerTypeFromText(text: string): "walking" | "registered
   }
   if (
     q.includes("party sale") ||
+    q.includes("credit sale") ||
     q.includes("credit") ||
     q.includes("registered") ||
     q === "party"
@@ -548,7 +549,7 @@ export function printCustomerWiseSalesPdf(
   toDate: string,
 ) {
   const typeLabel =
-    report.customerType === "walking" ? "Cash Sale (Walk-in)" : "Party Sale (Registered)";
+    report.customerType === "walking" ? "Walk-in" : "Party";
 
   const invoiceSections = report.invoices
     .map((inv) => {

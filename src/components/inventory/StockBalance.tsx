@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Package,
   Hash,
@@ -410,7 +411,7 @@ export const StockBalance = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
-                <TableHead className="w-12 text-xs font-semibold">SR.</TableHead>
+                <ListNumberHeader />
                 <TableHead className="min-w-[150px] text-xs font-semibold">PART NO</TableHead>
                 <TableHead className="min-w-[180px] text-xs font-semibold">DESCRIPTION</TableHead>
                 <TableHead className="min-w-[120px] text-xs font-semibold">CATEGORY</TableHead>
@@ -437,7 +438,11 @@ export const StockBalance = () => {
               ) : (
                 paginatedData.map((item, index) => (
                   <TableRow key={item.id} className="hover:bg-muted/20">
-                    <TableCell className="text-xs text-muted-foreground">{startIndex + index + 1}</TableCell>
+                    <ListNumberCell
+                      index={index}
+                      page={currentPage}
+                      pageSize={itemsPerPage}
+                    />
                     <TableCell className="text-xs font-medium">{item.partNo}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{item.description}</TableCell>
                     <TableCell>

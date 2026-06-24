@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -720,6 +721,7 @@ export const CustomerPriceStructures = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <ListNumberHeader />
                   <TableHead>Customer</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Price Category</TableHead>
@@ -734,21 +736,22 @@ export const CustomerPriceStructures = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       Loading price structures...
                     </TableCell>
                   </TableRow>
                 ) : filteredStructures.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       {searchTerm || filterType !== "all"
                         ? "No price structures found matching your search criteria"
                         : "No price structures found. Click 'Add Price Structure' to create one."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredStructures.map((item) => (
+                  filteredStructures.map((item, index) => (
                     <TableRow key={item.id}>
+                      <ListNumberCell index={index} />
                       <TableCell className="font-medium">{item.customerName}</TableCell>
                       <TableCell>
                         <Badge className={`${getTypeColor(item.customerType)} border`}>

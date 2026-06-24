@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Badge } from "@/components/ui/badge";
 import { Download, FileText, Calendar } from "lucide-react";
 import { toast } from "sonner";
@@ -216,6 +217,7 @@ const SalesReportTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>DATE</TableHead>
                 <TableHead>INVOICE #</TableHead>
                 <TableHead>CUSTOMER</TableHead>
@@ -227,7 +229,7 @@ const SalesReportTab = () => {
             <TableBody>
               {salesData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center">
+                  <TableCell colSpan={7} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <FileText className="w-10 h-10 opacity-50" />
                       <p>No sales records found</p>
@@ -236,8 +238,9 @@ const SalesReportTab = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                salesData.map((record) => (
+                salesData.map((record, index) => (
                   <TableRow key={record.id}>
+                    <ListNumberCell index={index} />
                     <TableCell>{record.date}</TableCell>
                     <TableCell className="font-medium">{record.invoiceNo}</TableCell>
                     <TableCell>{record.customer}</TableCell>

@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -54,6 +55,7 @@ export const StoreOrderDetail = ({ order, open, onOpenChange }: StoreOrderDetail
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <ListNumberHeader />
                         <TableHead className="w-[150px]">Part No</TableHead>
                         <TableHead className="w-[150px]">Brand</TableHead>
                         <TableHead className="text-right w-[100px]">Quantity</TableHead>
@@ -64,8 +66,9 @@ export const StoreOrderDetail = ({ order, open, onOpenChange }: StoreOrderDetail
                     </TableHeader>
                     <TableBody>
                       {order.items && order.items.length > 0 ? (
-                        order.items.map((item) => (
+                        order.items.map((item, index) => (
                           <TableRow key={item.id} className="h-12">
+                            <ListNumberCell index={index} className="align-middle" />
                             <TableCell className="font-medium align-middle">{item.partNo}</TableCell>
                             <TableCell className="align-middle">{item.brand}</TableCell>
                             <TableCell className="text-right align-middle">{item.quantity}</TableCell>
@@ -76,7 +79,7 @@ export const StoreOrderDetail = ({ order, open, onOpenChange }: StoreOrderDetail
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                             No items found in this order
                           </TableCell>
                         </TableRow>

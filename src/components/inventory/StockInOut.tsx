@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -1298,6 +1299,7 @@ export const StockInOut = () => {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
+              <ListNumberHeader />
               <TableHead className="w-12">
                 <Checkbox
                   checked={
@@ -1306,9 +1308,6 @@ export const StockInOut = () => {
                   }
                   onCheckedChange={handleSelectAll}
                 />
-              </TableHead>
-              <TableHead className="text-xs font-semibold text-foreground whitespace-nowrap">
-                Sr. No
               </TableHead>
               <TableHead className="text-xs font-semibold text-foreground whitespace-nowrap">
                 OEM/ Part No
@@ -1351,7 +1350,7 @@ export const StockInOut = () => {
             {loading ? (
               <TableRow>
                 <TableCell
-                  colSpan={13}
+                  colSpan={14}
                   className="text-center py-8 text-muted-foreground"
                 >
                   Loading stock movements...
@@ -1360,14 +1359,14 @@ export const StockInOut = () => {
             ) : currentItems.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={13}
+                  colSpan={14}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No stock movements found
                 </TableCell>
               </TableRow>
             ) : (
-              currentItems.map((stockItem) => (
+              currentItems.map((stockItem, index) => (
                 <TableRow
                   key={stockItem.id}
                   className={cn(
@@ -1375,6 +1374,11 @@ export const StockInOut = () => {
                     selectedItems.includes(stockItem.id) && "bg-primary/5",
                   )}
                 >
+                  <ListNumberCell
+                    index={index}
+                    page={currentPage}
+                    pageSize={itemsPerPage}
+                  />
                   <TableCell>
                     <Checkbox
                       checked={selectedItems.includes(stockItem.id)}
@@ -1382,9 +1386,6 @@ export const StockInOut = () => {
                         handleSelectItem(stockItem.id, !!checked)
                       }
                     />
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {stockItem.srNo}
                   </TableCell>
                   <TableCell className="text-sm font-medium text-foreground whitespace-nowrap">
                     {stockItem.oemPartNo}

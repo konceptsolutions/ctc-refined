@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 import { MapPin } from "lucide-react";
@@ -544,6 +545,7 @@ export const StoreLocationAssign = ({
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <ListNumberHeader />
                         <TableHead className="w-[120px]">Part No</TableHead>
                         <TableHead className="w-[170px]">Description</TableHead>
                         <TableHead className="w-[90px] px-2">Brand</TableHead>
@@ -555,7 +557,7 @@ export const StoreLocationAssign = ({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {order.items.map((item) => {
+                      {order.items.map((item, index) => {
                         const location = itemLocations[item.id];
                         const racksForStore = location?.storeId
                           ? racksEffective.filter(
@@ -648,6 +650,7 @@ export const StoreLocationAssign = ({
 
                         return (
                           <TableRow key={item.id} className="align-top">
+                            <ListNumberCell index={index} className="align-top py-3" />
                             <TableCell className="font-medium align-top py-3">{item.partNo}</TableCell>
                             <TableCell className="align-top py-3 max-w-[170px] truncate">{item.description || "-"}</TableCell>
                             <TableCell className="align-top py-3 px-2">{item.brand}</TableCell>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -292,6 +293,7 @@ export const GeneralLedgerTab = () => {
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/50">
+                            <ListNumberHeader />
                             <TableHead className="w-[100px]">Date</TableHead>
                             <TableHead className="w-[120px]">Journal No.</TableHead>
                             <TableHead className="w-[100px]">Reference</TableHead>
@@ -308,6 +310,7 @@ export const GeneralLedgerTab = () => {
                               className="transition-colors hover:bg-muted/30"
                               style={{ animationDelay: `${index * 50} ms` }}
                             >
+                              <ListNumberCell index={index} />
                               <TableCell>{txn.date}</TableCell>
                               <TableCell className="text-primary">{txn.journalNo}</TableCell>
                               <TableCell>{txn.reference}</TableCell>

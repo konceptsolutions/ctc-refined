@@ -11,6 +11,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
     Select,
     SelectContent,
@@ -421,6 +422,7 @@ export const DetailsPartSearch = () => {
                             <Table>
                                 <TableHeader className="bg-muted/50 sticky top-0">
                                     <TableRow className="hover:bg-transparent">
+                                        <ListNumberHeader className="text-[10px] uppercase font-bold px-2 h-10 border-r" />
                                         <TableHead className="text-[10px] uppercase font-bold px-2 h-10 border-r">Part No</TableHead>
                                         <TableHead className="text-[10px] uppercase font-bold px-2 h-10 border-r">Alt. No</TableHead>
                                         <TableHead className="text-[10px] uppercase font-bold px-2 h-10 border-r">Brand</TableHead>
@@ -440,20 +442,26 @@ export const DetailsPartSearch = () => {
                                 <TableBody>
                                     {loading ? (
                                         <TableRow>
-                                            <TableCell colSpan={13} className="text-center py-10">
+                                            <TableCell colSpan={15} className="text-center py-10">
                                                 <RefreshCw className="w-8 h-8 animate-spin mx-auto text-primary opacity-50" />
                                                 <p className="mt-2 text-muted-foreground">Loading parts...</p>
                                             </TableCell>
                                         </TableRow>
                                     ) : paginatedItems.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={13} className="text-center py-10 text-muted-foreground">
+                                            <TableCell colSpan={15} className="text-center py-10 text-muted-foreground">
                                                 No records found matching your quick search
                                             </TableCell>
                                         </TableRow>
                                     ) : (
-                                        paginatedItems.map((item) => (
+                                        paginatedItems.map((item, index) => (
                                             <TableRow key={item.id} className="hover:bg-muted/30 transition-colors">
+                                                <ListNumberCell
+                                                    index={index}
+                                                    page={currentPage}
+                                                    pageSize={itemsPerPage}
+                                                    className="px-2 py-1 text-xs border-r"
+                                                />
                                                 <TableCell className="px-2 py-1 text-xs font-medium border-r part-code-font font-mono">{item.partNo}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs border-r part-code-font font-mono">{item.altNo}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs border-r">{item.brand}</TableCell>
@@ -534,6 +542,7 @@ export const DetailsPartSearch = () => {
                             <Table>
                                 <TableHeader className="bg-muted/30 sticky top-0">
                                     <TableRow className="hover:bg-transparent">
+                                        <ListNumberHeader className="text-[10px] uppercase font-bold px-2 h-8 border-r" />
                                         <TableHead className="text-[10px] uppercase font-bold px-2 h-8 border-r">Date</TableHead>
                                         <TableHead className="text-[10px] uppercase font-bold px-2 h-8 border-r">Brand</TableHead>
                                         <TableHead className="text-[10px] uppercase font-bold px-2 h-8 border-r">Main Ctg</TableHead>
@@ -546,15 +555,16 @@ export const DetailsPartSearch = () => {
                                 <TableBody>
                                     {historyLoading ? (
                                         <TableRow>
-                                            <TableCell colSpan={7} className="text-center py-4 text-[10px]">Loading history...</TableCell>
+                                            <TableCell colSpan={8} className="text-center py-4 text-[10px]">Loading history...</TableCell>
                                         </TableRow>
                                     ) : history.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={7} className="text-center py-4 text-[10px] text-muted-foreground">No history records</TableCell>
+                                            <TableCell colSpan={8} className="text-center py-4 text-[10px] text-muted-foreground">No history records</TableCell>
                                         </TableRow>
                                     ) : (
-                                        history.map((h) => (
+                                        history.map((h, index) => (
                                             <TableRow key={h.id} className="hover:bg-muted/20">
+                                                <ListNumberCell index={index} className="px-2 py-0.5 text-[10px] border-r" />
                                                 <TableCell className="px-2 py-0.5 text-[10px] border-r">{h.date}</TableCell>
                                                 <TableCell className="px-2 py-0.5 text-[10px] border-r">{h.brand}</TableCell>
                                                 <TableCell className="px-2 py-0.5 text-[10px] border-r">{h.mainCategory}</TableCell>

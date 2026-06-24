@@ -2,6 +2,11 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  getListRowNumber,
+  LIST_NUMBER_HEAD_CLASS,
+  LIST_NUMBER_CELL_CLASS,
+} from "@/components/ui/list-table-number";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -384,6 +389,7 @@ export const ApprovalFlowsTab = () => {
             <table className="w-full">
               <thead className="bg-muted/50">
                 <tr>
+                  <th className={LIST_NUMBER_HEAD_CLASS}>#</th>
                   <th className="text-left p-4 text-sm font-medium">Type</th>
                   <th className="text-left p-4 text-sm font-medium">Reference</th>
                   <th className="text-left p-4 text-sm font-medium">Requested By</th>
@@ -393,8 +399,9 @@ export const ApprovalFlowsTab = () => {
                 </tr>
               </thead>
               <tbody>
-                {pendingApprovals.map((item) => (
+                {pendingApprovals.map((item, index) => (
                   <tr key={item.id} className="border-t">
+                    <td className={`p-4 text-sm ${LIST_NUMBER_CELL_CLASS}`}>{index + 1}</td>
                     <td className="p-4 text-sm">{item.type}</td>
                     <td className="p-4 text-sm font-medium">{item.reference}</td>
                     <td className="p-4 text-sm">{item.requestedBy}</td>

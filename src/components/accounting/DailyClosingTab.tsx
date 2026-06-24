@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 
 // Local API URL detection is replaced by apiClient from @/lib/api
 
@@ -190,6 +191,7 @@ const DailyClosingTab = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <ListNumberHeader />
                       <TableHead>Account Code</TableHead>
                       <TableHead>Account Name</TableHead>
                       <TableHead>Type</TableHead>
@@ -200,19 +202,20 @@ const DailyClosingTab = () => {
                   <TableBody>
                     {loadingBalances ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center">
+                        <TableCell colSpan={6} className="text-center">
                           <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                         </TableCell>
                       </TableRow>
                     ) : accountBalances.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
                           No account balances found
                         </TableCell>
                       </TableRow>
                     ) : (
-                      accountBalances.map((account) => (
+                      accountBalances.map((account, index) => (
                         <TableRow key={account.code}>
+                          <ListNumberCell index={index} />
                           <TableCell className="font-medium">{account.code}</TableCell>
                           <TableCell>{account.name}</TableCell>
                           <TableCell className="capitalize">{account.type || 'N/A'}</TableCell>

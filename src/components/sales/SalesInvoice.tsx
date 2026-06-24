@@ -28,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -99,7 +100,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import { InvoicePartDropdownList } from "./InvoicePartDropdownList";
-import { printDeliveryChallan } from "@/lib/printDeliveryChallan";
+import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
+import {
+  extractLatestPriceDatesFromHistory,
+  formatPriceLastUpdatedLabel,
+} from "@/lib/part-price-dates";
 import {
   Invoice,
   InvoiceItem,
@@ -110,7 +115,41 @@ import {
   DeliveryLogEntry,
   ItemGrade,
   PaymentStatus,
+  getCustomerTypeLabel,
 } from "@/types/invoice";
+
+function formatPartImageSrc(img?: string | null): string | null {
+  if (!img || !String(img).trim()) return null;
+  const trimmed = String(img).trim();
+  if (
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("http")
+  ) {
+    return trimmed;
+  }
+  return `data:image/jpeg;base64,${trimmed}`;
+}
+
+function getPartImageList(
+  part?: {
+    images?: string[];
+    imageP1?: string | null;
+    imageP2?: string | null;
+    image_p1?: string | null;
+    image_p2?: string | null;
+  } | null,
+): string[] {
+  if (!part) return [];
+  if (part.images?.length) {
+    return part.images
+      .map((img) => formatPartImageSrc(img))
+      .filter((img): img is string => Boolean(img));
+  }
+  return [part.imageP1, part.imageP2, part.image_p1, part.image_p2]
+    .map((img) => formatPartImageSrc(img))
+    .filter((img): img is string => Boolean(img));
+}
 
 function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] {
   if (!Array.isArray(fullItems)) return [];
@@ -508,6 +547,35 @@ export const SalesInvoice = ({
   const [loadingRecentSalesByPartId, setLoadingRecentSalesByPartId] = useState<
     Record<string, boolean>
   >({});
+  const [partImagesByPartId, setPartImagesByPartId] = useState<
+    Record<string, string[]>
+  >({});
+  const loadedPartImagesRef = useRef<Set<string>>(new Set());
+  const [partImageModalOpen, setPartImageModalOpen] = useState(false);
+  const [partImageModalImages, setPartImageModalImages] = useState<string[]>(
+    [],
+  );
+  const [partImageModalIndex, setPartImageModalIndex] = useState(0);
+  const [partImageModalTitle, setPartImageModalTitle] = useState("");
+  const [partPriceLastUpdatedByPartId, setPartPriceLastUpdatedByPartId] =
+    useState<Record<string, { priceA: string | null; priceB: string | null }>>(
+      {},
+    );
+  const loadedPartPriceDatesRef = useRef<Set<string>>(new Set());
+
+  const openPartImageModal = useCallback(
+    (images: string[], title = "Part Image", startIndex = 0) => {
+      const valid = images.filter((img) => img && img.trim() !== "");
+      if (valid.length === 0) return;
+      setPartImageModalImages(valid);
+      setPartImageModalIndex(
+        Math.min(Math.max(startIndex, 0), valid.length - 1),
+      );
+      setPartImageModalTitle(title);
+      setPartImageModalOpen(true);
+    },
+    [],
+  );
 
   // Inline items state - matching reference design
   const [inlineItems, setInlineItems] = useState<InlineItemRow[]>([]);
@@ -1357,6 +1425,8 @@ export const SalesInvoice = ({
 
               fetchPartStockBalance(value);
               fetchPartModels(value);
+              fetchPartImages(value);
+              void fetchPartPriceLastUpdated(value);
             }
           }
 
@@ -1374,6 +1444,63 @@ export const SalesInvoice = ({
 
   const handleUpdateInlineItemRef = useRef(handleUpdateInlineItem);
   handleUpdateInlineItemRef.current = handleUpdateInlineItem;
+
+  const fetchPartImages = useCallback(async (partId: string) => {
+    if (!partId || loadedPartImagesRef.current.has(partId)) return;
+
+    const cachedPart = selectedPartsMap[partId] || parts.find((p) => p.id === partId);
+    const cachedImages = getPartImageList(cachedPart);
+    if (cachedImages.length > 0) {
+      loadedPartImagesRef.current.add(partId);
+      setPartImagesByPartId((prev) =>
+        prev[partId]?.length ? prev : { ...prev, [partId]: cachedImages },
+      );
+      return;
+    }
+
+    loadedPartImagesRef.current.add(partId);
+    try {
+      const response = (await apiClient.getPart(partId)) as any;
+      const data = response?.data || response;
+      const images = getPartImageList(data);
+      if (images.length > 0) {
+        setPartImagesByPartId((prev) => ({ ...prev, [partId]: images }));
+        setSelectedPartsMap((prev) => {
+          const existing = prev[partId];
+          if (!existing) return prev;
+          return { ...prev, [partId]: { ...existing, images } };
+        });
+        setParts((prev) =>
+          prev.map((p) => (p.id === partId ? { ...p, images } : p)),
+        );
+      }
+    } catch {
+      // Images are optional; ignore fetch errors.
+    }
+  }, [parts, selectedPartsMap]);
+
+  const fetchPartPriceLastUpdated = useCallback(async (partId: string) => {
+    if (!partId || loadedPartPriceDatesRef.current.has(partId)) return;
+    loadedPartPriceDatesRef.current.add(partId);
+    try {
+      const response = (await apiClient.getPriceHistory({
+        partId,
+        page: 1,
+        limit: 100,
+      })) as any;
+      const rows = Array.isArray(response?.data) ? response.data : [];
+      const dates = extractLatestPriceDatesFromHistory(rows);
+      setPartPriceLastUpdatedByPartId((prev) => ({
+        ...prev,
+        [partId]: dates,
+      }));
+    } catch {
+      setPartPriceLastUpdatedByPartId((prev) => ({
+        ...prev,
+        [partId]: { priceA: null, priceB: null },
+      }));
+    }
+  }, []);
 
   // Fetch accurate stock balance for a part
   const fetchPartStockBalance = useCallback(async (partId: string, force = false) => {
@@ -1670,11 +1797,28 @@ export const SalesInvoice = ({
                     .filter((mm: any) => mm.name)
                 : [],
               unlocatedStock: p.unlocated_stock || 0,
+              images: getPartImageList({
+                image_p1: p.image_p1,
+                image_p2: p.image_p2,
+              }),
             };
           })
           .filter((p: PartItem | null): p is PartItem => p !== null);
 
         setParts(transformedParts);
+        const withImages = transformedParts.filter((p) => p.images?.length);
+        if (withImages.length > 0) {
+          setPartImagesByPartId((prev) => {
+            const next = { ...prev };
+            withImages.forEach((p) => {
+              if (!next[p.id]?.length && p.images?.length) {
+                next[p.id] = p.images;
+                loadedPartImagesRef.current.add(p.id);
+              }
+            });
+            return next;
+          });
+        }
       }
     } catch (error) {
       setParts([]);
@@ -1985,6 +2129,22 @@ export const SalesInvoice = ({
     [customers, selectedCustomerId],
   );
 
+  const customerSelectOptions = useMemo(() => {
+    const options = customers.map((customer) => ({
+      value: customer.id,
+      label: customer.name,
+    }));
+    if (selectedCustomerId && selectedCustomerName) {
+      if (!options.some((o) => o.value === selectedCustomerId)) {
+        options.unshift({
+          value: selectedCustomerId,
+          label: selectedCustomerName,
+        });
+      }
+    }
+    return options;
+  }, [customers, selectedCustomerId, selectedCustomerName]);
+
   const selectedCustomerAddressLine = useMemo(() => {
     if (!selectedRegisteredCustomer) return "";
     return [selectedRegisteredCustomer.address, selectedRegisteredCustomer.area]
@@ -1999,6 +2159,15 @@ export const SalesInvoice = ({
     if (pt === "M") return "Price M";
     return null;
   }, [selectedRegisteredCustomer]);
+
+  useEffect(() => {
+    inlineItems.forEach((item) => {
+      if (item.selectedPartId) {
+        void fetchPartImages(item.selectedPartId);
+        void fetchPartPriceLastUpdated(item.selectedPartId);
+      }
+    });
+  }, [inlineItems, fetchPartImages, fetchPartPriceLastUpdated]);
 
   // Background stock polling (every 60 seconds)
   useEffect(() => {
@@ -2408,6 +2577,11 @@ export const SalesInvoice = ({
               inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
             grandTotal: inv.grandTotal,
             paidAmount: inv.paidAmount || 0,
+            bankAccountId: inv.bankAccountId ?? null,
+            cashAccountId: inv.cashAccountId ?? null,
+            bankAmount: Number(inv.bankAmount || 0),
+            cashAmount: Number(inv.cashAmount || 0),
+            remarks: inv.remarks ?? null,
             status: inv.status as InvoiceStatus,
             paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
             accountId: inv.accountId,
@@ -2502,6 +2676,29 @@ export const SalesInvoice = ({
       fetchCustomers();
     }
   }, [isTransferOut]);
+
+  useEffect(() => {
+    if (!editingInvoiceId || selectedCustomerId) return;
+    if (newInvoice.customerType !== "registered" || !selectedCustomerName) {
+      return;
+    }
+    const match = customers.find(
+      (c) =>
+        c.name.trim().toLowerCase() ===
+        selectedCustomerName.trim().toLowerCase(),
+    );
+    if (match) {
+      setSelectedCustomerId(match.id);
+      setCustomerPriceType(match.priceType || null);
+      setSelectedCustomerCategory(match.category || null);
+    }
+  }, [
+    editingInvoiceId,
+    selectedCustomerId,
+    selectedCustomerName,
+    newInvoice.customerType,
+    customers,
+  ]);
 
   useEffect(() => {
     if (!isTransferOut) return;
@@ -2739,6 +2936,21 @@ export const SalesInvoice = ({
     return raw;
   };
 
+  const getInvoicePaymentMode = (inv: Invoice) => {
+    const bankAmt = Number(inv.bankAmount || 0);
+    const cashAmt = Number(inv.cashAmount || 0);
+    if (bankAmt > 0 && cashAmt > 0) return "Both";
+    if (bankAmt > 0) return "Bank";
+    if (cashAmt > 0) return "Cash";
+    if (inv.customerType !== "registered") {
+      const term = String(inv.term || "").toLowerCase();
+      if (term === "cash+online") return "Both";
+      if (term === "online") return "Bank";
+      if (term === "cash") return "Cash";
+    }
+    return "-";
+  };
+
   // Create or update invoice
   const handleSaveInvoice = async () => {
     if (
@@ -2790,7 +3002,7 @@ export const SalesInvoice = ({
     } else if (newInvoice.customerType === "registered" && !selectedCustomerId) {
       toast({
         title: "Customer Required",
-        description: "Please select a customer for Party Sale (Credit).",
+        description: "Please select a customer for Party sale.",
         variant: "destructive",
       });
       return;
@@ -2828,12 +3040,41 @@ export const SalesInvoice = ({
       }
     }
 
+    // Payment account validation (cash and/or bank split)
+    if (!isQuotation && !isTransferOut) {
+      if (bankAmount > 0 && !selectedBankAccount) {
+        toast({
+          title: "Bank Account Required",
+          description: "Select a bank account when entering a bank amount.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (cashAmount > 0 && !selectedCashAccount) {
+        toast({
+          title: "Cash Account Required",
+          description: "Select a cash account when entering a cash amount.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     if (!isQuotation && !isTransferOut && newInvoice.customerType === "walking") {
+      if (!selectedBankAccount && !selectedCashAccount) {
+        toast({
+          title: "Payment Accounts Required",
+          description:
+            "For walk-in customers, select cash and/or bank account(s) and enter the amounts received.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (totalReceived <= 0) {
         toast({
           title: "Missing Payment Information",
           description:
-            "For Walk-in Customers (Cash Sale), please enter the received amount before saving.",
+            "For Walk-in customers, please enter cash and/or bank amounts before saving.",
           variant: "destructive",
         });
         return;
@@ -2843,7 +3084,7 @@ export const SalesInvoice = ({
       if (Math.abs(totalReceived - grandTotal) > 0.01) {
         toast({
           title: "Exact Payment Required",
-          description: `For Walk-in Customers, the received amount (${totalReceived.toFixed(2)}) must exactly match the grand total (${grandTotal.toFixed(2)}).`,
+          description: `For Walk-in Customers, cash plus bank (${totalReceived.toFixed(2)}) must exactly match the grand total (${grandTotal.toFixed(2)}).`,
           variant: "destructive",
         });
         return;
@@ -2984,20 +3225,31 @@ export const SalesInvoice = ({
         ? undefined
         : newInvoice.customerType === "registered"
           ? term.trim() || undefined
-          : selectedBankAccount && bankAmount > 0
-            ? "online"
-            : selectedCashAccount && cashAmount > 0
-              ? "cash"
-              : undefined;
+          : getWalkinTermLabel() || undefined;
       const resolvedTax = isTransferOut ? 0 : calculateTax();
       const resolvedTaxPercentage = isTransferOut
         ? undefined
         : taxType === "With GST"
           ? getCurrentGstRate()
           : undefined;
-      const resolvedAccountId = isTransferOut
-        ? selectedBranchAccountId || undefined
-        : selectedBankAccount || selectedCashAccount || undefined;
+      const resolvedPaidAmount = isTransferOut
+        ? receivedAmount
+        : selectedBankAccount || selectedCashAccount
+          ? bankAmount + cashAmount
+          : receivedAmount;
+      const paymentPayload = isTransferOut
+        ? {
+            accountId: selectedBranchAccountId || undefined,
+            paidAmount: resolvedPaidAmount,
+          }
+        : {
+            accountId: selectedBankAccount || selectedCashAccount || undefined,
+            bankAccountId: selectedBankAccount || undefined,
+            cashAccountId: selectedCashAccount || undefined,
+            bankAmount: selectedBankAccount ? bankAmount : 0,
+            cashAmount: selectedCashAccount ? cashAmount : 0,
+            paidAmount: resolvedPaidAmount,
+          };
       if (editingInvoiceId) {
         // UPDATE Existing Invoice
         response = await apiClient.updateSalesInvoice(editingInvoiceId, {
@@ -3015,26 +3267,7 @@ export const SalesInvoice = ({
           tax: resolvedTax,
           taxPercentage: resolvedTaxPercentage,
           grandTotal,
-          accountId: resolvedAccountId,
-          bankAccountId: isTransferOut ? undefined : selectedBankAccount || undefined,
-          cashAccountId: isTransferOut ? undefined : selectedCashAccount || undefined,
-          bankAmount:
-            isTransferOut
-              ? undefined
-              : selectedBankAccount && bankAmount > 0
-                ? bankAmount
-                : undefined,
-          cashAmount:
-            isTransferOut
-              ? undefined
-              : selectedCashAccount && cashAmount > 0
-                ? cashAmount
-                : undefined,
-          paidAmount: isTransferOut
-            ? receivedAmount
-            : selectedBankAccount || selectedCashAccount
-              ? bankAmount + cashAmount
-              : receivedAmount,
+          ...paymentPayload,
         });
       } else {
         // CREATE New Invoice
@@ -3045,21 +3278,6 @@ export const SalesInvoice = ({
           customerName: customerName,
           customerType: resolvedCustomerType as CustomerType,
           salesPerson: newInvoice.salesPerson || "Admin",
-          accountId: resolvedAccountId,
-          bankAccountId: isTransferOut ? undefined : selectedBankAccount || undefined,
-          cashAccountId: isTransferOut ? undefined : selectedCashAccount || undefined,
-          bankAmount:
-            isTransferOut
-              ? undefined
-              : selectedBankAccount && bankAmount > 0
-                ? bankAmount
-                : undefined,
-          cashAmount:
-            isTransferOut
-              ? undefined
-              : selectedCashAccount && cashAmount > 0
-                ? cashAmount
-                : undefined,
           deliveredTo: deliveredTo || undefined,
           remarks: remarks || undefined,
           items: invoiceItems,
@@ -3069,11 +3287,7 @@ export const SalesInvoice = ({
           tax: resolvedTax,
           taxPercentage: resolvedTaxPercentage,
           grandTotal,
-          paidAmount: isTransferOut
-            ? receivedAmount
-            : selectedBankAccount || selectedCashAccount
-              ? bankAmount + cashAmount
-              : receivedAmount,
+          ...paymentPayload,
         });
       }
 
@@ -3090,9 +3304,7 @@ export const SalesInvoice = ({
 
       const invoiceType = isTransferOut
         ? "Transfer Out"
-        : newInvoice.customerType === "registered"
-          ? "Party Sale"
-          : "Cash Sale";
+        : getCustomerTypeLabel(newInvoice.customerType);
       const message = isTransferOut
         ? `Transfer Out ${editingInvoiceId ? "updated" : "created"}. Stock will be reserved when you approve.`
         : newInvoice.customerType === "registered"
@@ -3154,6 +3366,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         accountId: inv.accountId,
@@ -3222,29 +3439,73 @@ export const SalesInvoice = ({
   // Handle Edit Invoice
   const handleEditInvoice = async (invoice: Invoice) => {
     try {
-      const fullInvoice = isQuotation
-        ? ((await apiClient.getSalesQuotation(invoice.id)) as any)
-        : ((await apiClient.getSalesInvoice(invoice.id)) as any);
+      const rawResponse = isQuotation
+        ? await apiClient.getSalesQuotation(invoice.id)
+        : await apiClient.getSalesInvoice(invoice.id);
+      const fullInvoice = (rawResponse as any)?.data || rawResponse;
       setEditingInvoiceId(invoice.id);
 
       setNewInvoice({
-        customerType: invoice.customerType,
-        customerName: invoice.customerName,
-        salesPerson: invoice.salesPerson,
+        customerType: fullInvoice.customerType ?? invoice.customerType,
+        customerName: fullInvoice.customerName ?? invoice.customerName,
+        salesPerson: fullInvoice.salesPerson ?? invoice.salesPerson,
         items: [],
         overallDiscount: invoice.overallDiscount || 0,
         overallDiscountType: "percent",
       });
-      if (invoice.customerType === "transfer" || isTransferOut) {
+      if (
+        (fullInvoice.customerType ?? invoice.customerType) === "transfer" ||
+        isTransferOut
+      ) {
         setSelectedBranchAccountId(
           fullInvoice.accountId || invoice.accountId || "",
         );
         setSelectedCustomerId("");
         setSelectedCustomerName("");
       } else {
-        setSelectedCustomerId(invoice.customerId || "");
-        setSelectedCustomerName(invoice.customerName || "");
+        let customerId = String(
+          fullInvoice.customerId ?? invoice.customerId ?? "",
+        ).trim();
+        const customerName = String(
+          fullInvoice.customerName ?? invoice.customerName ?? "",
+        ).trim();
+
+        if (!customerId && customerName) {
+          const byName = customers.find(
+            (c) =>
+              c.name.trim().toLowerCase() === customerName.toLowerCase(),
+          );
+          if (byName) customerId = byName.id;
+        }
+
+        setSelectedCustomerId(customerId);
+        setSelectedCustomerName(customerName);
         setSelectedBranchAccountId("");
+
+        if (
+          customerId &&
+          customerName &&
+          !customers.some((c) => c.id === customerId)
+        ) {
+          setCustomers((prev) => {
+            if (prev.some((c) => c.id === customerId)) return prev;
+            return [
+              ...prev,
+              {
+                id: customerId,
+                name: customerName,
+                type: "registered" as CustomerType,
+                address: "",
+                area: null,
+                balance: 0,
+                creditLimit: 0,
+                creditDays: 0,
+                priceType: null,
+                category: null,
+              },
+            ];
+          });
+        }
       }
       const invDate = isQuotation
         ? fullInvoice.quotationDate ?? invoice.invoiceDate
@@ -3273,7 +3534,21 @@ export const SalesInvoice = ({
         setTerm("");
       }
       // Restore customer price type when editing
-      const editCustomer = customers.find((c) => c.id === invoice.customerId);
+      const customerNameForEdit = String(
+        fullInvoice.customerName ?? invoice.customerName ?? "",
+      ).trim();
+      let editCustomerId = String(
+        fullInvoice.customerId ?? invoice.customerId ?? "",
+      ).trim();
+      if (!editCustomerId && customerNameForEdit) {
+        editCustomerId =
+          customers.find(
+            (c) =>
+              c.name.trim().toLowerCase() ===
+              customerNameForEdit.toLowerCase(),
+          )?.id || "";
+      }
+      const editCustomer = customers.find((c) => c.id === editCustomerId);
       setCustomerPriceType(editCustomer?.priceType || null);
       setSelectedCustomerCategory(editCustomer?.category || null);
 
@@ -3319,7 +3594,22 @@ export const SalesInvoice = ({
                 : [],
               locations: stockLocations,
               unlocatedStock: item.Part.unlocatedStock || 0,
+              images: getPartImageList({
+                imageP1: item.Part.imageP1,
+                imageP2: item.Part.imageP2,
+              }),
             });
+            const partImages = getPartImageList({
+              imageP1: item.Part.imageP1,
+              imageP2: item.Part.imageP2,
+            });
+            if (partImages.length > 0) {
+              loadedPartImagesRef.current.add(item.Part.id);
+              setPartImagesByPartId((prev) => ({
+                ...prev,
+                [item.Part.id]: partImages,
+              }));
+            }
           }
 
           return {
@@ -3377,6 +3667,8 @@ export const SalesInvoice = ({
         if (item.selectedPartId) {
           fetchPartStockBalance(item.selectedPartId);
           fetchPartModels(item.selectedPartId);
+          fetchPartImages(item.selectedPartId);
+          void fetchPartPriceLastUpdated(item.selectedPartId);
         }
       });
 
@@ -3419,7 +3711,18 @@ export const SalesInvoice = ({
       }
 
       // Handle account and payment amounts
-      if (invoice.accountId) {
+      const bankId = fullInvoice.bankAccountId || "";
+      const cashId = fullInvoice.cashAccountId || "";
+      const savedBankAmount = Number(fullInvoice.bankAmount || 0);
+      const savedCashAmount = Number(fullInvoice.cashAmount || 0);
+
+      if (bankId || cashId || savedBankAmount > 0 || savedCashAmount > 0) {
+        setSelectedBankAccount(bankId);
+        setSelectedCashAccount(cashId);
+        setBankAmount(savedBankAmount);
+        setCashAmount(savedCashAmount);
+        setReceivedAmount(savedBankAmount + savedCashAmount);
+      } else if (invoice.accountId) {
         const isBank = bankAccounts.some((acc) => acc.id === invoice.accountId);
         const isCash = cashAccounts.some((acc) => acc.id === invoice.accountId);
 
@@ -3428,13 +3731,14 @@ export const SalesInvoice = ({
           setSelectedCashAccount("");
           setBankAmount(invoice.paidAmount || 0);
           setCashAmount(0);
+          setReceivedAmount(invoice.paidAmount || 0);
         } else if (isCash) {
           setSelectedCashAccount(invoice.accountId);
           setSelectedBankAccount("");
           setCashAmount(invoice.paidAmount || 0);
           setBankAmount(0);
+          setReceivedAmount(invoice.paidAmount || 0);
         } else {
-          // Fallback if not specifically found in lists (might still be an account)
           setReceivedAmount(invoice.paidAmount || 0);
         }
       } else {
@@ -3625,6 +3929,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         accountId: inv.accountId,
@@ -3730,6 +4039,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         account: inv.accountId,
@@ -3875,6 +4189,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         accountId: inv.accountId,
@@ -4106,7 +4425,7 @@ export const SalesInvoice = ({
       toast({
         title: "Error",
         description:
-          "Only Party Sale (registered customer) invoices can be approved.",
+          "Only Party (registered customer) invoices can be approved.",
         variant: "destructive",
       });
       return;
@@ -4182,6 +4501,10 @@ export const SalesInvoice = ({
         paymentStatus: inv.paymentStatus || "unpaid",
         accountId: inv.accountId,
         deliveredTo: inv.deliveredTo,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
         remarks: inv.remarks,
         createdAt: inv.createdAt,
         updatedAt: inv.updatedAt,
@@ -4271,6 +4594,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus:
           inv.status === "paid"
@@ -4366,6 +4694,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? inv.taxPercentage : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         accountId: inv.accountId,
@@ -4464,6 +4797,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         account: inv.accountId,
@@ -4561,6 +4899,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         account: inv.accountId,
@@ -4650,6 +4993,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         account: inv.accountId,
@@ -4845,6 +5193,11 @@ export const SalesInvoice = ({
           inv.taxPercentage != null ? Number(inv.taxPercentage) : undefined,
         grandTotal: inv.grandTotal,
         paidAmount: inv.paidAmount || 0,
+        bankAccountId: inv.bankAccountId ?? null,
+        cashAccountId: inv.cashAccountId ?? null,
+        bankAmount: Number(inv.bankAmount || 0),
+        cashAmount: Number(inv.cashAmount || 0),
+        remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
         account: inv.accountId,
@@ -5296,24 +5649,11 @@ export const SalesInvoice = ({
 
       const challanNo = `CH-${fullInvoice?.invoiceNo || invoice.invoiceNo}`;
       const challanItems = (rawItems as any[]).map((item) => {
-        const selectedLocations = Array.isArray(item.InvoiceRackShelf)
-          ? item.InvoiceRackShelf
-          : [];
-        const locationText = selectedLocations.length
-          ? selectedLocations
-              .map((loc: any) => {
-                const rack =
-                  loc?.Rack?.code ||
-                  loc?.Rack?.codeNo ||
-                  loc?.Rack?.rackCode ||
-                  loc?.rackCode ||
-                  "-";
-                const shelf =
-                  loc?.Shelf?.shelfNo || loc?.Shelf?.name || loc?.shelfNo || "-";
-                return `${rack}-${shelf}`;
-              })
-              .join(", ")
-          : "-";
+        const listItem = invoice.items?.find((i) => i.id === item.id);
+        const locationText = getChallanItemLocation(
+          { ...item, rackCode: listItem?.rackCode, shelfNo: listItem?.shelfNo },
+          fullInvoice,
+        );
 
         return {
           partNo: item.partNo || "-",
@@ -5581,8 +5921,8 @@ export const SalesInvoice = ({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="walking">Cash Sale</SelectItem>
-                      <SelectItem value="registered">Party Sale</SelectItem>
+                      <SelectItem value="walking">Walk-in</SelectItem>
+                      <SelectItem value="registered">Party</SelectItem>
                     </SelectContent>
                   </Select>
                 )}
@@ -5634,7 +5974,7 @@ export const SalesInvoice = ({
       {showDocumentForm ? (
         <Card className="relative">
           <CardContent className="space-y-6 p-4 pt-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex flex-wrap items-end justify-start gap-3">
               {isTransferOut ? (
                 <div className="space-y-1.5 w-[26rem]">
                   <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
@@ -5678,10 +6018,7 @@ export const SalesInvoice = ({
                       </Label>
                       <div className="flex gap-2">
                         <SearchableSelect
-                          options={customers.map((customer) => ({
-                            value: customer.id,
-                            label: customer.name,
-                          }))}
+                          options={customerSelectOptions}
                           value={selectedCustomerId || ""}
                           onValueChange={(value) => {
                             setSelectedCustomerId(value);
@@ -5761,12 +6098,8 @@ export const SalesInvoice = ({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="registered">
-                          Party Sale (Credit)
-                        </SelectItem>
-                        <SelectItem value="walking">
-                          Cash Sale (Walk-in)
-                        </SelectItem>
+                        <SelectItem value="registered">Party</SelectItem>
+                        <SelectItem value="walking">Walk-in</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -5855,7 +6188,7 @@ export const SalesInvoice = ({
                   <Table className="w-full table-fixed">
                     <colgroup>
                       <col className="w-[4%]" />
-                      <col className="w-[28%]" />
+                      <col className="w-[26%]" />
                       <col className="w-[7%]" />
                       <col className="w-[6%]" />
                       <col className="w-[6%]" />
@@ -5864,6 +6197,7 @@ export const SalesInvoice = ({
                       <col className="w-[7%]" />
                       <col className="w-[8%]" />
                       <col className="w-[8%]" />
+                      <col className="w-[6%]" />
                       <col className="w-[5%]" />
                     </colgroup>
                     <TableHeader className="hidden md:table-header-group bg-muted/50">
@@ -5902,6 +6236,9 @@ export const SalesInvoice = ({
                           Price B
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                          Image
+                        </TableHead>
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Action
                         </TableHead>
                       </TableRow>
@@ -5910,6 +6247,12 @@ export const SalesInvoice = ({
                       {inlineItems.map((item, index) => {
                         const part = getPartForItem(item.selectedPartId);
                         const pid = item.selectedPartId;
+                        const partImages =
+                          partImagesByPartId[pid] || getPartImageList(part);
+                        const partImageSrc = partImages[0];
+                        const priceDates = pid
+                          ? partPriceLastUpdatedByPartId[pid]
+                          : undefined;
                         const hasModels =
                           (part?.machineModels &&
                             part.machineModels.length > 0) ||
@@ -6564,6 +6907,30 @@ export const SalesInvoice = ({
                                 <span className="text-lg md:text-base text-primary">
                                   Rs {calculateLineTotal(item).toLocaleString()}
                                 </span>
+                                {partImageSrc ? (
+                                  <button
+                                    type="button"
+                                    className="md:hidden shrink-0 rounded border border-border overflow-hidden hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                    onClick={() =>
+                                      openPartImageModal(
+                                        partImages,
+                                        part?.partNo || "Part Image",
+                                      )
+                                    }
+                                    title="View image"
+                                  >
+                                    <img
+                                      src={partImageSrc}
+                                      alt={part?.partNo || "Part"}
+                                      className="h-8 w-8 object-cover"
+                                      onError={(e) => {
+                                        (
+                                          e.target as HTMLImageElement
+                                        ).style.display = "none";
+                                      }}
+                                    />
+                                  </button>
+                                ) : null}
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -6590,29 +6957,36 @@ export const SalesInvoice = ({
                                   );
                                 }
                                 return (
-                                  <Button
-                                    variant={
-                                      item.selectedPriceType === "A"
-                                        ? "default"
-                                        : "outline"
-                                    }
-                                    size="sm"
-                                    className="w-full min-w-0 px-2 text-sm h-9"
-                                    onClick={() => {
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "selectedPriceType",
-                                        "A",
-                                      );
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "unitPrice",
-                                        priceAValue,
-                                      );
-                                    }}
-                                  >
-                                    {priceAValue.toFixed(0)}
-                                  </Button>
+                                  <div className="flex flex-col items-center gap-1">
+                                    <Button
+                                      variant={
+                                        item.selectedPriceType === "A"
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      size="sm"
+                                      className="w-full min-w-0 px-2 text-sm h-9"
+                                      onClick={() => {
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "selectedPriceType",
+                                          "A",
+                                        );
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "unitPrice",
+                                          priceAValue,
+                                        );
+                                      }}
+                                    >
+                                      {priceAValue.toFixed(0)}
+                                    </Button>
+                                    <span className="text-[9px] leading-tight text-muted-foreground font-bold">
+                                      {formatPriceLastUpdatedLabel(
+                                        priceDates?.priceA,
+                                      )}
+                                    </span>
+                                  </div>
                                 );
                               })()}
                             </TableCell>
@@ -6630,29 +7004,36 @@ export const SalesInvoice = ({
                                   );
                                 }
                                 return (
-                                  <Button
-                                    variant={
-                                      item.selectedPriceType === "B"
-                                        ? "default"
-                                        : "outline"
-                                    }
-                                    size="sm"
-                                    className="w-full min-w-0 px-2 text-sm h-9"
-                                    onClick={() => {
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "selectedPriceType",
-                                        "B",
-                                      );
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "unitPrice",
-                                        priceBValue,
-                                      );
-                                    }}
-                                  >
-                                    {priceBValue.toFixed(0)}
-                                  </Button>
+                                  <div className="flex flex-col items-center gap-1">
+                                    <Button
+                                      variant={
+                                        item.selectedPriceType === "B"
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      size="sm"
+                                      className="w-full min-w-0 px-2 text-sm h-9"
+                                      onClick={() => {
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "selectedPriceType",
+                                          "B",
+                                        );
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "unitPrice",
+                                          priceBValue,
+                                        );
+                                      }}
+                                    >
+                                      {priceBValue.toFixed(0)}
+                                    </Button>
+                                    <span className="text-[9px] leading-tight text-muted-foreground font-bold">
+                                      {formatPriceLastUpdatedLabel(
+                                        priceDates?.priceB,
+                                      )}
+                                    </span>
+                                  </div>
                                 );
                               })()}
                             </TableCell>
@@ -6671,29 +7052,36 @@ export const SalesInvoice = ({
                                     const val =
                                       item.priceA ?? part?.priceA ?? null;
                                     return val != null ? (
-                                      <Button
-                                        variant={
-                                          item.selectedPriceType === "A"
-                                            ? "default"
-                                            : "outline"
-                                        }
-                                        size="sm"
-                                        className="w-full h-8 text-[10px]"
-                                        onClick={() => {
-                                          handleUpdateInlineItem(
-                                            item.id,
-                                            "selectedPriceType",
-                                            "A",
-                                          );
-                                          handleUpdateInlineItem(
-                                            item.id,
-                                            "unitPrice",
-                                            val,
-                                          );
-                                        }}
-                                      >
-                                        {val.toFixed(0)}
-                                      </Button>
+                                      <>
+                                        <Button
+                                          variant={
+                                            item.selectedPriceType === "A"
+                                              ? "default"
+                                              : "outline"
+                                          }
+                                          size="sm"
+                                          className="w-full h-8 text-[10px]"
+                                          onClick={() => {
+                                            handleUpdateInlineItem(
+                                              item.id,
+                                              "selectedPriceType",
+                                              "A",
+                                            );
+                                            handleUpdateInlineItem(
+                                              item.id,
+                                              "unitPrice",
+                                              val,
+                                            );
+                                          }}
+                                        >
+                                          {val.toFixed(0)}
+                                        </Button>
+                                        <span className="block text-[9px] leading-tight text-muted-foreground font-bold text-center">
+                                          {formatPriceLastUpdatedLabel(
+                                            priceDates?.priceA,
+                                          )}
+                                        </span>
+                                      </>
                                     ) : (
                                       <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">
                                         -
@@ -6709,29 +7097,36 @@ export const SalesInvoice = ({
                                     const val =
                                       item.priceB ?? part?.priceB ?? null;
                                     return val != null ? (
-                                      <Button
-                                        variant={
-                                          item.selectedPriceType === "B"
-                                            ? "default"
-                                            : "outline"
-                                        }
-                                        size="sm"
-                                        className="w-full h-8 text-[10px]"
-                                        onClick={() => {
-                                          handleUpdateInlineItem(
-                                            item.id,
-                                            "selectedPriceType",
-                                            "B",
-                                          );
-                                          handleUpdateInlineItem(
-                                            item.id,
-                                            "unitPrice",
-                                            val,
-                                          );
-                                        }}
-                                      >
-                                        {val.toFixed(0)}
-                                      </Button>
+                                      <>
+                                        <Button
+                                          variant={
+                                            item.selectedPriceType === "B"
+                                              ? "default"
+                                              : "outline"
+                                          }
+                                          size="sm"
+                                          className="w-full h-8 text-[10px]"
+                                          onClick={() => {
+                                            handleUpdateInlineItem(
+                                              item.id,
+                                              "selectedPriceType",
+                                              "B",
+                                            );
+                                            handleUpdateInlineItem(
+                                              item.id,
+                                              "unitPrice",
+                                              val,
+                                            );
+                                          }}
+                                        >
+                                          {val.toFixed(0)}
+                                        </Button>
+                                        <span className="block text-[9px] leading-tight text-muted-foreground font-bold text-center">
+                                          {formatPriceLastUpdatedLabel(
+                                            priceDates?.priceB,
+                                          )}
+                                        </span>
+                                      </>
                                     ) : (
                                       <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">
                                         -
@@ -6789,6 +7184,38 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
+                            {/* Column: Image (before Action) */}
+                            <TableCell className="hidden md:table-cell align-top text-center">
+                              {partImageSrc ? (
+                                <button
+                                  type="button"
+                                  className="mx-auto block rounded border border-border overflow-hidden hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                  onClick={() =>
+                                    openPartImageModal(
+                                      partImages,
+                                      part?.partNo || "Part Image",
+                                    )
+                                  }
+                                  title="View image"
+                                >
+                                  <img
+                                    src={partImageSrc}
+                                    alt={part?.partNo || "Part"}
+                                    className="w-10 h-10 object-cover"
+                                    onError={(e) => {
+                                      (
+                                        e.target as HTMLImageElement
+                                      ).style.visibility = "hidden";
+                                    }}
+                                  />
+                                </button>
+                              ) : (
+                                <div className="w-10 h-10 mx-auto rounded border border-dashed border-muted-foreground/30 bg-muted/30 flex items-center justify-center text-[9px] text-muted-foreground">
+                                  —
+                                </div>
+                              )}
+                            </TableCell>
+
                             {/* Column 11: Action (Desktop Only) */}
                             <TableCell className="hidden md:table-cell align-top text-center">
                               <div className="flex items-center justify-center gap-1.5">
@@ -6815,7 +7242,7 @@ export const SalesInvoice = ({
                           </TableRow>
                           {hasModels && !partsModelFilter.trim() ? (
                               <TableRow key={`${item.id}-qty-used`} className="hidden md:table-row border-b bg-muted/20">
-                                <TableCell colSpan={11} className="px-4 pt-0 pb-2">
+                                <TableCell colSpan={12} className="px-4 pt-0 pb-2">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
                                       Quantity Used
@@ -6918,6 +7345,8 @@ export const SalesInvoice = ({
                         <TableCell />
                         {/* Price B */}
                         <TableCell />
+                        {/* Image */}
+                        <TableCell />
                         {/* Action */}
                         <TableCell />
                       </TableRow>
@@ -6929,8 +7358,8 @@ export const SalesInvoice = ({
 
             {/* Payment Section */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-muted/30 rounded-lg border">
-              <div className="space-y-3 md:col-span-2">
-                <div className="space-y-2">
+              <div className="md:col-span-4 grid grid-cols-2 grid-rows-[auto_auto_auto] gap-x-3 gap-y-3 min-w-0 items-start">
+                <div className="space-y-2 row-start-1 col-start-1">
                   <Label className="text-xs">Discount</Label>
                   <Input
                     type="number"
@@ -6943,7 +7372,17 @@ export const SalesInvoice = ({
                     className="h-8 text-sm"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 row-start-1 col-start-2">
+                  <Label className="text-xs">Remarks</Label>
+                  <Textarea
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    placeholder="Enter remarks..."
+                    rows={3}
+                    className="text-sm min-h-[4.5rem]"
+                  />
+                </div>
+                <div className="space-y-2 hidden row-start-2 col-start-1">
                   <Label className="text-xs">Freight Charges</Label>
                   <Input
                     type="number"
@@ -6956,59 +7395,57 @@ export const SalesInvoice = ({
                     className="h-8 text-sm"
                   />
                 </div>
-                {!isQuotation ? (
-                <>
-                {!isTransferOut && (
-                <>
-                <div className="space-y-2">
-                  <Label className="text-xs">Bank Account</Label>
-                  <Select
-                    value={selectedBankAccount}
-                    onValueChange={(value) => {
-                      setSelectedBankAccount(value);
-                      if (!value) setBankAmount(0); // Reset amount if account is deselected
-                    }}
-                    disabled={loadingAccounts || bankAccounts.length === 0}
-                  >
-                  <SelectTrigger className="h-8 text-sm">
-                      <SelectValue
-                        placeholder={
-                          loadingAccounts
-                            ? "Loading bank accounts..."
-                            : bankAccounts.length === 0
-                              ? "No bank accounts available. Add accounts in Accounting → Accounts (Subgroup: Bank Account)."
-                              : "Select bank account..."
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {loadingAccounts ? (
-                        <SelectItem value="loading" disabled>
-                          Loading bank accounts...
-                        </SelectItem>
-                      ) : bankAccounts.length === 0 ? (
-                        <SelectItem value="no-accounts" disabled>
-                          No bank accounts available. Please add accounts in
-                          Accounting → Accounts (Subgroup: Bank Account).
-                        </SelectItem>
-                      ) : (
-                        bankAccounts.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.code
-                              ? `${account.code} - ${account.name}`
-                              : account.name}{" "}
-                            {account.type &&
-                            account.type !== "General" &&
-                            account.type !== "Current Assets"
-                              ? `(${account.type})`
-                              : ""}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {selectedBankAccount && (
-                    <div className="space-y-1">
+                {!isQuotation && !isTransferOut ? (
+                  <>
+                    <div className="space-y-2 row-start-2 col-start-1">
+                      <Label className="text-xs">Bank Account</Label>
+                      <Select
+                        value={selectedBankAccount}
+                        onValueChange={(value) => {
+                          setSelectedBankAccount(value);
+                          if (!value) setBankAmount(0);
+                        }}
+                        disabled={loadingAccounts || bankAccounts.length === 0}
+                      >
+                        <SelectTrigger className="h-8 text-sm w-full">
+                          <SelectValue
+                            placeholder={
+                              loadingAccounts
+                                ? "Loading bank accounts..."
+                                : bankAccounts.length === 0
+                                  ? "No bank accounts available. Add accounts in Accounting → Accounts (Subgroup: Bank Account)."
+                                  : "Select bank account..."
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {loadingAccounts ? (
+                            <SelectItem value="loading" disabled>
+                              Loading bank accounts...
+                            </SelectItem>
+                          ) : bankAccounts.length === 0 ? (
+                            <SelectItem value="no-accounts" disabled>
+                              No bank accounts available. Please add accounts in
+                              Accounting → Accounts (Subgroup: Bank Account).
+                            </SelectItem>
+                          ) : (
+                            bankAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.code
+                                  ? `${account.code} - ${account.name}`
+                                  : account.name}{" "}
+                                {account.type &&
+                                account.type !== "General" &&
+                                account.type !== "Current Assets"
+                                  ? `(${account.type})`
+                                  : ""}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2 row-start-2 col-start-2">
                       <Label className="text-xs">Bank Amount (Rs)</Label>
                       <Input
                         type="number"
@@ -7018,64 +7455,61 @@ export const SalesInvoice = ({
                         onChange={(e) => {
                           const val = parseFloat(e.target.value) || 0;
                           setBankAmount(val);
-                          // Auto-update receivedAmount for backward compatibility
                           setReceivedAmount(val + cashAmount);
                         }}
                         placeholder="0"
-                        className="h-8 text-sm"
+                        className="h-8 text-sm text-right"
                       />
                     </div>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">Cash Account</Label>
-                  <Select
-                    value={selectedCashAccount}
-                    onValueChange={(value) => {
-                      setSelectedCashAccount(value);
-                      if (!value) setCashAmount(0); // Reset amount if account is deselected
-                    }}
-                    disabled={loadingAccounts || cashAccounts.length === 0}
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue
-                        placeholder={
-                          loadingAccounts
-                            ? "Loading cash accounts..."
-                            : cashAccounts.length === 0
-                              ? "No cash accounts available. Add accounts in Accounting → Accounts (Subgroup: Cash Account)."
-                              : "Select cash account..."
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {loadingAccounts ? (
-                        <SelectItem value="loading" disabled>
-                          Loading cash accounts...
-                        </SelectItem>
-                      ) : cashAccounts.length === 0 ? (
-                        <SelectItem value="no-accounts" disabled>
-                          No cash accounts available. Please add accounts in
-                          Accounting → Accounts (Subgroup: Cash Account).
-                        </SelectItem>
-                      ) : (
-                        cashAccounts.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.code
-                              ? `${account.code} - ${account.name}`
-                              : account.name}{" "}
-                            {account.type &&
-                            account.type !== "General" &&
-                            account.type !== "Current Assets"
-                              ? `(${account.type})`
-                              : ""}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {selectedCashAccount && (
-                    <div className="space-y-1">
+                    <div className="space-y-2 row-start-3 col-start-1">
+                      <Label className="text-xs">Cash Account</Label>
+                      <Select
+                        value={selectedCashAccount}
+                        onValueChange={(value) => {
+                          setSelectedCashAccount(value);
+                          if (!value) setCashAmount(0);
+                        }}
+                        disabled={loadingAccounts || cashAccounts.length === 0}
+                      >
+                        <SelectTrigger className="h-8 text-sm w-full">
+                          <SelectValue
+                            placeholder={
+                              loadingAccounts
+                                ? "Loading cash accounts..."
+                                : cashAccounts.length === 0
+                                  ? "No cash accounts available. Add accounts in Accounting → Accounts (Subgroup: Cash Account)."
+                                  : "Select cash account..."
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {loadingAccounts ? (
+                            <SelectItem value="loading" disabled>
+                              Loading cash accounts...
+                            </SelectItem>
+                          ) : cashAccounts.length === 0 ? (
+                            <SelectItem value="no-accounts" disabled>
+                              No cash accounts available. Please add accounts in
+                              Accounting → Accounts (Subgroup: Cash Account).
+                            </SelectItem>
+                          ) : (
+                            cashAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.code
+                                  ? `${account.code} - ${account.name}`
+                                  : account.name}{" "}
+                                {account.type &&
+                                account.type !== "General" &&
+                                account.type !== "Current Assets"
+                                  ? `(${account.type})`
+                                  : ""}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2 row-start-3 col-start-2">
                       <Label className="text-xs">Cash Amount (Rs)</Label>
                       <Input
                         type="number"
@@ -7085,19 +7519,20 @@ export const SalesInvoice = ({
                         onChange={(e) => {
                           const val = parseFloat(e.target.value) || 0;
                           setCashAmount(val);
-                          // Auto-update receivedAmount for backward compatibility
                           setReceivedAmount(bankAmount + val);
                         }}
                         placeholder="0"
-                        className="h-8 text-sm"
+                        className="h-8 text-sm text-right"
                       />
                     </div>
-                  )}
-                </div>
-                </>
-                )}
-                {(isTransferOut || (!selectedBankAccount && !selectedCashAccount)) && (
-                  <div className="space-y-2">
+                  </>
+                ) : null}
+                {!isQuotation &&
+                (isTransferOut ||
+                  (newInvoice.customerType !== "registered" &&
+                    !selectedBankAccount &&
+                    !selectedCashAccount)) ? (
+                  <div className="space-y-2 row-start-2 col-span-2">
                     <Label className="text-xs">Received Amount</Label>
                     <Input
                       type="number"
@@ -7107,23 +7542,10 @@ export const SalesInvoice = ({
                         setReceivedAmount(parseFloat(e.target.value) || 0)
                       }
                       placeholder="0"
-                      className="h-8 text-sm"
+                      className="h-8 text-sm max-w-xs"
                     />
                   </div>
-                )}
-                </>
                 ) : null}
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
-                <Label className="text-xs">Remarks</Label>
-                <Textarea
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  placeholder="Enter remarks..."
-                  rows={5}
-                  className="text-sm"
-                />
               </div>
 
               <div className="space-y-3 p-3 bg-background rounded-lg border md:col-span-3">
@@ -7161,7 +7583,7 @@ export const SalesInvoice = ({
                     Rs {calculateAfterDiscount().toLocaleString()}
                   </span>
                 </div>
-                <div className="flex justify-between text-blue-700">
+                <div className="flex justify-between text-blue-700 hidden">
                   <span>Freight Charges:</span>
                   <span>+Rs {freightCharges.toLocaleString()}</span>
                 </div>
@@ -7764,6 +8186,7 @@ export const SalesInvoice = ({
                 <Table className="min-w-[800px] md:min-w-full">
                   <TableHeader className="hidden md:table-header-group">
                     <TableRow>
+                      <ListNumberHeader />
                       <TableHead>
                         {docNumberLabel}
                       </TableHead>
@@ -7775,6 +8198,12 @@ export const SalesInvoice = ({
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Tax %</TableHead>
                       <TableHead className="text-right">Total</TableHead>
+                      {!isQuotation && !isTransferOut ? (
+                        <TableHead>Mode</TableHead>
+                      ) : null}
+                      {!isQuotation && !isTransferOut ? (
+                        <TableHead>Remarks</TableHead>
+                      ) : null}
                       <TableHead className="text-center">
                         {isQuotation ? "Status" : "Delivery"}
                       </TableHead>
@@ -7782,11 +8211,17 @@ export const SalesInvoice = ({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedInvoices.map((inv) => (
+                    {paginatedInvoices.map((inv, index) => (
                       <TableRow
                         key={inv.id}
                         className="flex flex-col md:table-row border-b md:border-b-0 p-4 md:p-0 space-y-3 md:space-y-0 relative"
                       >
+                        <ListNumberCell
+                          index={index}
+                          page={invoiceListPage}
+                          pageSize={invoiceListPageSize}
+                          className="hidden md:table-cell"
+                        />
                         <TableCell className="md:table-cell font-bold md:font-medium p-0 md:p-4 block">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
                             {docNumberLabel}
@@ -7839,9 +8274,7 @@ export const SalesInvoice = ({
                             variant="outline"
                             className="text-[10px] md:text-xs"
                           >
-                            {inv.customerType === "walking"
-                              ? "Cash Sale"
-                              : "Party Sale"}
+                            {getCustomerTypeLabel(inv.customerType)}
                           </Badge>
                         </TableCell>
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-right">
@@ -7859,6 +8292,27 @@ export const SalesInvoice = ({
                           </span>
                           Rs {inv.grandTotal.toLocaleString()}
                         </TableCell>
+                        {!isQuotation && !isTransferOut ? (
+                          <TableCell className="md:table-cell block p-0 md:p-4">
+                            <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                              Mode
+                            </span>
+                            {getInvoicePaymentMode(inv)}
+                          </TableCell>
+                        ) : null}
+                        {!isQuotation && !isTransferOut ? (
+                          <TableCell className="md:table-cell block p-0 md:p-4 max-w-[200px]">
+                            <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                              Remarks
+                            </span>
+                            <span
+                              className="block truncate text-sm text-muted-foreground"
+                              title={inv.remarks || ""}
+                            >
+                              {inv.remarks?.trim() || "-"}
+                            </span>
+                          </TableCell>
+                        ) : null}
                         <TableCell className="md:table-cell block p-0 md:p-4 md:text-center">
                           <span className="md:hidden text-xs text-muted-foreground block mb-1">
                             {isQuotation ? "Status" : "Delivery"}
@@ -8290,9 +8744,7 @@ export const SalesInvoice = ({
                 <div>
                   <p className="text-xs text-muted-foreground">Type</p>
                   <Badge variant="outline">
-                    {selectedInvoice.customerType === "walking"
-                      ? "Cash Sale"
-                      : "Party Sale"}
+                    {getCustomerTypeLabel(selectedInvoice.customerType)}
                   </Badge>
                 </div>
                 <div>
@@ -9281,9 +9733,7 @@ export const SalesInvoice = ({
                 <div>
                   <p className="text-xs text-muted-foreground">Type</p>
                   <Badge variant="outline">
-                    {saleReturnInvoice.customerType === "walking"
-                      ? "Cash Sale"
-                      : "Party Sale"}
+                    {getCustomerTypeLabel(saleReturnInvoice.customerType)}
                   </Badge>
                 </div>
                 <div>
@@ -9689,6 +10139,74 @@ export const SalesInvoice = ({
                   {submittingSaleReturn ? "Saving…" : "Create return"}
                 </Button>
               </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Part image preview */}
+      <Dialog open={partImageModalOpen} onOpenChange={setPartImageModalOpen}>
+        <DialogContent className="max-w-2xl p-0 overflow-hidden bg-background border-border">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{partImageModalTitle || "Part Image"}</DialogTitle>
+          </DialogHeader>
+          <div className="relative">
+            {partImageModalImages.length > 0 &&
+              partImageModalImages[partImageModalIndex] && (
+                <img
+                  src={partImageModalImages[partImageModalIndex]}
+                  alt={partImageModalTitle || "Part"}
+                  className="w-full h-auto max-h-[70vh] object-contain bg-muted/20"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src =
+                      'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23ddd" width="400" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="20" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage not available%3C/text%3E%3C/svg%3E';
+                  }}
+                />
+              )}
+            {partImageModalImages.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                {partImageModalImages.map((_, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => setPartImageModalIndex(index)}
+                    className={cn(
+                      "w-2 h-2 rounded-full transition-all",
+                      partImageModalIndex === index
+                        ? "bg-primary w-4"
+                        : "bg-muted-foreground/50 hover:bg-muted-foreground",
+                    )}
+                    aria-label={`View image ${index + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          {partImageModalImages.length > 1 && (
+            <div className="p-3 border-t border-border flex gap-2 overflow-x-auto">
+              {partImageModalImages.map((img, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => setPartImageModalIndex(index)}
+                  className={cn(
+                    "flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-all",
+                    partImageModalIndex === index
+                      ? "border-primary"
+                      : "border-transparent hover:border-muted-foreground/50",
+                  )}
+                >
+                  <img
+                    src={img}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src =
+                        'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="56" height="56"%3E%3Crect fill="%23ddd" width="56" height="56"/%3E%3C/svg%3E';
+                    }}
+                  />
+                </button>
+              ))}
             </div>
           )}
         </DialogContent>

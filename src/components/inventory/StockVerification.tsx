@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -595,6 +596,7 @@ export const StockVerification = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/30">
+                    <ListNumberHeader />
                     <TableHead className="text-xs font-medium w-20">PART NO</TableHead>
                     <TableHead className="text-xs font-medium">DESCRIPTION</TableHead>
                     <TableHead className="text-xs font-medium">LOCATION</TableHead>
@@ -606,8 +608,9 @@ export const StockVerification = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedItems.map((item) => (
+                  {paginatedItems.map((item, index) => (
                     <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
+                      <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
                       <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{item.location}</TableCell>
@@ -650,7 +653,7 @@ export const StockVerification = () => {
                   ))}
                   {paginatedItems.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                         No items found matching your criteria
                       </TableCell>
                     </TableRow>

@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, Target, TrendingUp, TrendingDown } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -219,6 +220,7 @@ const TargetAchievementTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>CATEGORY</TableHead>
                 <TableHead className="text-right">TARGET</TableHead>
                 <TableHead className="text-right">ACHIEVED</TableHead>
@@ -227,8 +229,9 @@ const TargetAchievementTab = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {targetData.map((row) => (
+              {targetData.map((row, index) => (
                 <TableRow key={row.category}>
+                  <ListNumberCell index={index} />
                   <TableCell className="font-medium">{row.category}</TableCell>
                   <TableCell className="text-right">
                     {row.category.includes("Margin") 

@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Dialog,
   DialogContent,
@@ -1136,6 +1137,7 @@ export const AdjustItem = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <ListNumberHeader />
                   <TableHead className="w-10">
                     <Checkbox
                       checked={
@@ -1146,7 +1148,7 @@ export const AdjustItem = () => {
                     />
                   </TableHead>
                   <TableHead className="text-xs font-semibold w-16">
-                    S.No
+                    ADJ NO
                   </TableHead>
                   <TableHead className="text-xs font-semibold">STORE</TableHead>
                   <TableHead className="text-xs font-semibold">SUBJECT</TableHead>
@@ -1164,7 +1166,7 @@ export const AdjustItem = () => {
                 {loading && records.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={9}
                       className="text-center text-xs text-muted-foreground py-8"
                     >
                       Loading...
@@ -1173,7 +1175,7 @@ export const AdjustItem = () => {
                 ) : sortedRecords.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={9}
                       className="text-center text-xs text-muted-foreground py-8"
                     >
                       No adjustments found
@@ -1182,6 +1184,11 @@ export const AdjustItem = () => {
                 ) : (
                   sortedRecords.map((record, index) => (
                     <TableRow key={record.id} className="hover:bg-muted/20">
+                      <ListNumberCell
+                        index={index}
+                        page={currentPage}
+                        pageSize={itemsPerPage}
+                      />
                       <TableCell>
                         <Checkbox
                           checked={selectedIds.includes(record.id)}

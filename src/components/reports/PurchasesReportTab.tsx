@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -191,6 +192,7 @@ const PurchasesReportTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>DATE</TableHead>
                 <TableHead>PO NUMBER</TableHead>
                 <TableHead>SUPPLIER</TableHead>
@@ -202,7 +204,7 @@ const PurchasesReportTab = () => {
             <TableBody>
               {purchaseData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center">
+                  <TableCell colSpan={7} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <BarChart3 className="w-10 h-10 opacity-50" />
                       <p>No purchase records found</p>
@@ -211,8 +213,9 @@ const PurchasesReportTab = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                purchaseData.map((record) => (
+                purchaseData.map((record, index) => (
                   <TableRow key={record.id}>
+                    <ListNumberCell index={index} />
                     <TableCell>{record.date}</TableCell>
                     <TableCell className="font-medium">{record.poNumber}</TableCell>
                     <TableCell>{record.supplier}</TableCell>

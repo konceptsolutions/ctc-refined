@@ -1972,7 +1972,7 @@ const AIChatBot: React.FC = () => {
           .join('\n');
 
         const typeLabel =
-          customerType === 'walking' ? 'Cash Sale' : 'Party Sale (Credit)';
+          customerType === 'walking' ? 'Walk-in' : 'Party';
 
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -2123,7 +2123,7 @@ const AIChatBot: React.FC = () => {
 
   const promptCustomerSelection = useCallback(
     (flow: ConversationFlow, customerType: 'walking' | 'registered') => {
-      const typeLabel = customerType === 'walking' ? 'Cash Sale (Walk-in)' : 'Party Sale (Credit)';
+      const typeLabel = customerType === 'walking' ? 'Walk-in' : 'Party';
       const message: Message = {
         id: Date.now().toString(),
         role: 'assistant',
@@ -2231,7 +2231,7 @@ const AIChatBot: React.FC = () => {
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `📊 **Customer-wise Report**\n\nPeriod: **${range.label}** (${range.from} to ${range.to})${reportHint}\n\nFirst, select the **customer type**:\n\n• **Cash Sale** — walk-in customers (name typed on invoice)\n• **Party Sale** — registered credit customers from your customer list`,
+        content: `📊 **Customer-wise Report**\n\nPeriod: **${range.label}** (${range.from} to ${range.to})${reportHint}\n\nFirst, select the **customer type**:\n\n• **Walk-in** — walk-in customers (name typed on invoice)\n• **Party** — registered credit customers from your customer list`,
         timestamp: new Date(),
         interactiveComponent: 'customer_type_selection',
       };
@@ -2254,7 +2254,7 @@ const AIChatBot: React.FC = () => {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
             content:
-              'Please choose **Cash Sale** or **Party Sale**, or type "cash sale" / "party sale".',
+              'Please choose **Walk-in** or **Party**, or type "walk-in" / "party".',
             timestamp: new Date(),
             interactiveComponent: 'customer_type_selection',
           };

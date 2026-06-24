@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, Clock, AlertTriangle, Send } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -180,6 +181,7 @@ const CustomerAgingTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>CUSTOMER/DISTRIBUTOR</TableHead>
                 <TableHead>TYPE</TableHead>
                 <TableHead className="text-right">CURRENT</TableHead>
@@ -192,8 +194,9 @@ const CustomerAgingTab = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {agingData.map((row) => (
+              {agingData.map((row, index) => (
                 <TableRow key={row.id}>
+                  <ListNumberCell index={index} />
                   <TableCell className="font-medium">{row.customer}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">{row.type}</Badge>

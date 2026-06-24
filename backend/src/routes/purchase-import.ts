@@ -107,13 +107,16 @@ const normalizeQuotationStatus = (value: any): "pending" | "confirm" | "revise" 
   return "pending";
 };
 
-async function generateImportPoNumber(): Promise<string> {
+async function generateImportPoNumber(tx?: {
+  purchaseOrder: { findMany: typeof prisma.purchaseOrder.findMany };
+}): Promise<string> {
   const now = new Date();
   const year = String(now.getFullYear()).slice(-2);
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const prefix = `PO-${year}${month}-`;
+  const client = tx?.purchaseOrder ?? prisma.purchaseOrder;
 
-  const existingOrders = await prisma.purchaseOrder.findMany({
+  const existingOrders = await client.findMany({
     where: { poNumber: { startsWith: prefix } },
     orderBy: { poNumber: "desc" },
     select: { poNumber: true },
@@ -130,7 +133,97 @@ async function generateImportPoNumber(): Promise<string> {
   return `${prefix}${String(nextNum).padStart(3, "0")}`;
 }
 
+async function reserveImportPoNumbers(
+  count: number,
+  tx?: {
+    purchaseOrder: { findMany: typeof prisma.purchaseOrder.findMany };
+  },
+): Promise<string[]> {
+  if (count <= 0) return [];
+
+  const now = new Date();
+  const year = String(now.getFullYear()).slice(-2);
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const prefix = `PO-${year}${month}-`;
+  const client = tx?.purchaseOrder ?? prisma.purchaseOrder;
+
+  const existingOrders = await client.findMany({
+    where: { poNumber: { startsWith: prefix } },
+    orderBy: { poNumber: "desc" },
+    select: { poNumber: true },
+  });
+
+  const numbers = existingOrders
+    .map((order) => {
+      const match = order.poNumber.match(new RegExp(`^${prefix}(\\d+)$`));
+      return match ? parseInt(match[1], 10) : 0;
+    })
+    .filter((num) => num > 0);
+
+  let nextNum = (numbers.length > 0 ? Math.max(...numbers) : 0) + 1;
+  const reserved: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    reserved.push(`${prefix}${String(nextNum).padStart(3, "0")}`);
+    nextNum += 1;
+  }
+  return reserved;
+}
+
 async function createPurchaseOrderFromQuotation(quotationId: string) {
+  const result = await confirmPurchaseQuotation(quotationId, {
+    confirmationDate: new Date(),
+    items: null,
+  });
+  return result.purchaseOrders[0] || null;
+}
+
+type ConfirmQuotationItemInput = {
+  partId: string;
+  confirmQuantity: number;
+};
+
+type PoLaneKey = "khi" | "isb" | "other";
+
+const PO_LANE_CONSIGNEE: Record<PoLaneKey, string> = {
+  khi: "khi",
+  isb: "isb",
+  other: "other",
+};
+
+function distributeConfirmQuantity(
+  confirmQty: number,
+  quotationQty: number,
+  khi: number,
+  isb: number,
+  other: number,
+): Record<PoLaneKey, number> {
+  const safeConfirm = Math.max(0, Math.floor(Number(confirmQty) || 0));
+  if (safeConfirm <= 0) {
+    return { khi: 0, isb: 0, other: 0 };
+  }
+
+  const splitTotal = Math.max(0, khi) + Math.max(0, isb) + Math.max(0, other);
+  if (splitTotal <= 0) {
+    return { khi: 0, isb: 0, other: safeConfirm };
+  }
+
+  const khiQty = Math.round((Math.max(0, khi) / splitTotal) * safeConfirm);
+  const isbQty = Math.round((Math.max(0, isb) / splitTotal) * safeConfirm);
+  let otherQty = safeConfirm - khiQty - isbQty;
+  if (otherQty < 0) {
+    otherQty = 0;
+  }
+
+  return { khi: khiQty, isb: isbQty, other: otherQty };
+}
+
+async function confirmPurchaseQuotation(
+  quotationId: string,
+  options: {
+    confirmationDate?: Date | string | null;
+    items?: ConfirmQuotationItemInput[] | null;
+  },
+) {
   const purchaseQuotationModel = (prisma as any).purchaseQuotation;
   if (!purchaseQuotationModel) {
     throw new Error(
@@ -142,13 +235,26 @@ async function createPurchaseOrderFromQuotation(quotationId: string) {
     where: { id: quotationId },
     include: {
       PurchaseQuotationItem: true,
-      PurchaseImportRequest: { select: { requestNo: true } },
+      PurchaseImportRequest: {
+        select: {
+          requestNo: true,
+          PurchaseImportRequestItem: {
+            select: {
+              partId: true,
+              khiQuantity: true,
+              isbQuantity: true,
+              otherQuantity: true,
+            },
+          },
+        },
+      },
       PurchaseOrder: {
         select: {
           id: true,
           poNumber: true,
           status: true,
           totalAmount: true,
+          consignee: true,
         },
       },
     },
@@ -158,83 +264,186 @@ async function createPurchaseOrderFromQuotation(quotationId: string) {
     throw new Error("Purchase quotation not found.");
   }
 
-  if (String(quotation.status || "").toLowerCase() !== "confirm") {
-    throw new Error("Quotation must be confirmed before creating a purchase order.");
+  if (quotation.PurchaseOrder?.length > 0) {
+    return {
+      quotation: {
+        id: quotation.id,
+        quotationNo: quotation.quotationNo,
+        status: quotation.status,
+        confirmationDate: quotation.confirmationDate,
+      },
+      purchaseOrders: quotation.PurchaseOrder,
+    };
   }
 
-  if (quotation.PurchaseOrder) {
-    return quotation.PurchaseOrder;
+  const currentStatus = String(quotation.status || "").toLowerCase();
+  if (currentStatus === "confirm") {
+    // Allow creating POs if confirmation happened without orders (retry path).
   }
 
-  const lineItems = (quotation.PurchaseQuotationItem || []).filter(
-    (item: any) => Number(item.quotationQuantity || 0) > 0,
+  const inquirySplitByPartId = new Map<
+    string,
+    { khiQuantity: number; isbQuantity: number; otherQuantity: number }
+  >(
+    (quotation.PurchaseImportRequest?.PurchaseImportRequestItem || []).map(
+      (item: any) => [
+        String(item.partId),
+        {
+          khiQuantity: Number(item.khiQuantity || 0),
+          isbQuantity: Number(item.isbQuantity || 0),
+          otherQuantity: Number(item.otherQuantity || 0),
+        },
+      ],
+    ),
   );
 
-  if (lineItems.length === 0) {
-    throw new Error("Quotation has no items with quantity to order.");
+  const confirmQtyByPartId = new Map<string, number>();
+  if (Array.isArray(options.items) && options.items.length > 0) {
+    for (const item of options.items) {
+      const partId = String(item?.partId || "").trim();
+      if (!partId) continue;
+      confirmQtyByPartId.set(partId, Math.max(0, Math.floor(Number(item.confirmQuantity || 0))));
+    }
   }
 
   const useRevisedRates = String(quotation.quotationType || "").toLowerCase() === "revised";
-  const poItems = lineItems.map((item: any) => {
-    const quantity = Number(item.quotationQuantity || 0);
+  const laneItems: Record<
+    PoLaneKey,
+    Array<{ partId: string; quantity: number; unitCost: number; totalCost: number }>
+  > = {
+    khi: [],
+    isb: [],
+    other: [],
+  };
+
+  for (const item of quotation.PurchaseQuotationItem || []) {
+    const partId = String(item.partId || "").trim();
+    if (!partId) continue;
+
+    const quotationQty = Number(item.quotationQuantity || 0);
+    const confirmQty = confirmQtyByPartId.has(partId)
+      ? Number(confirmQtyByPartId.get(partId) || 0)
+      : quotationQty;
+
+    if (confirmQty <= 0) continue;
+
+    const split = inquirySplitByPartId.get(partId) || {
+      khiQuantity: 0,
+      isbQuantity: 0,
+      otherQuantity: 0,
+    };
+    const laneQty = distributeConfirmQuantity(
+      confirmQty,
+      quotationQty,
+      split.khiQuantity,
+      split.isbQuantity,
+      split.otherQuantity,
+    );
+
     const revisedLcRate = Number(item.revisedLcRate || 0);
     const lcRate = Number(item.lcRate || 0);
     const unitCost =
       useRevisedRates && revisedLcRate > 0 ? revisedLcRate : lcRate;
-    const totalCost = unitCost * quantity;
-    return {
-      partId: item.partId,
-      quantity,
-      unitCost,
-      totalCost,
-    };
-  });
 
-  const totalAmount = poItems.reduce(
-    (sum: number, item: { totalCost: number }) => sum + item.totalCost,
-    0,
+    (Object.keys(laneQty) as PoLaneKey[]).forEach((lane) => {
+      const quantity = laneQty[lane];
+      if (quantity <= 0) return;
+      laneItems[lane].push({
+        partId,
+        quantity,
+        unitCost,
+        totalCost: unitCost * quantity,
+      });
+    });
+  }
+
+  const lanesWithItems = (Object.keys(laneItems) as PoLaneKey[]).filter(
+    (lane) => laneItems[lane].length > 0,
   );
-  const poNumber = await generateImportPoNumber();
+
+  if (lanesWithItems.length === 0) {
+    throw new Error("No items with confirm quantity to order.");
+  }
+
+  const confirmationDate = parseDateOrNow(options.confirmationDate);
   const requestNo = quotation.PurchaseImportRequest?.requestNo || "";
-  const notes = `Created from purchase quotation ${quotation.quotationNo}${
-    requestNo ? ` (Inquiry ${requestNo})` : ""
-  }`;
 
-  const order = await prisma.$transaction(async (tx) => {
-    const created = await tx.purchaseOrder.create({
+  const createdOrders = await prisma.$transaction(async (tx) => {
+    await (tx as any).purchaseQuotation.update({
+      where: { id: quotationId },
       data: {
-        id: randomUUID(),
-        poNumber,
-        date: new Date(),
-        supplierId: quotation.supplierId,
-        purchaseQuotationId: quotationId,
-        status: "Pending",
-        notes,
-        totalAmount,
+        status: "confirm",
+        confirmationDate,
         updatedAt: new Date(),
-      } as any,
+      },
     });
 
-    await tx.purchaseOrderItem.createMany({
-      data: poItems.map((item: any) => ({
-        id: randomUUID(),
-        purchaseOrderId: created.id,
-        partId: item.partId,
-        quantity: item.quantity,
-        unitCost: item.unitCost,
-        totalCost: item.totalCost,
-        receivedQty: 0,
-      })),
-    });
+    const orders: Array<{
+      id: string;
+      poNumber: string;
+      status: string;
+      totalAmount: number;
+      consignee: string | null;
+    }> = [];
 
-    return created;
+    const poNumbers = await reserveImportPoNumbers(lanesWithItems.length, tx);
+
+    for (const [laneIndex, lane] of lanesWithItems.entries()) {
+      const poItems = laneItems[lane];
+      const totalAmount = poItems.reduce((sum, row) => sum + row.totalCost, 0);
+      const poNumber = poNumbers[laneIndex];
+      const consignee = PO_LANE_CONSIGNEE[lane];
+      const notes = `Created from purchase quotation ${quotation.quotationNo}${
+        requestNo ? ` (Inquiry ${requestNo})` : ""
+      } - ${consignee.toUpperCase()}`;
+
+      const created = await tx.purchaseOrder.create({
+        data: {
+          id: randomUUID(),
+          poNumber,
+          date: confirmationDate,
+          supplierId: quotation.supplierId,
+          purchaseQuotationId: quotationId,
+          consignee,
+          status: "Pending",
+          notes,
+          totalAmount,
+          updatedAt: new Date(),
+        } as any,
+      });
+
+      await tx.purchaseOrderItem.createMany({
+        data: poItems.map((row) => ({
+          id: randomUUID(),
+          purchaseOrderId: created.id,
+          partId: row.partId,
+          quantity: row.quantity,
+          unitCost: row.unitCost,
+          totalCost: row.totalCost,
+          receivedQty: 0,
+        })),
+      });
+
+      orders.push({
+        id: created.id,
+        poNumber: created.poNumber,
+        status: created.status,
+        totalAmount: created.totalAmount,
+        consignee: (created as any).consignee ?? null,
+      });
+    }
+
+    return orders;
   });
 
   return {
-    id: order.id,
-    poNumber: order.poNumber,
-    status: order.status,
-    totalAmount: order.totalAmount,
+    quotation: {
+      id: quotation.id,
+      quotationNo: quotation.quotationNo,
+      status: "confirm",
+      confirmationDate,
+    },
+    purchaseOrders: createdOrders,
   };
 }
 
@@ -260,6 +469,120 @@ const parseDateOrNow = (value: any) => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
+
+const resolveLastQuotationFcRate = (item: {
+  fcRate?: number | null;
+  revisedFcRate?: number | null;
+}) => {
+  const revised = Number(item.revisedFcRate || 0);
+  if (revised > 0) return revised;
+  return Number(item.fcRate || 0);
+};
+
+async function getLastSupplierFcRatesByPartIds(
+  supplierId: string,
+  partIds: string[],
+  excludeQuotationId?: string | null,
+): Promise<Map<string, number>> {
+  const uniquePartIds = Array.from(
+    new Set(partIds.map((id) => String(id || "").trim()).filter(Boolean)),
+  );
+  const normalizedSupplierId = String(supplierId || "").trim();
+  if (!normalizedSupplierId || uniquePartIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await prisma.purchaseQuotationItem.findMany({
+    where: {
+      partId: { in: uniquePartIds },
+      PurchaseQuotation: {
+        supplierId: normalizedSupplierId,
+        ...(excludeQuotationId
+          ? { id: { not: String(excludeQuotationId) } }
+          : {}),
+      },
+    },
+    select: {
+      partId: true,
+      fcRate: true,
+      revisedFcRate: true,
+      createdAt: true,
+      PurchaseQuotation: {
+        select: {
+          quotationDate: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  rows.sort((a, b) => {
+    const dateA = new Date(a.PurchaseQuotation?.quotationDate || 0).getTime();
+    const dateB = new Date(b.PurchaseQuotation?.quotationDate || 0).getTime();
+    if (dateB !== dateA) return dateB - dateA;
+    const createdA = new Date(a.PurchaseQuotation?.createdAt || 0).getTime();
+    const createdB = new Date(b.PurchaseQuotation?.createdAt || 0).getTime();
+    if (createdB !== createdA) return createdB - createdA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const rateMap = new Map<string, number>();
+  for (const row of rows) {
+    const partId = String(row.partId || "");
+    if (!partId || rateMap.has(partId)) continue;
+    const rate = resolveLastQuotationFcRate(row);
+    if (rate > 0) {
+      rateMap.set(partId, rate);
+    }
+  }
+
+  return rateMap;
+}
+
+async function attachLastSupplierFcRates(
+  supplierId: string,
+  items: any[],
+  excludeQuotationId?: string | null,
+) {
+  const rateMap = await getLastSupplierFcRatesByPartIds(
+    supplierId,
+    items.map((item) => item.partId),
+    excludeQuotationId,
+  );
+  return items.map((item) => ({
+    ...item,
+    lastFcRate: rateMap.get(String(item.partId)) ?? 0,
+  }));
+}
+
+router.get("/suppliers/:supplierId/last-fc-rates", async (req: Request, res: Response) => {
+  try {
+    const supplierId = String(req.params.supplierId || "").trim();
+    if (!supplierId) {
+      return res.status(400).json({ error: "Supplier id is required." });
+    }
+
+    const partIds = String(req.query.part_ids || "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const excludeQuotationId = req.query.exclude_quotation_id
+      ? String(req.query.exclude_quotation_id).trim()
+      : null;
+
+    const rateMap = await getLastSupplierFcRatesByPartIds(
+      supplierId,
+      partIds,
+      excludeQuotationId,
+    );
+
+    res.json({
+      data: Object.fromEntries(rateMap.entries()),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.get("/alternate-parts/:partId", async (req: Request, res: Response) => {
   try {
@@ -1194,6 +1517,12 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       }));
     }
 
+    items = await attachLastSupplierFcRates(
+      requestRow.supplierId || requestRow.Supplier?.id,
+      items,
+      existingQuotationId,
+    );
+
     res.json({
       data: {
         requestId: requestRow.id,
@@ -1421,9 +1750,19 @@ router.get("/quotations", async (req: Request, res: Response) => {
       Math.min(1000, parseInt(String(req.query.limit || "50"), 10) || 50),
     );
     const skip = (page - 1) * limit;
+    const statusFilter = String(req.query.status || "")
+      .trim()
+      .toLowerCase();
+    const where =
+      statusFilter === "confirm"
+        ? { status: "confirm" }
+        : statusFilter === "open"
+          ? { status: { not: "confirm" } }
+          : undefined;
 
     const [rows, total] = await Promise.all([
       purchaseQuotationModel.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: "desc" },
@@ -1455,11 +1794,13 @@ router.get("/quotations", async (req: Request, res: Response) => {
               id: true,
               poNumber: true,
               status: true,
+              consignee: true,
             },
+            orderBy: { createdAt: "asc" },
           },
         },
       }),
-      purchaseQuotationModel.count(),
+      purchaseQuotationModel.count({ where }),
     ]);
 
     res.json({
@@ -1511,6 +1852,15 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
             createdAt: true,
             consignee: true,
             batchId: true,
+            PurchaseImportRequestItem: {
+              select: {
+                partId: true,
+                currentStock: true,
+                khiQuantity: true,
+                isbQuantity: true,
+                otherQuantity: true,
+              },
+            },
           },
         },
         PurchaseQuotationItem: {
@@ -1547,6 +1897,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
         quotationNo: row.quotationNo,
         quotationDate: row.quotationDate,
         revisedQuotationDate: row.revisedQuotationDate,
+        confirmationDate: row.confirmationDate,
         quotationType: row.quotationType,
         terms: row.terms || null,
         status: row.status,
@@ -1564,26 +1915,39 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
           name: row.Supplier?.companyName || row.Supplier?.name || "-",
           currency: row.Supplier?.currencyName || row.currency || "USD",
         },
-        items: (row.PurchaseQuotationItem || []).map((item: any) => ({
-          partId: item.partId,
-          masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-          partNo: item.Part?.partNo || "",
-          description: item.Part?.description || "",
-          brand: item.Part?.Brand?.name || "",
-          demandQuantity: Number(item.demandQuantity || 0),
-          quotationQuantity: Number(item.quotationQuantity || 0),
-          shipDays: Number(item.shipDays || 0),
-          fcRate: Number(item.fcRate || 0),
-          fcAmount: Number(item.fcAmount || 0),
-          lcRate: Number(item.lcRate || 0),
-          lcAmount: Number(item.lcAmount || 0),
-          revisedFcRate: Number(item.revisedFcRate || 0),
-          revisedFcAmount: Number(item.revisedFcAmount || 0),
-          revisedLcRate: Number(item.revisedLcRate || 0),
-          revisedLcAmount: Number(item.revisedLcAmount || 0),
-          weight: Number(item.weight || 0),
-          totalWeight: Number(item.totalWeight || 0),
-        })),
+        items: await attachLastSupplierFcRates(
+          row.supplierId,
+          (row.PurchaseQuotationItem || []).map((item: any) => {
+            const split = (row.PurchaseImportRequest?.PurchaseImportRequestItem || []).find(
+              (requestItem: any) => String(requestItem.partId) === String(item.partId),
+            );
+            return {
+            partId: item.partId,
+            masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
+            partNo: item.Part?.partNo || "",
+            description: item.Part?.description || "",
+            brand: item.Part?.Brand?.name || "",
+            currentStock: Number(split?.currentStock || 0),
+            demandQuantity: Number(item.demandQuantity || 0),
+            quotationQuantity: Number(item.quotationQuantity || 0),
+            khiQuantity: Number(split?.khiQuantity || 0),
+            isbQuantity: Number(split?.isbQuantity || 0),
+            otherQuantity: Number(split?.otherQuantity || 0),
+            shipDays: Number(item.shipDays || 0),
+            fcRate: Number(item.fcRate || 0),
+            fcAmount: Number(item.fcAmount || 0),
+            lcRate: Number(item.lcRate || 0),
+            lcAmount: Number(item.lcAmount || 0),
+            revisedFcRate: Number(item.revisedFcRate || 0),
+            revisedFcAmount: Number(item.revisedFcAmount || 0),
+            revisedLcRate: Number(item.revisedLcRate || 0),
+            revisedLcAmount: Number(item.revisedLcAmount || 0),
+            weight: Number(item.weight || 0),
+            totalWeight: Number(item.totalWeight || 0),
+          };
+          }),
+          row.id,
+        ),
       },
     });
   } catch (error: any) {
@@ -1931,6 +2295,13 @@ router.put("/quotations/:quotationId/status", async (req: Request, res: Response
       updatePayload.revisedQuotationDate = new Date();
     }
 
+    if (status === "confirm") {
+      return res.status(400).json({
+        error:
+          "Use the quotation confirmation form to confirm and create purchase orders.",
+      });
+    }
+
     const updated = await purchaseQuotationModel.update({
       where: { id: quotationId },
       data: updatePayload,
@@ -1943,29 +2314,37 @@ router.put("/quotations/:quotationId/status", async (req: Request, res: Response
       },
     });
 
-    let purchaseOrder: {
-      id: string;
-      poNumber: string;
-      status: string;
-      totalAmount?: number;
-    } | null = null;
-
-    if (status === "confirm") {
-      try {
-        purchaseOrder = await createPurchaseOrderFromQuotation(quotationId);
-      } catch (convertError: any) {
-        return res.status(400).json({
-          error:
-            convertError?.message ||
-            "Quotation was confirmed but purchase order could not be created.",
-          data: updated,
-        });
-      }
-    }
-
-    res.json({ data: updated, purchaseOrder });
+    res.json({ data: updated });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/quotations/:quotationId/confirm", async (req: Request, res: Response) => {
+  try {
+    const quotationId = String(req.params.quotationId || "").trim();
+    if (!quotationId) {
+      return res.status(400).json({ error: "Quotation id is required." });
+    }
+
+    const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
+    const items = itemsRaw
+      .map((item: any) => ({
+        partId: String(item?.partId || "").trim(),
+        confirmQuantity: Math.max(0, Math.floor(Number(item?.confirmQuantity || 0))),
+      }))
+      .filter((item: { partId: string }) => item.partId);
+
+    const result = await confirmPurchaseQuotation(quotationId, {
+      confirmationDate: req.body?.confirmationDate,
+      items,
+    });
+
+    res.json(result);
+  } catch (error: any) {
+    const message = error?.message || "Failed to confirm quotation.";
+    const status = message.includes("not found") ? 404 : 400;
+    res.status(status).json({ error: message });
   }
 });
 
@@ -1976,8 +2355,15 @@ router.post("/quotations/:quotationId/convert-to-po", async (req: Request, res: 
       return res.status(400).json({ error: "Quotation id is required." });
     }
 
-    const purchaseOrder = await createPurchaseOrderFromQuotation(quotationId);
-    res.status(201).json({ data: purchaseOrder });
+    const result = await confirmPurchaseQuotation(quotationId, {
+      confirmationDate: new Date(),
+      items: null,
+    });
+    const purchaseOrder = result.purchaseOrders[0];
+    if (!purchaseOrder) {
+      return res.status(400).json({ error: "No purchase order was created." });
+    }
+    res.status(201).json({ data: purchaseOrder, purchaseOrders: result.purchaseOrders });
   } catch (error: any) {
     const message = error?.message || "Failed to create purchase order.";
     const status = message.includes("not found") ? 404 : 400;
@@ -2040,6 +2426,7 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
         poNumber: po.poNumber,
         date: po.date,
         status: po.status,
+        consignee: po.consignee,
         totalAmount: po.totalAmount,
         notes: po.notes,
         supplier: po.Supplier
@@ -2109,6 +2496,10 @@ router.get("/requests", async (req: Request, res: Response) => {
                 },
               },
             },
+          },
+          PurchaseQuotation: {
+            select: { id: true, status: true, quotationNo: true },
+            orderBy: { createdAt: "desc" },
           },
         },
       }),

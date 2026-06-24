@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -581,6 +582,7 @@ export const SupplierManagement = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <ListNumberHeader />
                   <TableHead className="w-10">
                     <Checkbox
                       checked={
@@ -590,7 +592,6 @@ export const SupplierManagement = () => {
                       onCheckedChange={handleSelectAll}
                     />
                   </TableHead>
-                  <TableHead className="text-xs font-medium">SR. NO</TableHead>
                   <TableHead className="text-xs font-medium">NAME</TableHead>
                   <TableHead className="text-xs font-medium">ADDRESS</TableHead>
                   <TableHead className="text-xs font-medium">EMAIL</TableHead>
@@ -625,6 +626,11 @@ export const SupplierManagement = () => {
                 ) : (
                   suppliers.map((supplier, index) => (
                     <TableRow key={supplier.id} className="hover:bg-muted/20">
+                      <ListNumberCell
+                        index={index}
+                        page={currentPage}
+                        pageSize={rowsPerPage}
+                      />
                       <TableCell>
                         <Checkbox
                           checked={selectedIds.includes(supplier.id)}
@@ -632,9 +638,6 @@ export const SupplierManagement = () => {
                             handleSelectOne(supplier.id, checked as boolean)
                           }
                         />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {(currentPage - 1) * rowsPerPage + index + 1}
                       </TableCell>
                       <TableCell className="text-xs max-w-[150px] truncate">
                         {supplier.name || "-"}

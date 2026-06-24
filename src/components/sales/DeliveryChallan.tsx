@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -911,6 +912,7 @@ export const DeliveryChallan = () => {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/30">
+                        <ListNumberHeader />
                         <TableHead className="text-xs font-semibold">Challan No</TableHead>
                         <TableHead className="text-xs font-semibold">Customer</TableHead>
                         <TableHead className="text-xs font-semibold">Delivery Date</TableHead>
@@ -924,13 +926,14 @@ export const DeliveryChallan = () => {
                     <TableBody>
                       {filteredChallans.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                             {loadingChallans ? "Loading challans..." : "No delivery challans found. Create a new challan to get started."}
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredChallans.map((challan) => (
+                        filteredChallans.map((challan, index) => (
                           <TableRow key={challan.id}>
+                            <ListNumberCell index={index} />
                             <TableCell>
                               <div>
                                 <p className="font-medium text-primary text-sm">{challan.challanNo}</p>

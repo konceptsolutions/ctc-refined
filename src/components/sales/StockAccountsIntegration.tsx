@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Link2, Package, DollarSign, RefreshCw, CheckCircle, AlertTriangle, Settings } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -303,6 +304,7 @@ export const StockAccountsIntegration = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <ListNumberHeader />
                   <TableHead>Timestamp</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Action</TableHead>
@@ -312,8 +314,9 @@ export const StockAccountsIntegration = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {logs.map((log) => (
+                {logs.map((log, index) => (
                   <TableRow key={log.id}>
+                    <ListNumberCell index={index} />
                     <TableCell className="text-sm">{log.timestamp}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">

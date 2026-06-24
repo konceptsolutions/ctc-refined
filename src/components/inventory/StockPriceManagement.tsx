@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -585,6 +586,7 @@ export const StockPriceManagement = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/30">
+                    <ListNumberHeader />
                     <TableHead className="w-10">
                       <Checkbox
                         checked={isAllSelected}
@@ -606,18 +608,18 @@ export const StockPriceManagement = () => {
                 <TableBody>
                   {partsLoading ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                         Loading parts...
                       </TableCell>
                     </TableRow>
                   ) : paginatedItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                         No items found matching your criteria
                       </TableCell>
                     </TableRow>
                   ) : (
-                    paginatedItems.map((item) => (
+                    paginatedItems.map((item, index) => (
                     <TableRow
                       key={item.id}
                       className={cn(
@@ -625,6 +627,7 @@ export const StockPriceManagement = () => {
                         item.isModified && "bg-green-50/50"
                       )}
                     >
+                      <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
                       <TableCell>
                         <Checkbox
                           checked={selectedIds.has(item.id)}
@@ -717,6 +720,7 @@ export const StockPriceManagement = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
+                <ListNumberHeader />
                 <TableHead className="text-xs font-medium">DATE & TIME</TableHead>
                 <TableHead className="text-xs font-medium text-center">ITEMS UPDATED</TableHead>
                 <TableHead className="text-xs font-medium">PRICE FIELD</TableHead>
@@ -729,19 +733,20 @@ export const StockPriceManagement = () => {
             <TableBody>
               {historyLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Loading history...
                   </TableCell>
                 </TableRow>
               ) : history.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     No price update history found
                   </TableCell>
                 </TableRow>
               ) : (
-                history.map((item) => (
+                history.map((item, index) => (
                 <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
+                  <ListNumberCell index={index} />
                   <TableCell className="text-sm text-foreground">{item.date}</TableCell>
                   <TableCell className="text-sm font-medium text-center text-primary">{item.itemsUpdated}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{item.priceField}</TableCell>

@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Users, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
@@ -414,6 +415,7 @@ export const LedgersTab = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <ListNumberHeader />
                 <TableHead className="w-12">
                   <Checkbox
                     checked={
@@ -448,7 +450,7 @@ export const LedgersTab = () => {
               {loading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     className="text-center py-8 text-muted-foreground"
                   >
                     Loading...
@@ -456,7 +458,7 @@ export const LedgersTab = () => {
                 </TableRow>
               ) : entries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">
+                  <TableCell colSpan={9} className="text-center py-8">
                     <div className="flex flex-col items-center gap-2">
                       <Users className="h-12 w-12 text-muted-foreground/50" />
                       <p className="text-muted-foreground font-medium">
@@ -474,8 +476,9 @@ export const LedgersTab = () => {
                 </TableRow>
               ) : (
                 <>
-                  {entries.map((entry) => (
+                  {entries.map((entry, index) => (
                     <TableRow key={entry.id} className="hover:bg-muted/30">
+                      <ListNumberCell index={index} />
                       <TableCell>
                         <Checkbox
                           checked={selectedEntries.includes(entry.id)}
@@ -503,7 +506,7 @@ export const LedgersTab = () => {
                   ))}
                   {/* Total Row */}
                   <TableRow className="bg-muted font-bold">
-                    <TableCell colSpan={5} className="text-right">
+                    <TableCell colSpan={6} className="text-right">
                       Total:
                     </TableCell>
                     <TableCell className="text-right">

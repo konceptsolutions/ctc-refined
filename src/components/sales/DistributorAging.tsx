@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Popover,
   PopoverContent,
@@ -292,6 +293,7 @@ export const DistributorAging = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <ListNumberHeader />
                   <TableHead className="font-semibold">Customer</TableHead>
                   <TableHead className="font-semibold">Invoice Number</TableHead>
                   <TableHead className="font-semibold">Invoice Date</TableHead>
@@ -304,19 +306,20 @@ export const DistributorAging = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : filteredData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No overdue unpaid invoices found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredData.map((item) => (
+                  filteredData.map((item, index) => (
                     <TableRow key={item.id} className="hover:bg-muted/30">
+                      <ListNumberCell index={index} />
                       <TableCell className="font-medium text-foreground">{item.customer}</TableCell>
                       <TableCell>{item.invoice_no}</TableCell>
                       <TableCell>{format(new Date(item.invoice_date), "dd/MM/yyyy")}</TableCell>

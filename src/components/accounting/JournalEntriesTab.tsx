@@ -6,6 +6,7 @@ import { apiClient } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -489,6 +490,7 @@ export const JournalEntriesTab = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <ListNumberHeader />
                   <TableHead className="w-[120px]">Entry No.</TableHead>
                   <TableHead className="w-[100px]">Date</TableHead>
                   <TableHead>Reference</TableHead>
@@ -500,11 +502,12 @@ export const JournalEntriesTab = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredEntries.map((entry) => (
+                {filteredEntries.map((entry, index) => (
                   <TableRow
                     key={entry.id}
                     className="transition-colors hover:bg-muted/30"
                   >
+                    <ListNumberCell index={index} />
                     <TableCell className="font-medium text-primary">{entry.entryNo}</TableCell>
                     <TableCell>{entry.date}</TableCell>
                     <TableCell>{entry.reference}</TableCell>

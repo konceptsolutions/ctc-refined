@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, FileText } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -224,7 +225,7 @@ const TopSellingItemsTab = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>#</TableHead>
+                      <ListNumberHeader />
                       <TableHead>Part No</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead>Brand</TableHead>
@@ -237,9 +238,9 @@ const TopSellingItemsTab = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((item) => (
+                    {items.map((item, index) => (
                       <TableRow key={item.partId}>
-                        <TableCell>{item.rank}</TableCell>
+                        <ListNumberCell index={index} />
                         <TableCell className="font-medium">{item.partNo}</TableCell>
                         <TableCell>{item.description || "-"}</TableCell>
                         <TableCell>{item.brand || "-"}</TableCell>

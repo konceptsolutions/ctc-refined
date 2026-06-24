@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -694,6 +695,7 @@ export const StockTransfer = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <ListNumberHeader />
                 <TableHead className="w-12">
                   <Checkbox
                     checked={selectedIds.length === transfers.length && transfers.length > 0}
@@ -709,19 +711,20 @@ export const StockTransfer = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                     Loading transfers...
                   </TableCell>
                 </TableRow>
               ) : transfers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                     No transfers found. Click "+ Transfer" to create one.
                   </TableCell>
                 </TableRow>
               ) : (
-                transfers.map((transfer) => (
+                transfers.map((transfer, index) => (
                   <TableRow key={transfer.id} className="hover:bg-muted/20 transition-colors">
+                    <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
                     <TableCell>
                       <Checkbox
                         checked={selectedIds.includes(transfer.id)}

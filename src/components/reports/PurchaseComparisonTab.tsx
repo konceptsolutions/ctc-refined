@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { toast } from "sonner";
@@ -199,6 +200,7 @@ const PurchaseComparisonTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>SUPPLIER</TableHead>
                 <TableHead className="text-right">CURRENT PERIOD</TableHead>
                 <TableHead className="text-right">PREVIOUS PERIOD</TableHead>
@@ -210,19 +212,20 @@ const PurchaseComparisonTab = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <p className="text-muted-foreground">Loading data...</p>
                   </TableCell>
                 </TableRow>
               ) : comparisonData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <p className="text-muted-foreground">No data available. Select periods and click Compare.</p>
                   </TableCell>
                 </TableRow>
               ) : (
-                comparisonData.map((row) => (
+                comparisonData.map((row, index) => (
                 <TableRow key={row.supplier}>
+                  <ListNumberCell index={index} />
                   <TableCell className="font-medium">{row.supplier}</TableCell>
                   <TableCell className="text-right">Rs {row.currentPeriod.toLocaleString()}</TableCell>
                   <TableCell className="text-right">Rs {row.previousPeriod.toLocaleString()}</TableCell>

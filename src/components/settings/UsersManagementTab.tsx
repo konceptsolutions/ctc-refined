@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Dialog,
   DialogContent,
@@ -405,6 +406,7 @@ export const UsersManagementTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>USER</TableHead>
                 <TableHead>EMAIL</TableHead>
                 <TableHead>ROLE</TableHead>
@@ -416,19 +418,20 @@ export const UsersManagementTab = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     No users found
                   </TableCell>
                 </TableRow>
               ) : (
-                users.map((user) => (
+                users.map((user, index) => (
                 <TableRow key={user.id}>
+                  <ListNumberCell index={index} page={page} pageSize={limit} />
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="w-9 h-9">

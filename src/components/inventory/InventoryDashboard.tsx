@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
@@ -500,6 +501,7 @@ export const InventoryDashboard = () => {
               <Table>
                 <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow>
+                    <ListNumberHeader />
                     <TableHead className="text-xs">Part No</TableHead>
                     <TableHead className="text-xs">Name</TableHead>
                     <TableHead className="text-xs">Brand</TableHead>
@@ -508,8 +510,9 @@ export const InventoryDashboard = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {topItemsByValue.map((item) => (
+                  {topItemsByValue.map((item, index) => (
                     <TableRow key={item.id} className="hover:bg-muted/50">
+                      <ListNumberCell index={index} />
                       <TableCell className="text-xs font-medium">{item.partNo}</TableCell>
                       <TableCell className="text-xs truncate max-w-[120px]">{item.name}</TableCell>
                       <TableCell className="text-xs">{item.brand}</TableCell>
@@ -535,6 +538,7 @@ export const InventoryDashboard = () => {
               <Table>
                 <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow>
+                    <ListNumberHeader />
                     <TableHead className="text-xs">Part No</TableHead>
                     <TableHead className="text-xs">Name</TableHead>
                     <TableHead className="text-xs">Brand</TableHead>
@@ -543,8 +547,9 @@ export const InventoryDashboard = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {topItemsByQty.map((item) => (
+                  {topItemsByQty.map((item, index) => (
                     <TableRow key={item.id} className="hover:bg-muted/50">
+                      <ListNumberCell index={index} />
                       <TableCell className="text-xs font-medium">{item.partNo}</TableCell>
                       <TableCell className="text-xs truncate max-w-[120px]">{item.name}</TableCell>
                       <TableCell className="text-xs">{item.brand}</TableCell>
@@ -572,6 +577,7 @@ export const InventoryDashboard = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <ListNumberHeader />
                   <TableHead className="text-xs uppercase">Store/Location</TableHead>
                   <TableHead className="text-xs uppercase text-center">Items</TableHead>
                   <TableHead className="text-xs uppercase text-center">Total Quantity</TableHead>
@@ -582,6 +588,7 @@ export const InventoryDashboard = () => {
               <TableBody>
                 {storeDistribution.map((store, index) => (
                   <TableRow key={index}>
+                    <ListNumberCell index={index} />
                     <TableCell className="font-medium">{store.store}</TableCell>
                     <TableCell className="text-center">{store.items}</TableCell>
                     <TableCell className="text-center font-medium">{store.qty}</TableCell>

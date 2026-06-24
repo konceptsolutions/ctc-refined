@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Dialog,
   DialogContent,
@@ -338,6 +339,7 @@ export const ReserveStock = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <ListNumberHeader />
                   <TableHead>Part No</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Brand</TableHead>
@@ -349,6 +351,7 @@ export const ReserveStock = () => {
               <TableBody>
                 {filteredItems.map((item, index) => (
                   <TableRow key={item.partId || index}>
+                    <ListNumberCell index={index} />
                     <TableCell className="font-medium">{item.partNo}</TableCell>
                     <TableCell>{item.description}</TableCell>
                     <TableCell>{item.brand || "-"}</TableCell>

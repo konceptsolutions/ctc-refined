@@ -27,6 +27,11 @@ import { Users, MoreVertical, Eye, Download, Plus } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import {
+  getListRowNumber,
+  LIST_NUMBER_HEAD_CLASS,
+  LIST_NUMBER_CELL_CLASS,
+} from "@/components/ui/list-table-number";
 
 interface MainGroup {
   id: string;
@@ -260,6 +265,7 @@ export const MainGroupsTab = () => {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
+                <th className={LIST_NUMBER_HEAD_CLASS}>#</th>
                 <th className="p-3 text-left font-medium text-primary underline cursor-pointer hover:text-primary/80 transition-colors">
                   Code
                 </th>
@@ -274,13 +280,13 @@ export const MainGroupsTab = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={3} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={4} className="p-8 text-center text-muted-foreground">
                     Loading main groups...
                   </td>
                 </tr>
               ) : paginatedGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="p-8 text-center">
+                  <td colSpan={4} className="p-8 text-center">
                     <p className="text-muted-foreground mb-4">No main groups found.</p>
                     <Button
                       variant="default"
@@ -302,6 +308,9 @@ export const MainGroupsTab = () => {
                     index % 2 === 0 ? "bg-muted/10" : ""
                   }`}
                 >
+                  <td className={`p-3 ${LIST_NUMBER_CELL_CLASS}`}>
+                    {getListRowNumber(index, currentPage, parseInt(pageSize))}
+                  </td>
                   <td className="p-3 text-primary font-medium">{group.code}</td>
                   <td className="p-3 text-primary font-medium">{group.name}</td>
                   <td className="p-3 text-muted-foreground">{group.type || "N/A"}</td>

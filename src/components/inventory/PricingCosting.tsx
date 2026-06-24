@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -2083,6 +2084,7 @@ export const PricingCosting = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <ListNumberHeader />
                       <TableHead className="w-10">
                         <Checkbox
                           checked={
@@ -2120,7 +2122,7 @@ export const PricingCosting = () => {
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={16} className="text-center py-8">
+                        <TableCell colSpan={17} className="text-center py-8">
                           <div className="flex items-center justify-center">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                             <span className="ml-2">Loading...</span>
@@ -2130,14 +2132,14 @@ export const PricingCosting = () => {
                     ) : paginatedItems.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={16}
+                          colSpan={17}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No pricing data found
                         </TableCell>
                       </TableRow>
                     ) : (
-                      paginatedItems.map((item) => {
+                      paginatedItems.map((item, index) => {
                         const hasChanges =
                           (typeof item.newCost !== "string" &&
                             item.newCost !== item.cost) ||
@@ -2154,6 +2156,7 @@ export const PricingCosting = () => {
                             className={item.modified ? "bg-warning/5" : ""}
                             data-part-id={item.id}
                           >
+                            <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
                             <TableCell>
                               <Checkbox
                                 checked={item.selected}
@@ -2654,6 +2657,7 @@ export const PricingCosting = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <ListNumberHeader />
                     <TableHead>Part / Master</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Category</TableHead>
@@ -2669,7 +2673,7 @@ export const PricingCosting = () => {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8">
+                      <TableCell colSpan={11} className="text-center py-8">
                         <div className="flex items-center justify-center">
                           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                           <span className="ml-2">Loading...</span>
@@ -2682,7 +2686,7 @@ export const PricingCosting = () => {
                         return (
                           <TableRow>
                             <TableCell
-                              colSpan={10}
+                              colSpan={11}
                               className="text-center text-muted-foreground py-8"
                             >
                               No items found matching the filters
@@ -2691,7 +2695,7 @@ export const PricingCosting = () => {
                         );
                       }
 
-                      return profitabilityPaginatedItems.map((item) => {
+                      return profitabilityPaginatedItems.map((item, index) => {
                         const price = Number(item.priceA || 0);
                         const avgPrice = Number(item.avgPrice || 0);
                         const margin =
@@ -2701,6 +2705,7 @@ export const PricingCosting = () => {
 
                         return (
                           <TableRow key={item.id}>
+                            <ListNumberCell index={index} page={profitabilityPage} pageSize={profitabilityItemsPerPage} />
                             <TableCell className="font-medium part-code-font font-mono">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span>{item.partNo}</span>

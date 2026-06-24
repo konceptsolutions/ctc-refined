@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -206,6 +207,7 @@ const ExpensesReportTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>DATE</TableHead>
                 <TableHead>REFERENCE</TableHead>
                 <TableHead>CATEGORY</TableHead>
@@ -217,7 +219,7 @@ const ExpensesReportTab = () => {
             <TableBody>
               {expenseData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center">
+                  <TableCell colSpan={7} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <DollarSign className="w-10 h-10 opacity-50" />
                       <p>No expense records found</p>
@@ -226,8 +228,9 @@ const ExpensesReportTab = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                expenseData.map((record) => (
+                expenseData.map((record, index) => (
                   <TableRow key={record.id}>
+                    <ListNumberCell index={index} />
                     <TableCell>{record.date}</TableCell>
                     <TableCell className="font-medium">{record.reference}</TableCell>
                     <TableCell>

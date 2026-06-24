@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Users, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -223,6 +224,7 @@ export const TrialBalanceReport = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <ListNumberHeader />
                 <TableHead className="font-semibold underline w-1/2">Account</TableHead>
                 <TableHead className="font-semibold underline text-right">Dr</TableHead>
                 <TableHead className="font-semibold underline text-right">Cr</TableHead>
@@ -231,13 +233,13 @@ export const TrialBalanceReport = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : trialBalanceData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                     No data found
                   </TableCell>
                 </TableRow>
@@ -247,6 +249,7 @@ export const TrialBalanceReport = () => {
                   key={index} 
                   className={`${account.isSubgroup ? 'bg-muted/20' : 'hover:bg-muted/30'}`}
                 >
+                  {account.isSubgroup ? <TableCell /> : <ListNumberCell index={index} />}
                   <TableCell 
                     className={account.isSubgroup ? 'font-medium' : ''}
                     style={getIndent(account.level || 0)}
@@ -263,6 +266,7 @@ export const TrialBalanceReport = () => {
               )))}
               {/* Total Row */}
               <TableRow className="bg-muted/40 font-bold">
+                <TableCell />
                 <TableCell className="text-right">Total</TableCell>
                 <TableCell className="text-right">{formatNumber(totalDebit)}</TableCell>
                 <TableCell className="text-right">{formatNumber(totalCredit)}</TableCell>

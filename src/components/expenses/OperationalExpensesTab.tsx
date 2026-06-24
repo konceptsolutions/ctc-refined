@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Dialog,
   DialogContent,
@@ -196,6 +197,7 @@ export const OperationalExpensesTab = ({ onUpdate }: OperationalExpensesTabProps
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <ListNumberHeader />
                 <TableHead>DATE</TableHead>
                 <TableHead>VOUCHER NO.</TableHead>
                 <TableHead>EXPENSE TYPE</TableHead>
@@ -206,8 +208,9 @@ export const OperationalExpensesTab = ({ onUpdate }: OperationalExpensesTabProps
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredExpenses.map((expense) => (
+              {filteredExpenses.map((expense, index) => (
                 <TableRow key={expense.id} className="hover:bg-muted/30 transition-colors">
+                  <ListNumberCell index={index} />
                   <TableCell className="font-medium">{expense.date}</TableCell>
                   <TableCell className="text-primary font-medium">{expense.voucherNo}</TableCell>
                   <TableCell>

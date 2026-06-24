@@ -3,6 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -127,6 +128,7 @@ export const StorePurchaseOrderDetail = ({
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <ListNumberHeader />
                         <TableHead className="w-[120px]">Part No</TableHead>
                         <TableHead className="min-w-[200px]">Description</TableHead>
                         <TableHead className="w-[120px]">Brand</TableHead>
@@ -138,8 +140,9 @@ export const StorePurchaseOrderDetail = ({
                     </TableHeader>
                     <TableBody>
                       {order.items && order.items.length > 0 ? (
-                        order.items.map((item) => (
+                        order.items.map((item, index) => (
                           <TableRow key={item.id} className="h-12">
+                            <ListNumberCell index={index} className="align-middle" />
                             <TableCell className="font-medium align-middle">{item.part_no}</TableCell>
                             <TableCell className="align-middle">{item.part_description || "-"}</TableCell>
                             <TableCell className="align-middle">{item.brand || "N/A"}</TableCell>
@@ -153,7 +156,7 @@ export const StorePurchaseOrderDetail = ({
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                             No items found in this order
                           </TableCell>
                         </TableRow>

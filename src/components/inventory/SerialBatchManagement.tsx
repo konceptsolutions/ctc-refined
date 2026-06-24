@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -185,6 +186,7 @@ export const SerialBatchManagement = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
+                <ListNumberHeader />
                 <TableHead className="text-xs font-medium">Serial No</TableHead>
                 <TableHead className="text-xs font-medium">Part No</TableHead>
                 <TableHead className="text-xs font-medium">Description</TableHead>
@@ -195,8 +197,9 @@ export const SerialBatchManagement = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredSerials.map((item) => (
+              {filteredSerials.map((item, index) => (
                 <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
+                  <ListNumberCell index={index} />
                   <TableCell className="text-sm font-medium text-primary">{item.serialNo}</TableCell>
                   <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>
@@ -230,6 +233,7 @@ export const SerialBatchManagement = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
+                <ListNumberHeader />
                 <TableHead className="text-xs font-medium">Batch No</TableHead>
                 <TableHead className="text-xs font-medium">Part No</TableHead>
                 <TableHead className="text-xs font-medium">Description</TableHead>
@@ -242,8 +246,9 @@ export const SerialBatchManagement = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredBatches.map((item) => (
+              {filteredBatches.map((item, index) => (
                 <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
+                  <ListNumberCell index={index} />
                   <TableCell className="text-sm font-medium text-primary">{item.batchNo}</TableCell>
                   <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>

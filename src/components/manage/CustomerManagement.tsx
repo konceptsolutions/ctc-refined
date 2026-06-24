@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -548,6 +549,7 @@ export const CustomerManagement = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <ListNumberHeader />
                   <TableHead className="w-10">
                     <Checkbox
                       checked={
@@ -557,7 +559,6 @@ export const CustomerManagement = () => {
                       onCheckedChange={handleSelectAll}
                     />
                   </TableHead>
-                  <TableHead className="text-xs font-medium">Sr. No</TableHead>
                   <TableHead className="text-xs font-medium">Title</TableHead>
                   <TableHead className="text-xs font-medium">Address</TableHead>
                   <TableHead className="text-xs font-medium">Email</TableHead>
@@ -597,6 +598,11 @@ export const CustomerManagement = () => {
                 ) : (
                   customers.map((customer, index) => (
                     <TableRow key={customer.id} className="hover:bg-muted/20">
+                      <ListNumberCell
+                        index={index}
+                        page={currentPage}
+                        pageSize={rowsPerPage}
+                      />
                       <TableCell>
                         <Checkbox
                           checked={selectedIds.includes(customer.id)}
@@ -604,9 +610,6 @@ export const CustomerManagement = () => {
                             handleSelectOne(customer.id, checked as boolean)
                           }
                         />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {(currentPage - 1) * rowsPerPage + index + 1}
                       </TableCell>
                       <TableCell className="text-xs font-medium">
                         {customer.name}

@@ -24,6 +24,7 @@ import {
   TableRow,
   TableFooter,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Dialog,
   DialogContent,
@@ -1129,6 +1130,7 @@ export const ViewVouchersTab = ({
           <Table>
             <TableHeader>
               <TableRow className="bg-primary/10">
+                <ListNumberHeader />
                 <TableHead className="w-[40px]">
                   <Checkbox
                     checked={
@@ -1138,7 +1140,6 @@ export const ViewVouchersTab = ({
                     onCheckedChange={handleSelectAll}
                   />
                 </TableHead>
-                <TableHead className="font-semibold text-primary">Sr No</TableHead>
                 <TableHead className="font-semibold text-primary">Voucher no</TableHead>
                 <TableHead className="font-semibold text-primary">Voucher Name</TableHead>
                 <TableHead className="font-semibold text-primary">Mode</TableHead>
@@ -1153,13 +1154,18 @@ export const ViewVouchersTab = ({
             <TableBody>
               {paginatedVouchers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                     No vouchers found
                   </TableCell>
                 </TableRow>
               ) : (
                 paginatedVouchers.map((voucher, index) => (
                   <TableRow key={voucher.id} className="hover:bg-muted/50">
+                    <ListNumberCell
+                      index={index}
+                      page={currentPage}
+                      pageSize={itemsPerPage}
+                    />
                     <TableCell>
                       <Checkbox
                         checked={selectedVouchers.includes(voucher.id)}
@@ -1168,7 +1174,6 @@ export const ViewVouchersTab = ({
                         }
                       />
                     </TableCell>
-                    <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                     <TableCell className="text-primary font-medium">
                       <div>
                         {voucher.voucherNumber}
@@ -1628,7 +1633,7 @@ export const ViewVouchersTab = ({
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
-                      <TableHead className="w-12">#</TableHead>
+                      <ListNumberHeader />
                       <TableHead>Account</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead className="text-right">Debit (Rs)</TableHead>
@@ -1638,7 +1643,7 @@ export const ViewVouchersTab = ({
                   <TableBody>
                     {(viewingVoucher.entries || viewingVoucher.VoucherEntry || [])?.map((entry, idx) => (
                       <TableRow key={entry.id}>
-                        <TableCell>{idx + 1}</TableCell>
+                        <ListNumberCell index={idx} />
                         <TableCell>{getAccountLabel(entry.account, entry.Account)}</TableCell>
                         <TableCell>{entry.description || "-"}</TableCell>
                         <TableCell className="text-right">

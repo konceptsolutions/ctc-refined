@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Download, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -182,6 +183,7 @@ const SalesByTypeTab = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <ListNumberHeader />
                 <TableHead>SALES TYPE</TableHead>
                 <TableHead className="text-center">TRANSACTIONS</TableHead>
                 <TableHead className="text-right">TOTAL AMOUNT</TableHead>
@@ -193,7 +195,7 @@ const SalesByTypeTab = () => {
             <TableBody>
               {salesData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center">
+                  <TableCell colSpan={7} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <BarChart3 className="w-10 h-10 opacity-50" />
                       <p>No sales type data found</p>
@@ -202,8 +204,9 @@ const SalesByTypeTab = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                salesData.map((row) => (
+                salesData.map((row, index) => (
                   <TableRow key={row.type}>
+                    <ListNumberCell index={index} />
                     <TableCell className="font-medium">{row.type}</TableCell>
                     <TableCell className="text-center">{row.transactions}</TableCell>
                     <TableCell className="text-right">Rs {row.totalAmount.toLocaleString()}</TableCell>

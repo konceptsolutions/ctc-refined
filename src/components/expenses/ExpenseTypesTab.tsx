@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -255,6 +256,7 @@ export const ExpenseTypesTab = ({ onUpdate }: ExpenseTypesTabProps) => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <ListNumberHeader />
                 <TableHead className="w-[100px]">CODE</TableHead>
                 <TableHead>NAME</TableHead>
                 <TableHead>CATEGORY</TableHead>
@@ -263,9 +265,10 @@ export const ExpenseTypesTab = ({ onUpdate }: ExpenseTypesTabProps) => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredTypes.map((type) => {
+              {filteredTypes.map((type, index) => {
                 return (
                   <TableRow key={type.id} className="hover:bg-muted/30 transition-colors">
+                    <ListNumberCell index={index} />
                     <TableCell className="font-medium text-primary">{type.code}</TableCell>
                     <TableCell>
                       <div>

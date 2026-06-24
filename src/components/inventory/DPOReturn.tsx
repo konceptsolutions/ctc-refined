@@ -32,6 +32,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
     Select,
     SelectContent,
@@ -268,6 +269,7 @@ export const DPOReturn = () => {
                 <Table>
                     <TableHeader>
                         <TableRow className="hover:bg-transparent">
+                            <ListNumberHeader />
                             <TableHead className="w-[150px]">Return No.</TableHead>
                             <TableHead className="w-[150px]">DPO No.</TableHead>
                             <TableHead>Supplier</TableHead>
@@ -280,7 +282,7 @@ export const DPOReturn = () => {
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={7} className="h-48 text-center text-muted-foreground">
+                                <TableCell colSpan={8} className="h-48 text-center text-muted-foreground">
                                     <div className="flex flex-col items-center justify-center gap-2">
                                         <RotateCcw className="w-8 h-8 animate-spin opacity-20" />
                                         <span>Loading returns...</span>
@@ -289,7 +291,7 @@ export const DPOReturn = () => {
                             </TableRow>
                         ) : returns.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={7} className="h-48 text-center text-muted-foreground">
+                                <TableCell colSpan={8} className="h-48 text-center text-muted-foreground">
                                     <div className="flex flex-col items-center justify-center gap-2">
                                         <Search className="w-12 h-12 opacity-10" />
                                         <p>No returns found</p>
@@ -297,8 +299,9 @@ export const DPOReturn = () => {
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            returns.map((ret) => (
+                            returns.map((ret, index) => (
                                 <TableRow key={ret.id} className="group hover:bg-muted/30 transition-colors">
+                                    <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
                                     <TableCell className="font-mono font-medium">{ret.returnNumber}</TableCell>
                                     <TableCell>{ret.dpoNumber}</TableCell>
                                     <TableCell className="max-w-[200px] truncate">{ret.supplierName}</TableCell>

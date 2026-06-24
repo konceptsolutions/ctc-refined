@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Separator } from "@/components/ui/separator";
 import { getCurrentDatePakistan, getStartOfCurrentMonthPakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
@@ -229,6 +230,7 @@ export const IncomeStatementTab = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <ListNumberHeader />
                   <TableHead className="font-semibold underline">Account</TableHead>
                   <TableHead className="font-semibold underline text-right">Amount</TableHead>
                 </TableRow>
@@ -236,13 +238,13 @@ export const IncomeStatementTab = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                       Loading income statement data...
                     </TableCell>
                   </TableRow>
                 ) : !data ? (
                   <TableRow>
-                    <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                       No data available
                     </TableCell>
                   </TableRow>
@@ -252,6 +254,7 @@ export const IncomeStatementTab = () => {
                     {data.revenue.accounts.length > 0 ? (
                       data.revenue.accounts.map((account, index) => (
                         <TableRow key={`rev-${account.accountId}-${index}`} className="hover:bg-muted/30">
+                          <ListNumberCell index={index} />
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>
@@ -262,7 +265,7 @@ export const IncomeStatementTab = () => {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={2} className="text-center text-sm text-muted-foreground py-2">
+                        <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-2">
                           No revenue accounts found
                         </TableCell>
                       </TableRow>
@@ -270,6 +273,7 @@ export const IncomeStatementTab = () => {
                     
                     {/* Total Revenue */}
                     <TableRow className="bg-muted/20 border-t border-border/50">
+                      <TableCell />
                       <TableCell className="font-semibold">
                         Total Revenue
                       </TableCell>
@@ -280,7 +284,7 @@ export const IncomeStatementTab = () => {
 
                     {/* Separator */}
                     <TableRow>
-                      <TableCell colSpan={2} className="p-0">
+                      <TableCell colSpan={3} className="p-0">
                         <Separator />
                       </TableCell>
                     </TableRow>
@@ -289,6 +293,7 @@ export const IncomeStatementTab = () => {
                     {data.cost.accounts.length > 0 ? (
                       data.cost.accounts.map((account, index) => (
                         <TableRow key={`cost-${account.accountId}-${index}`} className="hover:bg-muted/30">
+                          <ListNumberCell index={index} />
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>
@@ -299,7 +304,7 @@ export const IncomeStatementTab = () => {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={2} className="text-center text-sm text-muted-foreground py-2">
+                        <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-2">
                           No cost accounts found
                         </TableCell>
                       </TableRow>
@@ -307,6 +312,7 @@ export const IncomeStatementTab = () => {
                     
                     {/* Total Cost */}
                     <TableRow className="bg-muted/20 border-t border-border/50">
+                      <TableCell />
                       <TableCell className="font-semibold">
                         Total Cost
                       </TableCell>
@@ -317,6 +323,7 @@ export const IncomeStatementTab = () => {
 
                     {/* Gross Profit/Loss */}
                     <TableRow className="bg-muted/30 border-t border-border/50">
+                      <TableCell />
                       <TableCell className="font-bold">
                         {data.gross.label}
                       </TableCell>
@@ -327,7 +334,7 @@ export const IncomeStatementTab = () => {
 
                     {/* Separator */}
                     <TableRow>
-                      <TableCell colSpan={2} className="p-0">
+                      <TableCell colSpan={3} className="p-0">
                         <Separator />
                       </TableCell>
                     </TableRow>
@@ -336,6 +343,7 @@ export const IncomeStatementTab = () => {
                     {data.expenses.accounts.length > 0 ? (
                       data.expenses.accounts.map((account, index) => (
                         <TableRow key={`exp-${account.accountId}-${index}`} className="hover:bg-muted/30">
+                          <ListNumberCell index={index} />
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>
@@ -346,7 +354,7 @@ export const IncomeStatementTab = () => {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={2} className="text-center text-sm text-muted-foreground py-2">
+                        <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-2">
                           No expense accounts found
                         </TableCell>
                       </TableRow>
@@ -354,6 +362,7 @@ export const IncomeStatementTab = () => {
                     
                     {/* Total Expenses */}
                     <TableRow className="bg-muted/20 border-t border-border/50">
+                      <TableCell />
                       <TableCell className="font-semibold">
                         Total Expenses
                       </TableCell>
@@ -364,6 +373,7 @@ export const IncomeStatementTab = () => {
 
                     {/* Net Profit/Loss */}
                     <TableRow className="bg-muted/30 border-t-2 border-border font-bold">
+                      <TableCell />
                       <TableCell className="font-bold">
                         {data.net.label}
                       </TableCell>

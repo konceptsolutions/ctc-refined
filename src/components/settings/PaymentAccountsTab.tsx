@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Dialog,
   DialogContent,
@@ -286,6 +287,7 @@ export const PaymentAccountsTab = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <ListNumberHeader />
                   <TableHead>Account Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Account Number</TableHead>
@@ -295,8 +297,9 @@ export const PaymentAccountsTab = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {accounts.map((account) => (
+                {accounts.map((account, index) => (
                   <TableRow key={account.id}>
+                    <ListNumberCell index={index} />
                     <TableCell className="font-medium">{account.name}</TableCell>
                     <TableCell>
                       <Badge

@@ -162,9 +162,9 @@ Pakistan financial year: **1 July to 30 June**.
 
 **AI chat flow:**
 1. Say e.g. "I want customer wise sale report"
-2. Choose **Cash Sale** (walk-in) or **Party Sale** (registered credit customer)
-3. **Party Sale** — select customer from the list
-4. **Cash Sale** — type the customer name as on invoices
+2. Choose **Walk-in** or **Party** (registered credit customer)
+3. **Party** — select customer from the list
+4. **Walk-in** — type the customer name as on invoices
 5. View summary in chat → **Print PDF** for full invoice line details
 
 Default period: **current Pakistan financial year** (1 Jul – today). You can also say "customer wise sale report for May" or "for current financial year".

@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -292,6 +293,7 @@ export const ItemMaster = () => {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/30">
+              <ListNumberHeader />
               <TableHead className="text-xs font-medium">Part No</TableHead>
               <TableHead className="text-xs font-medium">Brand</TableHead>
               <TableHead className="text-xs font-medium">Origin</TableHead>
@@ -305,8 +307,9 @@ export const ItemMaster = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredItems.map((item) => (
+            {filteredItems.map((item, index) => (
               <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
+                <ListNumberCell index={index} />
                 <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{item.brand}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{item.origin}</TableCell>

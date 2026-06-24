@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -72,7 +73,7 @@ import { StoreEditPO } from "./StoreEditPO";
 import { StoreEditSalesInvoice } from "./StoreEditSalesInvoice";
 import { StoreLocationAssign } from "./StoreLocationAssign";
 import { StoreAdjustedItem } from "./StoreAdjustedItem";
-import { printDeliveryChallan } from "@/lib/printDeliveryChallan";
+import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { getUserRole, isStoreUserRole } from "@/utils/auth";
 
@@ -1079,24 +1080,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
       const rawItems = invoiceData.SalesInvoiceItem || invoiceData.items || [];
       const challanItems = rawItems.map((item: any) => {
-        const selectedLocations = Array.isArray(item.InvoiceRackShelf)
-          ? item.InvoiceRackShelf
-          : [];
-        const location = selectedLocations.length
-          ? selectedLocations
-              .map((loc: any) => {
-                const rack =
-                  loc?.Rack?.code ||
-                  loc?.Rack?.codeNo ||
-                  loc?.Rack?.rackCode ||
-                  loc?.rackCode ||
-                  "-";
-                const shelf =
-                  loc?.Shelf?.shelfNo || loc?.Shelf?.name || loc?.shelfNo || "-";
-                return `${rack}-${shelf}`;
-              })
-              .join(", ")
-          : "-";
+        const location = getChallanItemLocation(item, invoiceData);
 
         return {
           partNo: item.partNo || "-",
@@ -1863,6 +1847,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Type</TableHead>
@@ -1876,8 +1861,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {mixedOrders.map((row) => (
+                          {mixedOrders.map((row, index) => (
                             <TableRow key={`${row.type}-${row.id}`}>
+                              <ListNumberCell index={index} />
                               <TableCell className="font-medium">{row.number}</TableCell>
                               <TableCell>
                                 {row.date ? format(new Date(row.date), "MMM dd, yyyy") : "-"}
@@ -2085,6 +2071,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Type</TableHead>
@@ -2097,8 +2084,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                         </TableHeader>
                         <TableBody>
                           {/* Purchase Orders */}
-                          {displayPurchaseOrders.map((order) => (
+                          {displayPurchaseOrders.map((order, index) => (
                             <TableRow key={`po-${order.id}`}>
+                              <ListNumberCell index={index} />
                               <TableCell className="font-medium">
                                 {order.po_number}
                               </TableCell>
@@ -2159,8 +2147,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                             </TableRow>
                           ))}
                           {/* Direct Purchase Orders (DPOs) */}
-                          {displayDPOs.map((order) => (
+                          {displayDPOs.map((order, index) => (
                             <TableRow key={`dpo-${order.id}`}>
+                              <ListNumberCell
+                                index={displayPurchaseOrders.length + index}
+                              />
                               <TableCell className="font-medium">
                                 {order.dpo_no}
                               </TableCell>
@@ -2249,6 +2240,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Customer</TableHead>
@@ -2259,8 +2251,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredStockOutOrders.map((invoice) => (
+                          {filteredStockOutOrders.map((invoice, index) => (
                             <TableRow key={invoice.id}>
+                              <ListNumberCell index={index} />
                               <TableCell className="font-medium">
                                 {invoice.invoiceNo}
                               </TableCell>
@@ -2329,6 +2322,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Type</TableHead>
@@ -2340,8 +2334,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredTransferInOrders.map((order) => (
+                          {filteredTransferInOrders.map((order, index) => (
                             <TableRow key={`tin-${order.id}`}>
+                              <ListNumberCell index={index} />
                               <TableCell className="font-medium">{order.dpo_no}</TableCell>
                               <TableCell>
                                 {format(new Date(order.date), "MMM dd, yyyy")}
@@ -2448,6 +2443,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Branch</TableHead>
@@ -2458,8 +2454,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredTransferOutOrders.map((invoice) => (
+                          {filteredTransferOutOrders.map((invoice, index) => (
                             <TableRow key={`tout-${invoice.id}`}>
+                              <ListNumberCell index={index} />
                               <TableCell className="font-medium">
                                 {invoice.invoiceNo}
                               </TableCell>
@@ -2528,6 +2525,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <ListNumberHeader />
                             <TableHead>Date</TableHead>
                             <TableHead>Subject</TableHead>
                             <TableHead>Items</TableHead>
@@ -2538,8 +2536,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredAdjustments.map((adjustment) => (
+                          {filteredAdjustments.map((adjustment, index) => (
                             <TableRow key={adjustment.id}>
+                              <ListNumberCell index={index} />
                               <TableCell>
                                 {format(new Date(adjustment.date), "MMM dd, yyyy")}
                               </TableCell>
@@ -2622,6 +2621,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <ListNumberHeader />
                             <TableHead>Model</TableHead>
                             <TableHead className="text-right">Quantity Used</TableHead>
                           </TableRow>
@@ -2629,25 +2629,26 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                         <TableBody>
                           {!selectedAssociationPartId ? (
                             <TableRow>
-                              <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
+                              <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                                 Select an item to view model association.
                               </TableCell>
                             </TableRow>
                           ) : associationLoading ? (
                             <TableRow>
-                              <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
+                              <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                                 Loading model association...
                               </TableCell>
                             </TableRow>
                           ) : associationRows.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
+                              <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                                 No model association found for this item.
                               </TableCell>
                             </TableRow>
                           ) : (
                             associationRows.map((row, idx) => (
                               <TableRow key={`${row.model}-${idx}`}>
+                                <ListNumberCell index={idx} />
                                 <TableCell>{row.model}</TableCell>
                                 <TableCell className="text-right font-medium">
                                   {row.qtyUsed.toLocaleString("en-US")}

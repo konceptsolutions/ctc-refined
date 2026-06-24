@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1007,6 +1008,7 @@ export const ModelsPage = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <ListNumberHeader />
                   <TableHead className="font-semibold">Model</TableHead>
                   <TableHead className="font-semibold text-center w-40">
                     Qty. Used
@@ -1020,6 +1022,7 @@ export const ModelsPage = () => {
                 {/* Add New Model Row */}
                 {isAddingNew && (
                   <TableRow>
+                    <TableCell />
                     <TableCell>
                       <Input
                         placeholder="Enter model name..."
@@ -1064,15 +1067,16 @@ export const ModelsPage = () => {
                 {loadingModels ? (
                   <TableRow>
                     <TableCell
-                      colSpan={3}
+                      colSpan={4}
                       className="text-center text-muted-foreground py-8"
                     >
                       Loading models...
                     </TableCell>
                   </TableRow>
                 ) : partModels.length > 0 ? (
-                  partModels.map((model) => (
+                  partModels.map((model, index) => (
                     <TableRow key={model.id}>
+                      <ListNumberCell index={index} />
                       <TableCell>
                         {editingModelId === model.id ? (
                           <Input
@@ -1139,7 +1143,7 @@ export const ModelsPage = () => {
                 ) : !isAddingNew ? (
                   <TableRow>
                     <TableCell
-                      colSpan={3}
+                      colSpan={4}
                       className="text-center text-muted-foreground py-8"
                     >
                       No models found for this part. Click "Add Model" to create

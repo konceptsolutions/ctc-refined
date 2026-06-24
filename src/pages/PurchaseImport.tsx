@@ -25,6 +25,11 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import {
+  getListRowNumber,
+  LIST_NUMBER_HEAD_CLASS,
+  LIST_NUMBER_CELL_CLASS,
+} from "@/components/ui/list-table-number";
 
 type PurchaseImportTab = "inquiry" | "quotation" | "purchase-order";
 
@@ -205,6 +210,11 @@ type PurchaseImportRequestRecord = {
     demandQuantity: number;
     totalWeight: number;
   }>;
+  PurchaseQuotation?: Array<{
+    id: string;
+    status: string;
+    quotationNo?: string | null;
+  }>;
 };
 
 type PurchaseQuotationRecord = {
@@ -217,6 +227,7 @@ type PurchaseQuotationRecord = {
   lcTotal: number;
   quotationDate: string;
   revisedQuotationDate?: string | null;
+  confirmationDate?: string | null;
   PurchaseImportRequest?: {
     id: string;
     requestNo?: string | null;
@@ -233,11 +244,12 @@ type PurchaseQuotationRecord = {
     quotationQuantity: number;
     totalWeight: number;
   }>;
-  PurchaseOrder?: {
+  PurchaseOrder?: Array<{
     id: string;
     poNumber: string;
     status: string;
-  } | null;
+    consignee?: string | null;
+  }>;
 };
 
 type ImportPurchaseOrderRecord = {
@@ -245,6 +257,7 @@ type ImportPurchaseOrderRecord = {
   poNumber: string;
   date: string;
   status: string;
+  consignee?: string | null;
   totalAmount: number;
   notes?: string | null;
   itemsCount: number;
@@ -270,6 +283,9 @@ type PurchaseQuotationDetailItem = {
   currentStock?: number;
   demandQuantity: number;
   quotationQuantity: number;
+  khiQuantity?: number;
+  isbQuantity?: number;
+  otherQuantity?: number;
   shipDays: number;
   fcRate: number;
   fcAmount: number;
@@ -281,6 +297,45 @@ type PurchaseQuotationDetailItem = {
   revisedLcAmount: number;
   weight: number;
   totalWeight: number;
+  lastFcRate?: number;
+};
+
+const isQuotationRevised = (detail: PurchaseQuotationDetailPayload | null) => {
+  if (!detail) return false;
+  const type = String(detail.quotationType || "").trim().toLowerCase();
+  const status = String(detail.status || "").trim().toLowerCase();
+  return type === "revised" || status === "revise";
+};
+
+const getEffectiveQuotationItemValues = (
+  item: PurchaseQuotationDetailItem,
+  isRevised: boolean,
+) => {
+  if (isRevised) {
+    const fcRate =
+      Number(item.revisedFcRate || 0) > 0
+        ? Number(item.revisedFcRate)
+        : Number(item.fcRate || 0);
+    const fcAmount =
+      Number(item.revisedFcAmount || 0) > 0
+        ? Number(item.revisedFcAmount)
+        : Number(item.fcAmount || 0);
+    const lcRate =
+      Number(item.revisedLcRate || 0) > 0
+        ? Number(item.revisedLcRate)
+        : Number(item.lcRate || 0);
+    const lcAmount =
+      Number(item.revisedLcAmount || 0) > 0
+        ? Number(item.revisedLcAmount)
+        : Number(item.lcAmount || 0);
+    return { fcRate, fcAmount, lcRate, lcAmount };
+  }
+  return {
+    fcRate: Number(item.fcRate || 0),
+    fcAmount: Number(item.fcAmount || 0),
+    lcRate: Number(item.lcRate || 0),
+    lcAmount: Number(item.lcAmount || 0),
+  };
 };
 
 type PurchaseQuotationDetailPayload = {
@@ -288,6 +343,7 @@ type PurchaseQuotationDetailPayload = {
   quotationNo: string;
   quotationDate: string;
   revisedQuotationDate?: string | null;
+  confirmationDate?: string | null;
   quotationType: string;
   terms?: string | null;
   status: string;
@@ -370,6 +426,7 @@ type PurchaseQuotationContextPayload = {
       shipDays?: number;
       fcRate?: number;
       revisedFcRate?: number;
+      lastFcRate?: number;
     }
   >;
 };
@@ -384,6 +441,7 @@ type PurchaseQuotationFormItem = PurchaseQuotationContextItem & {
   fcRateText: string;
   revisedFcRate: number;
   revisedFcRateText: string;
+  lastFcRate: number;
 };
 
 const RATE_INPUT_PATTERN = /^\d*\.?\d{0,4}$/;
@@ -403,12 +461,39 @@ const parseRateInput = (raw: string): number => {
 const QUOTATION_QTY_COL_CLASS = "text-right p-2 border-b w-24 whitespace-nowrap";
 const QUOTATION_SHIP_DAYS_COL_CLASS = "text-right p-2 border-b w-20 whitespace-nowrap";
 const QUOTATION_FC_RATE_COL_CLASS = "text-right p-2 border-b w-24 whitespace-nowrap";
+const QUOTATION_LAST_FC_RATE_COL_CLASS =
+  "text-right p-2 border-b w-28 whitespace-nowrap";
 const QUOTATION_QTY_INPUT_CLASS =
   "h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto";
 const QUOTATION_SHIP_DAYS_INPUT_CLASS =
   "h-8 w-20 min-w-0 text-right text-xs px-2 ml-auto";
 const QUOTATION_FC_RATE_INPUT_CLASS =
   "h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto";
+
+const formatLastFcRateDisplay = (value?: number) => {
+  const rate = Number(value || 0);
+  if (!Number.isFinite(rate) || rate <= 0) return "-";
+  return rate.toFixed(4);
+};
+
+const loadLastFcRateForPart = async (
+  supplierId: string,
+  partId: string,
+  excludeQuotationId?: string | null,
+): Promise<number> => {
+  if (!supplierId || !partId) return 0;
+  try {
+    const res = await apiClient.getLastSupplierQuotationFcRates(
+      supplierId,
+      [partId],
+      excludeQuotationId || undefined,
+    );
+    const rates = (res as any)?.data || {};
+    return Number(rates[partId] || 0);
+  } catch {
+    return 0;
+  }
+};
 
 const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
   rowId: createRowId(),
@@ -430,6 +515,7 @@ const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
   fcRateText: "",
   revisedFcRate: 0,
   revisedFcRateText: "",
+  lastFcRate: 0,
   loadingPartDetails: false,
 });
 
@@ -2325,6 +2411,7 @@ const PurchaseImportRequestView = ({
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
               <tr>
+                <th className={`${LIST_NUMBER_HEAD_CLASS} p-2 border-b`}>#</th>
                 <th className="text-left p-2 border-b">Supplier</th>
                 <th className="text-left p-2 border-b">Country</th>
                 <th className="text-left p-2 border-b">Area</th>
@@ -2335,13 +2422,16 @@ const PurchaseImportRequestView = ({
             <tbody>
               {supplierRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-3 text-center text-muted-foreground">
+                  <td colSpan={6} className="p-3 text-center text-muted-foreground">
                     No suppliers found.
                   </td>
                 </tr>
               ) : (
-                supplierRows.map((supplier) => (
+                supplierRows.map((supplier, index) => (
                   <tr key={supplier.supplierId} className="border-b">
+                    <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
+                      {getListRowNumber(index)}
+                    </td>
                     <td className="p-2">{supplier.name}</td>
                     <td className="p-2">{supplier.country}</td>
                     <td className="p-2">{supplier.area}</td>
@@ -2388,6 +2478,7 @@ const PurchaseImportRequestView = ({
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
               <tr>
+                <th className={`${LIST_NUMBER_HEAD_CLASS} p-2 border-b`}>#</th>
                 <th className="text-left p-2 border-b">Item</th>
                 <th className="text-left p-2 border-b">Brand</th>
                 <th className="text-right p-2 border-b">Stock</th>
@@ -2402,7 +2493,7 @@ const PurchaseImportRequestView = ({
             <tbody>
               {sortedItemRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-3 text-center text-muted-foreground">
+                  <td colSpan={10} className="p-3 text-center text-muted-foreground">
                     No items found.
                   </td>
                 </tr>
@@ -2412,6 +2503,9 @@ const PurchaseImportRequestView = ({
                     key={item.id || `${item.partId}-${index}`}
                     className="border-b"
                   >
+                    <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
+                      {getListRowNumber(index)}
+                    </td>
                     <td className="p-2">
                       <div className="font-medium">
                         {item.masterPartNo} | {item.partNo}
@@ -2434,7 +2528,7 @@ const PurchaseImportRequestView = ({
             </tbody>
             <tfoot>
               <tr className="bg-muted/40 font-semibold">
-                <td className="p-2" colSpan={6}>
+                <td className="p-2" colSpan={7}>
                   Totals
                 </td>
                 <td className="p-2 text-right">{totals.qty}</td>
@@ -2560,6 +2654,7 @@ const PurchaseQuotationForm = ({
                 revisedFcRateText: formatRateInput(
                   Number(item.revisedFcRate || 0),
                 ),
+                lastFcRate: Number(item.lastFcRate || 0),
                 loadingPartDetails: false,
               }))
             : [],
@@ -2627,6 +2722,7 @@ const PurchaseQuotationForm = ({
         brand: "",
         currentStock: 0,
         weight: 0,
+        lastFcRate: 0,
         loadingPartDetails: false,
       });
       return;
@@ -2660,6 +2756,13 @@ const PurchaseQuotationForm = ({
           weight: 0,
         } as PartOption);
       const fields = buildQuotationPartFieldsFromSelection(option, details, partOptions);
+      const lastFcRate = context?.supplier?.id
+        ? await loadLastFcRateForPart(
+            context.supplier.id,
+            partId,
+            existingQuotationId,
+          )
+        : 0;
       setRows((prev) =>
         prev.map((row) => {
           if (row.rowId !== rowId) return row;
@@ -2667,6 +2770,7 @@ const PurchaseQuotationForm = ({
           return {
             ...row,
             ...fields,
+            lastFcRate,
             quotationQuantity:
               Number(row.quotationQuantity || 0) > 0
                 ? Number(row.quotationQuantity)
@@ -2784,10 +2888,17 @@ const PurchaseQuotationForm = ({
         details,
         partOptions,
       );
+      const lastFcRate = context?.supplier?.id
+        ? await loadLastFcRateForPart(
+            context.supplier.id,
+            alternate.id,
+            existingQuotationId,
+          )
+        : 0;
       setRows((prev) =>
         prev.map((row) =>
           row.rowId === rowId
-            ? { ...row, ...fields, loadingPartDetails: false }
+            ? { ...row, ...fields, lastFcRate, loadingPartDetails: false }
             : row,
         ),
       );
@@ -3056,6 +3167,7 @@ const PurchaseQuotationForm = ({
                   <th className="text-right p-2 border-b">Request QTY</th>
                   <th className={QUOTATION_QTY_COL_CLASS}>Quotation QTY</th>
                   <th className={QUOTATION_SHIP_DAYS_COL_CLASS}>Ship Days</th>
+                  <th className={QUOTATION_LAST_FC_RATE_COL_CLASS}>Last FC Rate</th>
                   <th className={QUOTATION_FC_RATE_COL_CLASS}>FC Rate</th>
                   <th className="text-right p-2 border-b">FC Amount</th>
                   <th className="text-right p-2 border-b">LC Rate</th>
@@ -3194,6 +3306,9 @@ const PurchaseQuotationForm = ({
                           }
                         />
                       </td>
+                      <td className="p-2 text-right text-muted-foreground tabular-nums">
+                        {formatLastFcRateDisplay(row.lastFcRate)}
+                      </td>
                       <td className="p-2 text-right">
                         <Input
                           type="text"
@@ -3255,7 +3370,7 @@ const PurchaseQuotationForm = ({
                     </tr>
                     {replaceRowId === row.rowId && (
                       <tr className="border-b bg-muted/20">
-                        <td colSpan={13} className="p-2">
+                        <td colSpan={14} className="p-2">
                           <div className="rounded-md border border-dashed border-border p-2">
                             <p className="text-xs font-medium mb-2">
                               Alternate items (same Part No / Master Part No)
@@ -3305,6 +3420,7 @@ const PurchaseQuotationForm = ({
                   <td className="p-2" />
                   <td className="p-2 text-right">{quotationTotals.requestQty}</td>
                   <td className="p-2 text-right">{quotationTotals.quotationQty}</td>
+                  <td className="p-2" />
                   <td className="p-2" />
                   <td className="p-2" />
                   <td className="p-2 text-right">{quotationTotals.fcAmount.toFixed(2)}</td>
@@ -3441,6 +3557,7 @@ const PurchaseQuotationRevisionForm = ({
                 revisedFcRateText: formatRateInput(
                   Number(item.revisedFcRate || 0),
                 ),
+                lastFcRate: Number((item as any).lastFcRate || 0),
                 weight: Number(item.weight || 0),
                 loadingPartDetails: false,
               }))
@@ -3566,10 +3683,13 @@ const PurchaseQuotationRevisionForm = ({
         details,
         partOptions,
       );
+      const lastFcRate = detail?.supplier?.id
+        ? await loadLastFcRateForPart(detail.supplier.id, alternate.id, quotationId)
+        : 0;
       setRows((prev) =>
         prev.map((row) =>
           row.rowId === rowId
-            ? { ...row, ...fields, loadingPartDetails: false }
+            ? { ...row, ...fields, lastFcRate, loadingPartDetails: false }
             : row,
         ),
       );
@@ -3804,6 +3924,7 @@ const PurchaseQuotationRevisionForm = ({
                   <th className="text-right p-2 border-b">Request QTY</th>
                   <th className={QUOTATION_QTY_COL_CLASS}>Quotation QTY</th>
                   <th className={QUOTATION_SHIP_DAYS_COL_CLASS}>Ship Days</th>
+                  <th className={QUOTATION_LAST_FC_RATE_COL_CLASS}>Last FC Rate</th>
                   <th className={QUOTATION_FC_RATE_COL_CLASS}>FC Rate</th>
                   <th className="text-right p-2 border-b">FC Amount</th>
                   <th className="text-right p-2 border-b">LC Rate</th>
@@ -3862,6 +3983,9 @@ const PurchaseQuotationRevisionForm = ({
                             })
                           }
                         />
+                      </td>
+                      <td className="p-2 text-right text-muted-foreground tabular-nums">
+                        {formatLastFcRateDisplay(row.lastFcRate)}
                       </td>
                       <td className="p-2 text-right">
                         <Input
@@ -3938,7 +4062,7 @@ const PurchaseQuotationRevisionForm = ({
                     </tr>
                     {replaceRowId === row.rowId && (
                       <tr className="border-b bg-muted/20">
-                        <td colSpan={17} className="p-2">
+                        <td colSpan={18} className="p-2">
                           <div className="rounded-md border border-dashed border-border p-2">
                             <p className="text-xs font-medium mb-2">
                               Alternate items (same Part No / Master Part No)
@@ -3988,6 +4112,7 @@ const PurchaseQuotationRevisionForm = ({
                   <td className="p-2" />
                   <td className="p-2 text-right">{quotationTotals.requestQty}</td>
                   <td className="p-2 text-right">{quotationTotals.quotationQty}</td>
+                  <td className="p-2" />
                   <td className="p-2" />
                   <td className="p-2" />
                   <td className="p-2 text-right">{quotationTotals.fcAmount.toFixed(2)}</td>
@@ -4222,6 +4347,7 @@ const PurchaseImportRequestTab = () => {
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
+              <th className={`${LIST_NUMBER_HEAD_CLASS} p-2 border-b`}>#</th>
               <th className="text-left p-2 border-b">Date</th>
               <th className="text-left p-2 border-b">Inquiry No</th>
               <th className="text-left p-2 border-b">Supplier</th>
@@ -4236,22 +4362,28 @@ const PurchaseImportRequestTab = () => {
           <tbody>
             {loadingRequests ? (
               <tr>
-                <td colSpan={9} className="p-4 text-center text-muted-foreground">
+                <td colSpan={10} className="p-4 text-center text-muted-foreground">
                   Loading inquiries...
                 </td>
               </tr>
             ) : requests.length === 0 ? (
               <tr>
-                <td colSpan={9} className="p-4 text-center text-muted-foreground">
+                <td colSpan={10} className="p-4 text-center text-muted-foreground">
                   No inquiries found. Use <span className="font-medium">New Inquiry</span> or the Inquiry Form tab.
                 </td>
               </tr>
             ) : (
-              requests.map((row) => {
+              requests.map((row, index) => {
                 const isConfirmed =
                   String(row.status || "")
                     .trim()
                     .toLowerCase() === "confirm";
+                const hasConfirmedQuotation = (row.PurchaseQuotation || []).some(
+                  (quotation) =>
+                    String(quotation.status || "")
+                      .trim()
+                      .toLowerCase() === "confirm",
+                );
                 const itemRows = row.PurchaseImportRequestItem || [];
                 const totalQty = itemRows.reduce(
                   (sum, item) => sum + Number(item.demandQuantity || 0),
@@ -4269,6 +4401,9 @@ const PurchaseImportRequestTab = () => {
                 const hasSupplier = Boolean(row.supplierId || row.Supplier?.id);
                 return (
                   <tr key={row.id} className="border-b hover:bg-muted/20">
+                    <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
+                      {getListRowNumber(index)}
+                    </td>
                     <td className="p-2">
                       {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}
                     </td>
@@ -4287,19 +4422,23 @@ const PurchaseImportRequestTab = () => {
                           type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() =>
+                          onClick={() => {
+                            if (hasConfirmedQuotation) return;
                             isConfirmed
                               ? handleUnconfirmRequest(row.id)
-                              : handleConfirmRequest(row.id)
-                          }
+                              : handleConfirmRequest(row.id);
+                          }}
                           disabled={
                             confirmingRequestId === row.id ||
-                            (!isConfirmed && !hasSupplier)
+                            (!isConfirmed && !hasSupplier) ||
+                            hasConfirmedQuotation
                           }
                           title={
-                            !hasSupplier && !isConfirmed
-                              ? "Select at least one supplier before confirming"
-                              : undefined
+                            hasConfirmedQuotation
+                              ? "Cannot change inquiry status after quotation is confirmed"
+                              : !hasSupplier && !isConfirmed
+                                ? "Select at least one supplier before confirming"
+                                : undefined
                           }
                         >
                           <Check className="w-3.5 h-3.5 mr-1" />
@@ -4309,9 +4448,16 @@ const PurchaseImportRequestTab = () => {
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={!isConfirmed}
+                          disabled={!isConfirmed || hasConfirmedQuotation}
+                          title={
+                            hasConfirmedQuotation
+                              ? "Quotation is already confirmed"
+                              : !isConfirmed
+                                ? "Confirm the inquiry before creating a quotation"
+                                : undefined
+                          }
                           onClick={() => {
-                            if (!isConfirmed) return;
+                            if (!isConfirmed || hasConfirmedQuotation) return;
                             setQuotationConsignee(row.consignee || null);
                             setQuotationRequestId(row.id);
                             setShowQuotationForm(true);
@@ -4377,10 +4523,407 @@ const PurchaseImportRequestTab = () => {
   );
 };
 
+type PurchaseQuotationConfirmRow = {
+  rowId: string;
+  partId: string;
+  masterPartNo: string;
+  partNo: string;
+  description: string;
+  brand: string;
+  currentStock: number;
+  demandQuantity: number;
+  quotationQuantity: number;
+  shipDays: number;
+  lastFcRate: number;
+  fcRate: number;
+  fcAmount: number;
+  lcRate: number;
+  lcAmount: number;
+  totalWeight: number;
+  khiQuantity: number;
+  isbQuantity: number;
+  otherQuantity: number;
+  confirmQuantity: number;
+};
+
+const PurchaseQuotationConfirmForm = ({
+  quotationId,
+  onSaved,
+  onCancel,
+}: {
+  quotationId: string;
+  onSaved?: () => void;
+  onCancel?: () => void;
+}) => {
+  const { toast } = useToast();
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [detail, setDetail] = useState<PurchaseQuotationDetailPayload | null>(null);
+  const [confirmationDate, setConfirmationDate] = useState(toInputDate(new Date()));
+  const [rows, setRows] = useState<PurchaseQuotationConfirmRow[]>([]);
+
+  const isRevised = isQuotationRevised(detail);
+
+  useEffect(() => {
+    const loadQuotation = async () => {
+      setLoading(true);
+      try {
+        const res = await apiClient.getPurchaseQuotationById(quotationId);
+        const data = (res as any)?.data as PurchaseQuotationDetailPayload | undefined;
+        if (!data) {
+          throw new Error("Quotation detail is unavailable.");
+        }
+        const revised = isQuotationRevised(data);
+        setDetail(data);
+        setConfirmationDate(toInputDate(new Date()));
+        setRows(
+          Array.isArray(data.items)
+            ? data.items.map((item) => {
+                const effective = getEffectiveQuotationItemValues(item, revised);
+                return {
+                  rowId: createRowId(),
+                  partId: item.partId,
+                  masterPartNo: item.masterPartNo || "",
+                  partNo: item.partNo || "",
+                  description: item.description || "",
+                  brand: item.brand || "",
+                  currentStock: Number(item.currentStock || 0),
+                  demandQuantity: Number(item.demandQuantity || 0),
+                  quotationQuantity: Number(item.quotationQuantity || 0),
+                  shipDays: Number(item.shipDays || 0),
+                  lastFcRate: Number(item.lastFcRate || 0),
+                  fcRate: effective.fcRate,
+                  fcAmount: effective.fcAmount,
+                  lcRate: effective.lcRate,
+                  lcAmount: effective.lcAmount,
+                  totalWeight: Number(item.totalWeight || 0),
+                  khiQuantity: Number(item.khiQuantity || 0),
+                  isbQuantity: Number(item.isbQuantity || 0),
+                  otherQuantity: Number(item.otherQuantity || 0),
+                  confirmQuantity: Number(item.quotationQuantity || 0),
+                };
+              })
+            : [],
+        );
+      } catch (error: any) {
+        toast({
+          title: "Failed to load quotation",
+          description:
+            error?.response?.data?.error || error?.message || "Could not load quotation detail.",
+          variant: "destructive",
+        });
+        onCancelRef.current?.();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadQuotation();
+  }, [quotationId, toast]);
+
+  const updateRow = (rowId: string, patch: Partial<PurchaseQuotationConfirmRow>) => {
+    setRows((prev) => prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)));
+  };
+
+  const hasSplitQuantities = rows.some(
+    (row) =>
+      Number(row.khiQuantity || 0) > 0 ||
+      Number(row.isbQuantity || 0) > 0 ||
+      Number(row.otherQuantity || 0) > 0,
+  );
+
+  const quotationTotals = useMemo(
+    () => ({
+      requestQty: rows.reduce((sum, row) => sum + Number(row.demandQuantity || 0), 0),
+      quotationQty: rows.reduce((sum, row) => sum + Number(row.quotationQuantity || 0), 0),
+      confirmQty: rows.reduce((sum, row) => sum + Number(row.confirmQuantity || 0), 0),
+      fcAmount: rows.reduce((sum, row) => sum + Number(row.fcAmount || 0), 0),
+      lcAmount: rows.reduce((sum, row) => sum + Number(row.lcAmount || 0), 0),
+      totalWeight: rows.reduce((sum, row) => sum + Number(row.totalWeight || 0), 0),
+    }),
+    [rows],
+  );
+
+  const handleConfirm = async () => {
+    const itemsToConfirm = rows.filter((row) => Number(row.confirmQuantity || 0) > 0);
+    if (itemsToConfirm.length === 0) {
+      toast({
+        title: "No items to confirm",
+        description: "Enter confirm quantity greater than zero for at least one item.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await apiClient.confirmPurchaseQuotation(quotationId, {
+        confirmationDate,
+        items: rows.map((row) => ({
+          partId: row.partId,
+          confirmQuantity: Number(row.confirmQuantity || 0),
+        })),
+      });
+      const purchaseOrders = (response as { purchaseOrders?: Array<{ poNumber?: string }> })
+        .purchaseOrders;
+      const poLabels = (purchaseOrders || [])
+        .map((po) => po.poNumber)
+        .filter(Boolean)
+        .join(", ");
+      toast({
+        title: "Quotation confirmed",
+        description: poLabels
+          ? `Purchase order${purchaseOrders && purchaseOrders.length > 1 ? "s" : ""} ${poLabels} created.`
+          : "Quotation has been confirmed.",
+      });
+      onSaved?.();
+    } catch (error: any) {
+      toast({
+        title: "Failed to confirm quotation",
+        description:
+          error?.response?.data?.error || error?.message || "Could not confirm quotation.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const itemTableColSpan = hasSplitQuantities ? 17 : 14;
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground">
+        Loading quotation confirmation...
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Confirm Purchase Quotation</h2>
+          <p className="text-sm text-muted-foreground">
+            Review quotation details and confirm quantities before creating purchase order
+            {hasSplitQuantities ? "s by consignee (KHI / ISB / Other)" : ""}.
+            {isRevised ? " Showing revised quotation values." : " Showing original quotation values."}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={handleConfirm} disabled={saving || !detail}>
+            {saving ? "Confirming..." : "Confirm & Create PO"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-3",
+            isRevised ? "md:grid-cols-3 lg:grid-cols-6" : "md:grid-cols-2 lg:grid-cols-5",
+          )}
+        >
+          <div className="space-y-1 min-w-0">
+            <Label>Import Inquiry No</Label>
+            <Input value={detail?.request?.requestNo || "—"} readOnly />
+          </div>
+          <div className="space-y-1 min-w-0">
+            <Label>Import Inquiry Date</Label>
+            <Input value={toInputDate(detail?.request?.requestDate)} readOnly />
+          </div>
+          <div className="space-y-1 min-w-0">
+            <Label>Quotation No</Label>
+            <Input value={detail?.quotationNo || "—"} readOnly />
+          </div>
+          <div className="space-y-1 min-w-0">
+            <Label>Quotation Date</Label>
+            <Input value={toInputDate(detail?.quotationDate)} readOnly />
+          </div>
+          {isRevised ? (
+            <div className="space-y-1 min-w-0">
+              <Label>Revised Quotation Date</Label>
+              <Input value={toInputDate(detail?.revisedQuotationDate)} readOnly />
+            </div>
+          ) : null}
+          <div className="space-y-1 min-w-0">
+            <Label>Confirmation Date</Label>
+            <Input
+              type="date"
+              value={confirmationDate}
+              onChange={(e) => setConfirmationDate(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="space-y-1 md:col-span-2 min-w-0">
+            <Label>Supplier</Label>
+            <Input value={detail?.supplier?.name || "—"} readOnly />
+          </div>
+          <div className="space-y-1 min-w-0">
+            <Label>Supplier Currency</Label>
+            <Input value={detail?.currency || detail?.supplier?.currency || "—"} readOnly />
+          </div>
+          <div className="space-y-1 min-w-0">
+            <Label>Exchange Rate</Label>
+            <Input value={Number(detail?.conversionRate || 1)} readOnly />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Items</h3>
+        {isRevised ? (
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Revised rates
+          </span>
+        ) : null}
+      </div>
+
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40">
+            <tr>
+              <th className="text-center p-2 border-b w-12">#</th>
+              <th className="text-left p-2 border-b">Item</th>
+              <th className="text-left p-2 border-b">Brand</th>
+              <th className="text-right p-2 border-b">Current Stock</th>
+              <th className="text-right p-2 border-b">Request QTY</th>
+              <th className={QUOTATION_QTY_COL_CLASS}>Quotation QTY</th>
+              <th className={QUOTATION_SHIP_DAYS_COL_CLASS}>Ship Days</th>
+              <th className={QUOTATION_LAST_FC_RATE_COL_CLASS}>Last FC Rate</th>
+              <th className={QUOTATION_FC_RATE_COL_CLASS}>
+                {isRevised ? "Revised FC Rate" : "FC Rate"}
+              </th>
+              <th className="text-right p-2 border-b">
+                {isRevised ? "Revised FC Amount" : "FC Amount"}
+              </th>
+              <th className="text-right p-2 border-b">
+                {isRevised ? "Revised LC Rate" : "LC Rate"}
+              </th>
+              <th className="text-right p-2 border-b">
+                {isRevised ? "Revised LC Amount" : "LC Amount"}
+              </th>
+              <th className="text-right p-2 border-b">Total Weight</th>
+              {hasSplitQuantities ? (
+                <>
+                  <th className="text-right p-2 border-b">KHI QTY</th>
+                  <th className="text-right p-2 border-b">ISB QTY</th>
+                  <th className="text-right p-2 border-b">Other QTY</th>
+                </>
+              ) : null}
+              <th className="text-right p-2 border-b min-w-[120px]">Confirm QTY</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={itemTableColSpan} className="p-4 text-center text-muted-foreground">
+                  No quotation items found.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, index) => (
+                <tr key={row.rowId} className="border-b hover:bg-muted/20">
+                  <td className="p-2 text-center text-muted-foreground tabular-nums">
+                    {index + 1}
+                  </td>
+                  <td
+                    className="p-2 min-w-[280px]"
+                    title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
+                  >
+                    <div className="font-medium">{row.masterPartNo || "-"}</div>
+                    <div className="text-xs text-muted-foreground">{row.description || "-"}</div>
+                  </td>
+                  <td className="p-2">{row.brand || "-"}</td>
+                  <td className="p-2 text-right tabular-nums">{row.currentStock}</td>
+                  <td className="p-2 text-right tabular-nums">{row.demandQuantity}</td>
+                  <td className="p-2 text-right tabular-nums">{row.quotationQuantity}</td>
+                  <td className="p-2 text-right tabular-nums">{row.shipDays}</td>
+                  <td className="p-2 text-right text-muted-foreground tabular-nums">
+                    {formatLastFcRateDisplay(row.lastFcRate)}
+                  </td>
+                  <td className="p-2 text-right tabular-nums">{row.fcRate.toFixed(4)}</td>
+                  <td className="p-2 text-right tabular-nums">{row.fcAmount.toFixed(2)}</td>
+                  <td className="p-2 text-right tabular-nums">{row.lcRate.toFixed(2)}</td>
+                  <td className="p-2 text-right tabular-nums">{row.lcAmount.toFixed(2)}</td>
+                  <td className="p-2 text-right tabular-nums">{row.totalWeight.toFixed(2)}</td>
+                  {hasSplitQuantities ? (
+                    <>
+                      <td className="p-2 text-right tabular-nums">{row.khiQuantity}</td>
+                      <td className="p-2 text-right tabular-nums">{row.isbQuantity}</td>
+                      <td className="p-2 text-right tabular-nums">{row.otherQuantity}</td>
+                    </>
+                  ) : null}
+                  <td className="p-2 text-right">
+                    <Input
+                      type="number"
+                      min={0}
+                      className={QUOTATION_QTY_INPUT_CLASS}
+                      value={row.confirmQuantity === 0 ? "" : row.confirmQuantity}
+                      onChange={(e) =>
+                        updateRow(row.rowId, {
+                          confirmQuantity: Math.max(0, Number(e.target.value || 0)),
+                        })
+                      }
+                    />
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+          {rows.length > 0 ? (
+            <tfoot>
+              <tr className="bg-muted/40 font-semibold border-t">
+                <td className="p-2" />
+                <td className="p-2">Totals</td>
+                <td className="p-2" />
+                <td className="p-2" />
+                <td className="p-2 text-right">{quotationTotals.requestQty}</td>
+                <td className="p-2 text-right">{quotationTotals.quotationQty}</td>
+                <td className="p-2" />
+                <td className="p-2" />
+                <td className="p-2" />
+                <td className="p-2 text-right">{quotationTotals.fcAmount.toFixed(2)}</td>
+                <td className="p-2" />
+                <td className="p-2 text-right">{quotationTotals.lcAmount.toFixed(2)}</td>
+                <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
+                {hasSplitQuantities ? (
+                  <>
+                    <td className="p-2" />
+                    <td className="p-2" />
+                    <td className="p-2" />
+                  </>
+                ) : null}
+                <td className="p-2 text-right">{quotationTotals.confirmQty}</td>
+              </tr>
+            </tfoot>
+          ) : null}
+        </table>
+      </div>
+
+      <div className="max-w-xs">
+        <div className="space-y-1">
+          <Label>Terms</Label>
+          <Input value={detail?.terms || "—"} readOnly />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PurchaseQuotationTab = () => {
   const { toast } = useToast();
+  const [quotationView, setQuotationView] = useState<"open" | "confirmed">("open");
   const [showRevisionForm, setShowRevisionForm] = useState(false);
+  const [showConfirmForm, setShowConfirmForm] = useState(false);
   const [revisionQuotationId, setRevisionQuotationId] = useState<string | null>(null);
+  const [confirmQuotationId, setConfirmQuotationId] = useState<string | null>(null);
   const [loadingQuotations, setLoadingQuotations] = useState(false);
   const [updatingQuotationId, setUpdatingQuotationId] = useState<string | null>(null);
   const [quotations, setQuotations] = useState<PurchaseQuotationRecord[]>([]);
@@ -4394,6 +4937,7 @@ const PurchaseQuotationTab = () => {
       const response = await apiClient.getPurchaseQuotations({
         page: currentPage,
         limit: itemsPerPage,
+        status: quotationView === "confirmed" ? "confirm" : "open",
       });
       const rows = Array.isArray((response as any)?.data)
         ? (response as any).data
@@ -4412,37 +4956,38 @@ const PurchaseQuotationTab = () => {
     } finally {
       setLoadingQuotations(false);
     }
-  }, [currentPage, itemsPerPage, toast]);
+  }, [currentPage, itemsPerPage, quotationView, toast]);
 
   useEffect(() => {
     void fetchQuotations();
   }, [fetchQuotations]);
 
-  const handleConfirmQuotation = async (quotationId: string) => {
-    setUpdatingQuotationId(quotationId);
-    try {
-      const response = await apiClient.updatePurchaseQuotationStatus(quotationId, "confirm");
-      const purchaseOrder = (response as { purchaseOrder?: { poNumber?: string } }).purchaseOrder;
-      toast({
-        title: "Quotation confirmed",
-        description: purchaseOrder?.poNumber
-          ? `Purchase order ${purchaseOrder.poNumber} has been created automatically.`
-          : "Quotation status has been updated to confirm.",
-      });
-      await fetchQuotations();
-    } catch (error: any) {
-      toast({
-        title: "Failed to update quotation",
-        description:
-          error?.response?.data?.error ||
-          error?.message ||
-          "Could not update quotation status.",
-        variant: "destructive",
-      });
-    } finally {
-      setUpdatingQuotationId(null);
-    }
+  const handleQuotationViewChange = (view: "open" | "confirmed") => {
+    setQuotationView(view);
+    setCurrentPage(1);
   };
+
+  const handleOpenConfirmForm = (quotationId: string) => {
+    setConfirmQuotationId(quotationId);
+    setShowConfirmForm(true);
+  };
+
+  if (showConfirmForm && confirmQuotationId) {
+    return (
+      <PurchaseQuotationConfirmForm
+        quotationId={confirmQuotationId}
+        onCancel={() => {
+          setShowConfirmForm(false);
+          setConfirmQuotationId(null);
+        }}
+        onSaved={() => {
+          setShowConfirmForm(false);
+          setConfirmQuotationId(null);
+          fetchQuotations();
+        }}
+      />
+    );
+  }
 
   if (showRevisionForm && revisionQuotationId) {
     return (
@@ -4461,129 +5006,209 @@ const PurchaseQuotationTab = () => {
     );
   }
 
+  const isConfirmedView = quotationView === "confirmed";
+  const openListColSpan = 12;
+  const confirmedListColSpan = 11;
+
   return (
-    <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Purchase Quotations</h2>
-          <p className="text-sm text-muted-foreground">
-            Review supplier quotations. Confirming a quotation automatically creates a purchase order.
-          </p>
+    <div className="space-y-4">
+      <Tabs
+        value={quotationView}
+        onValueChange={(value) => handleQuotationViewChange(value as "open" | "confirmed")}
+      >
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="open">Purchase Quotations</TabsTrigger>
+          <TabsTrigger value="confirmed">Confirmed Quotation</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold">
+              {isConfirmedView ? "Confirmed Quotation" : "Purchase Quotations"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {isConfirmedView
+                ? "Quotations that have been confirmed and converted to purchase order(s)."
+                : "Review supplier quotations. Confirming opens a form to set confirm quantities and create purchase order(s)."}
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div className="overflow-x-auto rounded-md border border-border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              <th className="text-left p-2 border-b">Date</th>
-              <th className="text-left p-2 border-b">Quotation No</th>
-              <th className="text-left p-2 border-b">Inquiry No</th>
-              <th className="text-left p-2 border-b">Supplier</th>
-              <th className="text-right p-2 border-b">Items</th>
-              <th className="text-right p-2 border-b">FC Total</th>
-              <th className="text-right p-2 border-b">LC Total</th>
-              <th className="text-left p-2 border-b">Type</th>
-              <th className="text-left p-2 border-b">Status</th>
-              <th className="text-left p-2 border-b">PO No</th>
-              <th className="text-center p-2 border-b">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loadingQuotations ? (
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
               <tr>
-                <td colSpan={11} className="p-4 text-center text-muted-foreground">
-                  Loading quotations...
-                </td>
+                <th className={`${LIST_NUMBER_HEAD_CLASS} p-2 border-b`}>#</th>
+                {isConfirmedView ? (
+                  <>
+                    <th className="text-left p-2 border-b">Confirmation Date</th>
+                    <th className="text-left p-2 border-b">Quotation Date</th>
+                  </>
+                ) : (
+                  <th className="text-left p-2 border-b">Date</th>
+                )}
+                <th className="text-left p-2 border-b">Quotation No</th>
+                <th className="text-left p-2 border-b">Inquiry No</th>
+                <th className="text-left p-2 border-b">Supplier</th>
+                <th className="text-right p-2 border-b">Items</th>
+                <th className="text-right p-2 border-b">FC Total</th>
+                <th className="text-right p-2 border-b">LC Total</th>
+                {!isConfirmedView && (
+                  <>
+                    <th className="text-left p-2 border-b">Type</th>
+                    <th className="text-left p-2 border-b">Status</th>
+                  </>
+                )}
+                <th className="text-left p-2 border-b">PO No</th>
+                {isConfirmedView && (
+                  <th className="text-left p-2 border-b">Consignee</th>
+                )}
+                {!isConfirmedView && (
+                  <th className="text-center p-2 border-b">Action</th>
+                )}
               </tr>
-            ) : quotations.length === 0 ? (
-              <tr>
-                <td colSpan={11} className="p-4 text-center text-muted-foreground">
-                  No quotations found yet.
-                </td>
-              </tr>
-            ) : (
-              quotations.map((row) => {
-                const normalizedStatus = String(row.status || "")
-                  .trim()
-                  .toLowerCase();
-                const isConfirmed = normalizedStatus === "confirm";
-                const isRevised = normalizedStatus === "revise";
-                const itemRows = row.PurchaseQuotationItem || [];
-                const supplierName =
-                  row.Supplier?.companyName ||
-                  row.Supplier?.name ||
-                  row.Supplier?.code ||
-                  "N/A";
+            </thead>
+            <tbody>
+              {loadingQuotations ? (
+                <tr>
+                  <td
+                    colSpan={isConfirmedView ? confirmedListColSpan : openListColSpan}
+                    className="p-4 text-center text-muted-foreground"
+                  >
+                    Loading quotations...
+                  </td>
+                </tr>
+              ) : quotations.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={isConfirmedView ? confirmedListColSpan : openListColSpan}
+                    className="p-4 text-center text-muted-foreground"
+                  >
+                    {isConfirmedView
+                      ? "No confirmed quotations found yet."
+                      : "No quotations found yet."}
+                  </td>
+                </tr>
+              ) : (
+                quotations.map((row, index) => {
+                  const normalizedStatus = String(row.status || "")
+                    .trim()
+                    .toLowerCase();
+                  const isConfirmed = normalizedStatus === "confirm";
+                  const isRevised = normalizedStatus === "revise";
+                  const itemRows = row.PurchaseQuotationItem || [];
+                  const purchaseOrders = row.PurchaseOrder || [];
+                  const supplierName =
+                    row.Supplier?.companyName ||
+                    row.Supplier?.name ||
+                    row.Supplier?.code ||
+                    "N/A";
+                  const poNumbers = purchaseOrders
+                    .map((po) => po.poNumber)
+                    .filter(Boolean)
+                    .join(", ");
+                  const consignees = purchaseOrders
+                    .map((po) => po.consignee)
+                    .filter(Boolean)
+                    .join(", ");
 
-                return (
-                  <tr key={row.id} className="border-b hover:bg-muted/20">
-                    <td className="p-2">
-                      {row.quotationDate
-                        ? new Date(row.quotationDate).toLocaleDateString()
-                        : "-"}
-                    </td>
-                    <td className="p-2 font-mono text-xs">{row.quotationNo || "-"}</td>
-                    <td className="p-2 font-mono text-xs">
-                      {row.PurchaseImportRequest?.requestNo || "-"}
-                    </td>
-                    <td className="p-2">{supplierName}</td>
-                    <td className="p-2 text-right">{itemRows.length}</td>
-                    <td className="p-2 text-right">
-                      {Number(row.fcTotal || 0).toFixed(2)} {row.currency || ""}
-                    </td>
-                    <td className="p-2 text-right">{Number(row.lcTotal || 0).toFixed(2)}</td>
-                    <td className="p-2 capitalize">{row.quotationType || "original"}</td>
-                    <td className="p-2 capitalize">{row.status || "pending"}</td>
-                    <td className="p-2 font-mono text-xs">
-                      {row.PurchaseOrder?.poNumber || "-"}
-                    </td>
-                    <td className="p-2 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleConfirmQuotation(row.id)}
-                          disabled={isConfirmed || updatingQuotationId === row.id}
-                        >
-                          <Check className="w-3.5 h-3.5 mr-1" />
-                          {isConfirmed ? "Confirmed" : "Confirm"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setRevisionQuotationId(row.id);
-                            setShowRevisionForm(true);
-                          }}
-                          disabled={updatingQuotationId === row.id}
-                        >
-                          {isRevised ? "Revise Again" : "Revise"}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                  return (
+                    <tr key={row.id} className="border-b hover:bg-muted/20">
+                      <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
+                        {getListRowNumber(index)}
+                      </td>
+                      {isConfirmedView ? (
+                        <>
+                          <td className="p-2">
+                            {row.confirmationDate
+                              ? new Date(row.confirmationDate).toLocaleDateString()
+                              : "-"}
+                          </td>
+                          <td className="p-2">
+                            {row.quotationDate
+                              ? new Date(row.quotationDate).toLocaleDateString()
+                              : "-"}
+                          </td>
+                        </>
+                      ) : (
+                        <td className="p-2">
+                          {row.quotationDate
+                            ? new Date(row.quotationDate).toLocaleDateString()
+                            : "-"}
+                        </td>
+                      )}
+                      <td className="p-2 font-mono text-xs">{row.quotationNo || "-"}</td>
+                      <td className="p-2 font-mono text-xs">
+                        {row.PurchaseImportRequest?.requestNo || "-"}
+                      </td>
+                      <td className="p-2">{supplierName}</td>
+                      <td className="p-2 text-right">{itemRows.length}</td>
+                      <td className="p-2 text-right">
+                        {Number(row.fcTotal || 0).toFixed(2)} {row.currency || ""}
+                      </td>
+                      <td className="p-2 text-right">{Number(row.lcTotal || 0).toFixed(2)}</td>
+                      {!isConfirmedView && (
+                        <>
+                          <td className="p-2 capitalize">{row.quotationType || "original"}</td>
+                          <td className="p-2 capitalize">{row.status || "pending"}</td>
+                        </>
+                      )}
+                      <td className="p-2 font-mono text-xs">{poNumbers || "-"}</td>
+                      {isConfirmedView && (
+                        <td className="p-2 capitalize">{consignees || "-"}</td>
+                      )}
+                      {!isConfirmedView && (
+                        <td className="p-2 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenConfirmForm(row.id)}
+                              disabled={isConfirmed || updatingQuotationId === row.id}
+                            >
+                              <Check className="w-3.5 h-3.5 mr-1" />
+                              {isConfirmed ? "Confirmed" : "Confirm"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                if (isConfirmed) return;
+                                setRevisionQuotationId(row.id);
+                                setShowRevisionForm(true);
+                              }}
+                              disabled={isConfirmed || updatingQuotationId === row.id}
+                            >
+                              {isRevised ? "Revise Again" : "Revise"}
+                            </Button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {!loadingQuotations && totalRecords > 0 && (
+          <PurchaseImportListPagination
+            currentPage={currentPage}
+            itemsPerPage={itemsPerPage}
+            totalRecords={totalRecords}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setItemsPerPage(size);
+              setCurrentPage(1);
+            }}
+          />
+        )}
       </div>
-
-      {!loadingQuotations && totalRecords > 0 && (
-        <PurchaseImportListPagination
-          currentPage={currentPage}
-          itemsPerPage={itemsPerPage}
-          totalRecords={totalRecords}
-          onPageChange={setCurrentPage}
-          onPageSizeChange={(size) => {
-            setItemsPerPage(size);
-            setCurrentPage(1);
-          }}
-        />
-      )}
     </div>
   );
 };
@@ -4661,11 +5286,13 @@ const PurchaseOrderTab = () => {
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
+              <th className={`${LIST_NUMBER_HEAD_CLASS} p-2 border-b`}>#</th>
               <th className="text-left p-2 border-b">Date</th>
               <th className="text-left p-2 border-b">PO No</th>
               <th className="text-left p-2 border-b">Quotation No</th>
               <th className="text-left p-2 border-b">Inquiry No</th>
               <th className="text-left p-2 border-b">Supplier</th>
+              <th className="text-left p-2 border-b">Consignee</th>
               <th className="text-right p-2 border-b">Items</th>
               <th className="text-right p-2 border-b">Total (LC)</th>
               <th className="text-left p-2 border-b">Status</th>
@@ -4675,19 +5302,22 @@ const PurchaseOrderTab = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} className="p-4 text-center text-muted-foreground">
+                <td colSpan={11} className="p-4 text-center text-muted-foreground">
                   Loading purchase orders...
                 </td>
               </tr>
             ) : orders.length === 0 ? (
               <tr>
-                <td colSpan={9} className="p-4 text-center text-muted-foreground">
+                <td colSpan={11} className="p-4 text-center text-muted-foreground">
                   No purchase orders yet. Confirm a quotation to create one.
                 </td>
               </tr>
             ) : (
-              orders.map((row) => (
+              orders.map((row, index) => (
                 <tr key={row.id} className="border-b hover:bg-muted/20">
+                  <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
+                    {getListRowNumber(index)}
+                  </td>
                   <td className="p-2">
                     {row.date ? new Date(row.date).toLocaleDateString() : "-"}
                   </td>
@@ -4699,6 +5329,7 @@ const PurchaseOrderTab = () => {
                     {row.quotation?.requestNo || "-"}
                   </td>
                   <td className="p-2">{row.supplier?.name || "-"}</td>
+                  <td className="p-2 uppercase">{row.consignee || "-"}</td>
                   <td className="p-2 text-right">{row.itemsCount}</td>
                   <td className="p-2 text-right">
                     {Number(row.totalAmount || 0).toLocaleString("en-PK", {

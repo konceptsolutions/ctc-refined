@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -439,6 +440,7 @@ export const ReceivableReminders = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <ListNumberHeader />
                   <TableHead className="w-10">
                     <Checkbox
                       checked={selectedItems.length === filteredReceivables.length && filteredReceivables.length > 0}
@@ -457,8 +459,9 @@ export const ReceivableReminders = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredReceivables.map((item) => (
+                {filteredReceivables.map((item, index) => (
                   <TableRow key={item.id} className="hover:bg-muted/30">
+                    <ListNumberCell index={index} />
                     <TableCell>
                       <Checkbox
                         checked={selectedItems.includes(item.id)}
