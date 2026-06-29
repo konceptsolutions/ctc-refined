@@ -93,13 +93,39 @@ export interface Item {
   priceUpdated?: boolean; // Track if price was recently updated
   createdAt?: string; // Creation date and time
   reservedQuantity?: number; // Reserved stock quantity
-  stock?: number; // Current stock quantity
+  stock?: number; // Current / total stock quantity
+  reservedStock?: number; // Reserved from movements & reservations (API)
   canDelete?: boolean;
   deleteBlockReason?: string | null;
   cost?: number | null;
   purchasePrice?: number | null;
   avgCost?: number | null;
   weight?: string | number | null;
+  duplicateGroupKey?: string;
+  duplicateGroupSize?: number;
+}
+
+export function getItemDuplicateKey(
+  item: Pick<Item, "partNo" | "masterPartNo" | "description" | "application" | "brand">,
+): string {
+  return [item.partNo, item.masterPartNo, item.description, item.application, item.brand]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .join("|");
+}
+
+const DUPLICATE_GROUP_BORDER = [
+  "border-l-amber-500",
+  "border-l-orange-500",
+  "border-l-yellow-600",
+  "border-l-rose-500",
+  "border-l-violet-500",
+] as const;
+
+function getItemStockBreakdown(item: Item) {
+  const total = Number(item.stock) || 0;
+  const reserved = Number(item.reservedStock ?? 0) || 0;
+  const available = Math.max(0, total - reserved);
+  return { total, reserved, available };
 }
 
 interface KitDetailRow {
@@ -122,6 +148,7 @@ interface SearchFilters {
   category_name: string;
   subcategory_name: string;
   application_name: string;
+  duplicates_only: string;
   created_from_date: string;
   created_to_date: string;
   created_from_time: string;
@@ -217,6 +244,7 @@ export const ItemsListView = ({
     category_name: "all",
     subcategory_name: "all",
     application_name: "all",
+    duplicates_only: "all",
     created_from_date: "",
     created_to_date: new Date().toISOString().split("T")[0], // Set to current date
     created_from_time: "",
@@ -376,7 +404,50 @@ export const ItemsListView = ({
       ];
 
   // Since filtering is now server-side, we just use the items as-is
-  const filteredItems = items;
+  const showDuplicateView = searchFilters.duplicates_only === "yes";
+
+  const sortedItems = useMemo(() => {
+    if (!showDuplicateView) return items;
+    return [...items].sort((a, b) => {
+      const keyA = a.duplicateGroupKey || getItemDuplicateKey(a);
+      const keyB = b.duplicateGroupKey || getItemDuplicateKey(b);
+      const byKey = keyA.localeCompare(keyB);
+      if (byKey !== 0) return byKey;
+      const byPart = a.partNo.localeCompare(b.partNo);
+      if (byPart !== 0) return byPart;
+      return a.id.localeCompare(b.id);
+    });
+  }, [items, showDuplicateView]);
+
+  const filteredItems = sortedItems;
+
+  const duplicateGroupedRows = useMemo(() => {
+    if (!showDuplicateView) {
+      return filteredItems.map((item) => ({
+        item,
+        groupNum: 0,
+        isFirstInGroup: false,
+        groupSize: 0,
+      }));
+    }
+
+    let lastKey = "";
+    let groupNum = 0;
+    return filteredItems.map((item) => {
+      const key = (item.duplicateGroupKey || getItemDuplicateKey(item)).trim();
+      const isFirstInGroup = key !== lastKey;
+      if (isFirstInGroup) {
+        groupNum += 1;
+        lastKey = key;
+      }
+      return {
+        item,
+        groupNum,
+        isFirstInGroup,
+        groupSize: item.duplicateGroupSize || 2,
+      };
+    });
+  }, [filteredItems, showDuplicateView]);
 
   // Options for search filters
   // Use passed options if available (for full list), otherwise derive from current items (fallback)
@@ -622,9 +693,16 @@ export const ItemsListView = ({
       "Category",
       "Sub Category",
       "Application",
+      "Stock",
       "Status",
     ];
-    const csvData = filteredItems.map((item) => [
+    const csvData = filteredItems.map((item) => {
+      const { total, reserved, available } = getItemStockBreakdown(item);
+      const stockLabel =
+        reserved > 0
+          ? `${total} (avail ${available}, rsv ${reserved})`
+          : String(total);
+      return [
       item.masterPartNo,
       item.partNo,
       item.brand,
@@ -632,8 +710,10 @@ export const ItemsListView = ({
       item.category,
       item.subCategory,
       item.application,
+      stockLabel,
       item.status,
-    ]);
+    ];
+    });
     const csvContent = [
       headers.join(","),
       ...csvData.map((row) => row.join(",")),
@@ -757,6 +837,8 @@ export const ItemsListView = ({
       searchFilters.application_name !== "all"
     )
       params.application_name = searchFilters.application_name;
+    if (searchFilters.duplicates_only === "yes")
+      params.duplicates_only = "true";
 
     const response = await apiClient.getParts(params);
     const responseAny = response as any;
@@ -1758,6 +1840,36 @@ export const ItemsListView = ({
                 </div>
               </div>
 
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="duplicates-only-filter"
+                  checked={searchFilters.duplicates_only === "yes"}
+                  onCheckedChange={(checked) => {
+                    updateFilterImmediate(
+                      "duplicates_only",
+                      checked === true ? "yes" : "all",
+                    );
+                    if (checked === true && onPageChange) {
+                      onPageChange(1);
+                    }
+                  }}
+                />
+                <label
+                  htmlFor="duplicates-only-filter"
+                  className="text-xs text-muted-foreground cursor-pointer select-none"
+                >
+                  Duplicate items only (same part no, master part, description,
+                  application & brand)
+                </label>
+                {showDuplicateView && (
+                  <span className="text-[10px] text-muted-foreground">
+                    Matching records are grouped together. Each group shares the
+                    same five fields but is a separate database item (different
+                    ID/stock).
+                  </span>
+                )}
+              </div>
+
               {/* Clear Filters Button */}
               {(searchFilters.search ||
                 searchFilters.master_part_no ||
@@ -1767,7 +1879,8 @@ export const ItemsListView = ({
                 searchFilters.part_type !== "all" ||
                 searchFilters.category_name !== "all" ||
                 searchFilters.subcategory_name !== "all" ||
-                searchFilters.application_name !== "all") && (
+                searchFilters.application_name !== "all" ||
+                searchFilters.duplicates_only === "yes") && (
                   <div className="flex justify-end pt-2">
                     <Button
                       variant="outline"
@@ -1784,6 +1897,7 @@ export const ItemsListView = ({
                           category_name: "all",
                           subcategory_name: "all",
                           application_name: "all",
+                          duplicates_only: "all",
                           created_from_date: "",
                           created_to_date: new Date().toISOString().split("T")[0], // Set to current date
                           created_from_time: "",
@@ -1861,6 +1975,11 @@ export const ItemsListView = ({
                             onCheckedChange={handleSelectAll}
                           />
                         </TableHead>
+                        {showDuplicateView && (
+                          <TableHead className="text-xs font-medium min-w-[7rem]">
+                            Dup. Group
+                          </TableHead>
+                        )}
                         <TableHead className="text-xs font-medium">
                           Part No
                         </TableHead>
@@ -1882,6 +2001,9 @@ export const ItemsListView = ({
                         <TableHead className="text-xs font-medium">
                           Application
                         </TableHead>
+                        <TableHead className="text-xs font-medium text-right min-w-[4.5rem]">
+                          Stock
+                        </TableHead>
                         <TableHead className="text-xs font-medium">
                           Status
                         </TableHead>
@@ -1897,10 +2019,23 @@ export const ItemsListView = ({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredItems.map((item, index) => (
+                      {duplicateGroupedRows.map(
+                        ({ item, groupNum, isFirstInGroup, groupSize }, index) => (
                         <TableRow
                           key={item.id}
-                          className="hover:bg-muted/20 cursor-pointer"
+                          className={cn(
+                            "hover:bg-muted/20 cursor-pointer",
+                            showDuplicateView &&
+                              "border-l-4 bg-amber-50/40",
+                            showDuplicateView &&
+                              DUPLICATE_GROUP_BORDER[
+                                (groupNum - 1) % DUPLICATE_GROUP_BORDER.length
+                              ],
+                            showDuplicateView &&
+                              isFirstInGroup &&
+                              groupNum > 1 &&
+                              "border-t-2 border-amber-300",
+                          )}
                           onClick={(e) => {
                             // Don't trigger if clicking on interactive elements
                             const target = e.target as HTMLElement;
@@ -1927,6 +2062,27 @@ export const ItemsListView = ({
                               onCheckedChange={() => handleSelectItem(item.id)}
                             />
                           </TableCell>
+                          {showDuplicateView && (
+                            <TableCell className="text-xs align-top">
+                              {isFirstInGroup ? (
+                                <div className="space-y-1">
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-amber-100 text-amber-900 border-amber-300 whitespace-nowrap"
+                                  >
+                                    Group {groupNum}
+                                  </Badge>
+                                  <p className="text-[10px] leading-tight text-amber-800 font-medium">
+                                    {groupSize} matching records
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] font-medium text-amber-700">
+                                  ↳ Same group
+                                </span>
+                              )}
+                            </TableCell>
+                          )}
                           <TableCell className="text-xs font-semibold part-code-font font-mono">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span
@@ -2012,6 +2168,24 @@ export const ItemsListView = ({
                             {item.application && item.application.trim()
                               ? item.application
                               : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-right align-top tabular-nums">
+                            {(() => {
+                              const { total, reserved, available } =
+                                getItemStockBreakdown(item);
+                              return (
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <span className="font-semibold text-foreground">
+                                    {total}
+                                  </span>
+                                  {reserved > 0 ? (
+                                    <span className="text-[10px] leading-tight text-muted-foreground">
+                                      Avail {available} · Rsv {reserved}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell>
                             <DropdownMenu>
@@ -2244,7 +2418,7 @@ export const ItemsListView = ({
                       {filteredItems.length === 0 && (
                         <TableRow>
                           <TableCell
-                            colSpan={13}
+                            colSpan={showDuplicateView ? 15 : 14}
                             className="h-24 text-center text-xs text-muted-foreground"
                           >
                             No parts found matching your filters.
@@ -2257,6 +2431,7 @@ export const ItemsListView = ({
                   {/* Pagination Controls */}
                   {totalItems > 0 &&
                     onPageChange &&
+                    !showDuplicateView &&
                     (() => {
                       const totalPages = Math.ceil(totalItems / itemsPerPage);
                       const handlePageJump = () => {

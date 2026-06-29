@@ -706,6 +706,7 @@ router.get("/", async (req: Request, res: Response) => {
       part_no,
       description,
       include_locations = "false",
+      duplicates_only,
       page = "1",
       limit = "50",
     } = req.query;
@@ -822,6 +823,36 @@ router.get("/", async (req: Request, res: Response) => {
       params.push(`%${(description as string).trim()}%`);
     }
 
+    const partDuplicateKeySql = `CONCAT(
+      LOWER(TRIM(COALESCE(p."partNo", ''))), '|',
+      LOWER(TRIM(COALESCE(mp."masterPartNo", ''))), '|',
+      LOWER(TRIM(COALESCE(p."description", ''))), '|',
+      LOWER(TRIM(COALESCE(app."name", ''))), '|',
+      LOWER(TRIM(COALESCE(b."name", '')))
+    )`;
+
+    if (duplicates_only === "true") {
+      conditions.push(`${partDuplicateKeySql} IN (
+        SELECT dup_key FROM (
+          SELECT
+            CONCAT(
+              LOWER(TRIM(COALESCE(p2."partNo", ''))), '|',
+              LOWER(TRIM(COALESCE(mp2."masterPartNo", ''))), '|',
+              LOWER(TRIM(COALESCE(p2."description", ''))), '|',
+              LOWER(TRIM(COALESCE(app2."name", ''))), '|',
+              LOWER(TRIM(COALESCE(b2."name", '')))
+            ) AS dup_key,
+            COUNT(*)::int AS cnt
+          FROM "Part" p2
+          LEFT JOIN "MasterPart" mp2 ON p2."masterPartId" = mp2.id
+          LEFT JOIN "Brand" b2 ON p2."brandId" = b2.id
+          LEFT JOIN "Application" app2 ON p2."applicationId" = app2.id
+          GROUP BY 1
+          HAVING COUNT(*) > 1
+        ) duplicate_groups
+      )`);
+    }
+
     if (status) {
       conditions.push(`p."status" = $${paramIdx++}`);
       params.push(status);
@@ -833,6 +864,10 @@ router.get("/", async (req: Request, res: Response) => {
     // Skip images for large result sets to reduce payload size (29MB -> <1MB)
     const skipImages = limitNum > 1000;
     const showLocations = include_locations === "true";
+    const showDuplicateMeta = duplicates_only === "true";
+    const orderByClause = showDuplicateMeta
+      ? `ORDER BY ${partDuplicateKeySql}, p."partNo", p."id"`
+      : `ORDER BY p."updatedAt" DESC`;
 
     const sql = `
       SELECT 
@@ -869,6 +904,7 @@ router.get("/", async (req: Request, res: Response) => {
           ),
           '[]'::json
         ) as models
+        ${showDuplicateMeta ? `, ${partDuplicateKeySql} as duplicate_key, COUNT(*) OVER (PARTITION BY ${partDuplicateKeySql})::int as duplicate_group_size` : ""}
         ${showLocations ? ", COALESCE(loc.locations, '[]'::jsonb) as locations, (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock" : ""}
         ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
       FROM "Part" p
@@ -930,7 +966,7 @@ router.get("/", async (req: Request, res: Response) => {
           GROUP BY prs."partId"
       ) loc ON p.id = loc."partId" ` : ""}
       ${whereClause}
-      ORDER BY p."updatedAt" DESC
+      ${orderByClause}
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}
     `;
 
@@ -1009,6 +1045,9 @@ router.get("/", async (req: Request, res: Response) => {
         unlocated_stock: Math.max(0, parseInt(part.unlocated_stock) || 0),
         created_at: part.createdAt || part.createdat,
         updated_at: part.updatedAt || part.updatedat,
+        duplicate_key: part.duplicate_key || part.duplicatekey || null,
+        duplicate_group_size:
+          parseInt(part.duplicate_group_size || part.duplicategroupsize) || null,
       };
     });
 

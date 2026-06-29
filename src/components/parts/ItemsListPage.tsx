@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ItemsListView, Item } from "@/components/parts/ItemsListView";
+import { ItemsListView, Item, getItemDuplicateKey } from "@/components/parts/ItemsListView";
 import { apiClient } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import { ReservedQuantityManager } from "@/utils/reservedQuantityManager";
@@ -46,6 +46,7 @@ export const ItemsListPage = ({
     category_name: "all",
     subcategory_name: "all",
     application_name: "all",
+    duplicates_only: "all",
     created_from_date: "",
     created_to_date: new Date().toISOString().split("T")[0], // Set to current date
     created_from_time: "",
@@ -316,13 +317,20 @@ export const ItemsListPage = ({
       priceUpdated: priceUpdated,
       createdAt: formattedCreatedAt,
       reservedQuantity: p.reserved_quantity || p.reservedQuantity || 0,
-      stock: p.quantity || p.current_stock || p.stock || 0, // Stock quantity from API
+      stock: Number(p.quantity ?? p.current_stock ?? p.stock ?? 0) || 0,
+      reservedStock: Number(p.reserved_stock ?? p.reservedstock ?? 0) || 0,
       canDelete: p.can_delete === true,
       deleteBlockReason: p.delete_block_reason || null,
       cost: p.cost ? parseFloat(p.cost) : null,
       purchasePrice: p.purchasePrice ? parseFloat(p.purchasePrice) : null,
       avgCost: p.avgCost ? parseFloat(p.avgCost) : null,
       weight: p.weight ? String(p.weight) : "-",
+      duplicateGroupKey: p.duplicate_key
+        ? String(p.duplicate_key).trim().toLowerCase()
+        : undefined,
+      duplicateGroupSize: p.duplicate_group_size
+        ? Number(p.duplicate_group_size)
+        : undefined,
     };
   };
 
@@ -469,10 +477,18 @@ export const ItemsListPage = ({
         (activeFilters.part_type && activeFilters.part_type !== "all") ||
         (activeFilters.category_name && activeFilters.category_name !== 'all') ||
         (activeFilters.subcategory_name && activeFilters.subcategory_name !== 'all') ||
-        (activeFilters.application_name && activeFilters.application_name !== 'all');
+        (activeFilters.application_name && activeFilters.application_name !== 'all') ||
+        activeFilters.duplicates_only === "yes";
 
-      const effectiveLimit = limit;
-      const params: any = { page, limit: effectiveLimit, include_locations: "false" };
+      const effectiveLimit =
+        activeFilters.duplicates_only === "yes" ? "all" : limit;
+      const effectivePage =
+        activeFilters.duplicates_only === "yes" ? 1 : page;
+      const params: any = {
+        page: effectivePage,
+        limit: effectiveLimit,
+        include_locations: "false",
+      };
 
       // Add search filters - use activeFilters, not the stale filters parameter
       if (activeFilters.search) params.search = activeFilters.search;
@@ -497,6 +513,8 @@ export const ItemsListPage = ({
         activeFilters.application_name !== "all"
       )
         params.application_name = activeFilters.application_name;
+      if (activeFilters.duplicates_only === "yes")
+        params.duplicates_only = "true";
 
       const response = await apiClient.getParts(params);
 
@@ -526,6 +544,18 @@ export const ItemsListPage = ({
 
         // Transform API data to Item format for ItemsListView
         let transformedItems = partsData.map(transformApiDataToItem);
+
+        if (activeFilters.duplicates_only === "yes") {
+          transformedItems = [...transformedItems].sort((a, b) => {
+            const keyA = a.duplicateGroupKey || getItemDuplicateKey(a);
+            const keyB = b.duplicateGroupKey || getItemDuplicateKey(b);
+            const byKey = keyA.localeCompare(keyB);
+            if (byKey !== 0) return byKey;
+            const byPart = a.partNo.localeCompare(b.partNo);
+            if (byPart !== 0) return byPart;
+            return a.id.localeCompare(b.id);
+          });
+        }
 
         // Set items immediately for faster display
         if (latestRequestIdRef.current === requestId) {
@@ -562,7 +592,11 @@ export const ItemsListPage = ({
 
         // Update total items from pagination
         const pagination = response.pagination;
-        if (pagination) {
+        if (activeFilters.duplicates_only === "yes") {
+          if (latestRequestIdRef.current === requestId) {
+            setTotalItems(transformedItems.length);
+          }
+        } else if (pagination) {
           if (latestRequestIdRef.current === requestId) {
             setTotalItems(pagination.total);
           }
@@ -620,6 +654,12 @@ export const ItemsListPage = ({
     fetchItems(itemsPage, itemsPerPage, searchFilters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsPage, itemsPerPage, searchFilters]);
+
+  useEffect(() => {
+    if (searchFilters.duplicates_only === "yes" && itemsPage !== 1) {
+      setItemsPage(1);
+    }
+  }, [searchFilters.duplicates_only, itemsPage]);
 
   return (
     <ItemsListView
