@@ -358,6 +358,13 @@ class ApiClient {
     return this.request(`/parts/by-part-no?${params.toString()}`);
   }
 
+  async getModelNames(search?: string) {
+    const params = new URLSearchParams();
+    if (search?.trim()) params.append("search", search.trim());
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return this.request(`/parts/model-names${query}`);
+  }
+
   async getPartsByModelAssociation(modelName: string, application?: string) {
     const params = new URLSearchParams();
     if (application?.trim()) params.set("application", application.trim());

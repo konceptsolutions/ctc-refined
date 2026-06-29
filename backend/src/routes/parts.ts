@@ -1657,6 +1657,29 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
   }
 });
 
+// Distinct model names for part-entry dropdowns
+router.get("/model-names", async (req: Request, res: Response) => {
+  try {
+    const search = String(req.query.search || "").trim();
+    const rows = await prisma.model.groupBy({
+      by: ["name"],
+      where: search
+        ? { name: { contains: search, mode: "insensitive" } }
+        : undefined,
+      orderBy: { name: "asc" },
+      take: 1000,
+    });
+
+    const names = rows
+      .map((row) => String(row.name || "").trim())
+      .filter(Boolean);
+
+    res.json(names);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get all active parts using a specific model name
 router.get("/model-associations/:modelName", async (req: Request, res: Response) => {
   try {

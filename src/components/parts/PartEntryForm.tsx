@@ -174,6 +174,8 @@ export const PartEntryForm = ({
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [brands, setBrands] = useState<{ id: string; name: string }[]>([]);
   const [brandsLoading, setBrandsLoading] = useState(true);
+  const [modelNames, setModelNames] = useState<string[]>([]);
+  const [modelNamesLoading, setModelNamesLoading] = useState(false);
 
   // Search results for dropdowns - CORRECTLY TYPED
   // masterPartNoOptions: unique master_part_no values for Master Part No dropdown
@@ -375,6 +377,41 @@ export const PartEntryForm = ({
     }
   };
 
+  const fetchModelNames = async (search?: string) => {
+    setModelNamesLoading(true);
+    try {
+      const res = (await apiClient.getModelNames(search)) as
+        | string[]
+        | { data?: string[]; error?: string };
+      if (Array.isArray(res)) {
+        setModelNames(
+          res.map((name) => String(name || "").trim()).filter(Boolean),
+        );
+        return;
+      }
+      if (Array.isArray(res?.data)) {
+        setModelNames(
+          res.data.map((name) => String(name || "").trim()).filter(Boolean),
+        );
+      }
+    } catch {
+      setModelNames([]);
+    } finally {
+      setModelNamesLoading(false);
+    }
+  };
+
+  const modelSelectOptions = useMemo(() => {
+    const names = new Set(modelNames);
+    modelQuantities.forEach((mq) => {
+      const trimmed = String(mq.model || "").trim();
+      if (trimmed) names.add(trimmed);
+    });
+    return [...names]
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ value: name, label: name }));
+  }, [modelNames, modelQuantities]);
+
   // Fetch dropdown data on mount (categories, brands, subcategories)
   useEffect(() => {
     const fetchDropdownData = async () => {
@@ -398,6 +435,7 @@ export const PartEntryForm = ({
 
         // Fetch brands
         await fetchBrands();
+        await fetchModelNames();
 
         // Handle subcategories (unrestricted)
         const subsData = Array.isArray((allSubsRes as any)?.data)
@@ -4589,13 +4627,21 @@ export const PartEntryForm = ({
               key={mq.id}
               className="grid grid-cols-[2fr_1.5fr_0.8fr] gap-2 mb-1.5 items-center"
             >
-              <Input
-                placeholder="Enter model"
+              <SearchableSelect
+                options={modelSelectOptions}
                 value={mq.model}
-                onChange={(e) =>
-                  handleModelChange(mq.id, "model", e.target.value)
+                onValueChange={(value) =>
+                  handleModelChange(mq.id, "model", value)
                 }
-                className="h-8 text-sm"
+                onSearchChange={(query) => {
+                  void fetchModelNames(query);
+                }}
+                placeholder={modelNamesLoading ? "Loading..." : "Select model"}
+                allowCustom
+                createLabel="model"
+                disabled={modelNamesLoading && modelSelectOptions.length === 0}
+                className="[&_input]:h-8 [&_input]:text-sm"
+                aria-label="Model"
               />
               <Input
                 type="number"

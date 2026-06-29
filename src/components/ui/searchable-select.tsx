@@ -289,6 +289,7 @@ export const SearchableSelect = ({
     onValueChange(optionValue);
     setIsOpen(false);
     setSearchQuery("");
+    setIsFocused(false);
   };
 
   const handleCreateNew = (val: string) => {
@@ -299,6 +300,7 @@ export const SearchableSelect = ({
     }
     setIsOpen(false);
     setSearchQuery("");
+    setIsFocused(false);
   }
 
   const handleInputFocus = () => {
@@ -414,6 +416,7 @@ export const SearchableSelect = ({
       e.stopPropagation();
       setIsOpen(false);
       setSearchQuery("");
+      setIsFocused(false);
     }
   };
 
