@@ -61,7 +61,7 @@ interface Receivable {
   daysOverdue: number;
   remindersSent: number;
   promisedPayments: number;
-  status: "pending" | "overdue" | "reminded" | "rescheduled" | "disputed";
+  status: "pending" | "overdue" | "paid" | "reminded" | "rescheduled" | "disputed";
 }
 
 const mockReceivables: Receivable[] = [];
@@ -183,7 +183,11 @@ export const ReceivableReminders = () => {
               : 0;
 
           const status: Receivable["status"] =
-            remaining <= 0 ? "pending" : daysOverdue > 0 ? "overdue" : "pending";
+            remaining <= 0
+              ? "paid"
+              : daysOverdue > 0
+                ? "overdue"
+                : "pending";
 
           const customerId = String(inv.customerId || "");
           const customerName = inv.customerName || "Walk-in Customer";
@@ -281,7 +285,7 @@ export const ReceivableReminders = () => {
                 ...r,
                 paidAmount: r.paidAmount + amount,
                 balance: r.balance - amount,
-                status: r.balance - amount <= 0 ? "pending" : r.status,
+                status: r.balance - amount <= 0 ? "paid" : r.status,
               }
             : r
         )
@@ -480,6 +484,7 @@ export const ReceivableReminders = () => {
   const getStatusBadge = (status: Receivable["status"]) => {
     const styles: Record<string, string> = {
       pending: "bg-muted text-muted-foreground",
+      paid: "bg-green-500 text-white",
       overdue: "bg-red-500 text-white",
       reminded: "bg-yellow-500 text-white",
       rescheduled: "bg-blue-500 text-white",
@@ -564,6 +569,7 @@ export const ReceivableReminders = () => {
           <SelectContent className="bg-popover z-50">
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="paid">Paid</SelectItem>
             <SelectItem value="overdue">Overdue</SelectItem>
             <SelectItem value="reminded">Reminded</SelectItem>
             <SelectItem value="rescheduled">Rescheduled</SelectItem>
