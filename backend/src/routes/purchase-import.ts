@@ -479,6 +479,55 @@ const resolveLastQuotationFcRate = (item: {
   return Number(item.fcRate || 0);
 };
 
+const isQuotationRevisedRecord = (quotation: {
+  quotationType?: string | null;
+  status?: string | null;
+}) => {
+  const type = String(quotation.quotationType || "").trim().toLowerCase();
+  const status = String(quotation.status || "").trim().toLowerCase();
+  return type === "revised" || status === "revise";
+};
+
+const getEffectiveQuotationItemValues = (
+  item: {
+    fcRate?: number | null;
+    fcAmount?: number | null;
+    lcRate?: number | null;
+    lcAmount?: number | null;
+    revisedFcRate?: number | null;
+    revisedFcAmount?: number | null;
+    revisedLcRate?: number | null;
+    revisedLcAmount?: number | null;
+  },
+  isRevised: boolean,
+) => {
+  if (isRevised) {
+    const fcRate =
+      Number(item.revisedFcRate || 0) > 0
+        ? Number(item.revisedFcRate)
+        : Number(item.fcRate || 0);
+    const fcAmount =
+      Number(item.revisedFcAmount || 0) > 0
+        ? Number(item.revisedFcAmount)
+        : Number(item.fcAmount || 0);
+    const lcRate =
+      Number(item.revisedLcRate || 0) > 0
+        ? Number(item.revisedLcRate)
+        : Number(item.lcRate || 0);
+    const lcAmount =
+      Number(item.revisedLcAmount || 0) > 0
+        ? Number(item.revisedLcAmount)
+        : Number(item.lcAmount || 0);
+    return { fcRate, fcAmount, lcRate, lcAmount };
+  }
+  return {
+    fcRate: Number(item.fcRate || 0),
+    fcAmount: Number(item.fcAmount || 0),
+    lcRate: Number(item.lcRate || 0),
+    lcAmount: Number(item.lcAmount || 0),
+  };
+};
+
 async function getLastSupplierFcRatesByPartIds(
   supplierId: string,
   partIds: string[],
@@ -2368,6 +2417,296 @@ router.post("/quotations/:quotationId/convert-to-po", async (req: Request, res: 
     const message = error?.message || "Failed to create purchase order.";
     const status = message.includes("not found") ? 404 : 400;
     res.status(status).json({ error: message });
+  }
+});
+
+type ReceivePurchaseOrderItemInput = {
+  id: string;
+  receiveQty: number;
+};
+
+function computeReceiveVariance(orderQty: number, receiveQty: number) {
+  const normalizedReceive = Math.max(0, Math.floor(Number(receiveQty) || 0));
+  const normalizedOrder = Math.max(0, Math.floor(Number(orderQty) || 0));
+  return {
+    receiveQty: normalizedReceive,
+    additionalQty:
+      normalizedReceive > normalizedOrder
+        ? normalizedReceive - normalizedOrder
+        : 0,
+    backQty:
+      normalizedReceive < normalizedOrder
+        ? normalizedOrder - normalizedReceive
+        : 0,
+  };
+}
+
+router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Purchase order id is required." });
+    }
+
+    const order = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        Supplier: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            companyName: true,
+          },
+        },
+        PurchaseOrderItem: {
+          orderBy: { createdAt: "asc" },
+          include: {
+            Part: {
+              select: {
+                id: true,
+                partNo: true,
+                description: true,
+                MasterPart: { select: { masterPartNo: true } },
+                Brand: { select: { name: true } },
+              },
+            },
+          },
+        },
+        PurchaseQuotation: {
+          include: {
+            PurchaseImportRequest: {
+              select: {
+                id: true,
+                requestNo: true,
+                PurchaseImportRequestItem: {
+                  select: {
+                    partId: true,
+                    currentStock: true,
+                  },
+                },
+              },
+            },
+            PurchaseQuotationItem: {
+              orderBy: { createdAt: "asc" },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Purchase order not found" });
+    }
+
+    if (!order.purchaseQuotationId || !order.PurchaseQuotation) {
+      return res.status(400).json({
+        error: "Only import purchase orders are available in purchase import",
+      });
+    }
+
+    const quotation = order.PurchaseQuotation;
+    const isRevised = isQuotationRevisedRecord(quotation);
+    const quotationItemByPartId = new Map(
+      (quotation.PurchaseQuotationItem || []).map((item) => [
+        String(item.partId),
+        item,
+      ]),
+    );
+    const requestItemByPartId = new Map(
+      (quotation.PurchaseImportRequest?.PurchaseImportRequestItem || []).map(
+        (item) => [String(item.partId), item],
+      ),
+    );
+
+    const baseItems = order.PurchaseOrderItem.map((poItem) => {
+      const partId = String(poItem.partId);
+      const quotationItem = quotationItemByPartId.get(partId);
+      const requestItem = requestItemByPartId.get(partId);
+      const orderQty = Number(poItem.quantity) || 0;
+      const effective = quotationItem
+        ? getEffectiveQuotationItemValues(quotationItem, isRevised)
+        : {
+            fcRate: 0,
+            fcAmount: 0,
+            lcRate: Number(poItem.unitCost) || 0,
+            lcAmount: Number(poItem.totalCost) || 0,
+          };
+      const weight = Number(quotationItem?.weight || 0);
+      const fcRate = effective.fcRate;
+      const lcRate =
+        effective.lcRate > 0 ? effective.lcRate : Number(poItem.unitCost) || 0;
+
+      return {
+        id: poItem.id,
+        partId,
+        masterPartNo: poItem.Part?.MasterPart?.masterPartNo || "",
+        partNo: poItem.Part?.partNo || "",
+        description: poItem.Part?.description || "",
+        brand: poItem.Part?.Brand?.name || "",
+        currentStock: Number(requestItem?.currentStock || 0),
+        demandQuantity: Number(quotationItem?.demandQuantity || 0),
+        quotationQuantity: Number(quotationItem?.quotationQuantity || 0),
+        shipDays: Number(quotationItem?.shipDays || 0),
+        fcRate,
+        fcAmount: fcRate * orderQty,
+        lcRate,
+        lcAmount: lcRate * orderQty,
+        weight,
+        totalWeight: weight * orderQty,
+        orderQty,
+        unitCost: Number(poItem.unitCost) || 0,
+        receivedQty: Number(poItem.receivedQty) || 0,
+        additionalQty: Number((poItem as any).additionalQty) || 0,
+        backQty: Number((poItem as any).backQty) || 0,
+      };
+    });
+
+    const items = await attachLastSupplierFcRates(
+      order.supplierId || "",
+      baseItems,
+      quotation.id,
+    );
+
+    res.json({
+      data: {
+        id: order.id,
+        poNumber: order.poNumber,
+        status: order.status,
+        date: order.date,
+        consignee: (order as any).consignee ?? null,
+        totalAmount: order.totalAmount,
+        supplier: {
+          id: order.Supplier?.id || null,
+          name:
+            order.Supplier?.companyName ||
+            order.Supplier?.name ||
+            order.Supplier?.code ||
+            "-",
+        },
+        quotation: {
+          id: quotation.id,
+          quotationNo: quotation.quotationNo,
+          currency: quotation.currency,
+          conversionRate: Number(quotation.conversionRate || 1),
+          terms: quotation.terms || null,
+          quotationType: quotation.quotationType,
+          isRevised,
+          requestNo: quotation.PurchaseImportRequest?.requestNo || null,
+        },
+        items,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
+
+    const order = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        PurchaseOrderItem: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Purchase order not found" });
+    }
+
+    if (!order.purchaseQuotationId) {
+      return res.status(400).json({
+        error: "Only import purchase orders can be received from this screen",
+      });
+    }
+
+    if (order.status === "Received") {
+      return res.status(400).json({ error: "Purchase order is already received" });
+    }
+
+    const receiveByItemId = new Map<string, number>();
+    for (const row of itemsRaw as ReceivePurchaseOrderItemInput[]) {
+      const itemId = String(row?.id || "").trim();
+      if (!itemId) continue;
+      receiveByItemId.set(itemId, Number(row.receiveQty) || 0);
+    }
+
+    if (receiveByItemId.size === 0) {
+      return res.status(400).json({ error: "At least one item receive quantity is required" });
+    }
+
+    const missingItems = order.PurchaseOrderItem.filter(
+      (item) => !receiveByItemId.has(item.id),
+    );
+    if (missingItems.length > 0) {
+      return res.status(400).json({
+        error: "Receive quantity is required for every purchase order line",
+      });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      for (const poItem of order.PurchaseOrderItem) {
+        const variance = computeReceiveVariance(
+          poItem.quantity,
+          receiveByItemId.get(poItem.id) ?? 0,
+        );
+        await tx.purchaseOrderItem.update({
+          where: { id: poItem.id },
+          data: {
+            receivedQty: variance.receiveQty,
+            additionalQty: variance.additionalQty,
+            backQty: variance.backQty,
+          } as any,
+        });
+      }
+
+      return tx.purchaseOrder.update({
+        where: { id },
+        data: {
+          status: "Received",
+          updatedAt: new Date(),
+        },
+        include: {
+          PurchaseOrderItem: {
+            include: {
+              Part: {
+                select: {
+                  id: true,
+                  partNo: true,
+                  description: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    res.json({
+      data: {
+        id: updated.id,
+        poNumber: updated.poNumber,
+        status: updated.status,
+        items: updated.PurchaseOrderItem.map((item) => ({
+          id: item.id,
+          part_id: item.partId,
+          part_no: item.Part.partNo,
+          part_description: item.Part.description,
+          quantity: item.quantity,
+          received_qty: item.receivedQty,
+          additional_qty: (item as any).additionalQty ?? 0,
+          back_qty: (item as any).backQty ?? 0,
+          unit_cost: item.unitCost,
+          total_cost: item.totalCost,
+        })),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 

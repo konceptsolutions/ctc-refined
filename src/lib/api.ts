@@ -2467,6 +2467,30 @@ class ApiClient {
     );
   }
 
+  async getImportPurchaseOrder(orderId: string) {
+    return this.request(`/purchase-import/purchase-orders/${orderId}`);
+  }
+
+  async receiveImportPurchaseOrder(
+    orderId: string,
+    data: {
+      items: Array<{
+        id: string;
+        receiveQty: number;
+      }>;
+    },
+  ) {
+    return this.request(`/purchase-import/purchase-orders/${orderId}/receive`, {
+      method: "POST",
+      body: JSON.stringify({
+        items: data.items.map((item) => ({
+          id: item.id,
+          receiveQty: item.receiveQty,
+        })),
+      }),
+    });
+  }
+
   // Reports API
   async getDashboardMetrics() {
     return this.request("/reports/dashboard/metrics");

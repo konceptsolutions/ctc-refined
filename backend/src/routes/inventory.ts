@@ -29,6 +29,15 @@ const isTransferInDpo = (orderType?: string | null, dpoNumber?: string | null) =
   String(orderType || "").trim() === "transfer_in" ||
   /^TIN-/i.test(String(dpoNumber || "").trim());
 
+function supplierDisplayName(
+  supplier?: { name?: string | null; companyName?: string | null } | null,
+): string | null {
+  if (!supplier) return null;
+  const companyName = String(supplier.companyName || "").trim();
+  const name = String(supplier.name || "").trim();
+  return companyName || name || null;
+}
+
 /** Supplier payable (local purchase) or selected branch account (transfer in) for DPO vouchers. */
 async function resolveDpoCounterpartyAccount(
   tx: PrismaTx,
@@ -5532,6 +5541,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         unit_cost: item.unitCost,
         total_cost: item.totalCost,
         received_qty: item.receivedQty,
+        additional_qty: (item as any).additionalQty ?? 0,
+        back_qty: (item as any).backQty ?? 0,
         notes: item.notes,
       })),
       created_at: order.createdAt,
@@ -7480,7 +7491,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
           store_id: dpo.storeId,
           store_name: dpo.Store?.name || null,
           supplier_id: dpo.supplierId,
-          supplier_name: dpo.Supplier?.name || null,
+          supplier_name: supplierDisplayName(dpo.Supplier),
           branch_account_id: dpo.branchAccountId,
           branch_account_name: dpo.BranchAccount?.name?.trim() || null,
           order_type: dpo.orderType || "local_purchase",
@@ -7608,7 +7619,7 @@ router.get(
         store_id: order.storeId,
         store_name: order.Store?.name || null,
         supplier_id: order.supplierId,
-        supplier_name: order.Supplier?.name || null,
+        supplier_name: supplierDisplayName(order.Supplier),
         branch_account_id: order.branchAccountId,
         branch_account_name: order.BranchAccount?.name?.trim() || null,
         order_type: order.orderType || "local_purchase",

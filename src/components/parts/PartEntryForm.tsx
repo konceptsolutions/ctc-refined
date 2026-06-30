@@ -96,12 +96,24 @@ const normalizeAvgPriceValue = (source: any): string => {
     source?.avg_cost ??
     source?.avgPrice ??
     source?.avg_price ??
-    
-    
     "";
   if (raw === null || raw === undefined || raw === "") return "0.00";
   const value = Number(raw);
   return Number.isFinite(value) ? value.toFixed(2) : String(raw);
+};
+
+const resolveCostPriceValue = (source: any): string => {
+  const direct = source?.cost ?? source?.cost_price;
+  if (
+    direct !== null &&
+    direct !== undefined &&
+    direct !== "" &&
+    Number(direct) !== 0
+  ) {
+    return String(direct);
+  }
+  const avg = normalizeAvgPriceValue(source);
+  return avg !== "0.00" ? avg : "";
 };
 
 interface PartEntryFormProps {
@@ -884,12 +896,7 @@ export const PartEntryForm = ({
             // SWAPPED mapping to match ItemsListView display convention:
             // - "Master Part No" UI field shows part_no data
             // - "Part No" UI field shows master_part_no data
-            const costValue =
-              part.cost && part.cost !== 0
-                ? part.cost.toString()
-                : selectedPart.cost && selectedPart.cost !== 0
-                  ? selectedPart.cost.toString()
-                  : "";
+            const costValue = resolveCostPriceValue(part) || resolveCostPriceValue(selectedPart);
             const priceAValue =
               part.price_a && part.price_a !== 0
                 ? part.price_a.toString()
@@ -1014,9 +1021,10 @@ export const PartEntryForm = ({
             avgCost:
               normalizeAvgPriceValue(selectedPart),
             cost:
-              selectedPart.cost && selectedPart.cost !== 0
+              resolveCostPriceValue(selectedPart) ||
+              (selectedPart.cost && selectedPart.cost !== 0
                 ? selectedPart.cost.toString()
-                : "",
+                : ""),
             priceA:
               selectedPart.price && selectedPart.price !== 0
                 ? selectedPart.price.toString()
@@ -1290,10 +1298,7 @@ export const PartEntryForm = ({
               : prev.reOrderLevel,
           avgCost:
             normalizeAvgPriceValue(fullPart),
-          cost:
-            fullPart.cost && fullPart.cost !== 0
-              ? fullPart.cost.toString()
-              : prev.cost,
+          cost: resolveCostPriceValue(fullPart) || prev.cost,
           priceA:
             fullPart.price_a && fullPart.price_a !== 0
               ? fullPart.price_a.toString()
@@ -1330,8 +1335,7 @@ export const PartEntryForm = ({
         if (fullPart.subcategory_id) setSubCategoryId(fullPart.subcategory_id);
 
         // Validate prices after populating form
-        const costVal =
-          fullPart.cost && fullPart.cost !== 0 ? fullPart.cost.toString() : "";
+        const costVal = resolveCostPriceValue(fullPart);
         const priceAVal =
           fullPart.price_a && fullPart.price_a !== 0
             ? fullPart.price_a.toString()
@@ -4085,14 +4089,23 @@ export const PartEntryForm = ({
               </div>
               <div>
                 <label className="block text-xs text-foreground mb-1 font-bold">
-                  Avg Price
+                  Cost Price
                 </label>
                 <Input
                   type="number"
-                  readOnly
-                  value={formatNumericValue(formData.avgCost)}
-                  className="h-8 text-xs bg-muted/30"
+                  step="0.01"
+                  max={MAX_PRICE_LIMIT}
+                  value={formatNumericValue(formData.cost)}
+                  onChange={(e) => handleInputChange("cost", e.target.value)}
+                  className={cn(
+                    "h-8 text-xs",
+                    costError &&
+                      "border-destructive focus-visible:ring-destructive",
+                  )}
                 />
+                {costError && (
+                  <p className="text-xs text-destructive mt-1">{costError}</p>
+                )}
               </div>
             </div>
 

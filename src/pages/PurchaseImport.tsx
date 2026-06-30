@@ -3,7 +3,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Plus, Trash2, Pencil, Check, Eye, ShoppingCart } from "lucide-react";
+import { FileText, Plus, Trash2, Pencil, Check, Eye, ShoppingCart, PackageCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -273,6 +274,55 @@ type ImportPurchaseOrderRecord = {
     requestNo?: string | null;
   } | null;
 };
+
+type ImportPurchaseOrderReceiveLine = {
+  id: string;
+  masterPartNo: string;
+  partNo: string;
+  description: string;
+  brand: string;
+  currentStock: number;
+  demandQuantity: number;
+  quotationQuantity: number;
+  shipDays: number;
+  lastFcRate: number;
+  fcRate: number;
+  fcAmount: number;
+  lcRate: number;
+  lcAmount: number;
+  weight: number;
+  totalWeight: number;
+  orderQty: number;
+  receiveQty: string;
+  additionalQty: number;
+  backQty: number;
+};
+
+type ImportPurchaseOrderReceiveDetail = {
+  supplierName: string;
+  quotationNo: string;
+  requestNo?: string | null;
+  currency: string;
+  conversionRate: number;
+  terms?: string | null;
+  consignee?: string | null;
+  isRevised: boolean;
+};
+
+function computeImportReceiveVariance(orderQty: number, receiveQty: number) {
+  const normalizedReceive = Math.max(0, Math.floor(Number(receiveQty) || 0));
+  const normalizedOrder = Math.max(0, Math.floor(Number(orderQty) || 0));
+  return {
+    additionalQty:
+      normalizedReceive > normalizedOrder
+        ? normalizedReceive - normalizedOrder
+        : 0,
+    backQty:
+      normalizedReceive < normalizedOrder
+        ? normalizedOrder - normalizedReceive
+        : 0,
+  };
+}
 
 type PurchaseQuotationDetailItem = {
   partId: string;
@@ -5223,6 +5273,12 @@ const PurchaseOrderTab = () => {
   const [viewOrderId, setViewOrderId] = useState<string | null>(null);
   const [viewOrder, setViewOrder] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [receiveOrderId, setReceiveOrderId] = useState<string | null>(null);
+  const [receiveOrderLabel, setReceiveOrderLabel] = useState("");
+  const [receiveDetail, setReceiveDetail] = useState<ImportPurchaseOrderReceiveDetail | null>(null);
+  const [receiveLines, setReceiveLines] = useState<ImportPurchaseOrderReceiveLine[]>([]);
+  const [loadingReceiveForm, setLoadingReceiveForm] = useState(false);
+  const [savingReceive, setSavingReceive] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -5270,6 +5326,157 @@ const PurchaseOrderTab = () => {
       setViewOrderId(null);
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const openReceiveForm = async (order: ImportPurchaseOrderRecord) => {
+    setReceiveOrderId(order.id);
+    setReceiveOrderLabel(order.poNumber || "");
+    setReceiveDetail(null);
+    setReceiveLines([]);
+    setLoadingReceiveForm(true);
+    try {
+      const response = await apiClient.getImportPurchaseOrder(order.id);
+      const orderData: any = (response as any)?.data || response;
+      const lines = (orderData.items || []).map((item: any) => {
+        const orderQty = Number(item.orderQty ?? item.quantity) || 0;
+        const existingReceive =
+          Number(item.receivedQty ?? item.received_qty) > 0
+            ? Number(item.receivedQty ?? item.received_qty)
+            : orderQty;
+        const variance = computeImportReceiveVariance(orderQty, existingReceive);
+        return {
+          id: item.id,
+          masterPartNo: item.masterPartNo || "",
+          partNo: item.partNo || item.part_no || "-",
+          description: item.description || item.part_description || "-",
+          brand: item.brand || "",
+          currentStock: Number(item.currentStock || 0),
+          demandQuantity: Number(item.demandQuantity || 0),
+          quotationQuantity: Number(item.quotationQuantity || 0),
+          shipDays: Number(item.shipDays || 0),
+          lastFcRate: Number(item.lastFcRate || 0),
+          fcRate: Number(item.fcRate || 0),
+          fcAmount: Number(item.fcAmount || 0),
+          lcRate: Number(item.lcRate || 0),
+          lcAmount: Number(item.lcAmount || 0),
+          weight: Number(item.weight || 0),
+          totalWeight: Number(item.totalWeight || 0),
+          orderQty,
+          receiveQty: String(existingReceive),
+          additionalQty: variance.additionalQty,
+          backQty: variance.backQty,
+        };
+      });
+      if (lines.length === 0) {
+        toast({
+          title: "No items to receive",
+          description: "This purchase order has no line items.",
+          variant: "destructive",
+        });
+        setReceiveOrderId(null);
+        return;
+      }
+      setReceiveDetail({
+        supplierName: orderData.supplier?.name || order.supplier?.name || "-",
+        quotationNo: orderData.quotation?.quotationNo || order.quotation?.quotationNo || "-",
+        requestNo: orderData.quotation?.requestNo || order.quotation?.requestNo || null,
+        currency: orderData.quotation?.currency || "USD",
+        conversionRate: Number(orderData.quotation?.conversionRate || 1),
+        terms: orderData.quotation?.terms || null,
+        consignee: orderData.consignee || order.consignee || null,
+        isRevised: Boolean(orderData.quotation?.isRevised),
+      });
+      setReceiveLines(lines);
+    } catch (error: any) {
+      toast({
+        title: "Failed to load purchase order",
+        description: error?.message || "Could not open receive form.",
+        variant: "destructive",
+      });
+      setReceiveOrderId(null);
+    } finally {
+      setLoadingReceiveForm(false);
+    }
+  };
+
+  const handleReceiveQtyChange = (lineId: string, value: string) => {
+    setReceiveLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== lineId) return line;
+        const variance = computeImportReceiveVariance(line.orderQty, value);
+        return {
+          ...line,
+          receiveQty: value,
+          additionalQty: variance.additionalQty,
+          backQty: variance.backQty,
+        };
+      }),
+    );
+  };
+
+  const receiveTotals = useMemo(
+    () =>
+      receiveLines.reduce(
+        (acc, line) => {
+          const receiveQty = Math.max(0, Number(line.receiveQty) || 0);
+          acc.orderQty += line.orderQty;
+          acc.receiveQty += receiveQty;
+          acc.fcAmount += line.fcRate * receiveQty;
+          acc.lcAmount += line.lcRate * receiveQty;
+          acc.totalWeight += line.weight * receiveQty;
+          return acc;
+        },
+        {
+          orderQty: 0,
+          receiveQty: 0,
+          fcAmount: 0,
+          lcAmount: 0,
+          totalWeight: 0,
+        },
+      ),
+    [receiveLines],
+  );
+
+  const handleSaveReceive = async () => {
+    if (!receiveOrderId || receiveLines.length === 0) return;
+
+    const invalidLine = receiveLines.find(
+      (line) => line.receiveQty.trim() === "" || Number.isNaN(Number(line.receiveQty)),
+    );
+    if (invalidLine) {
+      toast({
+        title: "Invalid receive quantity",
+        description: "Enter a receive quantity for every line item.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingReceive(true);
+    try {
+      await apiClient.receiveImportPurchaseOrder(receiveOrderId, {
+        items: receiveLines.map((line) => ({
+          id: line.id,
+          receiveQty: Math.max(0, Math.floor(Number(line.receiveQty) || 0)),
+        })),
+      });
+      toast({
+        title: "Receive quantities saved",
+        description: `Purchase order ${receiveOrderLabel} marked as received.`,
+      });
+      setReceiveOrderId(null);
+      setReceiveLines([]);
+      setReceiveDetail(null);
+      await fetchOrders();
+    } catch (error: any) {
+      toast({
+        title: "Failed to save receive quantities",
+        description: error?.message || "Could not save receive quantities.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingReceive(false);
     }
   };
 
@@ -5339,15 +5546,28 @@ const PurchaseOrderTab = () => {
                   </td>
                   <td className="p-2 capitalize">{row.status || "-"}</td>
                   <td className="p-2 text-center">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openOrderDetail(row.id)}
-                    >
-                      <Eye className="w-3.5 h-3.5 mr-1" />
-                      View
-                    </Button>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openOrderDetail(row.id)}
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1" />
+                        View
+                      </Button>
+                      {String(row.status || "").toLowerCase() !== "received" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="default"
+                          onClick={() => openReceiveForm(row)}
+                        >
+                          <PackageCheck className="w-3.5 h-3.5 mr-1" />
+                          Receive
+                        </Button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -5412,7 +5632,10 @@ const PurchaseOrderTab = () => {
                     <tr>
                       <th className="text-left p-2">Part No</th>
                       <th className="text-left p-2">Description</th>
-                      <th className="text-right p-2">Qty</th>
+                      <th className="text-right p-2">Order Qty</th>
+                      <th className="text-right p-2">Received</th>
+                      <th className="text-right p-2">Additional</th>
+                      <th className="text-right p-2">Back</th>
                       <th className="text-right p-2">Unit Cost</th>
                       <th className="text-right p-2">Total</th>
                     </tr>
@@ -5423,6 +5646,13 @@ const PurchaseOrderTab = () => {
                         <td className="p-2 font-mono">{item.part_no || "-"}</td>
                         <td className="p-2">{item.part_description || "-"}</td>
                         <td className="p-2 text-right">{item.quantity}</td>
+                        <td className="p-2 text-right">
+                          {item.received_qty ?? 0}
+                        </td>
+                        <td className="p-2 text-right">
+                          {item.additional_qty ?? 0}
+                        </td>
+                        <td className="p-2 text-right">{item.back_qty ?? 0}</td>
                         <td className="p-2 text-right">
                           {Number(item.unit_cost || 0).toFixed(2)}
                         </td>
@@ -5436,6 +5666,211 @@ const PurchaseOrderTab = () => {
               </div>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!receiveOrderId}
+        onOpenChange={(open) => {
+          if (!open && !savingReceive) {
+            setReceiveOrderId(null);
+            setReceiveLines([]);
+            setReceiveDetail(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-[96vw] xl:max-w-7xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Receive Quantities — PO {receiveOrderLabel}
+            </DialogTitle>
+          </DialogHeader>
+          {loadingReceiveForm ? (
+            <p className="text-sm text-muted-foreground">Loading order items...</p>
+          ) : (
+            <div className="space-y-4">
+              {receiveDetail ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Supplier:</span>{" "}
+                    {receiveDetail.supplierName}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Quotation:</span>{" "}
+                    {receiveDetail.quotationNo}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Inquiry:</span>{" "}
+                    {receiveDetail.requestNo || "-"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Currency:</span>{" "}
+                    {receiveDetail.currency}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Conv. Rate:</span>{" "}
+                    {receiveDetail.conversionRate.toFixed(4)}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Consignee:</span>{" "}
+                    {(receiveDetail.consignee || "-").toUpperCase()}
+                  </div>
+                </div>
+              ) : null}
+              <p className="text-sm text-muted-foreground">
+                Quotation rates and amounts are shown for reference. Enter received
+                quantity for each line; additional qty shows excess over the order and
+                back qty shows shortfall.
+                {receiveDetail?.isRevised ? " Showing revised quotation values." : ""}
+              </p>
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      <th className="text-left p-2 whitespace-nowrap">#</th>
+                      <th className="text-left p-2 min-w-[220px]">Part</th>
+                      <th className="text-left p-2">Brand</th>
+                      <th className="text-right p-2">Stock</th>
+                      <th className="text-right p-2">Request QTY</th>
+                      <th className="text-right p-2">Quotation QTY</th>
+                      <th className="text-right p-2">Ship Days</th>
+                      <th className="text-right p-2">Last FC Rate</th>
+                      <th className="text-right p-2">
+                        {receiveDetail?.isRevised ? "Revised FC Rate" : "FC Rate"}
+                      </th>
+                      <th className="text-right p-2">
+                        {receiveDetail?.isRevised ? "Revised FC Amount" : "FC Amount"}
+                      </th>
+                      <th className="text-right p-2">
+                        {receiveDetail?.isRevised ? "Revised LC Rate" : "LC Rate"}
+                      </th>
+                      <th className="text-right p-2">
+                        {receiveDetail?.isRevised ? "Revised LC Amount" : "LC Amount"}
+                      </th>
+                      <th className="text-right p-2">Weight</th>
+                      <th className="text-right p-2">Total Weight</th>
+                      <th className="text-right p-2">Order Qty</th>
+                      <th className="text-right p-2">Receive Qty</th>
+                      <th className="text-right p-2">Additional Qty</th>
+                      <th className="text-right p-2">Back Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {receiveLines.map((line, index) => (
+                      <tr key={line.id} className="border-t">
+                        <td className="p-2 text-center text-muted-foreground tabular-nums">
+                          {index + 1}
+                        </td>
+                        <td className="p-2">
+                          <div className="font-medium">{line.masterPartNo || line.partNo}</div>
+                          <div className="text-muted-foreground">{line.description}</div>
+                        </td>
+                        <td className="p-2">{line.brand || "-"}</td>
+                        <td className="p-2 text-right tabular-nums">{line.currentStock}</td>
+                        <td className="p-2 text-right tabular-nums">{line.demandQuantity}</td>
+                        <td className="p-2 text-right tabular-nums">{line.quotationQuantity}</td>
+                        <td className="p-2 text-right tabular-nums">{line.shipDays}</td>
+                        <td className="p-2 text-right text-muted-foreground tabular-nums">
+                          {formatLastFcRateDisplay(line.lastFcRate)}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">{line.fcRate.toFixed(4)}</td>
+                        <td className="p-2 text-right tabular-nums">{line.fcAmount.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">{line.lcRate.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">{line.lcAmount.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {line.weight > 0 ? line.weight.toFixed(4) : "-"}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {line.totalWeight > 0 ? line.totalWeight.toFixed(4) : "-"}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">{line.orderQty}</td>
+                        <td className="p-2 text-right">
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={line.receiveQty}
+                            onChange={(event) =>
+                              handleReceiveQtyChange(line.id, event.target.value)
+                            }
+                            className="h-8 w-24 ml-auto text-right"
+                          />
+                        </td>
+                        <td className="p-2 text-right text-amber-700 dark:text-amber-400 tabular-nums">
+                          {line.additionalQty > 0 ? line.additionalQty : "-"}
+                        </td>
+                        <td className="p-2 text-right text-rose-700 dark:text-rose-400 tabular-nums">
+                          {line.backQty > 0 ? line.backQty : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {receiveLines.length > 0 ? (
+                    <tfoot>
+                      <tr className="bg-muted/40 font-semibold border-t">
+                        <td className="p-2" />
+                        <td className="p-2">Totals</td>
+                        <td className="p-2" colSpan={3} />
+                        <td className="p-2 text-right tabular-nums">
+                          {receiveLines.reduce(
+                            (sum, line) => sum + line.quotationQuantity,
+                            0,
+                          )}
+                        </td>
+                        <td className="p-2" colSpan={2} />
+                        <td className="p-2" />
+                        <td className="p-2 text-right tabular-nums">
+                          {receiveTotals.fcAmount.toFixed(2)}
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2 text-right tabular-nums">
+                          {receiveTotals.lcAmount.toFixed(2)}
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2 text-right tabular-nums">
+                          {receiveTotals.totalWeight.toFixed(4)}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {receiveTotals.orderQty}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {receiveTotals.receiveQty}
+                        </td>
+                        <td className="p-2" colSpan={2} />
+                      </tr>
+                    </tfoot>
+                  ) : null}
+                </table>
+              </div>
+              {receiveDetail?.terms ? (
+                <div className="max-w-xs">
+                  <Label>Terms</Label>
+                  <Input value={receiveDetail.terms} readOnly />
+                </div>
+              ) : null}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={savingReceive}
+              onClick={() => {
+                setReceiveOrderId(null);
+                setReceiveLines([]);
+                setReceiveDetail(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={loadingReceiveForm || savingReceive || receiveLines.length === 0}
+              onClick={() => void handleSaveReceive()}
+            >
+              {savingReceive ? "Saving..." : "Save Receive Quantities"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

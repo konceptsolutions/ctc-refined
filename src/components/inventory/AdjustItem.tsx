@@ -366,6 +366,91 @@ export const AdjustItem = () => {
     }
   };
 
+  const resolvePartLocation = async (
+    partId: string,
+    preferredStoreId?: string,
+  ): Promise<{ storeId: string; rackId: string; shelfId: string } | null> => {
+    try {
+      const resp: any = await apiClient.getPartLocations(partId);
+      const locations = Array.isArray(resp?.data)
+        ? resp.data
+        : Array.isArray(resp)
+          ? resp
+          : [];
+      const normalized = locations
+        .filter((l: any) => !l.isUnlocated)
+        .map((l: any) => ({
+          storeId: String(l.storeId ?? l.store_id ?? ""),
+          rackId: String(l.rackId ?? l.rack_id ?? ""),
+          shelfId: String(l.shelfId ?? l.shelf_id ?? ""),
+          quantity: Number(l.quantity) || 0,
+        }))
+        .filter((l) => l.rackId);
+
+      if (normalized.length > 0) {
+        const pool = preferredStoreId
+          ? normalized.filter((l) => l.storeId === preferredStoreId)
+          : normalized;
+        if (pool.length === 0) {
+          return null;
+        }
+        const best = pool.sort((a, b) => b.quantity - a.quantity)[0];
+        return best;
+      }
+    } catch (err) {
+      console.error("Error fetching part locations:", err);
+    }
+
+    try {
+      const movementsRes: any = await apiClient.getStockMovements({
+        part_id: partId,
+        limit: 1,
+      });
+      const movement =
+        movementsRes?.data?.[0] ??
+        (Array.isArray(movementsRes) ? movementsRes[0] : null);
+      if (!movement) return null;
+      const rackId = String(movement.rack_id ?? movement.rackId ?? "");
+      if (!rackId) return null;
+      return {
+        storeId: String(movement.store_id ?? movement.storeId ?? ""),
+        rackId,
+        shelfId: String(movement.shelf_id ?? movement.shelfId ?? ""),
+      };
+    } catch (err) {
+      console.error("Error fetching latest stock movement:", err);
+      return null;
+    }
+  };
+
+  const applyPartLocationToRow = useCallback(
+    async (rowId: string, partId: string, preferredStoreId?: string) => {
+      const location = await resolvePartLocation(partId, preferredStoreId);
+      if (!location?.rackId) return;
+
+      if (location.storeId && !preferredStoreId) {
+        setStore(location.storeId);
+      }
+
+      await fetchShelves(location.rackId);
+
+      setAdjustmentItems((items) =>
+        items.map((it) =>
+          it.id === rowId
+            ? {
+                ...it,
+                rackId: location.rackId,
+                shelfId: location.shelfId || "",
+              }
+            : it,
+        ),
+      );
+    },
+    // fetchShelves is stable; resolvePartLocation is module-scoped in component body
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   // Fetch stores
   const fetchStores = async () => {
     try {
@@ -547,11 +632,13 @@ export const AdjustItem = () => {
             };
           }),
         );
+
+        await applyPartLocationToRow(rowId, partId, store || undefined);
       } catch (err) {
         console.error("Error loading part details for adjustment:", err);
       }
     },
-    [],
+    [applyPartLocationToRow, store],
   );
 
   useEffect(() => {
@@ -564,6 +651,18 @@ export const AdjustItem = () => {
     // Intentionally omit adjustmentItems — only refresh when add/remove mode or view changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, addInventory, applyPartDetailsToRow]);
+
+  useEffect(() => {
+    if (view !== "create" && view !== "edit") return;
+    if (!store) return;
+    adjustmentItems.forEach((item) => {
+      if (item.itemId) {
+        void applyPartLocationToRow(item.id, item.itemId, store);
+      }
+    });
+    // Re-pick rack/shelf when store changes; omit adjustmentItems to avoid loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, view, applyPartLocationToRow]);
 
   useEffect(() => {
     if (store && (view === "create" || view === "edit")) {

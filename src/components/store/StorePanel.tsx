@@ -102,6 +102,7 @@ interface DirectPurchaseOrder {
   store_id: string;
   store_name: string;
   supplier_id?: string;
+  supplier_name?: string;
   branch_account_name?: string;
   branch_account_id?: string;
   order_type?: string;
@@ -150,13 +151,30 @@ function getStockOutButtonLabel(status: string | undefined | null): string {
   return "Stock Out";
 }
 
+function resolveDpoSupplierName(order: any): string {
+  return (
+    order.supplier_name ||
+    order.supplier?.companyName ||
+    order.supplier?.name ||
+    "N/A"
+  );
+}
+
+function getDpoPartyLabel(order: DirectPurchaseOrder): string {
+  if (order.order_type === "transfer_in") {
+    return order.branch_account_name || order.store_name || "N/A";
+  }
+  return order.supplier_name || "N/A";
+}
+
 const mapApiDpoToStoreOrder = (order: any): DirectPurchaseOrder => ({
   id: order.id,
   dpo_no: order.dpo_no || order.dpoNumber,
   date: order.date,
   store_id: order.store_id || order.storeId,
-  store_name: order.store_name || order.store?.name || "Unknown",
+  store_name: order.store_name || order.store?.name || "N/A",
   supplier_id: order.supplier_id || order.supplierId,
+  supplier_name: resolveDpoSupplierName(order),
   branch_account_id: order.branch_account_id || order.branchAccountId,
   branch_account_name:
     order.branch_account_name || order.BranchAccount?.name || undefined,
@@ -717,8 +735,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           dpo_no: orderData.dpo_no || orderData.dpoNumber || '',
           date: orderData.date || new Date().toISOString(),
           store_id: orderData.store_id || orderData.storeId || '',
-          store_name: orderData.store_name || orderData.store?.name || "Unknown",
+          store_name: orderData.store_name || orderData.store?.name || "N/A",
           supplier_id: orderData.supplier_id || orderData.supplierId,
+          supplier_name: resolveDpoSupplierName(orderData),
           branch_account_id: orderData.branch_account_id || orderData.branchAccountId,
           branch_account_name: orderData.branch_account_name,
           order_type: orderData.order_type || orderData.orderType,
@@ -1431,6 +1450,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       const inDateRange = isWithinDateRange(order.date);
       const matchesSearch =
         order.dpo_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getDpoPartyLabel(order).toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.store_name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesPart = orderContainsSelectedPart(filterPartId, order.items);
       return inDateRange && matchesSearch && matchesPart;
@@ -1499,7 +1519,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       id: order.id,
       number: order.dpo_no,
       date: order.date,
-      party: order.store_name || "N/A",
+      party: getDpoPartyLabel(order),
       itemsCount: order.items_count,
       quantity: order.total_quantity || 0,
       amount: order.total_amount || 0,
@@ -2161,7 +2181,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell>
                                 <Badge variant="outline">DPO</Badge>
                               </TableCell>
-                              <TableCell>{order.store_name}</TableCell>
+                              <TableCell>{getDpoPartyLabel(order)}</TableCell>
                               <TableCell>{order.items_count} items</TableCell>
                               <TableCell>
                                 {order.total_quantity || 0}

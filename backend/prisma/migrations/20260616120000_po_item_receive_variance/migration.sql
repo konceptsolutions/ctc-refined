@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "PurchaseOrderItem" ADD COLUMN "additionalQty" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "PurchaseOrderItem" ADD COLUMN "backQty" INTEGER NOT NULL DEFAULT 0;

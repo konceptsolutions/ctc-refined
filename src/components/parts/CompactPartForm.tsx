@@ -100,6 +100,32 @@ function normalizeDropdownList<T>(res: unknown): T[] {
   return [];
 }
 
+const normalizeAvgPriceValue = (source: any): string => {
+  const raw =
+    source?.avgCost ??
+    source?.avg_cost ??
+    source?.avgPrice ??
+    source?.avg_price ??
+    "";
+  if (raw === null || raw === undefined || raw === "") return "0.00";
+  const value = Number(raw);
+  return Number.isFinite(value) ? value.toFixed(2) : String(raw);
+};
+
+const resolveCostPriceValue = (source: any): string => {
+  const direct = source?.cost ?? source?.cost_price;
+  if (
+    direct !== null &&
+    direct !== undefined &&
+    direct !== "" &&
+    Number(direct) !== 0
+  ) {
+    return String(direct);
+  }
+  const avg = normalizeAvgPriceValue(source);
+  return avg !== "0.00" ? avg : "0.00";
+};
+
 interface CompactPartFormProps {
   onSave: (
     part: PartFormData & {
@@ -547,10 +573,7 @@ export const CompactPartForm = ({
             }
 
             // Step 8: Prices - Map correctly (handle null/undefined)
-            const cost =
-              part.cost !== null && part.cost !== undefined
-                ? part.cost.toString()
-                : "0.00";
+            const cost = resolveCostPriceValue(part);
             const priceA =
               part.price_a !== null && part.price_a !== undefined
                 ? part.price_a.toString()
@@ -1292,7 +1315,7 @@ export const CompactPartForm = ({
               uom: part.uom || "NOS",
               weight: part.weight?.toString() || "",
               reOrderLevel: part.reorder_level?.toString() || "0",
-              cost: part.cost?.toString() || "0.00",
+              cost: resolveCostPriceValue(part),
               purchasePrice: part.purchasePrice?.toString() || "0.00",
               avgCost: part.avgCost?.toString() || "0.00",
               priceA: part.price_a?.toString() || "0.00",
@@ -2147,13 +2170,14 @@ export const CompactPartForm = ({
           </div>
           <div>
             <label className="block text-[10px] text-foreground mb-0.5 font-bold">
-              Avg Price
+              Cost Price
             </label>
             <Input
               type="number"
-              readOnly
-              value={formData.avgCost}
-              className="h-7 text-xs bg-muted/30"
+              step="0.01"
+              value={formData.cost}
+              onChange={(e) => handleInputChange("cost", e.target.value)}
+              className="h-7 text-xs"
             />
           </div>
         </div>

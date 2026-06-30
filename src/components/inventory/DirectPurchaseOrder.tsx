@@ -2411,7 +2411,8 @@ export const DirectPurchaseOrder = ({
                               <TableHead className="w-28 sm:w-32">Purchase Price</TableHead>
                               <TableHead className="w-24 sm:w-28">Price A</TableHead>
                               <TableHead className="w-24 sm:w-28">Price B</TableHead>
-                              <TableHead className="w-20 text-right">Weight (kg)</TableHead>
+                              <TableHead className="w-20 text-right">Weight</TableHead>
+                              <TableHead className="w-24 text-right">Total Weight</TableHead>
                               <TableHead className="text-right min-w-[100px]">Total Amount</TableHead>
                               <TableHead className="text-right min-w-[100px]">EXP / unit</TableHead>
                               <TableHead className="w-12"></TableHead>
@@ -2520,8 +2521,35 @@ export const DirectPurchaseOrder = ({
                                     />
                                   </TableCell>
 
-                                  <TableCell className="text-right text-xs text-muted-foreground">
-                                    {item.weight > 0 ? `${item.weight} kg` : "-"}
+                                  <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                                    {item.weight > 0
+                                      ? item.weight.toLocaleString("en-PK", {
+                                          minimumFractionDigits: 0,
+                                          maximumFractionDigits: 4,
+                                        })
+                                      : "-"}
+                                  </TableCell>
+                                  <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                                    {(() => {
+                                      const qty =
+                                        typeof item.quantity === "number"
+                                          ? item.quantity
+                                          : 0;
+                                      const unitWeight =
+                                        typeof item.weight === "number"
+                                          ? item.weight
+                                          : 0;
+                                      const lineTotalWeight = qty * unitWeight;
+                                      return lineTotalWeight > 0
+                                        ? lineTotalWeight.toLocaleString(
+                                            "en-PK",
+                                            {
+                                              minimumFractionDigits: 0,
+                                              maximumFractionDigits: 4,
+                                            },
+                                          )
+                                        : "-";
+                                    })()}
                                   </TableCell>
                                   <TableCell className="text-right font-medium">
                                     {(() => {
@@ -2590,15 +2618,16 @@ export const DirectPurchaseOrder = ({
                               {/* Price B */}
                               <TableCell />
                               {/* Weight */}
+                              <TableCell />
+                              {/* Total Weight */}
                               <TableCell className="text-right font-semibold tabular-nums text-xs">
                                 {itemPartTotals.totalWeight.toLocaleString(
                                   "en-PK",
                                   {
                                     minimumFractionDigits: 0,
-                                    maximumFractionDigits: 2,
+                                    maximumFractionDigits: 4,
                                   },
-                                )}{" "}
-                                kg
+                                )}
                               </TableCell>
                               {/* Total Amount */}
                               <TableCell className="text-right font-semibold tabular-nums">

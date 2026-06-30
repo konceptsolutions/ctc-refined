@@ -634,6 +634,8 @@ model PurchaseOrderItem {
   unitCost        Float
   totalCost       Float
   receivedQty     Int           @default(0)
+  additionalQty   Int           @default(0)
+  backQty         Int           @default(0)
   notes           String?
   createdAt       DateTime      @default(now())
   Part            Part          @relation(fields: [partId], references: [id], onDelete: Cascade)
