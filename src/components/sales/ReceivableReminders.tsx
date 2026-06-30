@@ -29,6 +29,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -47,6 +53,7 @@ interface Receivable {
   term: string;
   customerName: string;
   customerCode: string;
+  customerContact: string;
   balance: number;
   paidAmount: number;
   dueDate: string;
@@ -119,8 +126,32 @@ export const ReceivableReminders = () => {
     const fetchReceivables = async () => {
       try {
         setLoadingReceivables(true);
-        const response = await apiClient.getSalesInvoices();
-        const invoices = Array.isArray(response) ? response : ((response as any)?.data || []);
+        const [invoicesResponse, customersResponse] = await Promise.all([
+          apiClient.getSalesInvoices(),
+          apiClient.getCustomers({ status: "active", limit: 1000 }),
+        ]);
+        const invoices = Array.isArray(invoicesResponse)
+          ? invoicesResponse
+          : ((invoicesResponse as any)?.data || []);
+        const customersData = Array.isArray(customersResponse)
+          ? customersResponse
+          : (customersResponse as any)?.data || [];
+        const customerContactById = new Map<string, string>();
+        const customerContactByName = new Map<string, string>();
+        for (const customer of customersData) {
+          const contact =
+            String(customer?.contactNo || customer?.cellNumber || "").trim() ||
+            "-";
+          if (customer?.id) {
+            customerContactById.set(String(customer.id), contact);
+          }
+          const nameKey = String(customer?.name || "")
+            .trim()
+            .toLowerCase();
+          if (nameKey) {
+            customerContactByName.set(nameKey, contact);
+          }
+        }
         const approvedInvoices = invoices.filter((inv: any) =>
           ["approved", "partially_delivered", "fully_delivered"].includes(
             String(inv?.status || "").toLowerCase(),
@@ -154,13 +185,21 @@ export const ReceivableReminders = () => {
           const status: Receivable["status"] =
             remaining <= 0 ? "pending" : daysOverdue > 0 ? "overdue" : "pending";
 
+          const customerId = String(inv.customerId || "");
+          const customerName = inv.customerName || "Walk-in Customer";
+          const customerContact =
+            (customerId && customerContactById.get(customerId)) ||
+            customerContactByName.get(customerName.trim().toLowerCase()) ||
+            "-";
+
           return {
             id: inv.id,
             invoiceNo: inv.invoiceNo || "-",
             invoiceDate: format(invoiceDateObj, "dd/MM/yyyy"),
             term: rawTerm || "-",
-            customerName: inv.customerName || "Walk-in Customer",
-            customerCode: inv.customerId || "-",
+            customerName,
+            customerCode: customerId || "-",
+            customerContact,
             balance: remaining,
             paidAmount: Number(inv.paidAmount || 0),
             dueDate: format(dueDateObj, "dd/MM/yyyy"),
@@ -300,12 +339,23 @@ export const ReceivableReminders = () => {
     });
   };
 
-  const handleExport = () => {
-    const headers = ["Invoice", "Customer", "Code", "Term", "Due Date", "Balance", "Paid", "Days Overdue", "Reminders", "Status"];
+  const getExportData = () => {
+    const headers = [
+      "Invoice",
+      "Customer",
+      "Contact Number",
+      "Term",
+      "Due Date",
+      "Balance",
+      "Paid",
+      "Days Overdue",
+      "Reminders",
+      "Status",
+    ];
     const rows = filteredReceivables.map((item) => [
       item.invoiceNo,
       item.customerName,
-      item.customerCode,
+      item.customerContact,
       item.term,
       item.dueDate,
       item.balance,
@@ -314,7 +364,11 @@ export const ReceivableReminders = () => {
       item.remindersSent,
       item.status,
     ]);
+    return { headers, rows };
+  };
 
+  const handleExportExcel = () => {
+    const { headers, rows } = getExportData();
     const csvContent = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
@@ -324,7 +378,102 @@ export const ReceivableReminders = () => {
 
     toast({
       title: "Report Exported",
-      description: "Receivables report has been exported.",
+      description: "Receivables report has been exported to Excel.",
+    });
+  };
+
+  const handleExportPdf = () => {
+    const { headers, rows } = getExportData();
+    const esc = (value: unknown) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+    const printHTML = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title></title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: Arial, sans-serif; font-size: 10px; color: #000; margin: 0; }
+            h1 { font-size: 16px; margin: 0 0 6px; }
+            .meta { color: #555; margin-bottom: 14px; font-size: 9px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ccc; padding: 5px 6px; text-align: left; }
+            th { background: #f4f4f4; font-weight: 700; }
+            td.num { text-align: right; }
+            tr:nth-child(even) td { background: #fafafa; }
+          </style>
+        </head>
+        <body>
+          <h1>Receivables Report</h1>
+          <div class="meta">Generated: ${esc(new Date().toLocaleString())} | Total Invoices: ${rows.length}</div>
+          <table>
+            <thead>
+              <tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map(
+                  (row) => `
+                <tr>
+                  ${row
+                    .map((cell, index) =>
+                      index >= 5 && index <= 7
+                        ? `<td class="num">${esc(cell)}</td>`
+                        : `<td>${esc(cell)}</td>`,
+                    )
+                    .join("")}
+                </tr>`,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const printFrame = document.createElement("iframe");
+    printFrame.style.position = "fixed";
+    printFrame.style.right = "0";
+    printFrame.style.bottom = "0";
+    printFrame.style.width = "0";
+    printFrame.style.height = "0";
+    printFrame.style.border = "0";
+    printFrame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(printFrame);
+
+    const cleanup = () => {
+      setTimeout(() => {
+        if (document.body.contains(printFrame)) {
+          document.body.removeChild(printFrame);
+        }
+        window.focus();
+      }, 200);
+    };
+
+    printFrame.onload = () => {
+      const frameWindow = printFrame.contentWindow;
+      if (!frameWindow) {
+        cleanup();
+        return;
+      }
+      frameWindow.onafterprint = cleanup;
+      setTimeout(() => {
+        frameWindow.focus();
+        frameWindow.print();
+      }, 150);
+      setTimeout(cleanup, 3000);
+    };
+
+    printFrame.srcdoc = printHTML;
+
+    toast({
+      title: "PDF Export Ready",
+      description: "Use Save as PDF in the print dialog.",
     });
   };
 
@@ -369,7 +518,7 @@ export const ReceivableReminders = () => {
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="hidden grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="bg-[#1e3a5f] border-0">
           <CardContent className="p-4 text-center">
             <p className="text-xs text-white/70 mb-1">Total Amount</p>
@@ -423,10 +572,25 @@ export const ReceivableReminders = () => {
         </Select>
 
         <div className="ml-auto">
-          <Button onClick={handleExport} variant="outline" className="gap-2 border-green-500 text-green-600 hover:bg-green-50">
-            <Download className="w-4 h-4" />
-            Export
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="gap-2 border-green-500 text-green-600 hover:bg-green-50"
+              >
+                <Download className="w-4 h-4" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={handleExportExcel}>
+                Export as Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPdf}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

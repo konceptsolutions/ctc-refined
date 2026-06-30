@@ -768,6 +768,7 @@ export const SalesInvoice = ({
   const [showInvoicePrintColumnsDialog, setShowInvoicePrintColumnsDialog] =
     useState(false);
   const [invoiceForPrint, setInvoiceForPrint] = useState<Invoice | null>(null);
+  const [printInvoiceWithBalance, setPrintInvoiceWithBalance] = useState(true);
 
   // Hold Dialog
   const [showHoldDialog, setShowHoldDialog] = useState(false);
@@ -5326,7 +5327,12 @@ export const SalesInvoice = ({
     }
   };
 
-  const handlePrintInvoice = (invoice: Invoice, columns?: string[]) => {
+  const handlePrintInvoice = (
+    invoice: Invoice,
+    columns?: string[],
+    options?: { includeBalance?: boolean },
+  ) => {
+    const includeBalance = options?.includeBalance !== false;
     const invoiceMeta = invoice as any;
     const enabledColumns = new Set(columns || selectedInvoicePrintColumns);
     const include = (id: string) => enabledColumns.has(id);
@@ -5508,6 +5514,9 @@ export const SalesInvoice = ({
       (freightAmount > 0 ? 1 : 0) +
       (taxAmount > 0 ? 1 : 0);
     const amountWordsOffsetPx = linesBeforeCurrentAmount * 22;
+    const salesTaxStampUrl = `${window.location.origin}/invoice-sales-tax-stamp.png`;
+    const authorisedSignatureUrl = `${window.location.origin}/invoice-authorised-signature.png`;
+    const isGstLetterhead = taxAmount > 0 || taxPercentageStored > 0;
 
     const rows =
       invoice.items?.length
@@ -5532,37 +5541,59 @@ export const SalesInvoice = ({
     const printHTML = `
       <html>
         <head>
-          <title>Invoice ${esc(invoice.invoiceNo)}</title>
+          <title></title>
           <style>
-            @page { size: A5 landscape; margin: 8mm; }
+            @page { size: A5 landscape; margin: ${isGstLetterhead ? "28mm 10mm 42mm 22mm" : "8mm"}; }
             * { box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; font-size: 11px; color: #000; margin: 0; }
-            .page { width: 100%; }
+            html, body { font-family: Arial, sans-serif; font-size: ${isGstLetterhead ? "10px" : "11px"}; color: #000; margin: 0; padding: 0; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page { width: 100%; ${isGstLetterhead ? "page-break-after: avoid; break-after: avoid-page;" : ""} }
+            .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+            .header-row.gst-header { gap: 12px; }
+            .header-left { flex: 1; min-width: 0; }
+            .header-center { flex: 0 0 auto; display: flex; justify-content: center; align-items: flex-start; padding: 0 6px; }
+            .header-right { flex: 1; text-align: right; }
+            .header-row.gst-header .header-left { flex: 1; }
+            .header-row.gst-header .header-center { flex: 0 0 auto; }
+            .header-row.gst-header .header-right { flex: 1; min-width: 0; }
+            .tax-stamp { height: 58px; width: auto; object-fit: contain; display: block; }
+            .tax-stamp.gst-stamp { height: 50px; }
             .row { display: flex; justify-content: space-between; align-items: flex-start; }
             .mt-8 { margin-top: 8px; }
             .muted { color: #444; }
-            .title { font-weight: bold; font-size: 12px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-            th, td { border: 1px solid #444; padding: 3px 4px; font-size: 10px; vertical-align: top; }
+            .title { font-weight: bold; font-size: ${isGstLetterhead ? "11px" : "12px"}; }
+            table { width: 100%; border-collapse: collapse; margin-top: ${isGstLetterhead ? "4px" : "8px"}; }
+            th, td { border: 1px solid #444; padding: ${isGstLetterhead ? "2px 3px" : "3px 4px"}; font-size: ${isGstLetterhead ? "9px" : "10px"}; vertical-align: top; }
             th { text-align: left; background: #f5f5f5; }
             .c { text-align: center; }
             .r { text-align: right; }
-            .totals { width: 42%; margin-left: auto; margin-top: 0; }
-            .totals td { border: none; border-bottom: 1px solid #aaa; }
+            .totals { width: ${isGstLetterhead ? "38%" : "42%"}; margin-left: auto; margin-top: 0; }
+            .totals td { border: none; border-bottom: 1px solid #aaa; font-size: ${isGstLetterhead ? "9px" : "10px"}; }
             .totals tr:last-child td { border-bottom: 2px solid #000; font-weight: bold; }
-            .amount-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
-            .amount-words { flex: 1; font-size: 11px; padding-top: 2px; }
-            .notes { margin-top: 10px; font-size: 10px; }
+            .amount-row { display: flex; align-items: flex-start; gap: 8px; margin-top: ${isGstLetterhead ? "6px" : "8px"}; page-break-inside: avoid; break-inside: avoid; }
+            .amount-words { flex: 1; font-size: ${isGstLetterhead ? "10px" : "11px"}; padding-top: 2px; }
+            .notes { margin-top: ${isGstLetterhead ? "6px" : "10px"}; font-size: ${isGstLetterhead ? "9px" : "10px"}; max-width: ${isGstLetterhead ? "68%" : "100%"}; }
+            .gst-footer {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+              gap: 10px;
+              margin-top: ${isGstLetterhead ? "4px" : "10px"};
+              page-break-inside: avoid;
+              break-inside: avoid;
+            }
+            .gst-footer .notes { margin-top: 0; flex: 1; max-width: calc(100% - 158px); }
+            .signature-field { flex: 0 0 148px; text-align: center; align-self: flex-end; }
+            .signature-slot { height: 44px; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+            .auth-signature { max-height: 42px; max-width: 136px; width: auto; object-fit: contain; display: block; }
+            .signature-line { border-top: 1px solid #000; width: 100%; }
+            .signature-caption { font-size: 8px; margin-top: 1px; text-align: center; line-height: 1.2; }
           </style>
         </head>
         <body>
           <div class="page">
-            <div style="text-align: center; margin-bottom: 6px;">
-              <div style="font-weight: bold; font-size: 14px;">CRYSTAL TRADING COMPANY</div>
-              <div style="font-size: 12px; color: #444; margin-top: 1px;">Sale Invoice</div>
-            </div>
-            <div class="row">
-              <div>
+            <div class="header-row${isGstLetterhead ? " gst-header" : ""}">
+              <div class="header-left">
                 <div class="title">${esc(invoice.customerName || "Walk-in Customer")}</div>
                 ${
                   invoice.customerType === "registered" && formattedAddressHtml
@@ -5575,7 +5606,10 @@ export const SalesInvoice = ({
                     : ""
                 }
               </div>
-              <div class="r">
+              <div class="header-center">
+                <img src="${salesTaxStampUrl}" alt="Sales tax as per rule will be charged on the final invoice" class="tax-stamp${isGstLetterhead ? " gst-stamp" : ""}" />
+              </div>
+              <div class="header-right">
                 <div>Print: ${esc(printDateTime)}</div>
                 <div>Page 1 of 1</div>
                 <div>${esc(invoice.invoiceNo)}</div>
@@ -5659,12 +5693,38 @@ export const SalesInvoice = ({
                     : ""
                 }
                 <tr><td>Current Amount</td><td class="r">${currentAmount.toLocaleString()}</td></tr>
-                <tr><td>Bal. B/F</td><td class="r">${balBf.toLocaleString()}</td></tr>
-                <tr><td>Total Receivable</td><td class="r">${totalReceivable.toLocaleString()}</td></tr>
+                ${
+                  includeBalance
+                    ? `<tr><td>Bal. B/F</td><td class="r">${balBf.toLocaleString()}</td></tr>
+                <tr><td>Total Receivable</td><td class="r">${totalReceivable.toLocaleString()}</td></tr>`
+                    : ""
+                }
               </table>
             </div>
 
-            <div class="notes">
+            ${
+              isGstLetterhead
+                ? `<div class="gst-footer">
+              <div class="notes">
+                <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || "-")}</div>
+                <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || "-")}</div>
+                <div style="margin-top:4px;">
+                  <b>Note:-</b> All manufacturer's Names, Numbers, Symbols and Descriptions are used for reference only.
+                  Document invalid without authorised signature and stamp.
+                </div>
+                <div style="margin-top:3px;">
+                  Parts sold may be Exchanged/returned same day only.
+                </div>
+              </div>
+              <div class="signature-field">
+                <div class="signature-slot">
+                  <img src="${authorisedSignatureUrl}" alt="Authorised signature" class="auth-signature" />
+                </div>
+                <div class="signature-line"></div>
+                <div class="signature-caption">(Authorised Signature)</div>
+              </div>
+            </div>`
+                : `<div class="notes">
               <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || "-")}</div>
               <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || "-")}</div>
               <div style="margin-top:8px;">
@@ -5674,13 +5734,13 @@ export const SalesInvoice = ({
               <div style="margin-top:6px;">
                 Parts sold may be Exchanged/returned same day only.
               </div>
-            </div>
+            </div>`
+            }
           </div>
         </body>
       </html>
     `;
 
-    // Use hidden iframe printing to avoid opening a separate tab/window.
     const printFrame = document.createElement("iframe");
     printFrame.style.position = "fixed";
     printFrame.style.right = "0";
@@ -5702,16 +5762,36 @@ export const SalesInvoice = ({
 
     printFrame.onload = () => {
       const frameWindow = printFrame.contentWindow;
-      if (!frameWindow) {
+      const frameDocument = printFrame.contentDocument;
+      if (!frameWindow || !frameDocument) {
         cleanup();
         return;
       }
+
       frameWindow.onafterprint = cleanup;
-      setTimeout(() => {
+
+      const images = Array.from(frameDocument.images);
+      const waitForImages =
+        images.length === 0
+          ? Promise.resolve()
+          : Promise.all(
+              images.map(
+                (img) =>
+                  new Promise<void>((resolve) => {
+                    if (img.complete) {
+                      resolve();
+                      return;
+                    }
+                    img.onload = () => resolve();
+                    img.onerror = () => resolve();
+                  }),
+              ),
+            );
+
+      void waitForImages.then(() => {
         frameWindow.focus();
         frameWindow.print();
-      }, 100);
-      // Fallback for browsers that don't fire onafterprint reliably.
+      });
       setTimeout(cleanup, 3000);
     };
 
@@ -5813,6 +5893,7 @@ export const SalesInvoice = ({
     } catch {
       setInvoiceForPrint(invoice);
     } finally {
+      setPrintInvoiceWithBalance(true);
       setShowInvoicePrintColumnsDialog(true);
     }
   };
@@ -9100,9 +9181,37 @@ export const SalesInvoice = ({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Print Column Selection</DialogTitle>
+            <DialogTitle>Print Invoice</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Balance on print</Label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="invoice-print-balance"
+                    checked={printInvoiceWithBalance}
+                    onChange={() => setPrintInvoiceWithBalance(true)}
+                    className="h-4 w-4"
+                  />
+                  With balance (Bal. B/F and Total Receivable)
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="invoice-print-balance"
+                    checked={!printInvoiceWithBalance}
+                    onChange={() => setPrintInvoiceWithBalance(false)}
+                    className="h-4 w-4"
+                  />
+                  Without balance (current invoice amount only)
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Columns</Label>
+              <div className="space-y-3">
             {invoicePrintColumns.map((col) => (
               <div key={col.id} className="flex items-center gap-2">
                 <Checkbox
@@ -9118,6 +9227,8 @@ export const SalesInvoice = ({
                 <Label>{col.label}</Label>
               </div>
             ))}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -9129,7 +9240,9 @@ export const SalesInvoice = ({
             <Button
               onClick={() => {
                 if (!invoiceForPrint) return;
-                handlePrintInvoice(invoiceForPrint, selectedInvoicePrintColumns);
+                handlePrintInvoice(invoiceForPrint, selectedInvoicePrintColumns, {
+                  includeBalance: printInvoiceWithBalance,
+                });
                 setShowInvoicePrintColumnsDialog(false);
               }}
             >
