@@ -590,16 +590,43 @@ export const AccountsTab = () => {
     });
   };
 
+  const buildExportRows = (accountsToExport: Account[]) => {
+    const sortedAccounts = [...accountsToExport].sort((a, b) => {
+      const groupCmp = a.group.localeCompare(b.group);
+      if (groupCmp !== 0) return groupCmp;
+      const subGroupCmp = a.subGroup.localeCompare(b.subGroup);
+      if (subGroupCmp !== 0) return subGroupCmp;
+      return a.code.localeCompare(b.code);
+    });
+
+    let previousGroup = "";
+    let previousSubGroup = "";
+
+    return sortedAccounts.map((acc) => {
+      const showGroup = acc.group !== previousGroup;
+      const showSubGroup =
+        showGroup || acc.subGroup !== previousSubGroup;
+
+      previousGroup = acc.group;
+      previousSubGroup = acc.subGroup;
+
+      return {
+        group: showGroup ? acc.group : "",
+        subGroup: showSubGroup ? acc.subGroup : "",
+        code: acc.code,
+        name: acc.name,
+        status: acc.status,
+      };
+    });
+  };
+
   const handleExportCSV = () => {
+    const exportRows = buildExportRows(filteredAccounts);
     const csvContent = [
       ["Group", "Sub Group", "Code", "Name", "Status"].join(","),
-      ...filteredAccounts.map(acc => [
-        acc.group,
-        acc.subGroup,
-        acc.code,
-        acc.name,
-        acc.status
-      ].join(","))
+      ...exportRows.map((row) =>
+        [row.group, row.subGroup, row.code, row.name, row.status].join(","),
+      ),
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -613,6 +640,7 @@ export const AccountsTab = () => {
   };
 
   const handlePrintList = () => {
+    const exportRows = buildExportRows(filteredAccounts);
     const printHTML = `
       <html>
         <head>
@@ -639,13 +667,13 @@ export const AccountsTab = () => {
               </tr>
             </thead>
             <tbody>
-              ${filteredAccounts.map(acc => `
+              ${exportRows.map((row) => `
                 <tr>
-                  <td>${acc.group}</td>
-                  <td>${acc.subGroup}</td>
-                  <td>${acc.code}</td>
-                  <td>${acc.name}</td>
-                  <td>${acc.status}</td>
+                  <td>${row.group}</td>
+                  <td>${row.subGroup}</td>
+                  <td>${row.code}</td>
+                  <td>${row.name}</td>
+                  <td>${row.status}</td>
                 </tr>
               `).join('')}
             </tbody>
