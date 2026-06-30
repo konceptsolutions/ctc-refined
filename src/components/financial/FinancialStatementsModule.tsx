@@ -5,7 +5,7 @@ import { TrialBalanceTab } from "./TrialBalanceTab";
 import { IncomeStatementTab } from "./IncomeStatementTab";
 import { BalanceSheetTab } from "./BalanceSheetTab";
 import { LedgersTab } from "./LedgersTab";
-import { DailyClosingTab } from "./DailyClosingTab";
+import { DailyClosingModule } from "./DailyClosingModule";
 
 export const FinancialStatementsModule = () => {
   const [activeTab, setActiveTab] = useState("general-journal");
@@ -73,7 +73,7 @@ export const FinancialStatementsModule = () => {
         </TabsContent>
 
         <TabsContent value="daily-closing" className="animate-fade-in mt-4">
-          <DailyClosingTab />
+          <DailyClosingModule />
         </TabsContent>
       </Tabs>
     </div>

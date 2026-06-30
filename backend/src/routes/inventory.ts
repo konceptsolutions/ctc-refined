@@ -1506,6 +1506,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       store_id,
       stock_as_of_date,
       brand_name,
+      model_name,
       page = "1",
       limit = "50",
     } = req.query;
@@ -1542,6 +1543,11 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       params.push(String(brand_name).trim());
     }
 
+    if (model_name && String(model_name).trim() !== "") {
+      whereClause += ` AND EXISTS (SELECT 1 FROM "Model" m WHERE m."partId" = p.id AND LOWER(m.name) = LOWER($${paramIdx++}))`;
+      params.push(String(model_name).trim());
+    }
+
     if (search) {
       whereClause += ` AND (p."partNo" ILIKE $${paramIdx} OR p.description ILIKE $${paramIdx} OR b.name ILIKE $${paramIdx} OR mp."masterPartNo" ILIKE $${paramIdx})`;
       params.push(`%${search}%`);
@@ -1552,6 +1558,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       (search && String(search).trim()) ||
       category_id ||
       (brand_name && String(brand_name).trim()) ||
+      (model_name && String(model_name).trim()) ||
       store_id ||
       stock_as_of_date ||
       req.query.sort_stock_first === "true" ||

@@ -601,7 +601,12 @@ export const SalesInquiry = () => {
         if (Array.isArray(balancesData)) {
           balancesData.forEach((b: any) => {
             if (b.part_id) {
-              if (b.rack_no) rackMapData[b.part_id] = b.rack_no;
+              const loc =
+                b.location ||
+                (b.rack && b.shelf
+                  ? `${b.rack}/${b.shelf}`
+                  : b.rack || b.shelf || b.rack_no || "");
+              if (loc) rackMapData[b.part_id] = loc;
               if (b.current_stock !== undefined) stockMapData[b.part_id] = b.current_stock;
             }
           });
@@ -2129,9 +2134,12 @@ export const SalesInquiry = () => {
       if (Array.isArray(balancesData)) {
         balancesData.forEach((b: any) => {
           if (b.part_id) {
-            if (b.rack_no) {
-              rackMapData[b.part_id] = b.rack_no;
-            }
+            const loc =
+              b.location ||
+              (b.rack && b.shelf
+                ? `${b.rack}/${b.shelf}`
+                : b.rack || b.shelf || b.rack_no || "");
+            if (loc) rackMapData[b.part_id] = loc;
             if (b.current_stock !== undefined && b.current_stock !== null) {
               stockMapData[b.part_id] = b.current_stock;
             }
@@ -3242,6 +3250,9 @@ export const SalesInquiry = () => {
                     <TableHead className="w-[90px] text-center font-bold text-foreground">
                       Price B
                     </TableHead>
+                    <TableHead className="w-[100px] text-center font-bold text-foreground">
+                      Location
+                    </TableHead>
                     <TableHead className="w-[70px] text-center font-bold text-foreground">
                       Image
                     </TableHead>
@@ -3280,6 +3291,10 @@ export const SalesInquiry = () => {
                     const priceDates = row.partId
                       ? partPriceLastUpdatedByPartId[row.partId]
                       : undefined;
+                    const locationText =
+                      (row.partId && rackMap[row.partId]) ||
+                      rowPart?.rackNo ||
+                      "—";
                     return (
                       <Fragment key={row.id}>
                         <TableRow
@@ -3784,6 +3799,20 @@ export const SalesInquiry = () => {
                             )}
                           </TableCell>
                           <TableCell className="text-center align-top">
+                            {!row.partId ? (
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
+                            ) : (
+                              <span
+                                className="text-[11px] leading-tight text-foreground block max-w-[96px] mx-auto"
+                                title={locationText}
+                              >
+                                {locationText !== "N/A" ? locationText : "—"}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center align-top">
                             {renderPartImageThumbnail(row.partId, rowPart)}
                           </TableCell>
                           <TableCell className="text-center align-top">
@@ -3821,7 +3850,7 @@ export const SalesInquiry = () => {
                             key={`${row.id}-qty-used`}
                             className="border-b bg-muted/20"
                           >
-                            <TableCell colSpan={12} className="px-4 pt-0 pb-2">
+                            <TableCell colSpan={13} className="px-4 pt-0 pb-2">
                               <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
                                   Quantity Used

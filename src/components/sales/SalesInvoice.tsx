@@ -115,6 +115,7 @@ import {
   DeliveryLogEntry,
   ItemGrade,
   PaymentStatus,
+  StockLocation,
   getCustomerTypeLabel,
 } from "@/types/invoice";
 
@@ -149,6 +150,31 @@ function getPartImageList(
   return [part.imageP1, part.imageP2, part.image_p1, part.image_p2]
     .map((img) => formatPartImageSrc(img))
     .filter((img): img is string => Boolean(img));
+}
+
+function formatPartLocationDisplay(
+  partId: string,
+  part: PartItem | null | undefined,
+  partLocations: Record<string, StockLocation[] | any[]>,
+): string {
+  const locs =
+    (partId && partLocations[partId]?.length
+      ? partLocations[partId]
+      : part?.locations) || [];
+  if (!locs.length) return "—";
+  const labels = [
+    ...new Set(
+      locs
+        .map((loc) => {
+          const rack = String(loc.rackCode || loc.rack || "").trim();
+          const shelf = String(loc.shelfNo || loc.shelf || "").trim();
+          if (!rack && !shelf) return "";
+          return `${rack || "-"}${shelf ? `-${shelf}` : ""}`;
+        })
+        .filter(Boolean),
+    ),
+  ];
+  return labels.length ? labels.join(", ") : "—";
 }
 
 function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] {
@@ -703,6 +729,10 @@ export const SalesInvoice = ({
   const [receivedAmount, setReceivedAmount] = useState(0); // Keep for backward compatibility
   const [bankAmount, setBankAmount] = useState(0); // NEW: Separate bank amount
   const [cashAmount, setCashAmount] = useState(0); // NEW: Separate cash amount
+  const bankAccountTriggerRef = useRef<HTMLButtonElement>(null);
+  const cashAccountTriggerRef = useRef<HTMLButtonElement>(null);
+  const [bankSelectOpen, setBankSelectOpen] = useState(false);
+  const [cashSelectOpen, setCashSelectOpen] = useState(false);
 
   // Payment fields
   const [discount, setDiscount] = useState(0);
@@ -1164,17 +1194,45 @@ export const SalesInvoice = ({
   }, [inlineItems]);
 
   useEffect(() => {
+    const focusAndOpenAccountSelect = (
+      triggerRef: React.RefObject<HTMLButtonElement | null>,
+      setOpen: (open: boolean) => void,
+    ) => {
+      const trigger = triggerRef.current;
+      if (!trigger || trigger.disabled) return;
+      setOpen(true);
+      requestAnimationFrame(() => {
+        trigger.focus();
+      });
+    };
+
     const onShortcut = (e: KeyboardEvent) => {
       if (!showDocumentForm) return;
       if (e.altKey && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
         handleAddNewItem(true);
+        return;
+      }
+      if (isQuotation || isTransferOut) return;
+      if (e.altKey && (e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        focusAndOpenAccountSelect(cashAccountTriggerRef, setCashSelectOpen);
+        return;
+      }
+      if (e.altKey && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        focusAndOpenAccountSelect(bankAccountTriggerRef, setBankSelectOpen);
       }
     };
 
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
-  }, [showDocumentForm, handleAddNewItem]);
+  }, [
+    showDocumentForm,
+    handleAddNewItem,
+    isQuotation,
+    isTransferOut,
+  ]);
 
   // Keep item detail helpers hidden by default whenever invoice form opens.
   useEffect(() => {
@@ -1480,6 +1538,7 @@ export const SalesInvoice = ({
               updated.useUnlocatedStock = false;
 
               fetchPartStockBalance(value);
+              fetchPartLocations(value);
               fetchPartModels(value);
               fetchPartImages(value);
               if (!isTransferOut) {
@@ -1781,11 +1840,13 @@ export const SalesInvoice = ({
       });
 
       fetchPartStockBalance(partId);
+      fetchPartLocations(partId);
       fetchPartModels(partId);
     },
     [
       customerPriceType,
       fetchPartModels,
+      fetchPartLocations,
       fetchPartStockBalance,
       isTransferOut,
       parts,
@@ -2260,12 +2321,13 @@ export const SalesInvoice = ({
     inlineItems.forEach((item) => {
       if (item.selectedPartId) {
         void fetchPartImages(item.selectedPartId);
+        void fetchPartLocations(item.selectedPartId);
         if (!isTransferOut) {
           void fetchPartPriceLastUpdated(item.selectedPartId);
         }
       }
     });
-  }, [inlineItems, fetchPartImages, fetchPartPriceLastUpdated, isTransferOut]);
+  }, [inlineItems, fetchPartImages, fetchPartLocations, fetchPartPriceLastUpdated, isTransferOut]);
 
   // Background stock polling (every 60 seconds)
   useEffect(() => {
@@ -6378,6 +6440,7 @@ export const SalesInvoice = ({
                       <col className="w-[7%]" />
                       <col className="w-[8%]" />
                       <col className="w-[8%]" />
+                      <col className="w-[9%]" />
                       <col className="w-[6%]" />
                       <col className="w-[5%]" />
                     </colgroup>
@@ -6417,6 +6480,9 @@ export const SalesInvoice = ({
                           {linePriceBLabel}
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                          Location
+                        </TableHead>
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Image
                         </TableHead>
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
@@ -6438,6 +6504,14 @@ export const SalesInvoice = ({
                           (part?.machineModels &&
                             part.machineModels.length > 0) ||
                           Boolean(loadingModels[pid]);
+                        const locationText = formatPartLocationDisplay(
+                          pid,
+                          part,
+                          partLocations,
+                        );
+                        const locationLoading = pid
+                          ? !!loadingLocations[pid]
+                          : false;
                         return (
                           <Fragment key={item.id}>
                           <TableRow
@@ -7431,6 +7505,26 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
+                            {/* Column: Location (before Image) */}
+                            <TableCell className="hidden md:table-cell align-top text-center">
+                              {!pid ? (
+                                <span className="text-xs text-muted-foreground">
+                                  —
+                                </span>
+                              ) : locationLoading ? (
+                                <span className="text-xs text-muted-foreground">
+                                  ...
+                                </span>
+                              ) : (
+                                <span
+                                  className="text-[11px] leading-tight text-foreground block max-w-[100px] mx-auto"
+                                  title={locationText}
+                                >
+                                  {locationText}
+                                </span>
+                              )}
+                            </TableCell>
+
                             {/* Column: Image (before Action) */}
                             <TableCell className="hidden md:table-cell align-top text-center">
                               {partImageSrc ? (
@@ -7645,8 +7739,15 @@ export const SalesInvoice = ({
                 {!isQuotation && !isTransferOut ? (
                   <>
                     <div className="space-y-2 row-start-2 col-start-1">
-                      <Label className="text-xs">Bank Account</Label>
+                      <Label className="text-xs">
+                        Bank Account{" "}
+                        <span className="text-muted-foreground font-normal">
+                          (Alt + B)
+                        </span>
+                      </Label>
                       <Select
+                        open={bankSelectOpen}
+                        onOpenChange={setBankSelectOpen}
                         value={selectedBankAccount}
                         onValueChange={(value) => {
                           setSelectedBankAccount(value);
@@ -7654,7 +7755,10 @@ export const SalesInvoice = ({
                         }}
                         disabled={loadingAccounts || bankAccounts.length === 0}
                       >
-                        <SelectTrigger className="h-8 text-sm w-full">
+                        <SelectTrigger
+                          ref={bankAccountTriggerRef}
+                          className="h-8 text-sm w-full"
+                        >
                           <SelectValue
                             placeholder={
                               loadingAccounts
@@ -7709,8 +7813,15 @@ export const SalesInvoice = ({
                       />
                     </div>
                     <div className="space-y-2 row-start-3 col-start-1">
-                      <Label className="text-xs">Cash Account</Label>
+                      <Label className="text-xs">
+                        Cash Account{" "}
+                        <span className="text-muted-foreground font-normal">
+                          (Alt + C)
+                        </span>
+                      </Label>
                       <Select
+                        open={cashSelectOpen}
+                        onOpenChange={setCashSelectOpen}
                         value={selectedCashAccount}
                         onValueChange={(value) => {
                           setSelectedCashAccount(value);
@@ -7718,7 +7829,10 @@ export const SalesInvoice = ({
                         }}
                         disabled={loadingAccounts || cashAccounts.length === 0}
                       >
-                        <SelectTrigger className="h-8 text-sm w-full">
+                        <SelectTrigger
+                          ref={cashAccountTriggerRef}
+                          className="h-8 text-sm w-full"
+                        >
                           <SelectValue
                             placeholder={
                               loadingAccounts

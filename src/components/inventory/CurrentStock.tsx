@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,7 +80,9 @@ export const CurrentStock = () => {
   );
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedBrand, setSelectedBrand] = useState("all");
+  const [selectedModel, setSelectedModel] = useState("all");
   const [brands, setBrands] = useState<string[]>([]);
+  const [models, setModels] = useState<string[]>([]);
   const [stockStatusFilter, setStockStatusFilter] =
     useState<StockStatusFilter>("all");
   const [stockAsOfDate, setStockAsOfDate] = useState("");
@@ -189,6 +191,32 @@ export const CurrentStock = () => {
     }
   };
 
+  const fetchModels = async () => {
+    try {
+      const response = await apiClient.getModelNames();
+      const names = Array.isArray(response)
+        ? response
+        : (response as any).data || [];
+      setModels(
+        names
+          .map((name: string) => String(name || "").trim())
+          .filter(Boolean)
+          .sort((a: string, b: string) => a.localeCompare(b)),
+      );
+    } catch (error) {
+      console.error("Failed to fetch models:", error);
+      setModels([]);
+    }
+  };
+
+  const modelSelectOptions = useMemo(
+    () => [
+      { value: "all", label: "All Models" },
+      ...models.map((model) => ({ value: model, label: model })),
+    ],
+    [models],
+  );
+
   const fetchStockData = useCallback(async (searchTerm?: string) => {
     try {
       setTableLoading(true);
@@ -219,6 +247,10 @@ export const CurrentStock = () => {
         params.brand_name = selectedBrand;
       }
 
+      if (selectedModel !== "all") {
+        params.model_name = selectedModel;
+      }
+
       if (stockStatusFilter === "in_stock") {
         params.in_stock = true;
       } else if (stockStatusFilter === "out_of_stock") {
@@ -236,6 +268,7 @@ export const CurrentStock = () => {
         !!effectiveSearch ||
         selectedCategory !== "all" ||
         selectedBrand !== "all" ||
+        selectedModel !== "all" ||
         !!stockAsOfDate ||
         stockStatusFilter !== "all";
 
@@ -263,12 +296,13 @@ export const CurrentStock = () => {
     } finally {
       setTableLoading(false);
     }
-  }, [currentPage, itemsPerPage, selectedCategory, selectedBrand, stockStatusFilter, stockAsOfDate]);
+  }, [currentPage, itemsPerPage, selectedCategory, selectedBrand, selectedModel, stockStatusFilter, stockAsOfDate]);
 
   // Fetch initial data
   useEffect(() => {
     fetchCategories();
     fetchBrands();
+    fetchModels();
     fetchStores();
     fetchParts();
   }, []);
@@ -955,6 +989,10 @@ export const CurrentStock = () => {
         exportParams.brand_name = selectedBrand;
       }
 
+      if (selectedModel !== "all") {
+        exportParams.model_name = selectedModel;
+      }
+
       if (stockStatusFilter === "in_stock") {
         exportParams.in_stock = true;
       } else if (stockStatusFilter === "out_of_stock") {
@@ -972,6 +1010,7 @@ export const CurrentStock = () => {
         !!effectiveSearch ||
         selectedCategory !== "all" ||
         selectedBrand !== "all" ||
+        selectedModel !== "all" ||
         !!stockAsOfDate ||
         stockStatusFilter !== "all";
 
@@ -1183,6 +1222,18 @@ export const CurrentStock = () => {
             </SelectContent>
           </Select>
 
+          <SearchableSelect
+            options={modelSelectOptions}
+            value={selectedModel}
+            onValueChange={(v) => {
+              setSelectedModel(v);
+              setCurrentPage(1);
+            }}
+            placeholder="All Models"
+            aria-label="Filter by model"
+            className="w-[180px] [&_input]:h-9 [&_input]:text-sm"
+          />
+
           <Select
             value={selectedCategory}
             onValueChange={(v) => {
@@ -1233,6 +1284,7 @@ export const CurrentStock = () => {
           {(searchQuery ||
             selectedCategory !== "all" ||
             selectedBrand !== "all" ||
+            selectedModel !== "all" ||
             stockStatusFilter !== "all" ||
             stockAsOfDate) && (
             <Button
@@ -1242,6 +1294,7 @@ export const CurrentStock = () => {
                 setSearchQuery("");
                 setSelectedCategory("all");
                 setSelectedBrand("all");
+                setSelectedModel("all");
                 setStockStatusFilter("all");
                 setStockAsOfDate("");
                 setCurrentPage(1);

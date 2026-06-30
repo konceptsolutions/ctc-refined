@@ -1969,4 +1969,231 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
   }
 });
 
+function supplierLabel(
+  supplier?: { name?: string | null; companyName?: string | null } | null,
+): string {
+  if (!supplier) return "N/A";
+  const companyName = String(supplier.companyName || "").trim();
+  const name = String(supplier.name || "").trim();
+  return companyName || name || "N/A";
+}
+
+router.get("/daily-activity", async (req: Request, res: Response) => {
+  try {
+    const dateStr = String(req.query.date || "").trim();
+    if (!dateStr) {
+      return res.status(400).json({ error: "date is required (YYYY-MM-DD)" });
+    }
+
+    const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+    const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+    const dateRange = { gte: dayStart, lte: dayEnd };
+
+    const [
+      purchaseOrders,
+      directPurchaseOrders,
+      salesInvoices,
+      salesReturns,
+    ] = await Promise.all([
+      prisma.purchaseOrder.findMany({
+        where: { date: dateRange },
+        include: {
+          Supplier: true,
+          PurchaseOrderItem: {
+            include: {
+              Part: { select: { partNo: true, description: true } },
+            },
+          },
+        },
+        orderBy: [{ poNumber: "desc" }, { createdAt: "desc" }],
+      }),
+      prisma.directPurchaseOrder.findMany({
+        where: {
+          date: dateRange,
+          orderType: { not: "transfer_in" },
+        },
+        include: {
+          Supplier: true,
+          Store: true,
+          BranchAccount: true,
+          DirectPurchaseOrderItem: {
+            include: {
+              Part: { select: { partNo: true, description: true } },
+            },
+          },
+        },
+        orderBy: [{ dpoNumber: "desc" }, { createdAt: "desc" }],
+      }),
+      prisma.salesInvoice.findMany({
+        where: {
+          invoiceDate: dateRange,
+          customerType: { not: "transfer" },
+        },
+        include: {
+          SalesInvoiceItem: {
+            select: {
+              id: true,
+              partNo: true,
+              description: true,
+              orderedQty: true,
+              unitPrice: true,
+              lineTotal: true,
+              brand: true,
+            },
+          },
+        },
+        orderBy: [{ invoiceNo: "desc" }, { createdAt: "desc" }],
+      }),
+      prisma.salesReturn.findMany({
+        where: { returnDate: dateRange },
+        include: {
+          Customer: { select: { name: true } },
+          SalesInvoice: {
+            select: {
+              invoiceNo: true,
+              customerName: true,
+            },
+          },
+          SalesReturnItem: {
+            include: {
+              Part: {
+                select: { partNo: true, description: true, uom: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ returnNumber: "desc" }, { createdAt: "desc" }],
+      }),
+    ]);
+
+    const filteredInvoices = salesInvoices.filter(
+      (invoice) => !invoice.customerName.toLowerCase().includes("demo"),
+    );
+
+    const poRows = purchaseOrders.map((po) => ({
+      id: po.id,
+      number: po.poNumber,
+      date: po.date,
+      supplierName: supplierLabel(po.Supplier),
+      status: po.status,
+      totalAmount: po.totalAmount,
+      itemsCount: po.PurchaseOrderItem.length,
+      items: po.PurchaseOrderItem.map((item) => ({
+        partNo: item.Part?.partNo || "",
+        description: item.Part?.description || "",
+        quantity: item.quantity,
+        unitPrice: item.unitCost,
+        lineTotal: item.totalCost,
+      })),
+    }));
+
+    const dpoRows = directPurchaseOrders.map((dpo) => ({
+      id: dpo.id,
+      number: dpo.dpoNumber,
+      date: dpo.date,
+      supplierName: dpo.Supplier
+        ? supplierLabel(dpo.Supplier)
+        : dpo.BranchAccount?.name?.trim() || "N/A",
+      storeName: dpo.Store?.name || null,
+      status: dpo.status,
+      discount: dpo.discount ?? 0,
+      totalAmount: dpo.totalAmount,
+      itemsCount: dpo.DirectPurchaseOrderItem.length,
+      items: dpo.DirectPurchaseOrderItem.map((item) => ({
+        partNo: item.Part?.partNo || "",
+        description: item.Part?.description || "",
+        quantity: item.quantity,
+        unitPrice: item.purchasePrice,
+        lineTotal: item.amount,
+      })),
+    }));
+
+    const invoiceRows = filteredInvoices.map((inv) => ({
+      id: inv.id,
+      number: inv.invoiceNo,
+      date: inv.invoiceDate,
+      customerName: inv.customerName,
+      customerType: inv.customerType,
+      status: inv.status,
+      paymentStatus: inv.paymentStatus,
+      subtotal: inv.subtotal,
+      tax: inv.tax,
+      grandTotal: inv.grandTotal,
+      paidAmount: inv.paidAmount,
+      itemsCount: inv.SalesInvoiceItem.length,
+      items: inv.SalesInvoiceItem.map((item) => ({
+        partNo: item.partNo,
+        description: item.description || "",
+        brand: item.brand || "",
+        quantity: item.orderedQty,
+        unitPrice: item.unitPrice,
+        lineTotal: item.lineTotal,
+      })),
+    }));
+
+    const returnRows = salesReturns.map((sr) => ({
+      id: sr.id,
+      number: sr.returnNumber,
+      date: sr.returnDate,
+      invoiceNo:
+        sr.SalesInvoice?.invoiceNo || sr.legacyInvoiceNo || null,
+      customerName:
+        sr.Customer?.name ||
+        sr.SalesInvoice?.customerName ||
+        sr.legacyCustomerName ||
+        "N/A",
+      status: sr.status,
+      subtotal: sr.subtotal,
+      tax: sr.tax,
+      deduction: sr.deduction,
+      totalAmount: sr.totalAmount,
+      paidAmount: sr.paidAmount,
+      itemsCount: sr.SalesReturnItem.length,
+      items: sr.SalesReturnItem.map((item) => ({
+        partNo: item.Part?.partNo || "",
+        description: item.Part?.description || "",
+        quantity: item.returnQuantity,
+        unitPrice: item.originalSalePrice,
+        lineTotal: item.amount,
+      })),
+    }));
+
+    const sumAmount = (rows: { totalAmount: number }[]) =>
+      rows.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
+
+    res.json({
+      data: {
+        date: dateStr,
+        summary: {
+          purchaseOrders: {
+            count: poRows.length,
+            totalAmount: sumAmount(poRows),
+          },
+          directPurchaseOrders: {
+            count: dpoRows.length,
+            totalAmount: sumAmount(dpoRows),
+          },
+          salesInvoices: {
+            count: invoiceRows.length,
+            totalAmount: invoiceRows.reduce(
+              (sum, row) => sum + Number(row.grandTotal || 0),
+              0,
+            ),
+          },
+          salesReturns: {
+            count: returnRows.length,
+            totalAmount: sumAmount(returnRows),
+          },
+        },
+        purchaseOrders: poRows,
+        directPurchaseOrders: dpoRows,
+        salesInvoices: invoiceRows,
+        salesReturns: returnRows,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

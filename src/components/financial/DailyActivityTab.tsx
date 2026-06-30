@@ -1,0 +1,644 @@
+import { useCallback, useEffect, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { getCurrentDatePakistan } from "@/utils/dateUtils";
+import { apiClient } from "@/lib/api";
+import {
+  ChevronDown,
+  FileText,
+  Loader2,
+  Package,
+  RefreshCw,
+  ShoppingCart,
+  Truck,
+  Undo2,
+} from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+type ActivityLineItem = {
+  partNo: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  brand?: string;
+};
+
+type PurchaseOrderRow = {
+  id: string;
+  number: string;
+  date: string;
+  supplierName: string;
+  status: string;
+  totalAmount: number;
+  itemsCount: number;
+  items: ActivityLineItem[];
+};
+
+type DpoRow = {
+  id: string;
+  number: string;
+  date: string;
+  supplierName: string;
+  storeName: string | null;
+  status: string;
+  discount: number;
+  totalAmount: number;
+  itemsCount: number;
+  items: ActivityLineItem[];
+};
+
+type SalesInvoiceRow = {
+  id: string;
+  number: string;
+  date: string;
+  customerName: string;
+  customerType: string;
+  status: string;
+  paymentStatus: string;
+  subtotal: number;
+  tax: number;
+  grandTotal: number;
+  paidAmount: number;
+  itemsCount: number;
+  items: ActivityLineItem[];
+};
+
+type SalesReturnRow = {
+  id: string;
+  number: string;
+  date: string;
+  invoiceNo: string | null;
+  customerName: string;
+  status: string;
+  subtotal: number;
+  tax: number;
+  deduction: number;
+  totalAmount: number;
+  paidAmount: number;
+  itemsCount: number;
+  items: ActivityLineItem[];
+};
+
+type DailyActivityData = {
+  date: string;
+  summary: {
+    purchaseOrders: { count: number; totalAmount: number };
+    directPurchaseOrders: { count: number; totalAmount: number };
+    salesInvoices: { count: number; totalAmount: number };
+    salesReturns: { count: number; totalAmount: number };
+  };
+  purchaseOrders: PurchaseOrderRow[];
+  directPurchaseOrders: DpoRow[];
+  salesInvoices: SalesInvoiceRow[];
+  salesReturns: SalesReturnRow[];
+};
+
+const formatMoney = (value: number) =>
+  Number(value || 0).toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+const formatDate = (value: string) => {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-GB");
+};
+
+const statusBadgeClass = (status: string) => {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("complete") || s === "posted" || s === "approved" || s === "paid") {
+    return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
+  }
+  if (s.includes("pending") || s === "draft") {
+    return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300";
+  }
+  if (s.includes("cancel") || s === "rejected") {
+    return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
+  }
+  return "bg-muted text-muted-foreground";
+};
+
+const LineItemsTable = ({ items }: { items: ActivityLineItem[] }) => (
+  <div className="rounded-md border bg-muted/20 overflow-x-auto">
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <ListNumberHeader className="w-10" />
+          <TableHead>Part No</TableHead>
+          <TableHead>Description</TableHead>
+          <TableHead className="text-right">Qty</TableHead>
+          <TableHead className="text-right">Rate</TableHead>
+          <TableHead className="text-right">Amount</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {items.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={6} className="text-center text-muted-foreground py-4">
+              No line items
+            </TableCell>
+          </TableRow>
+        ) : (
+          items.map((item, index) => (
+            <TableRow key={`${item.partNo}-${index}`}>
+              <ListNumberCell index={index} />
+              <TableCell className="font-medium whitespace-nowrap">{item.partNo || "—"}</TableCell>
+              <TableCell className="max-w-[240px] truncate" title={item.description}>
+                {item.description || "—"}
+                {item.brand ? (
+                  <span className="block text-xs text-muted-foreground">{item.brand}</span>
+                ) : null}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatMoney(item.unitPrice)}</TableCell>
+              <TableCell className="text-right tabular-nums font-medium">
+                {formatMoney(item.lineTotal)}
+              </TableCell>
+            </TableRow>
+          ))
+        )}
+      </TableBody>
+    </Table>
+  </div>
+);
+
+type SectionProps = {
+  title: string;
+  icon: React.ReactNode;
+  count: number;
+  totalAmount: number;
+  emptyMessage: string;
+  children: React.ReactNode;
+};
+
+const ActivitySection = ({
+  title,
+  icon,
+  count,
+  totalAmount,
+  emptyMessage,
+  children,
+}: SectionProps) => {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <Card>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="w-full flex items-center justify-between gap-3 px-6 py-4 text-left hover:bg-muted/40 transition-colors"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="rounded-lg bg-primary/10 p-2 text-primary shrink-0">{icon}</div>
+              <div className="min-w-0">
+                <h3 className="font-semibold">{title}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {count} document{count === 1 ? "" : "s"} · Rs {formatMoney(totalAmount)}
+                </p>
+              </div>
+            </div>
+            <ChevronDown
+              className={cn(
+                "h-5 w-5 shrink-0 text-muted-foreground transition-transform",
+                open && "rotate-180",
+              )}
+            />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="pt-0 pb-6">
+            {count === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6 border rounded-lg bg-muted/20">
+                {emptyMessage}
+              </p>
+            ) : (
+              children
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+};
+
+const DocumentBlock = ({
+  header,
+  meta,
+  amountLabel,
+  amount,
+  items,
+}: {
+  header: React.ReactNode;
+  meta: React.ReactNode;
+  amountLabel: string;
+  amount: number;
+  items: ActivityLineItem[];
+}) => {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="border rounded-lg overflow-hidden">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="w-full flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
+        >
+          <div className="min-w-0 flex-1">{header}</div>
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="text-right">
+              <div className="text-xs text-muted-foreground">{amountLabel}</div>
+              <div className="font-semibold tabular-nums">Rs {formatMoney(amount)}</div>
+            </div>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 text-muted-foreground transition-transform",
+                open && "rotate-180",
+              )}
+            />
+          </div>
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="px-4 pb-4 space-y-3 border-t bg-muted/10">
+          <div className="pt-3 text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+            {meta}
+          </div>
+          <LineItemsTable items={items} />
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
+
+export const DailyActivityTab = ({
+  date: controlledDate,
+  hideDatePicker = false,
+}: {
+  date?: string;
+  hideDatePicker?: boolean;
+} = {}) => {
+  const [internalDate, setInternalDate] = useState(getCurrentDatePakistan());
+  const activityDate = controlledDate ?? internalDate;
+  const [data, setData] = useState<DailyActivityData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchDailyActivity = useCallback(async () => {
+    if (!activityDate) return;
+    setLoading(true);
+    try {
+      const result = await apiClient.getDailyActivity({ date: activityDate });
+      if ((result as any)?.error) {
+        toast.error((result as any).error || "Failed to load daily activity");
+        setData(null);
+        return;
+      }
+      setData(((result as any)?.data || null) as DailyActivityData | null);
+    } catch {
+      toast.error("Failed to load daily activity");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [activityDate]);
+
+  useEffect(() => {
+    void fetchDailyActivity();
+  }, [fetchDailyActivity]);
+
+  const summary = data?.summary;
+
+  const summaryCards = [
+    {
+      key: "po",
+      label: "Purchase Orders",
+      count: summary?.purchaseOrders.count ?? 0,
+      total: summary?.purchaseOrders.totalAmount ?? 0,
+      icon: <Package className="h-5 w-5" />,
+      color: "text-blue-600 bg-blue-50 dark:bg-blue-950/40",
+    },
+    {
+      key: "dpo",
+      label: "Direct Purchase (DPO)",
+      count: summary?.directPurchaseOrders.count ?? 0,
+      total: summary?.directPurchaseOrders.totalAmount ?? 0,
+      icon: <Truck className="h-5 w-5" />,
+      color: "text-violet-600 bg-violet-50 dark:bg-violet-950/40",
+    },
+    {
+      key: "si",
+      label: "Sales Invoices",
+      count: summary?.salesInvoices.count ?? 0,
+      total: summary?.salesInvoices.totalAmount ?? 0,
+      icon: <ShoppingCart className="h-5 w-5" />,
+      color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40",
+    },
+    {
+      key: "sr",
+      label: "Sales Returns",
+      count: summary?.salesReturns.count ?? 0,
+      total: summary?.salesReturns.totalAmount ?? 0,
+      icon: <Undo2 className="h-5 w-5" />,
+      color: "text-orange-600 bg-orange-50 dark:bg-orange-950/40",
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap items-end gap-3">
+            {!hideDatePicker ? (
+              <div className="space-y-2">
+                <Label htmlFor="daily-activity-date">Activity Date</Label>
+                <Input
+                  id="daily-activity-date"
+                  type="date"
+                  value={activityDate}
+                  onChange={(e) => setInternalDate(e.target.value)}
+                  className="w-44"
+                />
+              </div>
+            ) : null}
+            <Button
+              variant="outline"
+              onClick={() => void fetchDailyActivity()}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Refresh
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {loading && !data ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Loading daily activity...
+        </div>
+      ) : data ? (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {summaryCards.map((card) => (
+              <Card key={card.key}>
+                <CardContent className="pt-5 pb-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-muted-foreground">{card.label}</p>
+                      <p className="text-3xl font-bold mt-1 tabular-nums">{card.count}</p>
+                      <p className="text-sm font-medium mt-2 tabular-nums">
+                        Rs {formatMoney(card.total)}
+                      </p>
+                    </div>
+                    <div className={cn("rounded-lg p-2.5", card.color)}>{card.icon}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <ActivitySection
+            title="Purchase Orders"
+            icon={<Package className="h-5 w-5" />}
+            count={data.purchaseOrders.length}
+            totalAmount={data.summary.purchaseOrders.totalAmount}
+            emptyMessage="No purchase orders on this date."
+          >
+            <div className="space-y-3">
+              {data.purchaseOrders.map((po) => (
+                <DocumentBlock
+                  key={po.id}
+                  amountLabel="Total"
+                  amount={po.totalAmount}
+                  items={po.items}
+                  header={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{po.number}</span>
+                      <Badge variant="outline" className={statusBadgeClass(po.status)}>
+                        {po.status}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {po.itemsCount} item{po.itemsCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  }
+                  meta={
+                    <>
+                      <span>
+                        <strong>Supplier:</strong> {po.supplierName}
+                      </span>
+                      <span>
+                        <strong>Date:</strong> {formatDate(po.date)}
+                      </span>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          </ActivitySection>
+
+          <ActivitySection
+            title="Direct Purchase Orders (DPO)"
+            icon={<Truck className="h-5 w-5" />}
+            count={data.directPurchaseOrders.length}
+            totalAmount={data.summary.directPurchaseOrders.totalAmount}
+            emptyMessage="No DPOs on this date."
+          >
+            <div className="space-y-3">
+              {data.directPurchaseOrders.map((dpo) => (
+                <DocumentBlock
+                  key={dpo.id}
+                  amountLabel="Total"
+                  amount={dpo.totalAmount}
+                  items={dpo.items}
+                  header={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{dpo.number}</span>
+                      <Badge variant="outline" className={statusBadgeClass(dpo.status)}>
+                        {dpo.status}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {dpo.itemsCount} item{dpo.itemsCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  }
+                  meta={
+                    <>
+                      <span>
+                        <strong>Supplier:</strong> {dpo.supplierName}
+                      </span>
+                      {dpo.storeName ? (
+                        <span>
+                          <strong>Store:</strong> {dpo.storeName}
+                        </span>
+                      ) : null}
+                      <span>
+                        <strong>Date:</strong> {formatDate(dpo.date)}
+                      </span>
+                      {dpo.discount > 0 ? (
+                        <span>
+                          <strong>Discount:</strong> Rs {formatMoney(dpo.discount)}
+                        </span>
+                      ) : null}
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          </ActivitySection>
+
+          <ActivitySection
+            title="Sales Invoices"
+            icon={<ShoppingCart className="h-5 w-5" />}
+            count={data.salesInvoices.length}
+            totalAmount={data.summary.salesInvoices.totalAmount}
+            emptyMessage="No sales invoices on this date."
+          >
+            <div className="space-y-3">
+              {data.salesInvoices.map((inv) => (
+                <DocumentBlock
+                  key={inv.id}
+                  amountLabel="Grand Total"
+                  amount={inv.grandTotal}
+                  items={inv.items}
+                  header={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{inv.number}</span>
+                      <Badge variant="outline" className={statusBadgeClass(inv.status)}>
+                        {inv.status}
+                      </Badge>
+                      <Badge variant="outline" className={statusBadgeClass(inv.paymentStatus)}>
+                        {inv.paymentStatus}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {inv.itemsCount} item{inv.itemsCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  }
+                  meta={
+                    <>
+                      <span>
+                        <strong>Customer:</strong> {inv.customerName}
+                      </span>
+                      <span>
+                        <strong>Type:</strong> {inv.customerType}
+                      </span>
+                      <span>
+                        <strong>Date:</strong> {formatDate(inv.date)}
+                      </span>
+                      <span>
+                        <strong>Subtotal:</strong> Rs {formatMoney(inv.subtotal)}
+                      </span>
+                      {inv.tax > 0 ? (
+                        <span>
+                          <strong>Tax:</strong> Rs {formatMoney(inv.tax)}
+                        </span>
+                      ) : null}
+                      <span>
+                        <strong>Paid:</strong> Rs {formatMoney(inv.paidAmount)}
+                      </span>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          </ActivitySection>
+
+          <ActivitySection
+            title="Sales Returns"
+            icon={<Undo2 className="h-5 w-5" />}
+            count={data.salesReturns.length}
+            totalAmount={data.summary.salesReturns.totalAmount}
+            emptyMessage="No sales returns on this date."
+          >
+            <div className="space-y-3">
+              {data.salesReturns.map((sr) => (
+                <DocumentBlock
+                  key={sr.id}
+                  amountLabel="Return Total"
+                  amount={sr.totalAmount}
+                  items={sr.items}
+                  header={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{sr.number}</span>
+                      <Badge variant="outline" className={statusBadgeClass(sr.status)}>
+                        {sr.status}
+                      </Badge>
+                      {sr.invoiceNo ? (
+                        <span className="text-sm text-muted-foreground">
+                          Invoice: {sr.invoiceNo}
+                        </span>
+                      ) : null}
+                      <span className="text-sm text-muted-foreground">
+                        {sr.itemsCount} item{sr.itemsCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  }
+                  meta={
+                    <>
+                      <span>
+                        <strong>Customer:</strong> {sr.customerName}
+                      </span>
+                      <span>
+                        <strong>Date:</strong> {formatDate(sr.date)}
+                      </span>
+                      <span>
+                        <strong>Subtotal:</strong> Rs {formatMoney(sr.subtotal)}
+                      </span>
+                      {sr.tax > 0 ? (
+                        <span>
+                          <strong>Tax:</strong> Rs {formatMoney(sr.tax)}
+                        </span>
+                      ) : null}
+                      {sr.deduction > 0 ? (
+                        <span>
+                          <strong>Deduction:</strong> Rs {formatMoney(sr.deduction)}
+                        </span>
+                      ) : null}
+                      <span>
+                        <strong>Refunded:</strong> Rs {formatMoney(sr.paidAmount)}
+                      </span>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          </ActivitySection>
+        </>
+      ) : (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p>Select a date and refresh to view daily activity.</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};

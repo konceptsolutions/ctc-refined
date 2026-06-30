@@ -1094,6 +1094,7 @@ const PurchaseImportRequestForm = ({
   const [inquiryDate, setInquiryDate] = useState(() => toInputDate(new Date()));
   const [itemSort, setItemSort] = useState<InquiryItemSort>("alphabetical");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
+  const [brandFilter, setBrandFilter] = useState("all");
 
   const isEditMode = Boolean(requestId);
   const isViewMode = Boolean(readOnly);
@@ -1251,10 +1252,46 @@ const PurchaseImportRequestForm = ({
     loadInitial();
   }, [toast, requestId]);
 
-  const partSelectOptions = useMemo(
-    () => buildSortedPartSelectOptions(partOptions, itemSort, itemSortDirection),
-    [partOptions, itemSort, itemSortDirection],
+  const brandOptions = useMemo(
+    () =>
+      [...new Set(partOptions.map((part) => part.brand).filter(Boolean))].sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [partOptions],
   );
+
+  const partSelectOptions = useMemo(() => {
+    const selectedPartIds = new Set(
+      items.map((row) => row.partId).filter(Boolean),
+    );
+    const filteredParts =
+      brandFilter === "all"
+        ? partOptions
+        : partOptions.filter(
+            (part) =>
+              part.brand === brandFilter || selectedPartIds.has(part.id),
+          );
+    return buildSortedPartSelectOptions(
+      filteredParts,
+      itemSort,
+      itemSortDirection,
+    );
+  }, [partOptions, brandFilter, items, itemSort, itemSortDirection]);
+
+  const brandSelectOptions = useMemo(
+    () => [
+      { value: "all", label: "All Brands" },
+      ...brandOptions.map((brand) => ({
+        value: brand,
+        label: brand,
+      })),
+    ],
+    [brandOptions],
+  );
+
+  const handleBrandFilterChange = (value: string) => {
+    setBrandFilter(value || "all");
+  };
 
   const supplierSelectOptions = useMemo(
     () =>
@@ -1981,7 +2018,16 @@ const PurchaseImportRequestForm = ({
 <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Items</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <SearchableSelect
+              options={brandSelectOptions}
+              value={brandFilter}
+              onValueChange={handleBrandFilterChange}
+              placeholder="All Brands"
+              aria-label="Filter by brand"
+              className="w-[180px] [&_input]:h-9 [&_input]:text-sm"
+              disabled={loadingForm}
+            />
             <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
               <SelectTrigger className="w-[220px]">
                 <SelectValue />

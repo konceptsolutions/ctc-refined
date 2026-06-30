@@ -218,8 +218,20 @@ const buildPrintHtml = (data: DailyClosingData) => {
 </html>`;
 };
 
-export const DailyClosingTab = () => {
-  const [closingDate, setClosingDate] = useState(getCurrentDatePakistan());
+export const DailyClosingTab = ({
+  date: controlledDate,
+  hideDatePicker = false,
+}: {
+  date?: string;
+  hideDatePicker?: boolean;
+} = {}) => {
+  const [internalDate, setInternalDate] = useState(getCurrentDatePakistan());
+  const closingDate = controlledDate ?? internalDate;
+  const setClosingDate = (value: string) => {
+    if (controlledDate === undefined) {
+      setInternalDate(value);
+    }
+  };
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [accountOptions, setAccountOptions] = useState<DailyClosingAccountOption[]>([]);
   const [accountsOpen, setAccountsOpen] = useState(false);
@@ -317,16 +329,18 @@ export const DailyClosingTab = () => {
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="daily-closing-date">Closing Date</Label>
-              <Input
-                id="daily-closing-date"
-                type="date"
-                value={closingDate}
-                onChange={(e) => setClosingDate(e.target.value)}
-                className="w-44"
-              />
-            </div>
+            {!hideDatePicker ? (
+              <div className="space-y-2">
+                <Label htmlFor="daily-closing-date">Closing Date</Label>
+                <Input
+                  id="daily-closing-date"
+                  type="date"
+                  value={closingDate}
+                  onChange={(e) => setClosingDate(e.target.value)}
+                  className="w-44"
+                />
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label>Accounts</Label>
               <Popover open={accountsOpen} onOpenChange={setAccountsOpen}>

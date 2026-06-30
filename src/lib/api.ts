@@ -902,6 +902,7 @@ class ApiClient {
     store_id?: string;
     stock_as_of_date?: string;
     brand_name?: string;
+    model_name?: string;
     sort_stock_first?: boolean;
     page?: number;
     limit?: number;
@@ -1837,6 +1838,17 @@ class ApiClient {
 
   async getDailyClosingAccounts() {
     return this.request("/accounting/daily-closing/accounts");
+  }
+
+  async getDailyActivity(params?: { date?: string }) {
+    const queryParams = new URLSearchParams();
+    if (params?.date) {
+      queryParams.append("date", params.date);
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/accounting/daily-activity${queryString ? `?${queryString}` : ""}`,
+    );
   }
 
   async getIncomeStatement(params?: { from_date?: string; to_date?: string }) {

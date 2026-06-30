@@ -72,7 +72,6 @@ import { StoreEditDPO } from "./StoreEditDPO";
 import { StoreEditPO } from "./StoreEditPO";
 import { StoreEditSalesInvoice } from "./StoreEditSalesInvoice";
 import { StoreLocationAssign } from "./StoreLocationAssign";
-import { StoreAdjustedItem } from "./StoreAdjustedItem";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { getUserRole, isStoreUserRole } from "@/utils/auth";
@@ -123,7 +122,6 @@ type StoreOrderTypeFilter =
   | "stock-out"
   | "transfer-in"
   | "transfer-out"
-  | "adjusted"
   | "part-association";
 
 const STOCK_OUT_BLOCKED_STATUSES = new Set([
@@ -362,7 +360,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [stockOutOrders, setStockOutOrders] = useState<StockOutOrder[]>([]);
   const [transferOutOrders, setTransferOutOrders] = useState<StockOutOrder[]>([]);
-  const [adjustments, setAdjustments] = useState<any[]>([]);
   const [partOptions, setPartOptions] = useState<StorePartOption[]>([]);
   const [selectedAssociationPartId, setSelectedAssociationPartId] = useState("");
   const [associationRows, setAssociationRows] = useState<Array<{ model: string; qtyUsed: number }>>([]);
@@ -396,8 +393,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [deleteOrderType, setDeleteOrderType] = useState<"dpo" | "po" | null>(null);
   const [selectedStockOutOrder, setSelectedStockOutOrder] = useState<StockOutOrder | null>(null);
   const [stockOutReceiptOpen, setStockOutReceiptOpen] = useState(false);
-  const [selectedAdjustment, setSelectedAdjustment] = useState<any | null>(null);
-  const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
 
   // Fetch stores on mount
   useEffect(() => {
@@ -426,7 +421,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         // Fetch both Purchase Orders and Direct Purchase Orders for receiving
         fetchPurchaseOrders();
         fetchOrders(); // DPOs are receivable items
-        setAdjustments([]);
         setStockOutOrders([]);
       } else if (typeFilter === "stock-out") {
         fetchStockOutOrders();
@@ -434,42 +428,30 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         setPurchaseOrders([]);
         setTransferInOrders([]);
         setTransferOutOrders([]);
-        setAdjustments([]);
       } else if (typeFilter === "transfer-in") {
         fetchTransferInOrders();
         setOrders([]);
         setPurchaseOrders([]);
         setStockOutOrders([]);
         setTransferOutOrders([]);
-        setAdjustments([]);
       } else if (typeFilter === "transfer-out") {
         fetchTransferOutOrders();
         setOrders([]);
         setPurchaseOrders([]);
         setStockOutOrders([]);
         setTransferInOrders([]);
-        setAdjustments([]);
-      } else if (typeFilter === "adjusted") {
-        // Fetch adjustments for adjusted items
-        fetchAdjustments();
-        // Clear other data
-        setOrders([]);
-        setPurchaseOrders([]);
-        setStockOutOrders([]);
       } else if (typeFilter === "part-association") {
         setOrders([]);
         setPurchaseOrders([]);
         setStockOutOrders([]);
-        setAdjustments([]);
         if (isStoreOnlyUser) {
           fetchAssociationParts();
         }
       } else {
-        // All Orders - fetch everything (Receiving + Delivering + Adjusted)
+        // All Orders - fetch everything (Receiving + Delivering)
         fetchPurchaseOrders();
         fetchOrders();
         fetchStockOutOrders();
-        fetchAdjustments();
       }
 
       // Store users should keep receiving approved-invoice notifications
@@ -487,7 +469,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     setStockOutOrders([]);
     setTransferInOrders([]);
     setTransferOutOrders([]);
-    setAdjustments([]);
   }, [filterPartId]);
 
   // Support deep-linking to a specific filter, e.g. /store/orders?type=stock-out
@@ -503,7 +484,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       "stock-out",
       "transfer-in",
       "transfer-out",
-      "adjusted",
       ...(isStoreOnlyUser ? ["part-association"] : []),
     ] as const;
 
@@ -530,8 +510,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       } else if (typeFilter === "receiving") {
         fetchPurchaseOrders(true);
         fetchOrders(true);
-      } else if (typeFilter === "adjusted") {
-        fetchAdjustments(true);
       } else if (typeFilter === "part-association") {
         if (isStoreOnlyUser) fetchAssociationParts(true);
       } else {
@@ -540,7 +518,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchStockOutOrders(true);
         fetchTransferInOrders(true);
         fetchTransferOutOrders(true);
-        fetchAdjustments(true);
       }
 
       if (isStoreOnlyUser && typeFilter !== "stock-out" && typeFilter !== "all") {
@@ -822,30 +799,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       }
     } catch (error: any) {
       if (!silent) toast.error(error.error || "Failed to fetch purchase orders");
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
-
-  const fetchAdjustments = async (silent = false) => {
-    if (!selectedStoreId || selectedStoreId === "all") return;
-
-    try {
-      if (!silent) setLoading(true);
-      const response = await apiClient.getAdjustmentsByStore({
-        store_id: selectedStoreId,
-        status: "all", // Show all adjustments (pending + approved)
-        part_id: filterPartId || undefined,
-      });
-
-      const adjustmentsData = response.data || [];
-      if (Array.isArray(adjustmentsData)) {
-        setAdjustments(adjustmentsData);
-      } else {
-        setAdjustments([]);
-      }
-    } catch (error: any) {
-      if (!silent) toast.error(error.error || "Failed to fetch adjustments");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -1494,12 +1447,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     return inDateRange && matchesSearch && matchesPart;
   });
 
-  const filteredAdjustments = (adjustments || []).filter((adjustment) => {
-    const inDateRange = isWithinDateRange(adjustment.date);
-    const matchesPart = orderContainsSelectedPart(filterPartId, adjustment.items);
-    return inDateRange && matchesPart;
-  });
-
   const mixedOrders = [
     ...filteredPurchaseOrders.map((order) => ({
       type: "po" as const,
@@ -1804,15 +1751,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   <ArrowLeftRight className="w-4 h-4" />
                   Transfer Out
                 </Button>
-                <Button
-                  variant={typeFilter === "adjusted" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setTypeFilter("adjusted")}
-                  className="gap-2"
-                >
-                  <Package className="w-4 h-4" />
-                  Adjusted Items
-                </Button>
                 {isStoreOnlyUser && (
                   <Button
                     variant={typeFilter === "part-association" ? "default" : "outline"}
@@ -1843,11 +1781,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                     ? "Transfer In"
                     : typeFilter === "transfer-out"
                       ? "Transfer Out"
-                      : typeFilter === "adjusted"
-                        ? "Adjusted Items"
-                        : typeFilter === "part-association"
-                          ? "Part Association"
-                          : "All Orders"}
+                      : typeFilter === "part-association"
+                        ? "Part Association"
+                        : "All Orders"}
               {selectedStore && ` - ${selectedStore.name}`}
             </CardTitle>
           </CardHeader>
@@ -2534,87 +2470,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   )
                 )}
 
-                {/* Adjusted Items - Adjustments */}
-                {typeFilter === "adjusted" && (
-                  filteredAdjustments.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No adjustments found.
-                    </div>
-                  ) : (
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <ListNumberHeader />
-                            <TableHead>Date</TableHead>
-                            <TableHead>Subject</TableHead>
-                            <TableHead>Items</TableHead>
-                            <TableHead>Total Amount</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Voucher</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredAdjustments.map((adjustment, index) => (
-                            <TableRow key={adjustment.id}>
-                              <ListNumberCell index={index} />
-                              <TableCell>
-                                {format(new Date(adjustment.date), "MMM dd, yyyy")}
-                              </TableCell>
-                              <TableCell className="font-medium">
-                                {adjustment.subject || "Stock Adjustment"}
-                              </TableCell>
-                              <TableCell>{adjustment.items_count} items</TableCell>
-                              <TableCell>
-                                Rs {adjustment.total_amount?.toFixed(2) || "0.00"}
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={
-                                    adjustment.status === "approved"
-                                      ? "default"
-                                      : adjustment.status === "pending"
-                                        ? "secondary"
-                                        : "outline"
-                                  }
-                                >
-                                  {adjustment.status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {adjustment.voucher_number ? (
-                                  <Badge variant="outline">
-                                    {adjustment.voucher_number} ({adjustment.voucher_status || "draft"})
-                                  </Badge>
-                                ) : (
-                                  "-"
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedAdjustment(adjustment);
-                                      setAdjustmentDialogOpen(true);
-                                    }}
-                                    title="View/Update Adjustment"
-                                  >
-                                    <Eye className="w-4 h-4 mr-1" />
-                                    {adjustment.status === "pending" ? "Update" : "View"}
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )
-                )}
-
                 {/* Part Association - Store User only */}
                 {typeFilter === "part-association" && isStoreOnlyUser && (
                   <div className="space-y-4">
@@ -2816,21 +2671,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         />
       )}
 
-
-      {/* Adjusted Item Dialog */}
-      {selectedAdjustment && (
-        <StoreAdjustedItem
-          adjustment={selectedAdjustment}
-          open={adjustmentDialogOpen}
-          onOpenChange={setAdjustmentDialogOpen}
-          onSuccess={async () => {
-            setAdjustmentDialogOpen(false);
-            setSelectedAdjustment(null);
-            // Refresh adjustments
-            await fetchAdjustments();
-          }}
-        />
-      )}
 
       {/* Receive Order Dialog */}
       <AlertDialog open={receiveDialogOpen} onOpenChange={setReceiveDialogOpen}>
