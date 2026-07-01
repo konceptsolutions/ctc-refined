@@ -1734,6 +1734,10 @@ function computeBalanceSheetAccountBalance(
     if (firstVoucherDate && firstVoucherDate.getTime() > asOfMs) {
       return 0;
     }
+    // Opening balance without any posted voucher is not established on the balance sheet.
+    if (!firstVoucherDate) {
+      return 0;
+    }
   }
 
   const debit =
