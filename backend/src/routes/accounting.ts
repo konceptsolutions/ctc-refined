@@ -1642,6 +1642,139 @@ const balanceSheetEquityMainGroupWhere = {
   ],
 };
 
+function parseBalanceSheetAsOfDate(dateParam: string): Date {
+  const trimmed = String(dateParam).trim();
+  if (trimmed.includes("/")) {
+    const parts = trimmed.split("/");
+    const fullYear =
+      parseInt(parts[2], 10) < 100
+        ? 2000 + parseInt(parts[2], 10)
+        : parseInt(parts[2], 10);
+    const month = String(parseInt(parts[1], 10)).padStart(2, "0");
+    const day = String(parseInt(parts[0], 10)).padStart(2, "0");
+    return new Date(`${fullYear}-${month}-${day}T23:59:59.999Z`);
+  }
+
+  const isoDate = trimmed.slice(0, 10);
+  return new Date(`${isoDate}T23:59:59.999Z`);
+}
+
+function buildBalanceSheetVoucherInclude(asOfDate: Date) {
+  return {
+    VoucherEntry: {
+      where: {
+        Voucher: {
+          status: "posted",
+          OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+          date: { lte: asOfDate },
+        },
+      },
+    },
+  };
+}
+
+async function getFirstPostedVoucherDateByAccount(): Promise<
+  Map<string, Date>
+> {
+  const entries = await prisma.voucherEntry.findMany({
+    where: {
+      accountId: { not: null },
+      Voucher: {
+        status: "posted",
+        OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+      },
+    },
+    select: {
+      accountId: true,
+      Voucher: { select: { date: true } },
+    },
+    orderBy: [{ Voucher: { date: "asc" } }, { sortOrder: "asc" }],
+  });
+
+  const firstByAccount = new Map<string, Date>();
+  for (const entry of entries) {
+    if (!entry.accountId || firstByAccount.has(entry.accountId)) continue;
+    firstByAccount.set(entry.accountId, entry.Voucher.date);
+  }
+  return firstByAccount;
+}
+
+type BalanceSheetAccountRow = {
+  id: string;
+  code: string;
+  name: string;
+  openingBalance: number;
+  createdAt: Date;
+  VoucherEntry?: Array<{ debit: number; credit: number }>;
+};
+
+function computeBalanceSheetAccountBalance(
+  account: BalanceSheetAccountRow,
+  accountType: string,
+  asOfDate: Date,
+  firstVoucherDateByAccount: Map<string, Date>,
+): number {
+  const asOfMs = asOfDate.getTime();
+  const createdAtMs = new Date(account.createdAt).getTime();
+  if (createdAtMs > asOfMs) {
+    return 0;
+  }
+
+  const firstVoucherDate = firstVoucherDateByAccount.get(account.id);
+  const hasVoucherOnOrBefore =
+    (account.VoucherEntry?.length ?? 0) > 0 ||
+    (firstVoucherDate ? firstVoucherDate.getTime() <= asOfMs : false);
+
+  // Hide balances for accounts whose first posted activity is after the as-of date.
+  if (!hasVoucherOnOrBefore) {
+    const opening = Number(account.openingBalance || 0);
+    if (Math.abs(opening) < 0.01) {
+      return 0;
+    }
+    if (firstVoucherDate && firstVoucherDate.getTime() > asOfMs) {
+      return 0;
+    }
+  }
+
+  const debit =
+    account.VoucherEntry?.reduce((sum, entry) => sum + entry.debit, 0) || 0;
+  const credit =
+    account.VoucherEntry?.reduce((sum, entry) => sum + entry.credit, 0) || 0;
+
+  let openingBalance = Number(account.openingBalance || 0);
+  if (firstVoucherDate && firstVoucherDate.getTime() > asOfMs) {
+    openingBalance = 0;
+  }
+
+  return calculateAccountBalance(
+    openingBalance,
+    debit,
+    credit,
+    accountType,
+  );
+}
+
+function mapBalanceSheetAccounts(
+  accounts: BalanceSheetAccountRow[],
+  accountType: string,
+  asOfDate: Date,
+  firstVoucherDateByAccount: Map<string, Date>,
+) {
+  return accounts.map((acc) => ({
+    id: acc.id,
+    code: acc.code,
+    name: acc.name,
+    balance: {
+      balance: computeBalanceSheetAccountBalance(
+        acc,
+        accountType,
+        asOfDate,
+        firstVoucherDateByAccount,
+      ),
+    },
+  }));
+}
+
 // Get Balance Sheet
 router.get("/balance-sheet", async (req: Request, res: Response) => {
   try {
@@ -1653,54 +1786,9 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       });
     }
 
-    // Parse date
-    let asOfDate: Date;
-    if (dateParam.includes("/")) {
-      const parts = dateParam.split("/");
-      const fullYear =
-        parseInt(parts[2], 10) < 100
-          ? 2000 + parseInt(parts[2], 10)
-          : parseInt(parts[2], 10);
-      asOfDate = new Date(
-        Date.UTC(
-          fullYear,
-          parseInt(parts[1], 10) - 1,
-          parseInt(parts[0], 10),
-          23,
-          59,
-          59,
-          999,
-        ),
-      );
-    } else {
-      const parts = dateParam.split("-");
-      asOfDate = new Date(
-        Date.UTC(
-          parseInt(parts[0], 10),
-          parseInt(parts[1], 10) - 1,
-          parseInt(parts[2], 10),
-          23,
-          59,
-          59,
-          999,
-        ),
-      );
-    }
-
-    const commonInclude = {
-      VoucherEntry: {
-        where: {
-          Voucher: {
-            status: "posted",
-            OR: [
-              { isCleared: null },
-              { isCleared: { not: 0 } }
-            ],
-            date: { lte: asOfDate },
-          },
-        },
-      },
-    };
+    const asOfDate = parseBalanceSheetAsOfDate(dateParam);
+    const commonInclude = buildBalanceSheetVoucherInclude(asOfDate);
+    const firstVoucherDateByAccount = await getFirstPostedVoucherDateByAccount();
 
     // Get Assets (include case variants and standard codes 1/2 for Current/Long Term Assets)
     const assetMainGroups = await prisma.mainGroup.findMany({
@@ -1721,25 +1809,12 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
 
     const assets = assetMainGroups.map((mg) => {
       const subgroups = mg.Subgroup.map((sg) => {
-        const accounts = sg.Account.map((acc) => {
-          const debit =
-            acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-          const credit =
-            acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-          const balance = calculateAccountBalance(
-            acc.openingBalance,
-            debit,
-            credit,
-            "Asset",
-          );
-
-          return {
-            id: acc.id,
-            code: acc.code,
-            name: acc.name,
-            balance: { balance },
-          };
-        });
+        const accounts = mapBalanceSheetAccounts(
+          sg.Account as BalanceSheetAccountRow[],
+          "Asset",
+          asOfDate,
+          firstVoucherDateByAccount,
+        );
 
         return {
           id: sg.id,
@@ -1802,25 +1877,12 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
 
     const liabilities = liabilityMainGroups.map((mg) => {
       const subgroups = mg.Subgroup.map((sg) => {
-        const accounts = sg.Account.map((acc) => {
-          const debit =
-            acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-          const credit =
-            acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-          const balance = calculateAccountBalance(
-            acc.openingBalance,
-            debit,
-            credit,
-            "Liability",
-          );
-
-          return {
-            id: acc.id,
-            code: acc.code,
-            name: acc.name,
-            balance: { balance },
-          };
-        });
+        const accounts = mapBalanceSheetAccounts(
+          sg.Account as BalanceSheetAccountRow[],
+          "Liability",
+          asOfDate,
+          firstVoucherDateByAccount,
+        );
 
         return {
           id: sg.id,
@@ -1857,25 +1919,12 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
 
     const capital = capitalMainGroups.map((mg) => {
       const subgroups = mg.Subgroup.map((sg) => {
-        const accounts = sg.Account.map((acc) => {
-          const debit =
-            acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-          const credit =
-            acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-          const balance = calculateAccountBalance(
-            acc.openingBalance,
-            debit,
-            credit,
-            "Equity",
-          );
-
-          return {
-            id: acc.id,
-            code: acc.code,
-            name: acc.name,
-            balance: { balance },
-          };
-        });
+        const accounts = mapBalanceSheetAccounts(
+          sg.Account as BalanceSheetAccountRow[],
+          "Equity",
+          asOfDate,
+          firstVoucherDateByAccount,
+        );
 
         return {
           id: sg.id,
@@ -1893,13 +1942,16 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       };
     });
 
-    // Calculate Net Income (Revenue - Expense - Cost)
-    // Revenue accounts have MainGroup.type = "Income"
+    // Calculate Net Income (Revenue - Expense - Cost) as of date
     const revenueAccounts = await prisma.account.findMany({
       where: {
         Subgroup: {
           MainGroup: {
-            type: { in: ["Income", "Revenue"] },
+            OR: [
+              { type: { equals: "Income", mode: "insensitive" } },
+              { type: { equals: "Revenue", mode: "insensitive" } },
+              { code: "7" },
+            ],
           },
         },
       },
@@ -1911,12 +1963,14 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       },
     });
 
-    // Cost accounts have MainGroup.name = "Cost" or "Cost of Sales" (type = "Expense")
     const costAccounts = await prisma.account.findMany({
       where: {
         Subgroup: {
           MainGroup: {
-            name: { in: ["Cost", "Cost of Sales"] },
+            OR: [
+              { name: { in: ["Cost", "Cost of Sales"] } },
+              { code: "9" },
+            ],
           },
         },
       },
@@ -1928,13 +1982,19 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       },
     });
 
-    // Expense accounts have type = "Expense" but exclude Cost main groups
     const expenseAccounts = await prisma.account.findMany({
       where: {
         Subgroup: {
           MainGroup: {
-            type: "Expense",
-            name: { notIn: ["Cost", "Cost of Sales"] },
+            OR: [
+              {
+                AND: [
+                  { type: { equals: "Expense", mode: "insensitive" } },
+                  { name: { notIn: ["Cost", "Cost of Sales"] } },
+                ],
+              },
+              { code: "8" },
+            ],
           },
         },
       },
@@ -1946,33 +2006,32 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       },
     });
 
-    let revenueSum = 0;
-    let expenseSum = 0;
-    let costSum = 0;
+    const sumNetActivity = (
+      accounts: BalanceSheetAccountRow[],
+      kind: "revenue" | "cost" | "expense",
+    ) =>
+      accounts.reduce((sum, acc) => {
+        const balance = computeBalanceSheetAccountBalance(
+          acc,
+          kind === "revenue" ? "Revenue" : "Expense",
+          asOfDate,
+          firstVoucherDateByAccount,
+        );
+        return sum + balance;
+      }, 0);
 
-    // Calculate revenue
-    revenueAccounts.forEach((acc) => {
-      const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-      const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-      // Revenue: credit - debit
-      revenueSum += credit - debit;
-    });
-
-    // Calculate cost
-    costAccounts.forEach((acc) => {
-      const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-      const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-      // Cost: debit - credit (expense type)
-      costSum += debit - credit;
-    });
-
-    // Calculate expenses
-    expenseAccounts.forEach((acc) => {
-      const debit = acc.VoucherEntry?.reduce((sum, e) => sum + e.debit, 0) || 0;
-      const credit = acc.VoucherEntry?.reduce((sum, e) => sum + e.credit, 0) || 0;
-      // Expense: debit - credit
-      expenseSum += debit - credit;
-    });
+    const revenueSum = sumNetActivity(
+      revenueAccounts as BalanceSheetAccountRow[],
+      "revenue",
+    );
+    const costSum = sumNetActivity(
+      costAccounts as BalanceSheetAccountRow[],
+      "cost",
+    );
+    const expenseSum = sumNetActivity(
+      expenseAccounts as BalanceSheetAccountRow[],
+      "expense",
+    );
 
     const netIncome = revenueSum - expenseSum - costSum;
 

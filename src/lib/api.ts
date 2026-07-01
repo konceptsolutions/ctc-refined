@@ -3374,6 +3374,16 @@ class ApiClient {
     return this.request(`/vouchers/${id}`);
   }
 
+  async getNextVoucherNumber(type: string) {
+    const query = new URLSearchParams({ type });
+    query.set("_t", Date.now().toString());
+    return this.request<{
+      type: string;
+      voucherNumber: string;
+      sequence: number;
+    }>(`/vouchers/next-number?${query.toString()}`);
+  }
+
   async createVoucher(data: {
     voucherNumber: string;
     type: string;
