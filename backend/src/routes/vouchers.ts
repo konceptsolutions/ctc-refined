@@ -5,6 +5,57 @@ import { resolveCashBankModeFromAccount } from '../utils/cashBankMode';
 
 const router = express.Router();
 
+const VOUCHER_TYPE_PREFIX: Record<string, string> = {
+  payment: "PV",
+  receipt: "RV",
+  journal: "JV",
+  contra: "CV",
+};
+
+const VOUCHER_SEQUENCE_FLOORS: Record<string, number> = {
+  payment: 2000,
+  receipt: 1000,
+  journal: 3000,
+  contra: 100,
+};
+
+function parseVoucherSequence(
+  voucherNumber: string,
+  prefix: string,
+): number | null {
+  const match = String(voucherNumber)
+    .trim()
+    .match(new RegExp(`^${prefix}(\\d+)$`, "i"));
+  if (!match) return null;
+  const n = parseInt(match[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function allocateNextVoucherNumber(type: string): Promise<string> {
+  const normalized = String(type).trim().toLowerCase();
+  const prefix = VOUCHER_TYPE_PREFIX[normalized];
+  if (!prefix) {
+    throw new Error("Invalid voucher type");
+  }
+
+  const vouchers = await prisma.voucher.findMany({
+    where: { type: normalized },
+    select: { voucherNumber: true },
+  });
+
+  let maxSeq = 0;
+  for (const voucher of vouchers) {
+    const seq = parseVoucherSequence(voucher.voucherNumber, prefix);
+    if (seq !== null && seq > maxSeq) {
+      maxSeq = seq;
+    }
+  }
+
+  const floor = VOUCHER_SEQUENCE_FLOORS[normalized] ?? 0;
+  const nextSeq = Math.max(maxSeq + 1, floor + 1);
+  return `${prefix}${String(nextSeq).padStart(4, "0")}`;
+}
+
 function normalizeVoucherTypeFilter(typeParam: unknown): string | undefined {
   if (typeParam === undefined || typeParam === null) return undefined;
   const raw = String(typeParam).trim();
@@ -338,6 +389,30 @@ router.get('/', async (req: Request, res: Response) => {
         limit: limitNum,
         total: filteredVouchers.length,
         totalPages: Math.ceil(filteredVouchers.length / limitNum) || 0,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Next voucher number for manual entry (payment / receipt / journal / contra)
+router.get("/next-number", async (req: Request, res: Response) => {
+  try {
+    const type = String(req.query.type ?? "").trim().toLowerCase();
+    if (!VOUCHER_TYPE_PREFIX[type]) {
+      return res.status(400).json({ error: "Invalid voucher type" });
+    }
+
+    const voucherNumber = await allocateNextVoucherNumber(type);
+    const prefix = VOUCHER_TYPE_PREFIX[type];
+    const sequence = parseVoucherSequence(voucherNumber, prefix) ?? 0;
+
+    res.json({
+      data: {
+        type,
+        voucherNumber,
+        sequence,
       },
     });
   } catch (error: any) {

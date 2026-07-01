@@ -69,6 +69,49 @@ export interface VoucherEntry {
 type MainTab = "new" | "view";
 type VoucherTab = "payment" | "receipt" | "journal" | "contra";
 
+const VOUCHER_TYPE_PREFIX: Record<VoucherTab, string> = {
+  payment: "PV",
+  receipt: "RV",
+  journal: "JV",
+  contra: "CV",
+};
+
+const VOUCHER_SEQUENCE_FLOORS: Record<VoucherTab, number> = {
+  payment: 2000,
+  receipt: 1000,
+  journal: 3000,
+  contra: 100,
+};
+
+function parseVoucherSequence(
+  voucherNumber: string,
+  prefix: string,
+): number | null {
+  const match = String(voucherNumber)
+    .trim()
+    .match(new RegExp(`^${prefix}(\\d+)$`, "i"));
+  if (!match) return null;
+  const n = parseInt(match[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function maxVoucherSequence(
+  voucherList: Voucher[],
+  type: VoucherTab,
+): number {
+  const prefix = VOUCHER_TYPE_PREFIX[type];
+  const floor = VOUCHER_SEQUENCE_FLOORS[type];
+  let maxSeq = floor;
+  for (const voucher of voucherList) {
+    if (voucher.type !== type) continue;
+    const seq = parseVoucherSequence(voucher.voucherNumber, prefix);
+    if (seq !== null && seq > maxSeq) {
+      maxSeq = seq;
+    }
+  }
+  return maxSeq;
+}
+
 const mainTabs: { id: MainTab; label: string; icon: React.ElementType }[] = [
   { id: "new", label: "New Voucher", icon: Plus },
   { id: "view", label: "View Vouchers", icon: List },
@@ -128,10 +171,10 @@ export const VoucherManagement = () => {
   const [selectedSubgroup, setSelectedSubgroup] = useState("");
 
   const [voucherCounters, setVoucherCounters] = useState({
-    receipt: 1019,
-    payment: 2881,
-    journal: 4633,
-    contra: 100,
+    receipt: VOUCHER_SEQUENCE_FLOORS.receipt,
+    payment: VOUCHER_SEQUENCE_FLOORS.payment,
+    journal: VOUCHER_SEQUENCE_FLOORS.journal,
+    contra: VOUCHER_SEQUENCE_FLOORS.contra,
   });
 
   const cashBankAccounts = useMemo(() => {
@@ -197,22 +240,17 @@ export const VoucherManagement = () => {
         // Update counters locally based on existing vouchers
         if (vouchersRes.data) {
           const list = vouchersRes.data as any[];
-          const counters = {
-            receipt: 1000,
-            payment: 2000,
-            journal: 3000,
-            contra: 100,
-          };
+          const counters = { ...VOUCHER_SEQUENCE_FLOORS };
 
-          list.forEach(v => {
-            // Extract numeric part (e.g., from "PV1234" get "1234")
-            const numPartStr = v.voucherNumber.substring(2);
-            const numPart = parseInt(numPartStr);
-            if (!isNaN(numPart)) {
-              if (v.type === 'receipt' && numPart > counters.receipt) counters.receipt = numPart;
-              if (v.type === 'payment' && numPart > counters.payment) counters.payment = numPart;
-              if (v.type === 'journal' && numPart > counters.journal) counters.journal = numPart;
-              if (v.type === 'contra' && numPart > counters.contra) counters.contra = numPart;
+          list.forEach((v) => {
+            const type = v.type as VoucherTab;
+            if (!VOUCHER_TYPE_PREFIX[type]) return;
+            const seq = parseVoucherSequence(
+              v.voucherNumber,
+              VOUCHER_TYPE_PREFIX[type],
+            );
+            if (seq !== null && seq > counters[type]) {
+              counters[type] = seq;
             }
           });
           setVoucherCounters(counters);
@@ -366,27 +404,48 @@ export const VoucherManagement = () => {
   };
 
   const handleSaveVoucher = async (data: any) => {
-    const typePrefix = {
-      receipt: "RV",
-      payment: "PV",
-      journal: "JV",
-      contra: "CV",
-    };
-
-    let newVoucher: Voucher;
-    const nextNum = (voucherCounters[data.type as VoucherTab] || 0) + 1;
-    const voucherNumber = `${typePrefix[data.type as VoucherTab]}${String(nextNum).padStart(4, '0')}`;
-
-    // Check if voucher number already exists in local state
-    if (vouchers.some(v => v.voucherNumber === voucherNumber)) {
+    const voucherType = data.type as VoucherTab;
+    if (!VOUCHER_TYPE_PREFIX[voucherType]) {
       toast({
         title: "Error",
-        description: `Voucher number ${voucherNumber} already exists. Please try again.`,
-        variant: "destructive"
+        description: "Invalid voucher type",
+        variant: "destructive",
       });
       return;
     }
 
+    let voucherNumber: string;
+    let nextNum: number;
+    try {
+      const nextRes = (await apiClient.getNextVoucherNumber(
+        voucherType,
+      )) as any;
+      if (nextRes.error || !nextRes.data?.voucherNumber) {
+        toast({
+          title: "Error",
+          description: nextRes.error || "Could not generate voucher number",
+          variant: "destructive",
+        });
+        return;
+      }
+      voucherNumber = nextRes.data.voucherNumber;
+      nextNum =
+        nextRes.data.sequence ??
+        parseVoucherSequence(
+          voucherNumber,
+          VOUCHER_TYPE_PREFIX[voucherType],
+        ) ??
+        maxVoucherSequence(vouchers, voucherType) + 1;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.error || error.message || "Could not generate voucher number",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let newVoucher: Voucher;
     const voucherDate = convertDateToISO(data.date);
 
     // Payment/Receipt forms send `entries`.
@@ -547,30 +606,65 @@ export const VoucherManagement = () => {
     });
 
     try {
-      // Create voucher via API
-      const response = await apiClient.createVoucher({
-        voucherNumber: newVoucher.voucherNumber,
-        type: newVoucher.type,
-        date: newVoucher.date,
-        narration: newVoucher.narration,
-        cashBankAccount: newVoucher.cashBankAccount,
-        chequeNumber: data.chequeNumber,
-        chequeDate: data.chequeDate ? convertDateToISO(data.chequeDate) : undefined,
-        entries: apiEntries,
-        status: newVoucher.status,
-        createdBy: 'User',
-      }) as any;
+      let activeVoucherNumber = voucherNumber;
+      let activeNextNum = nextNum;
+      let response: any = null;
 
-      if (response.data) {
-        // Add the created voucher to the list
-        setVouchers([response.data, ...vouchers]);
-        setVoucherCounters(prev => ({
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          const retryRes = (await apiClient.getNextVoucherNumber(
+            voucherType,
+          )) as any;
+          if (retryRes.error || !retryRes.data?.voucherNumber) {
+            break;
+          }
+          activeVoucherNumber = retryRes.data.voucherNumber;
+          activeNextNum =
+            retryRes.data.sequence ??
+            parseVoucherSequence(
+              activeVoucherNumber,
+              VOUCHER_TYPE_PREFIX[voucherType],
+            ) ??
+            activeNextNum + 1;
+          newVoucher = { ...newVoucher, voucherNumber: activeVoucherNumber };
+        }
+
+        response = await apiClient.createVoucher({
+          voucherNumber: activeVoucherNumber,
+          type: newVoucher.type,
+          date: newVoucher.date,
+          narration: newVoucher.narration,
+          cashBankAccount: newVoucher.cashBankAccount,
+          chequeNumber: data.chequeNumber,
+          chequeDate: data.chequeDate ? convertDateToISO(data.chequeDate) : undefined,
+          entries: apiEntries,
+          status: newVoucher.status,
+          createdBy: "User",
+        });
+
+        if (response.data) {
+          nextNum = activeNextNum;
+          break;
+        }
+
+        const errText = String(response.error ?? "").toLowerCase();
+        if (!errText.includes("already exists")) {
+          break;
+        }
+      }
+
+      if (response?.data) {
+        setVouchers((prev) => [response.data, ...prev]);
+        setVoucherCounters((prev) => ({
           ...prev,
-          [data.type]: nextNum
+          [voucherType]: Math.max(prev[voucherType] ?? 0, nextNum),
         }));
 
-        toast({ title: "Success", description: `Voucher ${newVoucher.voucherNumber} created successfully` });
-      } else if (response.error) {
+        toast({
+          title: "Success",
+          description: `Voucher ${activeVoucherNumber} created successfully`,
+        });
+      } else if (response?.error) {
         toast({
           title: "Error",
           description: response.error,
@@ -665,8 +759,8 @@ export const VoucherManagement = () => {
   };
 
   const generateVoucherNo = () => {
-    const count = voucherCounters.receipt;
-    return `RV-${String(count).padStart(4, "0")}`;
+    const next = voucherCounters.receipt + 1;
+    return `RV${String(next).padStart(4, "0")}`;
   };
 
   return (
