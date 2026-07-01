@@ -156,3 +156,30 @@ export function getPreviousPakistanFinancialYearRange() {
   });
 }
 
+export function isDateInPakistanFinancialYear(
+  dateStr: string | undefined | null,
+  fyStartYear: number,
+): boolean {
+  if (!dateStr || !Number.isFinite(fyStartYear)) return false;
+  const d = String(dateStr).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const from = `${fyStartYear}-07-01`;
+  const to = `${fyStartYear + 1}-06-30`;
+  return d >= from && d <= to;
+}
+
+export function buildPakistanFinancialYearOptions(yearsBack = 12): Array<{
+  value: string;
+  label: string;
+}> {
+  const currentStart = getPakistanFinancialYearStartYear();
+  const options: Array<{ value: string; label: string }> = [];
+  for (let y = currentStart; y >= currentStart - yearsBack; y--) {
+    options.push({
+      value: String(y),
+      label: `FY ${y}-${String(y + 1).slice(-2)}`,
+    });
+  }
+  return options;
+}
+

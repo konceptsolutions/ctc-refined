@@ -3,9 +3,9 @@ import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
 import { getCanonicalPartId } from "../services/partCanonical";
 import { netStockFromMovements } from "../utils/stockMovementBalance";
+import { getPakistanFinancialYearBounds } from "../utils/pakistanFinancialYear";
 
 const router = express.Router();
-const SALES_INVOICE_START_NO = 1641;
 
 /** Persist freight when Prisma client predates freightCharges column (run prisma generate when dev server is stopped). */
 async function setInvoiceFreightCharges(
@@ -178,13 +178,20 @@ const LEGACY_SALES_INVOICE_NO = /^INV-(\d{4})-(\d+)$/i;
 const PLAIN_SALES_INVOICE_NO = /^INV-(\d+)$/i;
 const NUMERIC_SALES_INVOICE_NO = /^(\d+)$/;
 
-async function getNextSalesInvoiceNo(): Promise<string> {
+async function getNextSalesInvoiceNo(
+  invoiceDate?: string | Date,
+): Promise<string> {
+  const { from, to } = getPakistanFinancialYearBounds(invoiceDate ?? new Date());
+
   const rows = await prisma.$queryRaw<Array<{ invoiceNo: string }>>`
     SELECT "invoiceNo" FROM "SalesInvoice"
-    WHERE "invoiceNo" LIKE 'INV-%' OR "invoiceNo" ~ '^[0-9]+$'
+    WHERE "customerType" != 'transfer'
+    AND "invoiceDate" >= ${from}
+    AND "invoiceDate" <= ${to}
+    AND ("invoiceNo" LIKE 'INV-%' OR "invoiceNo" ~ '^[0-9]+$')
   `;
 
-  let maxNo = SALES_INVOICE_START_NO - 1;
+  let maxNo = 0;
   for (const { invoiceNo } of rows) {
     let value: number | null = null;
     const legacy = invoiceNo.match(LEGACY_SALES_INVOICE_NO);
@@ -1311,7 +1318,7 @@ router.post(
       }
 
       // Generate robust invoice number (numeric string; legacy INV-* rows still drive sequence)
-      const invoiceNo = await getNextSalesInvoiceNo();
+      const invoiceNo = await getNextSalesInvoiceNo(invoiceDate);
 
       const q = quotation as {
         subtotal?: number;
@@ -1586,7 +1593,7 @@ router.get("/invoices", async (req: Request, res: Response) => {
     // Fetch all invoices (we'll filter out "Demo" customers in memory since SQLite doesn't support case-insensitive mode)
     const allInvoices = await prisma.salesInvoice.findMany({
       where,
-      orderBy: { invoiceNo: "desc" },
+      orderBy: [{ invoiceDate: "desc" }, { invoiceNo: "desc" }],
       include: {
         SalesInvoiceItem: {
           select: {
@@ -1967,7 +1974,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
     const invoiceNo =
       normalizedCustomerType === "transfer"
         ? await getNextTransferOutInvoiceNo(invoiceDate)
-        : await getNextSalesInvoiceNo();
+        : await getNextSalesInvoiceNo(invoiceDate);
 
     const finalAccountId = payment.legacyAccountId;
 

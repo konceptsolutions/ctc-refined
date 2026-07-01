@@ -106,6 +106,11 @@ import {
   formatPriceLastUpdatedLabel,
 } from "@/lib/part-price-dates";
 import {
+  buildPakistanFinancialYearOptions,
+  getPakistanFinancialYearStartYear,
+  isDateInPakistanFinancialYear,
+} from "@/utils/dateUtils";
+import {
   Invoice,
   InvoiceItem,
   InvoiceStatus,
@@ -360,6 +365,16 @@ function invoiceIsSimpleForList(inv: Invoice): boolean {
   return !invoiceHasTaxForList(inv) && !invoiceHasOverallDiscountForList(inv);
 }
 
+function compareInvoicesByDateAndNoDesc(
+  a: { invoiceDate?: string; invoiceNo: string },
+  b: { invoiceDate?: string; invoiceNo: string },
+): number {
+  const dateA = a.invoiceDate ? new Date(a.invoiceDate).getTime() : 0;
+  const dateB = b.invoiceDate ? new Date(b.invoiceDate).getTime() : 0;
+  if (dateB !== dateA) return dateB - dateA;
+  return b.invoiceNo.localeCompare(a.invoiceNo, undefined, { numeric: true });
+}
+
 function parseSaleReturnDeductionDraft(val: string | undefined): number {
   const t = String(val ?? "")
     .trim()
@@ -479,7 +494,14 @@ export const SalesInvoice = ({
   const [filterCustomerType, setFilterCustomerType] = useState<string>("all");
   const [filterPartId, setFilterPartId] = useState("");
   const [filterBrandId, setFilterBrandId] = useState("");
+  const [filterFinancialYear, setFilterFinancialYear] = useState(() =>
+    String(getPakistanFinancialYearStartYear()),
+  );
   const [filterBrands, setFilterBrands] = useState<{ id: string; name: string }[]>(
+    [],
+  );
+  const financialYearOptions = useMemo(
+    () => buildPakistanFinancialYearOptions(15),
     [],
   );
   const [loadingInvoices, setLoadingInvoices] = useState(false);
@@ -1113,9 +1135,18 @@ export const SalesInvoice = ({
   // Filter invoices: search + demo filter client-side; status/customer/part/brand via API.
   // Invoice kind (simple / with tax / with discount) is client-side on loaded rows.
   const filteredInvoices = useMemo(() => {
+    const fyStartYear = parseInt(filterFinancialYear, 10);
     return invoices
       .filter((inv) => {
         if (inv.customerName.toLowerCase().includes("demo")) {
+          return false;
+        }
+
+        if (
+          !isQuotation &&
+          Number.isFinite(fyStartYear) &&
+          !isDateInPakistanFinancialYear(inv.invoiceDate, fyStartYear)
+        ) {
           return false;
         }
 
@@ -1145,10 +1176,8 @@ export const SalesInvoice = ({
         return true;
       })
       .slice()
-      .sort((a, b) =>
-        b.invoiceNo.localeCompare(a.invoiceNo, undefined, { numeric: true }),
-      );
-  }, [invoices, searchTerm, filterInvoiceKind]);
+      .sort(compareInvoicesByDateAndNoDesc);
+  }, [invoices, searchTerm, filterInvoiceKind, filterFinancialYear, isQuotation]);
 
   const invoiceListTotalPages =
     Math.ceil(filteredInvoices.length / invoiceListPageSize) || 1;
@@ -1166,6 +1195,7 @@ export const SalesInvoice = ({
     filterCustomerType,
     filterPartId,
     filterBrandId,
+    filterFinancialYear,
     isQuotation,
     isTransferOut,
   ]);
@@ -2759,10 +2789,7 @@ export const SalesInvoice = ({
             createdAt: inv.createdAt,
             updatedAt: inv.updatedAt,
           }))
-          .sort(
-            (a: any, b: any) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-          );
+          .sort(compareInvoicesByDateAndNoDesc);
 
         setInvoices(scopeInvoiceList(transformedInvoices));
       } catch (error: any) {
@@ -6154,6 +6181,23 @@ export const SalesInvoice = ({
                   className="min-w-0 w-full shrink-0 sm:min-w-[240px] sm:max-w-xs sm:flex-1 [&_input]:h-10 [&_input]:text-sm"
                   disabled={partsLoading && parts.length === 0}
                 />
+                {!isQuotation && (
+                  <Select
+                    value={filterFinancialYear}
+                    onValueChange={setFilterFinancialYear}
+                  >
+                    <SelectTrigger className="h-10 w-full shrink-0 text-sm sm:w-44">
+                      <SelectValue placeholder="Financial year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {financialYearOptions.map((fy) => (
+                        <SelectItem key={fy.value} value={fy.value}>
+                          {fy.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 {!isTransferOut && (
                   <Select
                     value={filterCustomerType}
