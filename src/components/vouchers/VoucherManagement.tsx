@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { CreditCard, Receipt, FileText, ArrowRightLeft, List, Plus } from "lucide-react";
 import { PaymentVoucherForm } from "./PaymentVoucherForm";
@@ -26,6 +26,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { isCashBankAccount } from "@/utils/cashBankMode";
+import { buildVoucherAccountOptions } from "@/utils/voucherAccounts";
+import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 
 export interface Voucher {
   id: string;
@@ -111,7 +114,7 @@ export const VoucherManagement = () => {
   // Dynamic data states
   const [mainGroups, setMainGroups] = useState<{ id: string, name: string, code: string }[]>([]);
   const [subgroups, setSubgroups] = useState<{ id: string, name: string, code: string, mainGroupId: string }[]>([]);
-  const [accountsList, setAccountsList] = useState<{ value: string, label: string }[]>([]);
+  const [accountsList, setAccountsList] = useState<SearchableSelectOption[]>([]);
   const [rawAccounts, setRawAccounts] = useState<any[]>([]);
 
   // Dialog states
@@ -133,20 +136,26 @@ export const VoucherManagement = () => {
 
   const cashBankAccounts = useMemo(() => {
     return rawAccounts
-      .filter((acc: any) => {
-        const subgroupCode = acc.subgroup?.code ?? acc.Subgroup?.code ?? "";
-
-        // IMPORTANT: For voucher DR/CR cash&bank dropdown, we must only use
-        // the CASH (subgroup 101) and BANK (subgroup 102) subgroups.
-        // Do NOT fallback using account code prefixes, otherwise you may
-        // accidentally include non-cash accounts.
-        return subgroupCode === "103" || subgroupCode === "102";
-      })
+      .filter((acc: any) => isCashBankAccount(acc))
       .map((acc: any) => ({
         value: acc.id,
         label: `${acc.code} - ${acc.name}`
       }));
   }, [rawAccounts]);
+
+  const applyAccountsData = (accountsData: any[]) => {
+    setRawAccounts(accountsData);
+    setAccountsList(buildVoucherAccountOptions(accountsData));
+  };
+
+  const refreshAccounts = useCallback(async () => {
+    const accountsRes = await apiClient.getAccounts({ status: "Active" });
+    const raw = accountsRes as any;
+    const accountsData = Array.isArray(raw) ? raw : (raw.data || []);
+    if (accountsData.length > 0) {
+      applyAccountsData(accountsData);
+    }
+  }, []);
 
   // Fetch all data
   useEffect(() => {
@@ -155,7 +164,7 @@ export const VoucherManagement = () => {
         setLoading(true);
         const [vouchersRes, accountsRes, subgroupsRes, mainGroupsRes] = await Promise.all([
           apiClient.getVouchers({ limit: 1000 }),
-          apiClient.getAccounts(),
+          apiClient.getAccounts({ status: "Active" }),
           apiClient.getSubgroups(),
           apiClient.getMainGroups()
         ]);
@@ -177,15 +186,12 @@ export const VoucherManagement = () => {
           setSubgroups(subgroupsData);
         }
 
-        const rawAccounts = accountsRes as any;
-        const accountsData = Array.isArray(rawAccounts) ? rawAccounts : (rawAccounts.data || []);
+        const rawAccountsPayload = accountsRes as any;
+        const accountsData = Array.isArray(rawAccountsPayload)
+          ? rawAccountsPayload
+          : (rawAccountsPayload.data || []);
         if (accountsData.length > 0) {
-          setRawAccounts(accountsData);
-          const formattedAccounts = accountsData.map((acc: any) => ({
-            value: acc.id,
-            label: `${acc.code} - ${acc.name}`
-          }));
-          setAccountsList(formattedAccounts);
+          applyAccountsData(accountsData);
         }
 
         // Update counters locally based on existing vouchers
@@ -225,6 +231,12 @@ export const VoucherManagement = () => {
 
     fetchAllData();
   }, [toast]);
+
+  useEffect(() => {
+    if (mainTab === "new") {
+      void refreshAccounts();
+    }
+  }, [mainTab, refreshAccounts]);
 
   const handleAddSubgroup = () => {
     setShowSubgroupDialog(true);
@@ -288,10 +300,11 @@ export const VoucherManagement = () => {
 
       if (res.data) {
         const newAcc = res.data as any;
-        setAccountsList([...accountsList, {
-          value: newAcc.id,
-          label: `${newAcc.code} - ${newAcc.name}`
-        }]);
+        setRawAccounts((prev) => [...prev, newAcc]);
+        setAccountsList((prev) => {
+          if (prev.some((p) => p.value === newAcc.id)) return prev;
+          return [...prev, ...buildVoucherAccountOptions([newAcc])];
+        });
         toast({ title: "Success", description: "Account created successfully" });
         setNewAccountName("");
         setNewAccountCode("");
@@ -755,6 +768,7 @@ export const VoucherManagement = () => {
           onUpdateVoucher={handleUpdateVoucher}
           onDeleteVoucher={handleDeleteVoucher}
           accounts={accountsList}
+          rawAccounts={rawAccounts}
           onAddSubgroup={handleAddSubgroup}
           onAddAccount={handleAddAccount}
           onSearch={handleSearch}
@@ -833,11 +847,15 @@ export const VoucherManagement = () => {
                   <SelectValue placeholder="Select Subgroup" />
                 </SelectTrigger>
                 <SelectContent>
-                  {subgroups.map((sg) => (
-                    <SelectItem key={sg.id} value={sg.id}>
-                      {sg.code} - {sg.name}
-                    </SelectItem>
-                  ))}
+                  {subgroups.map((sg) => {
+                    const mg = mainGroups.find((m) => m.id === sg.mainGroupId);
+                    return (
+                      <SelectItem key={sg.id} value={sg.id}>
+                        {sg.code} - {sg.name}
+                        {mg ? ` (${mg.name})` : ""}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>

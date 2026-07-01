@@ -193,6 +193,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
                 value={entry.account}
                 onValueChange={(v) => updateDrEntry(entry.id, "account", v)}
                 placeholder="Select..."
+                selectedDisplayLabelOnly
               />
             </div>
             <div className="col-span-4">
@@ -250,6 +251,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
                 value={entry.account}
                 onValueChange={(v) => updateCrEntry(entry.id, "account", v)}
                 placeholder="Select..."
+                selectedDisplayLabelOnly
               />
             </div>
             <div className="col-span-4">

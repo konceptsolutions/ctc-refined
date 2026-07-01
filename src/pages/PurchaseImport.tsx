@@ -324,6 +324,18 @@ function computeImportReceiveVariance(orderQty: number, receiveQty: number) {
   };
 }
 
+function computeImportReceiveLineAmounts(
+  line: Pick<ImportPurchaseOrderReceiveLine, "fcRate" | "lcRate" | "weight">,
+  receiveQty: number | string,
+) {
+  const qty = Math.max(0, Math.floor(Number(receiveQty) || 0));
+  return {
+    fcAmount: line.fcRate * qty,
+    lcAmount: line.lcRate * qty,
+    totalWeight: line.weight * qty,
+  };
+}
+
 type PurchaseQuotationDetailItem = {
   partId: string;
   masterPartNo: string;
@@ -5451,11 +5463,15 @@ const PurchaseOrderTab = () => {
       prev.map((line) => {
         if (line.id !== lineId) return line;
         const variance = computeImportReceiveVariance(line.orderQty, value);
+        const amounts = computeImportReceiveLineAmounts(line, value);
         return {
           ...line,
           receiveQty: value,
           additionalQty: variance.additionalQty,
           backQty: variance.backQty,
+          fcAmount: amounts.fcAmount,
+          lcAmount: amounts.lcAmount,
+          totalWeight: amounts.totalWeight,
         };
       }),
     );
@@ -5777,8 +5793,6 @@ const PurchaseOrderTab = () => {
                       <th className="text-left p-2 min-w-[220px]">Part</th>
                       <th className="text-left p-2">Brand</th>
                       <th className="text-right p-2">Stock</th>
-                      <th className="text-right p-2">Request QTY</th>
-                      <th className="text-right p-2">Quotation QTY</th>
                       <th className="text-right p-2">Ship Days</th>
                       <th className="text-right p-2">Last FC Rate</th>
                       <th className="text-right p-2">
@@ -5802,7 +5816,12 @@ const PurchaseOrderTab = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {receiveLines.map((line, index) => (
+                    {receiveLines.map((line, index) => {
+                      const lineAmounts = computeImportReceiveLineAmounts(
+                        line,
+                        line.receiveQty,
+                      );
+                      return (
                       <tr key={line.id} className="border-t">
                         <td className="p-2 text-center text-muted-foreground tabular-nums">
                           {index + 1}
@@ -5813,21 +5832,25 @@ const PurchaseOrderTab = () => {
                         </td>
                         <td className="p-2">{line.brand || "-"}</td>
                         <td className="p-2 text-right tabular-nums">{line.currentStock}</td>
-                        <td className="p-2 text-right tabular-nums">{line.demandQuantity}</td>
-                        <td className="p-2 text-right tabular-nums">{line.quotationQuantity}</td>
                         <td className="p-2 text-right tabular-nums">{line.shipDays}</td>
                         <td className="p-2 text-right text-muted-foreground tabular-nums">
                           {formatLastFcRateDisplay(line.lastFcRate)}
                         </td>
                         <td className="p-2 text-right tabular-nums">{line.fcRate.toFixed(4)}</td>
-                        <td className="p-2 text-right tabular-nums">{line.fcAmount.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {lineAmounts.fcAmount.toFixed(2)}
+                        </td>
                         <td className="p-2 text-right tabular-nums">{line.lcRate.toFixed(2)}</td>
-                        <td className="p-2 text-right tabular-nums">{line.lcAmount.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {lineAmounts.lcAmount.toFixed(2)}
+                        </td>
                         <td className="p-2 text-right tabular-nums">
                           {line.weight > 0 ? line.weight.toFixed(4) : "-"}
                         </td>
                         <td className="p-2 text-right tabular-nums">
-                          {line.totalWeight > 0 ? line.totalWeight.toFixed(4) : "-"}
+                          {lineAmounts.totalWeight > 0
+                            ? lineAmounts.totalWeight.toFixed(4)
+                            : "-"}
                         </td>
                         <td className="p-2 text-right tabular-nums">{line.orderQty}</td>
                         <td className="p-2 text-right">
@@ -5849,7 +5872,8 @@ const PurchaseOrderTab = () => {
                           {line.backQty > 0 ? line.backQty : "-"}
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                   {receiveLines.length > 0 ? (
                     <tfoot>
@@ -5857,14 +5881,7 @@ const PurchaseOrderTab = () => {
                         <td className="p-2" />
                         <td className="p-2">Totals</td>
                         <td className="p-2" colSpan={3} />
-                        <td className="p-2 text-right tabular-nums">
-                          {receiveLines.reduce(
-                            (sum, line) => sum + line.quotationQuantity,
-                            0,
-                          )}
-                        </td>
                         <td className="p-2" colSpan={2} />
-                        <td className="p-2" />
                         <td className="p-2 text-right tabular-nums">
                           {receiveTotals.fcAmount.toFixed(2)}
                         </td>

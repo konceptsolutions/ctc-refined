@@ -2114,6 +2114,7 @@ class ApiClient {
     search?: string;
     fieldFilter?: string;
     status?: string;
+    type?: string;
     page?: number;
     limit?: number;
   }) {

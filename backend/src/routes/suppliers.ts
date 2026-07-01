@@ -82,7 +82,7 @@ async function generateSupplierCode(): Promise<string> {
 // GET /api/suppliers - Get all suppliers with filters and pagination
 router.get("/", async (req, res) => {
   try {
-    const { search, fieldFilter, status, page = "1", limit = "10" } = req.query;
+    const { search, fieldFilter, status, type, page = "1", limit = "10" } = req.query;
 
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
@@ -94,6 +94,12 @@ router.get("/", async (req, res) => {
     // Status filter
     if (status && status !== "all") {
       where.status = status;
+    }
+
+    // Supplier type filter (local / international)
+    const typeFilter = String(type || "").trim().toLowerCase();
+    if (typeFilter === "local" || typeFilter === "international") {
+      where.type = typeFilter;
     }
 
     // Search filter

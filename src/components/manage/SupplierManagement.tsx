@@ -121,6 +121,7 @@ export const SupplierManagement = () => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [fieldFilter, setFieldFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [formData, setFormData] = useState<Omit<Supplier, "id">>(emptySupplier);
@@ -155,6 +156,7 @@ export const SupplierManagement = () => {
         search: searchTerm || undefined,
         fieldFilter: fieldFilter !== "all" ? fieldFilter : undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
+        type: typeFilter !== "all" ? typeFilter : undefined,
         page: currentPage,
         limit: rowsPerPage,
       });
@@ -183,14 +185,14 @@ export const SupplierManagement = () => {
   useEffect(() => {
     fetchSuppliers();
     fetchAreas();
-  }, [currentPage, rowsPerPage, statusFilter]);
+  }, [currentPage, rowsPerPage, statusFilter, typeFilter]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     if (currentPage !== 1) {
       setCurrentPage(1);
     }
-  }, [statusFilter]);
+  }, [statusFilter, typeFilter]);
 
   const totalPages = Math.ceil(totalRecords / rowsPerPage);
 
@@ -532,6 +534,27 @@ export const SupplierManagement = () => {
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                Supplier Type
+              </Label>
+              <Select
+                value={typeFilter}
+                onValueChange={(value) => {
+                  setTypeFilter(value);
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-36 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="local">Local</SelectItem>
+                  <SelectItem value="international">International</SelectItem>
                 </SelectContent>
               </Select>
             </div>

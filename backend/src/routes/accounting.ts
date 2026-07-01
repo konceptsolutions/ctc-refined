@@ -199,6 +199,7 @@ const SUBGROUPS_SEED = [
   { MainGroupCode: "1", code: "103", name: "Accounts Receivable" },
   { MainGroupCode: "1", code: "104", name: "Inventory" },
   { MainGroupCode: "1", code: "105", name: "Prepaid Expenses" },
+  { MainGroupCode: "2", code: "206", name: "SHOP INVESTMENT" },
   { MainGroupCode: "5", code: "501", name: "Owner's Capital" },
   { MainGroupCode: "8", code: "801", name: "Operating Expenses" },
 ];
@@ -250,6 +251,12 @@ router.post("/seed-required-accounts", async (req: Request, res: Response) => {
         code: "801014",
         name: "Dispose Inventory",
         description: "Dispose Inventory expense for adjustments",
+      },
+      {
+        SubgroupCode: "206",
+        code: "206001",
+        name: "SHOP INVESTMENT",
+        description: "Long term asset — shop investment",
       },
     ]) {
       const sg = await prisma.subgroup.findFirst({
@@ -1619,6 +1626,22 @@ router.post("/recalculate-balances", async (req: Request, res: Response) => {
   }
 });
 
+const balanceSheetAssetMainGroupWhere = {
+  OR: [
+    { type: "Asset" },
+    { type: { equals: "Asset", mode: "insensitive" as const } },
+    { code: { in: ["1", "2"] } },
+  ],
+};
+
+const balanceSheetEquityMainGroupWhere = {
+  OR: [
+    { type: "Equity" },
+    { type: { equals: "Equity", mode: "insensitive" as const } },
+    { code: { in: ["5", "6"] } },
+  ],
+};
+
 // Get Balance Sheet
 router.get("/balance-sheet", async (req: Request, res: Response) => {
   try {
@@ -1679,9 +1702,9 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       },
     };
 
-    // Get Assets
+    // Get Assets (include case variants and standard codes 1/2 for Current/Long Term Assets)
     const assetMainGroups = await prisma.mainGroup.findMany({
-      where: { type: "Asset" },
+      where: balanceSheetAssetMainGroupWhere,
       include: {
         Subgroup: {
           where: { isActive: true },
@@ -1815,9 +1838,9 @@ router.get("/balance-sheet", async (req: Request, res: Response) => {
       };
     });
 
-    // Get Capital
+    // Get Capital & Drawings (include case variants and standard codes 5/6)
     const capitalMainGroups = await prisma.mainGroup.findMany({
-      where: { type: "Equity" },
+      where: balanceSheetEquityMainGroupWhere,
       include: {
         Subgroup: {
           where: { isActive: true },

@@ -180,6 +180,7 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
                 value={entry.accountDr}
                 onValueChange={(v) => updateEntry(entry.id, "accountDr", v)}
                 placeholder="Select..."
+                selectedDisplayLabelOnly
               />
             </div>
             <div className="col-span-5">

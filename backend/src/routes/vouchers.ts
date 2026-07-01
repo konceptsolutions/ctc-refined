@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import prisma from '../config/database';
 import crypto from 'crypto';
+import { resolveCashBankModeFromAccount } from '../utils/cashBankMode';
 
 const router = express.Router();
 
@@ -261,13 +262,7 @@ router.get('/', async (req: Request, res: Response) => {
       : [];
     const accountModeById = new Map<string, 'cash' | 'online'>();
     for (const account of cashBankAccounts) {
-      const subgroupCode = String(account.Subgroup?.code ?? '').toLowerCase();
-      const subgroupName = String(account.Subgroup?.name ?? '').toLowerCase();
-      const accountCode = String(account.code ?? '').toLowerCase();
-      const accountName = String(account.name ?? '').toLowerCase();
-      const marker = `${subgroupCode} ${subgroupName} ${accountCode} ${accountName}`;
-      const isOnline = /\bbank\b|\bonline\b/.test(marker);
-      accountModeById.set(account.id, isOnline ? 'online' : 'cash');
+      accountModeById.set(account.id, resolveCashBankModeFromAccount(account));
     }
 
     // Filter out vouchers linked to soft-deleted sales invoices
@@ -527,6 +522,23 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
+    let mode: 'cash' | 'online' | undefined;
+    if (
+      (voucher.type === 'payment' || voucher.type === 'receipt') &&
+      voucher.cashBankAccount
+    ) {
+      const cashBankAccount = await prisma.account.findUnique({
+        where: { id: voucher.cashBankAccount },
+        select: {
+          name: true,
+          Subgroup: { select: { code: true, name: true } },
+        },
+      });
+      if (cashBankAccount) {
+        mode = resolveCashBankModeFromAccount(cashBankAccount);
+      }
+    }
+
     res.status(201).json({
       data: {
         id: voucher.id,
@@ -535,6 +547,7 @@ router.post('/', async (req: Request, res: Response) => {
         date: voucher.date.toISOString().split('T')[0],
         narration: voucher.narration || '',
         cashBankAccount: voucher.cashBankAccount || '',
+        mode,
         VoucherEntry: (voucher as any).VoucherEntry.map((entry: any) => ({
           id: entry.id,
           account: entry.accountName,

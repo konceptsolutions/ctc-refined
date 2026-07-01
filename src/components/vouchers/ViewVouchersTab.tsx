@@ -44,12 +44,14 @@ import { useToast } from "@/hooks/use-toast";
 import { Voucher } from "./VoucherManagement";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { apiClient } from "@/lib/api";
+import { getAccountCashBankMode } from "@/utils/cashBankMode";
 
 interface ViewVouchersTabProps {
   vouchers: Voucher[];
   onUpdateVoucher: (voucher: Voucher) => void;
   onDeleteVoucher: (id: string) => Promise<void>;
   accounts: { value: string; label: string }[];
+  rawAccounts?: any[];
   onAddSubgroup: () => void;
   onAddAccount: () => void;
   onSearch: (filters: any) => void;
@@ -71,6 +73,7 @@ export const ViewVouchersTab = ({
   onUpdateVoucher,
   onDeleteVoucher,
   accounts,
+  rawAccounts = [],
   onAddSubgroup,
   onAddAccount,
   onSearch,
@@ -551,8 +554,9 @@ export const ViewVouchersTab = ({
   const getVoucherMode = (voucher: Voucher): "cash" | "online" | "-" => {
     if (voucher.type !== "payment" && voucher.type !== "receipt") return "-";
     if (!voucher.cashBankAccount) return "-";
-    const label = getAccountLabel(voucher.cashBankAccount).toLowerCase();
-    if (/\bbank\b|\bonline\b/.test(label)) return "online";
+    if (voucher.mode === "cash" || voucher.mode === "online") return voucher.mode;
+    const account = rawAccounts.find((acc) => acc.id === voucher.cashBankAccount);
+    if (account) return getAccountCashBankMode(account);
     return "cash";
   };
   const totalPages = Math.ceil(filteredVouchers.length / itemsPerPage) || 1;

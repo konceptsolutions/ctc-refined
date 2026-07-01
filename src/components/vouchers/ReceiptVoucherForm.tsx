@@ -222,6 +222,7 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
                 value={entry.accountCr}
                 onValueChange={(v) => updateEntry(entry.id, "accountCr", v)}
                 placeholder="Select..."
+                selectedDisplayLabelOnly
               />
             </div>
             <div className="col-span-5">
