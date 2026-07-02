@@ -26,8 +26,7 @@ router.get("/", async (req, res) => {
       where,
       include: {
         Account: {
-          where: { status: "Active" },
-          select: { id: true, code: true, currentBalance: true },
+          select: { id: true, code: true, currentBalance: true, status: true },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -77,33 +76,7 @@ router.get("/", async (req, res) => {
     // Apply pagination
     const paginatedCustomers = filteredCustomers.slice(skip, skip + limitNum);
 
-    // Get all account IDs for the paginated customers
-    const accountIds = paginatedCustomers
-      .flatMap((c: any) => c.Account?.map((a: any) => a.id) || [])
-      .filter(Boolean);
-
-    // Fetch sums of debits and credits from VoucherEntry for these accounts
-    const voucherSums = await prisma.voucherEntry.groupBy({
-      by: ["accountId"],
-      where: {
-        accountId: { in: accountIds },
-        deletedAt: null,
-      },
-      _sum: {
-        debit: true,
-        credit: true,
-      },
-    });
-
-    const balanceMap: Record<string, number> = {};
-    voucherSums.forEach((sum) => {
-      if (sum.accountId) {
-        balanceMap[sum.accountId] =
-          (sum._sum.debit || 0) - (sum._sum.credit || 0);
-      }
-    });
-
-    // Map customers to include accountId and calculated balance
+    // Map customers to include accountId and balance from linked receivable account
     const customersWithAccountId = paginatedCustomers.map((customer: any) => {
       // Find the primary account (usually starting with 105 for receivables)
       const primaryAccount =
@@ -113,8 +86,8 @@ router.get("/", async (req, res) => {
       return {
         ...customer,
         balance: primaryAccount
-          ? balanceMap[primaryAccount.id] || 0
-          : customer.openingBalance || 0,
+          ? Number(primaryAccount.currentBalance ?? 0)
+          : Number(customer.openingBalance || 0),
         accountId: primaryAccount?.id || null,
         accounts: undefined, // Remove accounts array from response
         Account: undefined, // Clean up unused relations
@@ -142,7 +115,7 @@ router.get("/:id", async (req, res) => {
       where: { id: req.params.id },
       include: {
         Account: {
-          where: { status: "Active" },
+          select: { id: true, code: true, currentBalance: true, status: true },
         },
       },
     });
@@ -156,23 +129,10 @@ router.get("/:id", async (req, res) => {
       customer.Account?.find((a: any) => a.code?.startsWith("105")) ||
       customer.Account?.[0];
 
-    let balance = customer.openingBalance || 0;
-    let accountId = primaryAccount?.id || null;
-
-    if (primaryAccount) {
-      const voucherSum = await prisma.voucherEntry.aggregate({
-        _sum: {
-          debit: true,
-          credit: true,
-        },
-        where: {
-          accountId: primaryAccount.id,
-          deletedAt: null,
-        },
-      });
-
-      balance = (voucherSum._sum.debit || 0) - (voucherSum._sum.credit || 0);
-    }
+    const balance = primaryAccount
+      ? Number(primaryAccount.currentBalance ?? 0)
+      : Number(customer.openingBalance || 0);
+    const accountId = primaryAccount?.id || null;
 
     // Remove Account from response to match original format
     const customerData = { ...customer };

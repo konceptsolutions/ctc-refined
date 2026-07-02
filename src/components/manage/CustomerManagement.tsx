@@ -514,26 +514,21 @@ export const CustomerManagement = () => {
                 value={allCustomers.find(c => c.name === searchTerm)?.id || ''}
                 onValueChange={(value) => {
                   if (!value) {
-                    setSearchTerm('');
-                    handleSearch();
-                  } else {
-                    const customer = allCustomers.find(c => c.id === value);
-                    if (customer) {
-                      setSearchTerm(customer.name);
-                      handleSearch();
-                    }
+                    setSearchTerm("");
+                    return;
+                  }
+                  const customer = allCustomers.find((c) => c.id === value);
+                  if (customer) {
+                    setSearchTerm(customer.name);
                   }
                 }}
                 className="w-64"
               />
             </div>
             <Button
+              type="button"
               className="bg-primary text-primary-foreground h-8 text-xs px-6"
-              onClick={() => {
-                if (searchTerm) {
-                  handleSearch();
-                }
-              }}
+              onClick={handleSearch}
             >
               <Search className="w-3 h-3 mr-1" />
               Search

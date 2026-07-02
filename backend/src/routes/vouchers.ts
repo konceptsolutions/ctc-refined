@@ -614,6 +614,15 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
+    const mappedEntries = (voucher as any).VoucherEntry.map((entry: any) => ({
+      id: entry.id,
+      account: entry.accountId || entry.accountName,
+      accountName: entry.accountName,
+      description: entry.description || '',
+      debit: entry.debit,
+      credit: entry.credit,
+    }));
+
     res.status(201).json({
       data: {
         id: voucher.id,
@@ -623,13 +632,8 @@ router.post('/', async (req: Request, res: Response) => {
         narration: voucher.narration || '',
         cashBankAccount: voucher.cashBankAccount || '',
         mode,
-        VoucherEntry: (voucher as any).VoucherEntry.map((entry: any) => ({
-          id: entry.id,
-          account: entry.accountName,
-          description: entry.description || '',
-          debit: entry.debit,
-          credit: entry.credit,
-        })),
+        entries: mappedEntries,
+        VoucherEntry: mappedEntries,
         totalDebit: voucher.totalDebit,
         totalCredit: voucher.totalCredit,
         status: voucher.status,

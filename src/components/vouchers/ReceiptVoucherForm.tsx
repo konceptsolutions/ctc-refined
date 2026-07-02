@@ -18,7 +18,7 @@ interface ReceiptVoucherFormProps {
   cashBankAccounts: { value: string; label: string }[];
   onAddSubgroup: () => void;
   onAddAccount: () => void;
-  onSave: (data: any) => void;
+  onSave: (data: any) => Promise<boolean>;
   generateVoucherNo: () => string;
 }
 
@@ -70,7 +70,10 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
 
   const totalAmount = entries.reduce((sum, e) => sum + (Number(e.crAmount) || 0), 0);
 
-  const handleSave = () => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (saving) return;
     if (!receivedFrom) {
       toast({ title: "Error", description: "Please enter 'Received From' field", variant: "destructive" });
       return;
@@ -88,26 +91,31 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
       return;
     }
 
-    onSave({
-      type: "receipt",
-      receivedFrom,
-      voucherNo,
-      date,
-      drAccount,
-      entries,
-      totalAmount,
-      chequeNumber,
-      chequeDate
-    });
+    setSaving(true);
+    try {
+      const saved = await onSave({
+        type: "receipt",
+        receivedFrom,
+        voucherNo,
+        date,
+        drAccount,
+        entries,
+        totalAmount,
+        chequeNumber,
+        chequeDate,
+      });
 
-    // Reset form
-    setReceivedFrom("");
-    setVoucherNo(generateVoucherNo());
-    setDrAccount("");
-    setChequeNumber("");
-    setChequeDate("");
-    setEntries([{ id: "1", accountCr: "", description: "", crAmount: 0 }]);
-    toast({ title: "Success", description: "Receipt Voucher saved successfully" });
+      if (!saved) return;
+
+      setReceivedFrom("");
+      setVoucherNo(generateVoucherNo());
+      setDrAccount("");
+      setChequeNumber("");
+      setChequeDate("");
+      setEntries([{ id: "1", accountCr: "", description: "", crAmount: 0 }]);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -286,7 +294,7 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2">
-        <Button onClick={handleSave} variant="ghost" className="gap-2">
+        <Button onClick={handleSave} variant="ghost" className="gap-2" disabled={saving}>
           <Save className="w-4 h-4" />
           Save
         </Button>

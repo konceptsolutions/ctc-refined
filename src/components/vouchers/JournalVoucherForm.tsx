@@ -19,7 +19,7 @@ interface JournalVoucherFormProps {
   accounts: { value: string; label: string }[];
   onAddSubgroup: () => void;
   onAddAccount: () => void;
-  onSave: (data: any) => void;
+  onSave: (data: any) => Promise<boolean>;
 }
 
 export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSave }: JournalVoucherFormProps) => {
@@ -81,7 +81,10 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
   const totalDr = drEntries.reduce((sum, e) => sum + (Number(e.drAmount) || 0), 0);
   const totalCr = crEntries.reduce((sum, e) => sum + (Number(e.crAmount) || 0), 0);
 
-  const handleSave = () => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (saving) return;
     if (!name) {
       toast({ title: "Error", description: "Please enter Name field", variant: "destructive" });
       return;
@@ -103,21 +106,44 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
       return;
     }
 
-    onSave({
-      type: "journal",
-      name,
-      date,
-      drEntries,
-      crEntries,
-      totalDr,
-      totalCr
-    });
+    setSaving(true);
+    try {
+      const saved = await onSave({
+        type: "journal",
+        name,
+        date,
+        drEntries,
+        crEntries,
+        totalDr,
+        totalCr,
+      });
 
-    // Reset form
-    setName("");
-    setDrEntries([{ id: "dr-1", account: "", description: "", drAmount: 0, crAmount: 0, type: "dr" }]);
-    setCrEntries([{ id: "cr-1", account: "", description: "", drAmount: 0, crAmount: 0, type: "cr" }]);
-    toast({ title: "Success", description: "Journal Voucher saved successfully" });
+      if (!saved) return;
+
+      setName("");
+      setDrEntries([
+        {
+          id: "dr-1",
+          account: "",
+          description: "",
+          drAmount: 0,
+          crAmount: 0,
+          type: "dr",
+        },
+      ]);
+      setCrEntries([
+        {
+          id: "cr-1",
+          account: "",
+          description: "",
+          drAmount: 0,
+          crAmount: 0,
+          type: "cr",
+        },
+      ]);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -369,7 +395,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2">
-        <Button onClick={handleSave} variant="ghost" className="gap-2">
+        <Button onClick={handleSave} variant="ghost" className="gap-2" disabled={saving}>
           <Save className="w-4 h-4" />
           Save
         </Button>

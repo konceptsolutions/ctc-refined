@@ -56,6 +56,7 @@ interface Supplier {
   type: "local" | "international";
   currencyName?: string | null;
   name: string | null;
+  companyName?: string | null;
   address: string | null;
   city: string | null;
   state: string | null;
@@ -118,8 +119,10 @@ const emptySupplier: Omit<Supplier, "id"> = {
 export const SupplierManagement = () => {
   const { toast } = useToast();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [fieldFilter, setFieldFilter] = useState<string>("all");
@@ -149,7 +152,23 @@ export const SupplierManagement = () => {
     }
   };
 
-  const fetchSuppliers = async () => {
+  const fetchAllSuppliers = async () => {
+    try {
+      const response = await apiClient.getSuppliers({
+        status: "all",
+        page: 1,
+        limit: 10000,
+      });
+
+      if ((response as any).data) {
+        setAllSuppliers((response as any).data);
+      }
+    } catch (error) {
+      console.error("Error fetching all suppliers:", error);
+    }
+  };
+
+  const fetchSuppliers = async (pageOverride?: number) => {
     setLoading(true);
     try {
       const response = await apiClient.getSuppliers({
@@ -157,7 +176,7 @@ export const SupplierManagement = () => {
         fieldFilter: fieldFilter !== "all" ? fieldFilter : undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
         type: typeFilter !== "all" ? typeFilter : undefined,
-        page: currentPage,
+        page: pageOverride ?? currentPage,
         limit: rowsPerPage,
       });
 
@@ -185,6 +204,7 @@ export const SupplierManagement = () => {
   useEffect(() => {
     fetchSuppliers();
     fetchAreas();
+    fetchAllSuppliers();
   }, [currentPage, rowsPerPage, statusFilter, typeFilter]);
 
   // Reset to page 1 when filters change
@@ -195,6 +215,11 @@ export const SupplierManagement = () => {
   }, [statusFilter, typeFilter]);
 
   const totalPages = Math.ceil(totalRecords / rowsPerPage);
+
+  const handleSearch = () => {
+    setCurrentPage(1);
+    fetchSuppliers(1);
+  };
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -580,20 +605,43 @@ export const SupplierManagement = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex-1 min-w-[200px]">
-              <Input
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-8 text-xs"
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Search</Label>
+              <SearchableSelect
+                placeholder="Type to search suppliers..."
+                options={allSuppliers.map((supplier) => ({
+                  value: supplier.id,
+                  label:
+                    supplier.name ||
+                    supplier.companyName ||
+                    supplier.code ||
+                    "Unnamed Supplier",
+                  description: `${supplier.email || "No email"} • ${supplier.phone || "No contact"}`,
+                }))}
+                value={selectedSupplierId}
+                onValueChange={(value) => {
+                  if (!value) {
+                    setSelectedSupplierId("");
+                    setSearchTerm("");
+                    return;
+                  }
+                  const supplier = allSuppliers.find((s) => s.id === value);
+                  setSelectedSupplierId(value);
+                  if (!supplier) return;
+                  setSearchTerm(
+                    supplier.name ||
+                      supplier.companyName ||
+                      supplier.code ||
+                      "",
+                  );
+                }}
+                className="w-64"
               />
             </div>
             <Button
+              type="button"
               className="bg-primary text-primary-foreground h-8 text-xs px-4"
-              onClick={() => {
-                setCurrentPage(1);
-                fetchSuppliers();
-              }}
+              onClick={handleSearch}
             >
               <Search className="w-3 h-3 mr-1" />
               Search

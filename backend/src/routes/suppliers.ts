@@ -104,31 +104,32 @@ router.get("/", async (req, res) => {
 
     // Search filter
     if (search) {
-      const searchTerm = (search as string).toLowerCase();
+      const searchTerm = String(search).trim();
       if (fieldFilter && fieldFilter !== "all") {
         switch (fieldFilter) {
           case "name":
             where.OR = [
-              { name: { contains: searchTerm } },
-              { companyName: { contains: searchTerm } },
+              { name: { contains: searchTerm, mode: "insensitive" } },
+              { companyName: { contains: searchTerm, mode: "insensitive" } },
             ];
             break;
           case "email":
-            where.email = { contains: searchTerm };
+            where.email = { contains: searchTerm, mode: "insensitive" };
             break;
           case "phone":
             where.phone = { contains: search as string };
             break;
           case "type":
-            where.type = { contains: searchTerm };
+            where.type = { contains: searchTerm, mode: "insensitive" };
             break;
         }
       } else {
         where.OR = [
-          { companyName: { contains: searchTerm } },
-          { email: { contains: searchTerm } },
-          { code: { contains: searchTerm } },
-          { type: { contains: searchTerm } },
+          { name: { contains: searchTerm, mode: "insensitive" } },
+          { companyName: { contains: searchTerm, mode: "insensitive" } },
+          { email: { contains: searchTerm, mode: "insensitive" } },
+          { code: { contains: searchTerm, mode: "insensitive" } },
+          { type: { contains: searchTerm, mode: "insensitive" } },
           { phone: { contains: search as string } },
         ];
       }

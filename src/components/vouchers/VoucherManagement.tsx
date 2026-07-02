@@ -403,7 +403,7 @@ export const VoucherManagement = () => {
     return new Date().toISOString().split('T')[0];
   };
 
-  const handleSaveVoucher = async (data: any) => {
+  const handleSaveVoucher = async (data: any): Promise<boolean> => {
     const voucherType = data.type as VoucherTab;
     if (!VOUCHER_TYPE_PREFIX[voucherType]) {
       toast({
@@ -411,7 +411,7 @@ export const VoucherManagement = () => {
         description: "Invalid voucher type",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     let voucherNumber: string;
@@ -426,7 +426,7 @@ export const VoucherManagement = () => {
           description: nextRes.error || "Could not generate voucher number",
           variant: "destructive",
         });
-        return;
+        return false;
       }
       voucherNumber = nextRes.data.voucherNumber;
       nextNum =
@@ -442,7 +442,7 @@ export const VoucherManagement = () => {
         description: error.error || error.message || "Could not generate voucher number",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     let newVoucher: Voucher;
@@ -605,6 +605,18 @@ export const VoucherManagement = () => {
       };
     });
 
+    const missingAccount = apiEntries.find(
+      (entry) => !entry.accountId || String(entry.accountId).trim() === "",
+    );
+    if (missingAccount) {
+      toast({
+        title: "Error",
+        description: "Please select a valid account for every voucher line",
+        variant: "destructive",
+      });
+      return false;
+    }
+
     try {
       let activeVoucherNumber = voucherNumber;
       let activeNextNum = nextNum;
@@ -654,29 +666,49 @@ export const VoucherManagement = () => {
       }
 
       if (response?.data) {
-        setVouchers((prev) => [response.data, ...prev]);
+        const savedVoucher = {
+          ...(response.data as Voucher),
+          entries:
+            (response.data as Voucher).entries ??
+            (response.data as Voucher).VoucherEntry ??
+            [],
+        };
+        setVouchers((prev) => [savedVoucher, ...prev]);
         setVoucherCounters((prev) => ({
           ...prev,
           [voucherType]: Math.max(prev[voucherType] ?? 0, nextNum),
         }));
+        setMainTab("view");
 
         toast({
           title: "Success",
           description: `Voucher ${activeVoucherNumber} created successfully`,
         });
-      } else if (response?.error) {
+        return true;
+      }
+
+      if (response?.error) {
         toast({
           title: "Error",
           description: response.error,
           variant: "destructive",
         });
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to create voucher. Please try again.",
+          variant: "destructive",
+        });
       }
+      return false;
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.error || "Failed to create voucher",
+        description:
+          error.error || error.message || "Failed to create voucher",
         variant: "destructive",
       });
+      return false;
     }
   };
 

@@ -18,7 +18,7 @@ interface PaymentVoucherFormProps {
   cashBankAccounts: { value: string; label: string }[];
   onAddSubgroup: () => void;
   onAddAccount: () => void;
-  onSave: (data: any) => void;
+  onSave: (data: any) => Promise<boolean>;
 }
 
 export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, onAddAccount, onSave }: PaymentVoucherFormProps) => {
@@ -66,7 +66,10 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
 
   const totalAmount = entries.reduce((sum, e) => sum + (Number(e.drAmount) || 0), 0);
 
-  const handleSave = () => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (saving) return;
     if (!paidTo) {
       toast({ title: "Error", description: "Please enter 'Paid To' field", variant: "destructive" });
       return;
@@ -84,20 +87,25 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
       return;
     }
 
-    onSave({
-      type: "payment",
-      paidTo,
-      date,
-      crAccount,
-      entries,
-      totalAmount
-    });
+    setSaving(true);
+    try {
+      const saved = await onSave({
+        type: "payment",
+        paidTo,
+        date,
+        crAccount,
+        entries,
+        totalAmount,
+      });
 
-    // Reset form
-    setPaidTo("");
-    setCrAccount("");
-    setEntries([{ id: "1", accountDr: "", description: "", drAmount: 0 }]);
-    toast({ title: "Success", description: "Payment Voucher saved successfully" });
+      if (!saved) return;
+
+      setPaidTo("");
+      setCrAccount("");
+      setEntries([{ id: "1", accountDr: "", description: "", drAmount: 0 }]);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -244,7 +252,7 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2">
-        <Button onClick={handleSave} variant="ghost" className="gap-2">
+        <Button onClick={handleSave} variant="ghost" className="gap-2" disabled={saving}>
           <Save className="w-4 h-4" />
           Save
         </Button>
