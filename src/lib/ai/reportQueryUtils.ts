@@ -11,6 +11,10 @@ import {
   containsReportIntentPhrase,
   normalizeQueryForMatching,
 } from "@/lib/ai/queryNormalize";
+import {
+  openPrintHtml,
+  unlockBrowserPrintLayout,
+} from "@/utils/printUtils";
 
 export type ReportDateRange = {
   from: string;
@@ -281,13 +285,9 @@ export function printItemAnalyticsPdf(
     </thead>
     <tbody>${rows || '<tr><td colspan="10">No data</td></tr>'}</tbody>
   </table>
-  <script>window.onload = () => { window.print(); };</script>
 </body></html>`;
 
-  const win = window.open("", "_blank");
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
+  openPrintHtml(html);
 }
 
 /** @deprecated use printItemAnalyticsPdf */
@@ -506,13 +506,9 @@ export function printCustomerWiseItemAnalyticsPdf(
     </thead>
     <tbody>${rows || '<tr><td colspan="10">No data</td></tr>'}</tbody>
   </table>
-  <script>window.onload = () => { window.print(); };</script>
 </body></html>`;
 
-  const win = window.open("", "_blank");
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
+  openPrintHtml(html);
 }
 
 export function isCustomerWiseSalesReportQuery(query: string): boolean {
@@ -607,11 +603,7 @@ export function printCustomerWiseSalesPdf(
     Balance: <strong>Rs ${formatRs(report.summary.totalBalance)}</strong>
   </div>
   ${invoiceSections || "<p>No invoices in this period.</p>"}
-  <script>window.onload = () => { window.print(); };</script>
 </body></html>`;
 
-  const win = window.open("", "_blank");
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
+  openPrintHtml(html);
 }

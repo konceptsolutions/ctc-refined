@@ -28,6 +28,8 @@ import {
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api";
 import { toast } from "sonner";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 
 interface StockItem {
   id: string;
@@ -207,13 +209,6 @@ export const StockAnalysis = () => {
   };
 
   const handlePrintPDF = () => {
-    // Create a print-friendly version
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast.error("Please allow popups to print");
-      return;
-    }
-
     const printContent = `
       <!DOCTYPE html>
       <html>
@@ -303,12 +298,12 @@ export const StockAnalysis = () => {
       </html>
     `;
 
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.onload = () => {
-      printWindow.print();
-    };
-    toast.success("Print dialog opened");
+    const started = openPrintHtml(printContent, {
+      onBlocked: () => toast.error("Please allow popups to print"),
+    });
+    if (started) {
+      toast.success("Print dialog opened");
+    }
   };
 
   const classificationColors: Record<Classification, string> = {
@@ -340,10 +335,11 @@ export const StockAnalysis = () => {
             <Download className="w-4 h-4" />
             Export CSV
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 text-primary border-primary hover:bg-primary/10" onClick={handlePrintPDF} disabled={loading || filteredItems.length === 0}>
-            <Printer className="w-4 h-4" />
-            Print PDF
-          </Button>
+          <PrintPdfButton
+            onPrint={handlePrintPDF}
+            disabled={loading || filteredItems.length === 0}
+            className="gap-1.5 text-primary border-primary hover:bg-primary/10"
+          />
         </div>
       </div>
 

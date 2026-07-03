@@ -613,6 +613,13 @@ model PurchaseOrder {
   supplierId          String?
   purchaseQuotationId String?
   consignee           String?
+  currency            String?
+  conversionRate      Float               @default(1)
+  fcTotal             Float               @default(0)
+  invoiceNo           String?
+  invoiceDate         DateTime?
+  blNo                String?
+  blDate              DateTime?
   status              String              @default("Draft")
   expectedDate        DateTime?
   notes               String?
@@ -633,6 +640,10 @@ model PurchaseOrderItem {
   quantity        Int
   unitCost        Float
   totalCost       Float
+  fcRate          Float         @default(0)
+  fcAmount        Float         @default(0)
+  weight          Float         @default(0)
+  totalWeight     Float         @default(0)
   receivedQty     Int           @default(0)
   additionalQty   Int           @default(0)
   backQty         Int           @default(0)

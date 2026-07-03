@@ -19,9 +19,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
-import { Download, FileText } from "lucide-react";
+import { Download } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import {
   buildItemReportSpec,
   ITEM_REPORT_TYPE_OPTIONS,
@@ -209,10 +210,7 @@ const TopSellingItemsTab = () => {
                 <Download className="h-4 w-4 mr-1" />
                 Export CSV
               </Button>
-              <Button variant="outline" size="sm" onClick={handlePrintPdf} disabled={items.length === 0}>
-                <FileText className="h-4 w-4 mr-1" />
-                Print PDF
-              </Button>
+              <PrintPdfButton onPrint={handlePrintPdf} disabled={items.length === 0} />
             </div>
           </CardHeader>
           <CardContent>

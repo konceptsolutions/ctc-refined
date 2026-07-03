@@ -32,6 +32,8 @@ import {
   Loader2
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 import { apiClient } from "@/lib/api";
 
 interface ReportRow {
@@ -222,16 +224,6 @@ export const MultiDimensionalReport = () => {
       return;
     }
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast({
-        title: "Error",
-        description: "Please allow popups to print",
-        variant: "destructive",
-      });
-      return;
-    }
-
     const printContent = `
       <!DOCTYPE html>
       <html>
@@ -286,13 +278,15 @@ export const MultiDimensionalReport = () => {
       </html>
     `;
 
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+    const started = openPrintHtml(printContent, {
+      onBlocked: () =>
+        toast({
+          title: "Error",
+          description: "Please allow popups to print",
+          variant: "destructive",
+        }),
+    });
+    if (!started) return;
     
     toast({ 
       title: "Print", 
@@ -337,16 +331,12 @@ export const MultiDimensionalReport = () => {
             <FileText className="w-3.5 h-3.5" />
             Export CSV
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="gap-1.5 text-xs h-8 border-primary text-primary hover:bg-primary/10 hover:text-primary" 
-            onClick={handlePrint}
+          <PrintPdfButton
+            onPrint={handlePrint}
             disabled={loading || sortedData.length === 0}
-          >
-            <Printer className="w-3.5 h-3.5" />
-            Print PDF
-          </Button>
+            size="sm"
+            className="gap-1.5 text-xs h-8 border-primary text-primary hover:bg-primary/10 hover:text-primary"
+          />
         </div>
       </div>
 

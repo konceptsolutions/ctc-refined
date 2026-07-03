@@ -405,6 +405,8 @@ async function confirmPurchaseQuotation(
           supplierId: quotation.supplierId,
           purchaseQuotationId: quotationId,
           consignee,
+          currency: quotation.currency,
+          conversionRate: Number(quotation.conversionRate || 1),
           status: "Pending",
           notes,
           totalAmount,
@@ -468,6 +470,13 @@ const parseDateOrNow = (value: any) => {
   if (!value) return new Date();
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+const parseOptionalDate = (value: any) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const resolveLastQuotationFcRate = (item: {
@@ -2423,6 +2432,7 @@ router.post("/quotations/:quotationId/convert-to-po", async (req: Request, res: 
 type ReceivePurchaseOrderItemInput = {
   id: string;
   receiveQty: number;
+  fcRate?: number;
 };
 
 function computeReceiveVariance(orderQty: number, receiveQty: number) {
@@ -2519,11 +2529,47 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       ),
     );
 
+    const orderConversionRate =
+      Number((order as any).conversionRate) > 0
+        ? Number((order as any).conversionRate)
+        : Number(quotation.conversionRate || 1);
+    const isReceived = String(order.status || "").trim().toLowerCase() === "received";
+
     const baseItems = order.PurchaseOrderItem.map((poItem) => {
       const partId = String(poItem.partId);
       const quotationItem = quotationItemByPartId.get(partId);
       const requestItem = requestItemByPartId.get(partId);
       const orderQty = Number(poItem.quantity) || 0;
+      const savedFcRate = Number((poItem as any).fcRate || 0);
+      const useSavedAmounts = isReceived || savedFcRate > 0;
+
+      if (useSavedAmounts) {
+        const receiveQty = Number(poItem.receivedQty) || orderQty;
+        return {
+          id: poItem.id,
+          partId,
+          masterPartNo: poItem.Part?.MasterPart?.masterPartNo || "",
+          partNo: poItem.Part?.partNo || "",
+          description: poItem.Part?.description || "",
+          brand: poItem.Part?.Brand?.name || "",
+          currentStock: Number(requestItem?.currentStock || 0),
+          demandQuantity: Number(quotationItem?.demandQuantity || 0),
+          quotationQuantity: Number(quotationItem?.quotationQuantity || 0),
+          shipDays: Number(quotationItem?.shipDays || 0),
+          fcRate: savedFcRate,
+          fcAmount: Number((poItem as any).fcAmount || 0),
+          lcRate: Number(poItem.unitCost) || 0,
+          lcAmount: Number(poItem.totalCost) || 0,
+          weight: Number((poItem as any).weight || 0),
+          totalWeight: Number((poItem as any).totalWeight || 0),
+          orderQty,
+          unitCost: Number(poItem.unitCost) || 0,
+          receivedQty: receiveQty,
+          additionalQty: Number((poItem as any).additionalQty) || 0,
+          backQty: Number((poItem as any).backQty) || 0,
+        };
+      }
+
       const effective = quotationItem
         ? getEffectiveQuotationItemValues(quotationItem, isRevised)
         : {
@@ -2534,8 +2580,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           };
       const weight = Number(quotationItem?.weight || 0);
       const fcRate = effective.fcRate;
-      const lcRate =
-        effective.lcRate > 0 ? effective.lcRate : Number(poItem.unitCost) || 0;
+      const lcRate = fcRate * orderConversionRate;
 
       return {
         id: poItem.id,
@@ -2575,7 +2620,14 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         status: order.status,
         date: order.date,
         consignee: (order as any).consignee ?? null,
+        invoiceNo: (order as any).invoiceNo ?? null,
+        invoiceDate: (order as any).invoiceDate ?? null,
+        blNo: (order as any).blNo ?? null,
+        blDate: (order as any).blDate ?? null,
         totalAmount: order.totalAmount,
+        fcTotal: Number((order as any).fcTotal || 0),
+        currency: (order as any).currency || quotation.currency,
+        conversionRate: orderConversionRate,
         supplier: {
           id: order.Supplier?.id || null,
           name:
@@ -2606,11 +2658,25 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
   try {
     const { id } = req.params;
     const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
+    const invoiceNo = String(req.body?.invoiceNo ?? "").trim() || null;
+    const blNo = String(req.body?.blNo ?? "").trim() || null;
+    const invoiceDate = parseOptionalDate(req.body?.invoiceDate);
+    const blDate = parseOptionalDate(req.body?.blDate);
+    const conversionRate = Number(req.body?.conversionRate);
+
+    if (!Number.isFinite(conversionRate) || conversionRate <= 0) {
+      return res.status(400).json({ error: "Valid conversion rate is required" });
+    }
 
     const order = await prisma.purchaseOrder.findUnique({
       where: { id },
       include: {
         PurchaseOrderItem: true,
+        PurchaseQuotation: {
+          include: {
+            PurchaseQuotationItem: true,
+          },
+        },
       },
     });
 
@@ -2618,7 +2684,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       return res.status(404).json({ error: "Purchase order not found" });
     }
 
-    if (!order.purchaseQuotationId) {
+    if (!order.purchaseQuotationId || !order.PurchaseQuotation) {
       return res.status(400).json({
         error: "Only import purchase orders can be received from this screen",
       });
@@ -2628,11 +2694,26 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       return res.status(400).json({ error: "Purchase order is already received" });
     }
 
-    const receiveByItemId = new Map<string, number>();
+    const quotation = order.PurchaseQuotation;
+    const isRevised = isQuotationRevisedRecord(quotation);
+    const quotationItemByPartId = new Map(
+      (quotation.PurchaseQuotationItem || []).map((item) => [
+        String(item.partId),
+        item,
+      ]),
+    );
+
+    const receiveByItemId = new Map<string, { receiveQty: number; fcRate?: number }>();
     for (const row of itemsRaw as ReceivePurchaseOrderItemInput[]) {
       const itemId = String(row?.id || "").trim();
       if (!itemId) continue;
-      receiveByItemId.set(itemId, Number(row.receiveQty) || 0);
+      receiveByItemId.set(itemId, {
+        receiveQty: Number(row.receiveQty) || 0,
+        fcRate:
+          row.fcRate !== undefined && Number.isFinite(Number(row.fcRate))
+            ? Number(row.fcRate)
+            : undefined,
+      });
     }
 
     if (receiveByItemId.size === 0) {
@@ -2649,27 +2730,68 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      let totalLc = 0;
+      let totalFc = 0;
+
       for (const poItem of order.PurchaseOrderItem) {
+        const receiveRow = receiveByItemId.get(poItem.id);
         const variance = computeReceiveVariance(
           poItem.quantity,
-          receiveByItemId.get(poItem.id) ?? 0,
+          receiveRow?.receiveQty ?? 0,
         );
-        await tx.purchaseOrderItem.update({
-          where: { id: poItem.id },
-          data: {
-            receivedQty: variance.receiveQty,
-            additionalQty: variance.additionalQty,
-            backQty: variance.backQty,
-          } as any,
-        });
+        const quotationItem = quotationItemByPartId.get(String(poItem.partId));
+        const effective = quotationItem
+          ? getEffectiveQuotationItemValues(quotationItem, isRevised)
+          : { fcRate: 0 };
+        const quotationFcRate = Number(effective.fcRate || 0);
+        const fcRate =
+          receiveRow?.fcRate !== undefined
+            ? Math.max(0, Number(receiveRow.fcRate) || 0)
+            : quotationFcRate;
+        const weight = Number(quotationItem?.weight || 0);
+        const lineUnitCost = fcRate * conversionRate;
+        const receiveQty = variance.receiveQty;
+        const fcAmount = fcRate * receiveQty;
+        const lineTotalCost = lineUnitCost * receiveQty;
+        const totalWeight = weight * receiveQty;
+
+        totalLc += lineTotalCost;
+        totalFc += fcAmount;
+
+        await tx.$executeRaw`
+          UPDATE "PurchaseOrderItem"
+          SET
+            "receivedQty" = ${variance.receiveQty},
+            "additionalQty" = ${variance.additionalQty},
+            "backQty" = ${variance.backQty},
+            "fcRate" = ${fcRate},
+            "fcAmount" = ${fcAmount},
+            "weight" = ${weight},
+            "totalWeight" = ${totalWeight},
+            "unitCost" = ${lineUnitCost},
+            "totalCost" = ${lineTotalCost}
+          WHERE "id" = ${poItem.id}
+        `;
       }
 
-      return tx.purchaseOrder.update({
+      await tx.$executeRaw`
+        UPDATE "PurchaseOrder"
+        SET
+          "status" = 'Received',
+          "conversionRate" = ${conversionRate},
+          "fcTotal" = ${totalFc},
+          "totalAmount" = ${totalLc},
+          "currency" = ${quotation.currency || (order as any).currency || null},
+          "invoiceNo" = ${invoiceNo},
+          "invoiceDate" = ${invoiceDate},
+          "blNo" = ${blNo},
+          "blDate" = ${blDate},
+          "updatedAt" = ${new Date()}
+        WHERE "id" = ${id}
+      `;
+
+      return tx.purchaseOrder.findUnique({
         where: { id },
-        data: {
-          status: "Received",
-          updatedAt: new Date(),
-        },
         include: {
           PurchaseOrderItem: {
             include: {
@@ -2686,11 +2808,23 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       });
     });
 
+    if (!updated) {
+      return res.status(404).json({ error: "Purchase order not found after receive" });
+    }
+
     res.json({
       data: {
         id: updated.id,
         poNumber: updated.poNumber,
         status: updated.status,
+        conversionRate: (updated as any).conversionRate ?? conversionRate,
+        fcTotal: (updated as any).fcTotal ?? 0,
+        totalAmount: updated.totalAmount,
+        currency: (updated as any).currency ?? null,
+        invoiceNo: (updated as any).invoiceNo ?? null,
+        invoiceDate: (updated as any).invoiceDate ?? null,
+        blNo: (updated as any).blNo ?? null,
+        blDate: (updated as any).blDate ?? null,
         items: updated.PurchaseOrderItem.map((item) => ({
           id: item.id,
           part_id: item.partId,
@@ -2700,8 +2834,12 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
           received_qty: item.receivedQty,
           additional_qty: (item as any).additionalQty ?? 0,
           back_qty: (item as any).backQty ?? 0,
+          fc_rate: (item as any).fcRate ?? 0,
+          fc_amount: (item as any).fcAmount ?? 0,
           unit_cost: item.unitCost,
           total_cost: item.totalCost,
+          weight: (item as any).weight ?? 0,
+          total_weight: (item as any).totalWeight ?? 0,
         })),
       },
     });

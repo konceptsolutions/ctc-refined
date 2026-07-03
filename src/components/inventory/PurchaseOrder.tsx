@@ -56,6 +56,8 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -351,31 +353,13 @@ const ViewOrderDialog = ({ open, onOpenChange, order, statusColors, formatCurren
     return html;
   };
 
-  const handlePrint = () => {
+  const printPurchaseOrder = (showPdfToast = false) => {
     const printContent = generatePrintContent();
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-      }, 250);
+    const started = openPrintHtml(printContent);
+    if (!started) return;
+    if (showPdfToast) {
+      toast.success("PDF generation started - use your browser's print dialog to save as PDF");
     }
-  };
-
-  const handleGeneratePDF = () => {
-    const printContent = generatePrintContent();
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-      }, 250);
-    }
-    toast.success("PDF generation started - use your browser's print dialog to save as PDF");
   };
 
   if (!order) return null;
@@ -579,14 +563,16 @@ const ViewOrderDialog = ({ open, onOpenChange, order, statusColors, formatCurren
             <X className="w-4 h-4 mr-1" />
             Close
           </Button>
-          <Button variant="outline" onClick={handleGeneratePDF}>
-            <Download className="w-4 h-4 mr-1" />
-            Generate PDF
-          </Button>
-          <Button className="bg-primary hover:bg-primary/90" onClick={handlePrint}>
-            <Printer className="w-4 h-4 mr-1" />
-            PRINT
-          </Button>
+          <PrintPdfButton
+            onPrint={() => printPurchaseOrder(true)}
+            label="Generate PDF"
+          />
+          <PrintPdfButton
+            onPrint={() => printPurchaseOrder()}
+            label="PRINT"
+            variant="default"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+          />
         </DialogFooter>
       </DialogContent>
     </Dialog>

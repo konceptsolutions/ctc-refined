@@ -19,6 +19,8 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Search, Download, Printer, CalendarIcon } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api";
@@ -174,16 +176,7 @@ export const DistributorAging = () => {
       </html>
     `;
 
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 250);
-    }
+    openPrintHtml(printContent);
 
     toast({
       title: "Print Initiated",
@@ -271,10 +264,7 @@ export const DistributorAging = () => {
             <Download className="w-4 h-4" />
             Export Excel
           </Button>
-          <Button onClick={handlePrint} variant="outline" className="gap-2">
-            <Printer className="w-4 h-4" />
-            Print
-          </Button>
+          <PrintPdfButton onPrint={handlePrint} label="Print" />
         </div>
       </div>
 

@@ -16,7 +16,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
-import { FileText, ChevronsUpDown, Loader2, RefreshCw } from "lucide-react";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
+import { ChevronsUpDown, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -164,7 +166,7 @@ const buildPrintHtml = (data: DailyClosingData) => {
 <head>
   <title>Daily Closing - ${data.date}</title>
   <style>
-    @page { size: landscape; margin: 10mm; }
+    @page { size: A4; margin: 10mm; }
     body { font-family: Arial, sans-serif; padding: 12px; color: #111; font-size: 11px; }
     h1 { font-size: 18px; margin: 0 0 4px; }
     .subtitle { color: #666; font-size: 11px; margin-bottom: 12px; }
@@ -308,18 +310,11 @@ export const DailyClosingTab = ({
 
   const handlePrint = () => {
     if (!data) return;
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      toast.error("Allow pop-ups to print the report");
-      return;
-    }
-    printWindow.document.open();
-    printWindow.document.write(buildPrintHtml(data));
-    printWindow.document.close();
-    printWindow.focus();
-    window.setTimeout(() => {
-      printWindow.print();
-    }, 250);
+    const started = openPrintHtml(buildPrintHtml(data), {
+      paperSize: "A4",
+      onBlocked: () => toast.error("Allow pop-ups to print the report"),
+    });
+    if (!started) return;
   };
 
   const columns = data?.columns || [];
@@ -411,10 +406,7 @@ export const DailyClosingTab = ({
               )}
               Refresh
             </Button>
-            <Button variant="outline" onClick={handlePrint} disabled={!data || loading}>
-              <FileText className="w-4 h-4 mr-1" />
-              Print PDF
-            </Button>
+            <PrintPdfButton onPrint={handlePrint} disabled={!data || loading} />
           </div>
 
           {data && (

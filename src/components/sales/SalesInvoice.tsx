@@ -821,6 +821,10 @@ export const SalesInvoice = ({
     useState(false);
   const [invoiceForPrint, setInvoiceForPrint] = useState<Invoice | null>(null);
   const [printInvoiceWithBalance, setPrintInvoiceWithBalance] = useState(true);
+  const [printInvoiceOnLetterhead, setPrintInvoiceOnLetterhead] = useState(false);
+  const [printInvoiceOrientation, setPrintInvoiceOrientation] = useState<
+    "landscape" | "portrait"
+  >("landscape");
 
   // Hold Dialog
   const [showHoldDialog, setShowHoldDialog] = useState(false);
@@ -5419,7 +5423,11 @@ export const SalesInvoice = ({
   const handlePrintInvoice = (
     invoice: Invoice,
     columns?: string[],
-    options?: { includeBalance?: boolean },
+    options?: {
+      includeBalance?: boolean;
+      useLetterhead?: boolean;
+      orientation?: "landscape" | "portrait";
+    },
   ) => {
     const includeBalance = options?.includeBalance !== false;
     const invoiceMeta = invoice as any;
@@ -5606,6 +5614,12 @@ export const SalesInvoice = ({
     const salesTaxStampUrl = `${window.location.origin}/invoice-sales-tax-stamp.png`;
     const authorisedSignatureUrl = `${window.location.origin}/invoice-authorised-signature.png`;
     const isGstLetterhead = taxAmount > 0 || taxPercentageStored > 0;
+    const usePreprintedLetterhead =
+      options?.useLetterhead === true && isGstLetterhead;
+    const printOrientation = options?.orientation ?? "landscape";
+    const pageMargins = usePreprintedLetterhead
+      ? "28mm 10mm 42mm 22mm"
+      : "8mm";
 
     const rows =
       invoice.items?.length
@@ -5632,11 +5646,11 @@ export const SalesInvoice = ({
         <head>
           <title></title>
           <style>
-            @page { size: A5 landscape; margin: ${isGstLetterhead ? "28mm 10mm 42mm 22mm" : "8mm"}; }
+            @page { size: A5 ${printOrientation}; margin: ${pageMargins}; }
             * { box-sizing: border-box; }
-            html, body { font-family: Arial, sans-serif; font-size: ${isGstLetterhead ? "10px" : "11px"}; color: #000; margin: 0; padding: 0; }
+            html, body { font-family: Arial, sans-serif; font-size: ${isGstLetterhead ? "10px" : "11px"}; color: #000; margin: 0; padding: 0; width: 100%; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .page { width: 100%; ${isGstLetterhead ? "page-break-after: avoid; break-after: avoid-page;" : ""} }
+            .page { width: 100%; max-width: 100%; ${isGstLetterhead ? "page-break-after: avoid; break-after: avoid-page;" : ""} }
             .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
             .header-row.gst-header { gap: 12px; }
             .header-left { flex: 1; min-width: 0; }
@@ -5651,8 +5665,8 @@ export const SalesInvoice = ({
             .mt-8 { margin-top: 8px; }
             .muted { color: #444; }
             .title { font-weight: bold; font-size: ${isGstLetterhead ? "11px" : "12px"}; }
-            table { width: 100%; border-collapse: collapse; margin-top: ${isGstLetterhead ? "4px" : "8px"}; }
-            th, td { border: 1px solid #444; padding: ${isGstLetterhead ? "2px 3px" : "3px 4px"}; font-size: ${isGstLetterhead ? "9px" : "10px"}; vertical-align: top; }
+            table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: ${isGstLetterhead ? "4px" : "8px"}; }
+            th, td { border: 1px solid #444; padding: ${isGstLetterhead ? "2px 3px" : "3px 4px"}; font-size: ${isGstLetterhead ? "9px" : "10px"}; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
             th { text-align: left; background: #f5f5f5; }
             .c { text-align: center; }
             .r { text-align: right; }
@@ -5677,6 +5691,9 @@ export const SalesInvoice = ({
             .auth-signature { max-height: 42px; max-width: 136px; width: auto; object-fit: contain; display: block; }
             .signature-line { border-top: 1px solid #000; width: 100%; }
             .signature-caption { font-size: 8px; margin-top: 1px; text-align: center; line-height: 1.2; }
+            @media print {
+              html, body { width: auto; height: auto; overflow: visible; }
+            }
           </style>
         </head>
         <body>
@@ -5983,9 +6000,16 @@ export const SalesInvoice = ({
       setInvoiceForPrint(invoice);
     } finally {
       setPrintInvoiceWithBalance(true);
+      setPrintInvoiceOnLetterhead(false);
+      setPrintInvoiceOrientation("landscape");
       setShowInvoicePrintColumnsDialog(true);
     }
   };
+
+  const invoiceHasGstForPrint =
+    !!invoiceForPrint &&
+    (Number(invoiceForPrint.tax) > 0 ||
+      Number(invoiceForPrint.taxPercentage ?? 0) > 0);
 
   const getStatusLabel = (status: InvoiceStatus): string => {
     const labels: Record<InvoiceStatus, string> = {
@@ -9368,6 +9392,52 @@ export const SalesInvoice = ({
               </div>
             </div>
             <div className="space-y-2">
+              <Label className="text-sm font-medium">Page orientation</Label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="invoice-print-orientation"
+                    checked={printInvoiceOrientation === "landscape"}
+                    onChange={() => setPrintInvoiceOrientation("landscape")}
+                    className="h-4 w-4"
+                  />
+                  Landscape (recommended for invoices)
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="invoice-print-orientation"
+                    checked={printInvoiceOrientation === "portrait"}
+                    onChange={() => setPrintInvoiceOrientation("portrait")}
+                    className="h-4 w-4"
+                  />
+                  Portrait
+                </label>
+              </div>
+            </div>
+            {invoiceHasGstForPrint && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Paper type</Label>
+                <label className="flex items-start gap-2 cursor-pointer text-sm">
+                  <Checkbox
+                    checked={printInvoiceOnLetterhead}
+                    onCheckedChange={(checked) =>
+                      setPrintInvoiceOnLetterhead(checked === true)
+                    }
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Pre-printed GST letterhead
+                    <span className="block text-xs text-muted-foreground">
+                      Reserves space for company header/footer on your printed
+                      forms. Leave off for plain paper or PDF.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+            <div className="space-y-2">
               <Label className="text-sm font-medium">Columns</Label>
               <div className="space-y-3">
             {invoicePrintColumns.map((col) => (
@@ -9400,6 +9470,8 @@ export const SalesInvoice = ({
                 if (!invoiceForPrint) return;
                 handlePrintInvoice(invoiceForPrint, selectedInvoicePrintColumns, {
                   includeBalance: printInvoiceWithBalance,
+                  useLetterhead: printInvoiceOnLetterhead,
+                  orientation: printInvoiceOrientation,
                 });
                 setShowInvoicePrintColumnsDialog(false);
               }}

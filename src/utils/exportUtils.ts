@@ -63,6 +63,7 @@ export const printReport = (title: string) => {
       <head>
         <title>${title}</title>
         <style>
+          @page { size: A4; margin: 10mm; }
           body { font-family: Arial, sans-serif; padding: 20px; }
           table { width: 100%; border-collapse: collapse; margin-top: 20px; }
           th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
@@ -78,4 +79,3 @@ export const printReport = (title: string) => {
   printWindow.document.close();
   printWindow.print();
 };
-

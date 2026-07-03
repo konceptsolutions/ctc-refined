@@ -23,6 +23,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from "recharts";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { exportTableToCSV, printReport } from "@/utils/exportUtils";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { useEffect } from "react";
 
 type MovementFilter = "all" | "fast" | "slow" | "dead";
@@ -141,10 +142,7 @@ const StockMovementTab = () => {
               <p className="text-sm text-muted-foreground">Identify fast, slow, and dead stock items</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handlePrint}>
-                <Printer className="w-4 h-4 mr-2" />
-                Print
-              </Button>
+              <PrintPdfButton onPrint={handlePrint} label="Print" />
               <Button onClick={handleExport} className="bg-primary hover:bg-primary/90">
                 <Download className="w-4 h-4 mr-2" />
                 Export

@@ -9,6 +9,8 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { BookOpen, ArrowUpDown, Search, Calendar as CalendarIcon, Filter, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -147,20 +149,10 @@ export const GeneralJournalTab = () => {
   };
 
   const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast({
-        title: "Error",
-        description: "Please allow popups to print the report",
-        variant: "destructive"
-      });
-      return;
-    }
-
     const totalDebit = entries.reduce((sum, entry) => sum + entry.debit, 0);
     const totalCredit = entries.reduce((sum, entry) => sum + entry.credit, 0);
 
-    printWindow.document.write(`
+    const html = `
       <html>
         <head>
           <title>General Journal</title>
@@ -210,13 +202,15 @@ export const GeneralJournalTab = () => {
           </table>
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+    `;
+    openPrintHtml(html, {
+      onBlocked: () =>
+        toast({
+          title: "Error",
+          description: "Please allow popups to print the report",
+          variant: "destructive",
+        }),
+    });
   };
 
   const totalDebit = entries.reduce((sum, entry) => sum + entry.debit, 0);
@@ -247,10 +241,7 @@ export const GeneralJournalTab = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint}>
-              <Printer className="h-4 w-4 mr-1" />
-              Print
-            </Button>
+            <PrintPdfButton onPrint={handlePrint} label="Print" />
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span className="px-3 py-1 bg-muted rounded-full">
                 {totalEntries} entries

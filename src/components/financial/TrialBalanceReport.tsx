@@ -8,6 +8,8 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { Users, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 import { getCurrentDatePakistan, getStartOfCurrentMonthPakistan } from "@/utils/dateUtils";
 
 interface TrialBalanceAccount {
@@ -109,17 +111,7 @@ export const TrialBalanceReport = () => {
   };
 
   const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast({
-        title: "Error",
-        description: "Please allow popups to print the report",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    printWindow.document.write(`
+    const html = `
       <html>
         <head>
           <title>Trial Balance</title>
@@ -161,13 +153,15 @@ export const TrialBalanceReport = () => {
           </table>
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+    `;
+    openPrintHtml(html, {
+      onBlocked: () =>
+        toast({
+          title: "Error",
+          description: "Please allow popups to print the report",
+          variant: "destructive",
+        }),
+    });
   };
 
   return (
@@ -183,10 +177,7 @@ export const TrialBalanceReport = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint}>
-              <Printer className="h-4 w-4 mr-1" />
-              Print
-            </Button>
+            <PrintPdfButton onPrint={handlePrint} label="Print" />
           </div>
         </div>
       </CardHeader>

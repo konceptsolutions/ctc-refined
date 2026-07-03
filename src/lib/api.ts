@@ -2490,15 +2490,27 @@ class ApiClient {
       items: Array<{
         id: string;
         receiveQty: number;
+        fcRate: number;
       }>;
+      conversionRate: number;
+      invoiceNo?: string;
+      invoiceDate?: string;
+      blNo?: string;
+      blDate?: string;
     },
   ) {
     return this.request(`/purchase-import/purchase-orders/${orderId}/receive`, {
       method: "POST",
       body: JSON.stringify({
+        conversionRate: data.conversionRate,
+        invoiceNo: data.invoiceNo?.trim() || undefined,
+        invoiceDate: data.invoiceDate || undefined,
+        blNo: data.blNo?.trim() || undefined,
+        blDate: data.blDate || undefined,
         items: data.items.map((item) => ({
           id: item.id,
           receiveQty: item.receiveQty,
+          fcRate: item.fcRate,
         })),
       }),
     });

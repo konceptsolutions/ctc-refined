@@ -44,6 +44,7 @@ import { Search, Bell, Calendar as CalendarIcon, CreditCard, Download, X } from 
 import { toast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { unlockBrowserPrintLayout } from "@/utils/printUtils";
 import apiClient from "@/lib/api";
 
 interface Receivable {
@@ -401,7 +402,7 @@ export const ReceivableReminders = () => {
         <head>
           <title></title>
           <style>
-            @page { size: A4 landscape; margin: 12mm; }
+            @page { size: A4; margin: 12mm; }
             body { font-family: Arial, sans-serif; font-size: 10px; color: #000; margin: 0; }
             h1 { font-size: 16px; margin: 0 0 6px; }
             .meta { color: #555; margin-bottom: 14px; font-size: 9px; }
@@ -473,7 +474,7 @@ export const ReceivableReminders = () => {
       setTimeout(cleanup, 3000);
     };
 
-    printFrame.srcdoc = printHTML;
+    printFrame.srcdoc = unlockBrowserPrintLayout(printHTML);
 
     toast({
       title: "PDF Export Ready",

@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+import { openPrintHtml } from "@/utils/printUtils";
 
 interface PrintableDocumentProps {
   type: "quotation" | "inquiry";
@@ -214,10 +215,7 @@ export const printDocument = (printRef: React.RefObject<HTMLDivElement>) => {
   if (!printRef.current) return;
 
   const printContent = printRef.current.innerHTML;
-  const printWindow = window.open("", "_blank");
-
-  if (printWindow) {
-    printWindow.document.write(`
+  const html = `
       <!DOCTYPE html>
       <html>
         <head>
@@ -306,12 +304,7 @@ export const printDocument = (printRef: React.RefObject<HTMLDivElement>) => {
           ${printContent}
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
-  }
+    `;
+
+  openPrintHtml(html);
 };

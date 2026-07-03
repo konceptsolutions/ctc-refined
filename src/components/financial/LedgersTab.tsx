@@ -16,6 +16,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Users, Download, Printer } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -222,17 +224,7 @@ export const LedgersTab = () => {
   };
 
   const handlePrint = () => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      toast({
-        title: "Error",
-        description: "Please allow popups to print the report",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    printWindow.document.write(`
+    const html = `
       <html>
         <head>
           <title>Ledgers</title>
@@ -280,13 +272,15 @@ export const LedgersTab = () => {
           </table>
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+    `;
+    openPrintHtml(html, {
+      onBlocked: () =>
+        toast({
+          title: "Error",
+          description: "Please allow popups to print the report",
+          variant: "destructive",
+        }),
+    });
   };
 
   return (
@@ -302,10 +296,7 @@ export const LedgersTab = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint}>
-              <Printer className="h-4 w-4 mr-1" />
-              Print
-            </Button>
+            <PrintPdfButton onPrint={handlePrint} label="Print" />
           </div>
         </div>
       </CardHeader>

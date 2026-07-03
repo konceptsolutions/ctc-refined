@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar, Download, Printer, RefreshCw, Scale, CheckCircle2, AlertCircle } from "lucide-react";
 import { getCurrentDatePakistan, getStartOfCurrentMonthPakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 
 interface TrialBalanceRow {
   type?: 'mainGroup' | 'subgroup' | 'account';
@@ -107,12 +109,7 @@ export const TrialBalanceTab = () => {
         </body>
       </html>
     `;
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printHTML);
-      printWindow.document.close();
-      printWindow.print();
-    }
+    openPrintHtml(printHTML);
   };
 
   const handleExport = () => {
@@ -260,10 +257,7 @@ export const TrialBalanceTab = () => {
               >
                 Search
               </Button>
-              <Button variant="outline" size="sm" className="transition-all duration-200 hover:scale-105" onClick={handlePrint}>
-                <Printer className="h-4 w-4 mr-2" />
-                Print
-              </Button>
+              <PrintPdfButton onPrint={handlePrint} label="Print" />
               <Button variant="outline" size="sm" className="transition-all duration-200 hover:scale-105" onClick={handleExport}>
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV

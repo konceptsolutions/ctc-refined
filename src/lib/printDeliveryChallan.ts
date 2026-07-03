@@ -148,24 +148,28 @@ export const printDeliveryChallan = (payload: DeliveryChallanPayload) => {
         <style>
           @page { size: A5 landscape; margin: 8mm; }
           * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; font-size: 11px; color: #000; margin: 0; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-          .company { text-align: center; font-weight: 700; font-size: 22px; letter-spacing: .5px; margin-bottom: 2px; }
-          .title { text-align: center; font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+          html, body { font-family: Arial, sans-serif; font-size: 10px; color: #000; margin: 0; padding: 0; width: 100%; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 8px; }
+          .company { text-align: center; font-weight: 700; font-size: 18px; letter-spacing: .5px; margin-bottom: 4px; }
+          .title { text-align: center; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
           .left p, .right p { margin: 1px 0; }
-          .right { text-align: right; }
-          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-          th, td { border: 1px solid #555; padding: 3px 4px; font-size: 10px; }
+          .right { text-align: right; flex-shrink: 0; }
+          .left { min-width: 0; flex: 1; }
+          table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 6px; }
+          th, td { border: 1px solid #555; padding: 2px 3px; font-size: 9px; word-wrap: break-word; overflow-wrap: break-word; }
           th { background: #f5f5f5; text-align: left; }
           .c { text-align: center; }
-          .summary { margin-top: 6px; display: flex; justify-content: space-between; }
-          .summary .left, .summary .right { width: 49%; }
-          .right-box { margin-left: auto; width: 38%; }
+          .summary { margin-top: 6px; display: flex; justify-content: space-between; gap: 8px; }
+          .summary .left, .summary .right { width: 49%; min-width: 0; }
+          .right-box { margin-left: auto; width: 38%; max-width: 42%; }
           .right-box table td { border: none; border-bottom: 1px solid #777; padding: 3px 2px; }
           .right-box table tr:last-child td { border-bottom: 2px solid #000; font-weight: 700; }
-          .signatures { margin-top: 20px; display: flex; justify-content: space-between; }
+          .signatures { margin-top: 16px; display: flex; justify-content: space-between; gap: 8px; }
           .sign { width: 31%; text-align: center; }
-          .line { margin: 18px auto 4px; width: 85%; border-top: 1px solid #333; }
+          .line { margin: 14px auto 4px; width: 85%; border-top: 1px solid #333; }
+          @media print {
+            html, body { width: auto; height: auto; }
+          }
         </style>
       </head>
       <body>

@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
 import { apiClient } from "@/lib/api";
 import {
   getListRowNumber,
@@ -285,8 +287,8 @@ type ImportPurchaseOrderReceiveLine = {
   demandQuantity: number;
   quotationQuantity: number;
   shipDays: number;
-  lastFcRate: number;
   fcRate: number;
+  fcRateText: string;
   fcAmount: number;
   lcRate: number;
   lcAmount: number;
@@ -334,6 +336,35 @@ function computeImportReceiveLineAmounts(
     lcAmount: line.lcRate * qty,
     totalWeight: line.weight * qty,
   };
+}
+
+function recalcReceiveLineRates(
+  line: ImportPurchaseOrderReceiveLine,
+  fcRate: number,
+  conversionRate: number,
+) {
+  const lcRate = fcRate * conversionRate;
+  const amounts = computeImportReceiveLineAmounts(
+    { ...line, fcRate, lcRate },
+    line.receiveQty,
+  );
+  return {
+    ...line,
+    fcRate,
+    fcRateText: formatRateInput(fcRate),
+    lcRate,
+    fcAmount: amounts.fcAmount,
+    lcAmount: amounts.lcAmount,
+    totalWeight: amounts.totalWeight,
+  };
+}
+
+function applyReceiveConversionRateToLines(
+  lines: ImportPurchaseOrderReceiveLine[],
+  conversionRate: number,
+) {
+  const rate = Math.max(0, Number(conversionRate) || 0);
+  return lines.map((line) => recalcReceiveLineRates(line, line.fcRate, rate));
 }
 
 type PurchaseQuotationDetailItem = {
@@ -919,20 +950,7 @@ const printPurchaseImportInquiry = ({
 </body>
 </html>`;
 
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    return false;
-  }
-
-  printWindow.document.open();
-  printWindow.document.write(printContent);
-  printWindow.document.close();
-  printWindow.focus();
-  window.setTimeout(() => {
-    printWindow.print();
-  }, 250);
-
-  return true;
+  return openPrintHtml(printContent, { paperSize: "A4" });
 };
 
 const buildQuotationPartFieldsFromSelection = (
@@ -2477,10 +2495,7 @@ const PurchaseImportRequestView = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={handlePrintPdf}>
-            <FileText className="w-4 h-4 mr-1" />
-            Print PDF
-          </Button>
+          <PrintPdfButton onPrint={handlePrintPdf} />
           <Button type="button" variant="outline" onClick={onBack}>
             Back to List
           </Button>
@@ -5337,6 +5352,11 @@ const PurchaseOrderTab = () => {
   const [receiveLines, setReceiveLines] = useState<ImportPurchaseOrderReceiveLine[]>([]);
   const [loadingReceiveForm, setLoadingReceiveForm] = useState(false);
   const [savingReceive, setSavingReceive] = useState(false);
+  const [receiveInvoiceNo, setReceiveInvoiceNo] = useState("");
+  const [receiveInvoiceDate, setReceiveInvoiceDate] = useState("");
+  const [receiveBlNo, setReceiveBlNo] = useState("");
+  const [receiveBlDate, setReceiveBlDate] = useState("");
+  const [receiveConversionRate, setReceiveConversionRate] = useState("1");
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -5392,10 +5412,18 @@ const PurchaseOrderTab = () => {
     setReceiveOrderLabel(order.poNumber || "");
     setReceiveDetail(null);
     setReceiveLines([]);
+    setReceiveInvoiceNo("");
+    setReceiveInvoiceDate("");
+    setReceiveBlNo("");
+    setReceiveBlDate("");
+    setReceiveConversionRate("1");
     setLoadingReceiveForm(true);
     try {
       const response = await apiClient.getImportPurchaseOrder(order.id);
       const orderData: any = (response as any)?.data || response;
+      const initialConversionRate = Number(
+        orderData.conversionRate ?? orderData.quotation?.conversionRate ?? 1,
+      );
       const lines = (orderData.items || []).map((item: any) => {
         const orderQty = Number(item.orderQty ?? item.quantity) || 0;
         const existingReceive =
@@ -5403,6 +5431,13 @@ const PurchaseOrderTab = () => {
             ? Number(item.receivedQty ?? item.received_qty)
             : orderQty;
         const variance = computeImportReceiveVariance(orderQty, existingReceive);
+        const fcRate = Number(item.fcRate || 0);
+        const lcRate = Number(item.lcRate || fcRate * initialConversionRate);
+        const weight = Number(item.weight || 0);
+        const amounts = computeImportReceiveLineAmounts(
+          { fcRate, lcRate, weight },
+          existingReceive,
+        );
         return {
           id: item.id,
           masterPartNo: item.masterPartNo || "",
@@ -5413,13 +5448,13 @@ const PurchaseOrderTab = () => {
           demandQuantity: Number(item.demandQuantity || 0),
           quotationQuantity: Number(item.quotationQuantity || 0),
           shipDays: Number(item.shipDays || 0),
-          lastFcRate: Number(item.lastFcRate || 0),
-          fcRate: Number(item.fcRate || 0),
-          fcAmount: Number(item.fcAmount || 0),
-          lcRate: Number(item.lcRate || 0),
-          lcAmount: Number(item.lcAmount || 0),
-          weight: Number(item.weight || 0),
-          totalWeight: Number(item.totalWeight || 0),
+          fcRate,
+          fcRateText: formatRateInput(fcRate),
+          fcAmount: amounts.fcAmount,
+          lcRate,
+          lcAmount: amounts.lcAmount,
+          weight,
+          totalWeight: amounts.totalWeight,
           orderQty,
           receiveQty: String(existingReceive),
           additionalQty: variance.additionalQty,
@@ -5439,12 +5474,17 @@ const PurchaseOrderTab = () => {
         supplierName: orderData.supplier?.name || order.supplier?.name || "-",
         quotationNo: orderData.quotation?.quotationNo || order.quotation?.quotationNo || "-",
         requestNo: orderData.quotation?.requestNo || order.quotation?.requestNo || null,
-        currency: orderData.quotation?.currency || "USD",
-        conversionRate: Number(orderData.quotation?.conversionRate || 1),
+        currency: orderData.currency || orderData.quotation?.currency || "USD",
+        conversionRate: initialConversionRate,
         terms: orderData.quotation?.terms || null,
         consignee: orderData.consignee || order.consignee || null,
         isRevised: Boolean(orderData.quotation?.isRevised),
       });
+      setReceiveConversionRate(String(initialConversionRate));
+      setReceiveInvoiceNo(String(orderData.invoiceNo || ""));
+      setReceiveInvoiceDate(toInputDate(orderData.invoiceDate));
+      setReceiveBlNo(String(orderData.blNo || ""));
+      setReceiveBlDate(toInputDate(orderData.blDate));
       setReceiveLines(lines);
     } catch (error: any) {
       toast({
@@ -5456,6 +5496,36 @@ const PurchaseOrderTab = () => {
     } finally {
       setLoadingReceiveForm(false);
     }
+  };
+
+  const handleConversionRateChange = (value: string) => {
+    setReceiveConversionRate(value);
+    const rate = Number(value);
+    if (!Number.isFinite(rate) || rate <= 0) return;
+    setReceiveLines((prev) => applyReceiveConversionRateToLines(prev, rate));
+  };
+
+  const handleReceiveFcRateChange = (lineId: string, raw: string) => {
+    if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
+    const fcRate = parseRateInput(raw);
+    const conversionRate = Number(receiveConversionRate) || 0;
+    setReceiveLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== lineId) return line;
+        const updated = recalcReceiveLineRates(line, fcRate, conversionRate);
+        return { ...updated, fcRateText: raw };
+      }),
+    );
+  };
+
+  const handleReceiveFcRateBlur = (lineId: string) => {
+    setReceiveLines((prev) =>
+      prev.map((line) =>
+        line.id === lineId
+          ? { ...line, fcRateText: formatRateInput(line.fcRate) }
+          : line,
+      ),
+    );
   };
 
   const handleReceiveQtyChange = (lineId: string, value: string) => {
@@ -5515,12 +5585,28 @@ const PurchaseOrderTab = () => {
       return;
     }
 
+    const conversionRate = Number(receiveConversionRate);
+    if (!Number.isFinite(conversionRate) || conversionRate <= 0) {
+      toast({
+        title: "Invalid exchange rate",
+        description: "Enter a valid conversion rate greater than zero.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSavingReceive(true);
     try {
       await apiClient.receiveImportPurchaseOrder(receiveOrderId, {
+        conversionRate,
+        invoiceNo: receiveInvoiceNo,
+        invoiceDate: receiveInvoiceDate || undefined,
+        blNo: receiveBlNo,
+        blDate: receiveBlDate || undefined,
         items: receiveLines.map((line) => ({
           id: line.id,
           receiveQty: Math.max(0, Math.floor(Number(line.receiveQty) || 0)),
+          fcRate: line.fcRate,
         })),
       });
       toast({
@@ -5530,6 +5616,11 @@ const PurchaseOrderTab = () => {
       setReceiveOrderId(null);
       setReceiveLines([]);
       setReceiveDetail(null);
+      setReceiveInvoiceNo("");
+      setReceiveInvoiceDate("");
+      setReceiveBlNo("");
+      setReceiveBlDate("");
+      setReceiveConversionRate("1");
       await fetchOrders();
     } catch (error: any) {
       toast({
@@ -5684,6 +5775,50 @@ const PurchaseOrderTab = () => {
                     { minimumFractionDigits: 2 },
                   )}
                 </div>
+                {viewOrder.invoice_no ? (
+                  <div>
+                    <span className="text-muted-foreground">Invoice No:</span>{" "}
+                    {viewOrder.invoice_no}
+                  </div>
+                ) : null}
+                {viewOrder.invoice_date ? (
+                  <div>
+                    <span className="text-muted-foreground">Invoice Date:</span>{" "}
+                    {new Date(viewOrder.invoice_date).toLocaleDateString()}
+                  </div>
+                ) : null}
+                {viewOrder.bl_no ? (
+                  <div>
+                    <span className="text-muted-foreground">BL No:</span>{" "}
+                    {viewOrder.bl_no}
+                  </div>
+                ) : null}
+                {viewOrder.bl_date ? (
+                  <div>
+                    <span className="text-muted-foreground">BL Date:</span>{" "}
+                    {new Date(viewOrder.bl_date).toLocaleDateString()}
+                  </div>
+                ) : null}
+                {viewOrder.currency ? (
+                  <div>
+                    <span className="text-muted-foreground">Currency:</span>{" "}
+                    {viewOrder.currency}
+                  </div>
+                ) : null}
+                {viewOrder.conversion_rate ? (
+                  <div>
+                    <span className="text-muted-foreground">Exchange Rate:</span>{" "}
+                    {Number(viewOrder.conversion_rate).toFixed(4)}
+                  </div>
+                ) : null}
+                {Number(viewOrder.fc_total || 0) > 0 ? (
+                  <div>
+                    <span className="text-muted-foreground">FC Total:</span>{" "}
+                    {Number(viewOrder.fc_total).toLocaleString("en-PK", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </div>
+                ) : null}
               </div>
               {viewOrder.notes ? (
                 <p className="text-muted-foreground">{viewOrder.notes}</p>
@@ -5698,8 +5833,10 @@ const PurchaseOrderTab = () => {
                       <th className="text-right p-2">Received</th>
                       <th className="text-right p-2">Additional</th>
                       <th className="text-right p-2">Back</th>
-                      <th className="text-right p-2">Unit Cost</th>
-                      <th className="text-right p-2">Total</th>
+                      <th className="text-right p-2">FC Rate</th>
+                      <th className="text-right p-2">FC Amount</th>
+                      <th className="text-right p-2">LC Rate</th>
+                      <th className="text-right p-2">LC Amount</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5715,6 +5852,12 @@ const PurchaseOrderTab = () => {
                           {item.additional_qty ?? 0}
                         </td>
                         <td className="p-2 text-right">{item.back_qty ?? 0}</td>
+                        <td className="p-2 text-right">
+                          {Number(item.fc_rate || 0).toFixed(4)}
+                        </td>
+                        <td className="p-2 text-right">
+                          {Number(item.fc_amount || 0).toFixed(2)}
+                        </td>
                         <td className="p-2 text-right">
                           {Number(item.unit_cost || 0).toFixed(2)}
                         </td>
@@ -5738,6 +5881,11 @@ const PurchaseOrderTab = () => {
             setReceiveOrderId(null);
             setReceiveLines([]);
             setReceiveDetail(null);
+            setReceiveInvoiceNo("");
+            setReceiveInvoiceDate("");
+            setReceiveBlNo("");
+            setReceiveBlDate("");
+            setReceiveConversionRate("1");
           }
         }}
       >
@@ -5770,19 +5918,64 @@ const PurchaseOrderTab = () => {
                     {receiveDetail.currency}
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Conv. Rate:</span>{" "}
-                    {receiveDetail.conversionRate.toFixed(4)}
-                  </div>
-                  <div>
                     <span className="text-muted-foreground">Consignee:</span>{" "}
                     {(receiveDetail.consignee || "-").toUpperCase()}
                   </div>
                 </div>
               ) : null}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="receive-invoice-no">Invoice No</Label>
+                  <Input
+                    id="receive-invoice-no"
+                    value={receiveInvoiceNo}
+                    onChange={(e) => setReceiveInvoiceNo(e.target.value)}
+                    placeholder="Supplier invoice number"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="receive-invoice-date">Invoice Date</Label>
+                  <Input
+                    id="receive-invoice-date"
+                    type="date"
+                    value={receiveInvoiceDate}
+                    onChange={(e) => setReceiveInvoiceDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="receive-bl-no">BL No</Label>
+                  <Input
+                    id="receive-bl-no"
+                    value={receiveBlNo}
+                    onChange={(e) => setReceiveBlNo(e.target.value)}
+                    placeholder="Bill of lading number"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="receive-bl-date">BL Date</Label>
+                  <Input
+                    id="receive-bl-date"
+                    type="date"
+                    value={receiveBlDate}
+                    onChange={(e) => setReceiveBlDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="receive-conversion-rate">Exchange Rate</Label>
+                  <Input
+                    id="receive-conversion-rate"
+                    type="number"
+                    min={0}
+                    step="0.0001"
+                    value={receiveConversionRate}
+                    onChange={(e) => handleConversionRateChange(e.target.value)}
+                  />
+                </div>
+              </div>
               <p className="text-sm text-muted-foreground">
-                Quotation rates and amounts are shown for reference. Enter received
-                quantity for each line; additional qty shows excess over the order and
-                back qty shows shortfall.
+                FC rate and exchange rate can be changed. LC rate is calculated as FC rate
+                × exchange rate. Amounts are based on receive quantity and will be saved on
+                the purchase order.
                 {receiveDetail?.isRevised ? " Showing revised quotation values." : ""}
               </p>
               <div className="overflow-x-auto rounded-md border">
@@ -5794,7 +5987,10 @@ const PurchaseOrderTab = () => {
                       <th className="text-left p-2">Brand</th>
                       <th className="text-right p-2">Stock</th>
                       <th className="text-right p-2">Ship Days</th>
-                      <th className="text-right p-2">Last FC Rate</th>
+                      <th className="text-right p-2">Order Qty</th>
+                      <th className="text-right p-2">Receive Qty</th>
+                      <th className="text-right p-2">Additional Qty</th>
+                      <th className="text-right p-2">Back Qty</th>
                       <th className="text-right p-2">
                         {receiveDetail?.isRevised ? "Revised FC Rate" : "FC Rate"}
                       </th>
@@ -5809,10 +6005,6 @@ const PurchaseOrderTab = () => {
                       </th>
                       <th className="text-right p-2">Weight</th>
                       <th className="text-right p-2">Total Weight</th>
-                      <th className="text-right p-2">Order Qty</th>
-                      <th className="text-right p-2">Receive Qty</th>
-                      <th className="text-right p-2">Additional Qty</th>
-                      <th className="text-right p-2">Back Qty</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5833,25 +6025,6 @@ const PurchaseOrderTab = () => {
                         <td className="p-2">{line.brand || "-"}</td>
                         <td className="p-2 text-right tabular-nums">{line.currentStock}</td>
                         <td className="p-2 text-right tabular-nums">{line.shipDays}</td>
-                        <td className="p-2 text-right text-muted-foreground tabular-nums">
-                          {formatLastFcRateDisplay(line.lastFcRate)}
-                        </td>
-                        <td className="p-2 text-right tabular-nums">{line.fcRate.toFixed(4)}</td>
-                        <td className="p-2 text-right tabular-nums">
-                          {lineAmounts.fcAmount.toFixed(2)}
-                        </td>
-                        <td className="p-2 text-right tabular-nums">{line.lcRate.toFixed(2)}</td>
-                        <td className="p-2 text-right tabular-nums">
-                          {lineAmounts.lcAmount.toFixed(2)}
-                        </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {line.weight > 0 ? line.weight.toFixed(4) : "-"}
-                        </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {lineAmounts.totalWeight > 0
-                            ? lineAmounts.totalWeight.toFixed(4)
-                            : "-"}
-                        </td>
                         <td className="p-2 text-right tabular-nums">{line.orderQty}</td>
                         <td className="p-2 text-right">
                           <Input
@@ -5871,6 +6044,33 @@ const PurchaseOrderTab = () => {
                         <td className="p-2 text-right text-rose-700 dark:text-rose-400 tabular-nums">
                           {line.backQty > 0 ? line.backQty : "-"}
                         </td>
+                        <td className="p-2 text-right">
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            className={`${QUOTATION_FC_RATE_INPUT_CLASS} ml-auto`}
+                            value={line.fcRateText}
+                            onChange={(event) =>
+                              handleReceiveFcRateChange(line.id, event.target.value)
+                            }
+                            onBlur={() => handleReceiveFcRateBlur(line.id)}
+                          />
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {lineAmounts.fcAmount.toFixed(2)}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">{line.lcRate.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {lineAmounts.lcAmount.toFixed(2)}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {line.weight > 0 ? line.weight.toFixed(4) : "-"}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {lineAmounts.totalWeight > 0
+                            ? lineAmounts.totalWeight.toFixed(4)
+                            : "-"}
+                        </td>
                       </tr>
                     );
                     })}
@@ -5881,7 +6081,14 @@ const PurchaseOrderTab = () => {
                         <td className="p-2" />
                         <td className="p-2">Totals</td>
                         <td className="p-2" colSpan={3} />
+                        <td className="p-2 text-right tabular-nums">
+                          {receiveTotals.orderQty}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {receiveTotals.receiveQty}
+                        </td>
                         <td className="p-2" colSpan={2} />
+                        <td className="p-2" />
                         <td className="p-2 text-right tabular-nums">
                           {receiveTotals.fcAmount.toFixed(2)}
                         </td>
@@ -5893,13 +6100,6 @@ const PurchaseOrderTab = () => {
                         <td className="p-2 text-right tabular-nums">
                           {receiveTotals.totalWeight.toFixed(4)}
                         </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {receiveTotals.orderQty}
-                        </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {receiveTotals.receiveQty}
-                        </td>
-                        <td className="p-2" colSpan={2} />
                       </tr>
                     </tfoot>
                   ) : null}
@@ -5922,6 +6122,10 @@ const PurchaseOrderTab = () => {
                 setReceiveOrderId(null);
                 setReceiveLines([]);
                 setReceiveDetail(null);
+                setReceiveInvoiceNo("");
+                setReceiveInvoiceDate("");
+                setReceiveBlNo("");
+                setReceiveBlDate("");
               }}
             >
               Cancel

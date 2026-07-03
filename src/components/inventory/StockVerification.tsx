@@ -21,6 +21,8 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { printCurrentPage } from "@/utils/printUtils";
 import {
   Dialog,
   DialogContent,
@@ -388,7 +390,7 @@ export const StockVerification = () => {
   };
 
   const handlePrintPDF = () => {
-    window.print();
+    printCurrentPage();
   };
 
   // Reset filters
@@ -480,10 +482,7 @@ export const StockVerification = () => {
                   <Download className="w-4 h-4" />
                   Export CSV
                 </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handlePrintPDF} disabled={loading}>
-                  <Printer className="w-4 h-4" />
-                  Print
-                </Button>
+                <PrintPdfButton onPrint={handlePrintPDF} disabled={loading} label="Print" />
                 <Button 
                   variant="outline" 
                   size="sm" 

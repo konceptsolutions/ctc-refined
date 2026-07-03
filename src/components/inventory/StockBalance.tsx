@@ -29,6 +29,8 @@ import {
   Search,
   MapPin
 } from "lucide-react";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { printCurrentPage } from "@/utils/printUtils";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 
@@ -267,7 +269,7 @@ export const StockBalance = () => {
   };
 
   const handlePrintPDF = () => {
-    window.print();
+    printCurrentPage();
     toast({ title: "Print Started", description: "PDF is being generated..." });
   };
 
@@ -288,10 +290,11 @@ export const StockBalance = () => {
             <Download className="w-3.5 h-3.5 mr-1.5" />
             Export CSV
           </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handlePrintPDF}>
-            <FileText className="w-3.5 h-3.5 mr-1.5" />
-            Print PDF
-          </Button>
+          <PrintPdfButton
+            onPrint={handlePrintPDF}
+            size="sm"
+            className="h-7 text-xs"
+          />
         </div>
       </div>
 
