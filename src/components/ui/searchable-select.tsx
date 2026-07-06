@@ -27,6 +27,10 @@ interface SearchableSelectProps {
   selectedDisplayLabelOnly?: boolean;
   /** Fired when the user types in the search field (remote / async option loading). */
   onSearchChange?: (query: string) => void;
+  /** Open the dropdown and focus the input when mounted or when set to true. */
+  autoOpen?: boolean;
+  /** Called after auto-open has been applied (use to clear parent trigger state). */
+  onAutoOpenHandled?: () => void;
 }
 
 export const SearchableSelect = ({
@@ -41,6 +45,8 @@ export const SearchableSelect = ({
   createLabel = "item",
   selectedDisplayLabelOnly = false,
   onSearchChange,
+  autoOpen = false,
+  onAutoOpenHandled,
   ...props
 }: SearchableSelectProps & React.ComponentProps<typeof Input>) => {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -53,6 +59,7 @@ export const SearchableSelect = ({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const suppressFocusCloseRef = React.useRef(false);
 
   const [dropdownPosition, setDropdownPosition] = React.useState({
     top: 0,
@@ -247,6 +254,27 @@ export const SearchableSelect = ({
     }
   }, [isOpen, updateDropdownPosition]);
 
+  React.useLayoutEffect(() => {
+    if (!autoOpen || disabled) return;
+
+    suppressFocusCloseRef.current = true;
+    setIsOpen(true);
+    setIsFocused(true);
+    setSearchQuery("");
+    setHighlightIndex(0);
+
+    const focusFrame = requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        updateDropdownPosition();
+        suppressFocusCloseRef.current = false;
+        onAutoOpenHandled?.();
+      });
+    });
+
+    return () => cancelAnimationFrame(focusFrame);
+  }, [autoOpen, disabled, onAutoOpenHandled, updateDropdownPosition]);
+
   // Close dropdown when clicking outside
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -305,6 +333,15 @@ export const SearchableSelect = ({
 
   const handleInputFocus = () => {
     setIsFocused(true);
+    if (suppressFocusCloseRef.current) {
+      setIsOpen(true);
+      return;
+    }
+    if (!value) {
+      setIsOpen(true);
+      setSearchQuery("");
+      return;
+    }
     setIsOpen(false);
     setSearchQuery("");
   };

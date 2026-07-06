@@ -2255,7 +2255,13 @@ class ApiClient {
     });
   }
 
-  async getPurchaseImportRequests(params?: { page?: number; limit?: number }) {
+  async getPurchaseImportRequests(params?: {
+    page?: number;
+    limit?: number;
+    supplierId?: string;
+    requestNo?: string;
+    partReference?: string;
+  }) {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {

@@ -2578,10 +2578,27 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
             lcRate: Number(poItem.unitCost) || 0,
             lcAmount: Number(poItem.totalCost) || 0,
           };
-      const weight = Number(quotationItem?.weight || 0);
-      const fcRate = effective.fcRate;
-      const lcRate = fcRate * orderConversionRate;
+      const quotationQty = Number(quotationItem?.quotationQuantity || 0);
+      const poUnitCost = Number(poItem.unitCost) || 0;
+      let fcRate = Number(effective.fcRate || 0);
+      let lcRate = Number(effective.lcRate || 0);
 
+      if (fcRate <= 0 && quotationQty > 0 && Number(effective.fcAmount || 0) > 0) {
+        fcRate = Number(effective.fcAmount) / quotationQty;
+      }
+      if (lcRate <= 0 && quotationQty > 0 && Number(effective.lcAmount || 0) > 0) {
+        lcRate = Number(effective.lcAmount) / quotationQty;
+      }
+      if (fcRate <= 0 && poUnitCost > 0 && orderConversionRate > 0) {
+        lcRate = poUnitCost;
+        fcRate = poUnitCost / orderConversionRate;
+      } else if (lcRate <= 0 && fcRate > 0) {
+        lcRate = fcRate * orderConversionRate;
+      } else if (fcRate <= 0 && lcRate > 0 && orderConversionRate > 0) {
+        fcRate = lcRate / orderConversionRate;
+      }
+
+      const weight = Number(quotationItem?.weight || 0);
       return {
         id: poItem.id,
         partId,
@@ -2613,6 +2630,11 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       quotation.id,
     );
 
+    const computedFcTotal = items.reduce(
+      (sum, item) => sum + Number(item.fcAmount || 0),
+      0,
+    );
+
     res.json({
       data: {
         id: order.id,
@@ -2625,7 +2647,10 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         blNo: (order as any).blNo ?? null,
         blDate: (order as any).blDate ?? null,
         totalAmount: order.totalAmount,
-        fcTotal: Number((order as any).fcTotal || 0),
+        fcTotal:
+          Number((order as any).fcTotal || 0) > 0
+            ? Number((order as any).fcTotal)
+            : computedFcTotal,
         currency: (order as any).currency || quotation.currency,
         conversionRate: orderConversionRate,
         supplier: {
@@ -2951,9 +2976,26 @@ router.get("/requests", async (req: Request, res: Response) => {
       Math.min(1000, parseInt(String(req.query.limit || "50"), 10) || 50),
     );
     const skip = (page - 1) * limit;
+    const supplierId = String(req.query.supplierId || "").trim();
+    const requestNo = String(
+      req.query.requestNo || req.query.inquiryNo || "",
+    ).trim();
+    const partReference = String(req.query.partReference || "").trim();
+
+    const where: Record<string, unknown> = {};
+    if (supplierId) {
+      where.supplierId = supplierId;
+    }
+    if (requestNo) {
+      where.requestNo = { contains: requestNo, mode: "insensitive" };
+    }
+    if (partReference) {
+      where.partReference = { contains: partReference, mode: "insensitive" };
+    }
 
     const [rows, total] = await Promise.all([
       purchaseImportRequestModel.findMany({
+        where,
         skip,
         take: limit,
         orderBy: [{ requestNo: "desc" }, { createdAt: "desc" }],
@@ -2980,7 +3022,7 @@ router.get("/requests", async (req: Request, res: Response) => {
           },
         },
       }),
-      purchaseImportRequestModel.count(),
+      purchaseImportRequestModel.count({ where }),
     ]);
 
     res.json({

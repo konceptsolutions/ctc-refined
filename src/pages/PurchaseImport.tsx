@@ -189,7 +189,7 @@ type ItemRow = {
   loadingDetails: boolean;
 };
 
-type InquiryItemSort = "alphabetical" | "numeric" | "description" | "hsCode";
+type InquiryItemSort = "none" | "alphabetical" | "numeric" | "description" | "hsCode";
 type SortDirection = "asc" | "desc";
 
 type PurchaseImportRequestRecord = {
@@ -197,6 +197,7 @@ type PurchaseImportRequestRecord = {
   requestNo?: string;
   batchId: string;
   supplierId?: string | null;
+  partReference?: string | null;
   consignee?: string | null;
   status: string;
   notes?: string | null;
@@ -563,6 +564,24 @@ const QUOTATION_SHIP_DAYS_INPUT_CLASS =
 const QUOTATION_FC_RATE_INPUT_CLASS =
   "h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto";
 
+const INQUIRY_KHI_QTY_INPUT_CLASS =
+  "h-8 w-20 text-right ml-auto border-2 border-sky-500 focus-visible:ring-sky-500/30 dark:border-sky-400";
+const INQUIRY_ISB_QTY_INPUT_CLASS =
+  "h-8 w-20 text-right ml-auto border-2 border-emerald-500 focus-visible:ring-emerald-500/30 dark:border-emerald-400";
+const INQUIRY_OTHER_QTY_INPUT_CLASS =
+  "h-8 w-20 text-right ml-auto border-2 border-amber-500 focus-visible:ring-amber-500/30 dark:border-amber-400";
+const INQUIRY_KHI_QTY_HEAD_CLASS = "text-right p-2 border-b text-sky-700 dark:text-sky-400";
+const INQUIRY_ISB_QTY_HEAD_CLASS =
+  "text-right p-2 border-b text-emerald-700 dark:text-emerald-400";
+const INQUIRY_OTHER_QTY_HEAD_CLASS =
+  "text-right p-2 border-b text-amber-700 dark:text-amber-400";
+const INQUIRY_KHI_QTY_DISPLAY_CLASS =
+  "inline-flex h-8 min-w-[5rem] items-center justify-end rounded-md border-2 border-sky-500 px-2 tabular-nums dark:border-sky-400";
+const INQUIRY_ISB_QTY_DISPLAY_CLASS =
+  "inline-flex h-8 min-w-[5rem] items-center justify-end rounded-md border-2 border-emerald-500 px-2 tabular-nums dark:border-emerald-400";
+const INQUIRY_OTHER_QTY_DISPLAY_CLASS =
+  "inline-flex h-8 min-w-[5rem] items-center justify-end rounded-md border-2 border-amber-500 px-2 tabular-nums dark:border-amber-400";
+
 const formatLastFcRateDisplay = (value?: number) => {
   const rate = Number(value || 0);
   if (!Number.isFinite(rate) || rate <= 0) return "-";
@@ -752,15 +771,20 @@ const buildSortedPartSelectOptions = (
   partOptions: PartOption[],
   itemSort: InquiryItemSort,
   itemSortDirection: SortDirection,
-) =>
-  [...partOptions]
-    .sort((a, b) => compareInquiryItemSort(a, b, itemSort, itemSortDirection))
-    .map((p) => ({
-      value: p.id,
-      label: `${p.masterPartNo || "-"} | ${p.partNo}`,
-      description: String(p.description || "").trim() || "-",
-      listOnlyDescription: String(p.brand || "").trim() || undefined,
-    }));
+) => {
+  const sortedParts =
+    itemSort === "none"
+      ? partOptions
+      : [...partOptions].sort((a, b) =>
+          compareInquiryItemSort(a, b, itemSort, itemSortDirection),
+        );
+  return sortedParts.map((p) => ({
+    value: p.id,
+    label: `${p.masterPartNo || "-"} | ${p.partNo}`,
+    description: String(p.description || "").trim() || "-",
+    listOnlyDescription: String(p.brand || "").trim() || undefined,
+  }));
+};
 
 const sortInquiryItemRows = <T extends { partId: string }>(
   rows: T[],
@@ -769,6 +793,10 @@ const sortInquiryItemRows = <T extends { partId: string }>(
   itemSortDirection: SortDirection,
   getRowFields?: (row: T, part?: PartOption) => PartSortFields,
 ): T[] => {
+  if (itemSort === "none") {
+    return rows;
+  }
+
   const withPart = rows.filter((row) => row.partId);
   const withoutPart = rows.filter((row) => !row.partId);
   const partById = new Map(partOptions.map((part) => [part.id, part]));
@@ -1122,9 +1150,15 @@ const PurchaseImportRequestForm = ({
   const [loadingEditRequest, setLoadingEditRequest] = useState(false);
   const [inquiryNumber, setInquiryNumber] = useState("");
   const [inquiryDate, setInquiryDate] = useState(() => toInputDate(new Date()));
-  const [itemSort, setItemSort] = useState<InquiryItemSort>("alphabetical");
+  const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
   const [brandFilter, setBrandFilter] = useState("all");
+  const [openItemSelectRowId, setOpenItemSelectRowId] = useState<string | null>(null);
+  const [jumpToItemRowId, setJumpToItemRowId] = useState("");
+  const [highlightedItemRowId, setHighlightedItemRowId] = useState<string | null>(
+    null,
+  );
+  const itemRowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
   const isEditMode = Boolean(requestId);
   const isViewMode = Boolean(readOnly);
@@ -1319,8 +1353,52 @@ const PurchaseImportRequestForm = ({
     [brandOptions],
   );
 
+  const inquirySelectedItemOptions = useMemo(() => {
+    const partById = new Map(partOptions.map((part) => [part.id, part]));
+    return items
+      .filter((row) => row.partId)
+      .map((row) => {
+        const part = partById.get(row.partId);
+        return {
+          value: row.id,
+          label: `${part?.masterPartNo || "-"} | ${part?.partNo || "-"}`,
+          description: part?.description || "-",
+        };
+      });
+  }, [items, partOptions]);
+
+  const scrollToInquiryItemRow = useCallback((rowId: string) => {
+    if (!rowId) return;
+    requestAnimationFrame(() => {
+      const rowEl = itemRowRefs.current[rowId];
+      rowEl?.scrollIntoView({ block: "center", behavior: "smooth" });
+      setHighlightedItemRowId(rowId);
+      window.setTimeout(() => {
+        setHighlightedItemRowId((current) =>
+          current === rowId ? null : current,
+        );
+      }, 2000);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!jumpToItemRowId) return;
+    scrollToInquiryItemRow(jumpToItemRowId);
+  }, [jumpToItemRowId, sortedItems, scrollToInquiryItemRow]);
+
+  useEffect(() => {
+    if (!jumpToItemRowId) return;
+    if (!items.some((row) => row.id === jumpToItemRowId && row.partId)) {
+      setJumpToItemRowId("");
+    }
+  }, [items, jumpToItemRowId]);
+
   const handleBrandFilterChange = (value: string) => {
     setBrandFilter(value || "all");
+  };
+
+  const handleInquiryItemJump = (rowId: string) => {
+    setJumpToItemRowId(rowId);
   };
 
   const supplierSelectOptions = useMemo(
@@ -1460,9 +1538,12 @@ const PurchaseImportRequestForm = ({
     }
   };
 
-  const addItemRow = () => {
-    setItems((prev) => [...prev, createEmptyItem()]);
-  };
+  const addItemRow = useCallback(() => {
+    const newItem = createEmptyItem();
+    setItems((prev) => [...prev, newItem]);
+    setOpenItemSelectRowId(newItem.id);
+    window.setTimeout(() => setOpenItemSelectRowId(null), 400);
+  }, []);
 
   useEffect(() => {
     if (isViewMode) return;
@@ -1470,15 +1551,18 @@ const PurchaseImportRequestForm = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        setItems((prev) => [...prev, createEmptyItem()]);
+        addItemRow();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isViewMode]);
+  }, [isViewMode, addItemRow]);
 
   const removeItemRow = (rowId: string) => {
+    if (jumpToItemRowId === rowId) {
+      setJumpToItemRowId("");
+    }
     setItems((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== rowId) : prev));
   };
 
@@ -1516,6 +1600,9 @@ const PurchaseImportRequestForm = ({
         lastPurchases: Array.isArray(details?.lastPurchases) ? details.lastPurchases : [],
         loadingDetails: false,
       });
+      if (isEditMode) {
+        setJumpToItemRowId(rowId);
+      }
     } catch {
       updateItem(rowId, { loadingDetails: false });
       toast({
@@ -2049,6 +2136,17 @@ const PurchaseImportRequestForm = ({
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Items</h3>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {isEditMode && !isViewMode && inquirySelectedItemOptions.length > 0 && (
+              <SearchableSelect
+                options={inquirySelectedItemOptions}
+                value={jumpToItemRowId}
+                onValueChange={handleInquiryItemJump}
+                placeholder="Go to item..."
+                aria-label="Jump to inquiry item"
+                className="w-[260px] [&_input]:h-9 [&_input]:text-sm"
+                disabled={loadingForm}
+              />
+            )}
             <SearchableSelect
               options={brandSelectOptions}
               value={brandFilter}
@@ -2063,6 +2161,7 @@ const PurchaseImportRequestForm = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="none">Sort: Entry Order</SelectItem>
                 <SelectItem value="alphabetical">Sort: Alphabetical</SelectItem>
                 <SelectItem value="numeric">Sort: Numeric</SelectItem>
                 <SelectItem value="description">Sort: Description</SelectItem>
@@ -2072,6 +2171,7 @@ const PurchaseImportRequestForm = ({
             <Select
               value={itemSortDirection}
               onValueChange={(value: SortDirection) => setItemSortDirection(value)}
+              disabled={itemSort === "none"}
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
@@ -2095,9 +2195,9 @@ const PurchaseImportRequestForm = ({
                 <th className="text-center p-2 border-b w-12">#</th>
                 <th className="text-left p-2 border-b">Item</th>
                 <th className="text-right p-2 border-b">Current Stock</th>
-                <th className="text-right p-2 border-b">KHI Qty</th>
-                <th className="text-right p-2 border-b">ISB Qty</th>
-                <th className="text-right p-2 border-b">Other Qty</th>
+                <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI Qty</th>
+                <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB Qty</th>
+                <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other Qty</th>
                 <th className="text-right p-2 border-b">Total Demand</th>
                 <th className="text-right p-2 border-b">Weight</th>
                 <th className="text-right p-2 border-b">Total Weight</th>
@@ -2107,7 +2207,16 @@ const PurchaseImportRequestForm = ({
             <tbody>
               {sortedItems.map((row, index) => (
                 <Fragment key={row.id}>
-                  <tr className="align-top">
+                  <tr
+                    ref={(el) => {
+                      itemRowRefs.current[row.id] = el;
+                    }}
+                    className={cn(
+                      "align-top",
+                      highlightedItemRowId === row.id &&
+                        "bg-primary/10 ring-2 ring-primary/30 ring-inset",
+                    )}
+                  >
                     <td className="p-2 border-b text-center text-muted-foreground tabular-nums">
                       {index + 1}
                     </td>
@@ -2118,6 +2227,7 @@ const PurchaseImportRequestForm = ({
                         onValueChange={(partId) => fetchPartDetails(row.id, partId)}
                         placeholder="Master Part | Part No"
                         disabled={loadingForm}
+                        autoOpen={openItemSelectRowId === row.id}
                       />
                       {row.loadingDetails && (
                         <p className="text-xs text-muted-foreground mt-1">Loading details...</p>
@@ -2128,7 +2238,7 @@ const PurchaseImportRequestForm = ({
                       <Input
                         type="number"
                         min={0}
-                        className="h-8 w-20 text-right ml-auto"
+                        className={INQUIRY_KHI_QTY_INPUT_CLASS}
                         value={row.khiQuantity === 0 ? "" : row.khiQuantity}
                         onChange={(e) =>
                           updateItem(row.id, {
@@ -2141,7 +2251,7 @@ const PurchaseImportRequestForm = ({
                       <Input
                         type="number"
                         min={0}
-                        className="h-8 w-20 text-right ml-auto"
+                        className={INQUIRY_ISB_QTY_INPUT_CLASS}
                         value={row.isbQuantity === 0 ? "" : row.isbQuantity}
                         onChange={(e) =>
                           updateItem(row.id, {
@@ -2154,7 +2264,7 @@ const PurchaseImportRequestForm = ({
                       <Input
                         type="number"
                         min={0}
-                        className="h-8 w-20 text-right ml-auto"
+                        className={INQUIRY_OTHER_QTY_INPUT_CLASS}
                         value={row.otherQuantity === 0 ? "" : row.otherQuantity}
                         onChange={(e) =>
                           updateItem(row.id, {
@@ -2322,7 +2432,7 @@ const PurchaseImportRequestView = ({
   const [detail, setDetail] = useState<PurchaseImportRequestEditPayload | null>(null);
   const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([]);
   const [partOptions, setPartOptions] = useState<PartOption[]>([]);
-  const [itemSort, setItemSort] = useState<InquiryItemSort>("alphabetical");
+  const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;
@@ -2577,6 +2687,7 @@ const PurchaseImportRequestView = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="none">Sort: Entry Order</SelectItem>
                 <SelectItem value="alphabetical">Sort: Alphabetical</SelectItem>
                 <SelectItem value="numeric">Sort: Numeric</SelectItem>
                 <SelectItem value="description">Sort: Description</SelectItem>
@@ -2586,6 +2697,7 @@ const PurchaseImportRequestView = ({
             <Select
               value={itemSortDirection}
               onValueChange={(value: SortDirection) => setItemSortDirection(value)}
+              disabled={itemSort === "none"}
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
@@ -3161,24 +3273,13 @@ const PurchaseQuotationForm = ({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Purchase Quotation</h2>
-          <p className="text-sm text-muted-foreground">
-            {existingQuotationId
-              ? "View and update the saved quotation for this inquiry."
-              : "Create quotation for the selected confirmed supplier inquiry."}
-          </p>
-        </div>
-        <Button type="button" onClick={handleSaveQuotation} disabled={loading || saving || !context}>
-          {saving ? "Saving..." : existingQuotationId ? "Update Quotation" : "Save Quotation"}
-        </Button>
-      </div>
-
-      <div className="flex justify-end -mt-2">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Back to List
-        </Button>
+      <div>
+        <h2 className="text-base font-semibold">Purchase Quotation</h2>
+        <p className="text-sm text-muted-foreground">
+          {existingQuotationId
+            ? "View and update the saved quotation for this inquiry."
+            : "Create quotation for the selected confirmed supplier inquiry."}
+        </p>
       </div>
 
       {loading || !context ? (
@@ -3575,6 +3676,19 @@ const PurchaseQuotationForm = ({
           </div>
         </>
       )}
+
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          onClick={handleSaveQuotation}
+          disabled={loading || saving || !context}
+        >
+          {saving ? "Saving..." : existingQuotationId ? "Update Quotation" : "Save Quotation"}
+        </Button>
+      </div>
     </div>
   );
 };
@@ -3932,22 +4046,11 @@ const PurchaseQuotationRevisionForm = ({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Revise Purchase Quotation</h2>
-          <p className="text-sm text-muted-foreground">
-            Update quotation with revised FC/LC rates and revised quotation date.
-          </p>
-        </div>
-        <Button type="button" onClick={handleSaveRevision} disabled={loading || saving || !detail}>
-          {saving ? "Saving..." : "Save Revision"}
-        </Button>
-      </div>
-
-      <div className="flex justify-end -mt-2">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Back to List
-        </Button>
+      <div>
+        <h2 className="text-base font-semibold">Revise Purchase Quotation</h2>
+        <p className="text-sm text-muted-foreground">
+          Update quotation with revised FC/LC rates and revised quotation date.
+        </p>
       </div>
 
       {loading || !detail ? (
@@ -4271,6 +4374,19 @@ const PurchaseQuotationRevisionForm = ({
           </div>
         </>
       )}
+
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          onClick={handleSaveRevision}
+          disabled={loading || saving || !detail}
+        >
+          {saving ? "Saving..." : "Save Revision"}
+        </Button>
+      </div>
     </div>
   );
 };
@@ -4291,6 +4407,12 @@ const PurchaseImportRequestTab = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [totalRecords, setTotalRecords] = useState(0);
+  const [filterSupplierId, setFilterSupplierId] = useState("");
+  const [filterInquiryNo, setFilterInquiryNo] = useState("");
+  const [filterPartReference, setFilterPartReference] = useState("");
+  const [supplierFilterOptions, setSupplierFilterOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
 
   const fetchRequests = useCallback(async () => {
     setLoadingRequests(true);
@@ -4298,6 +4420,9 @@ const PurchaseImportRequestTab = () => {
       const response = await apiClient.getPurchaseImportRequests({
         page: currentPage,
         limit: itemsPerPage,
+        supplierId: filterSupplierId || undefined,
+        requestNo: filterInquiryNo.trim() || undefined,
+        partReference: filterPartReference.trim() || undefined,
       });
       const rows = Array.isArray((response as any)?.data)
         ? (response as any).data
@@ -4316,7 +4441,67 @@ const PurchaseImportRequestTab = () => {
     } finally {
       setLoadingRequests(false);
     }
-  }, [currentPage, itemsPerPage, toast]);
+  }, [
+    currentPage,
+    itemsPerPage,
+    filterSupplierId,
+    filterInquiryNo,
+    filterPartReference,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (requestView !== "list" || showQuotationForm) return;
+
+    const loadSupplierFilters = async () => {
+      try {
+        const suppliersRes = await apiClient.getSuppliers({
+          status: "active",
+          page: 1,
+          limit: 1000,
+        });
+        const suppliersData = ((suppliersRes as any)?.data || []).filter(
+          (supplier: any) =>
+            String(supplier?.type || "")
+              .trim()
+              .toLowerCase() === "international",
+        );
+        setSupplierFilterOptions(
+          suppliersData.map((supplier: any) => ({
+            value: supplier.id,
+            label:
+              supplier.companyName || supplier.name || supplier.code || "Unnamed Supplier",
+          })),
+        );
+      } catch {
+        setSupplierFilterOptions([]);
+      }
+    };
+
+    void loadSupplierFilters();
+  }, [requestView, showQuotationForm]);
+
+  const handleFilterSupplierChange = (value: string) => {
+    setFilterSupplierId(value);
+    setCurrentPage(1);
+  };
+
+  const handleFilterInquiryNoChange = (value: string) => {
+    setFilterInquiryNo(value);
+    setCurrentPage(1);
+  };
+
+  const handleFilterPartReferenceChange = (value: string) => {
+    setFilterPartReference(value);
+    setCurrentPage(1);
+  };
+
+  const clearInquiryFilters = () => {
+    setFilterSupplierId("");
+    setFilterInquiryNo("");
+    setFilterPartReference("");
+    setCurrentPage(1);
+  };
 
   useEffect(() => {
     const editId = searchParams.get("edit");
@@ -4459,7 +4644,55 @@ const PurchaseImportRequestTab = () => {
         )
       ) : (
         <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
-          <div className="flex items-center justify-end">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="inquiry-filter-supplier">Supplier</Label>
+                <SearchableSelect
+                  id="inquiry-filter-supplier"
+                  options={supplierFilterOptions}
+                  value={filterSupplierId}
+                  onValueChange={handleFilterSupplierChange}
+                  placeholder="All suppliers"
+                  aria-label="Filter by supplier"
+                  className="w-[240px] [&_input]:h-9 [&_input]:text-sm"
+                  disabled={loadingRequests}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="inquiry-filter-no">Inquiry No</Label>
+                <Input
+                  id="inquiry-filter-no"
+                  value={filterInquiryNo}
+                  onChange={(event) => handleFilterInquiryNoChange(event.target.value)}
+                  placeholder="Search inquiry no"
+                  className="h-9 w-[180px]"
+                  disabled={loadingRequests}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="inquiry-filter-part-reference">Part Reference</Label>
+                <Input
+                  id="inquiry-filter-part-reference"
+                  value={filterPartReference}
+                  onChange={(event) => handleFilterPartReferenceChange(event.target.value)}
+                  placeholder="Search part reference"
+                  className="h-9 w-[200px]"
+                  disabled={loadingRequests}
+                />
+              </div>
+              {(filterSupplierId || filterInquiryNo || filterPartReference) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9"
+                  onClick={clearInquiryFilters}
+                  disabled={loadingRequests}
+                >
+                  Clear Filters
+                </Button>
+              )}
+            </div>
             <Button type="button" onClick={goToNewRequestForm}>
               <Plus className="w-4 h-4 mr-1" />
               New Inquiry
@@ -4826,23 +5059,13 @@ const PurchaseQuotationConfirmForm = ({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold">Confirm Purchase Quotation</h2>
-          <p className="text-sm text-muted-foreground">
-            Review quotation details and confirm quantities before creating purchase order
-            {hasSplitQuantities ? "s by consignee (KHI / ISB / Other)" : ""}.
-            {isRevised ? " Showing revised quotation values." : " Showing original quotation values."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={handleConfirm} disabled={saving || !detail}>
-            {saving ? "Confirming..." : "Confirm & Create PO"}
-          </Button>
-        </div>
+      <div>
+        <h2 className="text-base font-semibold">Confirm Purchase Quotation</h2>
+        <p className="text-sm text-muted-foreground">
+          Review quotation details and confirm quantities before creating purchase order
+          {hasSplitQuantities ? "s by consignee (KHI / ISB / Other)" : ""}.
+          {isRevised ? " Showing revised quotation values." : " Showing original quotation values."}
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -4935,9 +5158,9 @@ const PurchaseQuotationConfirmForm = ({
               <th className="text-right p-2 border-b">Total Weight</th>
               {hasSplitQuantities ? (
                 <>
-                  <th className="text-right p-2 border-b">KHI QTY</th>
-                  <th className="text-right p-2 border-b">ISB QTY</th>
-                  <th className="text-right p-2 border-b">Other QTY</th>
+                  <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI QTY</th>
+                  <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB QTY</th>
+                  <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other QTY</th>
                 </>
               ) : null}
               <th className="text-right p-2 border-b min-w-[120px]">Confirm QTY</th>
@@ -4978,9 +5201,21 @@ const PurchaseQuotationConfirmForm = ({
                   <td className="p-2 text-right tabular-nums">{row.totalWeight.toFixed(2)}</td>
                   {hasSplitQuantities ? (
                     <>
-                      <td className="p-2 text-right tabular-nums">{row.khiQuantity}</td>
-                      <td className="p-2 text-right tabular-nums">{row.isbQuantity}</td>
-                      <td className="p-2 text-right tabular-nums">{row.otherQuantity}</td>
+                      <td className="p-2 text-right">
+                        <span className={INQUIRY_KHI_QTY_DISPLAY_CLASS}>
+                          {row.khiQuantity}
+                        </span>
+                      </td>
+                      <td className="p-2 text-right">
+                        <span className={INQUIRY_ISB_QTY_DISPLAY_CLASS}>
+                          {row.isbQuantity}
+                        </span>
+                      </td>
+                      <td className="p-2 text-right">
+                        <span className={INQUIRY_OTHER_QTY_DISPLAY_CLASS}>
+                          {row.otherQuantity}
+                        </span>
+                      </td>
                     </>
                   ) : null}
                   <td className="p-2 text-right">
@@ -5035,6 +5270,15 @@ const PurchaseQuotationConfirmForm = ({
           <Label>Terms</Label>
           <Input value={detail?.terms || "—"} readOnly />
         </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+        <Button type="button" onClick={handleConfirm} disabled={saving || !detail}>
+          {saving ? "Confirming..." : "Confirm & Create PO"}
+        </Button>
       </div>
     </div>
   );
@@ -5393,8 +5637,9 @@ const PurchaseOrderTab = () => {
     setLoadingDetail(true);
     setViewOrder(null);
     try {
-      const response = await apiClient.getPurchaseOrder(orderId);
-      setViewOrder(response);
+      const response = await apiClient.getImportPurchaseOrder(orderId);
+      const orderData = (response as any)?.data || response;
+      setViewOrder(orderData);
     } catch (error: any) {
       toast({
         title: "Failed to load purchase order",
@@ -5756,12 +6001,24 @@ const PurchaseOrderTab = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="text-muted-foreground">Supplier:</span>{" "}
-                  {viewOrder.supplier_name || "-"}
+                  {viewOrder.supplier?.name || viewOrder.supplier_name || "-"}
                 </div>
                 <div>
                   <span className="text-muted-foreground">Status:</span>{" "}
                   {viewOrder.status || "-"}
                 </div>
+                {viewOrder.consignee ? (
+                  <div>
+                    <span className="text-muted-foreground">Consignee:</span>{" "}
+                    {String(viewOrder.consignee).toUpperCase()}
+                  </div>
+                ) : null}
+                {viewOrder.quotation?.quotationNo ? (
+                  <div>
+                    <span className="text-muted-foreground">Quotation:</span>{" "}
+                    {viewOrder.quotation.quotationNo}
+                  </div>
+                ) : null}
                 <div>
                   <span className="text-muted-foreground">Date:</span>{" "}
                   {viewOrder.date
@@ -5769,34 +6026,36 @@ const PurchaseOrderTab = () => {
                     : "-"}
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Total:</span>{" "}
-                  {Number(viewOrder.total_amount || viewOrder.totalAmount || 0).toLocaleString(
+                  <span className="text-muted-foreground">Total (LC):</span>{" "}
+                  {Number(viewOrder.totalAmount || viewOrder.total_amount || 0).toLocaleString(
                     "en-PK",
                     { minimumFractionDigits: 2 },
                   )}
                 </div>
-                {viewOrder.invoice_no ? (
+                {(viewOrder.invoiceNo || viewOrder.invoice_no) ? (
                   <div>
                     <span className="text-muted-foreground">Invoice No:</span>{" "}
-                    {viewOrder.invoice_no}
+                    {viewOrder.invoiceNo || viewOrder.invoice_no}
                   </div>
                 ) : null}
-                {viewOrder.invoice_date ? (
+                {(viewOrder.invoiceDate || viewOrder.invoice_date) ? (
                   <div>
                     <span className="text-muted-foreground">Invoice Date:</span>{" "}
-                    {new Date(viewOrder.invoice_date).toLocaleDateString()}
+                    {new Date(
+                      viewOrder.invoiceDate || viewOrder.invoice_date,
+                    ).toLocaleDateString()}
                   </div>
                 ) : null}
-                {viewOrder.bl_no ? (
+                {(viewOrder.blNo || viewOrder.bl_no) ? (
                   <div>
                     <span className="text-muted-foreground">BL No:</span>{" "}
-                    {viewOrder.bl_no}
+                    {viewOrder.blNo || viewOrder.bl_no}
                   </div>
                 ) : null}
-                {viewOrder.bl_date ? (
+                {(viewOrder.blDate || viewOrder.bl_date) ? (
                   <div>
                     <span className="text-muted-foreground">BL Date:</span>{" "}
-                    {new Date(viewOrder.bl_date).toLocaleDateString()}
+                    {new Date(viewOrder.blDate || viewOrder.bl_date).toLocaleDateString()}
                   </div>
                 ) : null}
                 {viewOrder.currency ? (
@@ -5805,16 +6064,18 @@ const PurchaseOrderTab = () => {
                     {viewOrder.currency}
                   </div>
                 ) : null}
-                {viewOrder.conversion_rate ? (
+                {(viewOrder.conversionRate || viewOrder.conversion_rate) ? (
                   <div>
                     <span className="text-muted-foreground">Exchange Rate:</span>{" "}
-                    {Number(viewOrder.conversion_rate).toFixed(4)}
+                    {Number(
+                      viewOrder.conversionRate ?? viewOrder.conversion_rate ?? 0,
+                    ).toFixed(4)}
                   </div>
                 ) : null}
-                {Number(viewOrder.fc_total || 0) > 0 ? (
+                {Number(viewOrder.fcTotal || viewOrder.fc_total || 0) > 0 ? (
                   <div>
                     <span className="text-muted-foreground">FC Total:</span>{" "}
-                    {Number(viewOrder.fc_total).toLocaleString("en-PK", {
+                    {Number(viewOrder.fcTotal || viewOrder.fc_total).toLocaleString("en-PK", {
                       minimumFractionDigits: 2,
                     })}
                   </div>
@@ -5831,41 +6092,78 @@ const PurchaseOrderTab = () => {
                       <th className="text-left p-2">Description</th>
                       <th className="text-right p-2">Order Qty</th>
                       <th className="text-right p-2">Received</th>
-                      <th className="text-right p-2">Additional</th>
+                      <th className="text-right p-2">From Back</th>
                       <th className="text-right p-2">Back</th>
-                      <th className="text-right p-2">FC Rate</th>
-                      <th className="text-right p-2">FC Amount</th>
-                      <th className="text-right p-2">LC Rate</th>
-                      <th className="text-right p-2">LC Amount</th>
+                      <th className="text-right p-2">
+                        {viewOrder.quotation?.isRevised ? "Revised FC Rate" : "FC Rate"}
+                      </th>
+                      <th className="text-right p-2">
+                        {viewOrder.quotation?.isRevised ? "Revised FC Amount" : "FC Amount"}
+                      </th>
+                      <th className="text-right p-2">
+                        {viewOrder.quotation?.isRevised ? "Revised LC Rate" : "LC Rate"}
+                      </th>
+                      <th className="text-right p-2">
+                        {viewOrder.quotation?.isRevised ? "Revised LC Amount" : "LC Amount"}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(viewOrder.items || []).map((item: any) => (
+                    {(viewOrder.items || []).map((item: any) => {
+                      const orderQty = Number(item.orderQty ?? item.quantity ?? 0);
+                      const receivedQty = Number(
+                        item.receivedQty ?? item.received_qty ?? 0,
+                      );
+                      const additionalQty = Number(
+                        item.additionalQty ?? item.additional_qty ?? 0,
+                      );
+                      const backQty = Number(item.backQty ?? item.back_qty ?? 0);
+                      const fcRate = Number(item.fcRate ?? item.fc_rate ?? 0);
+                      const fcAmount = Number(
+                        item.fcAmount ??
+                          item.fc_amount ??
+                          fcRate * orderQty,
+                      );
+                      const lcRate = Number(
+                        item.lcRate ?? item.lc_rate ?? item.unit_cost ?? 0,
+                      );
+                      const lcAmount = Number(
+                        item.lcAmount ??
+                          item.lc_amount ??
+                          item.total_cost ??
+                          lcRate * orderQty,
+                      );
+                      return (
                       <tr key={item.id} className="border-t">
-                        <td className="p-2 font-mono">{item.part_no || "-"}</td>
-                        <td className="p-2">{item.part_description || "-"}</td>
-                        <td className="p-2 text-right">{item.quantity}</td>
-                        <td className="p-2 text-right">
-                          {item.received_qty ?? 0}
+                        <td className="p-2 font-mono">
+                          {item.partNo || item.part_no || "-"}
                         </td>
-                        <td className="p-2 text-right">
-                          {item.additional_qty ?? 0}
+                        <td className="p-2">
+                          {item.description || item.part_description || "-"}
                         </td>
-                        <td className="p-2 text-right">{item.back_qty ?? 0}</td>
-                        <td className="p-2 text-right">
-                          {Number(item.fc_rate || 0).toFixed(4)}
+                        <td className="p-2 text-right tabular-nums">{orderQty}</td>
+                        <td className="p-2 text-right tabular-nums">{receivedQty}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {additionalQty > 0 ? additionalQty : "-"}
                         </td>
-                        <td className="p-2 text-right">
-                          {Number(item.fc_amount || 0).toFixed(2)}
+                        <td className="p-2 text-right tabular-nums">
+                          {backQty > 0 ? backQty : "-"}
                         </td>
-                        <td className="p-2 text-right">
-                          {Number(item.unit_cost || 0).toFixed(2)}
+                        <td className="p-2 text-right tabular-nums">
+                          {fcRate.toFixed(4)}
                         </td>
-                        <td className="p-2 text-right">
-                          {Number(item.total_cost || 0).toFixed(2)}
+                        <td className="p-2 text-right tabular-nums">
+                          {fcAmount.toFixed(2)}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {lcRate.toFixed(2)}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {lcAmount.toFixed(2)}
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -5989,7 +6287,7 @@ const PurchaseOrderTab = () => {
                       <th className="text-right p-2">Ship Days</th>
                       <th className="text-right p-2">Order Qty</th>
                       <th className="text-right p-2">Receive Qty</th>
-                      <th className="text-right p-2">Additional Qty</th>
+                      <th className="text-right p-2">From Back Qty</th>
                       <th className="text-right p-2">Back Qty</th>
                       <th className="text-right p-2">
                         {receiveDetail?.isRevised ? "Revised FC Rate" : "FC Rate"}

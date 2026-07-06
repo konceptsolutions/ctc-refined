@@ -53,6 +53,28 @@ const inferCurrencyFromCountry = (country: any, type: "local" | "international")
   return countryCurrencyMap[normalizedCountry] || "USD";
 };
 
+const normalizeSupplierType = (
+  type: any,
+  country: any,
+): "local" | "international" => {
+  const normalizedType = String(type || "").trim().toLowerCase();
+  if (normalizedType === "local" || normalizedType === "international") {
+    return normalizedType;
+  }
+  return inferSupplierTypeFromCountry(country);
+};
+
+const resolveSupplierCurrencyName = (
+  type: "local" | "international",
+  country: any,
+  currencyName?: any,
+) => {
+  if (type === "local") return "PKR";
+  const explicit = String(currencyName ?? "").trim();
+  if (explicit) return explicit;
+  return inferCurrencyFromCountry(country, type);
+};
+
 // Generate next supplier code
 async function generateSupplierCode(): Promise<string> {
   try {
@@ -220,17 +242,20 @@ router.post("/", async (req, res) => {
       gstNumber,
       ntn,
       remarks,
+      type,
+      currencyName,
     } = req.body;
 
     // Parse openingBalance to ensure it's a number (not a string)
     const parsedOpeningBalance = openingBalance
       ? parseFloat(openingBalance)
       : 0;
-    const supplierType = inferSupplierTypeFromCountry(country);
-    const normalizedCurrencyName =
-      supplierType === "international"
-        ? inferCurrencyFromCountry(country, supplierType)
-        : "PKR";
+    const supplierType = normalizeSupplierType(type, country);
+    const normalizedCurrencyName = resolveSupplierCurrencyName(
+      supplierType,
+      country,
+      currencyName,
+    );
 
     // Auto-generate supplier code if not provided or empty
     const supplierCode =
@@ -507,6 +532,8 @@ router.put("/:id", async (req, res) => {
       ntn,
       remarks,
       accountId, // Account ID from payload
+      type,
+      currencyName,
     } = req.body;
     const updateData: any = {};
     if (code !== undefined) updateData.code = code;
@@ -554,9 +581,34 @@ router.put("/:id", async (req, res) => {
     }
 
     const effectiveCountry = country !== undefined ? country : oldSupplier.country;
-    const effectiveType = inferSupplierTypeFromCountry(effectiveCountry);
-    updateData.type = effectiveType;
-    updateData.currencyName = inferCurrencyFromCountry(effectiveCountry, effectiveType);
+
+    if (type !== undefined) {
+      const effectiveType = normalizeSupplierType(type, effectiveCountry);
+      updateData.type = effectiveType;
+      updateData.currencyName = resolveSupplierCurrencyName(
+        effectiveType,
+        effectiveCountry,
+        currencyName !== undefined ? currencyName : oldSupplier.currencyName,
+      );
+    } else if (country !== undefined) {
+      const effectiveType = inferSupplierTypeFromCountry(effectiveCountry);
+      updateData.type = effectiveType;
+      updateData.currencyName = resolveSupplierCurrencyName(
+        effectiveType,
+        effectiveCountry,
+        currencyName !== undefined ? currencyName : oldSupplier.currencyName,
+      );
+    } else if (currencyName !== undefined) {
+      const effectiveType = normalizeSupplierType(
+        oldSupplier.type,
+        effectiveCountry,
+      );
+      updateData.currencyName = resolveSupplierCurrencyName(
+        effectiveType,
+        effectiveCountry,
+        currencyName,
+      );
+    }
 
     const supplier = await prisma.supplier.update({
       where: { id: req.params.id },
