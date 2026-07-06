@@ -53,6 +53,9 @@ const PURCHASE_QUOTATION_TERMS = [
 
 const PURCHASE_IMPORT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
+/** Last 3 Purchases panel under inquiry item rows (includes PO history). */
+const SHOW_INQUIRY_LAST_PURCHASES = false;
+
 type ListPaginationProps = {
   currentPage: number;
   itemsPerPage: number;
@@ -713,6 +716,12 @@ const createEmptyItem = (): ItemRow => ({
 const getInquiryRowDemandQuantity = (row: Pick<ItemRow, "khiQuantity" | "isbQuantity" | "otherQuantity">) =>
   Number(row.khiQuantity || 0) + Number(row.isbQuantity || 0) + Number(row.otherQuantity || 0);
 
+const isInquiryConfirmed = (status?: string | null) =>
+  String(status || "").trim().toLowerCase() === "confirm";
+
+const formatInquiryListStatus = (status?: string | null) =>
+  isInquiryConfirmed(status) ? "Confirmed" : "Pending";
+
 const getQuotationRowDemandQuantity = (
   row: Pick<PurchaseQuotationFormItem, "khiQuantity" | "isbQuantity" | "otherQuantity">,
 ) =>
@@ -888,8 +897,8 @@ const printPurchaseImportInquiry = ({
           </td>
           <td>${escapeHtml(item.brand)}</td>
           <td style="text-align:right;">${Number(item.currentStock || 0)}</td>
-          <td style="text-align:right;">${item.khiQuantity}</td>
           <td style="text-align:right;">${item.isbQuantity}</td>
+          <td style="text-align:right;">${item.khiQuantity}</td>
           <td style="text-align:right;">${item.otherQuantity}</td>
           <td style="text-align:right;"><strong>${item.totalDemand}</strong></td>
           <td style="text-align:right;">${item.weight.toFixed(2)}</td>
@@ -956,8 +965,8 @@ const printPurchaseImportInquiry = ({
         <th>Item</th>
         <th>Brand</th>
         <th style="text-align:right;">Stock</th>
-        <th style="text-align:right;">KHI</th>
         <th style="text-align:right;">ISB</th>
+        <th style="text-align:right;">KHI</th>
         <th style="text-align:right;">Other</th>
         <th style="text-align:right;">Total Qty</th>
         <th style="text-align:right;">Weight</th>
@@ -1257,6 +1266,7 @@ const PurchaseImportRequestForm = ({
               editData.baseRequestNo || editData.requestNo || "",
             );
             setInquiryDate(toInputDate(editData.requestDate));
+            setJumpToItemRowId("");
 
             const nextItems = Array.isArray(editData.items)
               ? editData.items.map((item, index) => {
@@ -1600,9 +1610,6 @@ const PurchaseImportRequestForm = ({
         lastPurchases: Array.isArray(details?.lastPurchases) ? details.lastPurchases : [],
         loadingDetails: false,
       });
-      if (isEditMode) {
-        setJumpToItemRowId(rowId);
-      }
     } catch {
       updateItem(rowId, { loadingDetails: false });
       toast({
@@ -2195,8 +2202,8 @@ const PurchaseImportRequestForm = ({
                 <th className="text-center p-2 border-b w-12">#</th>
                 <th className="text-left p-2 border-b">Item</th>
                 <th className="text-right p-2 border-b">Current Stock</th>
-                <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI Qty</th>
                 <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB Qty</th>
+                <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI Qty</th>
                 <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other Qty</th>
                 <th className="text-right p-2 border-b">Total Demand</th>
                 <th className="text-right p-2 border-b">Weight</th>
@@ -2238,11 +2245,11 @@ const PurchaseImportRequestForm = ({
                       <Input
                         type="number"
                         min={0}
-                        className={INQUIRY_KHI_QTY_INPUT_CLASS}
-                        value={row.khiQuantity === 0 ? "" : row.khiQuantity}
+                        className={INQUIRY_ISB_QTY_INPUT_CLASS}
+                        value={row.isbQuantity === 0 ? "" : row.isbQuantity}
                         onChange={(e) =>
                           updateItem(row.id, {
-                            khiQuantity: Number(e.target.value || 0),
+                            isbQuantity: Number(e.target.value || 0),
                           })
                         }
                       />
@@ -2251,11 +2258,11 @@ const PurchaseImportRequestForm = ({
                       <Input
                         type="number"
                         min={0}
-                        className={INQUIRY_ISB_QTY_INPUT_CLASS}
-                        value={row.isbQuantity === 0 ? "" : row.isbQuantity}
+                        className={INQUIRY_KHI_QTY_INPUT_CLASS}
+                        value={row.khiQuantity === 0 ? "" : row.khiQuantity}
                         onChange={(e) =>
                           updateItem(row.id, {
-                            isbQuantity: Number(e.target.value || 0),
+                            khiQuantity: Number(e.target.value || 0),
                           })
                         }
                       />
@@ -2305,6 +2312,7 @@ const PurchaseImportRequestForm = ({
                       </Button>
                     </td>
                   </tr>
+                  {SHOW_INQUIRY_LAST_PURCHASES ? (
                   <tr>
                     <td colSpan={10} className="px-2 pb-3 border-b">
                       <div className="rounded-md border border-dashed border-border p-2">
@@ -2346,6 +2354,7 @@ const PurchaseImportRequestForm = ({
                       </div>
                     </td>
                   </tr>
+                  ) : null}
                 </Fragment>
               ))}
             </tbody>
@@ -2717,8 +2726,8 @@ const PurchaseImportRequestView = ({
                 <th className="text-left p-2 border-b">Item</th>
                 <th className="text-left p-2 border-b">Brand</th>
                 <th className="text-right p-2 border-b">Stock</th>
-                <th className="text-right p-2 border-b">KHI</th>
                 <th className="text-right p-2 border-b">ISB</th>
+                <th className="text-right p-2 border-b">KHI</th>
                 <th className="text-right p-2 border-b">Other</th>
                 <th className="text-right p-2 border-b">Total Qty</th>
                 <th className="text-right p-2 border-b">Weight</th>
@@ -2751,8 +2760,16 @@ const PurchaseImportRequestView = ({
                     </td>
                     <td className="p-2">{item.brand}</td>
                     <td className="p-2 text-right">{Number(item.currentStock || 0)}</td>
-                    <td className="p-2 text-right">{item.khiQuantity}</td>
-                    <td className="p-2 text-right">{item.isbQuantity}</td>
+                    <td className="p-2 text-right">
+                      <span className={INQUIRY_ISB_QTY_DISPLAY_CLASS}>
+                        {item.isbQuantity}
+                      </span>
+                    </td>
+                    <td className="p-2 text-right">
+                      <span className={INQUIRY_KHI_QTY_DISPLAY_CLASS}>
+                        {item.khiQuantity}
+                      </span>
+                    </td>
                     <td className="p-2 text-right">{item.otherQuantity}</td>
                     <td className="p-2 text-right font-medium">{item.totalDemand}</td>
                     <td className="p-2 text-right">{item.weight.toFixed(2)}</td>
@@ -3453,13 +3470,16 @@ const PurchaseQuotationForm = ({
                             <Input
                               type="number"
                               min={0}
-                              className="h-7 w-16 min-w-0 text-right text-xs px-2"
-                              placeholder="KHI"
-                              value={Number(row.khiQuantity || 0) === 0 ? "" : Number(row.khiQuantity || 0)}
+                              className={cn(
+                                INQUIRY_ISB_QTY_INPUT_CLASS,
+                                "h-7 w-16 min-w-0 text-xs px-2",
+                              )}
+                              placeholder="ISB"
+                              value={Number(row.isbQuantity || 0) === 0 ? "" : Number(row.isbQuantity || 0)}
                               onChange={(e) =>
                                 updateQuotationSplitQuantity(
                                   row.rowId,
-                                  "khiQuantity",
+                                  "isbQuantity",
                                   Number(e.target.value || 0),
                                 )
                               }
@@ -3467,13 +3487,16 @@ const PurchaseQuotationForm = ({
                             <Input
                               type="number"
                               min={0}
-                              className="h-7 w-16 min-w-0 text-right text-xs px-2"
-                              placeholder="ISB"
-                              value={Number(row.isbQuantity || 0) === 0 ? "" : Number(row.isbQuantity || 0)}
+                              className={cn(
+                                INQUIRY_KHI_QTY_INPUT_CLASS,
+                                "h-7 w-16 min-w-0 text-xs px-2",
+                              )}
+                              placeholder="KHI"
+                              value={Number(row.khiQuantity || 0) === 0 ? "" : Number(row.khiQuantity || 0)}
                               onChange={(e) =>
                                 updateQuotationSplitQuantity(
                                   row.rowId,
-                                  "isbQuantity",
+                                  "khiQuantity",
                                   Number(e.target.value || 0),
                                 )
                               }
@@ -4558,29 +4581,6 @@ const PurchaseImportRequestTab = () => {
     }
   };
 
-  const handleUnconfirmRequest = async (requestId: string) => {
-    setConfirmingRequestId(requestId);
-    try {
-      await apiClient.updatePurchaseImportRequestStatus(requestId, "pending");
-      toast({
-        title: "Inquiry unconfirmed",
-        description: "Inquiry status has been set back to pending.",
-      });
-      await fetchRequests();
-    } catch (error: any) {
-      toast({
-        title: "Failed to unconfirm inquiry",
-        description:
-          error?.response?.data?.error ||
-          error?.message ||
-          "Could not update inquiry status.",
-        variant: "destructive",
-      });
-    } finally {
-      setConfirmingRequestId(null);
-    }
-  };
-
   if (showQuotationForm && quotationRequestId) {
     return (
       <PurchaseQuotationForm
@@ -4730,10 +4730,7 @@ const PurchaseImportRequestTab = () => {
               </tr>
             ) : (
               requests.map((row, index) => {
-                const isConfirmed =
-                  String(row.status || "")
-                    .trim()
-                    .toLowerCase() === "confirm";
+                const isConfirmed = isInquiryConfirmed(row.status);
                 const hasConfirmedQuotation = (row.PurchaseQuotation || []).some(
                   (quotation) =>
                     String(quotation.status || "")
@@ -4768,38 +4765,33 @@ const PurchaseImportRequestTab = () => {
                     <td className="p-2 text-right">{itemRows.length}</td>
                     <td className="p-2 text-right">{totalQty}</td>
                     <td className="p-2 text-right">{totalWeight.toFixed(2)}</td>
-                    <td className="p-2 capitalize">{row.status || "pending"}</td>
+                    <td className="p-2 font-medium">
+                      {formatInquiryListStatus(row.status)}
+                    </td>
                     <td className="p-2 max-w-[260px] truncate" title={row.notes || ""}>
                       {row.notes || "-"}
                     </td>
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            if (hasConfirmedQuotation) return;
-                            isConfirmed
-                              ? handleUnconfirmRequest(row.id)
-                              : handleConfirmRequest(row.id);
-                          }}
-                          disabled={
-                            confirmingRequestId === row.id ||
-                            (!isConfirmed && !hasSupplier) ||
-                            hasConfirmedQuotation
-                          }
-                          title={
-                            hasConfirmedQuotation
-                              ? "Cannot change inquiry status after quotation is confirmed"
-                              : !hasSupplier && !isConfirmed
+                        {!isConfirmed ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleConfirmRequest(row.id)}
+                            disabled={
+                              confirmingRequestId === row.id || !hasSupplier
+                            }
+                            title={
+                              !hasSupplier
                                 ? "Select at least one supplier before confirming"
                                 : undefined
-                          }
-                        >
-                          <Check className="w-3.5 h-3.5 mr-1" />
-                          {isConfirmed ? "Unconfirm" : "Confirm"}
-                        </Button>
+                            }
+                          >
+                            <Check className="w-3.5 h-3.5 mr-1" />
+                            Confirm
+                          </Button>
+                        ) : null}
                         <Button
                           type="button"
                           size="sm"
@@ -5063,7 +5055,7 @@ const PurchaseQuotationConfirmForm = ({
         <h2 className="text-base font-semibold">Confirm Purchase Quotation</h2>
         <p className="text-sm text-muted-foreground">
           Review quotation details and confirm quantities before creating purchase order
-          {hasSplitQuantities ? "s by consignee (KHI / ISB / Other)" : ""}.
+          {hasSplitQuantities ? "s by consignee (ISB / KHI / Other)" : ""}.
           {isRevised ? " Showing revised quotation values." : " Showing original quotation values."}
         </p>
       </div>
@@ -5158,8 +5150,8 @@ const PurchaseQuotationConfirmForm = ({
               <th className="text-right p-2 border-b">Total Weight</th>
               {hasSplitQuantities ? (
                 <>
-                  <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI QTY</th>
                   <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB QTY</th>
+                  <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI QTY</th>
                   <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other QTY</th>
                 </>
               ) : null}
@@ -5202,13 +5194,13 @@ const PurchaseQuotationConfirmForm = ({
                   {hasSplitQuantities ? (
                     <>
                       <td className="p-2 text-right">
-                        <span className={INQUIRY_KHI_QTY_DISPLAY_CLASS}>
-                          {row.khiQuantity}
+                        <span className={INQUIRY_ISB_QTY_DISPLAY_CLASS}>
+                          {row.isbQuantity}
                         </span>
                       </td>
                       <td className="p-2 text-right">
-                        <span className={INQUIRY_ISB_QTY_DISPLAY_CLASS}>
-                          {row.isbQuantity}
+                        <span className={INQUIRY_KHI_QTY_DISPLAY_CLASS}>
+                          {row.khiQuantity}
                         </span>
                       </td>
                       <td className="p-2 text-right">
