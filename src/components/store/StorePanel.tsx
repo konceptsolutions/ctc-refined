@@ -223,6 +223,7 @@ interface PurchaseOrder {
   id: string;
   po_number: string;
   date: string;
+  invoice_date?: string | null;
   supplier_name?: string;
   status: string;
   total_amount: number;
@@ -784,6 +785,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             id: order.id,
             po_number: order.po_number || order.poNumber,
             date: order.date,
+            invoice_date: order.invoice_date ?? order.invoiceDate ?? null,
             supplier_name: order.supplier_name || order.supplier?.companyName || "N/A",
             status: order.status || "Draft",
             total_amount: order.total_amount || order.totalAmount || 0,
@@ -1452,7 +1454,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       type: "po" as const,
       id: order.id,
       number: order.po_number,
-      date: order.date,
+      date: order.invoice_date || order.date,
       party: order.supplier_name || "N/A",
       itemsCount: order.items_count,
       quantity: order.total_quantity || 0,

@@ -2503,6 +2503,24 @@ class ApiClient {
       invoiceDate?: string;
       blNo?: string;
       blDate?: string;
+      expenses?: {
+        pkgExpPercent?: number;
+        invDiscPercent?: number;
+        frtExp?: number;
+        discAmt?: number;
+        customsDuty?: number;
+        additionalCustomsDuty?: number;
+        regulatoryDuty?: number;
+        salesTax?: number;
+        additionalSalesTax?: number;
+        incomeTax?: number;
+        ed?: number;
+        doAmount?: number;
+        miscExp?: number;
+        locFrt?: number;
+        crnExp?: number;
+        totalExp?: number;
+      };
     },
   ) {
     return this.request(`/purchase-import/purchase-orders/${orderId}/receive`, {
@@ -2513,6 +2531,7 @@ class ApiClient {
         invoiceDate: data.invoiceDate || undefined,
         blNo: data.blNo?.trim() || undefined,
         blDate: data.blDate || undefined,
+        expenses: data.expenses,
         items: data.items.map((item) => ({
           id: item.id,
           receiveQty: item.receiveQty,

@@ -161,12 +161,11 @@ export const AccountsTab = () => {
     fetchSubGroups();
   }, []);
 
-  // Reset subgroup when main group changes
-  useEffect(() => {
-    if (formData.mainGroup) {
-      setFormData(prev => ({ ...prev, subGroup: "" }));
-    }
-  }, [formData.mainGroup]);
+  // Note: the subgroup is intentionally reset directly inside each main group
+  // <Select> onValueChange (see the Add/Edit dialogs). We must NOT reset it in a
+  // useEffect keyed on formData.mainGroup, because editing an account sets the
+  // main group and subgroup together and the effect would immediately wipe the
+  // loaded subgroup value.
 
   // Fetch accounts when filters change, but only after mainGroups and subGroups are loaded
   useEffect(() => {

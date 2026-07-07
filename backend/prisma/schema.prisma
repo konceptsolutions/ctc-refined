@@ -620,6 +620,22 @@ model PurchaseOrder {
   invoiceDate         DateTime?
   blNo                String?
   blDate              DateTime?
+  pkgExpPercent       Float               @default(0)
+  invDiscPercent      Float               @default(0)
+  frtExp              Float               @default(0)
+  discAmt             Float               @default(0)
+  customsDuty         Float               @default(0)
+  additionalCustomsDuty Float             @default(0)
+  regulatoryDuty      Float               @default(0)
+  salesTax            Float               @default(0)
+  additionalSalesTax  Float               @default(0)
+  incomeTax           Float               @default(0)
+  ed                  Float               @default(0)
+  doAmount            Float               @default(0)
+  miscExp             Float               @default(0)
+  locFrt              Float               @default(0)
+  crnExp              Float               @default(0)
+  totalExp            Float               @default(0)
   status              String              @default("Draft")
   expectedDate        DateTime?
   notes               String?
@@ -1164,6 +1180,7 @@ model Voucher {
   approvedBy                                  String?
   approvedAt                                  DateTime?
   isSystemGenerated                           Boolean        @default(false)
+  conversionRate                              Float?
   createdAt                                   DateTime       @default(now())
   updatedAt                                   DateTime       @updatedAt
   deletedAt                                   DateTime?

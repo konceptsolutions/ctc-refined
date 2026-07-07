@@ -315,6 +315,178 @@ type ImportPurchaseOrderReceiveDetail = {
   isRevised: boolean;
 };
 
+type ImportPurchaseOrderExpenses = {
+  pkgExpPercent: number;
+  invDiscPercent: number;
+  frtExp: number;
+  discAmt: number;
+  customsDuty: number;
+  additionalCustomsDuty: number;
+  regulatoryDuty: number;
+  salesTax: number;
+  additionalSalesTax: number;
+  incomeTax: number;
+  ed: number;
+  doAmount: number;
+  miscExp: number;
+  locFrt: number;
+  crnExp: number;
+  totalExp: number;
+};
+
+type ImportPoExpenseFieldKey = keyof Omit<
+  ImportPurchaseOrderExpenses,
+  "totalExp"
+>;
+
+const EMPTY_IMPORT_PO_EXPENSES: ImportPurchaseOrderExpenses = {
+  pkgExpPercent: 0,
+  invDiscPercent: 0,
+  frtExp: 0,
+  discAmt: 0,
+  customsDuty: 0,
+  additionalCustomsDuty: 0,
+  regulatoryDuty: 0,
+  salesTax: 0,
+  additionalSalesTax: 0,
+  incomeTax: 0,
+  ed: 0,
+  doAmount: 0,
+  miscExp: 0,
+  locFrt: 0,
+  crnExp: 0,
+  totalExp: 0,
+};
+
+const IMPORT_PO_EXPENSE_AMOUNT_KEYS: ImportPoExpenseFieldKey[] = [
+  "customsDuty",
+  "additionalCustomsDuty",
+  "regulatoryDuty",
+  "salesTax",
+  "additionalSalesTax",
+  "incomeTax",
+  "ed",
+  "doAmount",
+  "miscExp",
+  "locFrt",
+  "crnExp",
+];
+
+const IMPORT_PO_CLEARING_EXPENSE_SECTIONS = [
+  {
+    title: "Clearing Cost (International)",
+    fields: [
+      { key: "customsDuty" as const, label: "C.D." },
+      { key: "additionalCustomsDuty" as const, label: "A.C.D." },
+      { key: "regulatoryDuty" as const, label: "R.D." },
+      { key: "salesTax" as const, label: "S.T." },
+      { key: "additionalSalesTax" as const, label: "A.S.T." },
+      { key: "incomeTax" as const, label: "I.T." },
+    ],
+  },
+  {
+    title: "Local Expenses",
+    fields: [
+      { key: "ed" as const, label: "E.D." },
+      { key: "doAmount" as const, label: "D.O." },
+      { key: "miscExp" as const, label: "Misc.Exp." },
+      { key: "locFrt" as const, label: "Loc.Frt." },
+      { key: "crnExp" as const, label: "Crn.Exp." },
+    ],
+  },
+];
+
+function formatImportPoAmount(value: number) {
+  return value.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function normalizeImportPoExpenseNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function computeImportPoCommercialAmounts(
+  expenses: Pick<
+    ImportPurchaseOrderExpenses,
+    "pkgExpPercent" | "invDiscPercent" | "frtExp"
+  >,
+  invoiceLcAmount: number,
+  conversionRate: number,
+) {
+  const invoiceLc = Math.max(0, Number(invoiceLcAmount) || 0);
+  const rate = Math.max(0, Number(conversionRate) || 0);
+  const pkgExpPercent = normalizeImportPoExpenseNumber(expenses.pkgExpPercent);
+  const invDiscPercent = normalizeImportPoExpenseNumber(expenses.invDiscPercent);
+  const frtExp = normalizeImportPoExpenseNumber(expenses.frtExp);
+  return {
+    pkgExpAmt: (invoiceLc * pkgExpPercent) / 100,
+    invDiscAmt: (invoiceLc * invDiscPercent) / 100,
+    frtExpLc: frtExp * rate,
+  };
+}
+
+function computeImportPoTotalExp(
+  expenses: Omit<ImportPurchaseOrderExpenses, "totalExp">,
+  invoiceLcAmount = 0,
+  conversionRate = 1,
+) {
+  const commercial = computeImportPoCommercialAmounts(
+    expenses,
+    invoiceLcAmount,
+    conversionRate,
+  );
+  const clearingLocalTotal = IMPORT_PO_EXPENSE_AMOUNT_KEYS.reduce(
+    (sum, key) => sum + normalizeImportPoExpenseNumber(expenses[key]),
+    0,
+  );
+  return commercial.pkgExpAmt + commercial.frtExpLc + clearingLocalTotal;
+}
+
+function computeImportPoInvoiceTotal(
+  lcAmount: number,
+  totalExp: number,
+  invDiscAmt: number,
+) {
+  return Math.max(
+    0,
+    normalizeImportPoExpenseNumber(lcAmount) +
+      normalizeImportPoExpenseNumber(totalExp) -
+      normalizeImportPoExpenseNumber(invDiscAmt),
+  );
+}
+
+function parseImportPoExpenses(raw: unknown): ImportPurchaseOrderExpenses {
+  if (!raw || typeof raw !== "object") {
+    return { ...EMPTY_IMPORT_PO_EXPENSES };
+  }
+  const source = raw as Record<string, unknown>;
+  const base = {
+    pkgExpPercent: normalizeImportPoExpenseNumber(source.pkgExpPercent),
+    invDiscPercent: normalizeImportPoExpenseNumber(source.invDiscPercent),
+    frtExp: normalizeImportPoExpenseNumber(source.frtExp),
+    discAmt: normalizeImportPoExpenseNumber(source.discAmt),
+    customsDuty: normalizeImportPoExpenseNumber(source.customsDuty),
+    additionalCustomsDuty: normalizeImportPoExpenseNumber(source.additionalCustomsDuty),
+    regulatoryDuty: normalizeImportPoExpenseNumber(source.regulatoryDuty),
+    salesTax: normalizeImportPoExpenseNumber(source.salesTax),
+    additionalSalesTax: normalizeImportPoExpenseNumber(source.additionalSalesTax),
+    incomeTax: normalizeImportPoExpenseNumber(source.incomeTax),
+    ed: normalizeImportPoExpenseNumber(source.ed),
+    doAmount: normalizeImportPoExpenseNumber(source.doAmount),
+    miscExp: normalizeImportPoExpenseNumber(source.miscExp),
+    locFrt: normalizeImportPoExpenseNumber(source.locFrt),
+    crnExp: normalizeImportPoExpenseNumber(source.crnExp),
+  };
+  const storedTotal = normalizeImportPoExpenseNumber(source.totalExp);
+  return {
+    ...base,
+    totalExp: storedTotal > 0 ? storedTotal : computeImportPoTotalExp(base),
+  };
+}
+
 function computeImportReceiveVariance(orderQty: number, receiveQty: number) {
   const normalizedReceive = Math.max(0, Math.floor(Number(receiveQty) || 0));
   const normalizedOrder = Math.max(0, Math.floor(Number(orderQty) || 0));
@@ -340,6 +512,36 @@ function computeImportReceiveLineAmounts(
     lcAmount: line.lcRate * qty,
     totalWeight: line.weight * qty,
   };
+}
+
+function computeImportPoExpenseDistributionShares(
+  lines: Array<{ receiveQty: number | string; weight: number }>,
+) {
+  return lines.map((line) => {
+    const qty = Math.max(0, Math.floor(Number(line.receiveQty) || 0));
+    const unitWeight = Math.max(0, Number(line.weight) || 0);
+    if (qty <= 0) return 0;
+    return unitWeight > 0 ? qty * unitWeight : qty;
+  });
+}
+
+function computeImportPoDistributedExpenses(
+  lines: Array<{ receiveQty: number | string; weight: number }>,
+  totalExpenses: number,
+) {
+  if (totalExpenses <= 0 || lines.length === 0) {
+    return lines.map(() => 0);
+  }
+
+  const shares = computeImportPoExpenseDistributionShares(lines);
+  const totalShare = shares.reduce((sum, value) => sum + value, 0);
+
+  if (totalShare <= 0) {
+    const equalShare = totalExpenses / lines.length;
+    return lines.map(() => equalShare);
+  }
+
+  return shares.map((share) => (share / totalShare) * totalExpenses);
 }
 
 function recalcReceiveLineRates(
@@ -5593,6 +5795,52 @@ const PurchaseOrderTab = () => {
   const [receiveBlNo, setReceiveBlNo] = useState("");
   const [receiveBlDate, setReceiveBlDate] = useState("");
   const [receiveConversionRate, setReceiveConversionRate] = useState("1");
+  const [importExpenses, setImportExpenses] = useState<ImportPurchaseOrderExpenses>(
+    EMPTY_IMPORT_PO_EXPENSES,
+  );
+  const [importExpensePercentText, setImportExpensePercentText] = useState({
+    pkgExpPercent: "",
+    invDiscPercent: "",
+  });
+
+  const updateImportExpense = (key: ImportPoExpenseFieldKey, value: string) => {
+    setImportExpenses((prev) => ({
+      ...prev,
+      [key]: normalizeImportPoExpenseNumber(value),
+    }));
+  };
+
+  const updateImportExpensePercent = (
+    key: "pkgExpPercent" | "invDiscPercent",
+    raw: string,
+  ) => {
+    if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
+    setImportExpensePercentText((prev) => ({ ...prev, [key]: raw }));
+    setImportExpenses((prev) => ({
+      ...prev,
+      [key]: parseRateInput(raw),
+    }));
+  };
+
+  const resetImportExpensePercentText = (
+    expenses: Pick<ImportPurchaseOrderExpenses, "pkgExpPercent" | "invDiscPercent">,
+  ) => ({
+    pkgExpPercent: formatRateInput(expenses.pkgExpPercent),
+    invDiscPercent: formatRateInput(expenses.invDiscPercent),
+  });
+
+  const resetImportPurchaseForm = () => {
+    setReceiveOrderId(null);
+    setReceiveLines([]);
+    setReceiveDetail(null);
+    setReceiveInvoiceNo("");
+    setReceiveInvoiceDate("");
+    setReceiveBlNo("");
+    setReceiveBlDate("");
+    setReceiveConversionRate("1");
+    setImportExpenses({ ...EMPTY_IMPORT_PO_EXPENSES });
+    setImportExpensePercentText({ pkgExpPercent: "", invDiscPercent: "" });
+  };
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -5654,6 +5902,8 @@ const PurchaseOrderTab = () => {
     setReceiveBlNo("");
     setReceiveBlDate("");
     setReceiveConversionRate("1");
+    setImportExpenses({ ...EMPTY_IMPORT_PO_EXPENSES });
+    setImportExpensePercentText({ pkgExpPercent: "", invDiscPercent: "" });
     setLoadingReceiveForm(true);
     try {
       const response = await apiClient.getImportPurchaseOrder(order.id);
@@ -5700,8 +5950,8 @@ const PurchaseOrderTab = () => {
       });
       if (lines.length === 0) {
         toast({
-          title: "No items to receive",
-          description: "This purchase order has no line items.",
+          title: "No items found",
+          description: "This purchase order has no line items for purchase import.",
           variant: "destructive",
         });
         setReceiveOrderId(null);
@@ -5723,10 +5973,13 @@ const PurchaseOrderTab = () => {
       setReceiveBlNo(String(orderData.blNo || ""));
       setReceiveBlDate(toInputDate(orderData.blDate));
       setReceiveLines(lines);
+      const loadedExpenses = parseImportPoExpenses(orderData.expenses);
+      setImportExpenses(loadedExpenses);
+      setImportExpensePercentText(resetImportExpensePercentText(loadedExpenses));
     } catch (error: any) {
       toast({
-        title: "Failed to load purchase order",
-        description: error?.message || "Could not open receive form.",
+        title: "Failed to load purchase import",
+        description: error?.message || "Could not open purchase import form.",
         variant: "destructive",
       });
       setReceiveOrderId(null);
@@ -5807,6 +6060,62 @@ const PurchaseOrderTab = () => {
     [receiveLines],
   );
 
+  const receiveConversionRateNum = Number(receiveConversionRate);
+  const effectiveReceiveConversionRate =
+    Number.isFinite(receiveConversionRateNum) && receiveConversionRateNum > 0
+      ? receiveConversionRateNum
+      : 1;
+
+  const importPoCommercialAmounts = useMemo(
+    () =>
+      computeImportPoCommercialAmounts(
+        importExpenses,
+        receiveTotals.lcAmount,
+        effectiveReceiveConversionRate,
+      ),
+    [
+      importExpenses.pkgExpPercent,
+      importExpenses.invDiscPercent,
+      importExpenses.frtExp,
+      receiveTotals.lcAmount,
+      effectiveReceiveConversionRate,
+    ],
+  );
+
+  const importPoTotalExp = useMemo(
+    () =>
+      computeImportPoTotalExp(
+        importExpenses,
+        receiveTotals.lcAmount,
+        effectiveReceiveConversionRate,
+      ),
+    [importExpenses, receiveTotals.lcAmount, effectiveReceiveConversionRate],
+  );
+
+  const importPoInvoiceTotal = useMemo(
+    () =>
+      computeImportPoInvoiceTotal(
+        receiveTotals.lcAmount,
+        importPoTotalExp,
+        importPoCommercialAmounts.invDiscAmt,
+      ),
+    [
+      receiveTotals.lcAmount,
+      importPoTotalExp,
+      importPoCommercialAmounts.invDiscAmt,
+    ],
+  );
+
+  const receiveDistributedExpenses = useMemo(
+    () => computeImportPoDistributedExpenses(receiveLines, importPoTotalExp),
+    [receiveLines, importPoTotalExp],
+  );
+
+  const receiveExpenseTotal = useMemo(
+    () => receiveDistributedExpenses.reduce((sum, amount) => sum + amount, 0),
+    [receiveDistributedExpenses],
+  );
+
   const handleSaveReceive = async () => {
     if (!receiveOrderId || receiveLines.length === 0) return;
 
@@ -5815,8 +6124,8 @@ const PurchaseOrderTab = () => {
     );
     if (invalidLine) {
       toast({
-        title: "Invalid receive quantity",
-        description: "Enter a receive quantity for every line item.",
+        title: "Invalid quantity",
+        description: "Enter a quantity for every line item.",
         variant: "destructive",
       });
       return;
@@ -5840,6 +6149,11 @@ const PurchaseOrderTab = () => {
         invoiceDate: receiveInvoiceDate || undefined,
         blNo: receiveBlNo,
         blDate: receiveBlDate || undefined,
+        expenses: {
+          ...importExpenses,
+          discAmt: importPoCommercialAmounts.invDiscAmt,
+          totalExp: importPoTotalExp,
+        },
         items: receiveLines.map((line) => ({
           id: line.id,
           receiveQty: Math.max(0, Math.floor(Number(line.receiveQty) || 0)),
@@ -5847,22 +6161,15 @@ const PurchaseOrderTab = () => {
         })),
       });
       toast({
-        title: "Receive quantities saved",
-        description: `Purchase order ${receiveOrderLabel} marked as received.`,
+        title: "Purchase import saved",
+        description: `PO ${receiveOrderLabel} purchase import details saved. Complete stock receipt in Store when goods arrive.`,
       });
-      setReceiveOrderId(null);
-      setReceiveLines([]);
-      setReceiveDetail(null);
-      setReceiveInvoiceNo("");
-      setReceiveInvoiceDate("");
-      setReceiveBlNo("");
-      setReceiveBlDate("");
-      setReceiveConversionRate("1");
+      resetImportPurchaseForm();
       await fetchOrders();
     } catch (error: any) {
       toast({
-        title: "Failed to save receive quantities",
-        description: error?.message || "Could not save receive quantities.",
+        title: "Failed to save purchase import",
+        description: error?.message || "Could not save purchase import details.",
         variant: "destructive",
       });
     } finally {
@@ -5954,7 +6261,7 @@ const PurchaseOrderTab = () => {
                           onClick={() => openReceiveForm(row)}
                         >
                           <PackageCheck className="w-3.5 h-3.5 mr-1" />
-                          Receive
+                          Purchase Import
                         </Button>
                       ) : null}
                     </div>
@@ -6072,6 +6379,14 @@ const PurchaseOrderTab = () => {
                     })}
                   </div>
                 ) : null}
+                {Number(viewOrder.expenses?.totalExp || 0) > 0 ? (
+                  <div>
+                    <span className="text-muted-foreground">Total Exp.:</span>{" "}
+                    {Number(viewOrder.expenses.totalExp).toLocaleString("en-PK", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </div>
+                ) : null}
               </div>
               {viewOrder.notes ? (
                 <p className="text-muted-foreground">{viewOrder.notes}</p>
@@ -6168,25 +6483,18 @@ const PurchaseOrderTab = () => {
         open={!!receiveOrderId}
         onOpenChange={(open) => {
           if (!open && !savingReceive) {
-            setReceiveOrderId(null);
-            setReceiveLines([]);
-            setReceiveDetail(null);
-            setReceiveInvoiceNo("");
-            setReceiveInvoiceDate("");
-            setReceiveBlNo("");
-            setReceiveBlDate("");
-            setReceiveConversionRate("1");
+            resetImportPurchaseForm();
           }
         }}
       >
         <DialogContent className="max-w-[96vw] xl:max-w-7xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Receive Quantities — PO {receiveOrderLabel}
+              Purchase Import — {receiveOrderLabel}
             </DialogTitle>
           </DialogHeader>
           {loadingReceiveForm ? (
-            <p className="text-sm text-muted-foreground">Loading order items...</p>
+            <p className="text-sm text-muted-foreground">Loading purchase import...</p>
           ) : (
             <div className="space-y-4">
               {receiveDetail ? (
@@ -6263,9 +6571,9 @@ const PurchaseOrderTab = () => {
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                FC rate and exchange rate can be changed. LC rate is calculated as FC rate
-                × exchange rate. Amounts are based on receive quantity and will be saved on
-                the purchase order.
+                Enter supplier invoice quantities, rates, and expenses for this import purchase
+                order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange
+                rate. Final stock receipt is completed from Store.
                 {receiveDetail?.isRevised ? " Showing revised quotation values." : ""}
               </p>
               <div className="overflow-x-auto rounded-md border">
@@ -6293,6 +6601,8 @@ const PurchaseOrderTab = () => {
                       <th className="text-right p-2">
                         {receiveDetail?.isRevised ? "Revised LC Amount" : "LC Amount"}
                       </th>
+                      <th className="text-right p-2">Unit Exp</th>
+                      <th className="text-right p-2">Exp</th>
                       <th className="text-right p-2">Weight</th>
                       <th className="text-right p-2">Total Weight</th>
                     </tr>
@@ -6303,6 +6613,9 @@ const PurchaseOrderTab = () => {
                         line,
                         line.receiveQty,
                       );
+                      const receiveQty = Math.max(0, Math.floor(Number(line.receiveQty) || 0));
+                      const distributedExpense = receiveDistributedExpenses[index] ?? 0;
+                      const unitExp = receiveQty > 0 ? distributedExpense / receiveQty : 0;
                       return (
                       <tr key={line.id} className="border-t">
                         <td className="p-2 text-center text-muted-foreground tabular-nums">
@@ -6354,6 +6667,22 @@ const PurchaseOrderTab = () => {
                           {lineAmounts.lcAmount.toFixed(2)}
                         </td>
                         <td className="p-2 text-right tabular-nums">
+                          {importPoTotalExp > 0
+                            ? unitExp.toLocaleString("en-PK", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })
+                            : "-"}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {importPoTotalExp > 0
+                            ? distributedExpense.toLocaleString("en-PK", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })
+                            : "-"}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
                           {line.weight > 0 ? line.weight.toFixed(4) : "-"}
                         </td>
                         <td className="p-2 text-right tabular-nums">
@@ -6388,12 +6717,140 @@ const PurchaseOrderTab = () => {
                         </td>
                         <td className="p-2" />
                         <td className="p-2 text-right tabular-nums">
+                          {importPoTotalExp > 0
+                            ? receiveExpenseTotal.toLocaleString("en-PK", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })
+                            : "-"}
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2 text-right tabular-nums">
                           {receiveTotals.totalWeight.toFixed(4)}
                         </td>
                       </tr>
                     </tfoot>
                   ) : null}
                 </table>
+              </div>
+              <div className="rounded-md border border-border p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold">Expenses</h4>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Total Exp.: </span>
+                      <span className="font-semibold tabular-nums">
+                        {formatImportPoAmount(importPoTotalExp)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Invoice Total: </span>
+                      <span className="font-semibold tabular-nums">
+                        {formatImportPoAmount(importPoInvoiceTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Commercial
+                    </p>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-normal w-24 shrink-0">Pkg.Exp.%</Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="h-8 w-[100px] shrink-0 text-right text-xs"
+                          value={importExpensePercentText.pkgExpPercent}
+                          onChange={(event) =>
+                            updateImportExpensePercent("pkgExpPercent", event.target.value)
+                          }
+                          onBlur={() => {
+                            setImportExpensePercentText((prev) => ({
+                              ...prev,
+                              pkgExpPercent: formatRateInput(importExpenses.pkgExpPercent),
+                            }));
+                          }}
+                        />
+                        <div className="h-8 w-[120px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                          {formatImportPoAmount(importPoCommercialAmounts.pkgExpAmt)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-normal w-24 shrink-0">Inv.Disc.%</Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="h-8 w-[100px] shrink-0 text-right text-xs"
+                          value={importExpensePercentText.invDiscPercent}
+                          onChange={(event) =>
+                            updateImportExpensePercent("invDiscPercent", event.target.value)
+                          }
+                          onBlur={() => {
+                            setImportExpensePercentText((prev) => ({
+                              ...prev,
+                              invDiscPercent: formatRateInput(importExpenses.invDiscPercent),
+                            }));
+                          }}
+                        />
+                        <div className="h-8 w-[120px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                          {formatImportPoAmount(importPoCommercialAmounts.invDiscAmt)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-normal w-24 shrink-0">Frt.Exp (FC)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="1"
+                          className="h-8 w-[100px] shrink-0 text-right text-xs"
+                          value={
+                            importExpenses.frtExp === 0 ? "" : importExpenses.frtExp
+                          }
+                          onChange={(event) =>
+                            updateImportExpense("frtExp", event.target.value)
+                          }
+                        />
+                        <div className="h-8 w-[120px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                          {formatImportPoAmount(importPoCommercialAmounts.frtExpLc)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {IMPORT_PO_CLEARING_EXPENSE_SECTIONS.map((section) => (
+                    <div key={section.title} className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        {section.title}
+                      </p>
+                      <div className="space-y-2">
+                        {section.fields.map((field) => (
+                          <div
+                            key={field.key}
+                            className="flex items-center gap-2"
+                          >
+                            <Label className="text-xs font-normal w-20 shrink-0">{field.label}</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={field.step || "1"}
+                              className="h-8 w-[120px] shrink-0 text-right text-xs"
+                              value={
+                                importExpenses[field.key] === 0
+                                  ? ""
+                                  : importExpenses[field.key]
+                              }
+                              onChange={(event) =>
+                                updateImportExpense(field.key, event.target.value)
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
               {receiveDetail?.terms ? (
                 <div className="max-w-xs">
@@ -6408,15 +6865,7 @@ const PurchaseOrderTab = () => {
               type="button"
               variant="outline"
               disabled={savingReceive}
-              onClick={() => {
-                setReceiveOrderId(null);
-                setReceiveLines([]);
-                setReceiveDetail(null);
-                setReceiveInvoiceNo("");
-                setReceiveInvoiceDate("");
-                setReceiveBlNo("");
-                setReceiveBlDate("");
-              }}
+              onClick={resetImportPurchaseForm}
             >
               Cancel
             </Button>
@@ -6425,7 +6874,7 @@ const PurchaseOrderTab = () => {
               disabled={loadingReceiveForm || savingReceive || receiveLines.length === 0}
               onClick={() => void handleSaveReceive()}
             >
-              {savingReceive ? "Saving..." : "Save Receive Quantities"}
+              {savingReceive ? "Saving..." : "Save Purchase Import"}
             </Button>
           </DialogFooter>
         </DialogContent>

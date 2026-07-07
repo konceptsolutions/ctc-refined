@@ -2435,6 +2435,150 @@ type ReceivePurchaseOrderItemInput = {
   fcRate?: number;
 };
 
+type ImportPurchaseOrderExpenses = {
+  pkgExpPercent: number;
+  invDiscPercent: number;
+  frtExp: number;
+  discAmt: number;
+  customsDuty: number;
+  additionalCustomsDuty: number;
+  regulatoryDuty: number;
+  salesTax: number;
+  additionalSalesTax: number;
+  incomeTax: number;
+  ed: number;
+  doAmount: number;
+  miscExp: number;
+  locFrt: number;
+  crnExp: number;
+  totalExp: number;
+};
+
+const IMPORT_PO_EXPENSE_AMOUNT_KEYS: Array<
+  keyof Omit<ImportPurchaseOrderExpenses, "pkgExpPercent" | "invDiscPercent" | "frtExp" | "discAmt" | "totalExp">
+> = [
+  "customsDuty",
+  "additionalCustomsDuty",
+  "regulatoryDuty",
+  "salesTax",
+  "additionalSalesTax",
+  "incomeTax",
+  "ed",
+  "doAmount",
+  "miscExp",
+  "locFrt",
+  "crnExp",
+];
+
+function normalizeExpenseNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function computeImportPoCommercialAmounts(
+  expenses: Pick<ImportPurchaseOrderExpenses, "pkgExpPercent" | "invDiscPercent" | "frtExp">,
+  invoiceLcAmount: number,
+  conversionRate: number,
+) {
+  const invoiceLc = Math.max(0, Number(invoiceLcAmount) || 0);
+  const rate = Math.max(0, Number(conversionRate) || 0);
+  const pkgExpPercent = normalizeExpenseNumber(expenses.pkgExpPercent);
+  const invDiscPercent = normalizeExpenseNumber(expenses.invDiscPercent);
+  const frtExp = normalizeExpenseNumber(expenses.frtExp);
+  return {
+    pkgExpAmt: (invoiceLc * pkgExpPercent) / 100,
+    invDiscAmt: (invoiceLc * invDiscPercent) / 100,
+    frtExpLc: frtExp * rate,
+  };
+}
+
+function computeImportPoTotalExp(
+  expenses: Omit<ImportPurchaseOrderExpenses, "totalExp">,
+  invoiceLcAmount = 0,
+  conversionRate = 1,
+) {
+  const commercial = computeImportPoCommercialAmounts(
+    expenses,
+    invoiceLcAmount,
+    conversionRate,
+  );
+  const clearingLocalTotal = IMPORT_PO_EXPENSE_AMOUNT_KEYS.reduce(
+    (sum, key) => sum + normalizeExpenseNumber(expenses[key]),
+    0,
+  );
+  return commercial.pkgExpAmt + commercial.frtExpLc + clearingLocalTotal;
+}
+
+function readImportPoExpensesFromOrder(order: any): ImportPurchaseOrderExpenses {
+  const base = {
+    pkgExpPercent: normalizeExpenseNumber(order?.pkgExpPercent),
+    invDiscPercent: normalizeExpenseNumber(order?.invDiscPercent),
+    frtExp: normalizeExpenseNumber(order?.frtExp),
+    discAmt: 0,
+    customsDuty: normalizeExpenseNumber(order?.customsDuty),
+    additionalCustomsDuty: normalizeExpenseNumber(order?.additionalCustomsDuty),
+    regulatoryDuty: normalizeExpenseNumber(order?.regulatoryDuty),
+    salesTax: normalizeExpenseNumber(order?.salesTax),
+    additionalSalesTax: normalizeExpenseNumber(order?.additionalSalesTax),
+    incomeTax: normalizeExpenseNumber(order?.incomeTax),
+    ed: normalizeExpenseNumber(order?.ed),
+    doAmount: normalizeExpenseNumber(order?.doAmount),
+    miscExp: normalizeExpenseNumber(order?.miscExp),
+    locFrt: normalizeExpenseNumber(order?.locFrt),
+    crnExp: normalizeExpenseNumber(order?.crnExp),
+  };
+  const invoiceLc = normalizeExpenseNumber(order?.totalAmount);
+  const conversionRate =
+    normalizeExpenseNumber(order?.conversionRate) > 0
+      ? normalizeExpenseNumber(order?.conversionRate)
+      : 1;
+  const commercial = computeImportPoCommercialAmounts(base, invoiceLc, conversionRate);
+  const storedTotal = normalizeExpenseNumber(order?.totalExp);
+  return {
+    ...base,
+    discAmt: commercial.invDiscAmt,
+    totalExp:
+      storedTotal > 0
+        ? storedTotal
+        : computeImportPoTotalExp(base, invoiceLc, conversionRate),
+  };
+}
+
+function parseImportPoExpensesFromBody(
+  body: any,
+  invoiceLcAmount = 0,
+  conversionRate = 1,
+): ImportPurchaseOrderExpenses {
+  const source = body?.expenses && typeof body.expenses === "object" ? body.expenses : body;
+  const base = {
+    pkgExpPercent: normalizeExpenseNumber(source?.pkgExpPercent),
+    invDiscPercent: normalizeExpenseNumber(source?.invDiscPercent),
+    frtExp: normalizeExpenseNumber(source?.frtExp),
+    discAmt: 0,
+    customsDuty: normalizeExpenseNumber(source?.customsDuty),
+    additionalCustomsDuty: normalizeExpenseNumber(source?.additionalCustomsDuty),
+    regulatoryDuty: normalizeExpenseNumber(source?.regulatoryDuty),
+    salesTax: normalizeExpenseNumber(source?.salesTax),
+    additionalSalesTax: normalizeExpenseNumber(source?.additionalSalesTax),
+    incomeTax: normalizeExpenseNumber(source?.incomeTax),
+    ed: normalizeExpenseNumber(source?.ed),
+    doAmount: normalizeExpenseNumber(source?.doAmount),
+    miscExp: normalizeExpenseNumber(source?.miscExp),
+    locFrt: normalizeExpenseNumber(source?.locFrt),
+    crnExp: normalizeExpenseNumber(source?.crnExp),
+  };
+  const commercial = computeImportPoCommercialAmounts(
+    base,
+    invoiceLcAmount,
+    conversionRate,
+  );
+  return {
+    ...base,
+    discAmt: commercial.invDiscAmt,
+    totalExp: computeImportPoTotalExp(base, invoiceLcAmount, conversionRate),
+  };
+}
+
 function computeReceiveVariance(orderQty: number, receiveQty: number) {
   const normalizedReceive = Math.max(0, Math.floor(Number(receiveQty) || 0));
   const normalizedOrder = Math.max(0, Math.floor(Number(orderQty) || 0));
@@ -2529,10 +2673,18 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       ),
     );
 
+    const savedOrderConversionRate = Number((order as any).conversionRate);
+    const quotationConversionRate = Number(quotation.conversionRate || 0);
+    // A fresh PO carries the default conversionRate of 1, so fall back to the
+    // quotation's rate unless a meaningful (non-default) rate was already saved.
     const orderConversionRate =
-      Number((order as any).conversionRate) > 0
-        ? Number((order as any).conversionRate)
-        : Number(quotation.conversionRate || 1);
+      savedOrderConversionRate > 0 && savedOrderConversionRate !== 1
+        ? savedOrderConversionRate
+        : quotationConversionRate > 0
+          ? quotationConversionRate
+          : savedOrderConversionRate > 0
+            ? savedOrderConversionRate
+            : 1;
     const isReceived = String(order.status || "").trim().toLowerCase() === "received";
 
     const baseItems = order.PurchaseOrderItem.map((poItem) => {
@@ -2671,6 +2823,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           isRevised,
           requestNo: quotation.PurchaseImportRequest?.requestNo || null,
         },
+        expenses: readImportPoExpensesFromOrder(order),
         items,
       },
     });
@@ -2716,7 +2869,9 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
     }
 
     if (order.status === "Received") {
-      return res.status(400).json({ error: "Purchase order is already received" });
+      return res.status(400).json({
+        error: "Purchase order has already been received in store.",
+      });
     }
 
     const quotation = order.PurchaseQuotation;
@@ -2799,10 +2954,11 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         `;
       }
 
+      const expenses = parseImportPoExpensesFromBody(req.body, totalLc, conversionRate);
+
       await tx.$executeRaw`
         UPDATE "PurchaseOrder"
         SET
-          "status" = 'Received',
           "conversionRate" = ${conversionRate},
           "fcTotal" = ${totalFc},
           "totalAmount" = ${totalLc},
@@ -2811,6 +2967,22 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
           "invoiceDate" = ${invoiceDate},
           "blNo" = ${blNo},
           "blDate" = ${blDate},
+          "pkgExpPercent" = ${expenses.pkgExpPercent},
+          "invDiscPercent" = ${expenses.invDiscPercent},
+          "frtExp" = ${expenses.frtExp},
+          "discAmt" = ${expenses.discAmt},
+          "customsDuty" = ${expenses.customsDuty},
+          "additionalCustomsDuty" = ${expenses.additionalCustomsDuty},
+          "regulatoryDuty" = ${expenses.regulatoryDuty},
+          "salesTax" = ${expenses.salesTax},
+          "additionalSalesTax" = ${expenses.additionalSalesTax},
+          "incomeTax" = ${expenses.incomeTax},
+          "ed" = ${expenses.ed},
+          "doAmount" = ${expenses.doAmount},
+          "miscExp" = ${expenses.miscExp},
+          "locFrt" = ${expenses.locFrt},
+          "crnExp" = ${expenses.crnExp},
+          "totalExp" = ${expenses.totalExp},
           "updatedAt" = ${new Date()}
         WHERE "id" = ${id}
       `;
@@ -2850,6 +3022,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         invoiceDate: (updated as any).invoiceDate ?? null,
         blNo: (updated as any).blNo ?? null,
         blDate: (updated as any).blDate ?? null,
+        expenses: readImportPoExpensesFromOrder(updated),
         items: updated.PurchaseOrderItem.map((item) => ({
           id: item.id,
           part_id: item.partId,

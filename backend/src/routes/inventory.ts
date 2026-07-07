@@ -5143,6 +5143,7 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
         id: po.id,
         po_number: po.poNumber,
         date: po.date,
+        invoice_date: (po as any).invoiceDate ?? null,
         supplier_id: po.supplierId,
         supplier_name: po.supplierId
           ? supplierMap.get(po.supplierId) || "N/A"
@@ -5570,6 +5571,411 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
   }
 });
 
+// Import-PO expense buckets -> chart-of-accounts codes under subgroup 302
+// (Purchase expenses Payables). Each of these is Dr Inventory / Cr <payable>.
+const IMPORT_EXPENSE_ACCOUNTS: Array<{
+  field: string;
+  code: string;
+  label: string;
+}> = [
+  { field: "frtExpLc", code: "302002", label: "Frt.Exp" },
+  { field: "customsDuty", code: "302003", label: "C.D" },
+  { field: "additionalCustomsDuty", code: "302004", label: "A.C.D" },
+  { field: "regulatoryDuty", code: "302005", label: "R.D" },
+  { field: "salesTax", code: "302006", label: "S.T" },
+  { field: "additionalSalesTax", code: "302007", label: "A.S.T" },
+  { field: "incomeTax", code: "302008", label: "I.T" },
+  { field: "ed", code: "302009", label: "E.D" },
+  { field: "doAmount", code: "302010", label: "D.O" },
+  { field: "miscExp", code: "302011", label: "Misc.Exp" },
+  { field: "locFrt", code: "302012", label: "Loc.Frt" },
+  { field: "crnExp", code: "302013", label: "Cm.Exp" },
+];
+
+/**
+ * Receive an import Purchase Order: create stock-in movements, update part
+ * moving-average cost (DPO-style, landed cost = goods + distributed import
+ * expenses), and post the import Journal Voucher. For international suppliers
+ * the PO exchange rate is stored on the voucher.
+ */
+async function receiveImportPurchaseOrder(
+  orderId: string,
+  storeId: string | null,
+) {
+  const round2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
+  const round4 = (n: any) => Math.round((Number(n) || 0) * 10000) / 10000;
+
+  return await prisma.$transaction(async (tx) => {
+    const order = await tx.purchaseOrder.findUnique({
+      where: { id: orderId },
+      include: { PurchaseOrderItem: { include: { Part: true } } },
+    });
+    if (!order) throw new Error("Purchase order not found");
+
+    const supplier = order.supplierId
+      ? await tx.supplier.findUnique({ where: { id: order.supplierId } })
+      : null;
+    const supplierName =
+      supplier?.companyName || supplier?.name || "Supplier";
+    const isInternational =
+      String((supplier as any)?.type || "").toLowerCase() === "international";
+    const conversionRate = Number(order.conversionRate) || 1;
+
+    // ---- Amounts (all in local currency) ----
+    const receivedItems = order.PurchaseOrderItem.filter(
+      (i) => i.receivedQty > 0,
+    );
+    const goodsLc = round2(
+      receivedItems.reduce(
+        (s, i) =>
+          s +
+          (Number(i.totalCost) || Number(i.unitCost) * i.receivedQty || 0),
+        0,
+      ),
+    );
+    const invoiceLc = Number(order.totalAmount) || goodsLc;
+    const pkgExpAmt = round2(
+      (invoiceLc * (Number(order.pkgExpPercent) || 0)) / 100,
+    );
+    const discAmt = round2(
+      Number(order.discAmt) ||
+        (invoiceLc * (Number(order.invDiscPercent) || 0)) / 100,
+    );
+    const expenseAmounts: Record<string, number> = {
+      frtExpLc: round2((Number(order.frtExp) || 0) * conversionRate),
+      customsDuty: round2(order.customsDuty),
+      additionalCustomsDuty: round2(order.additionalCustomsDuty),
+      regulatoryDuty: round2(order.regulatoryDuty),
+      salesTax: round2(order.salesTax),
+      additionalSalesTax: round2(order.additionalSalesTax),
+      incomeTax: round2(order.incomeTax),
+      ed: round2(order.ed),
+      doAmount: round2(order.doAmount),
+      miscExp: round2(order.miscExp),
+      locFrt: round2(order.locFrt),
+      crnExp: round2(order.crnExp),
+    };
+    const otherExpTotal = round2(
+      Object.values(expenseAmounts).reduce((s, v) => s + v, 0),
+    );
+    // Everything capitalised into inventory: goods + pkg + all other expenses.
+    const expenseForCost = round2(pkgExpAmt + otherExpTotal);
+
+    // ---- Distribute expenses across received lines by qty x weight ----
+    const shares = receivedItems.map((i) => {
+      const w = Number(i.weight) || Number(i.Part?.weight) || 0;
+      return w > 0 ? i.receivedQty * w : i.receivedQty;
+    });
+    const totalShare = shares.reduce((s, v) => s + v, 0);
+    const lineExpense = shares.map((sh) => {
+      if (expenseForCost <= 0) return 0;
+      if (totalShare <= 0)
+        return receivedItems.length > 0
+          ? expenseForCost / receivedItems.length
+          : 0;
+      return (sh / totalShare) * expenseForCost;
+    });
+
+    // ---- Stock-in + moving-average cost (mirrors the DPO pipeline) ----
+    for (let idx = 0; idx < receivedItems.length; idx++) {
+      const item = receivedItems[idx];
+      const partId = item.partId;
+      const qty = item.receivedQty;
+      const baseRate = Number(item.unitCost) || 0;
+      if (!partId || qty <= 0) continue;
+
+      const existingMovement = await tx.stockMovement.findFirst({
+        where: {
+          referenceType: "import_purchase",
+          referenceId: order.id,
+          partId,
+        },
+      });
+      if (existingMovement) continue;
+
+      await tx.stockMovement.create({
+        data: {
+          id: crypto.randomUUID(),
+          partId,
+          type: "in",
+          quantity: qty,
+          storeId: storeId || null,
+          referenceType: "import_purchase",
+          referenceId: order.id,
+          supplierId: order.supplierId,
+          notes: `Import Purchase Order ${order.poNumber} - Received`,
+        } as any,
+      });
+
+      const stockIn = await tx.stockMovement.aggregate({
+        _sum: { quantity: true },
+        where: { partId, type: "in" },
+      });
+      const stockOut = await tx.stockMovement.aggregate({
+        _sum: { quantity: true },
+        where: { partId, type: "out" },
+      });
+      const currentTotalStock =
+        (stockIn._sum.quantity || 0) - (stockOut._sum.quantity || 0);
+      const oldQty = currentTotalStock - qty;
+      const currentAvg =
+        Number(item.Part?.avgCost) || Number(item.Part?.cost) || 0;
+      const landedValue = baseRate * qty + lineExpense[idx];
+      const denom = oldQty + qty;
+      const newAvg =
+        oldQty > 0 && currentAvg > 0 && denom > 0
+          ? (oldQty * currentAvg + landedValue) / denom
+          : landedValue / qty;
+
+      await tx.part.update({
+        where: { id: partId },
+        data: {
+          ...(baseRate > 0 ? { purchasePrice: round4(baseRate) } : {}),
+          ...(Number.isFinite(newAvg) && newAvg > 0
+            ? { avgCost: round4(newAvg), cost: round4(newAvg) }
+            : {}),
+        },
+      });
+    }
+
+    // Clear reservations for the received parts.
+    await tx.stockReservation.deleteMany({
+      where: {
+        partId: { in: order.PurchaseOrderItem.map((i) => i.partId) },
+        status: "reserved",
+      },
+    });
+
+    // ---- Resolve accounts for the voucher ----
+    let inventoryAccount = await tx.account.findFirst({
+      where: {
+        status: "Active",
+        OR: [{ code: "101001" }, { Subgroup: { code: "104" } }],
+      },
+    });
+
+    let supplierAccount = order.supplierId
+      ? await tx.account.findFirst({
+          where: {
+            code: { startsWith: "301" },
+            OR: [
+              { supplierId: order.supplierId },
+              { name: supplier?.name || "" },
+              { name: supplier?.companyName || "" },
+            ],
+          },
+        })
+      : null;
+    if (!supplierAccount && order.supplierId && supplier) {
+      const payablesSubgroup = await tx.subgroup.findFirst({
+        where: { code: "301" },
+      });
+      if (payablesSubgroup) {
+        const last = await tx.account.findFirst({
+          where: { code: { startsWith: "301" } },
+          orderBy: { code: "desc" },
+        });
+        let nextCode = "301001";
+        const m = last?.code.match(/^301(\d+)$/);
+        if (m) nextCode = `301${String(parseInt(m[1], 10) + 1).padStart(3, "0")}`;
+        supplierAccount = await tx.account.create({
+          data: {
+            subgroupId: payablesSubgroup.id,
+            code: nextCode,
+            name: supplier.name || supplier.companyName || "Supplier",
+            description: `Supplier Account: ${supplierName}`,
+            openingBalance: 0,
+            currentBalance: 0,
+            status: "Active",
+            canDelete: false,
+            supplierId: supplier.id,
+          } as Prisma.AccountUncheckedCreateInput,
+        });
+      }
+    }
+
+    if (!inventoryAccount || !supplierAccount) {
+      throw new Error(
+        "Cannot post import voucher: inventory or supplier account not found.",
+      );
+    }
+
+    const discountAccount =
+      discAmt > 0.001
+        ? await tx.account.findFirst({
+            where: {
+              status: "Active",
+              OR: [
+                { code: "901002" },
+                { name: { contains: "Cost Inventory (Discount" } },
+                { name: { contains: "Inventory Discount" } },
+              ],
+            },
+          })
+        : null;
+
+    const acctLabel = (a: { code: string; name: string }) =>
+      `${a.code}-${a.name}`;
+    const entries: any[] = [];
+    const pushEntry = (
+      acc: { id: string; code: string; name: string },
+      description: string,
+      debit: number,
+      credit: number,
+    ) => {
+      entries.push({
+        id: crypto.randomUUID(),
+        accountId: acc.id,
+        accountName: acctLabel(acc),
+        description,
+        debit: round2(debit),
+        credit: round2(credit),
+        sortOrder: entries.length,
+      });
+    };
+
+    // 1) Goods: Dr Inventory / Cr Supplier
+    pushEntry(
+      inventoryAccount as any,
+      `Import PO ${order.poNumber}: Inventory received`,
+      goodsLc,
+      0,
+    );
+    pushEntry(
+      supplierAccount as any,
+      `Import PO ${order.poNumber}: ${supplierName} liability`,
+      0,
+      goodsLc,
+    );
+
+    // 2) Package expense: Dr Inventory / Cr Supplier
+    if (pkgExpAmt > 0.001) {
+      pushEntry(
+        inventoryAccount as any,
+        `Import PO ${order.poNumber}: Package expense`,
+        pkgExpAmt,
+        0,
+      );
+      pushEntry(
+        supplierAccount as any,
+        `Import PO ${order.poNumber}: Package expense`,
+        0,
+        pkgExpAmt,
+      );
+    }
+
+    // 3) Discount: Dr Supplier / Cr Cost Inventory (Discounts)
+    if (discAmt > 0.001 && discountAccount) {
+      pushEntry(
+        supplierAccount as any,
+        `Import PO ${order.poNumber}: Invoice discount`,
+        discAmt,
+        0,
+      );
+      pushEntry(
+        discountAccount as any,
+        `Import PO ${order.poNumber}: Invoice discount`,
+        0,
+        discAmt,
+      );
+    }
+
+    // 4) Other expenses: Dr Inventory / Cr <purchase expense payable>
+    for (const def of IMPORT_EXPENSE_ACCOUNTS) {
+      const amt = round2(expenseAmounts[def.field]);
+      if (amt <= 0.001) continue;
+      const expAcc = await tx.account.findFirst({
+        where: {
+          status: "Active",
+          OR: [{ code: def.code }, { name: def.label }],
+        },
+      });
+      if (!expAcc) continue;
+      pushEntry(
+        inventoryAccount as any,
+        `Import PO ${order.poNumber}: ${def.label}`,
+        amt,
+        0,
+      );
+      pushEntry(
+        expAcc as any,
+        `Import PO ${order.poNumber}: ${def.label} payable`,
+        0,
+        amt,
+      );
+    }
+
+    const totalDebit = round2(
+      entries.reduce((s, e) => s + e.debit, 0),
+    );
+    const totalCredit = round2(
+      entries.reduce((s, e) => s + e.credit, 0),
+    );
+
+    if (totalDebit > 0.001) {
+      const lastVoucher = await tx.voucher.findFirst({
+        where: { type: "journal", voucherNumber: { startsWith: "JV" } },
+        orderBy: { voucherNumber: "desc" },
+      });
+      let nextNumber = 1;
+      const jm = lastVoucher?.voucherNumber.match(/^JV(\d+)$/);
+      if (jm) nextNumber = parseInt(jm[1], 10) + 1;
+      const voucherNumber = `JV${String(nextNumber).padStart(4, "0")}`;
+
+      const voucherDate = (order as any).invoiceDate || order.date;
+      await tx.voucher.create({
+        data: {
+          id: crypto.randomUUID(),
+          voucherNumber,
+          type: "journal",
+          date: voucherDate,
+          narration: `Import Purchase Order: ${order.poNumber}`,
+          totalDebit,
+          totalCredit,
+          status: "posted",
+          createdBy: "System",
+          approvedBy: "System",
+          approvedAt: new Date(),
+          isSystemGenerated: true,
+          ...(isInternational ? { conversionRate } : {}),
+          updatedAt: new Date(),
+          VoucherEntry: { create: entries },
+        } as any,
+      });
+
+      for (const entry of entries) {
+        const acc = await tx.account.findUnique({
+          where: { id: entry.accountId },
+          include: { Subgroup: { include: { MainGroup: true } } },
+        });
+        if (!acc) continue;
+        const type = acc.Subgroup.MainGroup.type.toLowerCase();
+        const change =
+          type === "asset" || type === "expense" || type === "cost"
+            ? entry.debit - entry.credit
+            : entry.credit - entry.debit;
+        await tx.account.update({
+          where: { id: entry.accountId },
+          data: { currentBalance: { increment: change } },
+        });
+      }
+    }
+
+    const updated = await tx.purchaseOrder.update({
+      where: { id: order.id },
+      data: { status: "Received" },
+    });
+
+    return {
+      id: updated.id,
+      po_number: updated.poNumber,
+      status: updated.status,
+      total_amount: updated.totalAmount,
+      voucher_total: totalDebit,
+    };
+  });
+}
+
 // Update purchase order
 router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
   try {
@@ -5597,6 +6003,25 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
     });
     if (!existingOrder) {
       return res.status(404).json({ error: "Purchase order not found" });
+    }
+
+    // Import POs (created from an import quotation) get a dedicated receive:
+    // stock-in + DPO-style landed-cost averaging + import JV (with duties /
+    // clearing expenses and, for international suppliers, the PO exchange rate).
+    if (
+      (existingOrder as any).purchaseQuotationId &&
+      status === "Received" &&
+      existingOrder.status !== "Received"
+    ) {
+      try {
+        const result = await receiveImportPurchaseOrder(
+          id,
+          req.body?.store_id || null,
+        );
+        return res.json(result);
+      } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+      }
     }
 
     // Calculate total amount from received items

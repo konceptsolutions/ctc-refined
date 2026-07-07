@@ -184,7 +184,7 @@ export const DeliveryChallan = () => {
         } else if (response.data && Array.isArray(response.data)) {
           partsDataArray = response.data;
         } else if (response.pagination && response.data) {
-          partsDataArray = response.data;
+          partsDataArray = response.data as any[];
         }
 
         const transformedParts = partsDataArray
@@ -198,6 +198,7 @@ export const DeliveryChallan = () => {
 
         setAvailableParts(transformedParts);
       } catch (error: any) {
+        console.error('Failed to load parts for delivery challan', error);
       } finally {
         setLoadingParts(false);
       }

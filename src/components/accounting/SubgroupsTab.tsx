@@ -211,17 +211,28 @@ export const SubgroupsTab = () => {
       // Generate code - use provided code or auto-generate
       let code = formData.code.trim();
       if (!code) {
-        // Auto-generate code based on main group code and existing subgroups
+        // Auto-generate code based on main group code and existing subgroups.
+        // The sequence number is the portion AFTER the main group code, so we
+        // must strip the main group prefix before incrementing. Otherwise the
+        // full code (which already contains the prefix) gets re-prefixed on
+        // every add, causing the leading digit to accumulate (e.g. 3303 ->
+        // 33304 -> 333305). We read the trailing two digits so generation also
+        // self-heals against any previously corrupted codes.
+        const mainGroupCode = String(mainGroup.code);
         const mainGroupSubgroups = subgroups.filter(
           (sg) => sg.mainGroupId === mainGroup.id,
         );
-        const existingCodes = mainGroupSubgroups.map((s) => {
-          const num = parseInt(s.code.replace(/\D/g, ""));
+        const existingSeqs = mainGroupSubgroups.map((s) => {
+          const digits = String(s.code).replace(/\D/g, "");
+          const seqPart = digits.startsWith(mainGroupCode)
+            ? digits.slice(mainGroupCode.length)
+            : digits;
+          const num = parseInt(seqPart.slice(-2), 10);
           return isNaN(num) ? 0 : num;
         });
         const nextNum =
-          existingCodes.length > 0 ? Math.max(...existingCodes) + 1 : 1;
-        code = `${mainGroup.code}${String(nextNum).padStart(2, "0")}`;
+          existingSeqs.length > 0 ? Math.max(...existingSeqs) + 1 : 1;
+        code = `${mainGroupCode}${String(nextNum).padStart(2, "0")}`;
       }
 
       const result = await apiClient.post<any>("/accounting/subgroups", {
