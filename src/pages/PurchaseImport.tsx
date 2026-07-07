@@ -6395,7 +6395,7 @@ const PurchaseOrderTab = () => {
                 <table className="w-full text-xs">
                   <thead className="bg-muted/40">
                     <tr>
-                      <th className="text-left p-2">Part No</th>
+                      <th className="text-left p-2">Master Part | Part No</th>
                       <th className="text-left p-2">Description</th>
                       <th className="text-right p-2">Order Qty</th>
                       <th className="text-right p-2">Received</th>
@@ -6443,6 +6443,7 @@ const PurchaseOrderTab = () => {
                       return (
                       <tr key={item.id} className="border-t">
                         <td className="p-2 font-mono">
+                          {item.masterPartNo || item.master_part_no || "-"} |{" "}
                           {item.partNo || item.part_no || "-"}
                         </td>
                         <td className="p-2">
@@ -6622,7 +6623,9 @@ const PurchaseOrderTab = () => {
                           {index + 1}
                         </td>
                         <td className="p-2">
-                          <div className="font-medium">{line.masterPartNo || line.partNo}</div>
+                          <div className="font-medium">
+                            {line.masterPartNo || "-"} | {line.partNo || "-"}
+                          </div>
                           <div className="text-muted-foreground">{line.description}</div>
                         </td>
                         <td className="p-2">{line.brand || "-"}</td>
