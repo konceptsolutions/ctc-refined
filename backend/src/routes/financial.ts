@@ -947,4 +947,263 @@ router.get("/account-groups", async (req: Request, res: Response) => {
   }
 });
 
+// International supplier linked accounts (for International Supplier Ledger dropdown)
+router.get("/international-supplier-accounts", async (_req: Request, res: Response) => {
+  try {
+    const accounts = await prisma.account.findMany({
+      where: {
+        supplierId: { not: null },
+        Supplier: { type: "international" },
+      },
+      include: {
+        Supplier: {
+          select: {
+            id: true,
+            companyName: true,
+            name: true,
+            code: true,
+            currencyName: true,
+            type: true,
+          },
+        },
+      },
+      orderBy: { code: "asc" },
+    });
+
+    res.json({
+      data: accounts.map((acc: any) => ({
+        id: acc.id,
+        name: `${acc.code}-${acc.name}`,
+        code: acc.code,
+        supplierId: acc.supplierId,
+        supplierName:
+          acc.Supplier?.companyName ||
+          acc.Supplier?.name ||
+          acc.name,
+        currencyName: acc.Supplier?.currencyName || "USD",
+      })),
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error.message || "Failed to fetch international supplier accounts",
+    });
+  }
+});
+
+// International supplier ledger (same as ledgers, plus FC amounts from voucher conversionRate)
+router.get("/international-supplier-ledgers", async (req: Request, res: Response) => {
+  try {
+    const {
+      account,
+      from_date,
+      to_date,
+      page = "1",
+      limit = "10000",
+    } = req.query;
+
+    if (!account || !String(account).trim()) {
+      return res.status(400).json({ error: "Account is required" });
+    }
+
+    let fromDateObj: Date | undefined;
+    let toDateObj: Date | undefined;
+
+    if (from_date) {
+      fromDateObj = new Date(from_date as string);
+    }
+    if (to_date) {
+      toDateObj = new Date(to_date as string);
+      toDateObj.setHours(23, 59, 59, 999);
+    }
+
+    const acc = await prisma.account.findFirst({
+      where: {
+        id: String(account),
+        supplierId: { not: null },
+        Supplier: { type: "international" },
+      },
+      include: {
+        Subgroup: { include: { MainGroup: true } },
+        Supplier: {
+          select: {
+            id: true,
+            companyName: true,
+            name: true,
+            currencyName: true,
+            type: true,
+          },
+        },
+      },
+    });
+
+    if (!acc) {
+      return res.status(404).json({
+        error: "International supplier account not found",
+      });
+    }
+
+    const accountType = (acc as any).Subgroup?.MainGroup?.type || "asset";
+    const currencyName = (acc as any).Supplier?.currencyName || "USD";
+
+    const calculateBalanceChange = (
+      debit: number,
+      credit: number,
+      type: string,
+    ) => {
+      if (["asset", "expense", "cost"].includes(type.toLowerCase())) {
+        return debit - credit;
+      }
+      return credit - debit;
+    };
+
+    const toFc = (amountLc: number, rate: number | null | undefined) => {
+      const r = Number(rate);
+      if (!Number.isFinite(r) || r <= 0) return amountLc;
+      return amountLc / r;
+    };
+
+    const formatDate = (date: Date): string => {
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
+
+    let runningBalanceLc = acc.openingBalance || 0;
+    // Opening balance is stored in LC; without a historical rate use 1:1 for FC seed.
+    let runningBalanceFc = acc.openingBalance || 0;
+
+    if (fromDateObj) {
+      const priorVoucherEntries = await prisma.voucherEntry.findMany({
+        where: {
+          accountId: acc.id,
+          Voucher: {
+            status: "posted",
+            OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+            date: { lt: fromDateObj },
+          },
+        },
+        include: { Voucher: true },
+      });
+
+      for (const entry of priorVoucherEntries as any[]) {
+        const debit = entry.debit || 0;
+        const credit = entry.credit || 0;
+        const rate = entry.Voucher?.conversionRate;
+        runningBalanceLc += calculateBalanceChange(debit, credit, accountType);
+        runningBalanceFc += calculateBalanceChange(
+          toFc(debit, rate),
+          toFc(credit, rate),
+          accountType,
+        );
+      }
+    }
+
+    const ledgerEntries: any[] = [
+      {
+        id: `opening-balance-${acc.id}`,
+        tId: null,
+        voucherNo: "-",
+        timeStamp: from_date ? formatDate(new Date(from_date as string)) : "-",
+        description: "Opening Balance",
+        debit: null,
+        credit: null,
+        balance: runningBalanceLc,
+        debitFc: null,
+        creditFc: null,
+        balanceFc: runningBalanceFc,
+        conversionRate: null,
+        currencyName,
+      },
+    ];
+
+    const dateFilter: any = {};
+    if (fromDateObj) dateFilter.gte = fromDateObj;
+    if (toDateObj) dateFilter.lte = toDateObj;
+
+    const voucherEntries = await prisma.voucherEntry.findMany({
+      where: {
+        accountId: acc.id,
+        Voucher: {
+          status: "posted",
+          OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+          ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
+        },
+      },
+      include: { Voucher: true },
+      orderBy: [{ Voucher: { date: "asc" } }, { sortOrder: "asc" }],
+    });
+
+    const allEntries = voucherEntries.map((entry: any) => ({
+      entryDate: entry.Voucher.date,
+      entryNo: entry.Voucher.voucherNumber,
+      description: entry.description || entry.Voucher.narration || "",
+      debit: entry.debit || 0,
+      credit: entry.credit || 0,
+      conversionRate: entry.Voucher?.conversionRate ?? null,
+      sortOrder: entry.sortOrder ?? 0,
+      id: entry.id,
+    }));
+
+    allEntries.sort(compareLedgerVoucherEntries);
+
+    let tIdCounter = 1;
+    for (const entry of allEntries) {
+      const debitLc = entry.debit || 0;
+      const creditLc = entry.credit || 0;
+      const debitFc = toFc(debitLc, entry.conversionRate);
+      const creditFc = toFc(creditLc, entry.conversionRate);
+
+      runningBalanceLc += calculateBalanceChange(debitLc, creditLc, accountType);
+      runningBalanceFc += calculateBalanceChange(debitFc, creditFc, accountType);
+
+      ledgerEntries.push({
+        id: entry.id,
+        tId: tIdCounter++,
+        voucherNo: entry.entryNo,
+        timeStamp: formatDate(new Date(entry.entryDate)),
+        description: entry.description,
+        debit: debitLc > 0 ? debitLc : null,
+        credit: creditLc > 0 ? creditLc : null,
+        balance: runningBalanceLc,
+        debitFc: debitLc > 0 ? debitFc : null,
+        creditFc: creditLc > 0 ? creditFc : null,
+        balanceFc: runningBalanceFc,
+        conversionRate: entry.conversionRate,
+        currencyName,
+      });
+    }
+
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const startIndex = (pageNum - 1) * limitNum;
+    const endIndex = startIndex + limitNum;
+    const paginatedLedger = ledgerEntries.slice(startIndex, endIndex);
+
+    res.json({
+      data: paginatedLedger,
+      meta: {
+        accountId: acc.id,
+        accountName: `${acc.code}-${acc.name}`,
+        supplierId: (acc as any).supplierId,
+        supplierName:
+          (acc as any).Supplier?.companyName ||
+          (acc as any).Supplier?.name ||
+          acc.name,
+        currencyName,
+      },
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: ledgerEntries.length,
+        totalPages: Math.ceil(ledgerEntries.length / limitNum),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error.message || "Failed to fetch international supplier ledger",
+    });
+  }
+});
+
 export default router;

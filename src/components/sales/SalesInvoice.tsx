@@ -450,6 +450,24 @@ type InquiryConversionDraft = {
   }>;
 };
 
+type ImportPoStockOutDraft = {
+  source: "import-po";
+  target: "transfer-out";
+  poNumber?: string;
+  poId?: string;
+  consignee?: string;
+  branchAccountId?: string;
+  branchAccountName?: string;
+  items?: Array<{
+    partId: string;
+    quantity: number;
+    purchasePrice?: number;
+    partNo?: string;
+    masterPartNo?: string;
+    description?: string;
+  }>;
+};
+
 type SalesDocumentKind = "invoice" | "quotation" | "transfer-out";
 
 const INVOICE_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
@@ -986,6 +1004,101 @@ export const SalesInvoice = ({
       sessionStorage.removeItem("salesInquiryConversionDraft");
     }
   }, [isQuotation, isTransferOut]);
+
+  useEffect(() => {
+    if (!isTransferOut) return;
+    const raw = sessionStorage.getItem("importPoStockOutDraft");
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as ImportPoStockOutDraft;
+      if (!draft || draft.source !== "import-po" || draft.target !== "transfer-out") {
+        return;
+      }
+
+      const mappedItems: InlineItemRow[] = (draft.items || [])
+        .filter((item) => item.partId && Number(item.quantity) > 0)
+        .map((item, idx) => ({
+          id:
+            typeof crypto !== "undefined" && (crypto as any).randomUUID
+              ? (crypto as any).randomUUID()
+              : `po-${Date.now()}-${idx}`,
+          selectedPartId: item.partId,
+          qty: Number(item.quantity) || 1,
+          priceA: Number(item.purchasePrice || 0) || undefined,
+          priceB: Number(item.purchasePrice || 0) || undefined,
+          unitPrice: Number(item.purchasePrice || 0) || undefined,
+          selectedPriceType: "A" as const,
+          partNoFallback: item.masterPartNo
+            ? `${item.masterPartNo} | ${item.partNo || ""}`
+            : item.partNo,
+          descriptionFallback: item.description,
+        }));
+
+      if (mappedItems.length === 0) return;
+
+      const seededParts = (draft.items || [])
+        .filter((item) => item.partId)
+        .map((item) => ({
+          id: item.partId,
+          partNo: item.partNo || `PART-${item.partId.slice(0, 6)}`,
+          masterPartNo: item.masterPartNo || item.partNo || undefined,
+          description: item.description || "",
+          application: "",
+          price: Number(item.purchasePrice || 0) || 0,
+          priceA: Number(item.purchasePrice || 0) || undefined,
+          priceB: Number(item.purchasePrice || 0) || undefined,
+          stockQty: 0,
+          reservedQty: 0,
+          availableQty: 0,
+          grade: "A" as const,
+          category: "",
+          brands: [],
+        }));
+
+      if (seededParts.length > 0) {
+        setSelectedPartsMap((prev) => {
+          const next = { ...prev };
+          for (const part of seededParts) {
+            if (!next[part.id]) next[part.id] = part;
+          }
+          return next;
+        });
+        setParts((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const toAdd = seededParts.filter((p) => !existingIds.has(p.id));
+          return toAdd.length > 0 ? [...toAdd, ...prev] : prev;
+        });
+      }
+
+      setDocumentView("form");
+      setEditingInvoiceId(null);
+      setNewInvoice({
+        customerType: "transfer",
+        items: [],
+        overallDiscount: 0,
+        overallDiscountType: "percent",
+      });
+      setSelectedCustomerId("");
+      setSelectedCustomerName(draft.branchAccountName || draft.consignee || "");
+      if (draft.branchAccountId) {
+        setSelectedBranchAccountId(draft.branchAccountId);
+      }
+      setInlineItems(mappedItems);
+      setRemarks(
+        draft.poNumber
+          ? `Stock out from Import PO ${draft.poNumber}`
+          : "Stock out from Import Purchase Order",
+      );
+      setQuotationStatus("pending");
+      sessionStorage.removeItem("importPoStockOutDraft");
+      toast({
+        title: "Purchase order loaded",
+        description: `Loaded ${mappedItems.length} item(s) with received quantities.`,
+      });
+    } catch {
+      sessionStorage.removeItem("importPoStockOutDraft");
+    }
+  }, [isTransferOut]);
 
   const [showSaleReturnDialog, setShowSaleReturnDialog] = useState(false);
   const [saleReturnInvoice, setSaleReturnInvoice] = useState<Invoice | null>(null);

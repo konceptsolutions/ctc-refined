@@ -387,6 +387,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [editDPODialogOpen, setEditDPODialogOpen] = useState(false);
   const [editPODialogOpen, setEditPODialogOpen] = useState(false);
   const [locationAssignDialogOpen, setLocationAssignDialogOpen] = useState(false);
+  const [locationAssignOrder, setLocationAssignOrder] = useState<DirectPurchaseOrder | null>(null);
+  const [locationAssignOrderKind, setLocationAssignOrderKind] = useState<"dpo" | "po">("dpo");
   const [selectedOrder, setSelectedOrder] = useState<DirectPurchaseOrder | null>(null);
   const [selectedPurchaseOrder, setSelectedPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [selectedPurchaseOrderFull, setSelectedPurchaseOrderFull] = useState<any>(null);
@@ -1137,13 +1139,75 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       // Fetch full order details
       const fullOrder = await fetchOrderDetails(order.id);
       if (fullOrder) {
-        setSelectedOrder(fullOrder);
+        setLocationAssignOrderKind("dpo");
+        setLocationAssignOrder(fullOrder);
         setLocationAssignDialogOpen(true);
       } else {
         toast.error("Failed to load order details");
       }
     } catch (error: any) {
       toast.error("Failed to load order details");
+    }
+  };
+
+  const formatPoForLocationAssign = (
+    poData: any,
+    fallbackStoreId?: string,
+  ): DirectPurchaseOrder => ({
+    id: poData.id,
+    dpo_no: poData.po_number || poData.poNumber || "",
+    po_number: poData.po_number || poData.poNumber || "",
+    date: poData.date || new Date().toISOString(),
+    store_id:
+      poData.store_id ||
+      poData.storeId ||
+      (fallbackStoreId && fallbackStoreId !== "all" ? fallbackStoreId : ""),
+    store_name: poData.store_name || poData.storeName || "",
+    status: poData.status || "Received",
+    total_amount: poData.total_amount || poData.totalAmount || 0,
+    items_count: Array.isArray(poData.items) ? poData.items.length : 0,
+    created_at: poData.created_at || poData.createdAt || new Date().toISOString(),
+    items: Array.isArray(poData.items)
+      ? poData.items.map((item: any) => ({
+          id: item.id || "",
+          partId: item.part_id || item.partId || "",
+          partNo: item.part_no || item.partNo || "N/A",
+          description: item.part_description || item.description || "",
+          brand: item.brand || "N/A",
+          quantity:
+            Number(item.received_qty ?? item.receivedQty ?? item.quantity ?? 0) || 0,
+          purchasePrice: Number(item.unit_cost || item.unitCost || 0),
+          salePrice: 0,
+          amount: Number(item.total_cost || item.totalCost || 0),
+          rackId: item.rack_id || item.rackId || null,
+          shelfId: item.shelf_id || item.shelfId || null,
+          rackCode: item.rack_name || item.rackCode || null,
+          shelfNo: item.shelf_name || item.shelfNo || null,
+          rackStoreId: item.store_id || item.storeId || item.rack_store_id || null,
+          rackStoreName: item.store_name || item.storeName || item.rack_store_name || null,
+        }))
+      : [],
+  });
+
+  const handleAssignLocationForPO = async (order: PurchaseOrder) => {
+    if (order.status !== "Received") {
+      toast.info("Assign Location is available after order is received");
+      return;
+    }
+    try {
+      const response = await apiClient.getPurchaseOrder(order.id);
+      const poData: any = response.data || response;
+      if (!poData?.items?.length) {
+        toast.error("Failed to load purchase order details");
+        return;
+      }
+      const resolvedStoreId =
+        selectedStoreId && selectedStoreId !== "all" ? selectedStoreId : undefined;
+      setLocationAssignOrderKind("po");
+      setLocationAssignOrder(formatPoForLocationAssign(poData, resolvedStoreId));
+      setLocationAssignDialogOpen(true);
+    } catch (error: any) {
+      toast.error("Failed to load purchase order details");
     }
   };
 
@@ -1335,7 +1399,12 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           quantity: item.quantity || item.orderedQty || 0,
           unit_cost: item.unit_cost || item.unitCost || 0,
           total_cost: item.total_cost || item.totalCost || (item.unit_cost || item.unitCost || 0) * (item.quantity || item.orderedQty || 0),
-          received_qty: item.quantity || item.orderedQty || 0, // Receive full quantity
+          received_qty:
+            item.received_qty ??
+            item.receivedQty ??
+            item.quantity ??
+            item.orderedQty ??
+            0,
         }));
 
         await apiClient.updatePurchaseOrder(selectedPurchaseOrder.id, {
@@ -1345,6 +1414,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         });
 
         toast.success(`Purchase Order ${selectedPurchaseOrder.po_number} has been received and stock added`);
+
+        const refreshedPo = await apiClient.getPurchaseOrder(selectedPurchaseOrder.id);
+        const refreshedData: any = refreshedPo.data || refreshedPo;
+        if (refreshedData?.items?.length) {
+          setLocationAssignOrderKind("po");
+          setLocationAssignOrder(
+            formatPoForLocationAssign(refreshedData, resolvedStoreId),
+          );
+          setLocationAssignDialogOpen(true);
+        }
       }
 
       setReceiveDialogOpen(false);
@@ -1891,28 +1970,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       >
                                         <Eye className="w-4 h-4" />
                                       </Button>
-                                      {(row.raw as PurchaseOrder).status !== "Cancelled" && (
-                                        <>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleEditPurchaseOrder(row.raw as PurchaseOrder)}
-                                            title="Edit Order"
-                                          >
-                                            <Edit className="w-4 h-4" />
-                                          </Button>
-                                          {(row.raw as PurchaseOrder).status !== "Received" && (
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => handleDeleteOrder(row.raw as PurchaseOrder)}
-                                              title="Delete Order"
-                                            >
-                                              <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                          )}
-                                        </>
-                                      )}
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -1921,6 +1978,18 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       >
                                         <Printer className="w-4 h-4" />
                                       </Button>
+                                      {(row.raw as PurchaseOrder).status === "Received" && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            handleAssignLocationForPO(row.raw as PurchaseOrder)
+                                          }
+                                          title="Assign Location"
+                                        >
+                                          <MapPin className="w-4 h-4" />
+                                        </Button>
+                                      )}
                                       {(row.raw as PurchaseOrder).status !== "Received" && (
                                         <Button
                                           variant="ghost"
@@ -1944,39 +2013,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       >
                                         <Eye className="w-4 h-4" />
                                       </Button>
-                                      {(row.raw as DirectPurchaseOrder).status !== "Cancelled" && (
-                                        <>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleEditDPO(row.raw as DirectPurchaseOrder)}
-                                            title="Edit Order"
-                                          >
-                                            <Edit className="w-4 h-4" />
-                                          </Button>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleAssignLocation(row.raw as DirectPurchaseOrder)}
-                                            title="Assign Location"
-                                            disabled={(row.raw as DirectPurchaseOrder).status !== "Received"}
-                                            className={(row.raw as DirectPurchaseOrder).status !== "Received" ? "opacity-50 cursor-not-allowed" : undefined}
-                                          >
-                                            <MapPin className="w-4 h-4" />
-                                          </Button>
-                                          {(row.raw as DirectPurchaseOrder).status !== "Received" &&
-                                            (row.raw as DirectPurchaseOrder).status !== "Completed" && (
-                                              <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleDeleteOrder(row.raw as DirectPurchaseOrder)}
-                                                title="Delete Order"
-                                              >
-                                                <Trash2 className="w-4 h-4" />
-                                              </Button>
-                                            )}
-                                        </>
-                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleAssignLocation(row.raw as DirectPurchaseOrder)}
+                                        title="Assign Location"
+                                        disabled={(row.raw as DirectPurchaseOrder).status !== "Received"}
+                                        className={(row.raw as DirectPurchaseOrder).status !== "Received" ? "opacity-50 cursor-not-allowed" : undefined}
+                                      >
+                                        <MapPin className="w-4 h-4" />
+                                      </Button>
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -2090,6 +2136,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   >
                                     <Printer className="w-4 h-4" />
                                   </Button>
+                                  {order.status === "Received" && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleAssignLocationForPO(order)}
+                                      title="Assign Location"
+                                    >
+                                      <MapPin className="w-4 h-4" />
+                                    </Button>
+                                  )}
                                   {order.status !== "Received" && (
                                     <Button
                                       variant="ghost"
@@ -2566,14 +2622,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           order={selectedPurchaseOrderFull}
           open={viewPODialogOpen}
           onOpenChange={setViewPODialogOpen}
-          onEdit={() => {
-            setViewPODialogOpen(false);
-            handleEditPurchaseOrder(selectedPurchaseOrder!);
-          }}
-          onDelete={() => {
-            setViewPODialogOpen(false);
-            handleDeleteOrder(selectedPurchaseOrder!);
-          }}
           onPrint={() => {
             setViewPODialogOpen(false);
             handlePrintPurchaseOrder(selectedPurchaseOrder!);
@@ -2633,15 +2681,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       )}
 
       {/* Assign Location Dialog */}
-      {selectedOrder && (
+      {locationAssignOrder && (
         <StoreLocationAssign
-          order={selectedOrder}
+          order={locationAssignOrder}
+          orderKind={locationAssignOrderKind}
           storeId={selectedStoreId}
           open={locationAssignDialogOpen}
           onOpenChange={setLocationAssignDialogOpen}
           onSuccess={async () => {
             setLocationAssignDialogOpen(false);
-            setSelectedOrder(null);
+            setLocationAssignOrder(null);
             if (typeFilter === "transfer-in") {
               await fetchTransferInOrders();
             } else {

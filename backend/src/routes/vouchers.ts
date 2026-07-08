@@ -357,6 +357,7 @@ router.get('/', async (req: Request, res: Response) => {
       date: voucher.date.toISOString().split('T')[0],
       narration: voucher.narration || '',
       cashBankAccount: voucher.cashBankAccount || '',
+      conversionRate: (voucher as any).conversionRate ?? undefined,
       mode:
         voucher.type === 'payment' || voucher.type === 'receipt'
           ? accountModeById.get(voucher.cashBankAccount || '') ?? 'cash'
@@ -455,6 +456,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         date: voucher.date.toISOString().split('T')[0],
         narration: voucher.narration || '',
         cashBankAccount: voucher.cashBankAccount || '',
+        conversionRate: (voucher as any).conversionRate ?? undefined,
         chequeNumber: voucher.chequeNumber || undefined,
         chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
         checkClearDate: voucher.checkClearDate ? voucher.checkClearDate.toISOString().split('T')[0] : undefined,
@@ -491,6 +493,7 @@ router.post('/', async (req: Request, res: Response) => {
       date,
       narration,
       cashBankAccount,
+      conversionRate,
       chequeNumber,
       chequeDate,
       checkClearDate,
@@ -527,6 +530,10 @@ router.post('/', async (req: Request, res: Response) => {
         date: new Date(date),
         narration: narration || null,
         cashBankAccount: cashBankAccount || null,
+        conversionRate:
+          Number.isFinite(Number(conversionRate)) && Number(conversionRate) > 0
+            ? Number(conversionRate)
+            : 1,
         chequeNumber: chequeNumber || null,
         chequeDate: chequeDate ? new Date(chequeDate) : null,
         checkClearDate: checkClearDate ? new Date(checkClearDate) : null,
@@ -631,6 +638,7 @@ router.post('/', async (req: Request, res: Response) => {
         date: voucher.date.toISOString().split('T')[0],
         narration: voucher.narration || '',
         cashBankAccount: voucher.cashBankAccount || '',
+        conversionRate: (voucher as any).conversionRate ?? undefined,
         mode,
         entries: mappedEntries,
         VoucherEntry: mappedEntries,
@@ -658,6 +666,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       date,
       narration,
       cashBankAccount,
+      conversionRate,
       chequeNumber,
       chequeDate,
       checkClearDate,
@@ -793,6 +802,12 @@ router.put('/:id', async (req: Request, res: Response) => {
           ...(date && { date: new Date(date) }),
           ...(narration !== undefined && { narration: narration || null }),
           ...(cashBankAccount !== undefined && { cashBankAccount: cashBankAccount || null }),
+          ...(conversionRate !== undefined && {
+            conversionRate:
+              Number.isFinite(Number(conversionRate)) && Number(conversionRate) > 0
+                ? Number(conversionRate)
+                : null,
+          }),
           ...(chequeNumber !== undefined && { chequeNumber: chequeNumber || null }),
           ...(chequeDate !== undefined && { chequeDate: chequeDate ? new Date(chequeDate) : null }),
           ...(checkClearDate !== undefined && { checkClearDate: checkClearDate ? new Date(checkClearDate) : null }),
@@ -840,6 +855,12 @@ router.put('/:id', async (req: Request, res: Response) => {
           ...(date && { date: new Date(date) }),
           ...(narration !== undefined && { narration: narration || null }),
           ...(cashBankAccount !== undefined && { cashBankAccount: cashBankAccount || null }),
+          ...(conversionRate !== undefined && {
+            conversionRate:
+              Number.isFinite(Number(conversionRate)) && Number(conversionRate) > 0
+                ? Number(conversionRate)
+                : null,
+          }),
           ...(chequeNumber !== undefined && { chequeNumber: chequeNumber || null }),
           ...(chequeDate !== undefined && { chequeDate: chequeDate ? new Date(chequeDate) : null }),
           ...(checkClearDate !== undefined && { checkClearDate: checkClearDate ? new Date(checkClearDate) : null }),
@@ -919,6 +940,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         date: updatedVoucher!.date.toISOString().split("T")[0],
         narration: updatedVoucher!.narration || "",
         cashBankAccount: updatedVoucher!.cashBankAccount || "",
+        conversionRate: (updatedVoucher as any).conversionRate ?? undefined,
         VoucherEntry: updatedVoucher!.VoucherEntry.map((entry) => ({
           id: entry.id,
           account: entry.accountName,

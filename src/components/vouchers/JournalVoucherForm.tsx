@@ -10,19 +10,26 @@ interface JournalEntry {
   id: string;
   account: string;
   description: string;
-  drAmount: number;
-  crAmount: number;
+  drAmount: number; // FC amount
+  crAmount: number; // FC amount
   type: "dr" | "cr";
 }
 
 interface JournalVoucherFormProps {
   accounts: { value: string; label: string }[];
+  isInternationalSupplier?: boolean;
   onAddSubgroup: () => void;
   onAddAccount: () => void;
   onSave: (data: any) => Promise<boolean>;
 }
 
-export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSave }: JournalVoucherFormProps) => {
+export const JournalVoucherForm = ({
+  accounts,
+  isInternationalSupplier = false,
+  onAddSubgroup,
+  onAddAccount,
+  onSave,
+}: JournalVoucherFormProps) => {
   const { toast } = useToast();
   const [name, setName] = useState("");
   // Initialize date in YYYY-MM-DD format for date input
@@ -35,6 +42,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
   };
   
   const [date, setDate] = useState(getTodayDate());
+  const [exchangeRate, setExchangeRate] = useState("1");
   const [drEntries, setDrEntries] = useState<JournalEntry[]>([
     { id: "dr-1", account: "", description: "", drAmount: 0, crAmount: 0, type: "dr" }
   ]);
@@ -80,6 +88,11 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
 
   const totalDr = drEntries.reduce((sum, e) => sum + (Number(e.drAmount) || 0), 0);
   const totalCr = crEntries.reduce((sum, e) => sum + (Number(e.crAmount) || 0), 0);
+  const parsedExchangeRate = Number(exchangeRate);
+  const exchangeRateValue =
+    Number.isFinite(parsedExchangeRate) && parsedExchangeRate > 0 ? parsedExchangeRate : 0;
+  const totalDrLc = totalDr * exchangeRateValue;
+  const totalCrLc = totalCr * exchangeRateValue;
 
   const [saving, setSaving] = useState(false);
 
@@ -105,6 +118,10 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
       });
       return;
     }
+    if (isInternationalSupplier && (!Number.isFinite(parsedExchangeRate) || parsedExchangeRate <= 0)) {
+      toast({ title: "Error", description: "Please enter a valid exchange rate", variant: "destructive" });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -112,15 +129,33 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
         type: "journal",
         name,
         date,
-        drEntries,
-        crEntries,
+        drEntries: drEntries.map((entry) => ({
+          ...entry,
+          ...(isInternationalSupplier
+            ? { drAmountLc: (Number(entry.drAmount) || 0) * parsedExchangeRate }
+            : {}),
+        })),
+        crEntries: crEntries.map((entry) => ({
+          ...entry,
+          ...(isInternationalSupplier
+            ? { crAmountLc: (Number(entry.crAmount) || 0) * parsedExchangeRate }
+            : {}),
+        })),
         totalDr,
         totalCr,
+        ...(isInternationalSupplier
+          ? {
+              totalDrLc,
+              totalCrLc,
+              conversionRate: parsedExchangeRate,
+            }
+          : {}),
       });
 
       if (!saved) return;
 
       setName("");
+      setExchangeRate("1");
       setDrEntries([
         {
           id: "dr-1",
@@ -170,7 +205,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
       </div>
 
       {/* Name and Date */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      <div className={isInternationalSupplier ? "grid grid-cols-1 lg:grid-cols-6 gap-4" : "grid grid-cols-1 lg:grid-cols-4 gap-4"}>
         <div className="lg:col-span-3">
           <Input
             placeholder="Name"
@@ -179,7 +214,22 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
             className="h-11"
           />
         </div>
-        <div>
+        {isInternationalSupplier ? (
+          <div className="lg:col-span-2">
+            <div className="relative">
+              <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Exchange Rate</Label>
+              <Input
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                value={exchangeRate}
+                onChange={(e) => setExchangeRate(e.target.value)}
+                className="h-11 bg-muted/30"
+              />
+            </div>
+          </div>
+        ) : null}
+        <div className="lg:col-span-1">
           <div className="relative">
             <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Date</Label>
             <Input
@@ -195,25 +245,39 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
       {/* Entries Table */}
       <div className="space-y-4">
         <div className="grid grid-cols-12 gap-4 items-center">
-          <div className="col-span-3">
+          <div className={isInternationalSupplier ? "col-span-2" : "col-span-3"}>
             <Label className="text-base font-medium">Account Dr/ Cr</Label>
           </div>
-          <div className="col-span-4">
+          <div className={isInternationalSupplier ? "col-span-2" : "col-span-4"}>
             <Label className="text-base font-medium">Description</Label>
           </div>
-          <div className="col-span-2">
-            <Label className="text-base font-medium">Dr</Label>
+          <div className="col-span-2 text-center">
+            <Label className="text-base font-medium">{isInternationalSupplier ? "FC Dr" : "Dr"}</Label>
           </div>
-          <div className="col-span-2">
-            <Label className="text-base font-medium">Cr</Label>
-          </div>
+          {isInternationalSupplier ? (
+            <>
+              <div className="col-span-2 text-center">
+                <Label className="text-base font-medium">LC Dr</Label>
+              </div>
+              <div className="col-span-2 text-center">
+                <Label className="text-base font-medium">FC Cr</Label>
+              </div>
+              <div className="col-span-1 text-center">
+                <Label className="text-base font-medium">LC Cr</Label>
+              </div>
+            </>
+          ) : (
+            <div className="col-span-2 text-center">
+              <Label className="text-base font-medium">Cr</Label>
+            </div>
+          )}
           <div className="col-span-1"></div>
         </div>
 
         {/* Dr Entries */}
         {drEntries.map((entry) => (
           <div key={entry.id} className="grid grid-cols-12 gap-4 items-center">
-            <div className="col-span-3">
+            <div className={isInternationalSupplier ? "col-span-2" : "col-span-3"}>
               <SearchableSelect
                 options={accounts}
                 value={entry.account}
@@ -222,7 +286,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
                 selectedDisplayLabelOnly
               />
             </div>
-            <div className="col-span-4">
+            <div className={isInternationalSupplier ? "col-span-2" : "col-span-4"}>
               <Input
                 placeholder="Description"
                 value={entry.description}
@@ -233,7 +297,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
             <div className="col-span-2">
               <Input
                 type="number"
-                placeholder="amount"
+                placeholder={isInternationalSupplier ? "fc amount" : "amount"}
                 value={entry.drAmount || ""}
                 onChange={(e) => {
                   const value = parseFloat(e.target.value) || 0;
@@ -244,16 +308,27 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
                 className="h-10"
               />
             </div>
-            <div className="col-span-2">
-              <div className="relative">
-                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">amount</Label>
-                <Input
-                  value="0"
-                  readOnly
-                  className="h-10 bg-muted/30"
-                />
+            {isInternationalSupplier ? (
+              <>
+                <div className="col-span-2">
+                  <Input
+                    value={formatAmount((Number(entry.drAmount) || 0) * exchangeRateValue)}
+                    readOnly
+                    className="h-10 bg-muted/30"
+                  />
+                </div>
+                <div className="col-span-1">
+                  <Input value="0.00" readOnly className="h-10 bg-muted/30" />
+                </div>
+                <div className="col-span-2">
+                  <Input value="0.00" readOnly className="h-10 bg-muted/30" />
+                </div>
+              </>
+            ) : (
+              <div className="col-span-2">
+                <Input value="0.00" readOnly className="h-10 bg-muted/30" />
               </div>
-            </div>
+            )}
             <div className="col-span-1 flex justify-center">
               <Button
                 variant="ghost"
@@ -271,7 +346,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
         {/* Cr Entries */}
         {crEntries.map((entry) => (
           <div key={entry.id} className="grid grid-cols-12 gap-4 items-center">
-            <div className="col-span-3">
+            <div className={isInternationalSupplier ? "col-span-2" : "col-span-3"}>
               <SearchableSelect
                 options={accounts}
                 value={entry.account}
@@ -280,7 +355,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
                 selectedDisplayLabelOnly
               />
             </div>
-            <div className="col-span-4">
+            <div className={isInternationalSupplier ? "col-span-2" : "col-span-4"}>
               <Input
                 placeholder="Description"
                 value={entry.description}
@@ -289,19 +364,17 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
               />
             </div>
             <div className="col-span-2">
-              <div className="relative">
-                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">amount</Label>
-                <Input
-                  value="0"
-                  readOnly
-                  className="h-10 bg-muted/30"
-                />
-              </div>
+              <Input value="0.00" readOnly className="h-10 bg-muted/30" />
             </div>
+            {isInternationalSupplier ? (
+              <div className="col-span-1">
+                <Input value="0.00" readOnly className="h-10 bg-muted/30" />
+              </div>
+            ) : null}
             <div className="col-span-2">
               <Input
                 type="number"
-                placeholder="amount"
+                placeholder={isInternationalSupplier ? "fc amount" : "amount"}
                 value={entry.crAmount || ""}
                 onChange={(e) => {
                   const value = parseFloat(e.target.value) || 0;
@@ -312,6 +385,15 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
                 className="h-10"
               />
             </div>
+            {isInternationalSupplier ? (
+              <div className="col-span-1">
+                <Input
+                  value={formatAmount((Number(entry.crAmount) || 0) * exchangeRateValue)}
+                  readOnly
+                  className="h-10 bg-muted/30"
+                />
+              </div>
+            ) : null}
             <div className="col-span-1 flex justify-center">
               <Button
                 variant="ghost"
@@ -327,32 +409,81 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
         ))}
 
         {/* Total Amount */}
-        <div className="grid grid-cols-12 gap-4 items-center">
-          <div className="col-span-7 text-right">
-            <Label className="text-base font-medium">Total Amount</Label>
-          </div>
-          <div className="col-span-2">
-            <div className="relative">
-              <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Total Dr</Label>
-              <Input
-                value={formatAmount(totalDr)}
-                readOnly
-                className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
-              />
+        {isInternationalSupplier ? (
+          <div className="grid grid-cols-12 gap-4 items-center">
+            <div className="col-span-4 text-right">
+              <Label className="text-base font-medium">Totals</Label>
             </div>
-          </div>
-          <div className="col-span-2">
-            <div className="relative">
-              <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Total Cr</Label>
-              <Input
-                value={formatAmount(totalCr)}
-                readOnly
-                className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
-              />
+            <div className="col-span-2">
+              <div className="relative">
+                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">FC Dr</Label>
+                <Input
+                  value={formatAmount(totalDr)}
+                  readOnly
+                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                />
+              </div>
             </div>
+            <div className="col-span-2">
+              <div className="relative">
+                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">LC Dr</Label>
+                <Input
+                  value={formatAmount(totalDrLc)}
+                  readOnly
+                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                />
+              </div>
+            </div>
+            <div className="col-span-2">
+              <div className="relative">
+                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">FC Cr</Label>
+                <Input
+                  value={formatAmount(totalCr)}
+                  readOnly
+                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                />
+              </div>
+            </div>
+            <div className="col-span-1">
+              <div className="relative">
+                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">LC Cr</Label>
+                <Input
+                  value={formatAmount(totalCrLc)}
+                  readOnly
+                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                />
+              </div>
+            </div>
+            <div className="col-span-1"></div>
           </div>
-          <div className="col-span-1"></div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-12 gap-4 items-center">
+            <div className="col-span-7 text-right">
+              <Label className="text-base font-medium">Total Amount</Label>
+            </div>
+            <div className="col-span-2">
+              <div className="relative">
+                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Total Dr</Label>
+                <Input
+                  value={formatAmount(totalDr)}
+                  readOnly
+                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                />
+              </div>
+            </div>
+            <div className="col-span-2">
+              <div className="relative">
+                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Total Cr</Label>
+                <Input
+                  value={formatAmount(totalCr)}
+                  readOnly
+                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                />
+              </div>
+            </div>
+            <div className="col-span-1"></div>
+          </div>
+        )}
         {totalDr !== totalCr && totalDr > 0 && totalCr > 0 && (
           <div className="text-sm text-destructive text-center pt-2">
             ⚠️ Total Dr ({formatAmount(totalDr)}) must equal Total Cr ({formatAmount(totalCr)})
@@ -368,7 +499,7 @@ export const JournalVoucherForm = ({ accounts, onAddSubgroup, onAddAccount, onSa
 
         {/* Add Buttons */}
         <div className="grid grid-cols-12 gap-4">
-          <div className="col-span-7"></div>
+          <div className={isInternationalSupplier ? "col-span-8" : "col-span-7"}></div>
           <div className="col-span-2">
             <Button
               onClick={addDrEntry}

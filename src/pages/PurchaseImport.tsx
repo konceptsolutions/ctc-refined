@@ -3,7 +3,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Plus, Trash2, Pencil, Check, Eye, ShoppingCart, PackageCheck } from "lucide-react";
+import { FileText, Plus, Trash2, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { openPrintHtml } from "@/utils/printUtils";
 import { apiClient } from "@/lib/api";
+import { fetchBranchAccountOptions } from "@/lib/branch-accounts";
 import {
   getListRowNumber,
   LIST_NUMBER_HEAD_CLASS,
@@ -931,6 +932,61 @@ const getQuotationRowDemandQuantity = (
   Number(row.isbQuantity || 0) +
   Number(row.otherQuantity || 0);
 
+const distributeConfirmSplitQuantities = (
+  confirmQty: number,
+  khi: number,
+  isb: number,
+  other: number,
+): { khiQuantity: number; isbQuantity: number; otherQuantity: number } => {
+  const safeConfirm = Math.max(0, Math.floor(Number(confirmQty) || 0));
+  if (safeConfirm <= 0) {
+    return { khiQuantity: 0, isbQuantity: 0, otherQuantity: 0 };
+  }
+
+  const splitTotal = Math.max(0, khi) + Math.max(0, isb) + Math.max(0, other);
+  if (splitTotal <= 0) {
+    return { khiQuantity: 0, isbQuantity: 0, otherQuantity: safeConfirm };
+  }
+
+  const khiQuantity = Math.round((Math.max(0, khi) / splitTotal) * safeConfirm);
+  const isbQuantity = Math.round((Math.max(0, isb) / splitTotal) * safeConfirm);
+  let otherQuantity = safeConfirm - khiQuantity - isbQuantity;
+  if (otherQuantity < 0) {
+    otherQuantity = 0;
+  }
+
+  return { khiQuantity, isbQuantity, otherQuantity };
+};
+
+const getConfirmRowSplitSum = (row: {
+  isbQuantity?: number;
+  khiQuantity?: number;
+  otherQuantity?: number;
+}) =>
+  Number(row.isbQuantity || 0) + Number(row.khiQuantity || 0) + Number(row.otherQuantity || 0);
+
+const getConfirmRowSplitMismatch = (row: {
+  confirmQuantity?: number;
+  isbQuantity?: number;
+  khiQuantity?: number;
+  otherQuantity?: number;
+  masterPartNo?: string;
+  partNo?: string;
+}) => {
+  const confirmQty = Math.max(0, Math.floor(Number(row.confirmQuantity) || 0));
+  if (confirmQty <= 0) return null;
+
+  const splitSum = getConfirmRowSplitSum(row);
+  if (splitSum === confirmQty) return null;
+
+  const label = row.masterPartNo || row.partNo || "Item";
+  const diff = splitSum - confirmQty;
+  if (diff > 0) {
+    return `${label}: ISB + KHI + Other (${splitSum}) exceeds confirm qty (${confirmQty}) by ${diff}.`;
+  }
+  return `${label}: ISB + KHI + Other (${splitSum}) is short of confirm qty (${confirmQty}) by ${Math.abs(diff)}.`;
+};
+
 type PartSortFields = {
   masterPartNo?: string;
   partNo?: string;
@@ -1071,7 +1127,7 @@ const printPurchaseImportInquiry = ({
 }) => {
   const supplierTableRows =
     supplierRows.length === 0
-      ? `<tr><td colspan="5" style="text-align:center;color:#666;">No suppliers</td></tr>`
+      ? `<tr><td colspan="4" style="text-align:center;color:#666;">No suppliers</td></tr>`
       : supplierRows
           .map(
             (supplier) => `
@@ -1079,7 +1135,6 @@ const printPurchaseImportInquiry = ({
           <td>${escapeHtml(supplier.name)}</td>
           <td>${escapeHtml(supplier.country)}</td>
           <td>${escapeHtml(supplier.area)}</td>
-          <td>${escapeHtml(supplier.type)}</td>
           <td>${escapeHtml(supplier.currencyName)}</td>
         </tr>`,
           )
@@ -1153,7 +1208,6 @@ const printPurchaseImportInquiry = ({
         <th>Supplier</th>
         <th>Country</th>
         <th>Area</th>
-        <th>Type</th>
         <th>Currency</th>
       </tr>
     </thead>
@@ -2244,103 +2298,6 @@ const PurchaseImportRequestForm = ({
           </div>
         </DialogContent>
       </Dialog>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">Suppliers</h3>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              onClick={addSupplierRow}
-              disabled={loadingForm}
-            >
-              <Plus className="w-4 h-4 mr-1" />
-              Add Supplier
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={() => setIsSupplierDialogOpen(true)}
-              disabled={loadingForm}
-              title="Add new supplier"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="sr-only">Add new supplier</span>
-            </Button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr className="text-muted-foreground border-b">
-                <th className="text-left p-2 min-w-[280px] w-[32%]">Supplier</th>
-                <th className="text-left p-2 w-[100px]">Country</th>
-                <th className="text-left p-2 w-[80px]">Area</th>
-                <th className="text-left p-2 w-[110px]">Type</th>
-                <th className="text-left p-2 w-[80px]">Currency</th>
-                <th className="text-center p-2 w-16">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {supplierRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="p-3 text-xs text-muted-foreground text-center"
-                  >
-                    No suppliers added. Click Add Supplier to add a row.
-                  </td>
-                </tr>
-              ) : (
-                supplierRows.map((row) => {
-                  const supplier = supplierOptions.find(
-                    (s) => s.id === row.supplierId,
-                  );
-                  return (
-                    <tr key={row.id} className="border-b align-top">
-                      <td className="p-2 min-w-[280px] w-[32%]">
-                        <SearchableSelect
-                          options={getSupplierOptionsForRow(row.id)}
-                          value={row.supplierId}
-                          onValueChange={(supplierId) =>
-                            updateSupplierRow(row.id, supplierId)
-                          }
-                          placeholder="Select supplier"
-                          disabled={loadingForm}
-                          selectedDisplayLabelOnly
-                          className="w-full"
-                        />
-                      </td>
-                      <td className="p-2">{supplier?.country || "-"}</td>
-                      <td className="p-2">{supplier?.area || "-"}</td>
-                      <td className="p-2 capitalize">
-                        {supplier?.type || "-"}
-                      </td>
-                      <td className="p-2 uppercase">
-                        {supplier?.currencyName || "-"}
-                      </td>
-                      <td className="p-2 text-center">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => removeSupplierRow(row.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
 <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Items</h3>
@@ -2581,6 +2538,96 @@ const PurchaseImportRequestForm = ({
                 <td className="p-2" />
               </tr>
             </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            size="sm"
+            onClick={addSupplierRow}
+            disabled={loadingForm}
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Add Supplier
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => setIsSupplierDialogOpen(true)}
+            disabled={loadingForm}
+            title="Add new supplier"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="sr-only">Add new supplier</span>
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr className="text-muted-foreground border-b">
+                <th className="text-left p-2 min-w-[280px] w-[32%]">Supplier</th>
+                <th className="text-left p-2 w-[100px]">Country</th>
+                <th className="text-left p-2 w-[80px]">Area</th>
+                <th className="text-left p-2 w-[80px]">Currency</th>
+                <th className="text-center p-2 w-16">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supplierRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="p-3 text-xs text-muted-foreground text-center"
+                  >
+                    No suppliers added. Click Add Supplier to add a row.
+                  </td>
+                </tr>
+              ) : (
+                supplierRows.map((row) => {
+                  const supplier = supplierOptions.find(
+                    (s) => s.id === row.supplierId,
+                  );
+                  return (
+                    <tr key={row.id} className="border-b align-top">
+                      <td className="p-2 min-w-[280px] w-[32%]">
+                        <SearchableSelect
+                          options={getSupplierOptionsForRow(row.id)}
+                          value={row.supplierId}
+                          onValueChange={(supplierId) =>
+                            updateSupplierRow(row.id, supplierId)
+                          }
+                          placeholder="Select supplier"
+                          disabled={loadingForm}
+                          selectedDisplayLabelOnly
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="p-2">{supplier?.country || "-"}</td>
+                      <td className="p-2">{supplier?.area || "-"}</td>
+                      <td className="p-2 uppercase">
+                        {supplier?.currencyName || "-"}
+                      </td>
+                      <td className="p-2 text-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => removeSupplierRow(row.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
           </table>
         </div>
       </div>
@@ -2859,14 +2906,13 @@ const PurchaseImportRequestView = ({
                 <th className="text-left p-2 border-b">Supplier</th>
                 <th className="text-left p-2 border-b">Country</th>
                 <th className="text-left p-2 border-b">Area</th>
-                <th className="text-left p-2 border-b">Type</th>
                 <th className="text-left p-2 border-b">Currency</th>
               </tr>
             </thead>
             <tbody>
               {supplierRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-3 text-center text-muted-foreground">
+                  <td colSpan={5} className="p-3 text-center text-muted-foreground">
                     No suppliers found.
                   </td>
                 </tr>
@@ -2879,7 +2925,6 @@ const PurchaseImportRequestView = ({
                     <td className="p-2">{supplier.name}</td>
                     <td className="p-2">{supplier.country}</td>
                     <td className="p-2">{supplier.area}</td>
-                    <td className="p-2 capitalize">{supplier.type}</td>
                     <td className="p-2 uppercase">{supplier.currencyName}</td>
                   </tr>
                 ))
@@ -5132,6 +5177,13 @@ const PurchaseQuotationConfirmForm = ({
           Array.isArray(data.items)
             ? data.items.map((item) => {
                 const effective = getEffectiveQuotationItemValues(item, revised);
+                const confirmQuantity = Number(item.quotationQuantity || 0);
+                const split = distributeConfirmSplitQuantities(
+                  confirmQuantity,
+                  Number(item.khiQuantity || 0),
+                  Number(item.isbQuantity || 0),
+                  Number(item.otherQuantity || 0),
+                );
                 return {
                   rowId: createRowId(),
                   partId: item.partId,
@@ -5149,10 +5201,8 @@ const PurchaseQuotationConfirmForm = ({
                   lcRate: effective.lcRate,
                   lcAmount: effective.lcAmount,
                   totalWeight: Number(item.totalWeight || 0),
-                  khiQuantity: Number(item.khiQuantity || 0),
-                  isbQuantity: Number(item.isbQuantity || 0),
-                  otherQuantity: Number(item.otherQuantity || 0),
-                  confirmQuantity: Number(item.quotationQuantity || 0),
+                  ...split,
+                  confirmQuantity,
                 };
               })
             : [],
@@ -5177,18 +5227,49 @@ const PurchaseQuotationConfirmForm = ({
     setRows((prev) => prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)));
   };
 
-  const hasSplitQuantities = rows.some(
-    (row) =>
-      Number(row.khiQuantity || 0) > 0 ||
-      Number(row.isbQuantity || 0) > 0 ||
-      Number(row.otherQuantity || 0) > 0,
+  const handleConfirmQtyChange = (rowId: string, rawValue: string) => {
+    if (rawValue.trim() === "") {
+      updateRow(rowId, { confirmQuantity: 0 });
+      return;
+    }
+
+    const confirmQuantity = Math.max(0, Math.floor(Number(rawValue)));
+    updateRow(rowId, { confirmQuantity });
+  };
+
+  const updateConfirmSplitQuantity = (
+    rowId: string,
+    field: "khiQuantity" | "isbQuantity" | "otherQuantity",
+    value: number,
+  ) => {
+    const qty = Math.max(0, Math.floor(Number(value) || 0));
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+        const next = { ...row, [field]: qty };
+        const confirmQuantity = getConfirmRowSplitSum(next);
+        return { ...next, confirmQuantity };
+      }),
+    );
+  };
+
+  const splitMismatchMessages = useMemo(
+    () =>
+      rows
+        .map((row) => getConfirmRowSplitMismatch(row))
+        .filter((message): message is string => Boolean(message)),
+    [rows],
   );
+  const hasSplitMismatch = splitMismatchMessages.length > 0;
 
   const quotationTotals = useMemo(
     () => ({
       requestQty: rows.reduce((sum, row) => sum + Number(row.demandQuantity || 0), 0),
       quotationQty: rows.reduce((sum, row) => sum + Number(row.quotationQuantity || 0), 0),
       confirmQty: rows.reduce((sum, row) => sum + Number(row.confirmQuantity || 0), 0),
+      isbQty: rows.reduce((sum, row) => sum + Number(row.isbQuantity || 0), 0),
+      khiQty: rows.reduce((sum, row) => sum + Number(row.khiQuantity || 0), 0),
+      otherQty: rows.reduce((sum, row) => sum + Number(row.otherQuantity || 0), 0),
       fcAmount: rows.reduce((sum, row) => sum + Number(row.fcAmount || 0), 0),
       lcAmount: rows.reduce((sum, row) => sum + Number(row.lcAmount || 0), 0),
       totalWeight: rows.reduce((sum, row) => sum + Number(row.totalWeight || 0), 0),
@@ -5207,13 +5288,32 @@ const PurchaseQuotationConfirmForm = ({
       return;
     }
 
+    for (const row of itemsToConfirm) {
+      const confirmQty = Number(row.confirmQuantity);
+      const splitSum =
+        Number(row.isbQuantity || 0) +
+        Number(row.khiQuantity || 0) +
+        Number(row.otherQuantity || 0);
+      if (splitSum !== confirmQty) {
+        toast({
+          title: "Split quantities must match confirm quantity",
+          description: `For ${row.masterPartNo || row.partNo || "item"}, ISB + KHI + Other (${splitSum}) must equal confirm quantity (${confirmQty}).`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const response = await apiClient.confirmPurchaseQuotation(quotationId, {
         confirmationDate,
-        items: rows.map((row) => ({
+        items: itemsToConfirm.map((row) => ({
           partId: row.partId,
-          confirmQuantity: Number(row.confirmQuantity || 0),
+          confirmQuantity: Number(row.confirmQuantity),
+          khiQuantity: Number(row.khiQuantity || 0),
+          isbQuantity: Number(row.isbQuantity || 0),
+          otherQuantity: Number(row.otherQuantity || 0),
         })),
       });
       const purchaseOrders = (response as { purchaseOrders?: Array<{ poNumber?: string }> })
@@ -5241,7 +5341,7 @@ const PurchaseQuotationConfirmForm = ({
     }
   };
 
-  const itemTableColSpan = hasSplitQuantities ? 17 : 14;
+  const itemTableColSpan = 17;
 
   if (loading) {
     return (
@@ -5256,8 +5356,8 @@ const PurchaseQuotationConfirmForm = ({
       <div>
         <h2 className="text-base font-semibold">Confirm Purchase Quotation</h2>
         <p className="text-sm text-muted-foreground">
-          Review quotation details and confirm quantities before creating purchase order
-          {hasSplitQuantities ? "s by consignee (ISB / KHI / Other)" : ""}.
+          Review quotation details and confirm quantities before creating purchase orders by
+          consignee (ISB / KHI / Other).
           {isRevised ? " Showing revised quotation values." : " Showing original quotation values."}
         </p>
       </div>
@@ -5350,13 +5450,9 @@ const PurchaseQuotationConfirmForm = ({
                 {isRevised ? "Revised LC Amount" : "LC Amount"}
               </th>
               <th className="text-right p-2 border-b">Total Weight</th>
-              {hasSplitQuantities ? (
-                <>
-                  <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB QTY</th>
-                  <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI QTY</th>
-                  <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other QTY</th>
-                </>
-              ) : null}
+              <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB QTY</th>
+              <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI QTY</th>
+              <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other QTY</th>
               <th className="text-right p-2 border-b min-w-[120px]">Confirm QTY</th>
             </tr>
           </thead>
@@ -5368,7 +5464,11 @@ const PurchaseQuotationConfirmForm = ({
                 </td>
               </tr>
             ) : (
-              rows.map((row, index) => (
+              rows.map((row, index) => {
+                const splitMismatch = getConfirmRowSplitMismatch(row);
+                const splitInputClass = splitMismatch ? "border-destructive focus-visible:ring-destructive" : "";
+
+                return (
                 <tr key={row.rowId} className="border-b hover:bg-muted/20">
                   <td className="p-2 text-center text-muted-foreground tabular-nums">
                     {index + 1}
@@ -5377,7 +5477,9 @@ const PurchaseQuotationConfirmForm = ({
                     className="p-2 min-w-[280px]"
                     title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
                   >
-                    <div className="font-medium">{row.masterPartNo || "-"}</div>
+                    <div className="font-medium">
+                      {row.masterPartNo || "-"} | {row.partNo || "-"}
+                    </div>
                     <div className="text-xs text-muted-foreground">{row.description || "-"}</div>
                   </td>
                   <td className="p-2">{row.brand || "-"}</td>
@@ -5393,40 +5495,66 @@ const PurchaseQuotationConfirmForm = ({
                   <td className="p-2 text-right tabular-nums">{row.lcRate.toFixed(2)}</td>
                   <td className="p-2 text-right tabular-nums">{row.lcAmount.toFixed(2)}</td>
                   <td className="p-2 text-right tabular-nums">{row.totalWeight.toFixed(2)}</td>
-                  {hasSplitQuantities ? (
-                    <>
-                      <td className="p-2 text-right">
-                        <span className={INQUIRY_ISB_QTY_DISPLAY_CLASS}>
-                          {row.isbQuantity}
-                        </span>
-                      </td>
-                      <td className="p-2 text-right">
-                        <span className={INQUIRY_KHI_QTY_DISPLAY_CLASS}>
-                          {row.khiQuantity}
-                        </span>
-                      </td>
-                      <td className="p-2 text-right">
-                        <span className={INQUIRY_OTHER_QTY_DISPLAY_CLASS}>
-                          {row.otherQuantity}
-                        </span>
-                      </td>
-                    </>
-                  ) : null}
                   <td className="p-2 text-right">
                     <Input
                       type="number"
                       min={0}
-                      className={QUOTATION_QTY_INPUT_CLASS}
-                      value={row.confirmQuantity === 0 ? "" : row.confirmQuantity}
+                      className={cn(INQUIRY_ISB_QTY_INPUT_CLASS, splitInputClass)}
+                      value={row.isbQuantity === 0 ? "" : row.isbQuantity}
                       onChange={(e) =>
-                        updateRow(row.rowId, {
-                          confirmQuantity: Math.max(0, Number(e.target.value || 0)),
-                        })
+                        updateConfirmSplitQuantity(
+                          row.rowId,
+                          "isbQuantity",
+                          Number(e.target.value || 0),
+                        )
                       }
                     />
                   </td>
+                  <td className="p-2 text-right">
+                    <Input
+                      type="number"
+                      min={0}
+                      className={cn(INQUIRY_KHI_QTY_INPUT_CLASS, splitInputClass)}
+                      value={row.khiQuantity === 0 ? "" : row.khiQuantity}
+                      onChange={(e) =>
+                        updateConfirmSplitQuantity(
+                          row.rowId,
+                          "khiQuantity",
+                          Number(e.target.value || 0),
+                        )
+                      }
+                    />
+                  </td>
+                  <td className="p-2 text-right">
+                    <Input
+                      type="number"
+                      min={0}
+                      className={cn(INQUIRY_OTHER_QTY_INPUT_CLASS, splitInputClass)}
+                      value={row.otherQuantity === 0 ? "" : row.otherQuantity}
+                      onChange={(e) =>
+                        updateConfirmSplitQuantity(
+                          row.rowId,
+                          "otherQuantity",
+                          Number(e.target.value || 0),
+                        )
+                      }
+                    />
+                  </td>
+                  <td className="p-2 text-right">
+                    <Input
+                      type="number"
+                      min={0}
+                      className={cn(QUOTATION_QTY_INPUT_CLASS, splitInputClass)}
+                      value={row.confirmQuantity === 0 ? "" : row.confirmQuantity}
+                      onChange={(e) => handleConfirmQtyChange(row.rowId, e.target.value)}
+                    />
+                    {splitMismatch ? (
+                      <p className="mt-1 text-left text-xs text-destructive">{splitMismatch}</p>
+                    ) : null}
+                  </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
           {rows.length > 0 ? (
@@ -5445,19 +5573,26 @@ const PurchaseQuotationConfirmForm = ({
                 <td className="p-2" />
                 <td className="p-2 text-right">{quotationTotals.lcAmount.toFixed(2)}</td>
                 <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
-                {hasSplitQuantities ? (
-                  <>
-                    <td className="p-2" />
-                    <td className="p-2" />
-                    <td className="p-2" />
-                  </>
-                ) : null}
+                <td className="p-2 text-right">{quotationTotals.isbQty}</td>
+                <td className="p-2 text-right">{quotationTotals.khiQty}</td>
+                <td className="p-2 text-right">{quotationTotals.otherQty}</td>
                 <td className="p-2 text-right">{quotationTotals.confirmQty}</td>
               </tr>
             </tfoot>
           ) : null}
         </table>
       </div>
+
+      {hasSplitMismatch ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive space-y-1">
+          <p className="font-medium">ISB, KHI, and Other must equal confirm quantity for each item.</p>
+          <ul className="list-disc space-y-0.5 pl-5">
+            {splitMismatchMessages.map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="max-w-xs">
         <div className="space-y-1">
@@ -5470,7 +5605,11 @@ const PurchaseQuotationConfirmForm = ({
         <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
-        <Button type="button" onClick={handleConfirm} disabled={saving || !detail}>
+        <Button
+          type="button"
+          onClick={handleConfirm}
+          disabled={saving || !detail || hasSplitMismatch}
+        >
           {saving ? "Confirming..." : "Confirm & Create PO"}
         </Button>
       </div>
@@ -5498,7 +5637,11 @@ const PurchaseQuotationTab = () => {
       const response = await apiClient.getPurchaseQuotations({
         page: currentPage,
         limit: itemsPerPage,
-        status: quotationView === "confirmed" ? "confirm" : "open",
+        // "Purchase Quotations" tab lists every quotation (open + confirmed);
+        // the "Confirmed" tab stays filtered to confirmed only.
+        ...(quotationView === "confirmed"
+          ? { status: "confirm" as const }
+          : {}),
       });
       const rows = Array.isArray((response as any)?.data)
         ? (response as any).data
@@ -5774,8 +5917,15 @@ const PurchaseQuotationTab = () => {
   );
 };
 
+const isKhiConsignee = (consignee?: string | null) =>
+  String(consignee || "").trim().toUpperCase() === "KHI";
+
+const isReceivedPurchaseOrder = (status?: string | null) =>
+  String(status || "").trim().toLowerCase() === "received";
+
 const PurchaseOrderTab = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<ImportPurchaseOrderRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -5985,6 +6135,95 @@ const PurchaseOrderTab = () => {
       setReceiveOrderId(null);
     } finally {
       setLoadingReceiveForm(false);
+    }
+  };
+
+  const handleStockOutFromPo = async (order: ImportPurchaseOrderRecord) => {
+    if (!isReceivedPurchaseOrder(order.status)) {
+      toast({
+        title: "PO not received",
+        description: "Stock out is available only after the purchase order is received.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!isKhiConsignee(order.consignee)) {
+      toast({
+        title: "KHI consignee only",
+        description: "Stock out from purchase order is available for KHI consignee orders.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await apiClient.getImportPurchaseOrder(order.id);
+      const orderData: any = (response as any)?.data || response;
+      const items = (orderData?.items || [])
+        .map((item: any) => {
+          const partId = String(item.partId || item.part_id || "").trim();
+          const quantity = Math.max(
+            0,
+            Math.floor(
+              Number(item.receivedQty ?? item.received_qty ?? item.receiveQty ?? 0),
+            ),
+          );
+          if (!partId || quantity <= 0) return null;
+          return {
+            partId,
+            quantity,
+            partNo: item.partNo || item.part_no || "",
+            masterPartNo: item.masterPartNo || item.master_part_no || "",
+            description: item.description || item.part_description || "",
+            purchasePrice: Number(item.unitCost ?? item.unit_cost ?? 0) || 0,
+          };
+        })
+        .filter(Boolean);
+
+      if (items.length === 0) {
+        toast({
+          title: "No received items",
+          description: "This purchase order has no received quantity to stock out.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const branchAccounts = await fetchBranchAccountOptions("Current Assets");
+      const khiBranch =
+        branchAccounts.find((branch) =>
+          String(branch.label || "").toUpperCase().includes("KHI"),
+        ) ||
+        branchAccounts.find((branch) =>
+          String(branch.label || "").toUpperCase().includes("KARACHI"),
+        ) ||
+        null;
+
+      sessionStorage.setItem(
+        "importPoStockOutDraft",
+        JSON.stringify({
+          source: "import-po",
+          target: "transfer-out",
+          poNumber: order.poNumber || orderData?.poNumber || "",
+          poId: order.id,
+          consignee: String(order.consignee || "KHI").toUpperCase(),
+          branchAccountId: khiBranch?.id || undefined,
+          branchAccountName: khiBranch?.label || undefined,
+          items,
+        }),
+      );
+
+      navigate("/transfer/transfer-out");
+      toast({
+        title: "Opening stock out",
+        description: `Loaded ${items.length} item(s) from PO ${order.poNumber}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to open stock out",
+        description: error?.message || "Could not load purchase order items.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -6262,6 +6501,18 @@ const PurchaseOrderTab = () => {
                         >
                           <PackageCheck className="w-3.5 h-3.5 mr-1" />
                           Purchase Import
+                        </Button>
+                      ) : null}
+                      {isReceivedPurchaseOrder(row.status) &&
+                      isKhiConsignee(row.consignee) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void handleStockOutFromPo(row)}
+                        >
+                          <ArrowUpFromLine className="w-3.5 h-3.5 mr-1" />
+                          Stock Out
                         </Button>
                       ) : null}
                     </div>

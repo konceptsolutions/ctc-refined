@@ -1323,6 +1323,24 @@ class ApiClient {
     });
   }
 
+  async assignPurchaseOrderLocations(
+    id: string,
+    data: {
+      store_id?: string;
+      items: Array<{
+        part_id: string;
+        store_id?: string | null;
+        rack_id?: string | null;
+        shelf_id?: string | null;
+      }>;
+    },
+  ) {
+    return this.request(`/inventory/purchase-orders/${id}/locations`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
   async deletePurchaseOrder(id: string) {
     return this.request(`/inventory/purchase-orders/${id}`, {
       method: "DELETE",
@@ -1897,6 +1915,35 @@ class ApiClient {
     );
   }
 
+  async getInternationalSupplierAccounts() {
+    return this.request("/financial/international-supplier-accounts");
+  }
+
+  async getInternationalSupplierLedgers(params?: {
+    account?: string;
+    from_date?: string;
+    to_date?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/financial/international-supplier-ledgers${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
   async getAccountGroups() {
     return this.request("/financial/account-groups");
   }
@@ -2430,6 +2477,9 @@ class ApiClient {
       items: Array<{
         partId: string;
         confirmQuantity: number;
+        khiQuantity?: number;
+        isbQuantity?: number;
+        otherQuantity?: number;
       }>;
     },
   ) {
@@ -3427,6 +3477,7 @@ class ApiClient {
     date: string;
     narration?: string;
     cashBankAccount?: string;
+    conversionRate?: number;
     chequeNumber?: string;
     chequeDate?: string;
     entries: Array<{
@@ -3456,6 +3507,7 @@ class ApiClient {
       date?: string;
       narration?: string;
       cashBankAccount?: string;
+      conversionRate?: number;
       chequeNumber?: string;
       chequeDate?: string;
       entries?: Array<{

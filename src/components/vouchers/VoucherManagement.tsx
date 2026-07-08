@@ -35,6 +35,7 @@ export interface Voucher {
   voucherNumber: string;
   type: "receipt" | "payment" | "journal" | "contra";
   mode?: "cash" | "online";
+  conversionRate?: number;
   date: string;
   narration: string;
   cashBankAccount: string;
@@ -68,6 +69,7 @@ export interface VoucherEntry {
 
 type MainTab = "new" | "view";
 type VoucherTab = "payment" | "receipt" | "journal" | "contra";
+type VoucherCategory = "general" | "international_supplier";
 
 const VOUCHER_TYPE_PREFIX: Record<VoucherTab, string> = {
   payment: "PV",
@@ -124,6 +126,8 @@ const voucherTabs: { id: VoucherTab; label: string; icon: React.ElementType }[] 
   { id: "contra", label: "Contra Voucher", icon: ArrowRightLeft },
 ];
 
+const internationalVoucherTabs: VoucherTab[] = ["payment", "journal"];
+
 // Sample accounts
 const initialAccounts = [
   { value: "cash-in-hand", label: "Cash in Hand" },
@@ -151,6 +155,7 @@ export const VoucherManagement = () => {
   const { toast } = useToast();
   const [mainTab, setMainTab] = useState<MainTab>("view");
   const [activeTab, setActiveTab] = useState<VoucherTab>("payment");
+  const [voucherCategory, setVoucherCategory] = useState<VoucherCategory>("general");
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -275,6 +280,15 @@ export const VoucherManagement = () => {
       void refreshAccounts();
     }
   }, [mainTab, refreshAccounts]);
+
+  useEffect(() => {
+    if (
+      voucherCategory === "international_supplier" &&
+      !internationalVoucherTabs.includes(activeTab)
+    ) {
+      setActiveTab("payment");
+    }
+  }, [voucherCategory, activeTab]);
 
   const handleAddSubgroup = () => {
     setShowSubgroupDialog(true);
@@ -459,7 +473,7 @@ export const VoucherManagement = () => {
         id: entry.id,
         account: entry.accountDr ?? entry.account,
         description: entry.description || "",
-        debit: entry.drAmount ?? entry.debit ?? 0,
+        debit: entry.drAmountLc ?? entry.drAmount ?? entry.debit ?? 0,
         credit: 0,
       }));
       // Add the Cr account entry
@@ -468,7 +482,7 @@ export const VoucherManagement = () => {
         account: data.crAccount,
         description: `Payment to ${data.paidTo}`,
         debit: 0,
-        credit: data.totalAmount || 0,
+        credit: data.totalAmountLc || data.totalAmount || 0,
       });
 
       newVoucher = {
@@ -478,9 +492,10 @@ export const VoucherManagement = () => {
         date: voucherDate,
         narration: data.paidTo || "",
         cashBankAccount: data.crAccount,
+        conversionRate: Number(data.conversionRate || 1),
         entries,
-        totalDebit: data.totalAmount || 0,
-        totalCredit: data.totalAmount || 0,
+        totalDebit: data.totalAmountLc || data.totalAmount || 0,
+        totalCredit: data.totalAmountLc || data.totalAmount || 0,
         status: "posted",
         createdAt: new Date().toISOString(),
       };
@@ -521,7 +536,7 @@ export const VoucherManagement = () => {
         id: entry.id,
         account: entry.account,
         description: entry.description || "",
-        debit: entry.drAmount || 0,
+        debit: entry.drAmountLc ?? entry.drAmount ?? 0,
         credit: 0,
       }));
       const crEntries: VoucherEntry[] = data.crEntries.map((entry: any) => ({
@@ -529,7 +544,7 @@ export const VoucherManagement = () => {
         account: entry.account,
         description: entry.description || "",
         debit: 0,
-        credit: entry.crAmount || 0,
+        credit: entry.crAmountLc ?? entry.crAmount ?? 0,
       }));
 
       newVoucher = {
@@ -539,9 +554,10 @@ export const VoucherManagement = () => {
         date: voucherDate,
         narration: data.name || "",
         cashBankAccount: "",
+        conversionRate: Number(data.conversionRate || 1),
         entries: [...drEntries, ...crEntries],
-        totalDebit: data.totalDr || 0,
-        totalCredit: data.totalCr || 0,
+        totalDebit: data.totalDrLc || data.totalDr || 0,
+        totalCredit: data.totalCrLc || data.totalCr || 0,
         status: "posted",
         createdAt: new Date().toISOString(),
       };
@@ -647,6 +663,7 @@ export const VoucherManagement = () => {
           date: newVoucher.date,
           narration: newVoucher.narration,
           cashBankAccount: newVoucher.cashBankAccount,
+          conversionRate: Number(newVoucher.conversionRate || 1),
           chequeNumber: data.chequeNumber,
           chequeDate: data.chequeDate ? convertDateToISO(data.chequeDate) : undefined,
           entries: apiEntries,
@@ -825,8 +842,32 @@ export const VoucherManagement = () => {
         <>
           {/* Voucher Type Tab Navigation */}
           <div className="bg-card border-b border-border">
-            <div className="flex items-center gap-1 overflow-x-auto">
-              {voucherTabs.map((tab) => {
+            <div className="flex flex-col gap-3 p-3">
+              <div className="max-w-xs">
+                <Label>Voucher Category</Label>
+                <Select
+                  value={voucherCategory}
+                  onValueChange={(value) => setVoucherCategory(value as VoucherCategory)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="general">General Vouchers</SelectItem>
+                    <SelectItem value="international_supplier">
+                      International Supplier Vouchers
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-1 overflow-x-auto">
+                {voucherTabs
+                  .filter((tab) =>
+                    voucherCategory === "international_supplier"
+                      ? internationalVoucherTabs.includes(tab.id)
+                      : true,
+                  )
+                  .map((tab) => {
                 return (
                   <button
                     key={tab.id}
@@ -843,6 +884,7 @@ export const VoucherManagement = () => {
                   </button>
                 );
               })}
+              </div>
             </div>
           </div>
 
@@ -852,6 +894,7 @@ export const VoucherManagement = () => {
               <PaymentVoucherForm
                 accounts={accountsList}
                 cashBankAccounts={cashBankAccounts}
+                isInternationalSupplier={voucherCategory === "international_supplier"}
                 onAddSubgroup={handleAddSubgroup}
                 onAddAccount={handleAddAccount}
                 onSave={handleSaveVoucher}
@@ -870,6 +913,7 @@ export const VoucherManagement = () => {
             {activeTab === "journal" && (
               <JournalVoucherForm
                 accounts={accountsList}
+                isInternationalSupplier={voucherCategory === "international_supplier"}
                 onAddSubgroup={handleAddSubgroup}
                 onAddAccount={handleAddAccount}
                 onSave={handleSaveVoucher}

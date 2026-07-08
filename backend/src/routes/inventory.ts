@@ -5529,6 +5529,18 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         : "N/A";
     }
 
+    const stockMovements = await prisma.stockMovement.findMany({
+      where: {
+        referenceId: order.id,
+        type: "in",
+        referenceType: { in: ["import_purchase", "purchase", "Purchase"] },
+      },
+      include: { Rack: true, Shelf: true, Store: true },
+    });
+    const movementByPartId = new Map(
+      stockMovements.map((mv) => [mv.partId, mv]),
+    );
+
     res.json({
       id: order.id,
       po_number: order.poNumber,
@@ -5538,6 +5550,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       status: order.status,
       expected_date: order.expectedDate,
       notes: order.notes,
+      purchase_quotation_id: (order as any).purchaseQuotationId ?? null,
       invoice_no: (order as any).invoiceNo ?? null,
       invoice_date: (order as any).invoiceDate ?? null,
       bl_no: (order as any).blNo ?? null,
@@ -5546,7 +5559,9 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       conversion_rate: Number((order as any).conversionRate || 0) || null,
       fc_total: Number((order as any).fcTotal || 0),
       total_amount: order.totalAmount,
-      items: order.PurchaseOrderItem.map((item) => ({
+      items: order.PurchaseOrderItem.map((item) => {
+        const mv = movementByPartId.get(item.partId);
+        return {
         id: item.id,
         part_id: item.partId,
         part_no: item.Part.partNo,
@@ -5562,8 +5577,15 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         fc_amount: (item as any).fcAmount ?? 0,
         weight: (item as any).weight ?? 0,
         total_weight: (item as any).totalWeight ?? 0,
+        store_id: mv?.storeId ?? null,
+        rack_id: mv?.rackId ?? null,
+        shelf_id: mv?.shelfId ?? null,
+        rack_name: mv?.Rack?.codeNo ?? null,
+        shelf_name: mv?.Shelf?.shelfNo ?? null,
+        store_name: mv?.Store?.name ?? null,
         notes: item.notes,
-      })),
+      };
+      }),
       created_at: order.createdAt,
     });
   } catch (error: any) {
@@ -5977,6 +5999,141 @@ async function receiveImportPurchaseOrder(
 }
 
 // Update purchase order
+// Assign rack/shelf locations to received purchase order stock movements.
+router.put("/purchase-orders/:id/locations", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { items, store_id } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "items array is required" });
+    }
+
+    const order = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: { PurchaseOrderItem: true },
+    });
+    if (!order) {
+      return res.status(404).json({ error: "Purchase order not found" });
+    }
+    if (order.status !== "Received") {
+      return res
+        .status(400)
+        .json({ error: "Locations can only be assigned after the order is received" });
+    }
+
+    const referenceType = (order as any).purchaseQuotationId
+      ? "import_purchase"
+      : "purchase";
+
+    await prisma.$transaction(async (tx) => {
+      const adjustPartRackShelf = async (
+        partId: string,
+        storeId: string | null,
+        rackId: string | null,
+        shelfId: string | null,
+        delta: number,
+      ) => {
+        if (!storeId || !delta) return;
+        const existing = await tx.partRackShelf.findFirst({
+          where: {
+            partId,
+            storeId,
+            rackId: rackId ?? null,
+            shelfId: shelfId ?? null,
+          },
+        });
+        if (delta < 0) {
+          if (!existing) return;
+          const nextQty = Number(existing.quantity || 0) + delta;
+          if (nextQty <= 0) {
+            await tx.partRackShelf.delete({ where: { id: existing.id } });
+          } else {
+            await tx.partRackShelf.update({
+              where: { id: existing.id },
+              data: { quantity: nextQty },
+            });
+          }
+          return;
+        }
+        if (existing) {
+          await tx.partRackShelf.update({
+            where: { id: existing.id },
+            data: { quantity: { increment: delta } },
+          });
+        } else {
+          await tx.partRackShelf.create({
+            data: {
+              id: crypto.randomUUID(),
+              partId,
+              storeId,
+              rackId: rackId ?? null,
+              shelfId: shelfId ?? null,
+              quantity: delta,
+            },
+          });
+        }
+      };
+
+      for (const item of items) {
+        const partId = String(item.part_id || item.partId || "").trim();
+        if (!partId) continue;
+
+        const movement = await tx.stockMovement.findFirst({
+          where: {
+            referenceType,
+            referenceId: order.id,
+            partId,
+            type: "in",
+          },
+        });
+        if (!movement) continue;
+
+        const qty = Number(movement.quantity) || 0;
+        if (qty <= 0) continue;
+
+        const newStoreId =
+          item.store_id || item.storeId || store_id || movement.storeId || null;
+        const newRackId = item.rack_id || item.rackId || null;
+        const newShelfId = item.shelf_id || item.shelfId || null;
+
+        if (movement.storeId) {
+          await adjustPartRackShelf(
+            partId,
+            movement.storeId,
+            movement.rackId ?? null,
+            movement.shelfId ?? null,
+            -qty,
+          );
+        }
+
+        await tx.stockMovement.update({
+          where: { id: movement.id },
+          data: {
+            storeId: newStoreId,
+            rackId: newRackId,
+            shelfId: newShelfId,
+          } as any,
+        });
+
+        if (newStoreId) {
+          await adjustPartRackShelf(
+            partId,
+            newStoreId,
+            newRackId,
+            newShelfId,
+            qty,
+          );
+        }
+      }
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

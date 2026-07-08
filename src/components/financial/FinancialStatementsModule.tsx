@@ -5,6 +5,7 @@ import { TrialBalanceTab } from "./TrialBalanceTab";
 import { IncomeStatementTab } from "./IncomeStatementTab";
 import { BalanceSheetTab } from "./BalanceSheetTab";
 import { LedgersTab } from "./LedgersTab";
+import { InternationalSupplierLedgersTab } from "./InternationalSupplierLedgersTab";
 import { DailyClosingModule } from "./DailyClosingModule";
 
 export const FinancialStatementsModule = () => {
@@ -44,6 +45,12 @@ export const FinancialStatementsModule = () => {
           >
             <span className="mr-1">λ</span> Ledgers
           </TabsTrigger>
+          <TabsTrigger
+            value="international-supplier-ledgers"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-4 py-2 transition-all duration-200"
+          >
+            <span className="mr-1">λ</span> International Supplier Ledger
+          </TabsTrigger>
           <TabsTrigger 
             value="daily-closing"
             className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-4 py-2 transition-all duration-200"
@@ -70,6 +77,10 @@ export const FinancialStatementsModule = () => {
 
         <TabsContent value="ledgers" className="animate-fade-in mt-4">
           <LedgersTab />
+        </TabsContent>
+
+        <TabsContent value="international-supplier-ledgers" className="animate-fade-in mt-4">
+          <InternationalSupplierLedgersTab />
         </TabsContent>
 
         <TabsContent value="daily-closing" className="animate-fade-in mt-4">

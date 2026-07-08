@@ -180,6 +180,9 @@ async function createPurchaseOrderFromQuotation(quotationId: string) {
 type ConfirmQuotationItemInput = {
   partId: string;
   confirmQuantity: number;
+  khiQuantity?: number;
+  isbQuantity?: number;
+  otherQuantity?: number;
 };
 
 type PoLaneKey = "khi" | "isb" | "other";
@@ -297,12 +300,27 @@ async function confirmPurchaseQuotation(
     ),
   );
 
-  const confirmQtyByPartId = new Map<string, number>();
+  const confirmItemByPartId = new Map<string, ConfirmQuotationItemInput>();
   if (Array.isArray(options.items) && options.items.length > 0) {
     for (const item of options.items) {
       const partId = String(item?.partId || "").trim();
       if (!partId) continue;
-      confirmQtyByPartId.set(partId, Math.max(0, Math.floor(Number(item.confirmQuantity || 0))));
+      confirmItemByPartId.set(partId, {
+        partId,
+        confirmQuantity: Math.max(0, Math.floor(Number(item.confirmQuantity || 0))),
+        khiQuantity:
+          item?.khiQuantity !== undefined
+            ? Math.max(0, Math.floor(Number(item.khiQuantity)))
+            : undefined,
+        isbQuantity:
+          item?.isbQuantity !== undefined
+            ? Math.max(0, Math.floor(Number(item.isbQuantity)))
+            : undefined,
+        otherQuantity:
+          item?.otherQuantity !== undefined
+            ? Math.max(0, Math.floor(Number(item.otherQuantity)))
+            : undefined,
+      });
     }
   }
 
@@ -321,24 +339,43 @@ async function confirmPurchaseQuotation(
     if (!partId) continue;
 
     const quotationQty = Number(item.quotationQuantity || 0);
-    const confirmQty = confirmQtyByPartId.has(partId)
-      ? Number(confirmQtyByPartId.get(partId) || 0)
-      : quotationQty;
+    const itemInput = confirmItemByPartId.get(partId);
+    const confirmQty = itemInput ? Number(itemInput.confirmQuantity || 0) : quotationQty;
 
     if (confirmQty <= 0) continue;
 
-    const split = inquirySplitByPartId.get(partId) || {
-      khiQuantity: 0,
-      isbQuantity: 0,
-      otherQuantity: 0,
-    };
-    const laneQty = distributeConfirmQuantity(
-      confirmQty,
-      quotationQty,
-      split.khiQuantity,
-      split.isbQuantity,
-      split.otherQuantity,
-    );
+    const hasExplicitSplit =
+      itemInput &&
+      (itemInput.khiQuantity !== undefined ||
+        itemInput.isbQuantity !== undefined ||
+        itemInput.otherQuantity !== undefined);
+
+    let laneQty: Record<PoLaneKey, number>;
+    if (hasExplicitSplit) {
+      const khi = Number(itemInput.khiQuantity || 0);
+      const isb = Number(itemInput.isbQuantity || 0);
+      const other = Number(itemInput.otherQuantity || 0);
+      const splitSum = khi + isb + other;
+      if (splitSum !== confirmQty) {
+        throw new Error(
+          `ISB, KHI, and Other quantities must total the confirm quantity (${confirmQty}) for part ${partId}.`,
+        );
+      }
+      laneQty = { khi, isb, other };
+    } else {
+      const split = inquirySplitByPartId.get(partId) || {
+        khiQuantity: 0,
+        isbQuantity: 0,
+        otherQuantity: 0,
+      };
+      laneQty = distributeConfirmQuantity(
+        confirmQty,
+        quotationQty,
+        split.khiQuantity,
+        split.isbQuantity,
+        split.otherQuantity,
+      );
+    }
 
     const revisedLcRate = Number(item.revisedLcRate || 0);
     const lcRate = Number(item.lcRate || 0);
@@ -2390,6 +2427,18 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
       .map((item: any) => ({
         partId: String(item?.partId || "").trim(),
         confirmQuantity: Math.max(0, Math.floor(Number(item?.confirmQuantity || 0))),
+        khiQuantity:
+          item?.khiQuantity !== undefined
+            ? Math.max(0, Math.floor(Number(item.khiQuantity)))
+            : undefined,
+        isbQuantity:
+          item?.isbQuantity !== undefined
+            ? Math.max(0, Math.floor(Number(item.isbQuantity)))
+            : undefined,
+        otherQuantity:
+          item?.otherQuantity !== undefined
+            ? Math.max(0, Math.floor(Number(item.otherQuantity)))
+            : undefined,
       }))
       .filter((item: { partId: string }) => item.partId);
 

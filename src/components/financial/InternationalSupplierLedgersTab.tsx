@@ -1,0 +1,502 @@
+import { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Users, Download } from "lucide-react";
+import { apiClient } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { openPrintHtml } from "@/utils/printUtils";
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Calendar as CalendarIcon } from "lucide-react";
+import {
+  SearchableSelect,
+  SearchableSelectOption,
+} from "@/components/ui/searchable-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+type CurrencyMode = "local" | "foreign";
+
+interface LedgerEntry {
+  id: number | string;
+  tId: number | null;
+  voucherNo: string;
+  timeStamp: string;
+  description: string;
+  debit: number | null;
+  credit: number | null;
+  balance: number;
+  debitFc: number | null;
+  creditFc: number | null;
+  balanceFc: number;
+  conversionRate?: number | null;
+  currencyName?: string;
+}
+
+interface SupplierAccountOption {
+  id: string;
+  name: string;
+  supplierName?: string;
+  currencyName?: string;
+}
+
+export const InternationalSupplierLedgersTab = () => {
+  const { toast } = useToast();
+  const [selectedAccount, setSelectedAccount] = useState("");
+  const [currencyMode, setCurrencyMode] = useState<CurrencyMode>("local");
+  const [fromDate, setFromDate] = useState<Date | undefined>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d;
+  });
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [selectedEntries, setSelectedEntries] = useState<(number | string)[]>([]);
+  const [accounts, setAccounts] = useState<SupplierAccountOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [currencyName, setCurrencyName] = useState("USD");
+
+  useEffect(() => {
+    const loadAccounts = async () => {
+      try {
+        const response = (await apiClient.getInternationalSupplierAccounts()) as any;
+        if (response.data) {
+          setAccounts(response.data);
+        }
+      } catch {
+        // ignore bootstrap errors; search will surface issues
+      }
+    };
+    loadAccounts();
+  }, []);
+
+  const accountOptions: SearchableSelectOption[] = useMemo(
+    () =>
+      accounts.map((acc) => ({
+        value: acc.id,
+        label: acc.supplierName
+          ? `${acc.name} (${acc.supplierName})`
+          : acc.name,
+      })),
+    [accounts],
+  );
+
+  const formatLocalNumber = (num: number | null) => {
+    if (num === null || num === undefined) return "-";
+    return num.toLocaleString("en-PK", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const formatForeignNumber = (num: number | null) => {
+    if (num === null || num === undefined) return "-";
+    return `$ ${num.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
+  const formatAmount = (num: number | null) =>
+    currencyMode === "foreign" ? formatForeignNumber(num) : formatLocalNumber(num);
+
+  const getDebit = (entry: LedgerEntry) =>
+    currencyMode === "foreign" ? entry.debitFc : entry.debit;
+
+  const getCredit = (entry: LedgerEntry) =>
+    currencyMode === "foreign" ? entry.creditFc : entry.credit;
+
+  const getBalance = (entry: LedgerEntry) =>
+    currencyMode === "foreign" ? entry.balanceFc : entry.balance;
+
+  const formatDisplayValue = (value: string | number | null) => {
+    if (value === null || value === undefined) return "-";
+    if (value === "-") return "-";
+    return String(value);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedEntries.length === entries.length) {
+      setSelectedEntries([]);
+    } else {
+      setSelectedEntries(entries.map((e) => e.id));
+    }
+  };
+
+  const toggleEntry = (id: number | string) => {
+    setSelectedEntries((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const fetchLedgers = async () => {
+    if (!selectedAccount) {
+      toast({
+        title: "Account Required",
+        description: "Please select an international supplier account",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = (await apiClient.getInternationalSupplierLedgers({
+        account: selectedAccount,
+        from_date: fromDate ? format(fromDate, "yyyy-MM-dd") : undefined,
+        to_date: toDate ? format(toDate, "yyyy-MM-dd") : undefined,
+        page: 1,
+        limit: 10000,
+      })) as any;
+
+      if (response.error) {
+        toast({
+          title: "Error",
+          description: response.error,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setEntries(response.data || []);
+      setCurrencyName(response.meta?.currencyName || "USD");
+      setSelectedEntries([]);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to fetch ledger entries",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    const modeLabel = currencyMode === "foreign" ? "FC" : "LC";
+    const headers = [
+      "T_Id",
+      "Voucher No",
+      "Time Stamp",
+      "Description",
+      `Debit (${modeLabel})`,
+      `Credit (${modeLabel})`,
+      `Balance (${modeLabel})`,
+    ];
+    const csvContent = [
+      headers.join(","),
+      ...entries.map((entry) =>
+        [
+          entry.tId ?? "",
+          entry.voucherNo,
+          entry.timeStamp,
+          `"${String(entry.description || "").replace(/"/g, '""')}"`,
+          getDebit(entry) ?? "",
+          getCredit(entry) ?? "",
+          getBalance(entry),
+        ].join(","),
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `international_supplier_ledgers_${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast({
+      title: "Export Complete",
+      description: "International supplier ledger exported to CSV successfully.",
+    });
+  };
+
+  const handlePrint = () => {
+    const modeLabel =
+      currencyMode === "foreign"
+        ? `Foreign Currency (${currencyName})`
+        : "Local Currency";
+    const html = `
+      <html>
+        <head>
+          <title>International Supplier Ledger</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f4f4f4; }
+            .text-right { text-align: right; }
+          </style>
+        </head>
+        <body>
+          <h1>International Supplier Ledger</h1>
+          <p>Currency mode: ${modeLabel}</p>
+          <p>Period: ${fromDate ? format(fromDate, "dd/MM/yyyy") : ""} to ${toDate ? format(toDate, "dd/MM/yyyy") : ""}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>T_Id</th>
+                <th>Voucher No</th>
+                <th>Time Stamp</th>
+                <th>Description</th>
+                <th class="text-right">Dr</th>
+                <th class="text-right">Cr</th>
+                <th class="text-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entries
+                .map(
+                  (entry) => `
+                <tr>
+                  <td>${entry.tId ?? "-"}</td>
+                  <td>${entry.voucherNo}</td>
+                  <td>${entry.timeStamp}</td>
+                  <td>${entry.description}</td>
+                  <td class="text-right">${formatAmount(getDebit(entry))}</td>
+                  <td class="text-right">${formatAmount(getCredit(entry))}</td>
+                  <td class="text-right">${formatAmount(getBalance(entry))}</td>
+                </tr>
+              `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+    openPrintHtml(html, {
+      onBlocked: () =>
+        toast({
+          title: "Error",
+          description: "Please allow popups to print the report",
+          variant: "destructive",
+        }),
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Users className="h-5 w-5 text-destructive" />
+            International Supplier Ledger
+          </CardTitle>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportCSV}>
+              <Download className="h-4 w-4 mr-1" />
+              Export CSV
+            </Button>
+            <PrintPdfButton onPrint={handlePrint} label="Print" />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Account (International Suppliers)</Label>
+            <SearchableSelect
+              options={accountOptions}
+              value={selectedAccount}
+              onValueChange={setSelectedAccount}
+              placeholder="Select international supplier account..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Currency</Label>
+            <Select
+              value={currencyMode}
+              onValueChange={(value) => setCurrencyMode(value as CurrencyMode)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Local Currency (LC)</SelectItem>
+                <SelectItem value="foreign">Foreign Currency (FC)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="space-y-2">
+            <Label>From</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-44 justify-start text-left font-normal",
+                    !fromDate && "text-muted-foreground",
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {fromDate ? format(fromDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={fromDate}
+                  onSelect={setFromDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="space-y-2">
+            <Label>To</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-44 justify-start text-left font-normal",
+                    !toDate && "text-muted-foreground",
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {toDate ? format(toDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={toDate}
+                  onSelect={setToDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <Button onClick={fetchLedgers} disabled={loading}>
+            Search
+          </Button>
+        </div>
+
+        {currencyMode === "foreign" ? (
+          <p className="text-xs text-muted-foreground">
+            Foreign amounts are derived as LC ÷ voucher exchange rate. Displayed with $ sign.
+          </p>
+        ) : null}
+
+        <div className="border rounded-lg overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <ListNumberHeader />
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={
+                      selectedEntries.length === entries.length && entries.length > 0
+                    }
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </TableHead>
+                <TableHead className="font-semibold underline">T_Id</TableHead>
+                <TableHead className="font-semibold underline">Voucher No</TableHead>
+                <TableHead className="font-semibold underline">Time Stamp</TableHead>
+                <TableHead className="font-semibold underline">Description</TableHead>
+                <TableHead className="font-semibold underline text-right">Dr</TableHead>
+                <TableHead className="font-semibold underline text-right">Cr</TableHead>
+                <TableHead className="font-semibold underline text-right">Balance</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    Loading...
+                  </TableCell>
+                </TableRow>
+              ) : entries.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-8">
+                    <div className="flex flex-col items-center gap-2">
+                      <Users className="h-12 w-12 text-muted-foreground/50" />
+                      <p className="text-muted-foreground font-medium">
+                        {selectedAccount
+                          ? "No ledger entries found"
+                          : "Please select an international supplier account"}
+                      </p>
+                      <p className="text-sm text-muted-foreground/70">
+                        {selectedAccount
+                          ? "Try adjusting your date range"
+                          : "Choose a supplier account and click Search"}
+                      </p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <>
+                  {entries.map((entry, index) => (
+                    <TableRow key={entry.id} className="hover:bg-muted/30">
+                      <ListNumberCell index={index} />
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedEntries.includes(entry.id)}
+                          onCheckedChange={() => toggleEntry(entry.id)}
+                        />
+                      </TableCell>
+                      <TableCell>{formatDisplayValue(entry.tId)}</TableCell>
+                      <TableCell>{formatDisplayValue(entry.voucherNo)}</TableCell>
+                      <TableCell>{formatDisplayValue(entry.timeStamp)}</TableCell>
+                      <TableCell>{entry.description}</TableCell>
+                      <TableCell className="text-right">
+                        {formatAmount(getDebit(entry))}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatAmount(getCredit(entry))}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatAmount(getBalance(entry))}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-muted font-bold">
+                    <TableCell colSpan={6} className="text-right">
+                      Total:
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatAmount(
+                        entries.reduce((sum, e) => sum + (getDebit(e) || 0), 0),
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatAmount(
+                        entries.reduce((sum, e) => sum + (getCredit(e) || 0), 0),
+                      )}
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                </>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};

@@ -10,18 +10,26 @@ interface VoucherEntry {
   id: string;
   accountDr: string;
   description: string;
-  drAmount: number;
+  drAmount: number; // FC amount
 }
 
 interface PaymentVoucherFormProps {
   accounts: { value: string; label: string }[];
   cashBankAccounts: { value: string; label: string }[];
+  isInternationalSupplier?: boolean;
   onAddSubgroup: () => void;
   onAddAccount: () => void;
   onSave: (data: any) => Promise<boolean>;
 }
 
-export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, onAddAccount, onSave }: PaymentVoucherFormProps) => {
+export const PaymentVoucherForm = ({
+  accounts,
+  cashBankAccounts,
+  isInternationalSupplier = false,
+  onAddSubgroup,
+  onAddAccount,
+  onSave,
+}: PaymentVoucherFormProps) => {
   const { toast } = useToast();
   const cashBankValues = new Set(cashBankAccounts.map((a) => a.value));
   // PV: Account Dr must NOT include cash/bank accounts.
@@ -37,6 +45,7 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
   };
 
   const [date, setDate] = useState(getTodayDate());
+  const [exchangeRate, setExchangeRate] = useState("1");
   const [crAccount, setCrAccount] = useState("");
   const [entries, setEntries] = useState<VoucherEntry[]>([
     { id: "1", accountDr: "", description: "", drAmount: 0 }
@@ -65,6 +74,10 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
   };
 
   const totalAmount = entries.reduce((sum, e) => sum + (Number(e.drAmount) || 0), 0);
+  const parsedExchangeRate = Number(exchangeRate);
+  const exchangeRateValue =
+    Number.isFinite(parsedExchangeRate) && parsedExchangeRate > 0 ? parsedExchangeRate : 0;
+  const totalAmountLc = totalAmount * exchangeRateValue;
 
   const [saving, setSaving] = useState(false);
 
@@ -86,6 +99,10 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
       toast({ title: "Error", description: "Please enter at least one amount", variant: "destructive" });
       return;
     }
+    if (isInternationalSupplier && (!Number.isFinite(parsedExchangeRate) || parsedExchangeRate <= 0)) {
+      toast({ title: "Error", description: "Please enter a valid exchange rate", variant: "destructive" });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -96,12 +113,19 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
         crAccount,
         entries,
         totalAmount,
+        ...(isInternationalSupplier
+          ? {
+              totalAmountLc,
+              conversionRate: parsedExchangeRate,
+            }
+          : {}),
       });
 
       if (!saved) return;
 
       setPaidTo("");
       setCrAccount("");
+      setExchangeRate("1");
       setEntries([{ id: "1", accountDr: "", description: "", drAmount: 0 }]);
     } finally {
       setSaving(false);
@@ -132,7 +156,7 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
       </div>
 
       {/* Paid To and Date */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      <div className={isInternationalSupplier ? "grid grid-cols-1 lg:grid-cols-6 gap-4" : "grid grid-cols-1 lg:grid-cols-4 gap-4"}>
         <div className="lg:col-span-3">
           <Input
             placeholder="Paid To"
@@ -141,7 +165,22 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
             className="h-11"
           />
         </div>
-        <div>
+        {isInternationalSupplier ? (
+          <div className="lg:col-span-2">
+            <div className="relative">
+              <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Exchange Rate</Label>
+              <Input
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                value={exchangeRate}
+                onChange={(e) => setExchangeRate(e.target.value)}
+                className="h-11 bg-muted/30"
+              />
+            </div>
+          </div>
+        ) : null}
+        <div className="lg:col-span-1">
           <div className="relative">
             <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Date</Label>
             <Input
@@ -168,21 +207,26 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
       {/* Entries Table */}
       <div className="space-y-4">
         <div className="grid grid-cols-12 gap-4 items-center">
-          <div className="col-span-4">
+          <div className="col-span-3">
             <Label className="text-base font-medium">Account Dr</Label>
           </div>
-          <div className="col-span-5">
+          <div className="col-span-4">
             <Label className="text-base font-medium">Description</Label>
           </div>
-          <div className="col-span-2">
-            <Label className="text-base font-medium">Dr</Label>
+          <div className={isInternationalSupplier ? "col-span-2" : "col-span-2"}>
+            <Label className="text-base font-medium">{isInternationalSupplier ? "FC Dr" : "Dr"}</Label>
           </div>
+          {isInternationalSupplier ? (
+            <div className="col-span-2">
+              <Label className="text-base font-medium">LC Dr</Label>
+            </div>
+          ) : null}
           <div className="col-span-1"></div>
         </div>
 
         {entries.map((entry) => (
           <div key={entry.id} className="grid grid-cols-12 gap-4 items-center">
-            <div className="col-span-4">
+            <div className="col-span-3">
               <SearchableSelect
                 options={paymentDrOptions}
                 value={entry.accountDr}
@@ -191,7 +235,7 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
                 selectedDisplayLabelOnly
               />
             </div>
-            <div className="col-span-5">
+            <div className="col-span-4">
               <Input
                 placeholder="Description"
                 value={entry.description}
@@ -202,7 +246,7 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
             <div className="col-span-2">
               <Input
                 type="number"
-                placeholder="amount"
+                placeholder={isInternationalSupplier ? "fc amount" : "amount"}
                 value={entry.drAmount || ""}
                 onChange={(e) => {
                   const value = parseFloat(e.target.value) || 0;
@@ -213,6 +257,15 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
                 className="h-10"
               />
             </div>
+            {isInternationalSupplier ? (
+              <div className="col-span-2">
+                <Input
+                  value={formatAmount((Number(entry.drAmount) || 0) * exchangeRateValue)}
+                  readOnly
+                  className="h-10 bg-muted/30"
+                />
+              </div>
+            ) : null}
             <div className="col-span-1 flex justify-center">
               <Button
                 variant="ghost"
@@ -237,18 +290,35 @@ export const PaymentVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
         </Button>
       </div>
 
-      {/* Total Amount */}
-      <div className="flex items-center justify-end gap-4">
-        <Label className="text-base font-medium">Total Amount</Label>
-        <div className="relative w-48">
-          <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Total Amount</Label>
-          <Input
-            value={formatAmount(totalAmount)}
-            readOnly
-            className="h-11 bg-muted/30 font-medium"
-          />
+      {/* Total Amounts */}
+      {isInternationalSupplier ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-md border border-border p-3 space-y-2">
+            <Label className="text-sm font-medium">FC Totals</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <Input value={formatAmount(totalAmount)} readOnly className="h-10 bg-muted/30 font-medium" />
+              <Input value={formatAmount(totalAmount)} readOnly className="h-10 bg-muted/30 font-medium" />
+            </div>
+            <p className="text-xs text-muted-foreground">Dr / Cr (FC)</p>
+          </div>
+          <div className="rounded-md border border-border p-3 space-y-2">
+            <Label className="text-sm font-medium">LC Totals</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <Input value={formatAmount(totalAmountLc)} readOnly className="h-10 bg-muted/30 font-medium" />
+              <Input value={formatAmount(totalAmountLc)} readOnly className="h-10 bg-muted/30 font-medium" />
+            </div>
+            <p className="text-xs text-muted-foreground">Dr / Cr (LC)</p>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center justify-end gap-4">
+          <Label className="text-base font-medium">Total Amount</Label>
+          <div className="relative w-48">
+            <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Total Amount</Label>
+            <Input value={formatAmount(totalAmount)} readOnly className="h-11 bg-muted/30 font-medium" />
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2">

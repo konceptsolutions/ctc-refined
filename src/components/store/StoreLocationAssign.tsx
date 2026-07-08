@@ -38,6 +38,7 @@ interface DirectPurchaseOrderItem {
 interface DirectPurchaseOrder {
   id: string;
   dpo_no: string;
+  po_number?: string;
   /** Store the DPO belongs to — used first for rack / shelf scoping */
   store_id?: string | null;
   storeId?: string | null;
@@ -61,6 +62,7 @@ interface Shelf {
 
 interface StoreLocationAssignProps {
   order: DirectPurchaseOrder;
+  orderKind?: "dpo" | "po";
   storeId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -92,6 +94,7 @@ interface PartStockLocationDisplay {
 
 export const StoreLocationAssign = ({
   order,
+  orderKind = "dpo",
   storeId,
   open,
   onOpenChange,
@@ -487,14 +490,30 @@ export const StoreLocationAssign = ({
         };
       });
 
-      // Update the order with new locations
-      const response = await apiClient.updateDirectPurchaseOrder(order.id, {
-        items: updatedItems,
-      });
+      if (orderKind === "po") {
+        const response = await apiClient.assignPurchaseOrderLocations(order.id, {
+          store_id: rackScopeStoreId || undefined,
+          items: updatedItems.map((item) => ({
+            part_id: item.part_id,
+            store_id: item.store_id,
+            rack_id: item.rack_id,
+            shelf_id: item.shelf_id,
+          })),
+        });
+        if (response.error) {
+          toast.error(response.error);
+          return;
+        }
+      } else {
+        // Update the DPO with new locations
+        const response = await apiClient.updateDirectPurchaseOrder(order.id, {
+          items: updatedItems,
+        });
 
-      if (response.error) {
-        toast.error(response.error);
-        return;
+        if (response.error) {
+          toast.error(response.error);
+          return;
+        }
       }
 
       toast.success("Locations assigned successfully");
@@ -506,6 +525,7 @@ export const StoreLocationAssign = ({
     }
   };
 
+  const orderLabel = order.po_number || order.dpo_no;
   const poStoreName =
     String(order.store_name ?? order.storeName ?? "").trim() || null;
 
@@ -515,7 +535,7 @@ export const StoreLocationAssign = ({
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <MapPin className="w-5 h-5" />
-            Assign Locations - {order.dpo_no}
+            Assign Locations - {orderLabel}
           </DialogTitle>
           <DialogDescription className="space-y-1">
             <span className="block">
