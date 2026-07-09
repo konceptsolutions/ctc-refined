@@ -135,6 +135,8 @@ exports.Prisma.AccountScalarFieldEnum = {
   canDelete: 'canDelete',
   supplierId: 'supplierId',
   customerId: 'customerId',
+  employeeId: 'employeeId',
+  employeeAccountRole: 'employeeAccountRole',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -187,6 +189,14 @@ exports.Prisma.AdjustmentItemScalarFieldEnum = {
   deletedAt: 'deletedAt'
 };
 
+exports.Prisma.AreaScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.ApplicationScalarFieldEnum = {
   id: 'id',
   subcategoryId: 'subcategoryId',
@@ -237,6 +247,7 @@ exports.Prisma.BackupScheduleScalarFieldEnum = {
 exports.Prisma.BrandScalarFieldEnum = {
   id: 'id',
   name: 'name',
+  longName: 'longName',
   status: 'status',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -273,6 +284,62 @@ exports.Prisma.CustomerScalarFieldEnum = {
   status: 'status',
   priceType: 'priceType',
   createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  accountHead: 'accountHead',
+  area: 'area',
+  cellNumber: 'cellNumber',
+  code: 'code',
+  contactPersons: 'contactPersons',
+  gstNumber: 'gstNumber',
+  ntn: 'ntn',
+  pstNumber: 'pstNumber',
+  referenceName: 'referenceName',
+  remarks: 'remarks',
+  shortTitle: 'shortTitle',
+  accountClosingDate: 'accountClosingDate',
+  accountOpeningDate: 'accountOpeningDate',
+  category: 'category',
+  tax: 'tax'
+};
+
+exports.Prisma.EmployeeScalarFieldEnum = {
+  id: 'id',
+  code: 'code',
+  name: 'name',
+  cnic: 'cnic',
+  contactNo: 'contactNo',
+  email: 'email',
+  address: 'address',
+  designation: 'designation',
+  department: 'department',
+  joiningDate: 'joiningDate',
+  openingBalanceDate: 'openingBalanceDate',
+  monthlySalary: 'monthlySalary',
+  workingDays: 'workingDays',
+  status: 'status',
+  remarks: 'remarks',
+  openingLoanBalance: 'openingLoanBalance',
+  openingAdvanceBalance: 'openingAdvanceBalance',
+  openingSalaryPayable: 'openingSalaryPayable',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.EmployeeTransactionScalarFieldEnum = {
+  id: 'id',
+  employeeId: 'employeeId',
+  type: 'type',
+  date: 'date',
+  payrollMonth: 'payrollMonth',
+  amount: 'amount',
+  absentDays: 'absentDays',
+  loanRecovery: 'loanRecovery',
+  advanceRecovery: 'advanceRecovery',
+  netPaid: 'netPaid',
+  description: 'description',
+  voucherId: 'voucherId',
+  referenceNo: 'referenceNo',
+  createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
 
@@ -297,11 +364,16 @@ exports.Prisma.DirectPurchaseOrderScalarFieldEnum = {
   id: 'id',
   dpoNumber: 'dpoNumber',
   date: 'date',
+  invoiceNo: 'invoiceNo',
+  invoiceDate: 'invoiceDate',
   storeId: 'storeId',
   supplierId: 'supplierId',
+  branchAccountId: 'branchAccountId',
+  orderType: 'orderType',
   account: 'account',
   description: 'description',
   status: 'status',
+  discount: 'discount',
   totalAmount: 'totalAmount',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -343,7 +415,9 @@ exports.Prisma.DirectPurchaseOrderReturnScalarFieldEnum = {
   totalAmount: 'totalAmount',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
-  supplierId: 'supplierId'
+  supplierId: 'supplierId',
+  deduction: 'deduction',
+  netAmount: 'netAmount'
 };
 
 exports.Prisma.DirectPurchaseOrderReturnItemScalarFieldEnum = {
@@ -367,57 +441,6 @@ exports.Prisma.ExpenseTypeScalarFieldEnum = {
   status: 'status',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
-};
-
-exports.Prisma.JournalEntryScalarFieldEnum = {
-  id: 'id',
-  entryNo: 'entryNo',
-  entryDate: 'entryDate',
-  reference: 'reference',
-  description: 'description',
-  totalDebit: 'totalDebit',
-  totalCredit: 'totalCredit',
-  status: 'status',
-  createdBy: 'createdBy',
-  postedBy: 'postedBy',
-  postedAt: 'postedAt',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.JournalLineScalarFieldEnum = {
-  id: 'id',
-  journalEntryId: 'journalEntryId',
-  accountId: 'accountId',
-  description: 'description',
-  debit: 'debit',
-  credit: 'credit',
-  lineOrder: 'lineOrder',
-  createdAt: 'createdAt'
-};
-
-exports.Prisma.KitScalarFieldEnum = {
-  id: 'id',
-  badge: 'badge',
-  name: 'name',
-  description: 'description',
-  sellingPrice: 'sellingPrice',
-  totalCost: 'totalCost',
-  itemsCount: 'itemsCount',
-  status: 'status',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.KitItemScalarFieldEnum = {
-  id: 'id',
-  kitId: 'kitId',
-  partId: 'partId',
-  partNo: 'partNo',
-  partName: 'partName',
-  quantity: 'quantity',
-  costPerUnit: 'costPerUnit',
-  createdAt: 'createdAt'
 };
 
 exports.Prisma.LongCatSettingsScalarFieldEnum = {
@@ -450,9 +473,9 @@ exports.Prisma.ModelScalarFieldEnum = {
   id: 'id',
   partId: 'partId',
   name: 'name',
-  qtyUsed: 'qtyUsed',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  qtyUsed: 'qtyUsed'
 };
 
 exports.Prisma.OperationalExpenseScalarFieldEnum = {
@@ -493,9 +516,92 @@ exports.Prisma.PartScalarFieldEnum = {
   smc: 'smc',
   size: 'size',
   origin: 'origin',
+  type: 'type',
   imageP1: 'imageP1',
   imageP2: 'imageP2',
   status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.KitItemScalarFieldEnum = {
+  id: 'id',
+  partId: 'partId',
+  componentPartId: 'componentPartId',
+  partNo: 'partNo',
+  partName: 'partName',
+  quantity: 'quantity',
+  costPerUnit: 'costPerUnit',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.PurchaseImportRequestScalarFieldEnum = {
+  id: 'id',
+  requestNo: 'requestNo',
+  batchId: 'batchId',
+  supplierId: 'supplierId',
+  partReference: 'partReference',
+  consignee: 'consignee',
+  status: 'status',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.PurchaseImportRequestItemScalarFieldEnum = {
+  id: 'id',
+  purchaseImportRequestId: 'purchaseImportRequestId',
+  partId: 'partId',
+  currentStock: 'currentStock',
+  demandQuantity: 'demandQuantity',
+  khiQuantity: 'khiQuantity',
+  isbQuantity: 'isbQuantity',
+  otherQuantity: 'otherQuantity',
+  weight: 'weight',
+  totalWeight: 'totalWeight',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.PurchaseQuotationScalarFieldEnum = {
+  id: 'id',
+  quotationNo: 'quotationNo',
+  purchaseImportRequestId: 'purchaseImportRequestId',
+  supplierId: 'supplierId',
+  currency: 'currency',
+  conversionRate: 'conversionRate',
+  fcTotal: 'fcTotal',
+  lcTotal: 'lcTotal',
+  fcRevisedTotal: 'fcRevisedTotal',
+  lcRevisedTotal: 'lcRevisedTotal',
+  quotationDate: 'quotationDate',
+  revisedQuotationDate: 'revisedQuotationDate',
+  quotationType: 'quotationType',
+  terms: 'terms',
+  status: 'status',
+  confirmationDate: 'confirmationDate',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.PurchaseQuotationItemScalarFieldEnum = {
+  id: 'id',
+  purchaseQuotationId: 'purchaseQuotationId',
+  partId: 'partId',
+  demandQuantity: 'demandQuantity',
+  quotationQuantity: 'quotationQuantity',
+  shipDays: 'shipDays',
+  fcRate: 'fcRate',
+  fcAmount: 'fcAmount',
+  lcRate: 'lcRate',
+  lcAmount: 'lcAmount',
+  revisedFcRate: 'revisedFcRate',
+  revisedFcAmount: 'revisedFcAmount',
+  revisedLcRate: 'revisedLcRate',
+  revisedLcAmount: 'revisedLcAmount',
+  weight: 'weight',
+  totalWeight: 'totalWeight',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -533,6 +639,31 @@ exports.Prisma.PurchaseOrderScalarFieldEnum = {
   poNumber: 'poNumber',
   date: 'date',
   supplierId: 'supplierId',
+  purchaseQuotationId: 'purchaseQuotationId',
+  consignee: 'consignee',
+  currency: 'currency',
+  conversionRate: 'conversionRate',
+  fcTotal: 'fcTotal',
+  invoiceNo: 'invoiceNo',
+  invoiceDate: 'invoiceDate',
+  blNo: 'blNo',
+  blDate: 'blDate',
+  pkgExpPercent: 'pkgExpPercent',
+  invDiscPercent: 'invDiscPercent',
+  frtExp: 'frtExp',
+  discAmt: 'discAmt',
+  customsDuty: 'customsDuty',
+  additionalCustomsDuty: 'additionalCustomsDuty',
+  regulatoryDuty: 'regulatoryDuty',
+  salesTax: 'salesTax',
+  additionalSalesTax: 'additionalSalesTax',
+  incomeTax: 'incomeTax',
+  ed: 'ed',
+  doAmount: 'doAmount',
+  miscExp: 'miscExp',
+  locFrt: 'locFrt',
+  crnExp: 'crnExp',
+  totalExp: 'totalExp',
   status: 'status',
   expectedDate: 'expectedDate',
   notes: 'notes',
@@ -548,7 +679,13 @@ exports.Prisma.PurchaseOrderItemScalarFieldEnum = {
   quantity: 'quantity',
   unitCost: 'unitCost',
   totalCost: 'totalCost',
+  fcRate: 'fcRate',
+  fcAmount: 'fcAmount',
+  weight: 'weight',
+  totalWeight: 'totalWeight',
   receivedQty: 'receivedQty',
+  additionalQty: 'additionalQty',
+  backQty: 'backQty',
   notes: 'notes',
   createdAt: 'createdAt'
 };
@@ -620,18 +757,25 @@ exports.Prisma.SalesInvoiceScalarFieldEnum = {
   id: 'id',
   invoiceNo: 'invoiceNo',
   invoiceDate: 'invoiceDate',
+  term: 'term',
   customerId: 'customerId',
   customerName: 'customerName',
   customerType: 'customerType',
   salesPerson: 'salesPerson',
   subtotal: 'subtotal',
   overallDiscount: 'overallDiscount',
+  freightCharges: 'freightCharges',
   tax: 'tax',
+  taxPercentage: 'taxPercentage',
   grandTotal: 'grandTotal',
   paidAmount: 'paidAmount',
   status: 'status',
   paymentStatus: 'paymentStatus',
   accountId: 'accountId',
+  bankAccountId: 'bankAccountId',
+  cashAccountId: 'cashAccountId',
+  bankAmount: 'bankAmount',
+  cashAmount: 'cashAmount',
   deliveredTo: 'deliveredTo',
   remarks: 'remarks',
   quotationId: 'quotationId',
@@ -655,6 +799,18 @@ exports.Prisma.SalesInvoiceItemScalarFieldEnum = {
   lineTotal: 'lineTotal',
   grade: 'grade',
   brand: 'brand',
+  createdAt: 'createdAt',
+  avgCost: 'avgCost',
+  useUnlocatedStock: 'useUnlocatedStock'
+};
+
+exports.Prisma.InvoiceRackShelfScalarFieldEnum = {
+  id: 'id',
+  salesInvoiceItemId: 'salesInvoiceItemId',
+  storeId: 'storeId',
+  rackId: 'rackId',
+  shelfId: 'shelfId',
+  quantity: 'quantity',
   createdAt: 'createdAt'
 };
 
@@ -663,11 +819,18 @@ exports.Prisma.SalesQuotationScalarFieldEnum = {
   quotationNo: 'quotationNo',
   quotationDate: 'quotationDate',
   validUntil: 'validUntil',
+  customerType: 'customerType',
+  customerId: 'customerId',
   customerName: 'customerName',
   customerEmail: 'customerEmail',
   customerPhone: 'customerPhone',
   customerAddress: 'customerAddress',
   status: 'status',
+  subtotal: 'subtotal',
+  overallDiscount: 'overallDiscount',
+  freightCharges: 'freightCharges',
+  tax: 'tax',
+  taxPercentage: 'taxPercentage',
   totalAmount: 'totalAmount',
   notes: 'notes',
   invoiceId: 'invoiceId',
@@ -691,10 +854,20 @@ exports.Prisma.SalesReturnScalarFieldEnum = {
   id: 'id',
   returnNumber: 'returnNumber',
   salesInvoiceId: 'salesInvoiceId',
+  isDirectReturn: 'isDirectReturn',
+  legacyInvoiceNo: 'legacyInvoiceNo',
+  legacyCustomerName: 'legacyCustomerName',
+  customerType: 'customerType',
   returnDate: 'returnDate',
   reason: 'reason',
   status: 'status',
+  subtotal: 'subtotal',
+  tax: 'tax',
+  taxPercentage: 'taxPercentage',
+  deduction: 'deduction',
   totalAmount: 'totalAmount',
+  paymentAccountId: 'paymentAccountId',
+  paidAmount: 'paidAmount',
   createdBy: 'createdBy',
   approvedBy: 'approvedBy',
   approvedAt: 'approvedAt',
@@ -710,7 +883,8 @@ exports.Prisma.SalesReturnItemScalarFieldEnum = {
   returnQuantity: 'returnQuantity',
   originalSalePrice: 'originalSalePrice',
   amount: 'amount',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  avgCost: 'avgCost'
 };
 
 exports.Prisma.ShelfScalarFieldEnum = {
@@ -734,7 +908,8 @@ exports.Prisma.StockMovementScalarFieldEnum = {
   referenceType: 'referenceType',
   referenceId: 'referenceId',
   notes: 'notes',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  supplierId: 'supplierId'
 };
 
 exports.Prisma.StockReservationScalarFieldEnum = {
@@ -745,7 +920,11 @@ exports.Prisma.StockReservationScalarFieldEnum = {
   reservedAt: 'reservedAt',
   releasedAt: 'releasedAt',
   status: 'status',
-  notes: 'notes'
+  notes: 'notes',
+  rackId: 'rackId',
+  shelfId: 'shelfId',
+  storeId: 'storeId',
+  useUnlocatedStock: 'useUnlocatedStock'
 };
 
 exports.Prisma.StockVerificationScalarFieldEnum = {
@@ -810,6 +989,8 @@ exports.Prisma.SubgroupScalarFieldEnum = {
 exports.Prisma.SupplierScalarFieldEnum = {
   id: 'id',
   code: 'code',
+  type: 'type',
+  currencyName: 'currencyName',
   name: 'name',
   companyName: 'companyName',
   address: 'address',
@@ -828,7 +1009,16 @@ exports.Prisma.SupplierScalarFieldEnum = {
   status: 'status',
   notes: 'notes',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  accountHead: 'accountHead',
+  area: 'area',
+  cellNumber: 'cellNumber',
+  contactPersons: 'contactPersons',
+  gstNumber: 'gstNumber',
+  ntn: 'ntn',
+  referenceName: 'referenceName',
+  remarks: 'remarks',
+  shortTitle: 'shortTitle'
 };
 
 exports.Prisma.TransferScalarFieldEnum = {
@@ -863,7 +1053,7 @@ exports.Prisma.UserScalarFieldEnum = {
   name: 'name',
   email: 'email',
   password: 'password',
-  role: 'role',
+  roleId: 'roleId',
   status: 'status',
   lastLogin: 'lastLogin',
   createdAt: 'createdAt',
@@ -879,6 +1069,8 @@ exports.Prisma.VoucherScalarFieldEnum = {
   cashBankAccount: 'cashBankAccount',
   chequeNumber: 'chequeNumber',
   chequeDate: 'chequeDate',
+  checkClearDate: 'checkClearDate',
+  isCleared: 'isCleared',
   totalDebit: 'totalDebit',
   totalCredit: 'totalCredit',
   status: 'status',
@@ -886,11 +1078,14 @@ exports.Prisma.VoucherScalarFieldEnum = {
   approvedBy: 'approvedBy',
   approvedAt: 'approvedAt',
   isSystemGenerated: 'isSystemGenerated',
+  conversionRate: 'conversionRate',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   deletedAt: 'deletedAt',
   storeId: 'storeId',
-  adjustmentId: 'adjustmentId'
+  adjustmentId: 'adjustmentId',
+  salesInvoiceId: 'salesInvoiceId',
+  salesReturnId: 'salesReturnId'
 };
 
 exports.Prisma.VoucherEntryScalarFieldEnum = {
@@ -904,9 +1099,11 @@ exports.Prisma.VoucherEntryScalarFieldEnum = {
   sortOrder: 'sortOrder',
   supplierId: 'supplierId',
   customerId: 'customerId',
+  employeeId: 'employeeId',
   createdAt: 'createdAt',
   deletedAt: 'deletedAt',
-  adjustmentId: 'adjustmentId'
+  adjustmentId: 'adjustmentId',
+  salesInvoiceId: 'salesInvoiceId'
 };
 
 exports.Prisma.WhatsAppSettingsScalarFieldEnum = {
@@ -934,6 +1131,11 @@ exports.Prisma.SortOrder = {
   desc: 'desc'
 };
 
+exports.Prisma.NullableJsonNullValueInput = {
+  DbNull: Prisma.DbNull,
+  JsonNull: Prisma.JsonNull
+};
+
 exports.Prisma.QueryMode = {
   default: 'default',
   insensitive: 'insensitive'
@@ -944,12 +1146,19 @@ exports.Prisma.NullsOrder = {
   last: 'last'
 };
 
+exports.Prisma.JsonNullValueFilter = {
+  DbNull: Prisma.DbNull,
+  JsonNull: Prisma.JsonNull,
+  AnyNull: Prisma.AnyNull
+};
+
 
 exports.Prisma.ModelName = {
   Account: 'Account',
   ActivityLog: 'ActivityLog',
   Adjustment: 'Adjustment',
   AdjustmentItem: 'AdjustmentItem',
+  Area: 'Area',
   Application: 'Application',
   ApprovalFlow: 'ApprovalFlow',
   Backup: 'Backup',
@@ -958,6 +1167,8 @@ exports.Prisma.ModelName = {
   Category: 'Category',
   CompanyProfile: 'CompanyProfile',
   Customer: 'Customer',
+  Employee: 'Employee',
+  EmployeeTransaction: 'EmployeeTransaction',
   DeliveryLog: 'DeliveryLog',
   DeliveryLogItem: 'DeliveryLogItem',
   DirectPurchaseOrder: 'DirectPurchaseOrder',
@@ -966,16 +1177,17 @@ exports.Prisma.ModelName = {
   DirectPurchaseOrderReturn: 'DirectPurchaseOrderReturn',
   DirectPurchaseOrderReturnItem: 'DirectPurchaseOrderReturnItem',
   ExpenseType: 'ExpenseType',
-  JournalEntry: 'JournalEntry',
-  JournalLine: 'JournalLine',
-  Kit: 'Kit',
-  KitItem: 'KitItem',
   LongCatSettings: 'LongCatSettings',
   MainGroup: 'MainGroup',
   MasterPart: 'MasterPart',
   Model: 'Model',
   OperationalExpense: 'OperationalExpense',
   Part: 'Part',
+  KitItem: 'KitItem',
+  PurchaseImportRequest: 'PurchaseImportRequest',
+  PurchaseImportRequestItem: 'PurchaseImportRequestItem',
+  PurchaseQuotation: 'PurchaseQuotation',
+  PurchaseQuotationItem: 'PurchaseQuotationItem',
   PostedExpense: 'PostedExpense',
   PriceHistory: 'PriceHistory',
   PurchaseOrder: 'PurchaseOrder',
@@ -987,6 +1199,7 @@ exports.Prisma.ModelName = {
   SalesInquiryItem: 'SalesInquiryItem',
   SalesInvoice: 'SalesInvoice',
   SalesInvoiceItem: 'SalesInvoiceItem',
+  InvoiceRackShelf: 'InvoiceRackShelf',
   SalesQuotation: 'SalesQuotation',
   SalesQuotationItem: 'SalesQuotationItem',
   SalesReturn: 'SalesReturn',

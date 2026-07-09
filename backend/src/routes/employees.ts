@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "crypto";
+import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
 import {
   createEmployeeLedgerAccount,
@@ -36,6 +37,14 @@ const LOAN_ADVANCE_TX_TYPES = [
 ] as const;
 
 type EmployeeTxType = (typeof EMPLOYEE_TX_TYPES)[number];
+
+type EmployeeAccountRecord = {
+  id: string;
+  code: string;
+  name: string;
+  currentBalance: number;
+  employeeAccountRole: string | null;
+};
 
 async function generateEmployeeCode(): Promise<string> {
   const employees = await prisma.employee.findMany({
@@ -124,13 +133,7 @@ function validateEmployeeCoreFields(params: {
   return null;
 }
 
-function mapEmployeeBalances(accounts: Array<{
-  id: string;
-  code: string;
-  name: string;
-  currentBalance: number;
-  employeeAccountRole: string | null;
-}>) {
+function mapEmployeeBalances(accounts: EmployeeAccountRecord[]) {
   const salaryAccount = getEmployeeAccountByRole(accounts, "salary_payable");
   const loanAccount = getEmployeeAccountByRole(accounts, "loan");
   const advanceAccount = getEmployeeAccountByRole(accounts, "advance");
@@ -145,9 +148,16 @@ function mapEmployeeBalances(accounts: Array<{
   };
 }
 
-async function getEmployeeAccounts(employeeId: string) {
+async function getEmployeeAccounts(employeeId: string): Promise<EmployeeAccountRecord[]> {
   return prisma.account.findMany({
     where: { employeeId },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      currentBalance: true,
+      employeeAccountRole: true,
+    },
     orderBy: { code: "asc" },
   });
 }
@@ -179,7 +189,13 @@ async function ensureEmployeeAccounts(employee: {
       subgroupCode: subgroup.code,
       description: `${employee.name} (${employee.code})`,
     });
-    created.push(account);
+    created.push({
+      id: account.id,
+      code: account.code,
+      name: account.name,
+      currentBalance: account.currentBalance,
+      employeeAccountRole: account.employeeAccountRole,
+    });
   }
 
   await syncEmployeeAccountNames(employee.id, employee.name);
@@ -277,7 +293,7 @@ router.get("/payroll-transactions", async (req: Request, res: Response) => {
     const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
     const limit = Math.max(1, parseInt(String(req.query.limit || "25"), 10) || 25);
 
-    const employeeFilter = search
+    const employeeFilter: Prisma.EmployeeTransactionWhereInput = search
       ? {
           Employee: {
             OR: [
@@ -301,7 +317,7 @@ router.get("/payroll-transactions", async (req: Request, res: Response) => {
         },
       },
       Voucher: { select: { id: true, voucherNumber: true, type: true } },
-    };
+    } satisfies Prisma.EmployeeTransactionInclude;
 
     const [accruals, payments] = await Promise.all([
       prisma.employeeTransaction.findMany({
