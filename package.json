@@ -47,9 +47,13 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "^4.4.0",
     "input-otp": "^1.4.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
+    "pdfjs-dist": "^5.4.530",
     "prisma": "^7.4.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
@@ -63,9 +67,7 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^13.0.0",
     "vaul": "^0.9.9",
-    "zod": "^3.25.76",
-    "exceljs": "^4.4.0",
-    "pdfjs-dist": "^5.4.530"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

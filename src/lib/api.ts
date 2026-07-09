@@ -2272,6 +2272,149 @@ class ApiClient {
     });
   }
 
+  // Employees API
+  async getEmployees(params?: {
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && String(value) !== "") {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const queryString = queryParams.toString();
+    return this.request(`/employees${queryString ? `?${queryString}` : ""}`);
+  }
+
+  async getEmployee(id: string) {
+    return this.request(`/employees/${id}`);
+  }
+
+  async getEmployeeCashBankAccounts() {
+    return this.request("/employees/cash-bank-accounts");
+  }
+
+  async getEmployeeLoanAdvanceTransactions(params?: {
+    search?: string;
+    category?: "all" | "loan" | "advance";
+    type?: "advance_issue" | "loan_issue" | "loan_recovery" | "advance_recovery";
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.search) queryParams.set("search", params.search);
+    if (params?.category) queryParams.set("category", params.category);
+    if (params?.type) queryParams.set("type", params.type);
+    if (params?.page) queryParams.set("page", String(params.page));
+    if (params?.limit) queryParams.set("limit", String(params.limit));
+    const queryString = queryParams.toString();
+    return this.request(`/employees/loan-advance-transactions${queryString ? `?${queryString}` : ""}`);
+  }
+
+  async getEmployeePayrollTransactions(params?: {
+    search?: string;
+    payrollMonth?: string;
+    paymentStatus?: "all" | "pending" | "partial" | "paid";
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.search) queryParams.set("search", params.search);
+    if (params?.payrollMonth) queryParams.set("payrollMonth", params.payrollMonth);
+    if (params?.paymentStatus) queryParams.set("paymentStatus", params.paymentStatus);
+    if (params?.page) queryParams.set("page", String(params.page));
+    if (params?.limit) queryParams.set("limit", String(params.limit));
+    const queryString = queryParams.toString();
+    return this.request(`/employees/payroll-transactions${queryString ? `?${queryString}` : ""}`);
+  }
+
+  async createEmployee(data: {
+    code?: string;
+    name: string;
+    cnic?: string;
+    contactNo?: string;
+    email?: string;
+    address?: string;
+    designation?: string;
+    department?: string;
+    joiningDate?: string;
+    openingBalanceDate?: string;
+    monthlySalary?: number;
+    workingDays?: number;
+    status?: string;
+    remarks?: string;
+    openingLoanBalance?: number;
+    openingAdvanceBalance?: number;
+    openingSalaryPayable?: number;
+  }) {
+    return this.request("/employees", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateEmployee(
+    id: string,
+    data: {
+      name?: string;
+      cnic?: string;
+      contactNo?: string;
+      email?: string;
+      address?: string;
+      designation?: string;
+      department?: string;
+      joiningDate?: string | null;
+      openingBalanceDate?: string | null;
+      monthlySalary?: number;
+      workingDays?: number;
+      status?: string;
+      remarks?: string;
+      openingLoanBalance?: number;
+      openingAdvanceBalance?: number;
+      openingSalaryPayable?: number;
+    },
+  ) {
+    return this.request(`/employees/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getEmployeeTransactions(employeeId: string) {
+    return this.request(`/employees/${employeeId}/transactions`);
+  }
+
+  async createEmployeeTransaction(
+    employeeId: string,
+    data: {
+      type:
+        | "advance_issue"
+        | "loan_issue"
+        | "loan_recovery"
+        | "advance_recovery"
+        | "salary_accrual"
+        | "salary_payment";
+      date?: string;
+      payrollMonth?: string;
+      amount?: number;
+      absentDays?: number;
+      loanRecovery?: number;
+      advanceRecovery?: number;
+      cashBankAccountId?: string;
+      description?: string;
+    },
+  ) {
+    return this.request(`/employees/${employeeId}/transactions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Purchase Import API
   async getPurchaseImportPartDetails(partId: string) {
     return this.request(`/purchase-import/part-details/${partId}`);
@@ -2390,6 +2533,7 @@ class ApiClient {
   async createPurchaseQuotation(
     requestId: string,
     data: {
+      quotationNo: string;
       quotationDate: string;
       revisedQuotationDate?: string;
       quotationType?: "original" | "revised";
@@ -2439,6 +2583,7 @@ class ApiClient {
   async updatePurchaseQuotation(
     quotationId: string,
     data: {
+      quotationNo: string;
       quotationDate: string;
       currency: string;
       conversionRate: number;

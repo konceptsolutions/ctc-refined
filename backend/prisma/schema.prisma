@@ -20,9 +20,12 @@ model Account {
   canDelete           Boolean        @default(true)
   supplierId          String?
   customerId          String?
+  employeeId          String?
+  employeeAccountRole String?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   Customer            Customer?      @relation(fields: [customerId], references: [id])
+  Employee            Employee?      @relation(fields: [employeeId], references: [id])
   Subgroup            Subgroup       @relation(fields: [subgroupId], references: [id], onDelete: Cascade)
   Supplier            Supplier?      @relation(fields: [supplierId], references: [id])
   SalesInvoice              SalesInvoice[]
@@ -217,6 +220,57 @@ model Customer {
   SalesQuotation     SalesQuotation[]
   SalesReturn        SalesReturn[]
   VoucherEntry       VoucherEntry[]
+}
+
+model Employee {
+  id                    String                @id @default(uuid())
+  code                  String                @unique
+  name                  String
+  cnic                  String?
+  contactNo             String?
+  email                 String?
+  address               String?
+  designation           String?
+  department            String?
+  joiningDate           DateTime?
+  openingBalanceDate    DateTime?
+  monthlySalary         Float                 @default(0)
+  workingDays           Int                   @default(26)
+  status                String                @default("active")
+  remarks               String?
+  openingLoanBalance    Float                 @default(0)
+  openingAdvanceBalance Float                 @default(0)
+  openingSalaryPayable  Float                 @default(0)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  Account               Account[]
+  EmployeeTransaction   EmployeeTransaction[]
+  VoucherEntry          VoucherEntry[]
+}
+
+model EmployeeTransaction {
+  id              String   @id @default(uuid())
+  employeeId      String
+  type            String
+  date            DateTime
+  payrollMonth    String?
+  amount          Float
+  absentDays      Float    @default(0)
+  loanRecovery    Float    @default(0)
+  advanceRecovery Float    @default(0)
+  netPaid         Float    @default(0)
+  description     String?
+  voucherId       String?
+  referenceNo     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  Employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  Voucher         Voucher? @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([date])
+  @@index([type])
+  @@index([employeeId, payrollMonth])
 }
 
 model DeliveryLog {
@@ -1194,6 +1248,7 @@ model Voucher {
   SalesReturn                                 SalesReturn?     @relation(fields: [salesReturnId], references: [id], onDelete: SetNull)
   Store                                       Store?         @relation(fields: [storeId], references: [id])
   VoucherEntry                                VoucherEntry[]
+  EmployeeTransaction                         EmployeeTransaction[]
 
   @@index([salesReturnId])
 }
@@ -1209,6 +1264,7 @@ model VoucherEntry {
   sortOrder      Int           @default(0)
   supplierId     String?
   customerId     String?
+  employeeId     String?
   createdAt      DateTime      @default(now())
   deletedAt      DateTime?
   adjustmentId   String?
@@ -1216,6 +1272,7 @@ model VoucherEntry {
   Account        Account?      @relation(fields: [accountId], references: [id])
   Adjustment     Adjustment?   @relation(fields: [adjustmentId], references: [id])
   Customer       Customer?     @relation(fields: [customerId], references: [id])
+  Employee       Employee?     @relation(fields: [employeeId], references: [id])
   SalesInvoice   SalesInvoice? @relation(fields: [salesInvoiceId], references: [id])
   Supplier       Supplier?     @relation(fields: [supplierId], references: [id])
   Voucher        Voucher       @relation(fields: [voucherId], references: [id], onDelete: Cascade)

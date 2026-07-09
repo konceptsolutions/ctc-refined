@@ -95,7 +95,6 @@ const balanceRow = (
   <TableRow className={cn(bold && "bg-muted/30 font-semibold")}>
     <TableCell />
     <TableCell />
-    <TableCell />
     <TableCell className={cn("whitespace-nowrap", bold && "font-semibold")}>{label}</TableCell>
     {columns.map((column) => {
       const value = Number(values[column.id] || 0);
@@ -116,7 +115,7 @@ const balanceRow = (
 
 const sectionHeaderRow = (columns: DailyClosingColumn[], title: string) => (
   <TableRow className="bg-slate-100 dark:bg-slate-800">
-    <TableCell colSpan={4 + columns.length} className="font-bold text-center">
+    <TableCell colSpan={3 + columns.length} className="font-bold text-center">
       {title}
     </TableCell>
   </TableRow>
@@ -477,7 +476,7 @@ export const DailyClosingTab = ({
               {sectionHeaderRow(columns, "Receipts")}
               {data.receipts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4 + columns.length} className="text-center text-muted-foreground">
+                  <TableCell colSpan={3 + columns.length} className="text-center text-muted-foreground">
                     No receipts for this date
                   </TableCell>
                 </TableRow>
@@ -498,7 +497,7 @@ export const DailyClosingTab = ({
               {sectionHeaderRow(columns, "Payments")}
               {data.payments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4 + columns.length} className="text-center text-muted-foreground">
+                  <TableCell colSpan={3 + columns.length} className="text-center text-muted-foreground">
                     No payments for this date
                   </TableCell>
                 </TableRow>

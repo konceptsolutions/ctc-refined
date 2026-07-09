@@ -1,0 +1,2 @@
+ALTER TABLE "Employee"
+ADD COLUMN IF NOT EXISTS "openingBalanceDate" TIMESTAMP(3);

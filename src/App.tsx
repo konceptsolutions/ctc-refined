@@ -14,6 +14,7 @@ import Transfer from "./pages/Transfer";
 import Sales from "./pages/Sales";
 import PurchaseImport from "./pages/PurchaseImport";
 import Manage from "./pages/Manage";
+import Employees from "./pages/Employees";
 import PricingCostingPage from "./pages/PricingCosting";
 import Reports from "./pages/Reports";
 import Expenses from "./pages/Expenses";
@@ -61,6 +62,8 @@ const App = () => (
             <Route path="/purchase-import/:tab" element={<ProtectedRoute><PurchaseImport /></ProtectedRoute>} />
             <Route path="/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
             <Route path="/manage/:tab" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
+            <Route path="/employees" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
+            <Route path="/employees/:tab" element={<ProtectedRoute><Employees /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
             <Route path="/expenses" element={<ProtectedRoute><Expenses /></ProtectedRoute>} />
             <Route path="/accounting" element={<ProtectedRoute><Accounting /></ProtectedRoute>} />

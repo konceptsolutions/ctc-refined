@@ -57,6 +57,7 @@ import accountingRoutes from "./routes/accounting";
 import financialRoutes from "./routes/financial";
 import customersRoutes from "./routes/customers";
 import suppliersRoutes from "./routes/suppliers";
+import employeesRoutes from "./routes/employees";
 import reportsRoutes from "./routes/reports";
 import usersRoutes from "./routes/users";
 import rolesRoutes from "./routes/roles";
@@ -585,6 +586,7 @@ app.use("/api/financial", financialRoutes); // Temporarily disabled auth for tes
 app.use("/api/public-financial", financialRoutes); // Public route for testing
 app.use("/api/customers", authenticateJWT, customersRoutes);
 app.use("/api/suppliers", authenticateJWT, suppliersRoutes);
+app.use("/api/employees", authenticateJWT, employeesRoutes);
 app.use("/api/reports", authenticateJWT, reportsRoutes);
 app.use("/api/users", authenticateJWT, usersRoutes);
 app.use("/api/roles", authenticateJWT, rolesRoutes);
@@ -617,6 +619,7 @@ app.use("/dev-koncepts/api/accounting", authenticateJWT, accountingRoutes);
 app.use("/dev-koncepts/api/financial", authenticateJWT, financialRoutes);
 app.use("/dev-koncepts/api/customers", authenticateJWT, customersRoutes);
 app.use("/dev-koncepts/api/suppliers", authenticateJWT, suppliersRoutes);
+app.use("/dev-koncepts/api/employees", authenticateJWT, employeesRoutes);
 app.use("/dev-koncepts/api/reports", authenticateJWT, reportsRoutes);
 app.use("/dev-koncepts/api/users", authenticateJWT, usersRoutes);
 app.use("/dev-koncepts/api/roles", authenticateJWT, rolesRoutes);

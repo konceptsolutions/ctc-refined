@@ -35,7 +35,12 @@ import {
   LIST_NUMBER_CELL_CLASS,
 } from "@/components/ui/list-table-number";
 
-type PurchaseImportTab = "inquiry" | "quotation" | "purchase-order";
+type PurchaseImportTab =
+  | "inquiry"
+  | "quotation"
+  | "revise-quotation"
+  | "confirm-quotation"
+  | "purchase-order";
 
 interface TabConfig {
   id: PurchaseImportTab;
@@ -43,14 +48,6 @@ interface TabConfig {
   icon: React.ElementType;
   description: string;
 }
-
-const PURCHASE_QUOTATION_TERMS = [
-  "EX-Works",
-  "F.O.B",
-  "CTF/CNF",
-  "CFR",
-  "CIF",
-] as const;
 
 const PURCHASE_IMPORT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
@@ -136,7 +133,19 @@ const tabs: TabConfig[] = [
     id: "quotation",
     label: "Purchase Quotation",
     icon: Check,
-    description: "Review and update purchase quotations",
+    description: "Create quotations from confirmed inquiries",
+  },
+  {
+    id: "revise-quotation",
+    label: "Revise Quotation",
+    icon: Pencil,
+    description: "Revise open purchase quotations",
+  },
+  {
+    id: "confirm-quotation",
+    label: "Confirm Quotation",
+    icon: PackageCheck,
+    description: "Confirm quotations and review confirmed records",
   },
   {
     id: "purchase-order",
@@ -311,7 +320,6 @@ type ImportPurchaseOrderReceiveDetail = {
   requestNo?: string | null;
   currency: string;
   conversionRate: number;
-  terms?: string | null;
   consignee?: string | null;
   isRevised: boolean;
 };
@@ -1312,6 +1320,36 @@ const filterAlternateOptions = (
   });
 };
 
+const isAlternatePart = (
+  candidate: Pick<PartOption, "id" | "partNo" | "masterPartNo">,
+  reference: Pick<PartOption, "id" | "partNo" | "masterPartNo">,
+): boolean => {
+  if (!candidate.id || !reference.id || candidate.id === reference.id) {
+    return false;
+  }
+  return (
+    filterAlternateOptions([candidate as PartOption], reference, reference.id).length > 0
+  );
+};
+
+const hasInquiryAlternateConflict = (
+  items: Array<{ partId: string }>,
+  partOptions: PartOption[],
+): boolean => {
+  const selectedParts = items
+    .map((row) => partOptions.find((part) => part.id === row.partId))
+    .filter((part): part is PartOption => Boolean(part));
+
+  for (let i = 0; i < selectedParts.length; i += 1) {
+    for (let j = i + 1; j < selectedParts.length; j += 1) {
+      if (isAlternatePart(selectedParts[j], selectedParts[i])) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
 const fetchAlternatePartsFromPartsApi = async (
   partId: string,
   current: Pick<PartOption, "partNo" | "masterPartNo">,
@@ -1590,21 +1628,35 @@ const PurchaseImportRequestForm = ({
     [partOptions],
   );
 
-  const partSelectOptions = useMemo(() => {
+  const partSelectOptionsByRowId = useMemo(() => {
     const selectedPartIds = new Set(
       items.map((row) => row.partId).filter(Boolean),
     );
-    const filteredParts =
+    const brandFilteredParts =
       brandFilter === "all"
         ? partOptions
         : partOptions.filter(
             (part) =>
               part.brand === brandFilter || selectedPartIds.has(part.id),
           );
-    return buildSortedPartSelectOptions(
-      filteredParts,
-      itemSort,
-      itemSortDirection,
+
+    return new Map(
+      items.map((row) => {
+        const selectedOnOtherRows = items
+          .filter((otherRow) => otherRow.id !== row.id && otherRow.partId)
+          .map((otherRow) => partOptions.find((part) => part.id === otherRow.partId))
+          .filter((part): part is PartOption => Boolean(part));
+        const rowParts = brandFilteredParts.filter((part) => {
+          if (selectedOnOtherRows.some((selected) => selected.id === part.id)) {
+            return false;
+          }
+          return !selectedOnOtherRows.some((selected) => isAlternatePart(part, selected));
+        });
+        return [
+          row.id,
+          buildSortedPartSelectOptions(rowParts, itemSort, itemSortDirection),
+        ] as const;
+      }),
     );
   }, [partOptions, brandFilter, items, itemSort, itemSortDirection]);
 
@@ -1855,6 +1907,34 @@ const PurchaseImportRequestForm = ({
       return;
     }
 
+    const duplicate = itemsRef.current.find(
+      (row) => row.id !== rowId && row.partId === partId,
+    );
+    if (duplicate) {
+      toast({
+        title: "Part already added",
+        description: "This item is already selected on another row.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const candidatePart = partOptions.find((part) => part.id === partId);
+    const alternateConflict = itemsRef.current
+      .filter((row) => row.id !== rowId && row.partId)
+      .map((row) => partOptions.find((part) => part.id === row.partId))
+      .filter((part): part is PartOption => Boolean(part))
+      .some((selected) => candidatePart && isAlternatePart(candidatePart, selected));
+    if (alternateConflict) {
+      toast({
+        title: "Alternate item not allowed",
+        description:
+          "An alternate item with the same Part No or Master Part No is already on this inquiry.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     updateItem(rowId, { partId, loadingDetails: true });
     try {
       const res = await apiClient.getPurchaseImportPartDetails(partId);
@@ -1896,6 +1976,24 @@ const PurchaseImportRequestForm = ({
     const validItems = currentItems.filter(
       (row) => row.partId && getInquiryRowDemandQuantity(row) > 0,
     );
+    const uniquePartIds = new Set(validItems.map((row) => row.partId));
+    if (uniquePartIds.size !== validItems.length) {
+      toast({
+        title: "Duplicate items",
+        description: "Each item can only be selected once on the inquiry.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (hasInquiryAlternateConflict(validItems, partOptions)) {
+      toast({
+        title: "Alternate items not allowed",
+        description:
+          "You cannot add alternate items with the same Part No or Master Part No on one inquiry.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (validItems.length === 0) {
       toast({
         title: "Items required",
@@ -2388,7 +2486,7 @@ const PurchaseImportRequestForm = ({
                     </td>
                     <td className="p-2 border-b min-w-[320px]">
                       <SearchableSelect
-                        options={partSelectOptions}
+                        options={partSelectOptionsByRowId.get(row.id) || []}
                         value={row.partId}
                         onValueChange={(partId) => fetchPartDetails(row.id, partId)}
                         placeholder="Master Part | Part No"
@@ -3060,17 +3158,17 @@ const PurchaseQuotationForm = ({
   const [saving, setSaving] = useState(false);
   const [context, setContext] = useState<PurchaseQuotationContextPayload | null>(null);
   const [existingQuotationId, setExistingQuotationId] = useState<string | null>(null);
+  const [quotationNo, setQuotationNo] = useState("");
   const [quotationDate, setQuotationDate] = useState(toInputDate(new Date()));
   const [currency, setCurrency] = useState("USD");
   const [conversionRate, setConversionRate] = useState(1);
-  const [terms, setTerms] = useState("");
   const [rows, setRows] = useState<PurchaseQuotationFormItem[]>([]);
   const [partOptions, setPartOptions] = useState<PartOption[]>([]);
   const [replaceRowId, setReplaceRowId] = useState<string | null>(null);
   const [alternateParts, setAlternateParts] = useState<PartOption[]>([]);
   const [loadingAlternates, setLoadingAlternates] = useState(false);
   const [replacingRowId, setReplacingRowId] = useState<string | null>(null);
-  const [itemSort, setItemSort] = useState<InquiryItemSort>("alphabetical");
+  const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
 
   const partSelectOptions = useMemo(
@@ -3130,10 +3228,10 @@ const PurchaseQuotationForm = ({
         };
         setContext(data);
         setExistingQuotationId(data.existingQuotationId || null);
+        setQuotationNo(data.quotationNo || "");
         setQuotationDate(toInputDate(data.quotationDate || new Date()));
         setCurrency(data.currency || data.defaultCurrency || "USD");
         setConversionRate(Number(data.conversionRate || 1));
-        setTerms(data.terms || "");
         setRows(
           Array.isArray(data.items)
             ? data.items.map((item) => ({
@@ -3201,11 +3299,7 @@ const PurchaseQuotationForm = ({
   };
 
   const removeQuotationRow = (rowId: string) => {
-    setRows((prev) => {
-      const target = prev.find((row) => row.rowId === rowId);
-      if (!target?.isNewRow) return prev;
-      return prev.filter((row) => row.rowId !== rowId);
-    });
+    setRows((prev) => (prev.length > 1 ? prev.filter((row) => row.rowId !== rowId) : prev));
     if (replaceRowId === rowId) {
       closeReplacePanel();
     }
@@ -3464,6 +3558,16 @@ const PurchaseQuotationForm = ({
   const handleSaveQuotation = async () => {
     if (!context) return;
 
+    const trimmedQuotationNo = quotationNo.trim();
+    if (!trimmedQuotationNo) {
+      toast({
+        title: "Quotation number required",
+        description: "Enter the supplier quotation number before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const incompleteRows = rows.filter(
       (row) =>
         (row.partId && Number(row.quotationQuantity || 0) <= 0) ||
@@ -3496,12 +3600,12 @@ const PurchaseQuotationForm = ({
     setSaving(true);
     try {
       const payload = {
+        quotationNo: trimmedQuotationNo,
         quotationDate,
         currency,
         conversionRate: Number(conversionRate || 1),
         quotationType: "original" as const,
         status: "pending",
-        terms: terms || undefined,
         items: validItems.map((row) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
@@ -3516,11 +3620,12 @@ const PurchaseQuotationForm = ({
       const res = existingQuotationId
         ? await apiClient.updatePurchaseQuotation(existingQuotationId, payload)
         : await apiClient.createPurchaseQuotation(requestId, payload);
-      const quotationNo = (res as any)?.data?.quotationNo || context?.quotationNo;
+      const quotationNoSaved =
+        (res as any)?.data?.quotationNo || trimmedQuotationNo || context?.quotationNo;
       toast({
         title: existingQuotationId ? "Quotation updated" : "Quotation saved",
-        description: quotationNo
-          ? `Quotation ${quotationNo} has been ${existingQuotationId ? "updated" : "created"} successfully.`
+        description: quotationNoSaved
+          ? `Quotation ${quotationNoSaved} has been ${existingQuotationId ? "updated" : "created"} successfully.`
           : `Quotation has been ${existingQuotationId ? "updated" : "created"} successfully.`,
       });
       onSaved?.();
@@ -3564,7 +3669,11 @@ const PurchaseQuotationForm = ({
               </div>
               <div className="space-y-1 min-w-0">
                 <Label>Quotation No</Label>
-                <Input value={context.quotationNo || "-"} disabled />
+                <Input
+                  value={quotationNo}
+                  onChange={(e) => setQuotationNo(e.target.value)}
+                  placeholder="Enter supplier quotation number"
+                />
               </div>
               <div className="space-y-1 min-w-0">
                 <Label>Quotation Date</Label>
@@ -3615,6 +3724,7 @@ const PurchaseQuotationForm = ({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">Sort: Entry Order</SelectItem>
                   <SelectItem value="alphabetical">Sort: Alphabetical</SelectItem>
                   <SelectItem value="numeric">Sort: Numeric</SelectItem>
                   <SelectItem value="description">Sort: Description</SelectItem>
@@ -3624,6 +3734,7 @@ const PurchaseQuotationForm = ({
               <Select
                 value={itemSortDirection}
                 onValueChange={(value: SortDirection) => setItemSortDirection(value)}
+                disabled={itemSort === "none"}
               >
                 <SelectTrigger className="w-[140px]">
                   <SelectValue />
@@ -3847,18 +3958,16 @@ const PurchaseQuotationForm = ({
                               Replace
                             </Button>
                           ) : null}
-                          {row.isNewRow ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive"
-                              disabled={loading || saving}
-                              onClick={() => removeQuotationRow(row.rowId)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive"
+                            disabled={loading || saving || rows.length === 1}
+                            onClick={() => removeQuotationRow(row.rowId)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -3926,24 +4035,6 @@ const PurchaseQuotationForm = ({
               </tfoot>
             </table>
           </div>
-
-          <div className="max-w-xs">
-            <div className="space-y-1">
-              <Label>Terms</Label>
-              <Select value={terms || undefined} onValueChange={setTerms}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select terms" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PURCHASE_QUOTATION_TERMS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
         </>
       )}
 
@@ -3982,7 +4073,6 @@ const PurchaseQuotationRevisionForm = ({
   const [revisedQuotationDate, setRevisedQuotationDate] = useState(toInputDate(new Date()));
   const [currency, setCurrency] = useState("USD");
   const [conversionRate, setConversionRate] = useState(1);
-  const [terms, setTerms] = useState("");
   const [rows, setRows] = useState<PurchaseQuotationFormItem[]>([]);
   const [replaceRowId, setReplaceRowId] = useState<string | null>(null);
   const [alternateParts, setAlternateParts] = useState<PartOption[]>([]);
@@ -4040,7 +4130,6 @@ const PurchaseQuotationRevisionForm = ({
         setRevisedQuotationDate(toInputDate(data.revisedQuotationDate || new Date()));
         setCurrency(data.currency || "USD");
         setConversionRate(Number(data.conversionRate || 1));
-        setTerms(data.terms || "");
         setRows(
           Array.isArray(data.items)
             ? data.items.map((item) => ({
@@ -4287,7 +4376,6 @@ const PurchaseQuotationRevisionForm = ({
         status: "revise",
         currency,
         conversionRate: Number(conversionRate || 1),
-        terms: terms || undefined,
         items: rows.map((row) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
@@ -4624,24 +4712,6 @@ const PurchaseQuotationRevisionForm = ({
               </tfoot>
             </table>
           </div>
-
-          <div className="max-w-xs">
-            <div className="space-y-1">
-              <Label>Terms</Label>
-              <Select value={terms || undefined} onValueChange={setTerms}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select terms" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PURCHASE_QUOTATION_TERMS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
         </>
       )}
 
@@ -4661,16 +4731,27 @@ const PurchaseQuotationRevisionForm = ({
   );
 };
 
-const PurchaseImportRequestTab = () => {
+type InquiryListMode = "manage" | "quotation";
+
+type PurchaseInquiryListPanelProps = {
+  mode: InquiryListMode;
+  onViewRequest?: (requestId: string) => void;
+  onEditRequest?: (requestId: string) => void;
+  onOpenQuotation?: (requestId: string, consignee: string | null) => void;
+  showNewInquiryButton?: boolean;
+  onNewInquiry?: () => void;
+};
+
+const PurchaseInquiryListPanel = ({
+  mode,
+  onViewRequest,
+  onEditRequest,
+  onOpenQuotation,
+  showNewInquiryButton = false,
+  onNewInquiry,
+}: PurchaseInquiryListPanelProps) => {
   const { toast } = useToast();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [requestView, setRequestView] = useState<"form" | "list">("form");
-  const showRequestForm = requestView === "form";
-  const [showQuotationForm, setShowQuotationForm] = useState(false);
-  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
-  const [viewingRequestId, setViewingRequestId] = useState<string | null>(null);
-  const [quotationRequestId, setQuotationRequestId] = useState<string | null>(null);
-  const [quotationConsignee, setQuotationConsignee] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [confirmingRequestId, setConfirmingRequestId] = useState<string | null>(null);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requests, setRequests] = useState<PurchaseImportRequestRecord[]>([]);
@@ -4721,8 +4802,6 @@ const PurchaseImportRequestTab = () => {
   ]);
 
   useEffect(() => {
-    if (requestView !== "list" || showQuotationForm) return;
-
     const loadSupplierFilters = async () => {
       try {
         const suppliersRes = await apiClient.getSuppliers({
@@ -4749,7 +4828,11 @@ const PurchaseImportRequestTab = () => {
     };
 
     void loadSupplierFilters();
-  }, [requestView, showQuotationForm]);
+  }, []);
+
+  useEffect(() => {
+    void fetchRequests();
+  }, [fetchRequests]);
 
   const handleFilterSupplierChange = (value: string) => {
     setFilterSupplierId(value);
@@ -4772,26 +4855,6 @@ const PurchaseImportRequestTab = () => {
     setFilterPartReference("");
     setCurrentPage(1);
   };
-
-  useEffect(() => {
-    const editId = searchParams.get("edit");
-    const viewId = searchParams.get("view");
-    if (viewId) {
-      setEditingRequestId(viewId);
-      setViewingRequestId(viewId);
-      setRequestView("form");
-    } else if (editId) {
-      setEditingRequestId(editId);
-      setViewingRequestId(null);
-      setRequestView("form");
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (!showQuotationForm && requestView === "list") {
-      void fetchRequests();
-    }
-  }, [showQuotationForm, requestView, fetchRequests]);
 
   const handleConfirmRequest = async (requestId: string) => {
     const row = requests.find((r) => r.id === requestId);
@@ -4828,125 +4891,75 @@ const PurchaseImportRequestTab = () => {
     }
   };
 
-  if (showQuotationForm && quotationRequestId) {
-    return (
-      <PurchaseQuotationForm
-        requestId={quotationRequestId}
-        initialConsignee={quotationConsignee}
-        onCancel={() => {
-          setShowQuotationForm(false);
-          setQuotationRequestId(null);
-          setQuotationConsignee(null);
-        }}
-        onSaved={() => {
-          setShowQuotationForm(false);
-          setQuotationRequestId(null);
-          setQuotationConsignee(null);
-        }}
-      />
-    );
-  }
-
-  const goToRequestList = () => {
-    setRequestView("list");
-    setEditingRequestId(null);
-    setViewingRequestId(null);
-    setSearchParams({}, { replace: true });
-  };
-
-  const goToNewRequestForm = () => {
-    setEditingRequestId(null);
-    setViewingRequestId(null);
-    setRequestView("form");
-    setSearchParams({}, { replace: true });
-  };
-
   return (
-    <div className="space-y-4">
-      <Tabs
-        value={requestView}
-        onValueChange={(v) => setRequestView(v as "form" | "list")}
-      >
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="form">Inquiry Form</TabsTrigger>
-          <TabsTrigger value="list">Inquiry List</TabsTrigger>
-        </TabsList>
-      </Tabs>
+    <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
+      {mode === "quotation" && (
+        <div>
+          <h2 className="text-base font-semibold">Purchase Quotation</h2>
+          <p className="text-sm text-muted-foreground">
+            Select a confirmed inquiry to create or update a supplier quotation.
+          </p>
+        </div>
+      )}
 
-      {showRequestForm ? (
-        viewingRequestId ? (
-          <PurchaseImportRequestView
-            requestId={viewingRequestId}
-            onBack={goToRequestList}
-          />
-        ) : (
-          <PurchaseImportRequestForm
-            requestId={editingRequestId}
-            onCancel={goToRequestList}
-            onSaved={() => {
-              goToRequestList();
-              void fetchRequests();
-            }}
-          />
-        )
-      ) : (
-        <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="inquiry-filter-supplier">Supplier</Label>
-                <SearchableSelect
-                  id="inquiry-filter-supplier"
-                  options={supplierFilterOptions}
-                  value={filterSupplierId}
-                  onValueChange={handleFilterSupplierChange}
-                  placeholder="All suppliers"
-                  aria-label="Filter by supplier"
-                  className="w-[240px] [&_input]:h-9 [&_input]:text-sm"
-                  disabled={loadingRequests}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="inquiry-filter-no">Inquiry No</Label>
-                <Input
-                  id="inquiry-filter-no"
-                  value={filterInquiryNo}
-                  onChange={(event) => handleFilterInquiryNoChange(event.target.value)}
-                  placeholder="Search inquiry no"
-                  className="h-9 w-[180px]"
-                  disabled={loadingRequests}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="inquiry-filter-part-reference">Part Reference</Label>
-                <Input
-                  id="inquiry-filter-part-reference"
-                  value={filterPartReference}
-                  onChange={(event) => handleFilterPartReferenceChange(event.target.value)}
-                  placeholder="Search part reference"
-                  className="h-9 w-[200px]"
-                  disabled={loadingRequests}
-                />
-              </div>
-              {(filterSupplierId || filterInquiryNo || filterPartReference) && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9"
-                  onClick={clearInquiryFilters}
-                  disabled={loadingRequests}
-                >
-                  Clear Filters
-                </Button>
-              )}
-            </div>
-            <Button type="button" onClick={goToNewRequestForm}>
-              <Plus className="w-4 h-4 mr-1" />
-              New Inquiry
-            </Button>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor={`${mode}-inquiry-filter-supplier`}>Supplier</Label>
+            <SearchableSelect
+              id={`${mode}-inquiry-filter-supplier`}
+              options={supplierFilterOptions}
+              value={filterSupplierId}
+              onValueChange={handleFilterSupplierChange}
+              placeholder="All suppliers"
+              aria-label="Filter by supplier"
+              className="w-[240px] [&_input]:h-9 [&_input]:text-sm"
+              disabled={loadingRequests}
+            />
           </div>
+          <div className="space-y-1">
+            <Label htmlFor={`${mode}-inquiry-filter-no`}>Inquiry No</Label>
+            <Input
+              id={`${mode}-inquiry-filter-no`}
+              value={filterInquiryNo}
+              onChange={(event) => handleFilterInquiryNoChange(event.target.value)}
+              placeholder="Search inquiry no"
+              className="h-9 w-[180px]"
+              disabled={loadingRequests}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`${mode}-inquiry-filter-part-reference`}>Part Reference</Label>
+            <Input
+              id={`${mode}-inquiry-filter-part-reference`}
+              value={filterPartReference}
+              onChange={(event) => handleFilterPartReferenceChange(event.target.value)}
+              placeholder="Search part reference"
+              className="h-9 w-[200px]"
+              disabled={loadingRequests}
+            />
+          </div>
+          {(filterSupplierId || filterInquiryNo || filterPartReference) && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9"
+              onClick={clearInquiryFilters}
+              disabled={loadingRequests}
+            >
+              Clear Filters
+            </Button>
+          )}
+        </div>
+        {showNewInquiryButton && onNewInquiry ? (
+          <Button type="button" onClick={onNewInquiry}>
+            <Plus className="w-4 h-4 mr-1" />
+            New Inquiry
+          </Button>
+        ) : null}
+      </div>
 
-          <div className="overflow-x-auto rounded-md border border-border">
+      <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
@@ -4972,7 +4985,13 @@ const PurchaseImportRequestTab = () => {
             ) : requests.length === 0 ? (
               <tr>
                 <td colSpan={10} className="p-4 text-center text-muted-foreground">
-                  No inquiries found. Use <span className="font-medium">New Inquiry</span> or the Inquiry Form tab.
+                  {mode === "quotation"
+                    ? "No inquiries found."
+                    : (
+                      <>
+                        No inquiries found. Use <span className="font-medium">New Inquiry</span> or the Inquiry Form tab.
+                      </>
+                    )}
                 </td>
               </tr>
             ) : (
@@ -5020,76 +5039,84 @@ const PurchaseImportRequestTab = () => {
                     </td>
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        {!isConfirmed ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleConfirmRequest(row.id)}
-                            disabled={
-                              confirmingRequestId === row.id || !hasSupplier
-                            }
-                            title={
-                              !hasSupplier
-                                ? "Select at least one supplier before confirming"
-                                : undefined
-                            }
-                          >
-                            <Check className="w-3.5 h-3.5 mr-1" />
-                            Confirm
-                          </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={!isConfirmed || hasConfirmedQuotation}
-                          title={
-                            hasConfirmedQuotation
-                              ? "Quotation is already confirmed"
-                              : !isConfirmed
-                                ? "Confirm the inquiry before creating a quotation"
-                                : undefined
-                          }
-                          onClick={() => {
-                            if (!isConfirmed || hasConfirmedQuotation) return;
-                            setQuotationConsignee(row.consignee || null);
-                            setQuotationRequestId(row.id);
-                            setShowQuotationForm(true);
-                          }}
-                        >
-                          Quotation
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingRequestId(row.id);
-                            setViewingRequestId(row.id);
-                            setRequestView("form");
-                            setSearchParams({ view: row.id }, { replace: true });
-                          }}
-                        >
-                          <Eye className="w-3.5 h-3.5 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={isConfirmed}
-                          onClick={() => {
-                            if (isConfirmed) return;
-                            setEditingRequestId(row.id);
-                            setViewingRequestId(null);
-                            setRequestView("form");
-                            setSearchParams({ edit: row.id }, { replace: true });
-                          }}
-                        >
-                          <Pencil className="w-3.5 h-3.5 mr-1" />
-                          Edit
-                        </Button>
+                        {mode === "manage" ? (
+                          <>
+                            {!isConfirmed ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleConfirmRequest(row.id)}
+                                disabled={
+                                  confirmingRequestId === row.id || !hasSupplier
+                                }
+                                title={
+                                  !hasSupplier
+                                    ? "Select at least one supplier before confirming"
+                                    : undefined
+                                }
+                              >
+                                <Check className="w-3.5 h-3.5 mr-1" />
+                                Confirm
+                              </Button>
+                            ) : null}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onViewRequest?.(row.id)}
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-1" />
+                              View
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={isConfirmed}
+                              onClick={() => {
+                                if (isConfirmed) return;
+                                onEditRequest?.(row.id);
+                              }}
+                            >
+                              <Pencil className="w-3.5 h-3.5 mr-1" />
+                              Edit
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={!isConfirmed || hasConfirmedQuotation}
+                              title={
+                                hasConfirmedQuotation
+                                  ? "Quotation is already confirmed"
+                                  : !isConfirmed
+                                    ? "Confirm the inquiry before creating a quotation"
+                                    : undefined
+                              }
+                              onClick={() => {
+                                if (!isConfirmed || hasConfirmedQuotation) return;
+                                onOpenQuotation?.(row.id, row.consignee || null);
+                              }}
+                            >
+                              Quotation
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                navigate(`/purchase-import/inquiry?view=${row.id}`)
+                              }
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-1" />
+                              Inquiry
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -5100,19 +5127,427 @@ const PurchaseImportRequestTab = () => {
         </table>
       </div>
 
-          {!loadingRequests && totalRecords > 0 && (
-            <PurchaseImportListPagination
-              currentPage={currentPage}
-              itemsPerPage={itemsPerPage}
-              totalRecords={totalRecords}
-              onPageChange={setCurrentPage}
-              onPageSizeChange={(size) => {
-                setItemsPerPage(size);
-                setCurrentPage(1);
-              }}
-            />
-          )}
-        </div>
+      {!loadingRequests && totalRecords > 0 && (
+        <PurchaseImportListPagination
+          currentPage={currentPage}
+          itemsPerPage={itemsPerPage}
+          totalRecords={totalRecords}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setItemsPerPage(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+type QuotationListView = "open" | "confirmed";
+type QuotationListAction = "revise" | "confirm" | "none";
+
+type PurchaseQuotationListPanelProps = {
+  view: QuotationListView;
+  action: QuotationListAction;
+  title: string;
+  description: string;
+  onRevise?: (quotationId: string) => void;
+  onConfirm?: (quotationId: string) => void;
+};
+
+const PurchaseQuotationListPanel = ({
+  view,
+  action,
+  title,
+  description,
+  onRevise,
+  onConfirm,
+}: PurchaseQuotationListPanelProps) => {
+  const { toast } = useToast();
+  const [loadingQuotations, setLoadingQuotations] = useState(false);
+  const [quotations, setQuotations] = useState<PurchaseQuotationRecord[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [totalRecords, setTotalRecords] = useState(0);
+
+  const isConfirmedView = view === "confirmed";
+  const openListColSpan = 12;
+  const confirmedListColSpan = 10;
+  const CONSIGNEE_ORDER = ["ISB", "KHI", "Other"] as const;
+
+  const fetchQuotations = useCallback(async () => {
+    setLoadingQuotations(true);
+    try {
+      const response = await apiClient.getPurchaseQuotations({
+        page: currentPage,
+        limit: itemsPerPage,
+        ...(view === "confirmed" ? { status: "confirm" as const } : {}),
+      });
+      const rows = Array.isArray((response as any)?.data)
+        ? (response as any).data
+        : Array.isArray(response)
+          ? response
+          : [];
+      const pagination = (response as any)?.pagination;
+      setQuotations(rows);
+      setTotalRecords(pagination?.total ?? rows.length);
+    } catch (error: any) {
+      toast({
+        title: "Failed to load quotations",
+        description: error?.message || "Could not fetch purchase quotations.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingQuotations(false);
+    }
+  }, [currentPage, itemsPerPage, view, toast]);
+
+  useEffect(() => {
+    void fetchQuotations();
+  }, [fetchQuotations]);
+
+  const displayRows = useMemo(() => {
+    type ConfirmedListRow = {
+      key: string;
+      quotation: PurchaseQuotationRecord;
+      purchaseOrder: NonNullable<PurchaseQuotationRecord["PurchaseOrder"]>[number] | null;
+    };
+
+    if (!isConfirmedView) {
+      return quotations.map((row) => ({
+        key: row.id,
+        quotation: row,
+        purchaseOrder: null,
+      })) as ConfirmedListRow[];
+    }
+
+    const expanded: ConfirmedListRow[] = [];
+
+    for (const row of quotations) {
+      const purchaseOrders = [...(row.PurchaseOrder || [])].sort((a, b) => {
+        const aKey = String(a.consignee || "").trim().toUpperCase();
+        const bKey = String(b.consignee || "").trim().toUpperCase();
+        const aIndex = CONSIGNEE_ORDER.findIndex(
+          (value) => value.toUpperCase() === aKey,
+        );
+        const bIndex = CONSIGNEE_ORDER.findIndex(
+          (value) => value.toUpperCase() === bKey,
+        );
+        const safeA = aIndex === -1 ? CONSIGNEE_ORDER.length : aIndex;
+        const safeB = bIndex === -1 ? CONSIGNEE_ORDER.length : bIndex;
+        if (safeA !== safeB) return safeA - safeB;
+        return String(a.poNumber || "").localeCompare(String(b.poNumber || ""));
+      });
+
+      if (purchaseOrders.length === 0) {
+        expanded.push({
+          key: row.id,
+          quotation: row,
+          purchaseOrder: null,
+        });
+        continue;
+      }
+
+      for (const purchaseOrder of purchaseOrders) {
+        expanded.push({
+          key: `${row.id}-${purchaseOrder.id}`,
+          quotation: row,
+          purchaseOrder,
+        });
+      }
+    }
+
+    return expanded;
+  }, [isConfirmedView, quotations]);
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold">{title}</h2>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40">
+            <tr>
+              <th className={`${LIST_NUMBER_HEAD_CLASS} p-2 border-b`}>#</th>
+              {isConfirmedView ? (
+                <>
+                  <th className="text-left p-2 border-b">Confirmation Date</th>
+                  <th className="text-left p-2 border-b">Quotation Date</th>
+                </>
+              ) : (
+                <th className="text-left p-2 border-b">Date</th>
+              )}
+              <th className="text-left p-2 border-b">Quotation No</th>
+              {!isConfirmedView && (
+                <th className="text-left p-2 border-b">Inquiry No</th>
+              )}
+              <th className="text-left p-2 border-b">Supplier</th>
+              <th className="text-right p-2 border-b">Items</th>
+              <th className="text-right p-2 border-b">FC Total</th>
+              <th className="text-right p-2 border-b">LC Total</th>
+              {!isConfirmedView && (
+                <>
+                  <th className="text-left p-2 border-b">Type</th>
+                  <th className="text-left p-2 border-b">Status</th>
+                </>
+              )}
+              <th className="text-left p-2 border-b">PO No</th>
+              {isConfirmedView && (
+                <th className="text-left p-2 border-b">Consignee</th>
+              )}
+              {action !== "none" && (
+                <th className="text-center p-2 border-b">Action</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {loadingQuotations ? (
+              <tr>
+                <td
+                  colSpan={
+                    isConfirmedView
+                      ? confirmedListColSpan
+                      : action !== "none"
+                        ? openListColSpan
+                        : openListColSpan - 1
+                  }
+                  className="p-4 text-center text-muted-foreground"
+                >
+                  Loading quotations...
+                </td>
+              </tr>
+            ) : displayRows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={
+                    isConfirmedView
+                      ? confirmedListColSpan
+                      : action !== "none"
+                        ? openListColSpan
+                        : openListColSpan - 1
+                  }
+                  className="p-4 text-center text-muted-foreground"
+                >
+                  {isConfirmedView
+                    ? "No confirmed quotations found yet."
+                    : "No quotations found yet."}
+                </td>
+              </tr>
+            ) : (
+              displayRows.map((entry, index) => {
+                const row = entry.quotation;
+                const normalizedStatus = String(row.status || "")
+                  .trim()
+                  .toLowerCase();
+                const isConfirmed = normalizedStatus === "confirm";
+                const isRevised = normalizedStatus === "revise";
+                const itemRows = row.PurchaseQuotationItem || [];
+                const purchaseOrders = row.PurchaseOrder || [];
+                const supplierName =
+                  row.Supplier?.companyName ||
+                  row.Supplier?.name ||
+                  row.Supplier?.code ||
+                  "N/A";
+                const poNumber = isConfirmedView
+                  ? entry.purchaseOrder?.poNumber || "-"
+                  : purchaseOrders
+                      .map((po) => po.poNumber)
+                      .filter(Boolean)
+                      .join(", ") || "-";
+                const consignee = String(entry.purchaseOrder?.consignee || "")
+                  .trim()
+                  .toUpperCase();
+                const consigneeLabel =
+                  consignee === "ISB" || consignee === "KHI" || consignee === "OTHER"
+                    ? consignee === "OTHER"
+                      ? "Other"
+                      : consignee
+                    : entry.purchaseOrder?.consignee || "-";
+
+                return (
+                  <tr key={entry.key} className="border-b hover:bg-muted/20">
+                    <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
+                      {getListRowNumber(index)}
+                    </td>
+                    {isConfirmedView ? (
+                      <>
+                        <td className="p-2">
+                          {row.confirmationDate
+                            ? new Date(row.confirmationDate).toLocaleDateString()
+                            : "-"}
+                        </td>
+                        <td className="p-2">
+                          {row.quotationDate
+                            ? new Date(row.quotationDate).toLocaleDateString()
+                            : "-"}
+                        </td>
+                      </>
+                    ) : (
+                      <td className="p-2">
+                        {row.quotationDate
+                          ? new Date(row.quotationDate).toLocaleDateString()
+                          : "-"}
+                      </td>
+                    )}
+                    <td className="p-2 font-mono text-xs">{row.quotationNo || "-"}</td>
+                    {!isConfirmedView && (
+                      <td className="p-2 font-mono text-xs">
+                        {row.PurchaseImportRequest?.requestNo || "-"}
+                      </td>
+                    )}
+                    <td className="p-2">{supplierName}</td>
+                    <td className="p-2 text-right">{itemRows.length}</td>
+                    <td className="p-2 text-right">
+                      {Number(row.fcTotal || 0).toFixed(2)} {row.currency || ""}
+                    </td>
+                    <td className="p-2 text-right">{Number(row.lcTotal || 0).toFixed(2)}</td>
+                    {!isConfirmedView && (
+                      <>
+                        <td className="p-2 capitalize">{row.quotationType || "original"}</td>
+                        <td className="p-2 capitalize">{row.status || "pending"}</td>
+                      </>
+                    )}
+                    <td className="p-2 font-mono text-xs">{poNumber}</td>
+                    {isConfirmedView && (
+                      <td className="p-2 font-medium">{consigneeLabel}</td>
+                    )}
+                    {action !== "none" && (
+                      <td className="p-2 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          {action === "confirm" ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onConfirm?.(row.id)}
+                              disabled={isConfirmed}
+                            >
+                              <Check className="w-3.5 h-3.5 mr-1" />
+                              {isConfirmed ? "Confirmed" : "Confirm"}
+                            </Button>
+                          ) : null}
+                          {action === "revise" ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onRevise?.(row.id)}
+                              disabled={isConfirmed}
+                            >
+                              {isRevised ? "Revise Again" : "Revise"}
+                            </Button>
+                          ) : null}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {!loadingQuotations && totalRecords > 0 && (
+        <PurchaseImportListPagination
+          currentPage={currentPage}
+          itemsPerPage={itemsPerPage}
+          totalRecords={totalRecords}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setItemsPerPage(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const PurchaseImportRequestTab = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [requestView, setRequestView] = useState<"form" | "list">("form");
+  const showRequestForm = requestView === "form";
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [viewingRequestId, setViewingRequestId] = useState<string | null>(null);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    const viewId = searchParams.get("view");
+    if (viewId) {
+      setEditingRequestId(viewId);
+      setViewingRequestId(viewId);
+      setRequestView("form");
+    } else if (editId) {
+      setEditingRequestId(editId);
+      setViewingRequestId(null);
+      setRequestView("form");
+    }
+  }, [searchParams]);
+
+  const goToRequestList = () => {
+    setRequestView("list");
+    setEditingRequestId(null);
+    setViewingRequestId(null);
+    setSearchParams({}, { replace: true });
+    setListRefreshKey((value) => value + 1);
+  };
+
+  const goToNewRequestForm = () => {
+    setEditingRequestId(null);
+    setViewingRequestId(null);
+    setRequestView("form");
+    setSearchParams({}, { replace: true });
+  };
+
+  return (
+    <div className="space-y-4">
+      <Tabs
+        value={requestView}
+        onValueChange={(v) => setRequestView(v as "form" | "list")}
+      >
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="form">Inquiry Form</TabsTrigger>
+          <TabsTrigger value="list">Inquiry List</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {showRequestForm ? (
+        viewingRequestId ? (
+          <PurchaseImportRequestView
+            requestId={viewingRequestId}
+            onBack={goToRequestList}
+          />
+        ) : (
+          <PurchaseImportRequestForm
+            requestId={editingRequestId}
+            onCancel={goToRequestList}
+            onSaved={goToRequestList}
+          />
+        )
+      ) : (
+        <PurchaseInquiryListPanel
+          key={listRefreshKey}
+          mode="manage"
+          showNewInquiryButton
+          onNewInquiry={goToNewRequestForm}
+          onViewRequest={(requestId) => {
+            setEditingRequestId(requestId);
+            setViewingRequestId(requestId);
+            setRequestView("form");
+            setSearchParams({ view: requestId }, { replace: true });
+          }}
+          onEditRequest={(requestId) => {
+            setEditingRequestId(requestId);
+            setViewingRequestId(null);
+            setRequestView("form");
+            setSearchParams({ edit: requestId }, { replace: true });
+          }}
+        />
       )}
     </div>
   );
@@ -5134,11 +5569,27 @@ type PurchaseQuotationConfirmRow = {
   fcAmount: number;
   lcRate: number;
   lcAmount: number;
+  weight: number;
   totalWeight: number;
   khiQuantity: number;
   isbQuantity: number;
   otherQuantity: number;
   confirmQuantity: number;
+};
+
+const recalcConfirmRowAmounts = (
+  row: Pick<PurchaseQuotationConfirmRow, "fcRate" | "lcRate" | "weight" | "confirmQuantity">,
+) => {
+  const confirmQuantity = Math.max(0, Number(row.confirmQuantity) || 0);
+  const fcRate = Number(row.fcRate) || 0;
+  const lcRate = Number(row.lcRate) || 0;
+  const weight = Number(row.weight) || 0;
+  return {
+    confirmQuantity,
+    fcAmount: fcRate * confirmQuantity,
+    lcAmount: lcRate * confirmQuantity,
+    totalWeight: weight * confirmQuantity,
+  };
 };
 
 const PurchaseQuotationConfirmForm = ({
@@ -5178,12 +5629,26 @@ const PurchaseQuotationConfirmForm = ({
             ? data.items.map((item) => {
                 const effective = getEffectiveQuotationItemValues(item, revised);
                 const confirmQuantity = Number(item.quotationQuantity || 0);
+                const quotationQuantity = Number(item.quotationQuantity || 0);
+                const storedWeight = Number(item.weight || 0);
+                const weight =
+                  storedWeight > 0
+                    ? storedWeight
+                    : quotationQuantity > 0
+                      ? Number(item.totalWeight || 0) / quotationQuantity
+                      : 0;
                 const split = distributeConfirmSplitQuantities(
                   confirmQuantity,
                   Number(item.khiQuantity || 0),
                   Number(item.isbQuantity || 0),
                   Number(item.otherQuantity || 0),
                 );
+                const amounts = recalcConfirmRowAmounts({
+                  fcRate: effective.fcRate,
+                  lcRate: effective.lcRate,
+                  weight,
+                  confirmQuantity,
+                });
                 return {
                   rowId: createRowId(),
                   partId: item.partId,
@@ -5193,16 +5658,14 @@ const PurchaseQuotationConfirmForm = ({
                   brand: item.brand || "",
                   currentStock: Number(item.currentStock || 0),
                   demandQuantity: Number(item.demandQuantity || 0),
-                  quotationQuantity: Number(item.quotationQuantity || 0),
+                  quotationQuantity,
                   shipDays: Number(item.shipDays || 0),
                   lastFcRate: Number(item.lastFcRate || 0),
                   fcRate: effective.fcRate,
-                  fcAmount: effective.fcAmount,
                   lcRate: effective.lcRate,
-                  lcAmount: effective.lcAmount,
-                  totalWeight: Number(item.totalWeight || 0),
+                  weight,
                   ...split,
-                  confirmQuantity,
+                  ...amounts,
                 };
               })
             : [],
@@ -5228,13 +5691,24 @@ const PurchaseQuotationConfirmForm = ({
   };
 
   const handleConfirmQtyChange = (rowId: string, rawValue: string) => {
-    if (rawValue.trim() === "") {
-      updateRow(rowId, { confirmQuantity: 0 });
-      return;
-    }
-
-    const confirmQuantity = Math.max(0, Math.floor(Number(rawValue)));
-    updateRow(rowId, { confirmQuantity });
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+        const confirmQuantity =
+          rawValue.trim() === ""
+            ? 0
+            : Math.max(0, Math.floor(Number(rawValue)));
+        return {
+          ...row,
+          ...recalcConfirmRowAmounts({
+            fcRate: row.fcRate,
+            lcRate: row.lcRate,
+            weight: row.weight,
+            confirmQuantity,
+          }),
+        };
+      }),
+    );
   };
 
   const updateConfirmSplitQuantity = (
@@ -5248,7 +5722,15 @@ const PurchaseQuotationConfirmForm = ({
         if (row.rowId !== rowId) return row;
         const next = { ...row, [field]: qty };
         const confirmQuantity = getConfirmRowSplitSum(next);
-        return { ...next, confirmQuantity };
+        return {
+          ...next,
+          ...recalcConfirmRowAmounts({
+            fcRate: next.fcRate,
+            lcRate: next.lcRate,
+            weight: next.weight,
+            confirmQuantity,
+          }),
+        };
       }),
     );
   };
@@ -5594,13 +6076,6 @@ const PurchaseQuotationConfirmForm = ({
         </div>
       ) : null}
 
-      <div className="max-w-xs">
-        <div className="space-y-1">
-          <Label>Terms</Label>
-          <Input value={detail?.terms || "—"} readOnly />
-        </div>
-      </div>
-
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
           Cancel
@@ -5618,62 +6093,90 @@ const PurchaseQuotationConfirmForm = ({
 };
 
 const PurchaseQuotationTab = () => {
-  const { toast } = useToast();
-  const [quotationView, setQuotationView] = useState<"open" | "confirmed">("open");
+  const [showQuotationForm, setShowQuotationForm] = useState(false);
+  const [quotationRequestId, setQuotationRequestId] = useState<string | null>(null);
+  const [quotationConsignee, setQuotationConsignee] = useState<string | null>(null);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
+
+  if (showQuotationForm && quotationRequestId) {
+    return (
+      <PurchaseQuotationForm
+        requestId={quotationRequestId}
+        initialConsignee={quotationConsignee}
+        onCancel={() => {
+          setShowQuotationForm(false);
+          setQuotationRequestId(null);
+          setQuotationConsignee(null);
+        }}
+        onSaved={() => {
+          setShowQuotationForm(false);
+          setQuotationRequestId(null);
+          setQuotationConsignee(null);
+          setListRefreshKey((value) => value + 1);
+        }}
+      />
+    );
+  }
+
+  return (
+    <PurchaseInquiryListPanel
+      key={listRefreshKey}
+      mode="quotation"
+      onOpenQuotation={(requestId, consignee) => {
+        setQuotationConsignee(consignee);
+        setQuotationRequestId(requestId);
+        setShowQuotationForm(true);
+      }}
+    />
+  );
+};
+
+const PurchaseReviseQuotationTab = () => {
   const [showRevisionForm, setShowRevisionForm] = useState(false);
-  const [showConfirmForm, setShowConfirmForm] = useState(false);
   const [revisionQuotationId, setRevisionQuotationId] = useState<string | null>(null);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
+
+  if (showRevisionForm && revisionQuotationId) {
+    return (
+      <PurchaseQuotationRevisionForm
+        quotationId={revisionQuotationId}
+        onCancel={() => {
+          setShowRevisionForm(false);
+          setRevisionQuotationId(null);
+        }}
+        onSaved={() => {
+          setShowRevisionForm(false);
+          setRevisionQuotationId(null);
+          setListRefreshKey((value) => value + 1);
+        }}
+      />
+    );
+  }
+
+  return (
+    <PurchaseQuotationListPanel
+      key={listRefreshKey}
+      view="open"
+      action="revise"
+      title="Purchase Quotations"
+      description="Review open supplier quotations and revise rates or quantities."
+      onRevise={(quotationId) => {
+        setRevisionQuotationId(quotationId);
+        setShowRevisionForm(true);
+      }}
+    />
+  );
+};
+
+const PurchaseConfirmQuotationTab = () => {
+  const [quotationView, setQuotationView] = useState<"open" | "confirmed">("open");
+  const [showConfirmForm, setShowConfirmForm] = useState(false);
   const [confirmQuotationId, setConfirmQuotationId] = useState<string | null>(null);
-  const [loadingQuotations, setLoadingQuotations] = useState(false);
-  const [updatingQuotationId, setUpdatingQuotationId] = useState<string | null>(null);
-  const [quotations, setQuotations] = useState<PurchaseQuotationRecord[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(50);
-  const [totalRecords, setTotalRecords] = useState(0);
-
-  const fetchQuotations = useCallback(async () => {
-    setLoadingQuotations(true);
-    try {
-      const response = await apiClient.getPurchaseQuotations({
-        page: currentPage,
-        limit: itemsPerPage,
-        // "Purchase Quotations" tab lists every quotation (open + confirmed);
-        // the "Confirmed" tab stays filtered to confirmed only.
-        ...(quotationView === "confirmed"
-          ? { status: "confirm" as const }
-          : {}),
-      });
-      const rows = Array.isArray((response as any)?.data)
-        ? (response as any).data
-        : Array.isArray(response)
-          ? response
-          : [];
-      const pagination = (response as any)?.pagination;
-      setQuotations(rows);
-      setTotalRecords(pagination?.total ?? rows.length);
-    } catch (error: any) {
-      toast({
-        title: "Failed to load quotations",
-        description: error?.message || "Could not fetch purchase quotations.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingQuotations(false);
-    }
-  }, [currentPage, itemsPerPage, quotationView, toast]);
-
-  useEffect(() => {
-    void fetchQuotations();
-  }, [fetchQuotations]);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
 
   const handleQuotationViewChange = (view: "open" | "confirmed") => {
     setQuotationView(view);
-    setCurrentPage(1);
-  };
-
-  const handleOpenConfirmForm = (quotationId: string) => {
-    setConfirmQuotationId(quotationId);
-    setShowConfirmForm(true);
+    setListRefreshKey((value) => value + 1);
   };
 
   if (showConfirmForm && confirmQuotationId) {
@@ -5687,32 +6190,13 @@ const PurchaseQuotationTab = () => {
         onSaved={() => {
           setShowConfirmForm(false);
           setConfirmQuotationId(null);
-          fetchQuotations();
-        }}
-      />
-    );
-  }
-
-  if (showRevisionForm && revisionQuotationId) {
-    return (
-      <PurchaseQuotationRevisionForm
-        quotationId={revisionQuotationId}
-        onCancel={() => {
-          setShowRevisionForm(false);
-          setRevisionQuotationId(null);
-        }}
-        onSaved={() => {
-          setShowRevisionForm(false);
-          setRevisionQuotationId(null);
-          fetchQuotations();
+          setListRefreshKey((value) => value + 1);
         }}
       />
     );
   }
 
   const isConfirmedView = quotationView === "confirmed";
-  const openListColSpan = 12;
-  const confirmedListColSpan = 11;
 
   return (
     <div className="space-y-4">
@@ -5726,193 +6210,21 @@ const PurchaseQuotationTab = () => {
         </TabsList>
       </Tabs>
 
-      <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-semibold">
-              {isConfirmedView ? "Confirmed Quotation" : "Purchase Quotations"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {isConfirmedView
-                ? "Quotations that have been confirmed and converted to purchase order(s)."
-                : "Review supplier quotations. Confirming opens a form to set confirm quantities and create purchase order(s)."}
-            </p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                <th className={`${LIST_NUMBER_HEAD_CLASS} p-2 border-b`}>#</th>
-                {isConfirmedView ? (
-                  <>
-                    <th className="text-left p-2 border-b">Confirmation Date</th>
-                    <th className="text-left p-2 border-b">Quotation Date</th>
-                  </>
-                ) : (
-                  <th className="text-left p-2 border-b">Date</th>
-                )}
-                <th className="text-left p-2 border-b">Quotation No</th>
-                <th className="text-left p-2 border-b">Inquiry No</th>
-                <th className="text-left p-2 border-b">Supplier</th>
-                <th className="text-right p-2 border-b">Items</th>
-                <th className="text-right p-2 border-b">FC Total</th>
-                <th className="text-right p-2 border-b">LC Total</th>
-                {!isConfirmedView && (
-                  <>
-                    <th className="text-left p-2 border-b">Type</th>
-                    <th className="text-left p-2 border-b">Status</th>
-                  </>
-                )}
-                <th className="text-left p-2 border-b">PO No</th>
-                {isConfirmedView && (
-                  <th className="text-left p-2 border-b">Consignee</th>
-                )}
-                {!isConfirmedView && (
-                  <th className="text-center p-2 border-b">Action</th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {loadingQuotations ? (
-                <tr>
-                  <td
-                    colSpan={isConfirmedView ? confirmedListColSpan : openListColSpan}
-                    className="p-4 text-center text-muted-foreground"
-                  >
-                    Loading quotations...
-                  </td>
-                </tr>
-              ) : quotations.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={isConfirmedView ? confirmedListColSpan : openListColSpan}
-                    className="p-4 text-center text-muted-foreground"
-                  >
-                    {isConfirmedView
-                      ? "No confirmed quotations found yet."
-                      : "No quotations found yet."}
-                  </td>
-                </tr>
-              ) : (
-                quotations.map((row, index) => {
-                  const normalizedStatus = String(row.status || "")
-                    .trim()
-                    .toLowerCase();
-                  const isConfirmed = normalizedStatus === "confirm";
-                  const isRevised = normalizedStatus === "revise";
-                  const itemRows = row.PurchaseQuotationItem || [];
-                  const purchaseOrders = row.PurchaseOrder || [];
-                  const supplierName =
-                    row.Supplier?.companyName ||
-                    row.Supplier?.name ||
-                    row.Supplier?.code ||
-                    "N/A";
-                  const poNumbers = purchaseOrders
-                    .map((po) => po.poNumber)
-                    .filter(Boolean)
-                    .join(", ");
-                  const consignees = purchaseOrders
-                    .map((po) => po.consignee)
-                    .filter(Boolean)
-                    .join(", ");
-
-                  return (
-                    <tr key={row.id} className="border-b hover:bg-muted/20">
-                      <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
-                        {getListRowNumber(index)}
-                      </td>
-                      {isConfirmedView ? (
-                        <>
-                          <td className="p-2">
-                            {row.confirmationDate
-                              ? new Date(row.confirmationDate).toLocaleDateString()
-                              : "-"}
-                          </td>
-                          <td className="p-2">
-                            {row.quotationDate
-                              ? new Date(row.quotationDate).toLocaleDateString()
-                              : "-"}
-                          </td>
-                        </>
-                      ) : (
-                        <td className="p-2">
-                          {row.quotationDate
-                            ? new Date(row.quotationDate).toLocaleDateString()
-                            : "-"}
-                        </td>
-                      )}
-                      <td className="p-2 font-mono text-xs">{row.quotationNo || "-"}</td>
-                      <td className="p-2 font-mono text-xs">
-                        {row.PurchaseImportRequest?.requestNo || "-"}
-                      </td>
-                      <td className="p-2">{supplierName}</td>
-                      <td className="p-2 text-right">{itemRows.length}</td>
-                      <td className="p-2 text-right">
-                        {Number(row.fcTotal || 0).toFixed(2)} {row.currency || ""}
-                      </td>
-                      <td className="p-2 text-right">{Number(row.lcTotal || 0).toFixed(2)}</td>
-                      {!isConfirmedView && (
-                        <>
-                          <td className="p-2 capitalize">{row.quotationType || "original"}</td>
-                          <td className="p-2 capitalize">{row.status || "pending"}</td>
-                        </>
-                      )}
-                      <td className="p-2 font-mono text-xs">{poNumbers || "-"}</td>
-                      {isConfirmedView && (
-                        <td className="p-2 capitalize">{consignees || "-"}</td>
-                      )}
-                      {!isConfirmedView && (
-                        <td className="p-2 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleOpenConfirmForm(row.id)}
-                              disabled={isConfirmed || updatingQuotationId === row.id}
-                            >
-                              <Check className="w-3.5 h-3.5 mr-1" />
-                              {isConfirmed ? "Confirmed" : "Confirm"}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                if (isConfirmed) return;
-                                setRevisionQuotationId(row.id);
-                                setShowRevisionForm(true);
-                              }}
-                              disabled={isConfirmed || updatingQuotationId === row.id}
-                            >
-                              {isRevised ? "Revise Again" : "Revise"}
-                            </Button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {!loadingQuotations && totalRecords > 0 && (
-          <PurchaseImportListPagination
-            currentPage={currentPage}
-            itemsPerPage={itemsPerPage}
-            totalRecords={totalRecords}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={(size) => {
-              setItemsPerPage(size);
-              setCurrentPage(1);
-            }}
-          />
-        )}
-      </div>
+      <PurchaseQuotationListPanel
+        key={`${quotationView}-${listRefreshKey}`}
+        view={quotationView}
+        action={isConfirmedView ? "none" : "confirm"}
+        title={isConfirmedView ? "Confirmed Quotation" : "Purchase Quotations"}
+        description={
+          isConfirmedView
+            ? "Confirmed quotations shown separately for ISB, KHI, and Other purchase orders."
+            : "Review supplier quotations. Confirming opens a form to set confirm quantities and create purchase order(s)."
+        }
+        onConfirm={(quotationId) => {
+          setConfirmQuotationId(quotationId);
+          setShowConfirmForm(true);
+        }}
+      />
     </div>
   );
 };
@@ -6113,7 +6425,6 @@ const PurchaseOrderTab = () => {
         requestNo: orderData.quotation?.requestNo || order.quotation?.requestNo || null,
         currency: orderData.currency || orderData.quotation?.currency || "USD",
         conversionRate: initialConversionRate,
-        terms: orderData.quotation?.terms || null,
         consignee: orderData.consignee || order.consignee || null,
         isRevised: Boolean(orderData.quotation?.isRevised),
       });
@@ -7106,12 +7417,6 @@ const PurchaseOrderTab = () => {
                   ))}
                 </div>
               </div>
-              {receiveDetail?.terms ? (
-                <div className="max-w-xs">
-                  <Label>Terms</Label>
-                  <Input value={receiveDetail.terms} readOnly />
-                </div>
-              ) : null}
             </div>
           )}
           <DialogFooter>
@@ -7170,6 +7475,10 @@ const PurchaseImport = () => {
         return <PurchaseImportRequestTab />;
       case "quotation":
         return <PurchaseQuotationTab />;
+      case "revise-quotation":
+        return <PurchaseReviseQuotationTab />;
+      case "confirm-quotation":
+        return <PurchaseConfirmQuotationTab />;
       case "purchase-order":
         return <PurchaseOrderTab />;
       default:

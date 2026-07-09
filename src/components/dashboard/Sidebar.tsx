@@ -14,6 +14,7 @@ import {
   Truck,
   BookMarked,
   ArrowLeftRight,
+  UserCircle,
   LucideIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -87,6 +88,7 @@ export const Sidebar = () => {
     { Icon: BookOpen, path: "/accounting", label: "Accounting" },
     { Icon: ClipboardList, path: "/financial-statements", label: "Financial Statements" },
     { Icon: Tag, path: "/vouchers", label: "Vouchers" },
+    { Icon: UserCircle, path: "/employees", label: "Employees" },
     { Icon: Settings2, path: "/manage", label: "Manage" },
     // { Icon: BookMarked, path: "/docs", label: "Documentation" },
     // { Icon: BarChart3, path: "/reports", label: "Reports" },

@@ -107,6 +107,21 @@ const normalizeQuotationStatus = (value: any): "pending" | "confirm" | "revise" 
   return "pending";
 };
 
+const normalizeQuotationNo = (value: any): string => String(value || "").trim();
+
+const findDuplicateQuotationNo = async (
+  purchaseQuotationModel: any,
+  quotationNo: string,
+  excludeQuotationId?: string,
+) =>
+  purchaseQuotationModel.findFirst({
+    where: {
+      quotationNo,
+      ...(excludeQuotationId ? { id: { not: excludeQuotationId } } : {}),
+    },
+    select: { id: true },
+  });
+
 async function generateImportPoNumber(tx?: {
   purchaseOrder: { findMany: typeof prisma.purchaseOrder.findMany };
 }): Promise<string> {
@@ -1588,12 +1603,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         totalWeight: Number(item.totalWeight || 0),
       }));
     } else {
-      const maxQuotationRows = await prisma.$queryRaw<Array<{ maxNo: number | null }>>`
-        SELECT COALESCE(MAX((regexp_match("quotationNo", '^PQ-([0-9]+)'))[1]::INT), 0) AS "maxNo"
-        FROM "PurchaseQuotation"
-      `;
-      const maxNo = Number(maxQuotationRows?.[0]?.maxNo || 0);
-      quotationNo = `PQ-${String(maxNo + 1).padStart(4, "0")}`;
+      quotationNo = "";
       quotationDate = new Date();
       items = requestRow.PurchaseImportRequestItem.map((item: any) => ({
         partId: item.partId,
@@ -1692,6 +1702,19 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
     }
 
     const quotationDate = parseDateOrNow(req.body?.quotationDate);
+    const quotationNo = normalizeQuotationNo(req.body?.quotationNo);
+    if (!quotationNo) {
+      return res.status(400).json({ error: "Quotation number is required." });
+    }
+    const duplicateQuotationNo = await findDuplicateQuotationNo(
+      purchaseQuotationModel,
+      quotationNo,
+    );
+    if (duplicateQuotationNo) {
+      return res.status(409).json({
+        error: `Quotation number "${quotationNo}" is already in use.`,
+      });
+    }
     const revisedQuotationDate = req.body?.revisedQuotationDate
       ? parseDateOrNow(req.body.revisedQuotationDate)
       : null;
@@ -1749,13 +1772,6 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
     if (validPartsCount !== partIds.length) {
       return res.status(400).json({ error: "One or more items are invalid." });
     }
-
-    const maxQuotationRows = await prisma.$queryRaw<Array<{ maxNo: number | null }>>`
-      SELECT COALESCE(MAX((regexp_match("quotationNo", '^PQ-([0-9]+)'))[1]::INT), 0) AS "maxNo"
-      FROM "PurchaseQuotation"
-    `;
-    const maxNo = Number(maxQuotationRows?.[0]?.maxNo || 0);
-    const quotationNo = `PQ-${String(maxNo + 1).padStart(4, "0")}`;
 
     const fcTotal = items.reduce((sum: number, item: any) => sum + Number(item.fcAmount || 0), 0);
     const lcTotal = items.reduce((sum: number, item: any) => sum + Number(item.lcAmount || 0), 0);
@@ -2075,6 +2091,20 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
     }
 
     const quotationDate = parseDateOrNow(req.body?.quotationDate);
+    const quotationNo = normalizeQuotationNo(req.body?.quotationNo);
+    if (!quotationNo) {
+      return res.status(400).json({ error: "Quotation number is required." });
+    }
+    const duplicateQuotationNo = await findDuplicateQuotationNo(
+      purchaseQuotationModel,
+      quotationNo,
+      quotationId,
+    );
+    if (duplicateQuotationNo) {
+      return res.status(409).json({
+        error: `Quotation number "${quotationNo}" is already in use.`,
+      });
+    }
     const conversionRate = Number(req.body?.conversionRate || 1);
     const normalizedConversionRate =
       Number.isFinite(conversionRate) && conversionRate > 0 ? conversionRate : 1;
@@ -2143,6 +2173,7 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
       await (tx as any).purchaseQuotation.update({
         where: { id: quotationId },
         data: {
+          quotationNo,
           quotationDate,
           currency,
           conversionRate: normalizedConversionRate,
@@ -2186,7 +2217,7 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
     res.json({
       data: {
         id: quotationId,
-        quotationNo: existing.quotationNo,
+        quotationNo,
       },
     });
   } catch (error: any) {

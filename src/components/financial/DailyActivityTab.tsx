@@ -327,43 +327,6 @@ export const DailyActivityTab = ({
     void fetchDailyActivity();
   }, [fetchDailyActivity]);
 
-  const summary = data?.summary;
-
-  const summaryCards = [
-    {
-      key: "po",
-      label: "Purchase Orders",
-      count: summary?.purchaseOrders.count ?? 0,
-      total: summary?.purchaseOrders.totalAmount ?? 0,
-      icon: <Package className="h-5 w-5" />,
-      color: "text-blue-600 bg-blue-50 dark:bg-blue-950/40",
-    },
-    {
-      key: "dpo",
-      label: "Direct Purchase (DPO)",
-      count: summary?.directPurchaseOrders.count ?? 0,
-      total: summary?.directPurchaseOrders.totalAmount ?? 0,
-      icon: <Truck className="h-5 w-5" />,
-      color: "text-violet-600 bg-violet-50 dark:bg-violet-950/40",
-    },
-    {
-      key: "si",
-      label: "Sales Invoices",
-      count: summary?.salesInvoices.count ?? 0,
-      total: summary?.salesInvoices.totalAmount ?? 0,
-      icon: <ShoppingCart className="h-5 w-5" />,
-      color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40",
-    },
-    {
-      key: "sr",
-      label: "Sales Returns",
-      count: summary?.salesReturns.count ?? 0,
-      total: summary?.salesReturns.totalAmount ?? 0,
-      icon: <Undo2 className="h-5 w-5" />,
-      color: "text-orange-600 bg-orange-50 dark:bg-orange-950/40",
-    },
-  ];
-
   return (
     <div className="space-y-4">
       <Card>
@@ -404,25 +367,6 @@ export const DailyActivityTab = ({
         </div>
       ) : data ? (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            {summaryCards.map((card) => (
-              <Card key={card.key}>
-                <CardContent className="pt-5 pb-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm text-muted-foreground">{card.label}</p>
-                      <p className="text-3xl font-bold mt-1 tabular-nums">{card.count}</p>
-                      <p className="text-sm font-medium mt-2 tabular-nums">
-                        Rs {formatMoney(card.total)}
-                      </p>
-                    </div>
-                    <div className={cn("rounded-lg p-2.5", card.color)}>{card.icon}</div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
           <ActivitySection
             title="Purchase Orders"
             icon={<Package className="h-5 w-5" />}
