@@ -478,6 +478,7 @@ class ApiClient {
       cost?: number;
       priceA?: number;
       priceB?: number;
+      priceM?: number;
       reason?: string;
       updated_by?: string;
     },
