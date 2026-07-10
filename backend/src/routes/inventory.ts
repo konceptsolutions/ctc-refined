@@ -5611,7 +5611,7 @@ const IMPORT_EXPENSE_ACCOUNTS: Array<{
   { field: "doAmount", code: "302010", label: "D.O" },
   { field: "miscExp", code: "302011", label: "Misc.Exp" },
   { field: "locFrt", code: "302012", label: "Loc.Frt" },
-  { field: "crnExp", code: "302013", label: "Cm.Exp" },
+  { field: "crnExp", code: "302013", label: "Dmg.Exp" },
 ];
 
 /**
@@ -5909,7 +5909,12 @@ async function receiveImportPurchaseOrder(
       const expAcc = await tx.account.findFirst({
         where: {
           status: "Active",
-          OR: [{ code: def.code }, { name: def.label }],
+          OR: [
+            { code: def.code },
+            { name: def.label },
+            // Keep matching the previous chart name for Dmg.Exp (was Cm.Exp)
+            ...(def.field === "crnExp" ? [{ name: "Cm.Exp" }] : []),
+          ],
         },
       });
       if (!expAcc) continue;

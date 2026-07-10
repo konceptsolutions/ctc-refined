@@ -400,7 +400,7 @@ const IMPORT_PO_CLEARING_EXPENSE_SECTIONS = [
       { key: "doAmount" as const, label: "D.O." },
       { key: "miscExp" as const, label: "Misc.Exp." },
       { key: "locFrt" as const, label: "Loc.Frt." },
-      { key: "crnExp" as const, label: "Crn.Exp." },
+      { key: "crnExp" as const, label: "Dmg.Exp." },
     ],
   },
 ];
@@ -7318,9 +7318,6 @@ const PurchaseOrderTab = () => {
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Commercial
-                    </p>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <Label className="text-xs font-normal w-24 shrink-0">Pkg.Exp.%</Label>
@@ -7386,9 +7383,6 @@ const PurchaseOrderTab = () => {
                   </div>
                   {IMPORT_PO_CLEARING_EXPENSE_SECTIONS.map((section) => (
                     <div key={section.title} className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        {section.title}
-                      </p>
                       <div className="space-y-2">
                         {section.fields.map((field) => (
                           <div

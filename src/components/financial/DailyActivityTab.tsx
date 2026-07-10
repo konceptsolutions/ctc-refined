@@ -24,14 +24,13 @@ import {
   ChevronDown,
   FileText,
   Loader2,
-  Package,
   RefreshCw,
   ShoppingCart,
-  Truck,
   Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { getCustomerTypeLabel } from "@/types/invoice";
 
 type ActivityLineItem = {
   partNo: string;
@@ -42,36 +41,15 @@ type ActivityLineItem = {
   brand?: string;
 };
 
-type PurchaseOrderRow = {
-  id: string;
-  number: string;
-  date: string;
-  supplierName: string;
-  status: string;
-  totalAmount: number;
-  itemsCount: number;
-  items: ActivityLineItem[];
-};
-
-type DpoRow = {
-  id: string;
-  number: string;
-  date: string;
-  supplierName: string;
-  storeName: string | null;
-  status: string;
-  discount: number;
-  totalAmount: number;
-  itemsCount: number;
-  items: ActivityLineItem[];
-};
-
 type SalesInvoiceRow = {
   id: string;
   number: string;
   date: string;
   customerName: string;
   customerType: string;
+  term?: string | null;
+  bankAmount?: number;
+  cashAmount?: number;
   status: string;
   paymentStatus: string;
   subtotal: number;
@@ -101,13 +79,9 @@ type SalesReturnRow = {
 type DailyActivityData = {
   date: string;
   summary: {
-    purchaseOrders: { count: number; totalAmount: number };
-    directPurchaseOrders: { count: number; totalAmount: number };
     salesInvoices: { count: number; totalAmount: number };
     salesReturns: { count: number; totalAmount: number };
   };
-  purchaseOrders: PurchaseOrderRow[];
-  directPurchaseOrders: DpoRow[];
   salesInvoices: SalesInvoiceRow[];
   salesReturns: SalesReturnRow[];
 };
@@ -137,6 +111,24 @@ const statusBadgeClass = (status: string) => {
     return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
   }
   return "bg-muted text-muted-foreground";
+};
+
+const getInvoicePaymentMode = (inv: SalesInvoiceRow) => {
+  const bankAmt = Number(inv.bankAmount || 0);
+  const cashAmt = Number(inv.cashAmount || 0);
+  if (bankAmt > 0 && cashAmt > 0) return "Both";
+  if (bankAmt > 0) return "Bank";
+  if (cashAmt > 0) return "Cash";
+  if (inv.customerType !== "registered") {
+    const term = String(inv.term || "").toLowerCase();
+    if (term === "cash+online") return "Both";
+    if (term === "online") return "Bank";
+    if (term === "cash") return "Cash";
+  }
+  const term = String(inv.term || "").trim();
+  if (!term) return "-";
+  if (inv.customerType === "registered") return `${term} days credit`;
+  return term;
 };
 
 const LineItemsTable = ({ items }: { items: ActivityLineItem[] }) => (
@@ -368,96 +360,6 @@ export const DailyActivityTab = ({
       ) : data ? (
         <>
           <ActivitySection
-            title="Purchase Orders"
-            icon={<Package className="h-5 w-5" />}
-            count={data.purchaseOrders.length}
-            totalAmount={data.summary.purchaseOrders.totalAmount}
-            emptyMessage="No purchase orders on this date."
-          >
-            <div className="space-y-3">
-              {data.purchaseOrders.map((po) => (
-                <DocumentBlock
-                  key={po.id}
-                  amountLabel="Total"
-                  amount={po.totalAmount}
-                  items={po.items}
-                  header={
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold">{po.number}</span>
-                      <Badge variant="outline" className={statusBadgeClass(po.status)}>
-                        {po.status}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {po.itemsCount} item{po.itemsCount === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                  }
-                  meta={
-                    <>
-                      <span>
-                        <strong>Supplier:</strong> {po.supplierName}
-                      </span>
-                      <span>
-                        <strong>Date:</strong> {formatDate(po.date)}
-                      </span>
-                    </>
-                  }
-                />
-              ))}
-            </div>
-          </ActivitySection>
-
-          <ActivitySection
-            title="Direct Purchase Orders (DPO)"
-            icon={<Truck className="h-5 w-5" />}
-            count={data.directPurchaseOrders.length}
-            totalAmount={data.summary.directPurchaseOrders.totalAmount}
-            emptyMessage="No DPOs on this date."
-          >
-            <div className="space-y-3">
-              {data.directPurchaseOrders.map((dpo) => (
-                <DocumentBlock
-                  key={dpo.id}
-                  amountLabel="Total"
-                  amount={dpo.totalAmount}
-                  items={dpo.items}
-                  header={
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold">{dpo.number}</span>
-                      <Badge variant="outline" className={statusBadgeClass(dpo.status)}>
-                        {dpo.status}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {dpo.itemsCount} item{dpo.itemsCount === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                  }
-                  meta={
-                    <>
-                      <span>
-                        <strong>Supplier:</strong> {dpo.supplierName}
-                      </span>
-                      {dpo.storeName ? (
-                        <span>
-                          <strong>Store:</strong> {dpo.storeName}
-                        </span>
-                      ) : null}
-                      <span>
-                        <strong>Date:</strong> {formatDate(dpo.date)}
-                      </span>
-                      {dpo.discount > 0 ? (
-                        <span>
-                          <strong>Discount:</strong> Rs {formatMoney(dpo.discount)}
-                        </span>
-                      ) : null}
-                    </>
-                  }
-                />
-              ))}
-            </div>
-          </ActivitySection>
-
-          <ActivitySection
             title="Sales Invoices"
             icon={<ShoppingCart className="h-5 w-5" />}
             count={data.salesInvoices.length}
@@ -474,12 +376,13 @@ export const DailyActivityTab = ({
                   header={
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{inv.number}</span>
-                      <Badge variant="outline" className={statusBadgeClass(inv.status)}>
-                        {inv.status}
-                      </Badge>
-                      <Badge variant="outline" className={statusBadgeClass(inv.paymentStatus)}>
-                        {inv.paymentStatus}
-                      </Badge>
+                      <span className="text-sm">{inv.customerName || "—"}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {getCustomerTypeLabel(inv.customerType)}
+                      </span>
+                      <span className="text-sm text-muted-foreground">
+                        {getInvoicePaymentMode(inv)}
+                      </span>
                       <span className="text-sm text-muted-foreground">
                         {inv.itemsCount} item{inv.itemsCount === 1 ? "" : "s"}
                       </span>
@@ -487,12 +390,6 @@ export const DailyActivityTab = ({
                   }
                   meta={
                     <>
-                      <span>
-                        <strong>Customer:</strong> {inv.customerName}
-                      </span>
-                      <span>
-                        <strong>Type:</strong> {inv.customerType}
-                      </span>
                       <span>
                         <strong>Date:</strong> {formatDate(inv.date)}
                       </span>
