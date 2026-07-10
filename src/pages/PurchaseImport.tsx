@@ -3,7 +3,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Plus, Trash2, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine } from "lucide-react";
+import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -2565,7 +2565,7 @@ const PurchaseImportRequestForm = ({
                         onClick={() => removeItemRow(row.id)}
                         disabled={items.length === 1}
                       >
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                        <Trash className="h-4 w-4 text-destructive" />
                       </Button>
                     </td>
                   </tr>
@@ -2718,7 +2718,7 @@ const PurchaseImportRequestForm = ({
                           className="h-8 w-8 text-destructive hover:text-destructive"
                           onClick={() => removeSupplierRow(row.id)}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </td>
                     </tr>
@@ -3966,7 +3966,7 @@ const PurchaseQuotationForm = ({
                             disabled={loading || saving || rows.length === 1}
                             onClick={() => removeQuotationRow(row.rowId)}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash className="w-4 h-4" />
                           </Button>
                         </div>
                       </td>

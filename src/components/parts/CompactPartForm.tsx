@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Image as ImageIcon, X, Save } from "lucide-react";
+import { Plus, Image as ImageIcon, Trash, Save } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Item } from "./ItemsListView";
 import { apiClient } from "@/lib/api";
@@ -1534,7 +1534,7 @@ export const CompactPartForm = ({
         aria-label="Close form"
         title="Close"
       >
-        <X className="w-4 h-4" />
+        <Trash className="w-4 h-4" />
       </Button>
       {/* Scrollable Form Content */}
       <div className="flex-1 overflow-auto p-3">
@@ -2398,7 +2398,7 @@ export const CompactPartForm = ({
                   className="absolute top-1 right-1 h-4 w-4 p-0"
                   onClick={() => setImageP1(null)}
                 >
-                  <X className="w-2.5 h-2.5" />
+                  <Trash className="w-2.5 h-2.5" />
                 </Button>
               </div>
             ) : (
@@ -2437,7 +2437,7 @@ export const CompactPartForm = ({
                   className="absolute top-1 right-1 h-4 w-4 p-0"
                   onClick={() => setImageP2(null)}
                 >
-                  <X className="w-2.5 h-2.5" />
+                  <Trash className="w-2.5 h-2.5" />
                 </Button>
               </div>
             ) : (
@@ -2610,7 +2610,7 @@ export const CompactPartForm = ({
                       onClick={() => handleRemoveKitItem(row.id)}
                       aria-label="Remove kit item row"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <Trash className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 ))}
@@ -2726,7 +2726,7 @@ export const CompactPartForm = ({
                     }
                     aria-label="Remove model row"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Trash className="w-3.5 h-3.5" />
                   </Button>
                 </div>
               ))}

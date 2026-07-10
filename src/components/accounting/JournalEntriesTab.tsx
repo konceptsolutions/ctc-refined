@@ -17,7 +17,7 @@ import {
   Filter,
   Calendar,
   FileText,
-  Trash2,
+  Trash,
   Eye,
   CheckCircle,
   Clock,
@@ -419,7 +419,7 @@ export const JournalEntriesTab = () => {
                                 onClick={() => removeJournalLine(line.id)}
                                 disabled={journalLines.length <= 2}
                               >
-                                <Trash2 className="h-4 w-4 text-destructive" />
+                                <Trash className="h-4 w-4 text-destructive" />
                               </Button>
                             </TableCell>
                           </TableRow>

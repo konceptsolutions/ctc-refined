@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tag, Search, Plus, Edit, Trash2 } from "lucide-react";
+import { Tag, Search, Plus, Edit, Trash } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
@@ -298,7 +298,7 @@ export const ExpenseTypesTab = ({ onUpdate }: ExpenseTypesTabProps) => {
                             onClick={() => handleDeleteClick(type)}
                             className="text-destructive hover:text-destructive hover:bg-destructive/10"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash className="w-4 h-4" />
                           </Button>
                         </ActionButtonTooltip>
                       </div>

@@ -1,9 +1,8 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 
 export interface SearchableSelectOption {
   value: string;
@@ -155,8 +154,9 @@ export const SearchableSelect = ({
 
   // Calculate dropdown position
   const updateDropdownPosition = React.useCallback(() => {
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
+    const anchor = inputRef.current ?? containerRef.current;
+    if (anchor) {
+      const rect = anchor.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
       const scrollY = window.scrollY;
@@ -204,9 +204,9 @@ export const SearchableSelect = ({
       // Convert to absolute position (add scroll offset)
       top = top + scrollY;
 
-      // Ensure dropdown stays within viewport horizontally
+      // Match dropdown width to the input field (never wider than the trigger)
       let left = rect.left + scrollX;
-      const dropdownWidth = Math.max(rect.width, 200); // Minimum width of 200px
+      const dropdownWidth = rect.width;
 
       if (left + dropdownWidth > viewportWidth + scrollX - padding) {
         left = viewportWidth + scrollX - dropdownWidth - padding;
@@ -297,20 +297,38 @@ export const SearchableSelect = ({
     }
   }, [isOpen]);
 
+  const selectAllInputText = React.useCallback(() => {
+    requestAnimationFrame(() => {
+      inputRef.current?.select();
+    });
+  }, []);
+
+  const openDropdown = React.useCallback(() => {
+    setIsOpen(true);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        updateDropdownPosition();
+      });
+    });
+  }, [updateDropdownPosition]);
+
   // Handle input change: only update search query for filtering options
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setSearchQuery(newValue);
     onSearchChange?.(newValue);
 
-    if (newValue.trim()) {
-      setIsOpen(true);
+    if (newValue.length > 0) {
+      openDropdown();
     } else {
       setIsOpen(false);
+      if (value) {
+        onValueChange("");
+      }
     }
 
-    // DO NOT call onValueChange here when allowCustom is true
-    // This prevents the parent filter from updating while the user is just typing to search
+    // Only clear the value when the field is emptied; otherwise defer onValueChange
+    // until blur/select so parent filters are not updated on every keystroke.
   };
 
   const handleSelect = (optionValue: string) => {
@@ -338,20 +356,13 @@ export const SearchableSelect = ({
       return;
     }
     if (!value) {
-      setIsOpen(true);
+      openDropdown();
       setSearchQuery("");
       return;
     }
-    setIsOpen(false);
-    setSearchQuery("");
-  };
-
-  const handleClear = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onValueChange("");
-    setSearchQuery("");
-    setIsOpen(false);
-    inputRef.current?.focus();
+    setSearchQuery(displayValue);
+    openDropdown();
+    selectAllInputText();
   };
 
   const handleInputBlur = () => {
@@ -367,20 +378,24 @@ export const SearchableSelect = ({
       setIsFocused(false);
 
       const query = searchQueryRef.current.trim();
-      if (query) {
-        const exact = options.find(
-          (opt) =>
-            opt.label.toLowerCase() === query.toLowerCase() ||
-            opt.value === query,
-        );
-        if (exact) {
-          handleSelect(exact.value);
-          return;
-        }
-        if (filteredOptions.length === 1) {
-          handleSelect(filteredOptions[0].value);
-          return;
-        }
+      if (!query) {
+        setIsOpen(false);
+        setSearchQuery("");
+        return;
+      }
+
+      const exact = options.find(
+        (opt) =>
+          opt.label.toLowerCase() === query.toLowerCase() ||
+          opt.value === query,
+      );
+      if (exact) {
+        handleSelect(exact.value);
+        return;
+      }
+      if (filteredOptions.length === 1) {
+        handleSelect(filteredOptions[0].value);
+        return;
       }
 
       setIsOpen(false);
@@ -396,12 +411,13 @@ export const SearchableSelect = ({
       e.stopPropagation();
       if (disabled) return;
       if (!isOpen) {
-        setIsOpen(true);
-        setSearchQuery("");
+        if (!searchQuery && value) {
+          setSearchQuery(displayValue);
+        } else if (!searchQuery) {
+          setSearchQuery("");
+        }
+        openDropdown();
         setHighlightIndex(0);
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => updateDropdownPosition());
-        });
         return;
       }
       if (len === 0) return;
@@ -414,13 +430,14 @@ export const SearchableSelect = ({
       e.stopPropagation();
       if (disabled) return;
       if (!isOpen) {
-        setIsOpen(true);
-        setSearchQuery("");
+        if (!searchQuery && value) {
+          setSearchQuery(displayValue);
+        } else if (!searchQuery) {
+          setSearchQuery("");
+        }
+        openDropdown();
         const last = len > 0 ? len - 1 : 0;
         setHighlightIndex(last);
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => updateDropdownPosition());
-        });
         return;
       }
       if (len === 0) return;
@@ -468,69 +485,29 @@ export const SearchableSelect = ({
           onBlur={handleInputBlur}
           onKeyDown={handleKeyDown}
           onClick={() => {
-            if (!disabled && !isOpen) {
-              setIsOpen(true);
+            if (disabled) return;
+            if (value && displayValue) {
+              if (!isFocused) {
+                setSearchQuery(displayValue);
+                selectAllInputText();
+                openDropdown();
+              }
+              return;
+            }
+            if (!isOpen) {
+              openDropdown();
               setSearchQuery("");
-              // Update position when opening via click
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  updateDropdownPosition();
-                });
-              });
             }
           }}
           placeholder={placeholder}
           disabled={disabled}
           className={cn(
-            "pr-16 h-8 text-xs",
+            "w-full h-8 text-xs",
             partCodeContext && "part-code-font font-mono",
             selectedDisplayLabelOnly && value && !isOpen && !isFocused && "truncate",
           )}
           {...props}
         />
-        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-          {value && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-5 w-5 p-0 hover:bg-muted"
-              onClick={handleClear}
-              disabled={disabled}
-            >
-              <X className="h-3 w-3 text-muted-foreground" />
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-5 w-5 p-0 hover:bg-muted"
-            onClick={() => {
-              if (!disabled) {
-                const newOpenState = !isOpen;
-                setIsOpen(newOpenState);
-                if (newOpenState) {
-                  setSearchQuery("");
-                  // Update position when opening via button
-                  requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                      updateDropdownPosition();
-                    });
-                  });
-                }
-              }
-            }}
-            disabled={disabled}
-          >
-            <ChevronDown
-              className={cn(
-                "h-3 w-3 text-muted-foreground transition-transform",
-                isOpen && "rotate-180",
-              )}
-            />
-          </Button>
-        </div>
       </div>
 
       {isOpen &&
@@ -538,12 +515,12 @@ export const SearchableSelect = ({
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-auto searchable-select-portal"
+            className="fixed z-[9999] bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-x-hidden overflow-y-auto searchable-select-portal"
             style={{
               top: `${dropdownPosition.top}px`,
               left: `${dropdownPosition.left}px`,
               width: `${dropdownPosition.width}px`,
-              maxWidth: "calc(100vw - 16px)", // Ensure it doesn't exceed viewport
+              maxWidth: `${dropdownPosition.width}px`,
             }}
           >
             {filteredOptions.length === 0 && !exactMatch && (searchQuery && (allowCustom || onCreate)) && (
@@ -553,7 +530,7 @@ export const SearchableSelect = ({
                   e.stopPropagation();
                   handleCreateNew(searchQuery);
                 }}
-                className="px-3 py-2 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors font-semibold text-primary"
+                className="px-3 py-2 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors font-semibold text-primary truncate"
               >
                 Add new {createLabel}: "{searchQuery}"
               </div>
@@ -578,7 +555,7 @@ export const SearchableSelect = ({
                       handleSelect(option.value);
                     }}
                     className={cn(
-                      "flex items-center justify-between px-3 py-2 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors pointer-events-auto",
+                      "flex items-center justify-between gap-1 px-3 py-2 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors pointer-events-auto min-w-0",
                       idx === highlightIndex &&
                         "bg-accent text-accent-foreground",
                       value === option.value &&
@@ -586,7 +563,7 @@ export const SearchableSelect = ({
                         "bg-primary/10 text-primary",
                     )}
                   >
-                    <div className="flex flex-col min-w-0">
+                    <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
                       <span className={cn("font-medium truncate", partCodeContext && "part-code-font font-mono")}>{option.label}</span>
                       {(option.description || option.listOnlyDescription) && (
                         <span className="text-[11px] text-muted-foreground truncate">
@@ -597,7 +574,9 @@ export const SearchableSelect = ({
                         </span>
                       )}
                     </div>
-                    {value === option.value && <Check className="h-3 w-3" />}
+                    {value === option.value && (
+                      <Check className="h-3 w-3 shrink-0" />
+                    )}
                   </div>
                 ))}
                 {!exactMatch && searchQuery && (allowCustom || onCreate) && (
@@ -607,7 +586,7 @@ export const SearchableSelect = ({
                       e.stopPropagation();
                       handleCreateNew(searchQuery);
                     }}
-                    className="px-3 py-2 text-xs cursor-pointer border-t hover:bg-accent hover:text-accent-foreground transition-colors font-semibold text-primary"
+                    className="px-3 py-2 text-xs cursor-pointer border-t hover:bg-accent hover:text-accent-foreground transition-colors font-semibold text-primary truncate"
                   >
                     Add new {createLabel}: "{searchQuery}"
                   </div>

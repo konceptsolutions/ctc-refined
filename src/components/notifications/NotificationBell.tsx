@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Check, CheckCheck, Trash2, Volume2, VolumeX, X, Info, CheckCircle, AlertTriangle, AlertCircle, BellRing, BellOff } from 'lucide-react';
+import { Bell, Check, CheckCheck, Volume2, VolumeX, Trash, Info, CheckCircle, AlertTriangle, AlertCircle, BellRing, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNotifications, Notification } from '@/contexts/NotificationContext';
@@ -186,7 +186,7 @@ export const NotificationBell: React.FC = () => {
                   onClick={clearAll}
                   title="Clear all"
                 >
-                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Trash className="h-3.5 w-3.5 text-muted-foreground" />
                 </Button>
               </>
             )}
@@ -235,7 +235,7 @@ export const NotificationBell: React.FC = () => {
                             removeNotification(notification.id);
                           }}
                         >
-                          <X className="h-3 w-3" />
+                          <Trash className="h-3 w-3" />
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">

@@ -35,7 +35,7 @@ import {
   Clock,
   Plus,
   Download,
-  Trash2,
+  Trash,
   RotateCcw,
   Archive,
   Loader2,
@@ -627,7 +627,7 @@ export const BackupRestoreTab = () => {
                           disabled={backup.status === "in_progress"}
                           title="Delete backup"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </div>
                     </TableCell>

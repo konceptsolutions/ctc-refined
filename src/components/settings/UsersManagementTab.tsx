@@ -36,7 +36,7 @@ import {
   Plus,
   Search,
   Edit,
-  Trash2,
+  Trash,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -467,7 +467,7 @@ export const UsersManagementTab = () => {
                       </ActionButtonTooltip>
                       <ActionButtonTooltip label="Delete" variant="delete">
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete(user.id)}>
-                          <Trash2 className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </ActionButtonTooltip>
                     </div>

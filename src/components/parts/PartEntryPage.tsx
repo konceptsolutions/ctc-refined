@@ -317,7 +317,7 @@ export const PartEntryPage = ({
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg">
       {/* Left Section - Forms */}
-      <ResizablePanel defaultSize={70} minSize={25} maxSize={85}>
+      <ResizablePanel defaultSize={60} minSize={25} maxSize={85}>
         <div className="h-full flex flex-col pr-3">
           {/* Form Content */}
           <div className="flex-1 overflow-auto">
@@ -634,7 +634,7 @@ export const PartEntryPage = ({
       />
 
       {/* Right Section - Lists */}
-      <ResizablePanel defaultSize={30} minSize={15} maxSize={75}>
+      <ResizablePanel defaultSize={40} minSize={15} maxSize={85}>
         <div className="h-full flex flex-col pl-3">
           {/* Right Tabs */}
           <div className="flex border-b border-border mb-3">

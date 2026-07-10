@@ -43,7 +43,7 @@ import {
   Users,
   Plus,
   Pencil,
-  Trash2,
+  Trash,
   MoreVertical,
   Save,
   RotateCcw,
@@ -621,7 +621,7 @@ export const SubgroupsTab = () => {
                                   }
                                   className="text-destructive hover:text-destructive/80 transition-colors"
                                 >
-                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  <Trash className="h-4 w-4 mr-1" />
                                   Delete
                                 </Button>
                               </ActionButtonTooltip>

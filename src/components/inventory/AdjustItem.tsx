@@ -44,7 +44,7 @@ import {
   Plus,
   Eye,
   Edit,
-  Trash2,
+  Trash,
   X,
   Check,
   RotateCcw,
@@ -127,21 +127,8 @@ export const AdjustItem = () => {
   const [category, setCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
   const [notes, setNotes] = useState("");
-  const [adjustmentItems, setAdjustmentItems] = useState<AdjustmentItem[]>([
-    {
-      id: "1",
-      itemId: "",
-      itemName: "",
-      qtyInStock: 0,
-      quantity: 0,
-      lastPurchaseRate: 0,
-      rate: 0,
-      priceA: 0,
-      priceB: 0,
-      priceM: 0,
-      total: 0,
-    },
-  ]);
+  const [adjustmentItems, setAdjustmentItems] = useState<AdjustmentItem[]>([]);
+  const [focusItemSelectId, setFocusItemSelectId] = useState<string | null>(null);
 
   // API data
   const [records, setRecords] = useState<AdjustmentRecord[]>([]);
@@ -733,6 +720,7 @@ export const AdjustItem = () => {
       shelfId: "",
     };
     setAdjustmentItems((prev) => [...prev, newItem]);
+    setFocusItemSelectId(newItem.id);
   }, []);
 
   // Shortcut key handling
@@ -752,8 +740,9 @@ export const AdjustItem = () => {
   }, [view, handleAddItem]);
 
   const handleRemoveItem = (id: string) => {
-    if (adjustmentItems.length > 1) {
-      setAdjustmentItems(adjustmentItems.filter((item) => item.id !== id));
+    setAdjustmentItems(adjustmentItems.filter((item) => item.id !== id));
+    if (focusItemSelectId === id) {
+      setFocusItemSelectId(null);
     }
   };
 
@@ -871,23 +860,8 @@ export const AdjustItem = () => {
     setCategory("");
     setSubCategory("");
     setNotes("");
-    setAdjustmentItems([
-      {
-        id: "1",
-        itemId: "",
-        itemName: "",
-        qtyInStock: 0,
-        quantity: 0,
-        lastPurchaseRate: 0,
-        rate: 0,
-        priceA: 0,
-        priceB: 0,
-        priceM: 0,
-        total: 0,
-        rackId: "",
-        shelfId: "",
-      },
-    ]);
+    setAdjustmentItems([]);
+    setFocusItemSelectId(null);
   };
 
   const handleSave = async () => {
@@ -1149,9 +1123,9 @@ export const AdjustItem = () => {
               <h2 className="text-base font-semibold text-foreground">
                 Adjust Inventory
               </h2>
-              <p className="text-xs text-muted-foreground">
+              {/* <p className="text-xs text-muted-foreground">
                 Manage inventory adjustments and stock corrections
-              </p>
+              </p> */}
             </div>
           </div>
           <div className="flex flex-1 max-w-sm relative">
@@ -1222,7 +1196,10 @@ export const AdjustItem = () => {
             <Button
               size="sm"
               className="h-7 text-xs"
-              onClick={() => setView("create")}
+              onClick={() => {
+                handleReset();
+                setView("create");
+              }}
             >
               <Plus className="w-3.5 h-3.5 mr-1.5" />
               Adjust
@@ -1336,7 +1313,6 @@ export const AdjustItem = () => {
                               className="text-primary hover:text-primary/80 flex items-center gap-1 text-xs font-medium"
                             >
                               <Eye className="w-3.5 h-3.5" />
-                              View
                             </Button>
                           </ActionButtonTooltip>
 
@@ -1363,7 +1339,6 @@ export const AdjustItem = () => {
                                 className="text-primary hover:text-primary/80 flex items-center gap-1 text-xs font-medium"
                               >
                                 <Edit className="w-3.5 h-3.5" />
-                                Edit
                               </Button>
                             </ActionButtonTooltip>
                           )}
@@ -1375,8 +1350,7 @@ export const AdjustItem = () => {
                               onClick={() => handleDeleteClick(record.id)}
                               className="text-destructive hover:text-destructive/80 flex items-center gap-1 text-xs font-medium"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              Delete
+                              <Trash className="w-3.5 h-3.5" />
                             </Button>
                           </ActionButtonTooltip>
                         </div>
@@ -1855,7 +1829,7 @@ export const AdjustItem = () => {
             className="h-6 w-6"
             onClick={handleCancel}
           >
-            <X className="w-4 h-4" />
+            <Trash className="w-4 h-4" />
           </Button>
         </div>
 
@@ -2014,6 +1988,8 @@ export const AdjustItem = () => {
                             handleItemChange(item.id, "itemId", v)
                           }
                           placeholder="Select item"
+                          autoOpen={focusItemSelectId === item.id}
+                          onAutoOpenHandled={() => setFocusItemSelectId(null)}
                         />
                       </TableCell>
                       <TableCell>
@@ -2179,7 +2155,7 @@ export const AdjustItem = () => {
                           className="h-6 w-6"
                           onClick={() => handleRemoveItem(item.id)}
                         >
-                          <X className="w-3.5 h-3.5 text-destructive" />
+                          <Trash className="w-3.5 h-3.5 text-destructive" />
                         </Button>
                       </TableCell>
                     </TableRow>

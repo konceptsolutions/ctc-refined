@@ -55,7 +55,7 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/ui/searchable-select";
-import { Plus, Search, Eye, FileText, CalendarIcon, Package, ShoppingCart, Boxes, Settings2, Truck, Printer, RefreshCw, ArrowRight, ArrowLeftRight, X, Trash2, Info } from "lucide-react";
+import { Plus, Search, Eye, FileText, CalendarIcon, Package, ShoppingCart, Boxes, Settings2, Truck, Printer, RefreshCw, ArrowRight, ArrowLeftRight, Trash, Info } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -290,7 +290,7 @@ export const SalesInquiry = () => {
     search: "",
     qty: 0,
   });
-  const [lookupRows, setLookupRows] = useState<LookupRow[]>([makeLookupRow()]);
+  const [lookupRows, setLookupRows] = useState<LookupRow[]>([]);
   const [activeLookupRowId, setActiveLookupRowId] = useState<string | null>(
     null,
   );
@@ -1560,46 +1560,50 @@ export const SalesInquiry = () => {
   };
 
   // Multi-row lookup table handlers ---------------------------------------
-  const handleAddLookupRow = () => {
+  const openLookupRowDropdown = useCallback((rowId: string) => {
+    const el = lookupRowInputRefs.current[rowId];
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setLookupDropdownRects((prev) => ({
+        ...prev,
+        [rowId]: {
+          top: rect.bottom + 4,
+          left: rect.left,
+          width: Math.max(rect.width, 360),
+        },
+      }));
+    }
+    setLookupRowHighlightIndex((prev) => ({ ...prev, [rowId]: 0 }));
+    lookupRowHighlightIndexRef.current[rowId] = 0;
+    setShowLookupRowDropdown((prev) => ({ ...prev, [rowId]: true }));
+  }, []);
+
+  const handleAddLookupRow = useCallback(() => {
     const row = makeLookupRow();
     setLookupRows((prev) => [...prev, row]);
-  };
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = lookupRowInputRefs.current[row.id];
+        el?.focus({ preventScroll: true });
+        openLookupRowDropdown(row.id);
+        setActiveLookupRowId(row.id);
+      });
+    });
+  }, [openLookupRowDropdown]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.altKey || event.key.toLowerCase() !== "z") return;
-      const target = event.target as HTMLElement | null;
-      const tag = String(target?.tagName || "").toLowerCase();
-      if (
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select" ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
       event.preventDefault();
-      const row = {
-        id:
-          typeof crypto !== "undefined" && (crypto as any).randomUUID
-            ? (crypto as any).randomUUID()
-            : `lr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        partId: "",
-        search: "",
-        qty: 0,
-      };
-      setLookupRows((prev) => [...prev, row]);
+      handleAddLookupRow();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [handleAddLookupRow]);
 
   const handleRemoveLookupRow = (rowId: string) => {
-    setLookupRows((prev) => {
-      const filtered = prev.filter((r) => r.id !== rowId);
-      return filtered.length > 0 ? filtered : [makeLookupRow()];
-    });
+    setLookupRows((prev) => prev.filter((r) => r.id !== rowId));
     setLookupRowPriceBaselines((prev) => {
       if (!(rowId in prev)) return prev;
       const next = { ...prev };
@@ -1631,24 +1635,6 @@ export const SalesInquiry = () => {
     });
     setActiveLookupRowId((curr) => (curr === rowId ? null : curr));
   };
-
-  const openLookupRowDropdown = useCallback((rowId: string) => {
-    const el = lookupRowInputRefs.current[rowId];
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      setLookupDropdownRects((prev) => ({
-        ...prev,
-        [rowId]: {
-          top: rect.bottom + 4,
-          left: rect.left,
-          width: Math.max(rect.width, 360),
-        },
-      }));
-    }
-    setLookupRowHighlightIndex((prev) => ({ ...prev, [rowId]: 0 }));
-    lookupRowHighlightIndexRef.current[rowId] = 0;
-    setShowLookupRowDropdown((prev) => ({ ...prev, [rowId]: true }));
-  }, []);
 
   // Recompute dropdown rect on scroll/resize while a dropdown is open.
   useEffect(() => {
@@ -2924,7 +2910,7 @@ export const SalesInquiry = () => {
                 });
                 setInquiryItems([]);
               }}>
-                <X className="w-4 h-4" />
+                <Trash className="w-4 h-4" />
               </Button>
             </div>
           </CardHeader>
@@ -3073,7 +3059,7 @@ export const SalesInquiry = () => {
                                 className="h-8 w-8 text-destructive"
                                 onClick={() => handleRemoveItem(index)}
                               >
-                                <X className="w-4 h-4" />
+                                <Trash className="w-4 h-4" />
                               </Button>
                             </TableCell>
                           </TableRow>
@@ -3127,7 +3113,7 @@ export const SalesInquiry = () => {
                 <Package className="h-5 w-5 text-primary" />
                 <CardTitle className="text-lg font-semibold">Part Inquiry Lookup</CardTitle>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">Search for part details using Item filter</p>
+              {/* <p className="text-sm text-muted-foreground mt-1">Search for part details using Item filter</p> */}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -3361,8 +3347,18 @@ export const SalesInquiry = () => {
                                       e.target.value,
                                     )
                                   }
-                                  onFocus={() => openLookupRowDropdown(row.id)}
-                                  onClick={() => openLookupRowDropdown(row.id)}
+                                  onFocus={(e) => {
+                                    openLookupRowDropdown(row.id);
+                                    if (row.search || row.partId) {
+                                      e.currentTarget.select();
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    openLookupRowDropdown(row.id);
+                                    if (row.search || row.partId) {
+                                      e.currentTarget.select();
+                                    }
+                                  }}
                                   onKeyDownCapture={(e) => {
                                     const len = rowFiltered.length;
                                     const arrowDown =
@@ -3462,55 +3458,11 @@ export const SalesInquiry = () => {
                                     }
                                   }}
                                   className={cn(
-                                    "w-full pr-8 h-10 text-sm",
+                                    "w-full h-10 text-sm",
                                     rowDropdownOpen &&
                                       "ring-2 ring-primary border-primary",
                                   )}
                                 />
-                                {(row.search || row.partId) && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setLookupRows((prev) =>
-                                        prev.map((r) =>
-                                          r.id === row.id
-                                            ? {
-                                                ...r,
-                                                partId: "",
-                                                search: "",
-                                                qty: 0,
-                                                unitPrice: undefined,
-                                                priceA: undefined,
-                                                priceB: undefined,
-                                                priceM: undefined,
-                                                selectedPriceType: undefined,
-                                              }
-                                            : r,
-                                        ),
-                                      );
-                                      setShowLookupRowDropdown((prev) => ({
-                                        ...prev,
-                                        [row.id]: false,
-                                      }));
-                                      setLookupRowSelectedModel((prev) => {
-                                        if (!(row.id in prev)) return prev;
-                                        const next = { ...prev };
-                                        delete next[row.id];
-                                        return next;
-                                      });
-                                      if (activeLookupRowId === row.id) {
-                                        setActiveLookupRowId(null);
-                                        handleClearSearch();
-                                      }
-                                    }}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                                    aria-label="Clear selected item"
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
                               </div>
                               {rowDropdownOpen &&
                                 typeof window !== "undefined" &&
@@ -3840,7 +3792,7 @@ export const SalesInquiry = () => {
                                 onClick={() => handleRemoveLookupRow(row.id)}
                                 title="Remove row"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash className="w-4 h-4" />
                               </Button>
                             </div>
                           </TableCell>
@@ -3931,9 +3883,9 @@ export const SalesInquiry = () => {
             <div className="rounded-md border bg-card p-3 flex flex-col min-h-[160px]">
               <div className="mb-2">
                 <div className="text-sm font-semibold">Alternate Items</div>
-                <div className="text-xs text-muted-foreground">
+                {/* <div className="text-xs text-muted-foreground">
                   Match by Part No / Master Part
-                </div>
+                </div> */}
               </div>
               <div className="rounded-md border bg-card overflow-y-auto flex-1 min-h-0 min-w-0 max-h-[520px]">
                 <Table className="table-fixed">
@@ -4035,7 +3987,7 @@ export const SalesInquiry = () => {
                       <TableHead className="text-xs">Invoice No</TableHead>
                       <TableHead className="text-xs">Date</TableHead>
                       <TableHead className="text-xs">Customer</TableHead>
-                      <TableHead className="text-xs">Customer Type</TableHead>
+                      {/* <TableHead className="text-xs">Customer Type</TableHead> */}
                       <TableHead className="text-xs">Qty</TableHead>
                       <TableHead className="text-xs">Unit Price</TableHead>
                       <TableHead className="text-xs">Line Total</TableHead>
@@ -4072,11 +4024,11 @@ export const SalesInquiry = () => {
                             {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : 'N/A'}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">{invoice.customer_name || 'N/A'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
+                          {/* <TableCell className="text-xs text-muted-foreground">
                             <Badge variant={invoice.customer_type === 'walking' ? 'secondary' : 'default'} className="text-xs">
                               {getCustomerTypeLabel(invoice.customer_type)}
                             </Badge>
-                          </TableCell>
+                          </TableCell> */}
                           <TableCell className="text-xs text-muted-foreground">
                             {invoice.item?.ordered_qty || 0}
                           </TableCell>

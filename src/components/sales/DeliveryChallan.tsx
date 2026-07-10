@@ -36,7 +36,7 @@ import {
   Package,
   Printer,
   X,
-  Trash2,
+  Trash,
   List,
   LayoutGrid,
   Clock,
@@ -690,7 +690,7 @@ export const DeliveryChallan = () => {
                 }}
                 className="h-8 w-8"
               >
-                <X className="w-4 h-4" />
+                <Trash className="w-4 h-4" />
               </Button>
             </div>
 
@@ -864,7 +864,7 @@ export const DeliveryChallan = () => {
                                 className="h-7 w-7 text-destructive"
                                 onClick={() => handleRemoveItem(item.id)}
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash className="w-4 h-4" />
                               </Button>
                             </TableCell>
                           </TableRow>

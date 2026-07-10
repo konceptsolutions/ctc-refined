@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, X, Send, Minimize2, Maximize2, FileText, Package, BarChart3, Receipt, Users, Settings, DollarSign, BookOpen, Mic, MicOff, ShoppingCart, Truck, CreditCard, Calculator, FileSpreadsheet, Building, Warehouse, Tag, TrendingUp, ClipboardList, UserPlus, RefreshCw, Sparkles, Navigation, Zap, Brain, ArrowRight, Trash2, History } from 'lucide-react';
+import { Bot, Send, Minimize2, Maximize2, FileText, Package, BarChart3, Receipt, Users, Settings, DollarSign, BookOpen, Mic, MicOff, ShoppingCart, Truck, CreditCard, Calculator, FileSpreadsheet, Building, Warehouse, Tag, TrendingUp, ClipboardList, UserPlus, RefreshCw, Sparkles, Navigation, Zap, Brain, ArrowRight, Trash, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -199,14 +199,16 @@ const AIChatBot: React.FC = () => {
     const checkAiConfig = async () => {
       try {
         const response = await apiClient.getAiAssistantStatus();
-        if (response.data?.configured) {
+        const statusData = response.data as { configured?: boolean } | null;
+        if (statusData?.configured) {
           setLongCatConfigured(true);
         }
       } catch {
         // Fallback: check LongCat settings directly
         try {
           const response = await apiClient.getLongCatSettings();
-          if (response.data?.apiKey) {
+          const settingsData = response.data as { apiKey?: string } | null;
+          if (settingsData?.apiKey) {
             setLongCatConfigured(true);
           }
         } catch {
@@ -849,8 +851,8 @@ const AIChatBot: React.FC = () => {
           throw new Error(poResponse.error);
         }
 
-        const poData = poResponse.data || poResponse.data?.data;
-        const items = (poData.items || []).map((item: any) => ({
+        const poData = (poResponse.data as any)?.data || (poResponse.data as any);
+        const items = (poData?.items || []).map((item: any) => ({
           partId: item.part?.id || item.partId,
           partNo: item.part?.partNo || item.partNo || 'Unknown',
           description: item.part?.description,
@@ -1045,7 +1047,7 @@ const AIChatBot: React.FC = () => {
       }
 
       // Handle different response structures
-      const responseData = response.data || response;
+      const responseData = (response.data as any) || response;
       const poId = responseData?.id || responseData?.data?.id;
       const poNumber = responseData?.po_number || responseData?.poNumber || responseData?.data?.po_number || responseData?.data?.poNumber;
 
@@ -1075,8 +1077,8 @@ const AIChatBot: React.FC = () => {
                   throw new Error(poResponse.error);
                 }
 
-                const poData = poResponse.data || poResponse.data?.data;
-                const items = (poData.items || []).map((item: any) => ({
+                const poData = (poResponse.data as any)?.data || (poResponse.data as any);
+                const items = (poData?.items || []).map((item: any) => ({
                   partId: item.part?.id || item.partId,
                   partNo: item.part?.partNo || item.partNo || 'Unknown',
                   description: item.part?.description,
@@ -2521,7 +2523,7 @@ const AIChatBot: React.FC = () => {
       }
 
       const aiResponse =
-        response.data?.content ||
+        (response.data as { content?: string } | null)?.content ||
         'I apologize, but I could not generate a response.';
 
       // Check if AI response suggests navigation
@@ -2688,7 +2690,7 @@ const AIChatBot: React.FC = () => {
               onClick={clearHistory}
               title="Clear chat history"
             >
-              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <Trash className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
           )}
           <Button
@@ -2705,7 +2707,7 @@ const AIChatBot: React.FC = () => {
             className="h-7 w-7 sm:h-8 sm:w-8 hover:bg-destructive/10 hover:text-destructive"
             onClick={() => setIsOpen(false)}
           >
-            <X className="h-4 w-4" />
+            <Trash className="h-4 w-4" />
           </Button>
         </div>
       </div>

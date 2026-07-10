@@ -499,7 +499,7 @@ export const CustomerFormDialog = ({
                                         onClick={() => removeContactPerson(idx)}
                                         className="h-8 w-8 text-red-500 hover:bg-red-50"
                                     >
-                                        <X className="w-4 h-4" />
+                                        <Trash className="w-4 h-4" />
                                     </Button>
                                 </div>
                             </div>

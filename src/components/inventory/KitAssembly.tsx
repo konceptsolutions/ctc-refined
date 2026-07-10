@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Boxes, Package, Plus, Minus, Search, ArrowRight, Trash2 } from "lucide-react";
+import { Boxes, Package, Plus, Minus, Search, ArrowRight, Trash } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -236,7 +236,7 @@ export const KitAssembly = () => {
                             className="h-6 w-6"
                             onClick={() => removePartFromKit(item.partNo)}
                           >
-                            <Trash2 className="w-3 h-3 text-destructive" />
+                            <Trash className="w-3 h-3 text-destructive" />
                           </Button>
                         </div>
                       </div>

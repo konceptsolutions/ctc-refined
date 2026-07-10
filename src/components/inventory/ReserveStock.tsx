@@ -4,7 +4,7 @@ import {
   Package,
   Plus,
   Edit,
-  Trash2,
+  Trash,
   RefreshCw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -382,7 +382,7 @@ export const ReserveStock = () => {
                           disabled={isSubmitting}
                           title="Remove Reservation"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </div>
                     </TableCell>

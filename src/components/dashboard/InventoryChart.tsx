@@ -23,9 +23,9 @@ export const InventoryChart = ({ timeRange, onTimeRangeChange }: InventoryChartP
       <div className="flex items-start justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Inventory Overview</h3>
-          <p className="text-muted-foreground text-sm">
+          {/* <p className="text-muted-foreground text-sm">
             {timeRange === 'Week' ? 'Weekly' : timeRange === 'Year' ? 'Yearly' : 'Monthly'} inventory movement
-          </p>
+          </p> */}
         </div>
         
         <div className="flex bg-muted rounded-lg p-1">

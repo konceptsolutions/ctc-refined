@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Trash2, Plus, PlusCircle, Check } from "lucide-react";
+import { Trash, Plus, PlusCircle, Check } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 import { Calendar } from "@/components/ui/calendar";
@@ -879,7 +879,7 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
                           onClick={() => handleRemoveItem(item.id)}
                           disabled={formItems.length === 1}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </div>
 
@@ -955,7 +955,7 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
                                         onClick={() => handleRemoveLocation(item.id, location.id)}
                                         disabled={item.locations.length === 1}
                                       >
-                                        <Trash2 className="w-4 h-4" />
+                                        <Trash className="w-4 h-4" />
                                       </Button>
                                     </TableCell>
                                   </TableRow>

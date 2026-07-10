@@ -7,7 +7,7 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Eye, Edit, Trash2, Printer, CheckCircle } from "lucide-react";
+import { Eye, Edit, Trash, Printer, CheckCircle } from "lucide-react";
 
 interface PurchaseOrderItem {
   id: string;
@@ -186,7 +186,7 @@ export const StorePurchaseOrderDetail = ({
             )}
             {canDelete && onDelete && (
               <Button variant="outline" onClick={onDelete}>
-                <Trash2 className="w-4 h-4 mr-2" />
+                <Trash className="w-4 h-4 mr-2" />
                 Delete
               </Button>
             )}

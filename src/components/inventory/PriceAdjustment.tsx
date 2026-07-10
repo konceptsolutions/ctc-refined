@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DollarSign, Search, Download, Edit2, Check, X, TrendingUp, TrendingDown, History } from "lucide-react";
+import { DollarSign, Search, Download, Edit2, Check, Trash, TrendingUp, TrendingDown, History } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -253,7 +253,7 @@ export const PriceAdjustment = () => {
                         <Check className="w-3.5 h-3.5 text-chart-green" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingId(null)}>
-                        <X className="w-3.5 h-3.5 text-muted-foreground" />
+                        <Trash className="w-3.5 h-3.5 text-muted-foreground" />
                       </Button>
                     </div>
                   ) : (

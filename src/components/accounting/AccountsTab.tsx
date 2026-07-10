@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Users, Plus, Pencil, Trash2, MoreVertical, Save, RotateCcw, UserPlus, X } from "lucide-react";
+import { Users, Plus, Pencil, Trash, MoreVertical, Save, RotateCcw, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import {
@@ -912,7 +912,7 @@ export const AccountsTab = () => {
                                 onClick={() => handleDeleteAccount(account.id)}
                                 className="text-destructive hover:text-destructive/80 transition-colors"
                               >
-                                <Trash2 className="h-4 w-4 mr-1" />
+                                <Trash className="h-4 w-4 mr-1" />
                                 Delete
                               </Button>
                             </ActionButtonTooltip>
@@ -1223,7 +1223,7 @@ export const AccountsTab = () => {
                   size="icon"
                   onClick={() => setFormData({ ...formData, mainGroup: "" })}
                 >
-                  <X className="h-4 w-4" />
+                  <Trash className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -1278,7 +1278,7 @@ export const AccountsTab = () => {
             onClick={() => setIsEditDialogOpen(false)}
             className="text-muted-foreground mt-2"
           >
-            <X className="h-4 w-4 mr-1" />
+            <Trash className="h-4 w-4 mr-1" />
             Cancel
           </Button>
         </DialogContent>

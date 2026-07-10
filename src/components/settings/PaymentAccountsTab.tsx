@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Wallet, Building2, CreditCard } from "lucide-react";
+import { Plus, Pencil, Trash, Wallet, Building2, CreditCard } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 
@@ -73,10 +73,11 @@ export const PaymentAccountsTab = () => {
 
       // If no stored accounts, try to fetch from account groups API
       const response = await apiClient.getAccountGroups();
+      const data = response.data as { accounts?: any[] } | null;
       
-      if (response.data && response.data.accounts) {
+      if (data?.accounts) {
         // Filter for payment-related accounts (Cash, Bank, Wallet)
-        const paymentAccounts = response.data.accounts
+        const paymentAccounts = data.accounts
           .filter((acc: any) => {
             const name = acc.name?.toLowerCase() || "";
             return (
@@ -338,7 +339,7 @@ export const PaymentAccountsTab = () => {
                           onClick={() => handleDelete(account.id)}
                           className="text-destructive hover:text-destructive"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </div>
                     </TableCell>

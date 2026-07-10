@@ -36,7 +36,7 @@ export const InventoryDistribution = () => {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Inventory Distribution</h3>
-          <p className="text-muted-foreground text-sm">Items by category</p>
+          {/* <p className="text-muted-foreground text-sm">Items by category</p> */}
         </div>
         <div className="flex items-center gap-2">
           <Button

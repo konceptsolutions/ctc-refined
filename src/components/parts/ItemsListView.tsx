@@ -7,7 +7,7 @@ import {
   Upload,
   CheckCircle,
   Edit,
-  Trash2,
+  Trash,
   ChevronDown,
   Image,
   X,
@@ -1601,9 +1601,9 @@ export const ItemsListView = ({
             <h1 className="text-xl font-bold text-foreground">
               Parts & Kits List
             </h1>
-            <p className="text-xs text-muted-foreground">
+            {/* <p className="text-xs text-muted-foreground">
               Search, filter, and manage all inventory parts and kits
-            </p>
+            </p> */}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1623,13 +1623,13 @@ export const ItemsListView = ({
                 <FileText className="w-4 h-4 mr-2" />
                 Export as PDF
               </DropdownMenuItem>
-              <DropdownMenuItem
+              {/* <DropdownMenuItem
                 onClick={handleExportCSV}
                 className="cursor-pointer"
               >
                 <Download className="w-4 h-4 mr-2" />
                 Export as CSV
-              </DropdownMenuItem>
+              </DropdownMenuItem> */}
               <DropdownMenuItem
                 onClick={handleExportExcel}
                 className="cursor-pointer"
@@ -1637,7 +1637,7 @@ export const ItemsListView = ({
                 <FileSpreadsheet className="w-4 h-4 mr-2" />
                 Export as Excel
               </DropdownMenuItem>
-              <DropdownMenuItem
+              {/* <DropdownMenuItem
                 onClick={handleExportTXT}
                 className="cursor-pointer"
               >
@@ -1658,7 +1658,7 @@ export const ItemsListView = ({
               >
                 <Upload className="w-4 h-4 mr-2" />
                 Import Data
-              </DropdownMenuItem>
+              </DropdownMenuItem> */}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -1853,16 +1853,15 @@ export const ItemsListView = ({
                   htmlFor="duplicates-only-filter"
                   className="text-xs text-muted-foreground cursor-pointer select-none"
                 >
-                  Duplicate items only (same part no, master part, description,
-                  application & brand)
+                  Duplicate items only
                 </label>
-                {showDuplicateView && (
+                {/* {showDuplicateView && (
                   <span className="text-[10px] text-muted-foreground">
                     Matching records are grouped together. Each group shares the
                     same five fields but is a separate database item (different
                     ID/stock).
                   </span>
-                )}
+                )} */}
               </div>
 
               {/* Clear Filters Button */}
@@ -1902,7 +1901,7 @@ export const ItemsListView = ({
                         setSearchFilters(clearedFilters);
                       }}
                     >
-                      <X className="w-3 h-3 mr-1" />
+                      <Trash className="w-3 h-3 mr-1" />
                       Clear All Filters
                     </Button>
                   </div>
@@ -1987,10 +1986,10 @@ export const ItemsListView = ({
                         <TableHead className="text-xs font-medium">
                           Description
                         </TableHead>
-                        <TableHead className="text-xs font-medium">
+                        <TableHead className="text-xs font-medium text-[#F28123]">
                           Category
                         </TableHead>
-                        <TableHead className="text-xs font-medium">
+                        <TableHead className="text-xs font-medium text-[#D34E24]">
                           Sub Category
                         </TableHead>
                         <TableHead className="text-xs font-medium">
@@ -2149,12 +2148,12 @@ export const ItemsListView = ({
                           <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">
                             {item.description}
                           </TableCell>
-                          <TableCell className="text-xs">
+                          <TableCell className="text-xs text-[#F28123]">
                             {item.category && item.category.trim()
                               ? item.category
                               : "-"}
                           </TableCell>
-                          <TableCell className="text-xs">
+                          <TableCell className="text-xs text-[#D34E24]">
                             {item.subCategory && item.subCategory.trim()
                               ? item.subCategory
                               : "-"}
@@ -2390,7 +2389,7 @@ export const ItemsListView = ({
                                       setDeleteConfirmOpen(true);
                                     }}
                                   >
-                                    <Trash2 className="w-3 h-3 text-destructive" />
+                                    <Trash className="w-3 h-3 text-destructive" />
                                   </Button>
                                 </ActionButtonTooltip>
                               ) : (
@@ -2402,7 +2401,7 @@ export const ItemsListView = ({
                                   variant="default"
                                 >
                                   <span className="inline-flex h-6 w-6 items-center justify-center opacity-35">
-                                    <Trash2 className="w-3 h-3 text-muted-foreground" />
+                                    <Trash className="w-3 h-3 text-muted-foreground" />
                                   </span>
                                 </ActionButtonTooltip>
                               )}

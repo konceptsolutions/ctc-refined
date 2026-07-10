@@ -223,7 +223,7 @@ export const PostExpenseTab = ({ onUpdate }: PostExpenseTabProps) => {
                   <div key={index} className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-sm">
                     <span className="truncate max-w-[150px]">{file.name}</span>
                     <button onClick={() => removeAttachment(index)} className="text-muted-foreground hover:text-destructive">
-                      <X className="w-4 h-4" />
+                      <Trash className="w-4 h-4" />
                     </button>
                   </div>
                 ))}

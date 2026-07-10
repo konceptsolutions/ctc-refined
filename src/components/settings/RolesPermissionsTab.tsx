@@ -16,7 +16,7 @@ import {
   Shield,
   Plus,
   Edit,
-  Trash2,
+  Trash,
   Users,
   Key,
   Download,
@@ -277,7 +277,7 @@ export const RolesPermissionsTab = () => {
                   </ActionButtonTooltip>
                   <ActionButtonTooltip label="Delete" variant="delete">
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(role.id)}>
-                      <Trash2 className="w-4 h-4" />
+                      <Trash className="w-4 h-4" />
                     </Button>
                   </ActionButtonTooltip>
                 </div>

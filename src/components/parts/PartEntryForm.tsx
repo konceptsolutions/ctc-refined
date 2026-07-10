@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Image as ImageIcon, X, Search, RefreshCw } from "lucide-react";
+import { Plus, Image as ImageIcon, Trash, Search, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Part } from "./PartsList";
 import { compressImage } from "@/utils/imageCompression";
@@ -3045,7 +3045,7 @@ export const PartEntryForm = ({
                   Brand
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-4 text-muted-foreground" />
                   <Input
                     ref={brandInputRef}
                     placeholder=""
@@ -3159,7 +3159,7 @@ export const PartEntryForm = ({
                       }, 200);
                     }}
                     className={cn(
-                      "h-8 text-xs pl-10 border-input",
+                      "h-8 max-w-24 text-xs pl-9 border-input",
                       !showBrandDropdown && "border-2",
                       showBrandDropdown && "ring-2 ring-primary border-primary",
                     )}
@@ -3178,7 +3178,7 @@ export const PartEntryForm = ({
                     // Only show dropdown if there are matching brands
                     if (brandsLoading) {
                       return (
-                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
+                        <div className="absolute z-50 left-0 w-full max-w-24 mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
                           <div className="px-4 py-3 text-sm text-muted-foreground">
                             Loading brands...
                           </div>
@@ -3191,7 +3191,7 @@ export const PartEntryForm = ({
                     }
 
                     return (
-                      <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
+                      <div className="absolute z-50 left-0 w-full max-w-24 mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
                         {filtered.map((brand, idx) => (
                           <button
                             key={brand.id}
@@ -3208,7 +3208,7 @@ export const PartEntryForm = ({
                               setBrandHighlightedIndex(-1);
                             }}
                             className={cn(
-                              "w-full text-left px-4 py-3 text-sm hover:bg-muted transition-colors border-b border-border last:border-b-0",
+                              "w-full text-left px-4 py-3 text-sm hover:bg-muted transition-colors border-b border-border last:border-b-0 truncate",
                               formData.brand === brand.name && "bg-muted",
                               brandHighlightedIndex === idx &&
                               "bg-primary/10 ring-2 ring-primary",
@@ -4371,7 +4371,7 @@ export const PartEntryForm = ({
                         }}
                         className="absolute top-0.5 right-0.5 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center hover:bg-destructive/80"
                       >
-                        <X className="w-3 h-3" />
+                        <Trash className="w-3 h-3" />
                       </button>
                     </>
                   ) : (
@@ -4414,7 +4414,7 @@ export const PartEntryForm = ({
                         }}
                         className="absolute top-0.5 right-0.5 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center hover:bg-destructive/80"
                       >
-                        <X className="w-3 h-3" />
+                        <Trash className="w-3 h-3" />
                       </button>
                     </>
                   ) : (
@@ -4616,7 +4616,7 @@ export const PartEntryForm = ({
       </div>
 
       {/* Right Panel - Model and Quantity / Kit Items */}
-      <div className="w-72 bg-card rounded-lg border border-border p-3">
+      <div className="w-fit bg-card rounded-lg border border-border p-2">
         <div className="flex items-center justify-end mb-3">
           <Button
             variant="outline"
@@ -4628,17 +4628,17 @@ export const PartEntryForm = ({
           </Button>
         </div>
 
-        <div className="border-t border-border pt-3">
-          <div className="grid grid-cols-[2fr_1.5fr_0.8fr] gap-2 mb-2 text-xs text-foreground font-bold">
-            <span>Model</span>
-            <span>Qty. Used</span>
-            <span className="text-center">Action</span>
+        <div className="border-t border-border pt-2">
+          <div className="flex items-center gap-1 mb-1.5 text-xs text-foreground font-bold">
+            <span className="w-20 ml-1">Model</span>
+            <span className="w-12 ml-1">Qty.</span>
+            <span className="w-8 ml-1" aria-hidden="true" />
           </div>
 
           {modelQuantities.map((mq) => (
             <div
               key={mq.id}
-              className="grid grid-cols-[2fr_1.5fr_0.8fr] gap-2 mb-1.5 items-center"
+              className="flex items-center gap-0.5 mb-1.5"
             >
               <SearchableSelect
                 options={modelSelectOptions}
@@ -4653,7 +4653,7 @@ export const PartEntryForm = ({
                 allowCustom
                 createLabel="model"
                 disabled={modelNamesLoading && modelSelectOptions.length === 0}
-                className="[&_input]:h-8 [&_input]:text-sm"
+                className="w-20 ml-1 [&>div]:w-full [&_input]:h-8 [&_input]:text-sm [&_input]:w-full"
                 aria-label="Model"
               />
               <Input
@@ -4662,15 +4662,15 @@ export const PartEntryForm = ({
                 onChange={(e) =>
                   handleModelChange(mq.id, "qty", parseInt(e.target.value) || 0)
                 }
-                className="h-8 text-sm"
+                className="h-8 w-12 ml-1 text-sm px-1.5"
               />
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground mx-auto"
+                className="h-8 w-8 ml-1 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
                 onClick={() => handleRemoveModel(mq.id)}
               >
-                ✕
+                <Trash className="w-3 h-3" />
               </Button>
             </div>
           ))}

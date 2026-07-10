@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash } from "lucide-react";
 import { Voucher, VoucherEntry } from "./VoucherManagement";
 import { useToast } from "@/hooks/use-toast";
 
@@ -296,7 +296,7 @@ export const NewVoucherTab = ({ onCreateVoucher }: NewVoucherTabProps) => {
                       onClick={() => removeEntry(entry.id)}
                       disabled={entries.length === 1}
                     >
-                      <Trash2 className="w-4 h-4 text-destructive" />
+                      <Trash className="w-4 h-4 text-destructive" />
                     </Button>
                   </TableCell>
                 </TableRow>

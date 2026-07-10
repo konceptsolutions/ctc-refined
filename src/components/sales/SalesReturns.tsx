@@ -47,7 +47,7 @@ import {
 import {
   Search,
   Eye,
-  Trash2,
+  Trash,
   MoreVertical,
   RotateCcw,
   FileText,
@@ -1560,7 +1560,7 @@ export const SalesReturns = () => {
                                   disabled={actionSubmittingId === returnItem.id}
                                   onClick={() => handleDeleteClick(returnItem)}
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash className="w-3 h-3" />
                                   Delete
                                 </Button>
                               </ActionButtonTooltip>
@@ -1765,7 +1765,7 @@ export const SalesReturns = () => {
               onClick={() => setIsViewOpen(false)}
               className="gap-2 text-primary text-xs"
             >
-              <X className="w-4 h-4" />
+              <Trash className="w-4 h-4" />
               Close
             </Button>
             <div className="flex flex-wrap items-center gap-2">
@@ -2437,7 +2437,7 @@ export const SalesReturns = () => {
                               )
                             }
                           >
-                            <X className="w-4 h-4" />
+                            <Trash className="w-4 h-4" />
                           </Button>
                         </TableCell>
                       </TableRow>

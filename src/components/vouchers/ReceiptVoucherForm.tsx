@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Plus, X, Save, MoreVertical, Receipt } from "lucide-react";
+import { Plus, Trash, Save, MoreVertical, Receipt } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface VoucherEntry {
@@ -263,7 +263,7 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
                 disabled={entries.length === 1}
                 className="h-8 w-8 text-destructive hover:bg-destructive/10"
               >
-                <X className="w-4 h-4" />
+                <Trash className="w-4 h-4" />
               </Button>
             </div>
           </div>

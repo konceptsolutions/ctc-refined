@@ -27,7 +27,7 @@ const Index = () => {
             <h1 className="text-2xl font-bold text-foreground">
               Welcome to Inventory Management
             </h1>
-            <p className="text-muted-foreground">Here's what's happening with your inventory today.</p>
+            {/* <p className="text-muted-foreground">Here's what's happening with your inventory today.</p> */}
           </div>
 
           {/* Stat Cards */}
@@ -48,22 +48,26 @@ const Index = () => {
               progressColor="blue"
               iconBgColor="bg-chart-blue/10"
             />
-            <StatCard
+            <div className="lg:col-span-2">
+              <RecentActivity />
+            </div>
+
+            {/* <StatCard
               icon={<ShoppingBag className="w-5 h-5 text-chart-yellow" />}
               value={loading ? 0 : stats.activeKits}
               label="Active Kits"
               change=""
               progressColor="blue"
               iconBgColor="bg-chart-yellow/10"
-            />
-            <StatCard
+            /> */}
+            {/* <StatCard
               icon={<Building2 className="w-5 h-5 text-chart-green" />}
               value={loading ? 0 : stats.suppliersCount}
               label="Suppliers"
               change=""
               progressColor="green"
               iconBgColor="bg-chart-green/10"
-            />
+            /> */}
           </div>
 
           {/* Charts Row */}
@@ -75,11 +79,10 @@ const Index = () => {
           </div>
 
           {/* Quick Actions and Activity */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <div className="lg:col-span-2">
               <QuickActions />
             </div>
-            <RecentActivity />
           </div>
 
           {/* Inventory Distribution */}

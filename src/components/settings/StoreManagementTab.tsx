@@ -47,7 +47,7 @@ import {
   Plus,
   Search,
   Edit,
-  Trash2,
+  Trash,
   X,
   ChevronDown,
   ChevronRight,
@@ -507,7 +507,7 @@ export const StoreManagementTab = () => {
             <DialogTitle className="flex items-center justify-between">
               {editingStore ? "Edit Store" : "Create New Store"}
               <Button variant="ghost" size="icon" onClick={() => setIsStoreDialogOpen(false)}>
-                <X className="w-4 h-4" />
+                <Trash className="w-4 h-4" />
               </Button>
             </DialogTitle>
           </DialogHeader>
@@ -703,7 +703,7 @@ export const StoreManagementTab = () => {
                             className="text-destructive border-destructive/50 hover:bg-destructive/10"
                             onClick={() => handleDeleteStore(store.id)}
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash className="w-3 h-3" />
                           </Button>
                         </ActionButtonTooltip>
                       </div>
@@ -770,7 +770,7 @@ export const StoreManagementTab = () => {
                                             className="text-destructive hover:bg-destructive/10"
                                             onClick={() => handleDeleteRack(rack.id)}
                                           >
-                                            <Trash2 className="w-3 h-3" />
+                                            <Trash className="w-3 h-3" />
                                           </Button>
                                         </ActionButtonTooltip>
                                       </div>
@@ -820,7 +820,7 @@ export const StoreManagementTab = () => {
                                                       className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10"
                                                       onClick={() => handleDeleteShelf(shelf.id)}
                                                     >
-                                                      <Trash2 className="w-3 h-3" />
+                                                      <Trash className="w-3 h-3" />
                                                     </Button>
                                                   </ActionButtonTooltip>
                                                 </div>

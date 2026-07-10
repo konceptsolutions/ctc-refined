@@ -1828,9 +1828,9 @@ export const PricingCosting = () => {
           <h1 className="text-2xl font-bold text-foreground">
             Pricing & Costing
           </h1>
-          <p className="text-sm text-muted-foreground">
+          {/* <p className="text-sm text-muted-foreground">
             Manage costs, pricing, margins, and profitability analysis
-          </p>
+          </p> */}
         </div>
       </div>
 
@@ -1862,9 +1862,9 @@ export const PricingCosting = () => {
               </div>
               <div>
                 <h2 className="text-lg font-semibold">Price Updating</h2>
-                <p className="text-sm text-muted-foreground">
+                {/* <p className="text-sm text-muted-foreground">
                   Update prices individually or by group (Category/Brand)
-                </p>
+                </p> */}
               </div>
             </div>
             <div className="flex gap-2">
@@ -2444,9 +2444,9 @@ export const PricingCosting = () => {
             </div>
             <div>
               <h2 className="text-lg font-semibold">Profitability Analysis</h2>
-              <p className="text-sm text-muted-foreground">
+              {/* <p className="text-sm text-muted-foreground">
                 Analyze profit margins and revenue performance
-              </p>
+              </p> */}
             </div>
           </div>
 

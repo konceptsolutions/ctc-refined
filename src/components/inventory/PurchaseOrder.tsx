@@ -7,7 +7,7 @@ import {
   Search,
   Eye,
   Edit,
-  Trash2,
+  Trash,
   PackageCheck,
   X,
   Download,
@@ -560,7 +560,7 @@ const ViewOrderDialog = ({ open, onOpenChange, order, statusColors, formatCurren
             className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
             onClick={() => onOpenChange(false)}
           >
-            <X className="w-4 h-4 mr-1" />
+            <Trash className="w-4 h-4 mr-1" />
             Close
           </Button>
           <PrintPdfButton
@@ -2259,7 +2259,7 @@ export const PurchaseOrder = () => {
                       onClick={() => handleRemoveItem(item.id)}
                       disabled={formItems.length === 1}
                     >
-                      <X className="w-4 h-4" />
+                      <Trash className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
@@ -2306,7 +2306,7 @@ export const PurchaseOrder = () => {
               <h2 className="text-xl font-semibold text-foreground">Receive Purchase Order</h2>
             </div>
             <Button variant="ghost" size="icon" onClick={handleBackToList}>
-              <X className="w-5 h-5" />
+              <Trash className="w-5 h-5" />
             </Button>
           </div>
 
@@ -2677,7 +2677,7 @@ export const PurchaseOrder = () => {
                         className="h-9 w-9"
                         onClick={() => handleRemoveExpense(expense.id)}
                       >
-                        <X className="w-4 h-4" />
+                        <Trash className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>

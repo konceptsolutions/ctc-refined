@@ -13,7 +13,7 @@ import {
   Search,
   Filter,
   MoreVertical,
-  Trash2,
+  Trash,
   ChevronDown,
   CopyMinus,
 } from "lucide-react";

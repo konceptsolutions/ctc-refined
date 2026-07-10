@@ -3,7 +3,7 @@ import { SearchableSelect, SearchableSelectOption } from '@/components/ui/search
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import apiClient from '@/lib/api';
 import {
@@ -535,7 +535,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ expenses, onAdd, onUpd
               disabled={disabled}
               className="h-7 w-7 p-0"
             >
-              <Trash2 className="h-3 w-3 text-destructive" />
+              <Trash className="h-3 w-3 text-destructive" />
             </Button>
           </div>
         ))}

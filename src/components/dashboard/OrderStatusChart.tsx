@@ -29,7 +29,7 @@ export const OrderStatusChart = ({ orderStatus: propOrderStatus, loading: propLo
     <div className="bg-card rounded-xl p-6 border border-border shadow-sm">
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-foreground">Order Status</h3>
-        <p className="text-muted-foreground text-sm">Current purchase orders</p>
+        {/* <p className="text-muted-foreground text-sm">Current purchase orders</p> */}
       </div>
 
       <div className="relative h-48 flex items-center justify-center">

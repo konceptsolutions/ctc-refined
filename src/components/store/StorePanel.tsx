@@ -57,7 +57,7 @@ import {
   ArrowUpCircle,
   ArrowLeftRight,
   List,
-  Trash2,
+  Trash,
   Edit,
   MapPin,
 } from "lucide-react";

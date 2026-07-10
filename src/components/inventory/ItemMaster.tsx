@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Plus, Filter, Download, Upload, Edit2, Trash2, Eye } from "lucide-react";
+import { Search, Plus, Filter, Download, Upload, Edit2, Trash, Eye } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
@@ -347,7 +347,7 @@ export const ItemMaster = () => {
                     </ActionButtonTooltip>
                     <ActionButtonTooltip label="Delete" variant="delete">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(item.id)}>
-                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        <Trash className="w-3.5 h-3.5 text-destructive" />
                       </Button>
                     </ActionButtonTooltip>
                   </div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { QrCode, Search, Plus, Eye, Edit2, Trash2, Package } from "lucide-react";
+import { QrCode, Search, Plus, Eye, Edit2, Trash, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {

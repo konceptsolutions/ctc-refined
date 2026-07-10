@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { apiClient, getApiBaseUrl } from "@/lib/api";
@@ -18,7 +18,7 @@ import {
   Search,
   Eye,
   Edit,
-  Trash2,
+  Trash,
   X,
   Save,
   RotateCcw,
@@ -261,6 +261,7 @@ export const DirectPurchaseOrder = ({
   const [formAccount, setFormAccount] = useState("");
   const [formDiscount, setFormDiscount] = useState<number | "">("");
   const [formItems, setFormItems] = useState<OrderItemForm[]>([]);
+  const [focusItemSelectId, setFocusItemSelectId] = useState<string | null>(null);
   const [formExpenses, setFormExpenses] = useState<ExpenseForm[]>([]);
 
   // Return dialog state
@@ -625,6 +626,25 @@ export const DirectPurchaseOrder = ({
     }
   };
 
+  // Add item to form
+  const handleAddItem = useCallback(() => {
+    const newId = String(Date.now());
+    setFormItems((prev) => [
+      ...prev,
+      {
+        id: newId,
+        partId: "",
+        quantity: "",
+        purchasePrice: "",
+        priceA: "",
+        priceB: "",
+        priceM: "",
+        weight: 0,
+      },
+    ]);
+    setFocusItemSelectId(newId);
+  }, []);
+
   // Shortcut key handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -639,7 +659,7 @@ export const DirectPurchaseOrder = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [viewMode]);
+  }, [viewMode, handleAddItem]);
 
   useEffect(() => {
     fetchOrders();
@@ -1037,27 +1057,13 @@ export const DirectPurchaseOrder = ({
     }
   };
 
-  // Add item to form
-  const handleAddItem = () => {
-    setFormItems((prev) => [
-      ...prev,
-      {
-        id: String(Date.now()),
-        partId: "",
-        quantity: "",
-        purchasePrice: "",
-        priceA: "",
-        priceB: "",
-        priceM: "",
-        weight: 0,
-      },
-    ]);
-  };
-
   // Remove item from form
   const handleRemoveItem = (id: string) => {
     const itemToRemove = formItems.find((item) => item.id === id);
     setFormItems((prev) => prev.filter((item) => item.id !== id));
+    if (focusItemSelectId === id) {
+      setFocusItemSelectId(null);
+    }
     // Clear history if the removed item was the one being viewed
     if (itemToRemove && itemToRemove.partId === selectedPartForHistory) {
       setSelectedPartForHistory(null);
@@ -1536,6 +1542,24 @@ export const DirectPurchaseOrder = ({
       { totalQty: 0, totalWeight: 0, totalAmount: 0 },
     );
   }, [formItems, formExpenses, calculateDistributedExpenses]);
+
+  const partSelectOptions = useMemo(
+    () =>
+      parts.map((p) => ({
+        value: p.id,
+        label: [p.partNo, p.masterPartNo && p.masterPartNo !== p.partNo ? p.masterPartNo : null]
+          .filter(Boolean)
+          .join(" / "),
+        description: [
+          p.description || null,
+          p.brand ? `Brand: ${p.brand}` : null,
+          p.masterPartNo && p.masterPartNo !== p.partNo ? `Master: ${p.masterPartNo}` : null,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      })),
+    [parts],
+  );
 
   // Grand total: items − discount (capped at items) + expenses
   const calculateDiscountAmount = (itemsSub: number) => {
@@ -2077,7 +2101,7 @@ export const DirectPurchaseOrder = ({
                                   onClick={() => handleDeleteClick(order)}
                                   className="h-8 w-8 text-destructive hover:text-destructive"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash className="h-4 w-4" />
                                 </Button>
                               </ActionButtonTooltip>
                             )}
@@ -2394,12 +2418,236 @@ export const DirectPurchaseOrder = ({
                 {formItems.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <p>No items added yet</p>
-                    <p className="text-sm">Click "Add New Item" to add items</p>
+                    {/* <p className="text-sm">Click "Add New Item" to add items</p> */}
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className="rounded-md border overflow-x-auto -mx-1 sm:mx-0">
-                      <div className="min-w-[800px] sm:min-w-0">
+                    {/* Mobile / tablet: stacked item cards */}
+                    <div className="space-y-3 lg:hidden">
+                      {formItems.map((item, index) => {
+                        const selectedPart = parts.find((p) => p.id === item.partId);
+                        const qty = typeof item.quantity === "number" ? item.quantity : 0;
+                        const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
+                        const unitWeight = typeof item.weight === "number" ? item.weight : 0;
+                        const lineTotalWeight = qty * unitWeight;
+                        const distributedExpense = calculateDistributedExpenses[index] || 0;
+                        const expensePerUnit = qty > 0 ? distributedExpense / qty : 0;
+                        const totalExpenses = calculateTotalExpenses();
+                        const itemValue =
+                          totalExpenses > 0
+                            ? qty * (price + expensePerUnit)
+                            : qty * price;
+
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => handleSelectHistoryRow(item)}
+                            className={cn(
+                              "rounded-lg border border-border p-3 space-y-3 cursor-pointer",
+                              selectedHistoryRowId === item.id && "bg-muted/40 ring-1 ring-primary/30",
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-muted-foreground">
+                                #{index + 1}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveItem(item.id);
+                                }}
+                                className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                              >
+                                <Trash className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-muted-foreground">Part</Label>
+                              <SearchableSelect
+                                options={partSelectOptions}
+                                value={item.partId}
+                                onValueChange={(value) => handleUpdateItem(item.id, "partId", value)}
+                                placeholder="Select part..."
+                                autoOpen={focusItemSelectId === item.id}
+                                onAutoOpenHandled={() => setFocusItemSelectId(null)}
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                              <div>
+                                <span className="block mb-0.5">Brand</span>
+                                <span className="text-foreground font-medium">
+                                  {selectedPart?.brand || "-"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block mb-0.5">UoM</span>
+                                <span className="text-foreground font-medium">
+                                  {selectedPart?.uom || "-"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground">Qty</Label>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={item.quantity === "" ? "" : item.quantity}
+                                  onChange={(e) =>
+                                    handleUpdateItem(
+                                      item.id,
+                                      "quantity",
+                                      e.target.value === "" ? "" : parseInt(e.target.value) || "",
+                                    )
+                                  }
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-full"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground">Purchase Price</Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.purchasePrice === "" ? "" : item.purchasePrice}
+                                  onChange={(e) =>
+                                    handleUpdateItem(
+                                      item.id,
+                                      "purchasePrice",
+                                      e.target.value === "" ? "" : parseFloat(e.target.value) || "",
+                                    )
+                                  }
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-full"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground">Price A</Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.priceA === "" ? "" : item.priceA}
+                                  onChange={(e) =>
+                                    handleUpdateItem(
+                                      item.id,
+                                      "priceA",
+                                      e.target.value === "" ? "" : parseFloat(e.target.value) || "",
+                                    )
+                                  }
+                                  onBlur={() => handleSaveRowPrice(item.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  placeholder="A"
+                                  disabled={!item.partId || !!savingRowPrice[item.id]}
+                                  className="w-full"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground">Price B</Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.priceB === "" ? "" : item.priceB}
+                                  onChange={(e) =>
+                                    handleUpdateItem(
+                                      item.id,
+                                      "priceB",
+                                      e.target.value === "" ? "" : parseFloat(e.target.value) || "",
+                                    )
+                                  }
+                                  onBlur={() => handleSaveRowPrice(item.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  placeholder="B"
+                                  disabled={!item.partId || !!savingRowPrice[item.id]}
+                                  className="w-full"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border text-xs">
+                              <div>
+                                <span className="text-muted-foreground block mb-0.5">Weight</span>
+                                <span className="tabular-nums font-medium">
+                                  {unitWeight > 0
+                                    ? unitWeight.toLocaleString("en-PK", {
+                                        minimumFractionDigits: 0,
+                                        maximumFractionDigits: 4,
+                                      })
+                                    : "-"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground block mb-0.5">Total Weight</span>
+                                <span className="tabular-nums font-medium">
+                                  {lineTotalWeight > 0
+                                    ? lineTotalWeight.toLocaleString("en-PK", {
+                                        minimumFractionDigits: 0,
+                                        maximumFractionDigits: 4,
+                                      })
+                                    : "-"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground block mb-0.5">Total Amount</span>
+                                <span className="tabular-nums font-semibold">
+                                  {itemValue.toLocaleString("en-PK", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground block mb-0.5">EXP / unit</span>
+                                <span className="tabular-nums font-medium">
+                                  {expensePerUnit.toLocaleString("en-PK", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <div className="rounded-lg border border-border bg-muted/30 p-3 grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground block mb-0.5">Total Qty</span>
+                          <span className="font-semibold tabular-nums">
+                            {itemPartTotals.totalQty.toLocaleString("en-PK")}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block mb-0.5">Total Weight</span>
+                          <span className="font-semibold tabular-nums">
+                            {itemPartTotals.totalWeight.toLocaleString("en-PK", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 4,
+                            })}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block mb-0.5">Total Amount</span>
+                          <span className="font-semibold tabular-nums">
+                            {itemPartTotals.totalAmount.toLocaleString("en-PK", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Desktop: full table with horizontal scroll */}
+                    <div className="hidden lg:block rounded-md border overflow-x-auto">
+                      <div className="min-w-[1100px]">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -2407,11 +2655,11 @@ export const DirectPurchaseOrder = ({
                               <TableHead className="min-w-[200px]">Part</TableHead>
                               <TableHead className="min-w-[80px]">Brand</TableHead>
                               <TableHead className="min-w-[60px]">UoM</TableHead>
-                              <TableHead className="w-20 sm:w-24">Qty</TableHead>
-                              <TableHead className="w-28 sm:w-32">Purchase Price</TableHead>
-                              <TableHead className="w-24 sm:w-28">Price A</TableHead>
-                              <TableHead className="w-24 sm:w-28">Price B</TableHead>
-                              <TableHead className="w-20 text-right">Weight</TableHead>
+                              <TableHead className="w-24">Qty</TableHead>
+                              <TableHead className="w-28">Purchase Price</TableHead>
+                              <TableHead className="w-24">Price A</TableHead>
+                              <TableHead className="w-24">Price B</TableHead>
+                              <TableHead className="w-16 text-right">Weight</TableHead>
                               <TableHead className="w-24 text-right">Total Weight</TableHead>
                               <TableHead className="text-right min-w-[100px]">Total Amount</TableHead>
                               <TableHead className="text-right min-w-[100px]">EXP / unit</TableHead>
@@ -2433,24 +2681,12 @@ export const DirectPurchaseOrder = ({
                                   <ListNumberCell index={index} />
                                   <TableCell>
                                     <SearchableSelect
-                                      options={parts.map(p => ({
-                                        value: p.id,
-                                        label: [p.partNo, p.masterPartNo && p.masterPartNo !== p.partNo ? p.masterPartNo : null]
-                                          .filter(Boolean)
-                                          .join(" / "),
-                                        description: [
-                                          p.description || null,
-                                          p.brand ? `Brand: ${p.brand}` : null,
-                                          p.masterPartNo && p.masterPartNo !== p.partNo
-                                            ? `Master: ${p.masterPartNo}`
-                                            : null,
-                                        ]
-                                          .filter(Boolean)
-                                          .join(" | "),
-                                      }))}
+                                      options={partSelectOptions}
                                       value={item.partId}
                                       onValueChange={(value) => handleUpdateItem(item.id, "partId", value)}
                                       placeholder="Select part..."
+                                      autoOpen={focusItemSelectId === item.id}
+                                      onAutoOpenHandled={() => setFocusItemSelectId(null)}
                                     />
                                   </TableCell>
                                   <TableCell>{selectedPart?.brand || "-"}</TableCell>
@@ -2460,7 +2696,13 @@ export const DirectPurchaseOrder = ({
                                       type="number"
                                       min="1"
                                       value={item.quantity === "" ? "" : item.quantity}
-                                      onChange={(e) => handleUpdateItem(item.id, "quantity", e.target.value === "" ? "" : parseInt(e.target.value) || "")}
+                                      onChange={(e) =>
+                                        handleUpdateItem(
+                                          item.id,
+                                          "quantity",
+                                          e.target.value === "" ? "" : parseInt(e.target.value) || "",
+                                        )
+                                      }
                                       placeholder=""
                                       className="w-full min-w-[60px]"
                                     />
@@ -2471,7 +2713,13 @@ export const DirectPurchaseOrder = ({
                                       min="0"
                                       step="0.01"
                                       value={item.purchasePrice === "" ? "" : item.purchasePrice}
-                                      onChange={(e) => handleUpdateItem(item.id, "purchasePrice", e.target.value === "" ? "" : parseFloat(e.target.value) || "")}
+                                      onChange={(e) =>
+                                        handleUpdateItem(
+                                          item.id,
+                                          "purchasePrice",
+                                          e.target.value === "" ? "" : parseFloat(e.target.value) || "",
+                                        )
+                                      }
                                       placeholder=""
                                       className="w-full min-w-[100px]"
                                     />
@@ -2486,9 +2734,7 @@ export const DirectPurchaseOrder = ({
                                         handleUpdateItem(
                                           item.id,
                                           "priceA",
-                                          e.target.value === ""
-                                            ? ""
-                                            : parseFloat(e.target.value) || "",
+                                          e.target.value === "" ? "" : parseFloat(e.target.value) || "",
                                         )
                                       }
                                       onBlur={() => handleSaveRowPrice(item.id)}
@@ -2508,9 +2754,7 @@ export const DirectPurchaseOrder = ({
                                         handleUpdateItem(
                                           item.id,
                                           "priceB",
-                                          e.target.value === ""
-                                            ? ""
-                                            : parseFloat(e.target.value) || "",
+                                          e.target.value === "" ? "" : parseFloat(e.target.value) || "",
                                         )
                                       }
                                       onBlur={() => handleSaveRowPrice(item.id)}
@@ -2520,7 +2764,6 @@ export const DirectPurchaseOrder = ({
                                       className="w-full min-w-[80px]"
                                     />
                                   </TableCell>
-
                                   <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
                                     {item.weight > 0
                                       ? item.weight.toLocaleString("en-PK", {
@@ -2532,44 +2775,49 @@ export const DirectPurchaseOrder = ({
                                   <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
                                     {(() => {
                                       const qty =
-                                        typeof item.quantity === "number"
-                                          ? item.quantity
-                                          : 0;
+                                        typeof item.quantity === "number" ? item.quantity : 0;
                                       const unitWeight =
-                                        typeof item.weight === "number"
-                                          ? item.weight
-                                          : 0;
+                                        typeof item.weight === "number" ? item.weight : 0;
                                       const lineTotalWeight = qty * unitWeight;
                                       return lineTotalWeight > 0
-                                        ? lineTotalWeight.toLocaleString(
-                                            "en-PK",
-                                            {
-                                              minimumFractionDigits: 0,
-                                              maximumFractionDigits: 4,
-                                            },
-                                          )
+                                        ? lineTotalWeight.toLocaleString("en-PK", {
+                                            minimumFractionDigits: 0,
+                                            maximumFractionDigits: 4,
+                                          })
                                         : "-";
                                     })()}
                                   </TableCell>
                                   <TableCell className="text-right font-medium">
                                     {(() => {
-                                      const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
-                                      const qty = typeof item.quantity === "number" ? item.quantity : 0;
-                                    const distributedExpense = calculateDistributedExpenses[index] || 0;
-                                    const expensePerUnit = qty > 0 ? distributedExpense / qty : 0;
-                                    const totalExpenses = calculateTotalExpenses();
-                                    const itemValue =
-                                      totalExpenses > 0
-                                        ? qty * (price + expensePerUnit)
-                                        : qty * price;
-                                    return itemValue.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                      const price =
+                                        typeof item.purchasePrice === "number"
+                                          ? item.purchasePrice
+                                          : 0;
+                                      const qty =
+                                        typeof item.quantity === "number" ? item.quantity : 0;
+                                      const distributedExpense =
+                                        calculateDistributedExpenses[index] || 0;
+                                      const expensePerUnit =
+                                        qty > 0 ? distributedExpense / qty : 0;
+                                      const totalExpenses = calculateTotalExpenses();
+                                      const itemValue =
+                                        totalExpenses > 0
+                                          ? qty * (price + expensePerUnit)
+                                          : qty * price;
+                                      return itemValue.toLocaleString("en-PK", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      });
                                     })()}
                                   </TableCell>
                                   <TableCell className="text-right">
                                     {(() => {
-                                      const qty = typeof item.quantity === "number" ? item.quantity : 0;
-                                      const distributedExpense = calculateDistributedExpenses[index] || 0;
-                                      const perPartExpense = qty > 0 ? distributedExpense / qty : 0;
+                                      const qty =
+                                        typeof item.quantity === "number" ? item.quantity : 0;
+                                      const distributedExpense =
+                                        calculateDistributedExpenses[index] || 0;
+                                      const perPartExpense =
+                                        qty > 0 ? distributedExpense / qty : 0;
 
                                       return (
                                         <span className="text-sm font-medium tabular-nums">
@@ -2588,7 +2836,7 @@ export const DirectPurchaseOrder = ({
                                       onClick={() => handleRemoveItem(item.id)}
                                       className="h-8 w-8 text-destructive hover:text-destructive"
                                     >
-                                      <X className="h-4 w-4" />
+                                      <Trash className="h-4 w-4" />
                                     </Button>
                                   </TableCell>
                                 </TableRow>
@@ -2597,51 +2845,32 @@ export const DirectPurchaseOrder = ({
                           </TableBody>
                           <TableFooter className="bg-muted/30">
                             <TableRow className="hover:bg-transparent">
-                              {/* # */}
                               <TableCell className="font-semibold text-xs uppercase text-muted-foreground">
                                 Totals
                               </TableCell>
-                              {/* Part */}
                               <TableCell />
-                              {/* Brand */}
                               <TableCell />
-                              {/* UoM */}
                               <TableCell />
-                              {/* Qty */}
                               <TableCell className="font-semibold tabular-nums">
                                 {itemPartTotals.totalQty.toLocaleString("en-PK")}
                               </TableCell>
-                              {/* Purchase Price */}
                               <TableCell />
-                              {/* Price A */}
                               <TableCell />
-                              {/* Price B */}
                               <TableCell />
-                              {/* Weight */}
                               <TableCell />
-                              {/* Total Weight */}
                               <TableCell className="text-right font-semibold tabular-nums text-xs">
-                                {itemPartTotals.totalWeight.toLocaleString(
-                                  "en-PK",
-                                  {
-                                    minimumFractionDigits: 0,
-                                    maximumFractionDigits: 4,
-                                  },
-                                )}
+                                {itemPartTotals.totalWeight.toLocaleString("en-PK", {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 4,
+                                })}
                               </TableCell>
-                              {/* Total Amount */}
                               <TableCell className="text-right font-semibold tabular-nums">
-                                {itemPartTotals.totalAmount.toLocaleString(
-                                  "en-PK",
-                                  {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  },
-                                )}
+                                {itemPartTotals.totalAmount.toLocaleString("en-PK", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </TableCell>
-                              {/* EXP / unit */}
                               <TableCell />
-                              {/* Action */}
                               <TableCell />
                             </TableRow>
                           </TableFooter>
@@ -3218,7 +3447,7 @@ export const DirectPurchaseOrder = ({
                           className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={() => setReturnItems(prev => prev.filter(i => i.partId !== item.partId))}
                         >
-                          <X className="h-4 w-4" />
+                          <Trash className="h-4 w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -3279,7 +3508,7 @@ export const DirectPurchaseOrder = ({
               Reset
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setShowReturnDialog(false)}>
-              <X className="w-4 h-4 mr-1" />
+              <Trash className="w-4 h-4 mr-1" />
               Cancel
             </Button>
           </div>

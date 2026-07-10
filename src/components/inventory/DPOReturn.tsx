@@ -15,7 +15,7 @@ import {
 import {
     Search,
     Eye,
-    Trash2,
+    Trash,
     X,
     RotateCcw,
     Check,
@@ -364,7 +364,7 @@ export const DPOReturn = () => {
                                                                 setDeleteDialogOpen(true);
                                                             }}
                                                         >
-                                                            <Trash2 className="w-4 h-4" />
+                                                            <Trash className="w-4 h-4" />
                                                         </Button>
                                                     </ActionButtonTooltip>
                                                 </>

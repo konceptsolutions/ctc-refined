@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { ClipboardCheck, Search, Download, Plus, Check, X, AlertCircle, Printer, Save, RotateCcw, Loader2 } from "lucide-react";
+import { ClipboardCheck, Search, Download, Plus, Check, Trash, AlertCircle, Printer, Save, RotateCcw, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -500,7 +500,7 @@ export const StockVerification = () => {
                   onClick={handleCancelSession}
                   disabled={loading || activeSession?.status !== 'Active'}
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash className="w-4 h-4" />}
                   Cancel
                 </Button>
               </div>
@@ -545,7 +545,7 @@ export const StockVerification = () => {
             <div className="bg-card border border-border rounded-lg p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
-                  <X className="w-5 h-5 text-red-600" />
+                  <Trash className="w-5 h-5 text-red-600" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Discrepancies</p>

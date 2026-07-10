@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeftRight, Plus, Eye, Pencil, Trash2, X, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ArrowLeftRight, Plus, Eye, Pencil, Trash, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -126,7 +126,7 @@ export const StockTransfer = () => {
         return;
       }
 
-      const transfersData = response.data || [];
+      const transfersData = (response.data as any[]) || [];
       const pagination = response.pagination;
 
       const formattedTransfers: Transfer[] = transfersData.map((t: any) => ({
@@ -262,7 +262,7 @@ export const StockTransfer = () => {
         return;
       }
 
-      const transferData = response.data || response;
+      const transferData = (response.data as any) || response;
       
       setFormData({
         transferNumber: transferData.transfer_number || transfer.transferNumber,
@@ -482,7 +482,7 @@ export const StockTransfer = () => {
               </h3>
             </div>
             <Button variant="ghost" size="icon" onClick={handleCancel} className="h-8 w-8">
-              <X className="w-4 h-4" />
+              <Trash className="w-4 h-4" />
             </Button>
           </div>
 
@@ -565,7 +565,7 @@ export const StockTransfer = () => {
                           onClick={() => handleRemoveItem(item.id)}
                           className="h-8 w-8 text-destructive hover:text-destructive/80 hover:bg-destructive/10"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </div>
 
@@ -736,75 +736,6 @@ export const StockTransfer = () => {
                     <TableCell className="text-muted-foreground">{transfer.date}</TableCell>
                     <TableCell>
                       <div className="flex items-center justify-center gap-3">
-                        <button
-                          onClick={async () => {
-                            try {
-                              setLoading(true);
-                              const response = await apiClient.getTransfer(transfer.id);
-                              
-                              // Handle 404 or other errors
-                              if (response.error) {
-                                // If it's a 404, the route might not be loaded - try to show basic info
-                                if (response.error.includes('404') || response.error.includes('Not Found')) {
-                                  toast.error('Transfer details endpoint not available. Please restart the backend server.');
-                                  // Show basic transfer info from the list
-                                  setViewingTransfer({
-                                    ...transfer,
-                                    items: [],
-                                  });
-                                  setLoading(false);
-                                  return;
-                                }
-                                toast.error(response.error || 'Failed to load transfer details');
-                                setLoading(false);
-                                return;
-                              }
-                              
-                              const transferData = response.data || response;
-                              if (!transferData || !transferData.id) {
-                                toast.error('Invalid transfer data received');
-                                setLoading(false);
-                                return;
-                              }
-                              
-                              const fullTransfer: Transfer = {
-                                id: transferData.id,
-                                transferNumber: transferData.transfer_number || transfer.transferNumber,
-                                date: new Date(transferData.date).toLocaleDateString('en-GB'),
-                                status: transferData.status as Transfer["status"],
-                                notes: transferData.notes || '',
-                                items: (transferData.items || []).map((item: any) => ({
-                                  id: item.id,
-                                  partId: item.part_id,
-                                  partName: item.part_description || item.part_no || '',
-                                  availableQty: 0,
-                                  transferQty: item.quantity,
-                                  fromStore: item.from_store || '',
-                                  fromRack: item.from_rack || '',
-                                  fromShelf: item.from_shelf || '',
-                                  toStore: item.to_store || '',
-                                  toRack: item.to_rack || '',
-                                  toShelf: item.to_shelf || '',
-                                })),
-                                total: transferData.total_qty || 0,
-                              };
-                              setViewingTransfer(fullTransfer);
-                            } catch (error: any) {
-                              const errorMsg = error.message || 'Failed to load transfer details';
-                              if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
-                                toast.error('Backend route not loaded. Please restart the backend server (Ctrl+C then npm run dev)');
-                              } else {
-                                toast.error(errorMsg);
-                              }
-                            } finally {
-                              setLoading(false);
-                            }
-                          }}
-                          className="text-primary hover:text-primary/80 text-sm font-medium flex items-center gap-1 transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                          View
-                        </button>
                         <ActionButtonTooltip label="View" variant="view">
                           <Button
                             variant="ghost"
@@ -812,11 +743,44 @@ export const StockTransfer = () => {
                             onClick={async () => {
                               setLoading(true);
                               try {
-                                const response = await apiClient.get(`/inventory/stock-transfers/${transfer.id}`);
-                                if (response.data) {
-                                  setViewingTransfer(response.data);
-                                  setViewDialogOpen(true);
+                                const response = await apiClient.getTransfer(transfer.id);
+                                if (response.error) {
+                                  if (response.error.includes('404') || response.error.includes('Not Found')) {
+                                    toast.error('Transfer details endpoint not available. Please restart the backend server.');
+                                    setViewingTransfer({ ...transfer, items: [] });
+                                    return;
+                                  }
+                                  toast.error(response.error || 'Failed to load transfer details');
+                                  return;
                                 }
+
+                                const transferData = (response.data as any) || response;
+                                if (!transferData?.id) {
+                                  toast.error('Invalid transfer data received');
+                                  return;
+                                }
+
+                                setViewingTransfer({
+                                  id: transferData.id,
+                                  transferNumber: transferData.transfer_number || transfer.transferNumber,
+                                  date: new Date(transferData.date).toLocaleDateString('en-GB'),
+                                  status: transferData.status as Transfer["status"],
+                                  notes: transferData.notes || '',
+                                  items: (transferData.items || []).map((item: any) => ({
+                                    id: item.id,
+                                    partId: item.part_id,
+                                    partName: item.part_description || item.part_no || '',
+                                    availableQty: 0,
+                                    transferQty: item.quantity,
+                                    fromStore: item.from_store || '',
+                                    fromRack: item.from_rack || '',
+                                    fromShelf: item.from_shelf || '',
+                                    toStore: item.to_store || '',
+                                    toRack: item.to_rack || '',
+                                    toShelf: item.to_shelf || '',
+                                  })),
+                                  total: transferData.total_qty || 0,
+                                });
                               } catch (error: any) {
                                 const errorMsg = error.message || 'Failed to load transfer details';
                                 if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
@@ -852,7 +816,7 @@ export const StockTransfer = () => {
                             onClick={() => handleDeleteClick(transfer.id)}
                             className="text-destructive hover:text-destructive/80 text-sm font-medium flex items-center gap-1 transition-colors"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash className="w-4 h-4" />
                             Delete
                           </Button>
                         </ActionButtonTooltip>

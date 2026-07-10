@@ -44,7 +44,7 @@ import {
   Plus,
   Search,
   Edit,
-  Trash2,
+  Trash,
   Users,
   Store,
   ShoppingCart,
@@ -792,7 +792,7 @@ export const CustomerPriceStructures = () => {
                               className="h-8 w-8 text-muted-foreground hover:text-destructive"
                               onClick={() => handleDeleteClick(item)}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash className="w-4 h-4" />
                             </Button>
                           </ActionButtonTooltip>
                         </div>

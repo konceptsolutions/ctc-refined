@@ -225,7 +225,7 @@ export const StoreAdjustedItem = ({
               )}
             </div>
             <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
-              <X className="w-4 h-4" />
+              <Trash className="w-4 h-4" />
             </Button>
           </DialogTitle>
           <DialogDescription>

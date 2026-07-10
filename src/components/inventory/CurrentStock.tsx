@@ -24,7 +24,7 @@ import {
   Edit,
   Plus,
   Loader2,
-  Trash2,
+  Trash,
   Archive,
   Layers,
   RefreshCw,
@@ -1304,7 +1304,7 @@ export const CurrentStock = () => {
               }}
               className="text-muted-foreground hover:text-foreground"
             >
-              <X className="w-4 h-4 mr-1" />
+              <Trash className="w-4 h-4 mr-1" />
               Clear filters
             </Button>
           )}
@@ -1324,8 +1324,8 @@ export const CurrentStock = () => {
                 <TableHead className="w-[150px]">Category</TableHead>
                 <TableHead className="w-[200px]">Description</TableHead>
                 <TableHead className="w-[100px]">Store</TableHead>
-                <TableHead className="w-[100px]">Rack</TableHead>
-                <TableHead className="w-[100px]">Shelf</TableHead>
+                <TableHead className="w-[100px]"><span className="text-[#F28123]">Rack</span> | <span className="text-[#d42424]">Shelf</span></TableHead>
+                {/* <TableHead className="w-[100px]">Shelf</TableHead> */}
                 <TableHead className="w-[100px] text-right">Stock</TableHead>
                 <TableHead className="w-[80px] text-right">Actions</TableHead>
               </TableRow>
@@ -1367,8 +1367,8 @@ export const CurrentStock = () => {
                       {item.description || "-"}
                     </TableCell>
                     <TableCell>{item.store || "-"}</TableCell>
-                    <TableCell>{item.rack || "-"}</TableCell>
-                    <TableCell>{item.shelf || "-"}</TableCell>
+                    <TableCell><span className="text-[#F28123]">{item.rack || "-"}</span> | <span className="text-[#d42424]">{item.shelf || "-"}</span></TableCell>
+                    {/* <TableCell>{item.shelf || "-"}</TableCell> */}
                     <TableCell className="text-right font-medium">
                       {formatNumber(item.current_stock)}
                     </TableCell>
@@ -1890,7 +1890,7 @@ export const CurrentStock = () => {
                           className="h-8 w-8 text-destructive hover:bg-destructive/10"
                           disabled={bulkRows.length <= 1}
                         >
-                          <X className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </TableCell>
                     </TableRow>

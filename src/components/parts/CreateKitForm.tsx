@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Package, Trash2, Loader2 } from "lucide-react";
+import { Plus, Package, Trash, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 
@@ -289,7 +289,7 @@ export const CreateKitForm = ({ onSave }: CreateKitFormProps) => {
                       className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 text-xs gap-1"
                       onClick={() => handleRemoveItem(item.id)}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash className="w-3.5 h-3.5" />
                       Remove
                     </Button>
                   </div>

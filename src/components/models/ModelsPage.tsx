@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Search, Plus, RefreshCw, Trash } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -1133,7 +1133,7 @@ export const ModelsPage = () => {
                               onClick={() => openDeleteModel(model)}
                               className="p-1.5 text-destructive hover:bg-destructive/10 rounded transition-colors"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash className="w-4 h-4" />
                             </button>
                           )}
                         </div>

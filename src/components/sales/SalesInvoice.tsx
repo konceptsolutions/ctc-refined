@@ -63,7 +63,7 @@ import {
 import {
   Search,
   Plus,
-  Trash2,
+  Trash,
   Eye,
   Truck,
   FileText,
@@ -7375,7 +7375,7 @@ export const SalesInvoice = ({
                                     handleRemoveInlineItem(item.id)
                                   }
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash className="w-4 h-4" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -7757,7 +7757,7 @@ export const SalesInvoice = ({
                                   onClick={() => handleRemoveInlineItem(item.id)}
                                   title="Remove Item"
                                 >
-                                  <Trash2 className="w-5 h-5" />
+                                  <Trash className="w-5 h-5" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -9165,7 +9165,7 @@ export const SalesInvoice = ({
                                 }}
                                 title="Delete Invoice"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash className="w-4 h-4" />
                               </Button>
                             )}
                           </div>

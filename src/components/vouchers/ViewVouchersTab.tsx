@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { format } from "date-fns";
-import { Search, Edit, Trash2, MoreVertical, Printer, CheckCircle, Clock, X, Plus, CalendarIcon, Eye } from "lucide-react";
+import { Search, Edit, MoreVertical, Printer, CheckCircle, Clock, Trash, Plus, CalendarIcon, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -101,10 +101,15 @@ export const ViewVouchersTab = ({
     const fetchFilterGroups = async () => {
       try {
         const response = await apiClient.getAccountGroups();
-        if (response.data) {
-          setFilterMainGroups(response.data.mainGroups || []);
-          setFilterSubGroups(response.data.subGroups || []);
-          setFilterAccounts(response.data.accounts || []);
+        const data = response.data as {
+          mainGroups?: FilterAccountGroup[];
+          subGroups?: FilterAccountGroup[];
+          accounts?: FilterAccountGroup[];
+        } | null;
+        if (data) {
+          setFilterMainGroups(data.mainGroups || []);
+          setFilterSubGroups(data.subGroups || []);
+          setFilterAccounts(data.accounts || []);
         }
       } catch (error) {
         console.error("Failed to fetch account groups for voucher filters:", error);
@@ -1233,7 +1238,7 @@ export const ViewVouchersTab = ({
                             onClick={() => handleDelete(voucher)}
                             disabled={voucher.status !== "draft"}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash className="h-4 w-4" />
                           </Button>
                         </ActionButtonTooltip>
                         <DropdownMenu>
@@ -1489,7 +1494,7 @@ export const ViewVouchersTab = ({
                       className="text-destructive"
                       onClick={() => removeEntry(entry.id)}
                     >
-                      <X className="h-4 w-4" />
+                      <Trash className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -1563,7 +1568,7 @@ export const ViewVouchersTab = ({
               className="text-primary"
               onClick={() => setEditingVoucher(null)}
             >
-              <X className="h-4 w-4 mr-1" />
+              <Trash className="h-4 w-4 mr-1" />
               Cancel
             </Button>
           </div>

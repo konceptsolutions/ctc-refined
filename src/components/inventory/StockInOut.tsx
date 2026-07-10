@@ -8,6 +8,7 @@ import {
   Edit,
   Plus,
   X,
+  Trash,
 } from "lucide-react";
 import {
   Dialog,
@@ -1783,7 +1784,7 @@ export const StockInOut = () => {
                           className="h-8 w-8 text-destructive hover:bg-destructive/10"
                           disabled={bulkRows.length <= 1}
                         >
-                          <X className="w-4 h-4" />
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </TableCell>
                     </TableRow>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, X, FileText, Package, Users, Settings, BarChart3, Receipt, DollarSign, Layers, ArrowRight } from "lucide-react";
+import { Search, Trash, FileText, Package, Users, Settings, BarChart3, Receipt, DollarSign, Layers, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -199,7 +199,7 @@ export const GlobalSearch = ({ open, onOpenChange }: GlobalSearchProps) => {
                 onClick={() => setQuery("")} 
                 className="p-1.5 rounded-md hover:bg-muted transition-colors"
               >
-                <X className="w-4 h-4 text-muted-foreground" />
+                <Trash className="w-4 h-4 text-muted-foreground" />
               </button>
             )}
             <kbd className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground bg-background border border-border rounded-md shadow-sm">

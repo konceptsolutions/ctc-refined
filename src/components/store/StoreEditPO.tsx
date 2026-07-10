@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 import { Calendar } from "@/components/ui/calendar";
@@ -411,7 +411,7 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
                               onClick={() => handleRemoveItem(item.id)}
                               disabled={formItems.length === 1}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash className="w-4 h-4" />
                             </Button>
                           </TableCell>
                         </TableRow>

@@ -29,7 +29,7 @@ const QuickActionItem = ({ icon, iconBgColor, title, description, badge, onClick
           </span>
         )}
       </div>
-      <span className="text-sm text-muted-foreground">{description}</span>
+      {/* <span className="text-sm text-muted-foreground">{description}</span> */}
     </div>
     <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
   </button>
@@ -128,7 +128,7 @@ export const QuickActions = () => {
     <div className="bg-card rounded-xl p-6 border border-border shadow-sm">
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-foreground">Quick Actions</h3>
-        <p className="text-muted-foreground text-sm">Frequently used shortcuts</p>
+        {/* <p className="text-muted-foreground text-sm">Frequently used shortcuts</p> */}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

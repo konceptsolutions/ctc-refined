@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, ChevronDown, Plus, Edit2, Trash2, Folder, FolderOpen } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Edit2, Trash, Folder, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -167,7 +167,7 @@ const TreeItem = ({ node, level, onEdit, onDelete, onAddChild }: TreeItemProps) 
               onDelete(node);
             }}
           >
-            <Trash2 className="w-3 h-3 text-destructive" />
+            <Trash className="w-3 h-3 text-destructive" />
           </Button>
         </div>
       </div>

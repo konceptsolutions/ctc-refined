@@ -30,7 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, Plus, Loader2, Package, Edit, Trash2, RefreshCw, ChevronDown, ChevronRight, Archive, Layers, MapPin, X } from "lucide-react";
+import { Search, Plus, Loader2, Package, Edit, Trash, RefreshCw, ChevronDown, ChevronRight, Archive, Layers, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import {
@@ -884,7 +884,7 @@ export const RackAndShelf = () => {
                 <div key={i} className="flex items-center gap-2">
                   <Input value={n} onChange={(e) => handleUpdateShelfName(i, e.target.value)} placeholder={`Shelf name ${i + 1}`} className="text-sm h-9 flex-1" />
                   {combinedShelfNames.length > 1 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveShelfField(i)} className="h-9 w-9 p-0 text-destructive"><X className="w-4 h-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveShelfField(i)} className="h-9 w-9 p-0 text-destructive"><Trash className="w-4 h-4" /></Button>
                   )}
                 </div>
               ))}
@@ -964,7 +964,7 @@ export const RackAndShelf = () => {
                     onClick={() => handleRemoveBulkShelfField(index)}
                     className="h-9 w-9 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
-                    <X className="w-4 h-4" />
+                    <Trash className="w-4 h-4" />
                   </Button>
                 ) : (
                   <div className="w-9"></div>
@@ -1102,7 +1102,7 @@ export const RackAndShelf = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <Button variant="ghost" size="sm" onClick={() => handleAddShelfToRack(rack)}><Plus className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDeleteRack(rack)} className="text-destructive"><Trash2 className="w-4 h-4" /></Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteRack(rack)} className="text-destructive"><Trash className="w-4 h-4" /></Button>
                     </div>
                   </div>
                   {isExpanded && (
@@ -1123,7 +1123,7 @@ export const RackAndShelf = () => {
                                 <p className="text-xs text-muted-foreground">{shelf.description}</p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Button variant="ghost" size="sm" onClick={() => handleDeleteShelf(shelf)} className="text-destructive"><Trash2 className="w-4 h-4" /></Button>
+                                <Button variant="ghost" size="sm" onClick={() => handleDeleteShelf(shelf)} className="text-destructive"><Trash className="w-4 h-4" /></Button>
                               </div>
                             </div>
 
