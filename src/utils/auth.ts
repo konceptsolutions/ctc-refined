@@ -107,6 +107,72 @@ export const isStoreUserRole = (): boolean => {
   return roleName === 'store user';
 };
 
+export const isAdminRole = (): boolean => {
+  const roleName = getTokenRoleName()?.trim().toLowerCase();
+  return roleName === 'admin';
+};
+
+export const isManagerRole = (): boolean => {
+  const roleName = getTokenRoleName()?.trim().toLowerCase();
+  return roleName === 'manager';
+};
+
+export const isAccountantRole = (): boolean => {
+  const roleName = getTokenRoleName()?.trim().toLowerCase();
+  return roleName === 'accountant';
+};
+
+export const isSalesRole = (): boolean => {
+  const roleName = getTokenRoleName()?.trim().toLowerCase();
+  return roleName === 'sales';
+};
+
+/** Paths Manager role is allowed to access */
+export const MANAGER_ALLOWED_PATHS = [
+  '/partentry',
+  '/inventory',
+  '/pricing-costing',
+  '/sales',
+  '/manage',
+] as const;
+
+/** Paths Accountant role is allowed to access */
+export const ACCOUNTANT_ALLOWED_PATHS = [
+  '/accounting',
+  '/financial-statements',
+  '/vouchers',
+  '/sales',
+] as const;
+
+/** Paths Sales role is allowed to access */
+export const SALES_ALLOWED_PATHS = [
+  '/sales',
+] as const;
+
+export const isManagerAllowedPath = (pathname: string): boolean => {
+  return MANAGER_ALLOWED_PATHS.some(
+    (base) => pathname === base || pathname.startsWith(`${base}/`),
+  );
+};
+
+export const isAccountantAllowedPath = (pathname: string): boolean => {
+  return ACCOUNTANT_ALLOWED_PATHS.some(
+    (base) => pathname === base || pathname.startsWith(`${base}/`),
+  );
+};
+
+export const isSalesAllowedPath = (pathname: string): boolean => {
+  return SALES_ALLOWED_PATHS.some(
+    (base) => pathname === base || pathname.startsWith(`${base}/`),
+  );
+};
+
+export const getManagerHomePath = (): string => '/partentry';
+
+export const getAccountantHomePath = (): string => '/accounting';
+
+export const getSalesHomePath = (): string => '/sales/invoice';
+
 export const getTokenUserName = (): string | null => {
   const token = localStorage.getItem('authToken');
   if (!token) return null;

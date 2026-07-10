@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
+import { isAccountantRole, isSalesRole } from "@/utils/auth";
 import {
   branchAccountDisplayName,
   fetchBranchAccountOptions,
@@ -480,6 +481,9 @@ export const SalesInvoice = ({
   const navigate = useNavigate();
   const isQuotation = documentKind === "quotation";
   const isTransferOut = documentKind === "transfer-out";
+  const isAccountant = isAccountantRole();
+  const canChangeInvoiceStatus = !isSalesRole() && !isAccountant;
+  const canUseDocumentForm = !isAccountant;
   const docFormLabel = isQuotation
     ? "Quotation Form"
     : isTransferOut
@@ -565,8 +569,10 @@ export const SalesInvoice = ({
 
   // New / Edit Invoice State
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
-  const [documentView, setDocumentView] = useState<"form" | "list">("form");
-  const showDocumentForm = documentView === "form";
+  const [documentView, setDocumentView] = useState<"form" | "list">(
+    canUseDocumentForm ? "form" : "list",
+  );
+  const showDocumentForm = canUseDocumentForm && documentView === "form";
   const [newInvoice, setNewInvoice] = useState<Partial<Invoice>>({
     customerType: isTransferOut ? "transfer" : "registered",
     items: [],
@@ -5335,6 +5341,14 @@ export const SalesInvoice = ({
     quotation: Invoice,
     status: "pending" | "approved",
   ) => {
+    if (!canChangeInvoiceStatus) {
+      toast({
+        title: "Not allowed",
+        description: "Your role cannot change quotation status.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       const response = await apiClient.updateSalesQuotation(quotation.id, {
         status,
@@ -5426,6 +5440,14 @@ export const SalesInvoice = ({
     newStatus: InvoiceStatus,
     deliveredQtys?: Record<string, number>,
   ) => {
+    if (!canChangeInvoiceStatus) {
+      toast({
+        title: "Not allowed",
+        description: "Your role cannot change invoice status.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (isQuotation) {
       if (newStatus === "approved") {
         await handleUpdateQuotationStatus(invoice, "approved");
@@ -6248,15 +6270,19 @@ export const SalesInvoice = ({
   return (
     <div className="space-y-4">
       <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs
-          value={documentView}
-          onValueChange={(v) => setDocumentView(v as "form" | "list")}
-        >
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="form">{docFormLabel}</TabsTrigger>
-            <TabsTrigger value="list">{docListLabel}</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {canUseDocumentForm ? (
+          <Tabs
+            value={documentView}
+            onValueChange={(v) => setDocumentView(v as "form" | "list")}
+          >
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="form">{docFormLabel}</TabsTrigger>
+              <TabsTrigger value="list">{docListLabel}</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : (
+          <h2 className="text-lg font-semibold text-foreground">{docListLabel}</h2>
+        )}
         <div className="flex items-center gap-2">
           {showBackToInquiry && showDocumentForm && (
             <Button
@@ -6267,18 +6293,20 @@ export const SalesInvoice = ({
               Back to Inquiry
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={refreshPartsData}
-            title="Refresh Stock Data"
-            disabled={partsLoading}
-            className={
-              partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
-            }
-          >
-            <RefreshCw className="w-4 h-4" />
-          </Button>
+          {canUseDocumentForm && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={refreshPartsData}
+              title="Refresh Stock Data"
+              disabled={partsLoading}
+              className={
+                partsLoading ? "animate-spin flex-shrink-0" : "flex-shrink-0"
+              }
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -8979,8 +9007,8 @@ export const SalesInvoice = ({
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
-                            {/* Status actions */}
-                            {isQuotation ? (
+                            {/* Status actions — Sales role can create invoices but cannot change status */}
+                            {canChangeInvoiceStatus && (isQuotation ? (
                               <>
                                 {(inv.status as string) === "pending" && (
                                   <Button
@@ -9043,7 +9071,7 @@ export const SalesInvoice = ({
                                     : "Approve"}
                                 </Button>
                               )
-                            )}
+                            ))}
                             {/* Print */}
                             {!isQuotation && <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -9072,7 +9100,8 @@ export const SalesInvoice = ({
                               </DropdownMenuContent>
                             </DropdownMenu>}
                             {/* Sale return once approved or in any delivery-complete state; reverse undelivered stock is the orange icon */}
-                            {!isQuotation &&
+                            {canUseDocumentForm &&
+                              !isQuotation &&
                               !isTransferOut &&
                               (inv.status === "approved" ||
                                 inv.status === "partially_delivered" ||
@@ -9089,7 +9118,7 @@ export const SalesInvoice = ({
                               </Button>
                             )}
                             {/* Edit (Pending only) */}
-                            {inv.status === "pending" && (
+                            {canUseDocumentForm && inv.status === "pending" && (
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -9101,7 +9130,8 @@ export const SalesInvoice = ({
                               </Button>
                             )}
                             {/* Reverse Stock - for approved or partially delivered party sale (registered) only; not for cash sale */}
-                            {!isQuotation &&
+                            {canUseDocumentForm &&
+                              !isQuotation &&
                               !isTransferOut &&
                               inv.customerType === "registered" &&
                               (inv.status === "approved" ||
@@ -9154,7 +9184,7 @@ export const SalesInvoice = ({
                                 </Button>
                               )}
                             {/* Delete (Pending only) */}
-                            {inv.status === "pending" && (
+                            {canUseDocumentForm && inv.status === "pending" && (
                               <Button
                                 variant="ghost"
                                 size="icon"

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Receipt,
 } from "lucide-react";
+import { getSalesHomePath, isAccountantRole, isSalesRole } from "@/utils/auth";
 
 // Sales sub-modules
 import { SalesInquiry } from "@/components/sales/SalesInquiry";
@@ -36,7 +37,7 @@ interface TabConfig {
   description: string;
 }
 
-const tabs: TabConfig[] = [
+const allTabs: TabConfig[] = [
   { id: "inquiry", label: "Inquiry", icon: MessageSquare, description: "Manage sales inquiries" },
   { id: "quotation", label: "Quotation", icon: FileText, description: "Create & manage quotations" },
   { id: "invoice", label: "Invoice", icon: Receipt, description: "Sales invoices with stock reserve" },
@@ -48,34 +49,76 @@ const tabs: TabConfig[] = [
 const Sales = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
+  const isSalesUser = isSalesRole();
+  const isAccountant = isAccountantRole();
+
+  const tabs = useMemo(() => {
+    if (isAccountant) {
+      return allTabs.filter((t) => t.id === "invoice" || t.id === "returns");
+    }
+    if (isSalesUser) {
+      return allTabs.filter(
+        (t) =>
+          t.id !== "inquiry" &&
+          t.id !== "distributor-aging" &&
+          t.id !== "receivable-reminders",
+      );
+    }
+    return allTabs;
+  }, [isAccountant, isSalesUser]);
+
+  const defaultTab: SalesTab =
+    isSalesUser || isAccountant ? "invoice" : "inquiry";
 
   const activeTab: SalesTab = tabs.some((t) => t.id === tab)
     ? (tab as SalesTab)
-    : "inquiry";
+    : defaultTab;
 
   // Ensure /sales redirects to the default dedicated page.
   useEffect(() => {
-    if (!tab) navigate("/sales/inquiry", { replace: true });
-  }, [tab, navigate]);
+    if (!tab) {
+      navigate(
+        isSalesUser || isAccountant ? getSalesHomePath() : "/sales/inquiry",
+        { replace: true },
+      );
+      return;
+    }
+    if (
+      isSalesUser &&
+      (tab === "inquiry" ||
+        tab === "distributor-aging" ||
+        tab === "receivable-reminders")
+    ) {
+      navigate(getSalesHomePath(), { replace: true });
+      return;
+    }
+    if (
+      isAccountant &&
+      tab !== "invoice" &&
+      tab !== "returns"
+    ) {
+      navigate(getSalesHomePath(), { replace: true });
+    }
+  }, [tab, navigate, isSalesUser, isAccountant]);
 
   const handleTabChange = (tabId: SalesTab) => navigate(`/sales/${tabId}`);
 
   const renderContent = () => {
     switch (activeTab) {
       case "inquiry":
-        return <SalesInquiry />;
+        return isSalesUser || isAccountant ? <SalesInvoice /> : <SalesInquiry />;
       case "quotation":
-        return <SalesQuotation />;
+        return isAccountant ? <SalesInvoice /> : <SalesQuotation />;
       case "invoice":
         return <SalesInvoice />;
       case "returns":
         return <SalesReturns />;
       case "distributor-aging":
-        return <DistributorAging />;
+        return isSalesUser || isAccountant ? <SalesInvoice /> : <DistributorAging />;
       case "receivable-reminders":
-        return <ReceivableReminders />;
+        return isSalesUser || isAccountant ? <SalesInvoice /> : <ReceivableReminders />;
       default:
-        return <SalesInquiry />;
+        return isSalesUser || isAccountant ? <SalesInvoice /> : <SalesInquiry />;
     }
   };
 
@@ -90,21 +133,21 @@ const Sales = () => {
         <div className="bg-card border-b border-border relative z-10">
           <div className="px-4 py-2 overflow-x-auto scrollbar-hide">
             <div className="flex items-center gap-2 min-w-max">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
+              {tabs.map((tabItem) => {
+                const Icon = tabItem.icon;
                 return (
                   <button
-                    key={tab.id}
-                    onClick={() => handleTabChange(tab.id)}
+                    key={tabItem.id}
+                    onClick={() => handleTabChange(tabItem.id)}
                     className={cn(
                       "flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-medium whitespace-nowrap group",
-                      activeTab === tab.id
+                      activeTab === tabItem.id
                         ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     )}
                   >
                     <Icon className="w-4 h-4" />
-                    <span>{tab.label}</span>
+                    <span>{tabItem.label}</span>
                   </button>
                 );
               })}

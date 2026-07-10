@@ -25,7 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getUserRole, isStoreUserRole } from "@/utils/auth";
+import { getUserRole, isAccountantRole, isManagerRole, isSalesRole, isStoreUserRole, ACCOUNTANT_ALLOWED_PATHS, MANAGER_ALLOWED_PATHS, SALES_ALLOWED_PATHS } from "@/utils/auth";
 
 interface SidebarItemProps {
   Icon: LucideIcon;
@@ -95,9 +95,24 @@ export const Sidebar = () => {
     // { Icon: Settings, path: "/settings", label: "Settings" },
   ];
   const isStoreUser = getUserRole() === "store" || isStoreUserRole();
+  const isManager = isManagerRole();
+  const isAccountant = isAccountantRole();
+  const isSales = isSalesRole();
   const visibleMenuItems = isStoreUser
     ? menuItems.filter((item) => item.path === "/inventory" || item.path === "/store")
-    : menuItems;
+    : isManager
+      ? menuItems.filter((item) =>
+          (MANAGER_ALLOWED_PATHS as readonly string[]).includes(item.path),
+        )
+      : isAccountant
+        ? menuItems.filter((item) =>
+            (ACCOUNTANT_ALLOWED_PATHS as readonly string[]).includes(item.path),
+          )
+        : isSales
+          ? menuItems.filter((item) =>
+              (SALES_ALLOWED_PATHS as readonly string[]).includes(item.path),
+            )
+          : menuItems;
 
   return (
     <aside className="w-16 bg-card border-r border-border flex flex-col items-center py-4 h-screen fixed left-0 top-0 z-50">

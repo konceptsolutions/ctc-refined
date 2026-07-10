@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { isAuthenticated, getUserRole, isStoreUserRole } from '@/utils/auth';
+import { isAuthenticated, getUserRole, isStoreUserRole, isManagerRole, isManagerAllowedPath, getManagerHomePath, isAccountantRole, isAccountantAllowedPath, getAccountantHomePath, isSalesRole, isSalesAllowedPath, getSalesHomePath } from '@/utils/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -35,6 +35,40 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
       path.startsWith('/store') || path === '/inventory/current-stock';
     if (!allowedForStoreUser) {
       return <Navigate to="/inventory/current-stock" replace />;
+    }
+  }
+
+  if (isManagerRole() && !isManagerAllowedPath(location.pathname)) {
+    return <Navigate to={getManagerHomePath()} replace />;
+  }
+
+  if (isAccountantRole()) {
+    const path = location.pathname;
+    const allowedAccountantSales =
+      path === '/sales' ||
+      path === '/sales/invoice' ||
+      path.startsWith('/sales/invoice/') ||
+      path === '/sales/returns' ||
+      path.startsWith('/sales/returns/');
+    if (path.startsWith('/sales') && !allowedAccountantSales) {
+      return <Navigate to={getSalesHomePath()} replace />;
+    }
+    if (!isAccountantAllowedPath(path)) {
+      return <Navigate to={getAccountantHomePath()} replace />;
+    }
+  }
+
+  if (isSalesRole()) {
+    const path = location.pathname;
+    const blockedSalesTabs =
+      path === '/sales/inquiry' ||
+      path.startsWith('/sales/inquiry/') ||
+      path === '/sales/distributor-aging' ||
+      path.startsWith('/sales/distributor-aging/') ||
+      path === '/sales/receivable-reminders' ||
+      path.startsWith('/sales/receivable-reminders/');
+    if (!isSalesAllowedPath(path) || blockedSalesTabs) {
+      return <Navigate to={getSalesHomePath()} replace />;
     }
   }
 

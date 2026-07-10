@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
-import { saveAuth, isAuthenticated, getUserRole } from "@/utils/auth";
+import { saveAuth, isAuthenticated, getUserRole, isManagerRole, getManagerHomePath, isManagerAllowedPath, isAccountantRole, getAccountantHomePath, isAccountantAllowedPath, isSalesRole, getSalesHomePath, isSalesAllowedPath } from "@/utils/auth";
 
 const Login = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -43,6 +43,28 @@ const Login = () => {
             // If user is already logged in, redirect to appropriate page
             if (userRole === 'store') {
                 navigate("/store", { replace: true });
+            } else if (isManagerRole()) {
+                const target = from && from !== "/login" && isManagerAllowedPath(from)
+                    ? from
+                    : getManagerHomePath();
+                navigate(target, { replace: true });
+            } else if (isAccountantRole()) {
+                const target = from && from !== "/login" && isAccountantAllowedPath(from)
+                    ? from
+                    : getAccountantHomePath();
+                navigate(target, { replace: true });
+            } else if (isSalesRole()) {
+                const blocked =
+                    from === "/sales/inquiry" ||
+                    from.startsWith("/sales/inquiry/") ||
+                    from === "/sales/distributor-aging" ||
+                    from.startsWith("/sales/distributor-aging/") ||
+                    from === "/sales/receivable-reminders" ||
+                    from.startsWith("/sales/receivable-reminders/");
+                const target = from && from !== "/login" && isSalesAllowedPath(from) && !blocked
+                    ? from
+                    : getSalesHomePath();
+                navigate(target, { replace: true });
             } else {
                 navigate(from === "/login" ? "/" : from, { replace: true });
             }
@@ -78,6 +100,12 @@ const Login = () => {
                 // Redirect
                 if (effectiveRole === 'store') {
                     navigate("/inventory/current-stock", { replace: true });
+                } else if (backendRoleName === "manager") {
+                    navigate(getManagerHomePath(), { replace: true });
+                } else if (backendRoleName === "accountant") {
+                    navigate(getAccountantHomePath(), { replace: true });
+                } else if (backendRoleName === "sales") {
+                    navigate(getSalesHomePath(), { replace: true });
                 } else {
                     const from = (location.state as any)?.from?.pathname || "/";
                     navigate(from === "/login" ? "/" : from, { replace: true });

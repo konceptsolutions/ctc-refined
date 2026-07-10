@@ -61,7 +61,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { Textarea } from "@/components/ui/textarea";
-import { getUserRole } from "@/utils/auth";
+import { getUserRole, isAccountantRole } from "@/utils/auth";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 
@@ -328,6 +328,8 @@ function mapApiSalesReturn(row: any): SalesReturn {
 const RETURN_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 export const SalesReturns = () => {
+  const isAccountant = isAccountantRole();
+  const canMutateReturns = !isAccountant;
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [selectedReturns, setSelectedReturns] = useState<string[]>([]);
   const [loadingReturns, setLoadingReturns] = useState(false);
@@ -1341,17 +1343,19 @@ export const SalesReturns = () => {
                 Return Sale Orders
               </h2>
             </div>
-            <Button
-              size="sm"
-              className="gap-2"
-              onClick={() => {
-                resetDirectReturnForm();
-                setIsDirectReturnOpen(true);
-              }}
-            >
-              <Plus className="w-4 h-4" />
-              Direct Return
-            </Button>
+            {canMutateReturns && (
+              <Button
+                size="sm"
+                className="gap-2"
+                onClick={() => {
+                  resetDirectReturnForm();
+                  setIsDirectReturnOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                Direct Return
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1499,7 +1503,7 @@ export const SalesReturns = () => {
                               <Eye className="w-4 h-4" />
                             </Button>
                           </ActionButtonTooltip>
-                          {returnItem.status === "pending" && (
+                          {canMutateReturns && returnItem.status === "pending" && (
                             <>
                               {returnItem.isDirectReturn ? (
                                 <ActionButtonTooltip
