@@ -238,7 +238,7 @@ const Login = () => {
                                             <Input
                                                 id="admin-email"
                                                 type="email"
-                                                placeholder="admin@koncepts.com"
+                                                placeholder="Enter email"
                                                 value={adminEmail}
                                                 onChange={(e) => setAdminEmail(e.target.value)}
                                                 className="pl-11 h-12 bg-slate-800/40 border-white/10 text-white placeholder:text-slate-500 focus-visible:ring-primary focus-visible:bg-slate-800/60 transition-all rounded-xl"

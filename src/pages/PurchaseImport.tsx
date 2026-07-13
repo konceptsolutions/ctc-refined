@@ -27,6 +27,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printPurchaseImportInquiry } from "@/utils/printPurchaseImportInquiryPdf";
+import { printPurchaseImportQuotation } from "@/utils/printPurchaseImportQuotationPdf";
 import { apiClient } from "@/lib/api";
 import { fetchBranchAccountOptions } from "@/lib/branch-accounts";
 import {
@@ -3402,6 +3403,55 @@ const PurchaseQuotationForm = ({
     [rows, calculations],
   );
 
+  const handlePrintPdf = () => {
+    if (!context) return;
+    const started = printPurchaseImportQuotation({
+      detail: {
+        requestNo: context.requestNo,
+        requestDate: context.requestDate,
+        quotationNo: quotationNo || context.quotationNo,
+        quotationDate,
+        supplierName: context.supplier?.name,
+        currency,
+        conversionRate,
+        status: existingQuotationId ? "saved" : "draft",
+        terms: context.terms,
+      },
+      itemRows: sortedRows.map((row) => {
+        const calc = calculations.find((item) => item.rowId === row.rowId);
+        return {
+          masterPartNo: row.masterPartNo,
+          partNo: row.partNo,
+          description: row.description,
+          brand: row.brand,
+          currentStock: row.currentStock,
+          requestQty: row.demandQuantity,
+          quotationQty: calc?.quotationQuantity ?? row.quotationQuantity,
+          shipDays: row.shipDays,
+          lastFcRate: row.lastFcRate,
+          fcRate: calc?.fcRate ?? row.fcRate,
+          fcAmount: calc?.fcAmount ?? 0,
+          lcRate: calc?.lcRate ?? 0,
+          lcAmount: calc?.lcAmount ?? 0,
+          totalWeight: calc?.totalWeight ?? 0,
+        };
+      }),
+      totals: quotationTotals,
+    });
+    if (!started) {
+      toast({
+        title: "Print blocked",
+        description: "Allow pop-ups for this site and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "Print Started",
+      description: "PDF is being generated...",
+    });
+  };
+
   const handleSaveQuotation = async () => {
     if (!context) return;
 
@@ -3489,13 +3539,19 @@ const PurchaseQuotationForm = ({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
-      <div>
-        <h2 className="text-base font-semibold">Purchase Quotation</h2>
-        <p className="text-sm text-muted-foreground">
-          {existingQuotationId
-            ? "View and update the saved quotation for this inquiry."
-            : "Create quotation for the selected confirmed supplier inquiry."}
-        </p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Purchase Quotation</h2>
+          <p className="text-sm text-muted-foreground">
+            {existingQuotationId
+              ? "View and update the saved quotation for this inquiry."
+              : "Create quotation for the selected confirmed supplier inquiry."}
+          </p>
+        </div>
+        <PrintPdfButton
+          onPrint={handlePrintPdf}
+          disabled={loading || !context || sortedRows.length === 0}
+        />
       </div>
 
       {loading || !context ? (
