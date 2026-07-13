@@ -46844,6 +46844,7 @@ export namespace Prisma {
     invoiceDate: Date | null
     blNo: string | null
     blDate: Date | null
+    forwarder: string | null
     pkgExpPercent: number | null
     invDiscPercent: number | null
     frtExp: number | null
@@ -46882,6 +46883,7 @@ export namespace Prisma {
     invoiceDate: Date | null
     blNo: string | null
     blDate: Date | null
+    forwarder: string | null
     pkgExpPercent: number | null
     invDiscPercent: number | null
     frtExp: number | null
@@ -46920,6 +46922,7 @@ export namespace Prisma {
     invoiceDate: number
     blNo: number
     blDate: number
+    forwarder: number
     pkgExpPercent: number
     invDiscPercent: number
     frtExp: number
@@ -47004,6 +47007,7 @@ export namespace Prisma {
     invoiceDate?: true
     blNo?: true
     blDate?: true
+    forwarder?: true
     pkgExpPercent?: true
     invDiscPercent?: true
     frtExp?: true
@@ -47042,6 +47046,7 @@ export namespace Prisma {
     invoiceDate?: true
     blNo?: true
     blDate?: true
+    forwarder?: true
     pkgExpPercent?: true
     invDiscPercent?: true
     frtExp?: true
@@ -47080,6 +47085,7 @@ export namespace Prisma {
     invoiceDate?: true
     blNo?: true
     blDate?: true
+    forwarder?: true
     pkgExpPercent?: true
     invDiscPercent?: true
     frtExp?: true
@@ -47205,6 +47211,7 @@ export namespace Prisma {
     invoiceDate: Date | null
     blNo: string | null
     blDate: Date | null
+    forwarder: string | null
     pkgExpPercent: number
     invDiscPercent: number
     frtExp: number
@@ -47262,6 +47269,7 @@ export namespace Prisma {
     invoiceDate?: boolean
     blNo?: boolean
     blDate?: boolean
+    forwarder?: boolean
     pkgExpPercent?: boolean
     invDiscPercent?: boolean
     frtExp?: boolean
@@ -47304,6 +47312,7 @@ export namespace Prisma {
     invoiceDate?: boolean
     blNo?: boolean
     blDate?: boolean
+    forwarder?: boolean
     pkgExpPercent?: boolean
     invDiscPercent?: boolean
     frtExp?: boolean
@@ -47344,6 +47353,7 @@ export namespace Prisma {
     invoiceDate?: boolean
     blNo?: boolean
     blDate?: boolean
+    forwarder?: boolean
     pkgExpPercent?: boolean
     invDiscPercent?: boolean
     frtExp?: boolean
@@ -47400,6 +47410,7 @@ export namespace Prisma {
       invoiceDate: Date | null
       blNo: string | null
       blDate: Date | null
+      forwarder: string | null
       pkgExpPercent: number
       invDiscPercent: number
       frtExp: number
@@ -47831,6 +47842,7 @@ export namespace Prisma {
     readonly invoiceDate: FieldRef<"PurchaseOrder", 'DateTime'>
     readonly blNo: FieldRef<"PurchaseOrder", 'String'>
     readonly blDate: FieldRef<"PurchaseOrder", 'DateTime'>
+    readonly forwarder: FieldRef<"PurchaseOrder", 'String'>
     readonly pkgExpPercent: FieldRef<"PurchaseOrder", 'Float'>
     readonly invDiscPercent: FieldRef<"PurchaseOrder", 'Float'>
     readonly frtExp: FieldRef<"PurchaseOrder", 'Float'>
@@ -81761,6 +81773,7 @@ export namespace Prisma {
     invoiceDate: 'invoiceDate',
     blNo: 'blNo',
     blDate: 'blDate',
+    forwarder: 'forwarder',
     pkgExpPercent: 'pkgExpPercent',
     invDiscPercent: 'invDiscPercent',
     frtExp: 'frtExp',
@@ -85805,6 +85818,7 @@ export namespace Prisma {
     invoiceDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     blNo?: StringNullableFilter<"PurchaseOrder"> | string | null
     blDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
+    forwarder?: StringNullableFilter<"PurchaseOrder"> | string | null
     pkgExpPercent?: FloatFilter<"PurchaseOrder"> | number
     invDiscPercent?: FloatFilter<"PurchaseOrder"> | number
     frtExp?: FloatFilter<"PurchaseOrder"> | number
@@ -85846,6 +85860,7 @@ export namespace Prisma {
     invoiceDate?: SortOrderInput | SortOrder
     blNo?: SortOrderInput | SortOrder
     blDate?: SortOrderInput | SortOrder
+    forwarder?: SortOrderInput | SortOrder
     pkgExpPercent?: SortOrder
     invDiscPercent?: SortOrder
     frtExp?: SortOrder
@@ -85890,6 +85905,7 @@ export namespace Prisma {
     invoiceDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     blNo?: StringNullableFilter<"PurchaseOrder"> | string | null
     blDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
+    forwarder?: StringNullableFilter<"PurchaseOrder"> | string | null
     pkgExpPercent?: FloatFilter<"PurchaseOrder"> | number
     invDiscPercent?: FloatFilter<"PurchaseOrder"> | number
     frtExp?: FloatFilter<"PurchaseOrder"> | number
@@ -85931,6 +85947,7 @@ export namespace Prisma {
     invoiceDate?: SortOrderInput | SortOrder
     blNo?: SortOrderInput | SortOrder
     blDate?: SortOrderInput | SortOrder
+    forwarder?: SortOrderInput | SortOrder
     pkgExpPercent?: SortOrder
     invDiscPercent?: SortOrder
     frtExp?: SortOrder
@@ -85977,6 +85994,7 @@ export namespace Prisma {
     invoiceDate?: DateTimeNullableWithAggregatesFilter<"PurchaseOrder"> | Date | string | null
     blNo?: StringNullableWithAggregatesFilter<"PurchaseOrder"> | string | null
     blDate?: DateTimeNullableWithAggregatesFilter<"PurchaseOrder"> | Date | string | null
+    forwarder?: StringNullableWithAggregatesFilter<"PurchaseOrder"> | string | null
     pkgExpPercent?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     invDiscPercent?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     frtExp?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
@@ -92819,6 +92837,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -92860,6 +92879,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -92897,6 +92917,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -92938,6 +92959,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -92977,6 +92999,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -93013,6 +93036,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -93051,6 +93075,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -99095,6 +99120,7 @@ export namespace Prisma {
     invoiceDate?: SortOrder
     blNo?: SortOrder
     blDate?: SortOrder
+    forwarder?: SortOrder
     pkgExpPercent?: SortOrder
     invDiscPercent?: SortOrder
     frtExp?: SortOrder
@@ -99155,6 +99181,7 @@ export namespace Prisma {
     invoiceDate?: SortOrder
     blNo?: SortOrder
     blDate?: SortOrder
+    forwarder?: SortOrder
     pkgExpPercent?: SortOrder
     invDiscPercent?: SortOrder
     frtExp?: SortOrder
@@ -99193,6 +99220,7 @@ export namespace Prisma {
     invoiceDate?: SortOrder
     blNo?: SortOrder
     blDate?: SortOrder
+    forwarder?: SortOrder
     pkgExpPercent?: SortOrder
     invDiscPercent?: SortOrder
     frtExp?: SortOrder
@@ -117241,6 +117269,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -117280,6 +117309,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -117498,6 +117528,7 @@ export namespace Prisma {
     invoiceDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     blNo?: StringNullableFilter<"PurchaseOrder"> | string | null
     blDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
+    forwarder?: StringNullableFilter<"PurchaseOrder"> | string | null
     pkgExpPercent?: FloatFilter<"PurchaseOrder"> | number
     invDiscPercent?: FloatFilter<"PurchaseOrder"> | number
     frtExp?: FloatFilter<"PurchaseOrder"> | number
@@ -118601,6 +118632,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -118641,6 +118673,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -118806,6 +118839,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -118846,6 +118880,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -127670,6 +127705,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -127709,6 +127745,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -135279,6 +135316,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -135375,6 +135413,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -135414,6 +135453,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -135452,6 +135492,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -138496,6 +138537,7 @@ export namespace Prisma {
     invoiceDate?: Date | string | null
     blNo?: string | null
     blDate?: Date | string | null
+    forwarder?: string | null
     pkgExpPercent?: number
     invDiscPercent?: number
     frtExp?: number
@@ -138765,6 +138807,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -138804,6 +138847,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number
@@ -138842,6 +138886,7 @@ export namespace Prisma {
     invoiceDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     blNo?: NullableStringFieldUpdateOperationsInput | string | null
     blDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    forwarder?: NullableStringFieldUpdateOperationsInput | string | null
     pkgExpPercent?: FloatFieldUpdateOperationsInput | number
     invDiscPercent?: FloatFieldUpdateOperationsInput | number
     frtExp?: FloatFieldUpdateOperationsInput | number

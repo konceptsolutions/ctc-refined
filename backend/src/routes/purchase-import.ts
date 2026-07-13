@@ -798,6 +798,9 @@ router.get("/alternate-parts/:partId", async (req: Request, res: Response) => {
 router.get("/part-details/:partId", async (req: Request, res: Response) => {
   try {
     const { partId } = req.params;
+    const includeHistory =
+      String(req.query.includeHistory || "").toLowerCase() === "true" ||
+      String(req.query.includeHistory || "") === "1";
 
     const part = await prisma.part.findUnique({
       where: { id: partId },
@@ -815,84 +818,105 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Part not found" });
     }
 
-    const [movements, dpoItems, poItems] = await Promise.all([
-      prisma.stockMovement.findMany({
-        where: { partId },
-        select: { type: true, quantity: true },
-      }),
-      prisma.directPurchaseOrderItem.findMany({
-        where: { partId },
-        take: 3,
-        orderBy: { createdAt: "desc" },
-        include: {
-          DirectPurchaseOrder: {
-            select: {
-              dpoNumber: true,
-              date: true,
-              Supplier: {
-                select: {
-                  name: true,
-                  companyName: true,
+    // Aggregate stock in DB instead of loading every movement row.
+    const stockRows = await prisma.$queryRaw<Array<{ stock: number | bigint | null }>>`
+      SELECT COALESCE(
+        SUM(
+          CASE
+            WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation'
+            THEN CASE WHEN type = 'in' THEN quantity ELSE -quantity END
+            ELSE 0
+          END
+        ),
+        0
+      ) AS stock
+      FROM "StockMovement"
+      WHERE "partId" = ${partId}
+    `;
+    const currentStock = Number(stockRows?.[0]?.stock ?? 0);
+
+    let lastPurchases: Array<{
+      source: string;
+      documentNumber: string;
+      date: Date;
+      supplierName: string;
+      quantity: number;
+      rate: number;
+      amount: number;
+    }> = [];
+
+    if (includeHistory) {
+      const [dpoItems, poItems] = await Promise.all([
+        prisma.directPurchaseOrderItem.findMany({
+          where: { partId },
+          take: 3,
+          orderBy: { createdAt: "desc" },
+          include: {
+            DirectPurchaseOrder: {
+              select: {
+                dpoNumber: true,
+                date: true,
+                Supplier: {
+                  select: {
+                    name: true,
+                    companyName: true,
+                  },
                 },
               },
             },
           },
-        },
-      }),
-      prisma.purchaseOrderItem.findMany({
-        where: { partId },
-        take: 3,
-        orderBy: { createdAt: "desc" },
-        include: {
-          PurchaseOrder: {
-            select: {
-              poNumber: true,
-              date: true,
-              Supplier: {
-                select: {
-                  name: true,
-                  companyName: true,
+        }),
+        prisma.purchaseOrderItem.findMany({
+          where: { partId },
+          take: 3,
+          orderBy: { createdAt: "desc" },
+          include: {
+            PurchaseOrder: {
+              select: {
+                poNumber: true,
+                date: true,
+                Supplier: {
+                  select: {
+                    name: true,
+                    companyName: true,
+                  },
                 },
               },
             },
           },
-        },
-      }),
-    ]);
+        }),
+      ]);
 
-    const currentStock = movements.reduce((sum, row) => {
-      return sum + (row.type === "in" ? row.quantity : -row.quantity);
-    }, 0);
+      const normalizedDpo = dpoItems.map((row) => ({
+        source: "DPO",
+        documentNumber: row.DirectPurchaseOrder?.dpoNumber || "-",
+        date: row.DirectPurchaseOrder?.date || row.createdAt,
+        supplierName:
+          row.DirectPurchaseOrder?.Supplier?.companyName ||
+          row.DirectPurchaseOrder?.Supplier?.name ||
+          "-",
+        quantity: row.quantity,
+        rate: row.purchasePrice,
+        amount: row.amount,
+      }));
 
-    const normalizedDpo = dpoItems.map((row) => ({
-      source: "DPO",
-      documentNumber: row.DirectPurchaseOrder?.dpoNumber || "-",
-      date: row.DirectPurchaseOrder?.date || row.createdAt,
-      supplierName:
-        row.DirectPurchaseOrder?.Supplier?.companyName ||
-        row.DirectPurchaseOrder?.Supplier?.name ||
-        "-",
-      quantity: row.quantity,
-      rate: row.purchasePrice,
-      amount: row.amount,
-    }));
+      const normalizedPo = poItems.map((row) => ({
+        source: "PO",
+        documentNumber: row.PurchaseOrder?.poNumber || "-",
+        date: row.PurchaseOrder?.date || row.createdAt,
+        supplierName:
+          row.PurchaseOrder?.Supplier?.companyName ||
+          row.PurchaseOrder?.Supplier?.name ||
+          "-",
+        quantity: row.quantity,
+        rate: row.unitCost,
+        amount: row.totalCost,
+      }));
 
-    const normalizedPo = poItems.map((row) => ({
-      source: "PO",
-      documentNumber: row.PurchaseOrder?.poNumber || "-",
-      date: row.PurchaseOrder?.date || row.createdAt,
-      supplierName:
-        row.PurchaseOrder?.Supplier?.companyName ||
-        row.PurchaseOrder?.Supplier?.name ||
-        "-",
-      quantity: row.quantity,
-      rate: row.unitCost,
-      amount: row.totalCost,
-    }));
-
-    const lastPurchases = [...normalizedDpo, ...normalizedPo]
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 3);
+      lastPurchases = [...normalizedDpo, ...normalizedPo]
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 3);
+    }
 
     res.json({
       data: {
@@ -2675,6 +2699,67 @@ function computeReceiveVariance(orderQty: number, receiveQty: number) {
   };
 }
 
+router.get("/parts/expected-arrivals", async (req: Request, res: Response) => {
+  try {
+    const rawPartIds = String(req.query.partIds || "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const partIds = Array.from(new Set(rawPartIds));
+    if (partIds.length === 0) {
+      return res.json({ data: {} });
+    }
+
+    const rows = await prisma.purchaseOrderItem.findMany({
+      where: {
+        partId: { in: partIds },
+        PurchaseOrder: {
+          purchaseQuotationId: { not: null },
+          expectedDate: { not: null },
+          status: { notIn: ["Received", "received"] },
+        },
+      },
+      select: {
+        partId: true,
+        PurchaseOrder: {
+          select: {
+            poNumber: true,
+            expectedDate: true,
+            forwarder: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    const data: Record<
+      string,
+      { estTimeDate: string; forwarder: string | null; poNumber: string }
+    > = {};
+
+    const sorted = [...rows].sort((a, b) => {
+      const aTime = new Date(a.PurchaseOrder?.expectedDate || 0).getTime();
+      const bTime = new Date(b.PurchaseOrder?.expectedDate || 0).getTime();
+      return aTime - bTime;
+    });
+
+    for (const row of sorted) {
+      const partId = String(row.partId || "").trim();
+      const estTimeDate = row.PurchaseOrder?.expectedDate;
+      if (!partId || !estTimeDate || data[partId]) continue;
+      data[partId] = {
+        estTimeDate: estTimeDate.toISOString(),
+        forwarder: (row.PurchaseOrder as any)?.forwarder || null,
+        poNumber: row.PurchaseOrder?.poNumber || "",
+      };
+    }
+
+    res.json({ data });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id || "").trim();
@@ -2878,6 +2963,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         invoiceDate: (order as any).invoiceDate ?? null,
         blNo: (order as any).blNo ?? null,
         blDate: (order as any).blDate ?? null,
+        forwarder: (order as any).forwarder ?? null,
+        estTimeDate: (order as any).expectedDate ?? null,
         totalAmount: order.totalAmount,
         fcTotal:
           Number((order as any).fcTotal || 0) > 0
@@ -2920,6 +3007,10 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
     const blNo = String(req.body?.blNo ?? "").trim() || null;
     const invoiceDate = parseOptionalDate(req.body?.invoiceDate);
     const blDate = parseOptionalDate(req.body?.blDate);
+    const forwarder = String(req.body?.forwarder ?? "").trim() || null;
+    const estTimeDate = parseOptionalDate(
+      req.body?.estTimeDate ?? req.body?.expectedDate,
+    );
     const conversionRate = Number(req.body?.conversionRate);
 
     if (!Number.isFinite(conversionRate) || conversionRate <= 0) {
@@ -2945,12 +3036,6 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
     if (!order.purchaseQuotationId || !order.PurchaseQuotation) {
       return res.status(400).json({
         error: "Only import purchase orders can be received from this screen",
-      });
-    }
-
-    if (order.status === "Received") {
-      return res.status(400).json({
-        error: "Purchase order has already been received in store.",
       });
     }
 
@@ -3047,6 +3132,8 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
           "invoiceDate" = ${invoiceDate},
           "blNo" = ${blNo},
           "blDate" = ${blDate},
+          "forwarder" = ${forwarder},
+          "expectedDate" = ${estTimeDate},
           "pkgExpPercent" = ${expenses.pkgExpPercent},
           "invDiscPercent" = ${expenses.invDiscPercent},
           "frtExp" = ${expenses.frtExp},
@@ -3102,6 +3189,8 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         invoiceDate: (updated as any).invoiceDate ?? null,
         blNo: (updated as any).blNo ?? null,
         blDate: (updated as any).blDate ?? null,
+        forwarder: (updated as any).forwarder ?? null,
+        estTimeDate: (updated as any).expectedDate ?? null,
         expenses: readImportPoExpensesFromOrder(updated),
         items: updated.PurchaseOrderItem.map((item) => ({
           id: item.id,
@@ -3184,6 +3273,8 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
         consignee: po.consignee,
         totalAmount: po.totalAmount,
         notes: po.notes,
+        forwarder: po.forwarder ?? null,
+        estTimeDate: po.expectedDate ?? null,
         supplier: po.Supplier
           ? {
               id: po.Supplier.id,

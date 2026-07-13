@@ -345,6 +345,12 @@ export const SalesInquiry = () => {
   const [loadingStockBalances, setLoadingStockBalances] = useState<
     Record<string, boolean>
   >({});
+  const [partExpectedArrivals, setPartExpectedArrivals] = useState<
+    Record<
+      string,
+      { estTimeDate: string; forwarder: string | null; poNumber: string }
+    >
+  >({});
   const [partImagesByPartId, setPartImagesByPartId] = useState<
     Record<string, string[]>
   >({});
@@ -898,6 +904,52 @@ export const SalesInquiry = () => {
 
     fetchDpoHistory();
   }, [selectedPart, resolveSelectedPartId]);
+
+  const combinedPurchaseHistory = useMemo(() => {
+    const localRows = (dpoHistory || []).map((dpo: any) => {
+      const qty = Number(dpo.item?.quantity ?? dpo.qty ?? 0) || 0;
+      const rate = Number(dpo.item?.purchase_price ?? dpo.rate ?? 0) || 0;
+      const costPrice =
+        Number(dpo.costPriceWithExpenses ?? dpo.item?.purchase_price ?? dpo.rate ?? 0) || 0;
+      return {
+        id: `local-${dpo.id}`,
+        source: "local" as const,
+        poNo: String(dpo.dpo_no || dpo.dpo_number || dpo.dpoNo || "N/A"),
+        date: dpo.date || dpo.request_date || dpo.requestDate || null,
+        supplier: String(
+          dpo.supplier_name || dpo.supplier?.name || dpo.customer || "N/A",
+        ),
+        qty,
+        rate,
+        costPrice,
+      };
+    });
+
+    const importRows = (purchaseOrderHistory || []).map((po: any) => {
+      const orderedQty = Number(po.item?.quantity || 0) || 0;
+      const receivedQty = Number(po.item?.received_qty || 0) || 0;
+      const qty = receivedQty > 0 ? receivedQty : orderedQty;
+      const rate = Number(po.item?.unit_cost || 0) || 0;
+      return {
+        id: `po-${po.id}`,
+        source: "import" as const,
+        poNo: String(po.po_number || po.poNumber || "N/A"),
+        date: po.date || null,
+        supplier: String(po.supplier_name || po.supplier?.name || "N/A"),
+        qty,
+        rate,
+        costPrice: rate,
+      };
+    });
+
+    return [...localRows, ...importRows].sort((a, b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+    });
+  }, [dpoHistory, purchaseOrderHistory]);
+
+  const loadingCombinedPurchaseHistory = loadingDpoHistory || loadingPOHistory;
 
   // Filter parts based on item search
   const filteredParts = useMemo(() => {
@@ -1719,6 +1771,38 @@ export const SalesInquiry = () => {
       setLoadingStockBalances((prev) => ({ ...prev, [partId]: false }));
     }
   }, []);
+
+  useEffect(() => {
+    const partIds = Array.from(
+      new Set(
+        lookupRows
+          .map((row) => String(row.partId || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    if (partIds.length === 0) {
+      setPartExpectedArrivals({});
+      return;
+    }
+
+    let cancelled = false;
+    const loadExpectedArrivals = async () => {
+      try {
+        const response: any = await apiClient.getPurchaseImportExpectedArrivals(partIds);
+        if (cancelled) return;
+        const data =
+          response?.data && typeof response.data === "object" ? response.data : {};
+        setPartExpectedArrivals(data);
+      } catch {
+        if (!cancelled) setPartExpectedArrivals({});
+      }
+    };
+
+    void loadExpectedArrivals();
+    return () => {
+      cancelled = true;
+    };
+  }, [lookupRows]);
 
   // Refresh stock for visible dropdown options (same source as In Stock column).
   useEffect(() => {
@@ -3227,6 +3311,9 @@ export const SalesInquiry = () => {
                     <TableHead className="w-[80px] text-center font-bold text-foreground">
                       Available Stock
                     </TableHead>
+                    <TableHead className="w-[120px] text-center font-bold text-foreground">
+                      New Stock Arrive
+                    </TableHead>
                     <TableHead className="w-[95px] text-center font-bold text-foreground">
                       Cost Price
                     </TableHead>
@@ -3643,6 +3730,43 @@ export const SalesInquiry = () => {
                             )}
                           </TableCell>
                           <TableCell className="text-center align-top">
+                            {(() => {
+                              const arrival = row.partId
+                                ? partExpectedArrivals[row.partId]
+                                : undefined;
+                              if (!row.partId) {
+                                return (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                );
+                              }
+                              if (!arrival?.estTimeDate) {
+                                return (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                );
+                              }
+                              const arriveDate = new Date(arrival.estTimeDate);
+                              const label = Number.isNaN(arriveDate.getTime())
+                                ? "-"
+                                : arriveDate.toLocaleDateString("en-GB");
+                              return (
+                                <span
+                                  className="text-xs font-semibold text-emerald-700 dark:text-emerald-400"
+                                  title={
+                                    arrival.poNumber
+                                      ? `PO ${arrival.poNumber}${
+                                          arrival.forwarder
+                                            ? ` · ${arrival.forwarder}`
+                                            : ""
+                                        }`
+                                      : undefined
+                                  }
+                                >
+                                  {label}
+                                </span>
+                              );
+                            })()}
+                          </TableCell>
+                          <TableCell className="text-center align-top">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
                                 -
@@ -3973,7 +4097,7 @@ export const SalesInquiry = () => {
               </TabsTrigger>
               <TabsTrigger value="last-dpo" className="flex items-center gap-1.5 text-xs">
                 <Truck className="h-3.5 w-3.5" />
-                Last Local PO
+                Last Purchase
               </TabsTrigger>
                 </TabsList>
 
@@ -4046,58 +4170,71 @@ export const SalesInquiry = () => {
               </div>
             </TabsContent>
 
-            {/* Last Direct Purchase Order Tab */}
+            {/* Combined Local PO + Import Purchase Order history */}
             <TabsContent value="last-dpo" className="mt-4">
               <div className="rounded-md border bg-card">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <ListNumberHeader className="text-xs" />
-                      <TableHead className="text-xs">DPO No</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">PO No</TableHead>
                       <TableHead className="text-xs">Date</TableHead>
-                      <TableHead className="text-xs">Customer</TableHead>
+                      <TableHead className="text-xs">Supplier</TableHead>
                       <TableHead className="text-xs">Qty</TableHead>
                       <TableHead className="text-xs">Rate</TableHead>
-                      <TableHead className="text-xs">DPO Cost Price</TableHead>
+                      <TableHead className="text-xs">Cost Price</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {!selectedPart ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm opacity-50">
+                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm opacity-50">
                           Select a part to view purchase history
                         </TableCell>
                       </TableRow>
-                    ) : loadingDpoHistory ? (
+                    ) : loadingCombinedPurchaseHistory ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
+                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
                           <div className="flex items-center justify-center gap-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                            Loading local purchase order history...
+                            Loading purchase history...
                           </div>
                         </TableCell>
                       </TableRow>
-                    ) : dpoHistory.length === 0 ? (
+                    ) : combinedPurchaseHistory.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm italic">
-                          No local purchase order history available for this part
+                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm italic">
+                          No local or import purchase history available for this part
                         </TableCell>
                       </TableRow>
                     ) : (
-                      dpoHistory.map((dpo, index) => (
-                        <TableRow key={dpo.id} className="hover:bg-muted/20">
+                      combinedPurchaseHistory.map((row, index) => (
+                        <TableRow key={row.id} className="hover:bg-muted/20">
                           <ListNumberCell index={index} className="text-xs" />
-                          <TableCell className="text-xs font-medium">{dpo.dpo_no || 'N/A'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {dpo.date ? format(new Date(dpo.date), 'dd MMM yyyy') : 'N/A'}
+                          <TableCell className="text-xs">
+                            <Badge
+                              variant={row.source === "local" ? "secondary" : "outline"}
+                              className="text-[10px] px-1.5 py-0"
+                            >
+                              {row.source === "local" ? "Local" : "Import"}
+                            </Badge>
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{dpo.supplier_name || dpo.customer || 'N/A'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{dpo.item?.quantity || dpo.qty || 0}</TableCell>
+                          <TableCell className="text-xs font-medium">{row.poNo}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            Rs {(dpo.item?.purchase_price || dpo.rate || 0).toFixed(2)}
+                            {row.date ? format(new Date(row.date), "dd MMM yyyy") : "N/A"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {row.supplier}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {row.qty}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            Rs {row.rate.toFixed(2)}
                           </TableCell>
                           <TableCell className="text-xs font-medium">
-                            Rs {(dpo.costPriceWithExpenses || dpo.item?.purchase_price || dpo.rate || 0).toFixed(2)}
+                            Rs {row.costPrice.toFixed(2)}
                           </TableCell>
                         </TableRow>
                       ))

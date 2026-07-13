@@ -1,9 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine } from "lucide-react";
+import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,7 +42,8 @@ type PurchaseImportTab =
   | "quotation"
   | "revise-quotation"
   | "confirm-quotation"
-  | "purchase-order";
+  | "purchase-order"
+  | "purchase-invoice";
 
 interface TabConfig {
   id: PurchaseImportTab;
@@ -153,6 +155,12 @@ const tabs: TabConfig[] = [
     label: "Purchase Order",
     icon: ShoppingCart,
     description: "Purchase orders created from confirmed quotations",
+  },
+  {
+    id: "purchase-invoice",
+    label: "Purchase Invoice",
+    icon: Receipt,
+    description: "Enter purchase invoice details and import expenses",
   },
 ];
 
@@ -279,6 +287,9 @@ type ImportPurchaseOrderRecord = {
   totalAmount: number;
   notes?: string | null;
   itemsCount: number;
+  forwarder?: string | null;
+  estTimeDate?: string | null;
+  expectedDate?: string | null;
   supplier?: {
     id: string;
     code?: string | null;
@@ -1161,32 +1172,25 @@ const filterAlternateOptions = (
   });
 };
 
-const isAlternatePart = (
-  candidate: Pick<PartOption, "id" | "partNo" | "masterPartNo">,
-  reference: Pick<PartOption, "id" | "partNo" | "masterPartNo">,
-): boolean => {
-  if (!candidate.id || !reference.id || candidate.id === reference.id) {
-    return false;
-  }
-  return (
-    filterAlternateOptions([candidate as PartOption], reference, reference.id).length > 0
-  );
-};
-
 const hasInquiryAlternateConflict = (
   items: Array<{ partId: string }>,
   partOptions: PartOption[],
 ): boolean => {
-  const selectedParts = items
-    .map((row) => partOptions.find((part) => part.id === row.partId))
-    .filter((part): part is PartOption => Boolean(part));
+  const partById = new Map(partOptions.map((part) => [part.id, part]));
+  const occupiedKeys = new Set<string>();
 
-  for (let i = 0; i < selectedParts.length; i += 1) {
-    for (let j = i + 1; j < selectedParts.length; j += 1) {
-      if (isAlternatePart(selectedParts[j], selectedParts[i])) {
-        return true;
-      }
+  for (const row of items) {
+    if (!row.partId) continue;
+    const part = partById.get(row.partId);
+    if (!part) continue;
+    const keys = [
+      String(part.partNo || "").trim().toLowerCase(),
+      String(part.masterPartNo || "").trim().toLowerCase(),
+    ].filter(Boolean);
+    if (keys.some((key) => occupiedKeys.has(key))) {
+      return true;
     }
+    keys.forEach((key) => occupiedKeys.add(key));
   }
   return false;
 };
@@ -1332,6 +1336,24 @@ const PurchaseImportRequestForm = ({
     [items, itemSort, itemSortDirection, partOptions],
   );
 
+  const inquiryItemsScrollRef = useRef<HTMLDivElement>(null);
+  const inquiryRowVirtualizer = useVirtualizer({
+    count: sortedItems.length,
+    getScrollElement: () => inquiryItemsScrollRef.current,
+    estimateSize: () => 52,
+    overscan: 12,
+  });
+  const inquiryRowVirtualizerRef = useRef(inquiryRowVirtualizer);
+  inquiryRowVirtualizerRef.current = inquiryRowVirtualizer;
+  const inquiryVirtualItems = inquiryRowVirtualizer.getVirtualItems();
+  const inquiryVirtualPaddingTop =
+    inquiryVirtualItems.length > 0 ? inquiryVirtualItems[0].start : 0;
+  const inquiryVirtualPaddingBottom =
+    inquiryVirtualItems.length > 0
+      ? inquiryRowVirtualizer.getTotalSize() -
+        inquiryVirtualItems[inquiryVirtualItems.length - 1].end
+      : 0;
+
   const loadSuppliers = async () => {
     const suppliersRes = await apiClient.getSuppliers({
       status: "active",
@@ -1442,12 +1464,9 @@ const PurchaseImportRequestForm = ({
               : [];
 
             if (nextItems.length > 0) {
+              // Use saved stock/weight from the request — do not N-fetch part details
+              // (that freezes edit of 100–1000 line inquiries).
               setItems([...nextItems, createEmptyItem()]);
-              nextItems.forEach((row) => {
-                if (row.partId) {
-                  fetchPartDetails(row.id, row.partId);
-                }
-              });
             } else {
               setItems([createEmptyItem()]);
             }
@@ -1476,9 +1495,18 @@ const PurchaseImportRequestForm = ({
     [partOptions],
   );
 
-  const partSelectOptionsByRowId = useMemo(() => {
+  const partById = useMemo(
+    () => new Map(partOptions.map((part) => [part.id, part])),
+    [partOptions],
+  );
+
+  const selectedPartIdsKey = items.map((row) => row.partId).join("|");
+
+  // One shared options list — never rebuild a full catalog copy per row.
+  // Duplicate / alternate conflicts are enforced on select in fetchPartDetails.
+  const partSelectOptions = useMemo(() => {
     const selectedPartIds = new Set(
-      items.map((row) => row.partId).filter(Boolean),
+      selectedPartIdsKey.split("|").filter(Boolean),
     );
     const brandFilteredParts =
       brandFilter === "all"
@@ -1487,26 +1515,12 @@ const PurchaseImportRequestForm = ({
             (part) =>
               part.brand === brandFilter || selectedPartIds.has(part.id),
           );
-
-    return new Map(
-      items.map((row) => {
-        const selectedOnOtherRows = items
-          .filter((otherRow) => otherRow.id !== row.id && otherRow.partId)
-          .map((otherRow) => partOptions.find((part) => part.id === otherRow.partId))
-          .filter((part): part is PartOption => Boolean(part));
-        const rowParts = brandFilteredParts.filter((part) => {
-          if (selectedOnOtherRows.some((selected) => selected.id === part.id)) {
-            return false;
-          }
-          return !selectedOnOtherRows.some((selected) => isAlternatePart(part, selected));
-        });
-        return [
-          row.id,
-          buildSortedPartSelectOptions(rowParts, itemSort, itemSortDirection),
-        ] as const;
-      }),
+    return buildSortedPartSelectOptions(
+      brandFilteredParts,
+      itemSort,
+      itemSortDirection,
     );
-  }, [partOptions, brandFilter, items, itemSort, itemSortDirection]);
+  }, [partOptions, brandFilter, selectedPartIdsKey, itemSort, itemSortDirection]);
 
   const brandSelectOptions = useMemo(
     () => [
@@ -1535,6 +1549,10 @@ const PurchaseImportRequestForm = ({
 
   const scrollToInquiryItemRow = useCallback((rowId: string) => {
     if (!rowId) return;
+    const index = sortedItems.findIndex((row) => row.id === rowId);
+    if (index >= 0) {
+      inquiryRowVirtualizerRef.current.scrollToIndex(index, { align: "center" });
+    }
     requestAnimationFrame(() => {
       const rowEl = itemRowRefs.current[rowId];
       rowEl?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -1545,7 +1563,7 @@ const PurchaseImportRequestForm = ({
         );
       }, 2000);
     });
-  }, []);
+  }, [sortedItems]);
 
   useEffect(() => {
     if (!jumpToItemRowId) return;
@@ -1707,8 +1725,17 @@ const PurchaseImportRequestForm = ({
   const addItemRow = useCallback(() => {
     const newItem = createEmptyItem();
     setItems((prev) => [...prev, newItem]);
-    setOpenItemSelectRowId(newItem.id);
-    window.setTimeout(() => setOpenItemSelectRowId(null), 400);
+    window.requestAnimationFrame(() => {
+      const lastIndex = Math.max(
+        0,
+        inquiryRowVirtualizerRef.current.options.count - 1,
+      );
+      inquiryRowVirtualizerRef.current.scrollToIndex(lastIndex, {
+        align: "end",
+      });
+      setOpenItemSelectRowId(newItem.id);
+      window.setTimeout(() => setOpenItemSelectRowId(null), 400);
+    });
   }, []);
 
   useEffect(() => {
@@ -1767,31 +1794,51 @@ const PurchaseImportRequestForm = ({
       return;
     }
 
-    const candidatePart = partOptions.find((part) => part.id === partId);
-    const alternateConflict = itemsRef.current
-      .filter((row) => row.id !== rowId && row.partId)
-      .map((row) => partOptions.find((part) => part.id === row.partId))
-      .filter((part): part is PartOption => Boolean(part))
-      .some((selected) => candidatePart && isAlternatePart(candidatePart, selected));
-    if (alternateConflict) {
-      toast({
-        title: "Alternate item not allowed",
-        description:
-          "An alternate item with the same Part No or Master Part No is already on this inquiry.",
-        variant: "destructive",
-      });
-      return;
+    const candidatePart = partById.get(partId);
+    const occupiedKeys = new Set<string>();
+    for (const row of itemsRef.current) {
+      if (row.id === rowId || !row.partId) continue;
+      const selected = partById.get(row.partId);
+      if (!selected) continue;
+      const partNo = String(selected.partNo || "").trim().toLowerCase();
+      const master = String(selected.masterPartNo || "").trim().toLowerCase();
+      if (partNo) occupiedKeys.add(partNo);
+      if (master) occupiedKeys.add(master);
+    }
+    if (candidatePart) {
+      const candidateKeys = [
+        String(candidatePart.partNo || "").trim().toLowerCase(),
+        String(candidatePart.masterPartNo || "").trim().toLowerCase(),
+      ].filter(Boolean);
+      if (candidateKeys.some((key) => occupiedKeys.has(key))) {
+        toast({
+          title: "Alternate item not allowed",
+          description:
+            "An alternate item with the same Part No or Master Part No is already on this inquiry.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
-    updateItem(rowId, { partId, loadingDetails: true });
+    const localWeight = Number(candidatePart?.weight || 0);
+    updateItem(rowId, {
+      partId,
+      weight: localWeight,
+      loadingDetails: true,
+    });
     try {
-      const res = await apiClient.getPurchaseImportPartDetails(partId);
+      const res = await apiClient.getPurchaseImportPartDetails(partId, {
+        includeHistory: SHOW_INQUIRY_LAST_PURCHASES,
+      });
       const details = (res as any)?.data;
       updateItem(rowId, {
         partId,
         currentStock: Number(details?.currentStock || 0),
-        weight: Number(details?.part?.weight || 0),
-        lastPurchases: Array.isArray(details?.lastPurchases) ? details.lastPurchases : [],
+        weight: Number(details?.part?.weight ?? localWeight) || 0,
+        lastPurchases: Array.isArray(details?.lastPurchases)
+          ? details.lastPurchases
+          : [],
         loadingDetails: false,
       });
     } catch {
@@ -2300,28 +2347,48 @@ const PurchaseImportRequestForm = ({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border border-border rounded-md">
-            <thead className="bg-muted/40">
+        <div
+          ref={inquiryItemsScrollRef}
+          className="max-h-[70vh] overflow-auto border border-border rounded-md"
+        >
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 sticky top-0 z-10">
               <tr>
-                <th className="text-center p-2 border-b w-12">#</th>
-                <th className="text-left p-2 border-b">Item</th>
-                <th className="text-right p-2 border-b">Current Stock</th>
-                <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB Qty</th>
-                <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI Qty</th>
-                {/* <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other Qty</th> */}
-                <th className="text-right p-2 border-b">Total Demand</th>
-                <th className="text-right p-2 border-b">Weight</th>
-                <th className="text-right p-2 border-b">Total Weight</th>
-                <th className="text-center p-2 border-b w-16">Action</th>
+                <th className="text-center p-2 border-b w-12 bg-muted/40">#</th>
+                <th className="text-left p-2 border-b bg-muted/40">Item</th>
+                <th className="text-right p-2 border-b bg-muted/40">Current Stock</th>
+                <th className={`${INQUIRY_ISB_QTY_HEAD_CLASS} bg-muted/40`}>ISB Qty</th>
+                <th className={`${INQUIRY_KHI_QTY_HEAD_CLASS} bg-muted/40`}>KHI Qty</th>
+                <th className="text-right p-2 border-b bg-muted/40">Total Demand</th>
+                <th className="text-right p-2 border-b bg-muted/40">Weight</th>
+                <th className="text-right p-2 border-b bg-muted/40">Total Weight</th>
+                <th className="text-center p-2 border-b w-16 bg-muted/40">Action</th>
               </tr>
             </thead>
             <tbody>
-              {sortedItems.map((row, index) => (
+              {inquiryVirtualPaddingTop > 0 ? (
+                <tr aria-hidden="true">
+                  <td
+                    colSpan={9}
+                    style={{
+                      height: inquiryVirtualPaddingTop,
+                      padding: 0,
+                      border: 0,
+                    }}
+                  />
+                </tr>
+              ) : null}
+              {inquiryVirtualItems.map((virtualRow) => {
+                const row = sortedItems[virtualRow.index];
+                const index = virtualRow.index;
+                if (!row) return null;
+                return (
                 <Fragment key={row.id}>
                   <tr
+                    data-index={virtualRow.index}
                     ref={(el) => {
                       itemRowRefs.current[row.id] = el;
+                      if (el) inquiryRowVirtualizer.measureElement(el);
                     }}
                     className={cn(
                       "align-top",
@@ -2334,7 +2401,7 @@ const PurchaseImportRequestForm = ({
                     </td>
                     <td className="p-2 border-b min-w-[320px]">
                       <SearchableSelect
-                        options={partSelectOptionsByRowId.get(row.id) || []}
+                        options={partSelectOptions}
                         value={row.partId}
                         onValueChange={(partId) => fetchPartDetails(row.id, partId)}
                         placeholder="Master Part | Part No"
@@ -2419,7 +2486,7 @@ const PurchaseImportRequestForm = ({
                   </tr>
                   {SHOW_INQUIRY_LAST_PURCHASES ? (
                   <tr>
-                    <td colSpan={10} className="px-2 pb-3 border-b">
+                    <td colSpan={9} className="px-2 pb-3 border-b">
                       <div className="rounded-md border border-dashed border-border p-2">
                         <p className="text-xs font-medium mb-2">Last 3 Purchases</p>
                         {row.lastPurchases.length === 0 ? (
@@ -2461,7 +2528,20 @@ const PurchaseImportRequestForm = ({
                   </tr>
                   ) : null}
                 </Fragment>
-              ))}
+                );
+              })}
+              {inquiryVirtualPaddingBottom > 0 ? (
+                <tr aria-hidden="true">
+                  <td
+                    colSpan={9}
+                    style={{
+                      height: inquiryVirtualPaddingBottom,
+                      padding: 0,
+                      border: 0,
+                    }}
+                  />
+                </tr>
+              ) : null}
             </tbody>
             <tfoot>
               <tr className="bg-muted/40 font-semibold border-t">
@@ -3711,7 +3791,9 @@ const PurchaseQuotationForm = ({
                           <div
                             title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
                           >
-                            <div className="font-medium">{row.masterPartNo || "-"}</div>
+                            <div className="font-medium">
+                              {row.masterPartNo || "-"} | {row.partNo || "-"}
+                            </div>
                             <div className="text-xs text-muted-foreground">
                               {row.description || "-"}
                             </div>
@@ -4437,7 +4519,9 @@ const PurchaseQuotationRevisionForm = ({
                         className="p-2 min-w-[280px]"
                         title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
                       >
-                        <div className="font-medium">{row.masterPartNo || "-"}</div>
+                        <div className="font-medium">
+                          {row.masterPartNo || "-"} | {row.partNo || "-"}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {row.description || "-"}
                         </div>
@@ -6138,7 +6222,15 @@ const isKhiConsignee = (consignee?: string | null) =>
 const isReceivedPurchaseOrder = (status?: string | null) =>
   String(status || "").trim().toLowerCase() === "received";
 
-const PurchaseOrderTab = () => {
+const PurchaseOrderTab = ({
+  mode = "purchase-order",
+}: {
+  mode?: "purchase-order" | "purchase-invoice";
+}) => {
+  const isInvoiceMode = mode === "purchase-invoice";
+  const formTitle = isInvoiceMode ? "Purchase Invoice" : "Purchase Import";
+  const formActionLabel = isInvoiceMode ? "Purchase Invoice" : "Purchase Import";
+  const saveLabel = isInvoiceMode ? "Save Purchase Invoice" : "Save Purchase Import";
   const { toast } = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -6159,6 +6251,8 @@ const PurchaseOrderTab = () => {
   const [receiveInvoiceDate, setReceiveInvoiceDate] = useState("");
   const [receiveBlNo, setReceiveBlNo] = useState("");
   const [receiveBlDate, setReceiveBlDate] = useState("");
+  const [receiveForwarder, setReceiveForwarder] = useState("");
+  const [receiveEstTimeDate, setReceiveEstTimeDate] = useState("");
   const [receiveConversionRate, setReceiveConversionRate] = useState("1");
   const [importExpenses, setImportExpenses] = useState<ImportPurchaseOrderExpenses>(
     EMPTY_IMPORT_PO_EXPENSES,
@@ -6202,6 +6296,8 @@ const PurchaseOrderTab = () => {
     setReceiveInvoiceDate("");
     setReceiveBlNo("");
     setReceiveBlDate("");
+    setReceiveForwarder("");
+    setReceiveEstTimeDate("");
     setReceiveConversionRate("1");
     setImportExpenses({ ...EMPTY_IMPORT_PO_EXPENSES });
     setImportExpensePercentText({ pkgExpPercent: "", invDiscPercent: "" });
@@ -6266,6 +6362,8 @@ const PurchaseOrderTab = () => {
     setReceiveInvoiceDate("");
     setReceiveBlNo("");
     setReceiveBlDate("");
+    setReceiveForwarder("");
+    setReceiveEstTimeDate("");
     setReceiveConversionRate("1");
     setImportExpenses({ ...EMPTY_IMPORT_PO_EXPENSES });
     setImportExpensePercentText({ pkgExpPercent: "", invDiscPercent: "" });
@@ -6336,6 +6434,8 @@ const PurchaseOrderTab = () => {
       setReceiveInvoiceDate(toInputDate(orderData.invoiceDate));
       setReceiveBlNo(String(orderData.blNo || ""));
       setReceiveBlDate(toInputDate(orderData.blDate));
+      setReceiveForwarder(String(orderData.forwarder || ""));
+      setReceiveEstTimeDate(toInputDate(orderData.estTimeDate || orderData.expectedDate));
       setReceiveLines(lines);
       const loadedExpenses = parseImportPoExpenses(orderData.expenses);
       setImportExpenses(loadedExpenses);
@@ -6602,6 +6702,8 @@ const PurchaseOrderTab = () => {
         invoiceDate: receiveInvoiceDate || undefined,
         blNo: receiveBlNo,
         blDate: receiveBlDate || undefined,
+        forwarder: receiveForwarder,
+        estTimeDate: receiveEstTimeDate || undefined,
         expenses: {
           ...importExpenses,
           discAmt: importPoCommercialAmounts.invDiscAmt,
@@ -6614,15 +6716,23 @@ const PurchaseOrderTab = () => {
         })),
       });
       toast({
-        title: "Purchase import saved",
-        description: `PO ${receiveOrderLabel} purchase import details saved. Complete stock receipt in Store when goods arrive.`,
+        title: isInvoiceMode ? "Purchase invoice saved" : "Purchase import saved",
+        description: isInvoiceMode
+          ? `PO ${receiveOrderLabel} invoice and expense details saved.`
+          : `PO ${receiveOrderLabel} purchase import details saved. Complete stock receipt in Store when goods arrive.`,
       });
       resetImportPurchaseForm();
       await fetchOrders();
     } catch (error: any) {
       toast({
-        title: "Failed to save purchase import",
-        description: error?.message || "Could not save purchase import details.",
+        title: isInvoiceMode
+          ? "Failed to save purchase invoice"
+          : "Failed to save purchase import",
+        description:
+          error?.message ||
+          (isInvoiceMode
+            ? "Could not save purchase invoice details."
+            : "Could not save purchase import details."),
         variant: "destructive",
       });
     } finally {
@@ -6633,9 +6743,13 @@ const PurchaseOrderTab = () => {
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
       <div>
-        <h2 className="text-base font-semibold">Import Purchase Orders</h2>
+        <h2 className="text-base font-semibold">
+          {isInvoiceMode ? "Purchase Invoice" : "Import Purchase Orders"}
+        </h2>
         <p className="text-sm text-muted-foreground">
-          Orders created automatically when a purchase quotation is confirmed.
+          {isInvoiceMode
+            ? "Select a purchase order to enter invoice details and import expenses."
+            : "Orders created automatically when a purchase quotation is confirmed."}
         </p>
       </div>
 
@@ -6650,6 +6764,8 @@ const PurchaseOrderTab = () => {
               <th className="text-left p-2 border-b">Inquiry No</th>
               <th className="text-left p-2 border-b">Supplier</th>
               <th className="text-left p-2 border-b">Consignee</th>
+              <th className="text-left p-2 border-b">Forwarder</th>
+              <th className="text-left p-2 border-b">Est Time Date</th>
               <th className="text-right p-2 border-b">Items</th>
               <th className="text-right p-2 border-b">Total (LC)</th>
               <th className="text-left p-2 border-b">Status</th>
@@ -6659,13 +6775,13 @@ const PurchaseOrderTab = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={11} className="p-4 text-center text-muted-foreground">
+                <td colSpan={13} className="p-4 text-center text-muted-foreground">
                   Loading purchase orders...
                 </td>
               </tr>
             ) : orders.length === 0 ? (
               <tr>
-                <td colSpan={11} className="p-4 text-center text-muted-foreground">
+                <td colSpan={13} className="p-4 text-center text-muted-foreground">
                   No purchase orders yet. Confirm a quotation to create one.
                 </td>
               </tr>
@@ -6687,6 +6803,14 @@ const PurchaseOrderTab = () => {
                   </td>
                   <td className="p-2">{row.supplier?.name || "-"}</td>
                   <td className="p-2 uppercase">{row.consignee || "-"}</td>
+                  <td className="p-2">{row.forwarder || "-"}</td>
+                  <td className="p-2">
+                    {row.estTimeDate || row.expectedDate
+                      ? new Date(
+                          row.estTimeDate || row.expectedDate || "",
+                        ).toLocaleDateString()
+                      : "-"}
+                  </td>
                   <td className="p-2 text-right">{row.itemsCount}</td>
                   <td className="p-2 text-right">
                     {Number(row.totalAmount || 0).toLocaleString("en-PK", {
@@ -6706,18 +6830,21 @@ const PurchaseOrderTab = () => {
                         <Eye className="w-3.5 h-3.5 mr-1" />
                         View
                       </Button>
-                      {String(row.status || "").toLowerCase() !== "received" ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="default"
-                          onClick={() => openReceiveForm(row)}
-                        >
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="default"
+                        onClick={() => openReceiveForm(row)}
+                      >
+                        {isInvoiceMode ? (
+                          <Receipt className="w-3.5 h-3.5 mr-1" />
+                        ) : (
                           <PackageCheck className="w-3.5 h-3.5 mr-1" />
-                          Purchase Import
-                        </Button>
-                      ) : null}
-                      {isReceivedPurchaseOrder(row.status) &&
+                        )}
+                        {formActionLabel}
+                      </Button>
+                      {!isInvoiceMode &&
+                      isReceivedPurchaseOrder(row.status) &&
                       isKhiConsignee(row.consignee) ? (
                         <Button
                           type="button"
@@ -6822,6 +6949,18 @@ const PurchaseOrderTab = () => {
                     {new Date(viewOrder.blDate || viewOrder.bl_date).toLocaleDateString()}
                   </div>
                 ) : null}
+                <div>
+                  <span className="text-muted-foreground">Forwarder:</span>{" "}
+                  {viewOrder.forwarder || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Est Time Date:</span>{" "}
+                  {viewOrder.estTimeDate || viewOrder.expectedDate
+                    ? new Date(
+                        viewOrder.estTimeDate || viewOrder.expectedDate,
+                      ).toLocaleDateString()
+                    : "-"}
+                </div>
                 {viewOrder.currency ? (
                   <div>
                     <span className="text-muted-foreground">Currency:</span>{" "}
@@ -6956,11 +7095,13 @@ const PurchaseOrderTab = () => {
         <DialogContent className="max-w-[96vw] xl:max-w-7xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Purchase Import — {receiveOrderLabel}
+              {formTitle} — {receiveOrderLabel}
             </DialogTitle>
           </DialogHeader>
           {loadingReceiveForm ? (
-            <p className="text-sm text-muted-foreground">Loading purchase import...</p>
+            <p className="text-sm text-muted-foreground">
+              Loading {formTitle.toLowerCase()}...
+            </p>
           ) : (
             <div className="space-y-4">
               {receiveDetail ? (
@@ -6987,7 +7128,7 @@ const PurchaseOrderTab = () => {
                   </div>
                 </div>
               ) : null}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="receive-invoice-no">Invoice No</Label>
                   <Input
@@ -7025,6 +7166,24 @@ const PurchaseOrderTab = () => {
                   />
                 </div>
                 <div className="space-y-1">
+                  <Label htmlFor="receive-forwarder">Forwarder</Label>
+                  <Input
+                    id="receive-forwarder"
+                    value={receiveForwarder}
+                    onChange={(e) => setReceiveForwarder(e.target.value)}
+                    placeholder="Forwarder name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="receive-est-time-date">Est Time Date</Label>
+                  <Input
+                    id="receive-est-time-date"
+                    type="date"
+                    value={receiveEstTimeDate}
+                    onChange={(e) => setReceiveEstTimeDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
                   <Label htmlFor="receive-conversion-rate">Exchange Rate</Label>
                   <Input
                     id="receive-conversion-rate"
@@ -7037,9 +7196,9 @@ const PurchaseOrderTab = () => {
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                Enter supplier invoice quantities, rates, and expenses for this import purchase
-                order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange
-                rate. Final stock receipt is completed from Store.
+                {isInvoiceMode
+                  ? "Enter supplier invoice quantities, rates, and expenses for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate."
+                  : "Enter supplier invoice quantities and rates for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate. Enter expenses from Purchase Invoice. Final stock receipt is completed from Store."}
                 {receiveDetail?.isRevised ? " Showing revised quotation values." : ""}
               </p>
               <div className="overflow-x-auto rounded-md border">
@@ -7067,8 +7226,12 @@ const PurchaseOrderTab = () => {
                       <th className="text-right p-2">
                         {receiveDetail?.isRevised ? "Revised LC Amount" : "LC Amount"}
                       </th>
-                      <th className="text-right p-2">Unit Exp</th>
-                      <th className="text-right p-2">Exp</th>
+                      {isInvoiceMode ? (
+                        <>
+                          <th className="text-right p-2">Unit Exp</th>
+                          <th className="text-right p-2">Exp</th>
+                        </>
+                      ) : null}
                       <th className="text-right p-2">Weight</th>
                       <th className="text-right p-2">Total Weight</th>
                     </tr>
@@ -7134,22 +7297,26 @@ const PurchaseOrderTab = () => {
                         <td className="p-2 text-right tabular-nums">
                           {lineAmounts.lcAmount.toFixed(2)}
                         </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {importPoTotalExp > 0
-                            ? unitExp.toLocaleString("en-PK", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })
-                            : "-"}
-                        </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {importPoTotalExp > 0
-                            ? distributedExpense.toLocaleString("en-PK", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })
-                            : "-"}
-                        </td>
+                        {isInvoiceMode ? (
+                          <>
+                            <td className="p-2 text-right tabular-nums">
+                              {importPoTotalExp > 0
+                                ? unitExp.toLocaleString("en-PK", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })
+                                : "-"}
+                            </td>
+                            <td className="p-2 text-right tabular-nums">
+                              {importPoTotalExp > 0
+                                ? distributedExpense.toLocaleString("en-PK", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })
+                                : "-"}
+                            </td>
+                          </>
+                        ) : null}
                         <td className="p-2 text-right tabular-nums">
                           {line.weight > 0 ? line.weight.toFixed(4) : "-"}
                         </td>
@@ -7183,15 +7350,19 @@ const PurchaseOrderTab = () => {
                         <td className="p-2 text-right tabular-nums">
                           {receiveTotals.lcAmount.toFixed(2)}
                         </td>
-                        <td className="p-2" />
-                        <td className="p-2 text-right tabular-nums">
-                          {importPoTotalExp > 0
-                            ? receiveExpenseTotal.toLocaleString("en-PK", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })
-                            : "-"}
-                        </td>
+                        {isInvoiceMode ? (
+                          <>
+                            <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {importPoTotalExp > 0
+                                ? receiveExpenseTotal.toLocaleString("en-PK", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })
+                                : "-"}
+                            </td>
+                          </>
+                        ) : null}
                         <td className="p-2" />
                         <td className="p-2 text-right tabular-nums">
                           {receiveTotals.totalWeight.toFixed(4)}
@@ -7201,6 +7372,7 @@ const PurchaseOrderTab = () => {
                   ) : null}
                 </table>
               </div>
+              {isInvoiceMode ? (
               <div className="rounded-md border border-border p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-sm font-semibold">Expenses</h4>
@@ -7314,6 +7486,7 @@ const PurchaseOrderTab = () => {
                   ))}
                 </div>
               </div>
+              ) : null}
             </div>
           )}
           <DialogFooter>
@@ -7330,7 +7503,7 @@ const PurchaseOrderTab = () => {
               disabled={loadingReceiveForm || savingReceive || receiveLines.length === 0}
               onClick={() => void handleSaveReceive()}
             >
-              {savingReceive ? "Saving..." : "Save Purchase Import"}
+              {savingReceive ? "Saving..." : saveLabel}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -7377,7 +7550,9 @@ const PurchaseImport = () => {
       case "confirm-quotation":
         return <PurchaseConfirmQuotationTab />;
       case "purchase-order":
-        return <PurchaseOrderTab />;
+        return <PurchaseOrderTab mode="purchase-order" />;
+      case "purchase-invoice":
+        return <PurchaseOrderTab mode="purchase-invoice" />;
       default:
         return null;
     }

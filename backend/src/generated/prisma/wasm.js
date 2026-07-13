@@ -648,6 +648,7 @@ exports.Prisma.PurchaseOrderScalarFieldEnum = {
   invoiceDate: 'invoiceDate',
   blNo: 'blNo',
   blDate: 'blDate',
+  forwarder: 'forwarder',
   pkgExpPercent: 'pkgExpPercent',
   invDiscPercent: 'invDiscPercent',
   frtExp: 'frtExp',

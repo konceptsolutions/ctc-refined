@@ -676,6 +676,7 @@ model PurchaseOrder {
   invoiceDate           DateTime?
   blNo                  String?
   blDate                DateTime?
+  forwarder             String?
   pkgExpPercent         Float               @default(0)
   invDiscPercent        Float               @default(0)
   frtExp                Float               @default(0)

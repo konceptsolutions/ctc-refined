@@ -30,9 +30,22 @@ interface SearchableSelectProps {
   autoOpen?: boolean;
   /** Called after auto-open has been applied (use to clear parent trigger state). */
   onAutoOpenHandled?: () => void;
+  /**
+   * Max options rendered in the open list. Large catalogs should be searched,
+   * not fully mounted in the DOM.
+   */
+  maxDisplayedOptions?: number;
+  /**
+   * When there is no search text and options exceed this count, require typing
+   * instead of dumping the full catalog into the dropdown.
+   */
+  requireSearchAbove?: number;
 }
 
-export const SearchableSelect = ({
+const DEFAULT_MAX_DISPLAYED_OPTIONS = 80;
+const DEFAULT_REQUIRE_SEARCH_ABOVE = 120;
+
+export const SearchableSelect = React.memo(function SearchableSelect({
   options,
   value,
   onValueChange,
@@ -46,8 +59,10 @@ export const SearchableSelect = ({
   onSearchChange,
   autoOpen = false,
   onAutoOpenHandled,
+  maxDisplayedOptions = DEFAULT_MAX_DISPLAYED_OPTIONS,
+  requireSearchAbove = DEFAULT_REQUIRE_SEARCH_ABOVE,
   ...props
-}: SearchableSelectProps & React.ComponentProps<typeof Input>) => {
+}: SearchableSelectProps & React.ComponentProps<typeof Input>) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [isFocused, setIsFocused] = React.useState(false);
@@ -85,15 +100,29 @@ export const SearchableSelect = ({
   const inputValue = isFocused || isOpen ? searchQuery : displayValue;
 
   const filteredOptions = React.useMemo(() => {
-    if (!searchQuery) return options;
-    const query = searchQuery.toLowerCase();
-    return options.filter(
-      (opt) =>
-        opt.label.toLowerCase().includes(query) ||
-        opt.description?.toLowerCase().includes(query) ||
-        opt.listOnlyDescription?.toLowerCase().includes(query),
-    );
-  }, [options, searchQuery]);
+    const query = searchQuery.trim().toLowerCase();
+    if (!query && options.length > requireSearchAbove) {
+      return [] as SearchableSelectOption[];
+    }
+
+    let matched = options;
+    if (query) {
+      matched = options.filter(
+        (opt) =>
+          opt.label.toLowerCase().includes(query) ||
+          opt.description?.toLowerCase().includes(query) ||
+          opt.listOnlyDescription?.toLowerCase().includes(query),
+      );
+    }
+
+    return matched.slice(0, Math.max(1, maxDisplayedOptions));
+  }, [options, searchQuery, maxDisplayedOptions, requireSearchAbove]);
+
+  const requireSearchHint =
+    !searchQuery.trim() && options.length > requireSearchAbove;
+  const showingCappedResults =
+    Boolean(searchQuery.trim()) &&
+    filteredOptions.length >= maxDisplayedOptions;
 
   React.useEffect(() => {
     highlightIndexRef.current = highlightIndex;
@@ -538,7 +567,9 @@ export const SearchableSelect = ({
 
             {filteredOptions.length === 0 && (!searchQuery || (!allowCustom && !onCreate)) && (
               <div className="px-3 py-2 text-xs text-muted-foreground">
-                No options found
+                {requireSearchHint
+                  ? "Type to search parts..."
+                  : "No options found"}
               </div>
             )}
 
@@ -579,6 +610,11 @@ export const SearchableSelect = ({
                     )}
                   </div>
                 ))}
+                {showingCappedResults ? (
+                  <div className="px-3 py-1.5 text-[11px] text-muted-foreground border-t">
+                    Showing top {filteredOptions.length} matches — refine search for more
+                  </div>
+                ) : null}
                 {!exactMatch && searchQuery && (allowCustom || onCreate) && (
                   <div
                     onMouseDown={(e) => {
@@ -598,4 +634,4 @@ export const SearchableSelect = ({
         )}
     </div>
   );
-};
+});

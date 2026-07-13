@@ -2417,8 +2417,18 @@ class ApiClient {
   }
 
   // Purchase Import API
-  async getPurchaseImportPartDetails(partId: string) {
-    return this.request(`/purchase-import/part-details/${partId}`);
+  async getPurchaseImportPartDetails(
+    partId: string,
+    params?: { includeHistory?: boolean },
+  ) {
+    const query = new URLSearchParams();
+    if (params?.includeHistory) {
+      query.set("includeHistory", "true");
+    }
+    const qs = query.toString();
+    return this.request(
+      `/purchase-import/part-details/${partId}${qs ? `?${qs}` : ""}`,
+    );
   }
 
   async getPurchaseImportAlternateParts(partId: string) {
@@ -2686,6 +2696,19 @@ class ApiClient {
     return this.request(`/purchase-import/purchase-orders/${orderId}`);
   }
 
+  async getPurchaseImportExpectedArrivals(partIds: string[]) {
+    const ids = Array.from(
+      new Set(partIds.map((id) => String(id || "").trim()).filter(Boolean)),
+    );
+    if (ids.length === 0) {
+      return { data: {} };
+    }
+    const query = new URLSearchParams({ partIds: ids.join(",") });
+    return this.request(
+      `/purchase-import/parts/expected-arrivals?${query.toString()}`,
+    );
+  }
+
   async receiveImportPurchaseOrder(
     orderId: string,
     data: {
@@ -2699,6 +2722,8 @@ class ApiClient {
       invoiceDate?: string;
       blNo?: string;
       blDate?: string;
+      forwarder?: string;
+      estTimeDate?: string;
       expenses?: {
         pkgExpPercent?: number;
         invDiscPercent?: number;
@@ -2727,6 +2752,8 @@ class ApiClient {
         invoiceDate: data.invoiceDate || undefined,
         blNo: data.blNo?.trim() || undefined,
         blDate: data.blDate || undefined,
+        forwarder: data.forwarder?.trim() || undefined,
+        estTimeDate: data.estTimeDate || undefined,
         expenses: data.expenses,
         items: data.items.map((item) => ({
           id: item.id,
