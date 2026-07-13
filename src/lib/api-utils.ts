@@ -3,7 +3,7 @@
  */
 export function buildApiUrl(endpoint: string): string {
   const baseUrl = import.meta.env.VITE_API_URL || 
-    (import.meta.env.DEV ? 'http://localhost:5000' : '');
+    (import.meta.env.DEV ? 'http://localhost:5001' : '');
   
   // Remove trailing slash from base URL
   const cleanBaseUrl = baseUrl.replace(/\/$/, '');

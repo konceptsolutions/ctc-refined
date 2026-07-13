@@ -26,7 +26,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import { printPurchaseImportInquiry } from "@/utils/printPurchaseImportInquiryPdf";
 import { apiClient } from "@/lib/api";
 import { fetchBranchAccountOptions } from "@/lib/branch-accounts";
 import {
@@ -496,7 +496,10 @@ function parseImportPoExpenses(raw: unknown): ImportPurchaseOrderExpenses {
   };
 }
 
-function computeImportReceiveVariance(orderQty: number, receiveQty: number) {
+function computeImportReceiveVariance(
+  orderQty: number | string,
+  receiveQty: number | string,
+) {
   const normalizedReceive = Math.max(0, Math.floor(Number(receiveQty) || 0));
   const normalizedOrder = Math.max(0, Math.floor(Number(orderQty) || 0));
   return {
@@ -1091,169 +1094,6 @@ const sortInquiryItemRows = <T extends { partId: string }>(
   return [...sortedWithPart, ...withoutPart];
 };
 
-const escapeHtml = (value: unknown) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-type InquiryViewSupplierRow = {
-  name: string;
-  country: string;
-  area: string;
-  type: string;
-  currencyName: string;
-};
-
-type InquiryViewItemRow = {
-  id?: string;
-  partId: string;
-  masterPartNo: string;
-  partNo: string;
-  description: string;
-  brand: string;
-  khiQuantity: number;
-  isbQuantity: number;
-  otherQuantity: number;
-  totalDemand: number;
-  weight: number;
-  totalWeight: number;
-  currentStock?: number;
-};
-
-const printPurchaseImportInquiry = ({
-  detail,
-  supplierRows,
-  itemRows,
-  totals,
-}: {
-  detail: PurchaseImportRequestEditPayload;
-  supplierRows: InquiryViewSupplierRow[];
-  itemRows: InquiryViewItemRow[];
-  totals: { qty: number; weight: number };
-}) => {
-  const supplierTableRows =
-    supplierRows.length === 0
-      ? `<tr><td colspan="4" style="text-align:center;color:#666;">No suppliers</td></tr>`
-      : supplierRows
-          .map(
-            (supplier) => `
-        <tr>
-          <td>${escapeHtml(supplier.name)}</td>
-          <td>${escapeHtml(supplier.country)}</td>
-          <td>${escapeHtml(supplier.area)}</td>
-          <td>${escapeHtml(supplier.currencyName)}</td>
-        </tr>`,
-          )
-          .join("");
-
-  const itemTableRows =
-    itemRows.length === 0
-      ? `<tr><td colspan="9" style="text-align:center;color:#666;">No items</td></tr>`
-      : itemRows
-          .map(
-            (item, index) => `
-        <tr>
-          <td>${index + 1}</td>
-          <td>
-            <strong>${escapeHtml(item.masterPartNo)} | ${escapeHtml(item.partNo)}</strong><br/>
-            <span style="color:#666;font-size:11px;">${escapeHtml(item.description)}</span>
-          </td>
-          <td>${escapeHtml(item.brand)}</td>
-          <td style="text-align:right;">${Number(item.currentStock || 0)}</td>
-          <td style="text-align:right;">${item.isbQuantity}</td>
-          <td style="text-align:right;">${item.khiQuantity}</td>
-          <td style="text-align:right;">${item.otherQuantity}</td>
-          <td style="text-align:right;"><strong>${item.totalDemand}</strong></td>
-          <td style="text-align:right;">${item.weight.toFixed(2)}</td>
-          <td style="text-align:right;">${item.totalWeight.toFixed(2)}</td>
-        </tr>`,
-          )
-          .join("");
-
-  const printContent = `<!DOCTYPE html>
-<html>
-<head>
-  <title>Import Inquiry - ${escapeHtml(detail.requestNo || detail.id)}</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; color: #111; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
-    .subtitle { color: #666; font-size: 12px; margin-bottom: 20px; }
-    .header-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-    .header-card { border: 1px solid #ddd; border-radius: 6px; padding: 10px; }
-    .header-card label { display: block; color: #666; font-size: 11px; margin-bottom: 4px; }
-    .header-card span { font-weight: 600; font-size: 13px; }
-    .section-title { font-size: 14px; font-weight: 700; margin: 18px 0 8px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    th { background: #1664da; color: #fff; padding: 8px; text-align: left; font-size: 11px; }
-    td { border: 1px solid #ddd; padding: 7px; font-size: 11px; vertical-align: top; }
-    tr:nth-child(even) { background: #f9f9f9; }
-    tfoot td { font-weight: 700; background: #f3f4f6; }
-    .notes { border: 1px solid #ddd; border-radius: 6px; padding: 10px; margin-bottom: 16px; font-size: 12px; }
-    .footer { margin-top: 24px; font-size: 10px; color: #666; }
-    @media print { body { padding: 0; } }
-  </style>
-</head>
-<body>
-  <h1>Purchase Import Inquiry</h1>
-  <p class="subtitle">Printed on ${escapeHtml(new Date().toLocaleString())}</p>
-  <div class="header-grid">
-    <div class="header-card"><label>Inquiry No</label><span>${escapeHtml(detail.requestNo || "-")}</span></div>
-    <div class="header-card"><label>Inquiry Date</label><span>${escapeHtml(toInputDate(detail.requestDate) || "-")}</span></div>
-    <div class="header-card"><label>Status</label><span>${escapeHtml(detail.status || "pending")}</span></div>
-    <div class="header-card"><label>Part Reference</label><span>${escapeHtml(detail.partReference || "-")}</span></div>
-  </div>
-  ${
-    detail.notes
-      ? `<div class="notes"><strong>Notes:</strong> ${escapeHtml(detail.notes)}</div>`
-      : ""
-  }
-  <div class="section-title">Suppliers</div>
-  <table>
-    <thead>
-      <tr>
-        <th>Supplier</th>
-        <th>Country</th>
-        <th>Area</th>
-        <th>Currency</th>
-      </tr>
-    </thead>
-    <tbody>${supplierTableRows}</tbody>
-  </table>
-  <div class="section-title">Items</div>
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Item</th>
-        <th>Brand</th>
-        <th style="text-align:right;">Stock</th>
-        <th style="text-align:right;">ISB</th>
-        <th style="text-align:right;">KHI</th>
-        <th style="text-align:right;">Other</th>
-        <th style="text-align:right;">Total Qty</th>
-        <th style="text-align:right;">Weight</th>
-        <th style="text-align:right;">Total Weight</th>
-      </tr>
-    </thead>
-    <tbody>${itemTableRows}</tbody>
-    <tfoot>
-      <tr>
-        <td colspan="7" style="text-align:right;">Totals</td>
-        <td style="text-align:right;">${totals.qty}</td>
-        <td></td>
-        <td style="text-align:right;">${totals.weight.toFixed(2)}</td>
-      </tr>
-    </tfoot>
-  </table>
-  <div class="footer">Computer-generated document.</div>
-</body>
-</html>`;
-
-  return openPrintHtml(printContent, { paperSize: "A4" });
-};
-
 const buildQuotationPartFieldsFromSelection = (
   alternate: PartOption,
   detailsData: { part?: Record<string, unknown>; currentStock?: number } | null | undefined,
@@ -1412,7 +1252,11 @@ const fetchAlternateParts = async (
       .map((row) => mapApiPartToOption(row))
       .filter((part) => part.id && part.id !== id);
 
-    const filtered = filterAlternateOptions(mapped, resolvedCurrent || {}, id);
+    const filtered = filterAlternateOptions(
+      mapped,
+      resolvedCurrent ?? { partNo: "", masterPartNo: "" },
+      id,
+    );
     if (filtered.length > 0) {
       return filtered;
     }
@@ -1420,7 +1264,10 @@ const fetchAlternateParts = async (
     // Fall back to parts list API (e.g. when alternate-parts route is unavailable).
   }
 
-  return fetchAlternatePartsFromPartsApi(id, resolvedCurrent || {});
+  return fetchAlternatePartsFromPartsApi(
+    id,
+    resolvedCurrent ?? { partNo: "", masterPartNo: "" },
+  );
 };
 
 const PurchaseImportRequestForm = ({
@@ -2461,7 +2308,7 @@ const PurchaseImportRequestForm = ({
                 <th className="text-right p-2 border-b">Current Stock</th>
                 <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB Qty</th>
                 <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI Qty</th>
-                <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other Qty</th>
+                {/* <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other Qty</th> */}
                 <th className="text-right p-2 border-b">Total Demand</th>
                 <th className="text-right p-2 border-b">Weight</th>
                 <th className="text-right p-2 border-b">Total Weight</th>
@@ -2524,7 +2371,7 @@ const PurchaseImportRequestForm = ({
                         }
                       />
                     </td>
-                    <td className="p-2 border-b">
+                    {/* <td className="p-2 border-b">
                       <Input
                         type="number"
                         min={0}
@@ -2536,7 +2383,7 @@ const PurchaseImportRequestForm = ({
                           })
                         }
                       />
-                    </td>
+                    </td> */}
                     <td className="p-2 border-b text-right font-medium tabular-nums">
                       {getInquiryRowDemandQuantity(row)}
                     </td>
@@ -3004,7 +2851,7 @@ const PurchaseImportRequestView = ({
                 <th className="text-left p-2 border-b">Supplier</th>
                 <th className="text-left p-2 border-b">Country</th>
                 <th className="text-left p-2 border-b">Area</th>
-                <th className="text-left p-2 border-b">Currency</th>
+                {/* <th className="text-left p-2 border-b">Currency</th> */}
               </tr>
             </thead>
             <tbody>
@@ -3023,7 +2870,7 @@ const PurchaseImportRequestView = ({
                     <td className="p-2">{supplier.name}</td>
                     <td className="p-2">{supplier.country}</td>
                     <td className="p-2">{supplier.area}</td>
-                    <td className="p-2 uppercase">{supplier.currencyName}</td>
+                    {/* <td className="p-2 uppercase">{supplier.currencyName}</td> */}
                   </tr>
                 ))
               )}
@@ -3073,7 +2920,7 @@ const PurchaseImportRequestView = ({
                 <th className="text-right p-2 border-b">Stock</th>
                 <th className="text-right p-2 border-b">ISB</th>
                 <th className="text-right p-2 border-b">KHI</th>
-                <th className="text-right p-2 border-b">Other</th>
+                {/* <th className="text-right p-2 border-b">Other</th> */}
                 <th className="text-right p-2 border-b">Total Qty</th>
                 <th className="text-right p-2 border-b">Weight</th>
                 <th className="text-right p-2 border-b">Total Weight</th>
@@ -3115,7 +2962,7 @@ const PurchaseImportRequestView = ({
                         {item.khiQuantity}
                       </span>
                     </td>
-                    <td className="p-2 text-right">{item.otherQuantity}</td>
+                    {/* <td className="p-2 text-right">{item.otherQuantity}</td> */}
                     <td className="p-2 text-right font-medium">{item.totalDemand}</td>
                     <td className="p-2 text-right">{item.weight.toFixed(2)}</td>
                     <td className="p-2 text-right">{item.totalWeight.toFixed(2)}</td>
