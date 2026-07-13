@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printPurchaseImportInquiry } from "@/utils/printPurchaseImportInquiryPdf";
 import { printPurchaseImportQuotation } from "@/utils/printPurchaseImportQuotationPdf";
+import { printPurchaseImportOrder } from "@/utils/printPurchaseImportOrderPdf";
 import { apiClient } from "@/lib/api";
 import { fetchBranchAccountOptions } from "@/lib/branch-accounts";
 import {
@@ -4387,13 +4388,82 @@ const PurchaseQuotationRevisionForm = ({
     }
   };
 
+  const handlePrintPdf = () => {
+    if (!detail) return;
+    const started = printPurchaseImportQuotation({
+      detail: {
+        requestNo: detail.request?.requestNo,
+        requestDate: detail.request?.requestDate,
+        quotationNo: detail.quotationNo,
+        quotationDate,
+        revisedQuotationDate,
+        supplierName: detail.supplier?.name || detail.supplier?.code || null,
+        currency,
+        conversionRate,
+        status: "revise",
+        terms: detail.terms,
+      },
+      showRevisedFields: true,
+      itemRows: sortedRows.map((row) => {
+        const calc = calculations.find((item) => item.rowId === row.rowId);
+        return {
+          masterPartNo: row.masterPartNo,
+          partNo: row.partNo,
+          description: row.description,
+          brand: row.brand,
+          currentStock: row.currentStock,
+          requestQty: row.demandQuantity,
+          quotationQty: calc?.quotationQuantity ?? row.quotationQuantity,
+          shipDays: row.shipDays,
+          lastFcRate: row.lastFcRate,
+          fcRate: Number(calc?.fcRate || row.fcRate || 0),
+          fcAmount: Number(calc?.fcAmount || 0),
+          lcRate: Number(calc?.lcRate || 0),
+          lcAmount: Number(calc?.lcAmount || 0),
+          revisedFcRate: Number(calc?.revisedFcRate || row.revisedFcRate || 0),
+          revisedFcAmount: Number(calc?.revisedFcAmount || 0),
+          revisedLcRate: Number(calc?.revisedLcRate || 0),
+          revisedLcAmount: Number(calc?.revisedLcAmount || 0),
+          totalWeight: calc?.totalWeight ?? 0,
+        };
+      }),
+      totals: {
+        requestQty: quotationTotals.requestQty,
+        quotationQty: quotationTotals.quotationQty,
+        fcAmount: quotationTotals.fcAmount,
+        lcAmount: quotationTotals.lcAmount,
+        revisedFcAmount: quotationTotals.revisedFcAmount,
+        revisedLcAmount: quotationTotals.revisedLcAmount,
+        totalWeight: quotationTotals.totalWeight,
+      },
+    });
+    if (!started) {
+      toast({
+        title: "Print blocked",
+        description: "Allow pop-ups for this site and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "Print Started",
+      description: "PDF is being generated...",
+    });
+  };
+
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
-      <div>
-        <h2 className="text-base font-semibold">Revise Purchase Quotation</h2>
-        <p className="text-sm text-muted-foreground">
-          Update quotation with revised FC/LC rates and revised quotation date.
-        </p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Revise Purchase Quotation</h2>
+          <p className="text-sm text-muted-foreground">
+            Update quotation with revised FC/LC rates and revised quotation date.
+          </p>
+        </div>
+        <PrintPdfButton
+          onPrint={handlePrintPdf}
+          disabled={loading || !detail || sortedRows.length === 0}
+        />
       </div>
 
       {loading || !detail ? (
@@ -4748,6 +4818,7 @@ const PurchaseInquiryListPanel = ({
   const [filterSupplierId, setFilterSupplierId] = useState("");
   const [filterInquiryNo, setFilterInquiryNo] = useState("");
   const [filterPartReference, setFilterPartReference] = useState("");
+  const [printingRequestId, setPrintingRequestId] = useState<string | null>(null);
   const [supplierFilterOptions, setSupplierFilterOptions] = useState<
     Array<{ value: string; label: string }>
   >([]);
@@ -4875,6 +4946,101 @@ const PurchaseInquiryListPanel = ({
       });
     } finally {
       setConfirmingRequestId(null);
+    }
+  };
+
+  const handlePrintQuotationPdf = async (requestId: string) => {
+    setPrintingRequestId(requestId);
+    try {
+      const res = await apiClient.getPurchaseQuotationContext(requestId);
+      const data = (res as any)?.data as PurchaseQuotationContextPayload | undefined;
+      if (!data) {
+        throw new Error("Quotation data is unavailable.");
+      }
+
+      const conversionRate = Number(data.conversionRate || 1);
+      const items = Array.isArray(data.items) ? data.items : [];
+      const itemRows = items.map((item) => {
+        const quotationQty = Number(
+          item.quotationQuantity ?? item.demandQuantity ?? 0,
+        );
+        const fcRate = Number(item.fcRate || 0);
+        const lcRate = fcRate * conversionRate;
+        return {
+          masterPartNo: item.masterPartNo,
+          partNo: item.partNo,
+          description: item.description,
+          brand: item.brand,
+          currentStock: item.currentStock,
+          requestQty: Number(item.demandQuantity || 0),
+          quotationQty,
+          shipDays: Number(item.shipDays || 0),
+          lastFcRate: Number(item.lastFcRate || 0),
+          fcRate,
+          fcAmount: quotationQty * fcRate,
+          lcRate,
+          lcAmount: quotationQty * lcRate,
+          totalWeight: quotationQty * Number(item.weight || 0),
+        };
+      });
+
+      const totals = itemRows.reduce(
+        (acc, row) => ({
+          requestQty: acc.requestQty + Number(row.requestQty || 0),
+          quotationQty: acc.quotationQty + Number(row.quotationQty || 0),
+          fcAmount: acc.fcAmount + Number(row.fcAmount || 0),
+          lcAmount: acc.lcAmount + Number(row.lcAmount || 0),
+          totalWeight: acc.totalWeight + Number(row.totalWeight || 0),
+        }),
+        {
+          requestQty: 0,
+          quotationQty: 0,
+          fcAmount: 0,
+          lcAmount: 0,
+          totalWeight: 0,
+        },
+      );
+
+      const started = printPurchaseImportQuotation({
+        detail: {
+          requestNo: data.requestNo,
+          requestDate: data.requestDate,
+          quotationNo: data.quotationNo,
+          quotationDate: data.quotationDate,
+          supplierName: data.supplier?.name,
+          currency: data.currency || data.defaultCurrency || data.supplier?.currency,
+          conversionRate,
+          status: data.existingQuotationId ? "saved" : "draft",
+          terms: data.terms,
+        },
+        itemRows,
+        totals,
+      });
+
+      if (!started) {
+        toast({
+          title: "Print blocked",
+          description: "Allow pop-ups for this site and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Print Started",
+        description: "PDF is being generated...",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to print quotation",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not load quotation data for printing.",
+        variant: "destructive",
+      });
+    } finally {
+      setPrintingRequestId(null);
     }
   };
 
@@ -5102,6 +5268,21 @@ const PurchaseInquiryListPanel = ({
                               <Eye className="w-3.5 h-3.5 mr-1" />
                               Inquiry
                             </Button>
+                            <PrintPdfButton
+                              size="sm"
+                              disabled={
+                                !isConfirmed || printingRequestId === row.id
+                              }
+                              label={
+                                printingRequestId === row.id
+                                  ? "Printing..."
+                                  : "Print PDF"
+                              }
+                              onPrint={() => {
+                                if (!isConfirmed || printingRequestId) return;
+                                void handlePrintQuotationPdf(row.id);
+                              }}
+                            />
                           </>
                         )}
                       </div>
@@ -5156,10 +5337,11 @@ const PurchaseQuotationListPanel = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [totalRecords, setTotalRecords] = useState(0);
+  const [printingQuotationId, setPrintingQuotationId] = useState<string | null>(null);
 
   const isConfirmedView = view === "confirmed";
   const openListColSpan = 12;
-  const confirmedListColSpan = 10;
+  const confirmedListColSpan = 11;
   const CONSIGNEE_ORDER = ["ISB", "KHI", "Other"] as const;
 
   const fetchQuotations = useCallback(async () => {
@@ -5192,6 +5374,139 @@ const PurchaseQuotationListPanel = ({
   useEffect(() => {
     void fetchQuotations();
   }, [fetchQuotations]);
+
+  const handlePrintQuotationById = async (
+    quotationId: string,
+    extras?: {
+      poNumber?: string | null;
+      consignee?: string | null;
+    },
+  ) => {
+    setPrintingQuotationId(quotationId);
+    try {
+      const res = await apiClient.getPurchaseQuotationById(quotationId);
+      const data = (res as any)?.data as PurchaseQuotationDetailPayload | undefined;
+      if (!data) {
+        throw new Error("Quotation detail is unavailable.");
+      }
+
+      const revised = isQuotationRevised(data);
+      const statusLower = String(data.status || "")
+        .trim()
+        .toLowerCase();
+      const items = Array.isArray(data.items) ? data.items : [];
+      const conversionRate = Number(data.conversionRate || 1);
+      const itemRows = items.map((item) => {
+        const quotationQty = Number(item.quotationQuantity || 0);
+        const fcRate = Number(item.fcRate || 0);
+        const lcRate = Number(item.lcRate || fcRate * conversionRate);
+        const fcAmount = Number(item.fcAmount || quotationQty * fcRate);
+        const lcAmount = Number(item.lcAmount || quotationQty * lcRate);
+        const revisedFcRate = Number(item.revisedFcRate || 0);
+        const revisedLcRate = Number(
+          item.revisedLcRate || revisedFcRate * conversionRate,
+        );
+        const revisedFcAmount = Number(
+          item.revisedFcAmount || quotationQty * revisedFcRate,
+        );
+        const revisedLcAmount = Number(
+          item.revisedLcAmount || quotationQty * revisedLcRate,
+        );
+        return {
+          masterPartNo: item.masterPartNo,
+          partNo: item.partNo,
+          description: item.description,
+          brand: item.brand,
+          currentStock: item.currentStock,
+          requestQty: Number(item.demandQuantity || 0),
+          quotationQty,
+          shipDays: Number(item.shipDays || 0),
+          lastFcRate: Number(item.lastFcRate || 0),
+          fcRate,
+          fcAmount,
+          lcRate,
+          lcAmount,
+          revisedFcRate,
+          revisedFcAmount,
+          revisedLcRate,
+          revisedLcAmount,
+          totalWeight: Number(
+            item.totalWeight || quotationQty * Number(item.weight || 0),
+          ),
+        };
+      });
+
+      const totals = itemRows.reduce(
+        (acc, row) => ({
+          requestQty: acc.requestQty + Number(row.requestQty || 0),
+          quotationQty: acc.quotationQty + Number(row.quotationQty || 0),
+          fcAmount: acc.fcAmount + Number(row.fcAmount || 0),
+          lcAmount: acc.lcAmount + Number(row.lcAmount || 0),
+          revisedFcAmount: acc.revisedFcAmount + Number(row.revisedFcAmount || 0),
+          revisedLcAmount: acc.revisedLcAmount + Number(row.revisedLcAmount || 0),
+          totalWeight: acc.totalWeight + Number(row.totalWeight || 0),
+        }),
+        {
+          requestQty: 0,
+          quotationQty: 0,
+          fcAmount: 0,
+          lcAmount: 0,
+          revisedFcAmount: 0,
+          revisedLcAmount: 0,
+          totalWeight: 0,
+        },
+      );
+
+      const started = printPurchaseImportQuotation({
+        detail: {
+          requestNo: data.request?.requestNo,
+          requestDate: data.request?.requestDate,
+          quotationNo: data.quotationNo,
+          quotationDate: data.quotationDate,
+          revisedQuotationDate: data.revisedQuotationDate,
+          confirmationDate: data.confirmationDate,
+          supplierName:
+            data.supplier?.name ||
+            data.supplier?.code ||
+            null,
+          currency: data.currency,
+          conversionRate: data.conversionRate,
+          status: data.status,
+          terms: data.terms,
+          poNumber: extras?.poNumber || null,
+          consignee: extras?.consignee || data.request?.consignee || null,
+        },
+        showRevisedFields: revised,
+        itemRows,
+        totals,
+      });
+
+      if (!started) {
+        toast({
+          title: "Print blocked",
+          description: "Allow pop-ups for this site and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Print Started",
+        description: "PDF is being generated...",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to print quotation",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not load quotation data for printing.",
+        variant: "destructive",
+      });
+    } finally {
+      setPrintingQuotationId(null);
+    }
+  };
 
   const displayRows = useMemo(() => {
     type ConfirmedListRow = {
@@ -5285,9 +5600,7 @@ const PurchaseQuotationListPanel = ({
               {isConfirmedView && (
                 <th className="text-left p-2 border-b">Consignee</th>
               )}
-              {action !== "none" && (
-                <th className="text-center p-2 border-b">Action</th>
-              )}
+              <th className="text-center p-2 border-b">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -5295,11 +5608,7 @@ const PurchaseQuotationListPanel = ({
               <tr>
                 <td
                   colSpan={
-                    isConfirmedView
-                      ? confirmedListColSpan
-                      : action !== "none"
-                        ? openListColSpan
-                        : openListColSpan - 1
+                    isConfirmedView ? confirmedListColSpan : openListColSpan
                   }
                   className="p-4 text-center text-muted-foreground"
                 >
@@ -5310,11 +5619,7 @@ const PurchaseQuotationListPanel = ({
               <tr>
                 <td
                   colSpan={
-                    isConfirmedView
-                      ? confirmedListColSpan
-                      : action !== "none"
-                        ? openListColSpan
-                        : openListColSpan - 1
+                    isConfirmedView ? confirmedListColSpan : openListColSpan
                   }
                   className="p-4 text-center text-muted-foreground"
                 >
@@ -5401,35 +5706,54 @@ const PurchaseQuotationListPanel = ({
                     {isConfirmedView && (
                       <td className="p-2 font-medium">{consigneeLabel}</td>
                     )}
-                    {action !== "none" && (
-                      <td className="p-2 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {action === "confirm" ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => onConfirm?.(row.id)}
-                              disabled={isConfirmed}
-                            >
-                              <Check className="w-3.5 h-3.5 mr-1" />
-                              {isConfirmed ? "Confirmed" : "Confirm"}
-                            </Button>
-                          ) : null}
-                          {action === "revise" ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => onRevise?.(row.id)}
-                              disabled={isConfirmed}
-                            >
-                              {isRevised ? "Revise Again" : "Revise"}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </td>
-                    )}
+                    <td className="p-2 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        {action === "confirm" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onConfirm?.(row.id)}
+                            disabled={isConfirmed}
+                          >
+                            <Check className="w-3.5 h-3.5 mr-1" />
+                            {isConfirmed ? "Confirmed" : "Confirm"}
+                          </Button>
+                        ) : null}
+                        {action === "revise" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onRevise?.(row.id)}
+                            disabled={isConfirmed}
+                          >
+                            {isRevised ? "Revise Again" : "Revise"}
+                          </Button>
+                        ) : null}
+                        <PrintPdfButton
+                          size="sm"
+                          disabled={printingQuotationId === row.id}
+                          label={
+                            printingQuotationId === row.id
+                              ? "Printing..."
+                              : "Print PDF"
+                          }
+                          onPrint={() => {
+                            if (printingQuotationId) return;
+                            void handlePrintQuotationById(row.id, {
+                              poNumber:
+                                entry.purchaseOrder?.poNumber ||
+                                (poNumber !== "-" ? poNumber : null),
+                              consignee:
+                                consigneeLabel !== "-"
+                                  ? consigneeLabel
+                                  : entry.purchaseOrder?.consignee || null,
+                            });
+                          }}
+                        />
+                      </div>
+                    </td>
                   </tr>
                 );
               })
@@ -6241,6 +6565,7 @@ const PurchaseOrderTab = ({
   const [viewOrderId, setViewOrderId] = useState<string | null>(null);
   const [viewOrder, setViewOrder] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
   const [receiveOrderId, setReceiveOrderId] = useState<string | null>(null);
   const [receiveOrderLabel, setReceiveOrderLabel] = useState("");
   const [receiveDetail, setReceiveDetail] = useState<ImportPurchaseOrderReceiveDetail | null>(null);
@@ -6350,6 +6675,139 @@ const PurchaseOrderTab = ({
       setViewOrderId(null);
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const handlePrintOrderPdf = async (orderId: string) => {
+    setPrintingOrderId(orderId);
+    try {
+      const response = await apiClient.getImportPurchaseOrder(orderId);
+      const orderData: any = (response as any)?.data || response;
+      if (!orderData) {
+        throw new Error("Purchase order detail is unavailable.");
+      }
+
+      const isRevised = Boolean(orderData.quotation?.isRevised);
+      const conversionRate = Number(
+        orderData.conversionRate ?? orderData.quotation?.conversionRate ?? 1,
+      );
+      const items = Array.isArray(orderData.items) ? orderData.items : [];
+
+      const itemRows = items.map((item: any) => {
+        const orderQty = Number(item.orderQty ?? item.quantity ?? 0);
+        const receivedQty = Number(item.receivedQty ?? item.received_qty ?? 0);
+        const additionalQty = Number(item.additionalQty ?? item.additional_qty ?? 0);
+        const backQty = Number(item.backQty ?? item.back_qty ?? 0);
+        const fcRate = Number(item.fcRate ?? item.fc_rate ?? 0);
+        const fcAmount = Number(
+          item.fcAmount ?? item.fc_amount ?? fcRate * orderQty,
+        );
+        const lcRate = Number(
+          item.lcRate ?? item.lc_rate ?? item.unit_cost ?? 0,
+        );
+        const lcAmount = Number(
+          item.lcAmount ?? item.lc_amount ?? item.total_cost ?? lcRate * orderQty,
+        );
+        const weight = Number(item.weight || 0);
+        const totalWeight = Number(
+          item.totalWeight ?? item.total_weight ?? weight * orderQty,
+        );
+
+        return {
+          masterPartNo: item.masterPartNo || item.master_part_no || "",
+          partNo: item.partNo || item.part_no || "-",
+          description: item.description || item.part_description || "-",
+          brand: item.brand || "",
+          orderQty,
+          receivedQty,
+          additionalQty,
+          backQty,
+          fcRate,
+          fcAmount,
+          lcRate,
+          lcAmount,
+          weight,
+          totalWeight,
+        };
+      });
+
+      const totals = itemRows.reduce(
+        (acc, row) => ({
+          orderQty: acc.orderQty + Number(row.orderQty || 0),
+          receivedQty: acc.receivedQty + Number(row.receivedQty || 0),
+          fcAmount: acc.fcAmount + Number(row.fcAmount || 0),
+          lcAmount: acc.lcAmount + Number(row.lcAmount || 0),
+          totalWeight: acc.totalWeight + Number(row.totalWeight || 0),
+        }),
+        {
+          orderQty: 0,
+          receivedQty: 0,
+          fcAmount: 0,
+          lcAmount: 0,
+          totalWeight: 0,
+        },
+      );
+
+      const started = printPurchaseImportOrder({
+        detail: {
+          poNumber: orderData.poNumber || orderData.po_number || "-",
+          date: orderData.date,
+          status: orderData.status,
+          supplierName:
+            orderData.supplier?.name ||
+            orderData.supplier_name ||
+            "-",
+          quotationNo: orderData.quotation?.quotationNo || "-",
+          requestNo: orderData.quotation?.requestNo || null,
+          consignee: orderData.consignee || null,
+          currency: orderData.currency || orderData.quotation?.currency || "USD",
+          conversionRate:
+            orderData.conversionRate ??
+            orderData.conversion_rate ??
+            orderData.quotation?.conversionRate ??
+            1,
+          invoiceNo: orderData.invoiceNo || orderData.invoice_no || null,
+          invoiceDate: orderData.invoiceDate || orderData.invoice_date || null,
+          blNo: orderData.blNo || orderData.bl_no || null,
+          blDate: orderData.blDate || orderData.bl_date || null,
+          forwarder: orderData.forwarder || null,
+          estTimeDate:
+            orderData.estTimeDate || orderData.expectedDate || null,
+          isRevised,
+          notes: orderData.notes || null,
+          fcTotal: orderData.fcTotal || orderData.fc_total || totals.fcAmount,
+          lcTotal:
+            orderData.totalAmount ||
+            orderData.total_amount ||
+            totals.lcAmount,
+          totalExp: orderData.expenses?.totalExp || null,
+        },
+        itemRows,
+        totals,
+      });
+
+      if (!started) {
+        toast({
+          title: "Print blocked",
+          description: "Allow pop-ups for this site and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Print Started",
+        description: "PDF is being generated...",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to print purchase order",
+        description:
+          error?.message || "Could not load purchase order data for printing.",
+        variant: "destructive",
+      });
+    } finally {
+      setPrintingOrderId(null);
     }
   };
 
@@ -6830,6 +7288,17 @@ const PurchaseOrderTab = ({
                         <Eye className="w-3.5 h-3.5 mr-1" />
                         View
                       </Button>
+                      <PrintPdfButton
+                        size="sm"
+                        disabled={printingOrderId === row.id}
+                        label={
+                          printingOrderId === row.id ? "Printing..." : "Print PDF"
+                        }
+                        onPrint={() => {
+                          if (printingOrderId) return;
+                          void handlePrintOrderPdf(row.id);
+                        }}
+                      />
                       <Button
                         type="button"
                         size="sm"
