@@ -1888,12 +1888,27 @@ router.get("/quotations", async (req: Request, res: Response) => {
     const statusFilter = String(req.query.status || "")
       .trim()
       .toLowerCase();
-    const where =
-      statusFilter === "confirm"
-        ? { status: "confirm" }
-        : statusFilter === "open"
-          ? { status: { not: "confirm" } }
-          : undefined;
+    const supplierId = String(req.query.supplierId || "").trim();
+    const quotationNo = String(req.query.quotationNo || "").trim();
+    const partReference = String(req.query.partReference || "").trim();
+
+    const where: Record<string, unknown> = {};
+    if (statusFilter === "confirm") {
+      where.status = "confirm";
+    } else if (statusFilter === "open") {
+      where.status = { not: "confirm" };
+    }
+    if (supplierId) {
+      where.supplierId = supplierId;
+    }
+    if (quotationNo) {
+      where.quotationNo = { contains: quotationNo, mode: "insensitive" };
+    }
+    if (partReference) {
+      where.PurchaseImportRequest = {
+        partReference: { contains: partReference, mode: "insensitive" },
+      };
+    }
 
     const [rows, total] = await Promise.all([
       purchaseQuotationModel.findMany({
@@ -1914,6 +1929,7 @@ router.get("/quotations", async (req: Request, res: Response) => {
             select: {
               id: true,
               requestNo: true,
+              partReference: true,
             },
           },
           PurchaseQuotationItem: {

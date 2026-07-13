@@ -58,6 +58,9 @@ const PURCHASE_IMPORT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 /** Last 3 Purchases panel under inquiry item rows (includes PO history). */
 const SHOW_INQUIRY_LAST_PURCHASES = false;
 
+/** Other Qty column/inputs across Purchase Import (kept in data model as 0). */
+const SHOW_OTHER_QTY = false;
+
 type ListPaginationProps = {
   currentPage: number;
   itemsPerPage: number;
@@ -941,7 +944,9 @@ const createEmptyItem = (): ItemRow => ({
 });
 
 const getInquiryRowDemandQuantity = (row: Pick<ItemRow, "khiQuantity" | "isbQuantity" | "otherQuantity">) =>
-  Number(row.khiQuantity || 0) + Number(row.isbQuantity || 0) + Number(row.otherQuantity || 0);
+  Number(row.khiQuantity || 0) +
+  Number(row.isbQuantity || 0) +
+  (SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0);
 
 const isInquiryConfirmed = (status?: string | null) =>
   String(status || "").trim().toLowerCase() === "confirm";
@@ -954,7 +959,7 @@ const getQuotationRowDemandQuantity = (
 ) =>
   Number(row.khiQuantity || 0) +
   Number(row.isbQuantity || 0) +
-  Number(row.otherQuantity || 0);
+  (SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0);
 
 const distributeConfirmSplitQuantities = (
   confirmQty: number,
@@ -967,14 +972,27 @@ const distributeConfirmSplitQuantities = (
     return { khiQuantity: 0, isbQuantity: 0, otherQuantity: 0 };
   }
 
-  const splitTotal = Math.max(0, khi) + Math.max(0, isb) + Math.max(0, other);
+  const safeKhi = Math.max(0, khi);
+  const safeIsb = Math.max(0, isb);
+  const safeOther = SHOW_OTHER_QTY ? Math.max(0, other) : 0;
+  const splitTotal = safeKhi + safeIsb + safeOther;
+
   if (splitTotal <= 0) {
-    return { khiQuantity: 0, isbQuantity: 0, otherQuantity: safeConfirm };
+    // Default remaining qty to ISB when Other is hidden.
+    return {
+      khiQuantity: 0,
+      isbQuantity: safeConfirm,
+      otherQuantity: 0,
+    };
   }
 
-  const khiQuantity = Math.round((Math.max(0, khi) / splitTotal) * safeConfirm);
-  const isbQuantity = Math.round((Math.max(0, isb) / splitTotal) * safeConfirm);
-  let otherQuantity = safeConfirm - khiQuantity - isbQuantity;
+  const khiQuantity = Math.round((safeKhi / splitTotal) * safeConfirm);
+  const isbQuantity = SHOW_OTHER_QTY
+    ? Math.round((safeIsb / splitTotal) * safeConfirm)
+    : safeConfirm - khiQuantity;
+  let otherQuantity = SHOW_OTHER_QTY
+    ? safeConfirm - khiQuantity - isbQuantity
+    : 0;
   if (otherQuantity < 0) {
     otherQuantity = 0;
   }
@@ -987,7 +1005,9 @@ const getConfirmRowSplitSum = (row: {
   khiQuantity?: number;
   otherQuantity?: number;
 }) =>
-  Number(row.isbQuantity || 0) + Number(row.khiQuantity || 0) + Number(row.otherQuantity || 0);
+  Number(row.isbQuantity || 0) +
+  Number(row.khiQuantity || 0) +
+  (SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0);
 
 const getConfirmRowSplitMismatch = (row: {
   confirmQuantity?: number;
@@ -997,7 +1017,7 @@ const getConfirmRowSplitMismatch = (row: {
   masterPartNo?: string;
   partNo?: string;
 }) => {
-  const confirmQty = Math.max(0, Math.floor(Number(row.confirmQuantity) || 0));
+  const confirmQty = Math.max(0, Math.floor(Number(row.confirmQuantity || 0)));
   if (confirmQty <= 0) return null;
 
   const splitSum = getConfirmRowSplitSum(row);
@@ -1005,10 +1025,11 @@ const getConfirmRowSplitMismatch = (row: {
 
   const label = row.masterPartNo || row.partNo || "Item";
   const diff = splitSum - confirmQty;
+  const splitLabel = SHOW_OTHER_QTY ? "ISB + KHI + Other" : "ISB + KHI";
   if (diff > 0) {
-    return `${label}: ISB + KHI + Other (${splitSum}) exceeds confirm qty (${confirmQty}) by ${diff}.`;
+    return `${label}: ${splitLabel} (${splitSum}) exceeds confirm qty (${confirmQty}) by ${diff}.`;
   }
-  return `${label}: ISB + KHI + Other (${splitSum}) is short of confirm qty (${confirmQty}) by ${Math.abs(diff)}.`;
+  return `${label}: ${splitLabel} (${splitSum}) is short of confirm qty (${confirmQty}) by ${Math.abs(diff)}.`;
 };
 
 type PartSortFields = {
@@ -1442,10 +1463,12 @@ const PurchaseImportRequestForm = ({
                   const splitQty = rawKhi + rawIsb + rawOther;
                   const khiQuantity =
                     splitQty > 0 ? rawKhi : normalizedConsignee === "KHI" ? demandQty : 0;
-                  const isbQuantity =
+                  const isbBase =
                     splitQty > 0 ? rawIsb : normalizedConsignee === "ISB" ? demandQty : 0;
-                  const otherQuantity =
+                  const otherBase =
                     splitQty > 0 ? rawOther : normalizedConsignee === "OTHER" ? demandQty : 0;
+                  const isbQuantity = SHOW_OTHER_QTY ? isbBase : isbBase + otherBase;
+                  const otherQuantity = SHOW_OTHER_QTY ? otherBase : 0;
 
                   return {
                     id: `row-${item.partId}-${index}-${Math.random().toString(16).slice(2)}`,
@@ -1911,7 +1934,7 @@ const PurchaseImportRequestForm = ({
           demandQuantity: getInquiryRowDemandQuantity(row),
           khiQuantity: Number(row.khiQuantity || 0),
           isbQuantity: Number(row.isbQuantity || 0),
-          otherQuantity: Number(row.otherQuantity || 0),
+          otherQuantity: SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0,
           weight: Number(row.weight || 0),
         })),
       };
@@ -2809,7 +2832,7 @@ const PurchaseImportRequestView = ({
         const part = partOptions.find((row) => row.id === item.partId);
         const khiQuantity = Number(item.khiQuantity || 0);
         const isbQuantity = Number(item.isbQuantity || 0);
-        const otherQuantity = Number(item.otherQuantity || 0);
+        const otherQuantity = SHOW_OTHER_QTY ? Number(item.otherQuantity || 0) : 0;
         const totalDemand =
           khiQuantity + isbQuantity + otherQuantity ||
           Number(item.demandQuantity || 0);
@@ -3163,13 +3186,17 @@ const PurchaseQuotationForm = ({
         setConversionRate(Number(data.conversionRate || 1));
         setRows(
           Array.isArray(data.items)
-            ? data.items.map((item) => ({
+            ? data.items.map((item) => {
+                const rawOther = Number(item.otherQuantity || 0);
+                const rawIsb = Number(item.isbQuantity || 0);
+                const rawKhi = Number(item.khiQuantity || 0);
+                return {
                 ...item,
                 rowId: createRowId(),
                 isNewRow: false,
-                khiQuantity: Number(item.khiQuantity || 0),
-                isbQuantity: Number(item.isbQuantity || 0),
-                otherQuantity: Number(item.otherQuantity || 0),
+                khiQuantity: rawKhi,
+                isbQuantity: SHOW_OTHER_QTY ? rawIsb : rawIsb + rawOther,
+                otherQuantity: SHOW_OTHER_QTY ? rawOther : 0,
                 quotationQuantity: Number(
                   item.quotationQuantity ?? item.demandQuantity ?? 0,
                 ),
@@ -3182,7 +3209,8 @@ const PurchaseQuotationForm = ({
                 ),
                 lastFcRate: Number(item.lastFcRate || 0),
                 loadingPartDetails: false,
-              }))
+              };
+              })
             : [],
         );
       } catch (error: any) {
@@ -3587,6 +3615,9 @@ const PurchaseQuotationForm = ({
         items: validItems.map((row) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
+          khiQuantity: Number(row.khiQuantity || 0),
+          isbQuantity: Number(row.isbQuantity || 0),
+          otherQuantity: SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0,
           quotationQuantity: Number(row.quotationQuantity || 0),
           shipDays: Number(row.shipDays || 0),
           fcRate: Number(row.fcRate || 0),
@@ -3845,20 +3876,22 @@ const PurchaseQuotationForm = ({
                                 )
                               }
                             />
-                            <Input
-                              type="number"
-                              min={0}
-                              className="h-7 w-20 min-w-0 text-right text-xs px-2"
-                              placeholder="Other"
-                              value={Number(row.otherQuantity || 0) === 0 ? "" : Number(row.otherQuantity || 0)}
-                              onChange={(e) =>
-                                updateQuotationSplitQuantity(
-                                  row.rowId,
-                                  "otherQuantity",
-                                  Number(e.target.value || 0),
-                                )
-                              }
-                            />
+                            {SHOW_OTHER_QTY ? (
+                              <Input
+                                type="number"
+                                min={0}
+                                className="h-7 w-20 min-w-0 text-right text-xs px-2"
+                                placeholder="Other"
+                                value={Number(row.otherQuantity || 0) === 0 ? "" : Number(row.otherQuantity || 0)}
+                                onChange={(e) =>
+                                  updateQuotationSplitQuantity(
+                                    row.rowId,
+                                    "otherQuantity",
+                                    Number(e.target.value || 0),
+                                  )
+                                }
+                              />
+                            ) : null}
                             <Input
                               type="number"
                               className="h-7 w-20 min-w-0 text-right text-xs px-2 bg-muted/40"
@@ -4118,7 +4151,10 @@ const PurchaseQuotationRevisionForm = ({
         setConversionRate(Number(data.conversionRate || 1));
         setRows(
           Array.isArray(data.items)
-            ? data.items.map((item) => ({
+            ? data.items.map((item) => {
+                const rawOther = Number((item as any).otherQuantity || 0);
+                const rawIsb = Number((item as any).isbQuantity || 0);
+                return {
                 rowId: createRowId(),
                 isNewRow: false,
                 partId: item.partId,
@@ -4129,8 +4165,8 @@ const PurchaseQuotationRevisionForm = ({
                 currentStock: Number((item as any).currentStock || 0),
                 demandQuantity: Number(item.demandQuantity || 0),
                 khiQuantity: Number((item as any).khiQuantity || 0),
-                isbQuantity: Number((item as any).isbQuantity || 0),
-                otherQuantity: Number((item as any).otherQuantity || 0),
+                isbQuantity: SHOW_OTHER_QTY ? rawIsb : rawIsb + rawOther,
+                otherQuantity: SHOW_OTHER_QTY ? rawOther : 0,
                 quotationQuantity: Number(item.quotationQuantity || 0),
                 shipDays: Number(item.shipDays || 0),
                 fcRate: Number(item.fcRate || 0),
@@ -4142,7 +4178,8 @@ const PurchaseQuotationRevisionForm = ({
                 lastFcRate: Number((item as any).lastFcRate || 0),
                 weight: Number(item.weight || 0),
                 loadingPartDetails: false,
-              }))
+              };
+              })
             : [],
         );
       } catch (error: any) {
@@ -5338,11 +5375,22 @@ const PurchaseQuotationListPanel = ({
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [totalRecords, setTotalRecords] = useState(0);
   const [printingQuotationId, setPrintingQuotationId] = useState<string | null>(null);
+  const [filterSupplierId, setFilterSupplierId] = useState("");
+  const [filterQuotationNo, setFilterQuotationNo] = useState("");
+  const [filterPartReference, setFilterPartReference] = useState("");
+  const [appliedPartReference, setAppliedPartReference] = useState("");
+  const [supplierFilterOptions, setSupplierFilterOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
+  const [quotationNoFilterOptions, setQuotationNoFilterOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
 
   const isConfirmedView = view === "confirmed";
   const openListColSpan = 12;
   const confirmedListColSpan = 11;
   const CONSIGNEE_ORDER = ["ISB", "KHI", "Other"] as const;
+  const listStatus = view === "confirmed" ? ("confirm" as const) : ("open" as const);
 
   const fetchQuotations = useCallback(async () => {
     setLoadingQuotations(true);
@@ -5350,7 +5398,10 @@ const PurchaseQuotationListPanel = ({
       const response = await apiClient.getPurchaseQuotations({
         page: currentPage,
         limit: itemsPerPage,
-        ...(view === "confirmed" ? { status: "confirm" as const } : {}),
+        status: listStatus,
+        supplierId: filterSupplierId || undefined,
+        quotationNo: filterQuotationNo.trim() || undefined,
+        partReference: appliedPartReference || undefined,
       });
       const rows = Array.isArray((response as any)?.data)
         ? (response as any).data
@@ -5369,11 +5420,109 @@ const PurchaseQuotationListPanel = ({
     } finally {
       setLoadingQuotations(false);
     }
-  }, [currentPage, itemsPerPage, view, toast]);
+  }, [
+    currentPage,
+    itemsPerPage,
+    listStatus,
+    filterSupplierId,
+    filterQuotationNo,
+    appliedPartReference,
+    toast,
+  ]);
+
+  useEffect(() => {
+    const loadSupplierFilters = async () => {
+      try {
+        const suppliersRes = await apiClient.getSuppliers({
+          status: "active",
+          page: 1,
+          limit: 1000,
+        });
+        const suppliersData = ((suppliersRes as any)?.data || []).filter(
+          (supplier: any) =>
+            String(supplier?.type || "")
+              .trim()
+              .toLowerCase() === "international",
+        );
+        setSupplierFilterOptions(
+          suppliersData.map((supplier: any) => ({
+            value: supplier.id,
+            label:
+              supplier.companyName || supplier.name || supplier.code || "Unnamed Supplier",
+          })),
+        );
+      } catch {
+        setSupplierFilterOptions([]);
+      }
+    };
+
+    void loadSupplierFilters();
+  }, []);
+
+  useEffect(() => {
+    const loadQuotationNoFilters = async () => {
+      try {
+        const response = await apiClient.getPurchaseQuotations({
+          page: 1,
+          limit: 1000,
+          status: listStatus,
+        });
+        const rows = Array.isArray((response as any)?.data)
+          ? (response as any).data
+          : Array.isArray(response)
+            ? response
+            : [];
+        const seen = new Set<string>();
+        const options: Array<{ value: string; label: string }> = [];
+        for (const row of rows) {
+          const quotationNo = String(row?.quotationNo || "").trim();
+          if (!quotationNo || seen.has(quotationNo)) continue;
+          seen.add(quotationNo);
+          options.push({ value: quotationNo, label: quotationNo });
+        }
+        options.sort((a, b) => a.label.localeCompare(b.label));
+        setQuotationNoFilterOptions(options);
+      } catch {
+        setQuotationNoFilterOptions([]);
+      }
+    };
+
+    void loadQuotationNoFilters();
+  }, [listStatus]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const next = filterPartReference.trim();
+      setAppliedPartReference((prev) => {
+        if (prev === next) return prev;
+        setCurrentPage(1);
+        return next;
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [filterPartReference]);
 
   useEffect(() => {
     void fetchQuotations();
   }, [fetchQuotations]);
+
+  const handleFilterSupplierChange = (value: string) => {
+    setFilterSupplierId(value);
+    setCurrentPage(1);
+  };
+
+  const handleFilterQuotationNoChange = (value: string) => {
+    setFilterQuotationNo(value);
+    setCurrentPage(1);
+  };
+
+  const clearQuotationFilters = () => {
+    setFilterSupplierId("");
+    setFilterQuotationNo("");
+    setFilterPartReference("");
+    setAppliedPartReference("");
+    setCurrentPage(1);
+  };
 
   const handlePrintQuotationById = async (
     quotationId: string,
@@ -5567,6 +5716,57 @@ const PurchaseQuotationListPanel = ({
       <div>
         <h2 className="text-base font-semibold">{title}</h2>
         <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1">
+          <Label htmlFor={`quotation-filter-no-${view}-${action}`}>Quotation No</Label>
+          <SearchableSelect
+            id={`quotation-filter-no-${view}-${action}`}
+            options={quotationNoFilterOptions}
+            value={filterQuotationNo}
+            onValueChange={handleFilterQuotationNoChange}
+            placeholder="All quotation nos"
+            aria-label="Filter by quotation number"
+            className="w-[200px] [&_input]:h-9 [&_input]:text-sm"
+            selectedDisplayLabelOnly
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`quotation-filter-supplier-${view}-${action}`}>Supplier</Label>
+          <SearchableSelect
+            id={`quotation-filter-supplier-${view}-${action}`}
+            options={supplierFilterOptions}
+            value={filterSupplierId}
+            onValueChange={handleFilterSupplierChange}
+            placeholder="All suppliers"
+            aria-label="Filter by supplier"
+            className="w-[240px] [&_input]:h-9 [&_input]:text-sm"
+            selectedDisplayLabelOnly
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`quotation-filter-part-reference-${view}-${action}`}>
+            Part Reference
+          </Label>
+          <Input
+            id={`quotation-filter-part-reference-${view}-${action}`}
+            value={filterPartReference}
+            onChange={(event) => setFilterPartReference(event.target.value)}
+            placeholder="Search part reference"
+            className="h-9 w-[200px]"
+          />
+        </div>
+        {(filterSupplierId || filterQuotationNo || filterPartReference) && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9"
+            onClick={clearQuotationFilters}
+          >
+            Clear Filters
+          </Button>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-md border border-border">
@@ -6027,11 +6227,16 @@ const PurchaseQuotationConfirmForm = ({
     field: "khiQuantity" | "isbQuantity" | "otherQuantity",
     value: number,
   ) => {
+    if (!SHOW_OTHER_QTY && field === "otherQuantity") return;
     const qty = Math.max(0, Math.floor(Number(value) || 0));
     setRows((prev) =>
       prev.map((row) => {
         if (row.rowId !== rowId) return row;
-        const next = { ...row, [field]: qty };
+        const next = {
+          ...row,
+          [field]: qty,
+          ...(SHOW_OTHER_QTY ? {} : { otherQuantity: 0 }),
+        };
         const confirmQuantity = getConfirmRowSplitSum(next);
         return {
           ...next,
@@ -6083,14 +6288,13 @@ const PurchaseQuotationConfirmForm = ({
 
     for (const row of itemsToConfirm) {
       const confirmQty = Number(row.confirmQuantity);
-      const splitSum =
-        Number(row.isbQuantity || 0) +
-        Number(row.khiQuantity || 0) +
-        Number(row.otherQuantity || 0);
+      const splitSum = getConfirmRowSplitSum(row);
       if (splitSum !== confirmQty) {
         toast({
           title: "Split quantities must match confirm quantity",
-          description: `For ${row.masterPartNo || row.partNo || "item"}, ISB + KHI + Other (${splitSum}) must equal confirm quantity (${confirmQty}).`,
+          description: `For ${row.masterPartNo || row.partNo || "item"}, ${
+            SHOW_OTHER_QTY ? "ISB + KHI + Other" : "ISB + KHI"
+          } (${splitSum}) must equal confirm quantity (${confirmQty}).`,
           variant: "destructive",
         });
         return;
@@ -6106,7 +6310,7 @@ const PurchaseQuotationConfirmForm = ({
           confirmQuantity: Number(row.confirmQuantity),
           khiQuantity: Number(row.khiQuantity || 0),
           isbQuantity: Number(row.isbQuantity || 0),
-          otherQuantity: Number(row.otherQuantity || 0),
+          otherQuantity: SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0,
         })),
       });
       const purchaseOrders = (response as { purchaseOrders?: Array<{ poNumber?: string }> })
@@ -6134,7 +6338,7 @@ const PurchaseQuotationConfirmForm = ({
     }
   };
 
-  const itemTableColSpan = 17;
+  const itemTableColSpan = SHOW_OTHER_QTY ? 17 : 16;
 
   if (loading) {
     return (
@@ -6229,6 +6433,12 @@ const PurchaseQuotationConfirmForm = ({
               <th className="text-right p-2 border-b">Request QTY</th>
               <th className={QUOTATION_QTY_COL_CLASS}>Quotation QTY</th>
               <th className={QUOTATION_SHIP_DAYS_COL_CLASS}>Ship Days</th>
+              <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB QTY</th>
+              <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI QTY</th>
+              {SHOW_OTHER_QTY ? (
+                <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other QTY</th>
+              ) : null}
+              <th className="text-right p-2 border-b min-w-[120px]">Confirm QTY</th>
               <th className={QUOTATION_LAST_FC_RATE_COL_CLASS}>Last FC Rate</th>
               <th className={QUOTATION_FC_RATE_COL_CLASS}>
                 {isRevised ? "Revised FC Rate" : "FC Rate"}
@@ -6243,10 +6453,6 @@ const PurchaseQuotationConfirmForm = ({
                 {isRevised ? "Revised LC Amount" : "LC Amount"}
               </th>
               <th className="text-right p-2 border-b">Total Weight</th>
-              <th className={INQUIRY_ISB_QTY_HEAD_CLASS}>ISB QTY</th>
-              <th className={INQUIRY_KHI_QTY_HEAD_CLASS}>KHI QTY</th>
-              <th className={INQUIRY_OTHER_QTY_HEAD_CLASS}>Other QTY</th>
-              <th className="text-right p-2 border-b min-w-[120px]">Confirm QTY</th>
             </tr>
           </thead>
           <tbody>
@@ -6280,14 +6486,6 @@ const PurchaseQuotationConfirmForm = ({
                   <td className="p-2 text-right tabular-nums">{row.demandQuantity}</td>
                   <td className="p-2 text-right tabular-nums">{row.quotationQuantity}</td>
                   <td className="p-2 text-right tabular-nums">{row.shipDays}</td>
-                  <td className="p-2 text-right text-muted-foreground tabular-nums">
-                    {formatLastFcRateDisplay(row.lastFcRate)}
-                  </td>
-                  <td className="p-2 text-right tabular-nums">{row.fcRate.toFixed(4)}</td>
-                  <td className="p-2 text-right tabular-nums">{row.fcAmount.toFixed(2)}</td>
-                  <td className="p-2 text-right tabular-nums">{row.lcRate.toFixed(2)}</td>
-                  <td className="p-2 text-right tabular-nums">{row.lcAmount.toFixed(2)}</td>
-                  <td className="p-2 text-right tabular-nums">{row.totalWeight.toFixed(2)}</td>
                   <td className="p-2 text-right">
                     <Input
                       type="number"
@@ -6318,21 +6516,23 @@ const PurchaseQuotationConfirmForm = ({
                       }
                     />
                   </td>
-                  <td className="p-2 text-right">
-                    <Input
-                      type="number"
-                      min={0}
-                      className={cn(INQUIRY_OTHER_QTY_INPUT_CLASS, splitInputClass)}
-                      value={row.otherQuantity === 0 ? "" : row.otherQuantity}
-                      onChange={(e) =>
-                        updateConfirmSplitQuantity(
-                          row.rowId,
-                          "otherQuantity",
-                          Number(e.target.value || 0),
-                        )
-                      }
-                    />
-                  </td>
+                  {SHOW_OTHER_QTY ? (
+                    <td className="p-2 text-right">
+                      <Input
+                        type="number"
+                        min={0}
+                        className={cn(INQUIRY_OTHER_QTY_INPUT_CLASS, splitInputClass)}
+                        value={row.otherQuantity === 0 ? "" : row.otherQuantity}
+                        onChange={(e) =>
+                          updateConfirmSplitQuantity(
+                            row.rowId,
+                            "otherQuantity",
+                            Number(e.target.value || 0),
+                          )
+                        }
+                      />
+                    </td>
+                  ) : null}
                   <td className="p-2 text-right">
                     <Input
                       type="number"
@@ -6345,6 +6545,14 @@ const PurchaseQuotationConfirmForm = ({
                       <p className="mt-1 text-left text-xs text-destructive">{splitMismatch}</p>
                     ) : null}
                   </td>
+                  <td className="p-2 text-right text-muted-foreground tabular-nums">
+                    {formatLastFcRateDisplay(row.lastFcRate)}
+                  </td>
+                  <td className="p-2 text-right tabular-nums">{row.fcRate.toFixed(4)}</td>
+                  <td className="p-2 text-right tabular-nums">{row.fcAmount.toFixed(2)}</td>
+                  <td className="p-2 text-right tabular-nums">{row.lcRate.toFixed(2)}</td>
+                  <td className="p-2 text-right tabular-nums">{row.lcAmount.toFixed(2)}</td>
+                  <td className="p-2 text-right tabular-nums">{row.totalWeight.toFixed(2)}</td>
                 </tr>
                 );
               })
@@ -6360,16 +6568,18 @@ const PurchaseQuotationConfirmForm = ({
                 <td className="p-2 text-right">{quotationTotals.requestQty}</td>
                 <td className="p-2 text-right">{quotationTotals.quotationQty}</td>
                 <td className="p-2" />
+                <td className="p-2 text-right">{quotationTotals.isbQty}</td>
+                <td className="p-2 text-right">{quotationTotals.khiQty}</td>
+                {SHOW_OTHER_QTY ? (
+                  <td className="p-2 text-right">{quotationTotals.otherQty}</td>
+                ) : null}
+                <td className="p-2 text-right">{quotationTotals.confirmQty}</td>
                 <td className="p-2" />
                 <td className="p-2" />
                 <td className="p-2 text-right">{quotationTotals.fcAmount.toFixed(2)}</td>
                 <td className="p-2" />
                 <td className="p-2 text-right">{quotationTotals.lcAmount.toFixed(2)}</td>
                 <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
-                <td className="p-2 text-right">{quotationTotals.isbQty}</td>
-                <td className="p-2 text-right">{quotationTotals.khiQty}</td>
-                <td className="p-2 text-right">{quotationTotals.otherQty}</td>
-                <td className="p-2 text-right">{quotationTotals.confirmQty}</td>
               </tr>
             </tfoot>
           ) : null}
@@ -6378,7 +6588,11 @@ const PurchaseQuotationConfirmForm = ({
 
       {hasSplitMismatch ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive space-y-1">
-          <p className="font-medium">ISB, KHI, and Other must equal confirm quantity for each item.</p>
+          <p className="font-medium">
+            {SHOW_OTHER_QTY
+              ? "ISB, KHI, and Other must equal confirm quantity for each item."
+              : "ISB and KHI must equal confirm quantity for each item."}
+          </p>
           <ul className="list-disc space-y-0.5 pl-5">
             {splitMismatchMessages.map((message) => (
               <li key={message}>{message}</li>

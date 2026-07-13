@@ -2572,6 +2572,9 @@ class ApiClient {
     page?: number;
     limit?: number;
     status?: "open" | "confirm";
+    supplierId?: string;
+    quotationNo?: string;
+    partReference?: string;
   }) {
     const queryParams = new URLSearchParams();
     if (params) {
