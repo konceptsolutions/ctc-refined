@@ -98,6 +98,111 @@ const resolveRequestConsignee = async (
   return siblingValue || null;
 };
 
+const formatConsigneesFromSplitItems = (
+  items: Array<{
+    khiQuantity?: number | null;
+    isbQuantity?: number | null;
+    otherQuantity?: number | null;
+  }>,
+  fallbackConsignee?: string | null,
+): string => {
+  let hasIsb = false;
+  let hasKhi = false;
+  let hasOther = false;
+
+  for (const item of items) {
+    if (Number(item.isbQuantity || 0) > 0) hasIsb = true;
+    if (Number(item.khiQuantity || 0) > 0) hasKhi = true;
+    if (Number(item.otherQuantity || 0) > 0) hasOther = true;
+  }
+
+  const parts: string[] = [];
+  if (hasIsb) parts.push("ISB");
+  if (hasKhi) parts.push("KHI");
+  if (hasOther) parts.push("Other");
+  if (parts.length > 0) return parts.join(", ");
+
+  const fallback = String(fallbackConsignee || "")
+    .trim()
+    .toUpperCase();
+  if (fallback === "ISB" || fallback === "KHI") return fallback;
+  if (fallback === "OTHER") return "Other";
+  return "-";
+};
+
+const resolveQuotationConsigneeLabel = async (
+  purchaseImportRequestModel: any,
+  request:
+    | {
+        batchId: string;
+        consignee?: string | null;
+        PurchaseImportRequestItem?: Array<{
+          khiQuantity?: number | null;
+          isbQuantity?: number | null;
+          otherQuantity?: number | null;
+        }>;
+      }
+    | null
+    | undefined,
+): Promise<string> => {
+  if (!request?.batchId) return "-";
+
+  const resolvedConsignee = await resolveRequestConsignee(
+    purchaseImportRequestModel,
+    request,
+  );
+
+  let items = request.PurchaseImportRequestItem || [];
+  const hasSplitQty = items.some(
+    (item) =>
+      Number(item.khiQuantity || 0) > 0 ||
+      Number(item.isbQuantity || 0) > 0 ||
+      Number(item.otherQuantity || 0) > 0,
+  );
+
+  if (!hasSplitQty) {
+    const batchRows = await purchaseImportRequestModel.findMany({
+      where: { batchId: request.batchId },
+      select: {
+        consignee: true,
+        PurchaseImportRequestItem: {
+          select: {
+            khiQuantity: true,
+            isbQuantity: true,
+            otherQuantity: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    items = batchRows.flatMap(
+      (row: any) => row.PurchaseImportRequestItem || [],
+    );
+
+    const batchConsignees = [
+      ...new Set(
+        batchRows
+          .map((row: any) => String(row.consignee || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (batchConsignees.length > 1) {
+      return batchConsignees
+        .map((value) => {
+          const text = String(value);
+          const normalized = text.toUpperCase();
+          if (normalized === "ISB" || normalized === "KHI") return normalized;
+          if (normalized === "OTHER") return "Other";
+          return text;
+        })
+        .join(", ");
+    }
+  }
+
+  return formatConsigneesFromSplitItems(items, resolvedConsignee);
+};
+
 const normalizeQuotationStatus = (value: any): "pending" | "confirm" | "revise" => {
   const normalized = String(value || "")
     .trim()
@@ -193,6 +298,7 @@ async function createPurchaseOrderFromQuotation(quotationId: string) {
 }
 
 type ConfirmQuotationItemInput = {
+  quotationId?: string;
   partId: string;
   confirmQuantity: number;
   khiQuantity?: number;
@@ -240,6 +346,7 @@ async function confirmPurchaseQuotation(
   options: {
     confirmationDate?: Date | string | null;
     items?: ConfirmQuotationItemInput[] | null;
+    combineQuotationIds?: string[] | null;
   },
 ) {
   const purchaseQuotationModel = (prisma as any).purchaseQuotation;
@@ -249,8 +356,22 @@ async function confirmPurchaseQuotation(
     );
   }
 
-  const quotation = await purchaseQuotationModel.findUnique({
-    where: { id: quotationId },
+  const primaryId = String(quotationId || "").trim();
+  if (!primaryId) {
+    throw new Error("Quotation id is required.");
+  }
+
+  const combineIds = Array.from(
+    new Set(
+      (Array.isArray(options.combineQuotationIds) ? options.combineQuotationIds : [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => id && id !== primaryId),
+    ),
+  );
+  const allQuotationIds = [primaryId, ...combineIds];
+
+  const quotations: any[] = await purchaseQuotationModel.findMany({
+    where: { id: { in: allQuotationIds } },
     include: {
       PurchaseQuotationItem: true,
       PurchaseImportRequest: {
@@ -278,68 +399,103 @@ async function confirmPurchaseQuotation(
     },
   });
 
-  if (!quotation) {
+  if (quotations.length !== allQuotationIds.length) {
+    throw new Error("One or more purchase quotations were not found.");
+  }
+
+  const quotationById = new Map<string, any>(
+    quotations.map((row: any) => [String(row.id), row]),
+  );
+  const primary: any = quotationById.get(primaryId);
+  if (!primary) {
     throw new Error("Purchase quotation not found.");
   }
 
-  if (quotation.PurchaseOrder?.length > 0) {
+  if (primary.PurchaseOrder?.length > 0 && combineIds.length === 0) {
     return {
       quotation: {
-        id: quotation.id,
-        quotationNo: quotation.quotationNo,
-        status: quotation.status,
-        confirmationDate: quotation.confirmationDate,
+        id: primary.id,
+        quotationNo: primary.quotationNo,
+        status: primary.status,
+        confirmationDate: primary.confirmationDate,
       },
-      purchaseOrders: quotation.PurchaseOrder,
+      purchaseOrders: primary.PurchaseOrder,
+      quotations: [
+        {
+          id: primary.id,
+          quotationNo: primary.quotationNo,
+          status: primary.status,
+          confirmationDate: primary.confirmationDate,
+        },
+      ],
     };
   }
 
-  const currentStatus = String(quotation.status || "").toLowerCase();
-  if (currentStatus === "confirm") {
-    // Allow creating POs if confirmation happened without orders (retry path).
+  const supplierId = String(primary.supplierId || "").trim();
+  if (!supplierId) {
+    throw new Error("Primary quotation has no supplier.");
   }
 
-  const inquirySplitByPartId = new Map<
-    string,
-    { khiQuantity: number; isbQuantity: number; otherQuantity: number }
-  >(
-    (quotation.PurchaseImportRequest?.PurchaseImportRequestItem || []).map(
-      (item: any) => [
-        String(item.partId),
-        {
-          khiQuantity: Number(item.khiQuantity || 0),
-          isbQuantity: Number(item.isbQuantity || 0),
-          otherQuantity: Number(item.otherQuantity || 0),
-        },
-      ],
-    ),
-  );
+  const primaryCurrency = String(primary.currency || "")
+    .trim()
+    .toUpperCase();
 
-  const confirmItemByPartId = new Map<string, ConfirmQuotationItemInput>();
-  if (Array.isArray(options.items) && options.items.length > 0) {
-    for (const item of options.items) {
-      const partId = String(item?.partId || "").trim();
-      if (!partId) continue;
-      confirmItemByPartId.set(partId, {
-        partId,
-        confirmQuantity: Math.max(0, Math.floor(Number(item.confirmQuantity || 0))),
-        khiQuantity:
-          item?.khiQuantity !== undefined
-            ? Math.max(0, Math.floor(Number(item.khiQuantity)))
-            : undefined,
-        isbQuantity:
-          item?.isbQuantity !== undefined
-            ? Math.max(0, Math.floor(Number(item.isbQuantity)))
-            : undefined,
-        otherQuantity:
-          item?.otherQuantity !== undefined
-            ? Math.max(0, Math.floor(Number(item.otherQuantity)))
-            : undefined,
-      });
+  for (const id of allQuotationIds) {
+    const row: any = quotationById.get(id);
+    if (!row) continue;
+    if (String(row.supplierId || "").trim() !== supplierId) {
+      throw new Error(
+        "Only quotations from the same supplier can be combined for confirmation.",
+      );
+    }
+    if (
+      primaryCurrency &&
+      String(row.currency || "").trim().toUpperCase() !== primaryCurrency
+    ) {
+      throw new Error(
+        "Only quotations with the same currency can be combined for confirmation.",
+      );
+    }
+    if (row.PurchaseOrder?.length > 0) {
+      throw new Error(
+        `Quotation ${row.quotationNo} already has purchase order(s) and cannot be combined.`,
+      );
+    }
+    const status = String(row.status || "").trim().toLowerCase();
+    if (status === "confirm" && id !== primaryId) {
+      throw new Error(
+        `Quotation ${row.quotationNo} is already confirmed and cannot be combined.`,
+      );
     }
   }
 
-  const useRevisedRates = String(quotation.quotationType || "").toLowerCase() === "revised";
+  const confirmInputs = Array.isArray(options.items) ? options.items : [];
+  const confirmByQuotationPart = new Map<string, ConfirmQuotationItemInput>();
+  for (const item of confirmInputs) {
+    const partId = String(item?.partId || "").trim();
+    if (!partId) continue;
+    const itemQuotationId =
+      String(item?.quotationId || primaryId).trim() || primaryId;
+    if (!allQuotationIds.includes(itemQuotationId)) continue;
+    confirmByQuotationPart.set(`${itemQuotationId}::${partId}`, {
+      quotationId: itemQuotationId,
+      partId,
+      confirmQuantity: Math.max(0, Math.floor(Number(item.confirmQuantity || 0))),
+      khiQuantity:
+        item?.khiQuantity !== undefined
+          ? Math.max(0, Math.floor(Number(item.khiQuantity)))
+          : undefined,
+      isbQuantity:
+        item?.isbQuantity !== undefined
+          ? Math.max(0, Math.floor(Number(item.isbQuantity)))
+          : undefined,
+      otherQuantity:
+        item?.otherQuantity !== undefined
+          ? Math.max(0, Math.floor(Number(item.otherQuantity)))
+          : undefined,
+    });
+  }
+
   const laneItems: Record<
     PoLaneKey,
     Array<{ partId: string; quantity: number; unitCost: number; totalCost: number }>
@@ -349,64 +505,92 @@ async function confirmPurchaseQuotation(
     other: [],
   };
 
-  for (const item of quotation.PurchaseQuotationItem || []) {
-    const partId = String(item.partId || "").trim();
-    if (!partId) continue;
+  for (const qid of allQuotationIds) {
+    const quotation: any = quotationById.get(qid);
+    if (!quotation) continue;
 
-    const quotationQty = Number(item.quotationQuantity || 0);
-    const itemInput = confirmItemByPartId.get(partId);
-    const confirmQty = itemInput ? Number(itemInput.confirmQuantity || 0) : quotationQty;
+    const inquirySplitByPartId = new Map<
+      string,
+      { khiQuantity: number; isbQuantity: number; otherQuantity: number }
+    >(
+      (quotation.PurchaseImportRequest?.PurchaseImportRequestItem || []).map(
+        (item: any) => [
+          String(item.partId),
+          {
+            khiQuantity: Number(item.khiQuantity || 0),
+            isbQuantity: Number(item.isbQuantity || 0),
+            otherQuantity: Number(item.otherQuantity || 0),
+          },
+        ],
+      ),
+    );
 
-    if (confirmQty <= 0) continue;
+    const useRevisedRates =
+      String(quotation.quotationType || "").toLowerCase() === "revised";
 
-    const hasExplicitSplit =
-      itemInput &&
-      (itemInput.khiQuantity !== undefined ||
-        itemInput.isbQuantity !== undefined ||
-        itemInput.otherQuantity !== undefined);
+    for (const item of quotation.PurchaseQuotationItem || []) {
+      const partId = String(item.partId || "").trim();
+      if (!partId) continue;
 
-    let laneQty: Record<PoLaneKey, number>;
-    if (hasExplicitSplit) {
-      const khi = Number(itemInput.khiQuantity || 0);
-      const isb = Number(itemInput.isbQuantity || 0);
-      const other = Number(itemInput.otherQuantity || 0);
-      const splitSum = khi + isb + other;
-      if (splitSum !== confirmQty) {
-        throw new Error(
-          `ISB, KHI, and Other quantities must total the confirm quantity (${confirmQty}) for part ${partId}.`,
+      const quotationQty = Number(item.quotationQuantity || 0);
+      const itemInput = confirmByQuotationPart.get(`${qid}::${partId}`);
+
+      if (confirmInputs.length > 0 && !itemInput) continue;
+
+      const confirmQty = itemInput
+        ? Number(itemInput.confirmQuantity || 0)
+        : quotationQty;
+      if (confirmQty <= 0) continue;
+
+      const hasExplicitSplit =
+        !!itemInput &&
+        (itemInput.khiQuantity !== undefined ||
+          itemInput.isbQuantity !== undefined ||
+          itemInput.otherQuantity !== undefined);
+
+      let laneQty: Record<PoLaneKey, number>;
+      if (hasExplicitSplit && itemInput) {
+        const khi = Number(itemInput.khiQuantity || 0);
+        const isb = Number(itemInput.isbQuantity || 0);
+        const other = Number(itemInput.otherQuantity || 0);
+        const splitSum = khi + isb + other;
+        if (splitSum !== confirmQty) {
+          throw new Error(
+            `ISB, KHI, and Other quantities must total the confirm quantity (${confirmQty}) for part ${partId} on quotation ${quotation.quotationNo}.`,
+          );
+        }
+        laneQty = { khi, isb, other };
+      } else {
+        const split = inquirySplitByPartId.get(partId) || {
+          khiQuantity: 0,
+          isbQuantity: 0,
+          otherQuantity: 0,
+        };
+        laneQty = distributeConfirmQuantity(
+          confirmQty,
+          quotationQty,
+          split.khiQuantity,
+          split.isbQuantity,
+          split.otherQuantity,
         );
       }
-      laneQty = { khi, isb, other };
-    } else {
-      const split = inquirySplitByPartId.get(partId) || {
-        khiQuantity: 0,
-        isbQuantity: 0,
-        otherQuantity: 0,
-      };
-      laneQty = distributeConfirmQuantity(
-        confirmQty,
-        quotationQty,
-        split.khiQuantity,
-        split.isbQuantity,
-        split.otherQuantity,
-      );
-    }
 
-    const revisedLcRate = Number(item.revisedLcRate || 0);
-    const lcRate = Number(item.lcRate || 0);
-    const unitCost =
-      useRevisedRates && revisedLcRate > 0 ? revisedLcRate : lcRate;
+      const revisedLcRate = Number(item.revisedLcRate || 0);
+      const lcRate = Number(item.lcRate || 0);
+      const unitCost =
+        useRevisedRates && revisedLcRate > 0 ? revisedLcRate : lcRate;
 
-    (Object.keys(laneQty) as PoLaneKey[]).forEach((lane) => {
-      const quantity = laneQty[lane];
-      if (quantity <= 0) return;
-      laneItems[lane].push({
-        partId,
-        quantity,
-        unitCost,
-        totalCost: unitCost * quantity,
+      (Object.keys(laneQty) as PoLaneKey[]).forEach((lane) => {
+        const quantity = laneQty[lane];
+        if (quantity <= 0) return;
+        laneItems[lane].push({
+          partId,
+          quantity,
+          unitCost,
+          totalCost: unitCost * quantity,
+        });
       });
-    });
+    }
   }
 
   const lanesWithItems = (Object.keys(laneItems) as PoLaneKey[]).filter(
@@ -418,11 +602,21 @@ async function confirmPurchaseQuotation(
   }
 
   const confirmationDate = parseDateOrNow(options.confirmationDate);
-  const requestNo = quotation.PurchaseImportRequest?.requestNo || "";
+  const quotationNos = allQuotationIds
+    .map((id) => (quotationById.get(id) as any)?.quotationNo)
+    .filter(Boolean)
+    .join(", ");
+  const requestNos = Array.from(
+    new Set(
+      allQuotationIds
+        .map((id) => (quotationById.get(id) as any)?.PurchaseImportRequest?.requestNo)
+        .filter(Boolean),
+    ),
+  ).join(", ");
 
   const createdOrders = await prisma.$transaction(async (tx) => {
-    await (tx as any).purchaseQuotation.update({
-      where: { id: quotationId },
+    await (tx as any).purchaseQuotation.updateMany({
+      where: { id: { in: allQuotationIds } },
       data: {
         status: "confirm",
         confirmationDate,
@@ -445,8 +639,10 @@ async function confirmPurchaseQuotation(
       const totalAmount = poItems.reduce((sum, row) => sum + row.totalCost, 0);
       const poNumber = poNumbers[laneIndex];
       const consignee = PO_LANE_CONSIGNEE[lane];
-      const notes = `Created from purchase quotation ${quotation.quotationNo}${
-        requestNo ? ` (Inquiry ${requestNo})` : ""
+      const notes = `Created from purchase quotation${
+        allQuotationIds.length > 1 ? "s" : ""
+      } ${quotationNos}${
+        requestNos ? ` (Inquiry ${requestNos})` : ""
       } - ${consignee.toUpperCase()}`;
 
       const created = await tx.purchaseOrder.create({
@@ -454,11 +650,11 @@ async function confirmPurchaseQuotation(
           id: randomUUID(),
           poNumber,
           date: confirmationDate,
-          supplierId: quotation.supplierId,
-          purchaseQuotationId: quotationId,
+          supplierId,
+          purchaseQuotationId: primaryId,
           consignee,
-          currency: quotation.currency,
-          conversionRate: Number(quotation.conversionRate || 1),
+          currency: primary.currency,
+          conversionRate: Number(primary.conversionRate || 1),
           status: "Pending",
           notes,
           totalAmount,
@@ -492,11 +688,20 @@ async function confirmPurchaseQuotation(
 
   return {
     quotation: {
-      id: quotation.id,
-      quotationNo: quotation.quotationNo,
+      id: primary.id,
+      quotationNo: primary.quotationNo,
       status: "confirm",
       confirmationDate,
     },
+    quotations: allQuotationIds.map((id) => {
+      const row: any = quotationById.get(id);
+      return {
+        id,
+        quotationNo: row?.quotationNo || "",
+        status: "confirm",
+        confirmationDate,
+      };
+    }),
     purchaseOrders: createdOrders,
   };
 }
@@ -1871,11 +2076,18 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
 
 router.get("/quotations", async (req: Request, res: Response) => {
   try {
+    const purchaseImportRequestModel = (prisma as any).purchaseImportRequest;
     const purchaseQuotationModel = (prisma as any).purchaseQuotation;
     if (!purchaseQuotationModel) {
       return res.status(500).json({
         error:
           "Purchase quotation model is unavailable in Prisma client. Restart backend and regenerate Prisma client.",
+      });
+    }
+    if (!purchaseImportRequestModel) {
+      return res.status(500).json({
+        error:
+          "Purchase import request model is unavailable in Prisma client. Restart backend and regenerate Prisma client.",
       });
     }
 
@@ -1930,6 +2142,15 @@ router.get("/quotations", async (req: Request, res: Response) => {
               id: true,
               requestNo: true,
               partReference: true,
+              consignee: true,
+              batchId: true,
+              PurchaseImportRequestItem: {
+                select: {
+                  khiQuantity: true,
+                  isbQuantity: true,
+                  otherQuantity: true,
+                },
+              },
             },
           },
           PurchaseQuotationItem: {
@@ -1954,8 +2175,18 @@ router.get("/quotations", async (req: Request, res: Response) => {
       purchaseQuotationModel.count({ where }),
     ]);
 
+    const data = await Promise.all(
+      rows.map(async (row: any) => ({
+        ...row,
+        consigneeLabel: await resolveQuotationConsigneeLabel(
+          purchaseImportRequestModel,
+          row.PurchaseImportRequest,
+        ),
+      })),
+    );
+
     res.json({
-      data: rows,
+      data,
       pagination: {
         page,
         limit,
@@ -2496,6 +2727,7 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
     const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
     const items = itemsRaw
       .map((item: any) => ({
+        quotationId: String(item?.quotationId || "").trim() || undefined,
         partId: String(item?.partId || "").trim(),
         confirmQuantity: Math.max(0, Math.floor(Number(item?.confirmQuantity || 0))),
         khiQuantity:
@@ -2513,9 +2745,16 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
       }))
       .filter((item: { partId: string }) => item.partId);
 
+    const combineQuotationIds = Array.isArray(req.body?.combineQuotationIds)
+      ? req.body.combineQuotationIds
+          .map((id: any) => String(id || "").trim())
+          .filter(Boolean)
+      : [];
+
     const result = await confirmPurchaseQuotation(quotationId, {
       confirmationDate: req.body?.confirmationDate,
       items,
+      combineQuotationIds,
     });
 
     res.json(result);
@@ -2550,7 +2789,8 @@ router.post("/quotations/:quotationId/convert-to-po", async (req: Request, res: 
 });
 
 type ReceivePurchaseOrderItemInput = {
-  id: string;
+  id?: string;
+  partId?: string;
   receiveQty: number;
   fcRate?: number;
 };
@@ -3055,6 +3295,12 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       });
     }
 
+    if (String(order.status || "").trim().toLowerCase() === "received") {
+      return res.status(400).json({
+        error: "Purchase import cannot be updated after the purchase order is received",
+      });
+    }
+
     const quotation = order.PurchaseQuotation;
     const isRevised = isQuotationRevisedRecord(quotation);
     const quotationItemByPartId = new Map(
@@ -3064,20 +3310,41 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       ]),
     );
 
+    const existingItemIds = new Set(
+      order.PurchaseOrderItem.map((item) => String(item.id)),
+    );
+
     const receiveByItemId = new Map<string, { receiveQty: number; fcRate?: number }>();
+    const newItems: Array<{
+      partId: string;
+      receiveQty: number;
+      fcRate: number;
+    }> = [];
+
     for (const row of itemsRaw as ReceivePurchaseOrderItemInput[]) {
       const itemId = String(row?.id || "").trim();
-      if (!itemId) continue;
-      receiveByItemId.set(itemId, {
-        receiveQty: Number(row.receiveQty) || 0,
-        fcRate:
-          row.fcRate !== undefined && Number.isFinite(Number(row.fcRate))
-            ? Number(row.fcRate)
-            : undefined,
+      const partId = String(row?.partId || "").trim();
+      const receiveQty = Number(row.receiveQty) || 0;
+      const fcRate =
+        row.fcRate !== undefined && Number.isFinite(Number(row.fcRate))
+          ? Math.max(0, Number(row.fcRate) || 0)
+          : undefined;
+
+      if (itemId && existingItemIds.has(itemId)) {
+        receiveByItemId.set(itemId, { receiveQty, fcRate });
+        continue;
+      }
+
+      if (!partId) continue;
+
+      newItems.push({
+        partId,
+        receiveQty,
+        fcRate: fcRate ?? 0,
       });
     }
 
-    if (receiveByItemId.size === 0) {
+    if (receiveByItemId.size === 0 && newItems.length === 0) {
       return res.status(400).json({ error: "At least one item receive quantity is required" });
     }
 
@@ -3109,7 +3376,9 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
           receiveRow?.fcRate !== undefined
             ? Math.max(0, Number(receiveRow.fcRate) || 0)
             : quotationFcRate;
-        const weight = Number(quotationItem?.weight || 0);
+        const weight = Number(
+          quotationItem?.weight ?? (poItem as any).weight ?? 0,
+        );
         const lineUnitCost = fcRate * conversionRate;
         const receiveQty = variance.receiveQty;
         const fcAmount = fcRate * receiveQty;
@@ -3133,6 +3402,44 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
             "totalCost" = ${lineTotalCost}
           WHERE "id" = ${poItem.id}
         `;
+      }
+
+      for (const newItem of newItems) {
+        const part = await tx.part.findUnique({
+          where: { id: newItem.partId },
+          select: { id: true, weight: true },
+        });
+        if (!part) {
+          throw new Error(`Part not found: ${newItem.partId}`);
+        }
+
+        const receiveQty = Math.max(0, Math.floor(Number(newItem.receiveQty) || 0));
+        const fcRate = Math.max(0, Number(newItem.fcRate) || 0);
+        const weight = Number(part.weight || 0);
+        const lineUnitCost = fcRate * conversionRate;
+        const fcAmount = fcRate * receiveQty;
+        const lineTotalCost = lineUnitCost * receiveQty;
+        const totalWeight = weight * receiveQty;
+
+        totalLc += lineTotalCost;
+        totalFc += fcAmount;
+
+        await tx.purchaseOrderItem.create({
+          data: {
+            purchaseOrderId: id,
+            partId: newItem.partId,
+            quantity: receiveQty,
+            receivedQty: receiveQty,
+            additionalQty: 0,
+            backQty: 0,
+            fcRate,
+            fcAmount,
+            weight,
+            totalWeight,
+            unitCost: lineUnitCost,
+            totalCost: lineTotalCost,
+          },
+        });
       }
 
       const expenses = parseImportPoExpensesFromBody(req.body, totalLc, conversionRate);
@@ -3227,7 +3534,10 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       },
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    const message = error?.message || "Failed to receive purchase order";
+    const status =
+      message.includes("Part not found") || message.includes("not found") ? 404 : 500;
+    res.status(status).json({ error: message });
   }
 });
 

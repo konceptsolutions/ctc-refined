@@ -2633,7 +2633,9 @@ class ApiClient {
     quotationId: string,
     data: {
       confirmationDate: string;
+      combineQuotationIds?: string[];
       items: Array<{
+        quotationId?: string;
         partId: string;
         confirmQuantity: number;
         khiQuantity?: number;
@@ -2716,7 +2718,8 @@ class ApiClient {
     orderId: string,
     data: {
       items: Array<{
-        id: string;
+        id?: string;
+        partId?: string;
         receiveQty: number;
         fcRate: number;
       }>;
@@ -2760,6 +2763,7 @@ class ApiClient {
         expenses: data.expenses,
         items: data.items.map((item) => ({
           id: item.id,
+          partId: item.partId,
           receiveQty: item.receiveQty,
           fcRate: item.fcRate,
         })),

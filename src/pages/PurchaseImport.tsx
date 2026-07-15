@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -239,6 +240,9 @@ type PurchaseImportRequestRecord = {
     id: string;
     demandQuantity: number;
     totalWeight: number;
+    khiQuantity?: number;
+    isbQuantity?: number;
+    otherQuantity?: number;
   }>;
   PurchaseQuotation?: Array<{
     id: string;
@@ -258,9 +262,18 @@ type PurchaseQuotationRecord = {
   quotationDate: string;
   revisedQuotationDate?: string | null;
   confirmationDate?: string | null;
+  consigneeLabel?: string;
   PurchaseImportRequest?: {
     id: string;
     requestNo?: string | null;
+    partReference?: string | null;
+    consignee?: string | null;
+    batchId?: string;
+    PurchaseImportRequestItem?: Array<{
+      khiQuantity?: number;
+      isbQuantity?: number;
+      otherQuantity?: number;
+    }>;
   };
   Supplier?: {
     id: string;
@@ -309,6 +322,9 @@ type ImportPurchaseOrderRecord = {
 
 type ImportPurchaseOrderReceiveLine = {
   id: string;
+  partId: string;
+  isNewRow?: boolean;
+  loadingPartDetails?: boolean;
   masterPartNo: string;
   partNo: string;
   description: string;
@@ -943,6 +959,32 @@ const createEmptyItem = (): ItemRow => ({
   loadingDetails: false,
 });
 
+const createEmptyReceiveLine = (): ImportPurchaseOrderReceiveLine => ({
+  id: createRowId(),
+  partId: "",
+  isNewRow: true,
+  loadingPartDetails: false,
+  masterPartNo: "",
+  partNo: "",
+  description: "",
+  brand: "",
+  currentStock: 0,
+  demandQuantity: 0,
+  quotationQuantity: 0,
+  shipDays: 0,
+  fcRate: 0,
+  fcRateText: "",
+  fcAmount: 0,
+  lcRate: 0,
+  lcAmount: 0,
+  weight: 0,
+  totalWeight: 0,
+  orderQty: 0,
+  receiveQty: "",
+  additionalQty: 0,
+  backQty: 0,
+});
+
 const getInquiryRowDemandQuantity = (row: Pick<ItemRow, "khiQuantity" | "isbQuantity" | "otherQuantity">) =>
   Number(row.khiQuantity || 0) +
   Number(row.isbQuantity || 0) +
@@ -953,6 +995,68 @@ const isInquiryConfirmed = (status?: string | null) =>
 
 const formatInquiryListStatus = (status?: string | null) =>
   isInquiryConfirmed(status) ? "Confirmed" : "Pending";
+
+/** Build list consignee label from ISB / KHI (/ Other) split quantities. */
+const formatConsigneesFromSplitQuantities = (
+  items?: Array<{
+    isbQuantity?: number | null;
+    khiQuantity?: number | null;
+    otherQuantity?: number | null;
+  }> | null,
+  fallbackConsignee?: string | null,
+): string => {
+  let hasIsb = false;
+  let hasKhi = false;
+  let hasOther = false;
+
+  for (const item of items || []) {
+    if (Number(item.isbQuantity || 0) > 0) hasIsb = true;
+    if (Number(item.khiQuantity || 0) > 0) hasKhi = true;
+    if (Number(item.otherQuantity || 0) > 0) hasOther = true;
+  }
+
+  const parts: string[] = [];
+  if (hasIsb) parts.push("ISB");
+  if (hasKhi) parts.push("KHI");
+  if (SHOW_OTHER_QTY && hasOther) parts.push("Other");
+  if (parts.length > 0) return parts.join(", ");
+
+  const fallback = String(fallbackConsignee || "")
+    .trim()
+    .toUpperCase();
+  if (fallback === "ISB" || fallback === "KHI") return fallback;
+  if (fallback === "OTHER") return "Other";
+  return "-";
+};
+
+const getQuotationListConsigneeLabel = (
+  quotation: PurchaseQuotationRecord,
+  options?: {
+    purchaseOrderConsignee?: string | null;
+  },
+): string => {
+  const poConsignee = String(options?.purchaseOrderConsignee || "")
+    .trim()
+    .toUpperCase();
+  if (poConsignee === "ISB" || poConsignee === "KHI") return poConsignee;
+  if (poConsignee === "OTHER") return "Other";
+  if (options?.purchaseOrderConsignee) return options.purchaseOrderConsignee;
+
+  if (quotation.consigneeLabel && quotation.consigneeLabel !== "-") {
+    return quotation.consigneeLabel;
+  }
+
+  const request =
+    quotation.PurchaseImportRequest ||
+    (quotation as { purchaseImportRequest?: PurchaseQuotationRecord["PurchaseImportRequest"] })
+      .purchaseImportRequest;
+  const requestItems =
+    request?.PurchaseImportRequestItem ||
+    (request as { purchaseImportRequestItem?: PurchaseQuotationRecord["PurchaseImportRequest"]["PurchaseImportRequestItem"] })
+      ?.purchaseImportRequestItem;
+
+  return formatConsigneesFromSplitQuantities(requestItems, request?.consignee);
+};
 
 const getQuotationRowDemandQuantity = (
   row: Pick<PurchaseQuotationFormItem, "khiQuantity" | "isbQuantity" | "otherQuantity">,
@@ -5157,6 +5261,8 @@ const PurchaseInquiryListPanel = ({
               <th className="text-left p-2 border-b">Date</th>
               <th className="text-left p-2 border-b">Inquiry No</th>
               <th className="text-left p-2 border-b">Supplier</th>
+              <th className="text-left p-2 border-b">Part Reference</th>
+              <th className="text-left p-2 border-b">Consignee</th>
               <th className="text-right p-2 border-b">Items</th>
               <th className="text-right p-2 border-b">Total Qty</th>
               <th className="text-right p-2 border-b">Total Weight</th>
@@ -5168,13 +5274,13 @@ const PurchaseInquiryListPanel = ({
           <tbody>
             {loadingRequests ? (
               <tr>
-                <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                <td colSpan={12} className="p-4 text-center text-muted-foreground">
                   Loading inquiries...
                 </td>
               </tr>
             ) : requests.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                <td colSpan={12} className="p-4 text-center text-muted-foreground">
                   {mode === "quotation"
                     ? "No inquiries found."
                     : (
@@ -5208,6 +5314,10 @@ const PurchaseInquiryListPanel = ({
                   row.Supplier?.code ||
                   "N/A";
                 const hasSupplier = Boolean(row.supplierId || row.Supplier?.id);
+                const consigneeLabel = formatConsigneesFromSplitQuantities(
+                  itemRows,
+                  row.consignee,
+                );
                 return (
                   <tr key={row.id} className="border-b hover:bg-muted/20">
                     <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
@@ -5218,6 +5328,10 @@ const PurchaseInquiryListPanel = ({
                     </td>
                     <td className="p-2 font-mono text-xs">{row.requestNo || "-"}</td>
                     <td className="p-2">{supplierName}</td>
+                    <td className="p-2 max-w-[180px] truncate" title={row.partReference || ""}>
+                      {row.partReference || "-"}
+                    </td>
+                    <td className="p-2 font-medium">{consigneeLabel}</td>
                     <td className="p-2 text-right">{itemRows.length}</td>
                     <td className="p-2 text-right">{totalQty}</td>
                     <td className="p-2 text-right">{totalWeight.toFixed(2)}</td>
@@ -5387,8 +5501,8 @@ const PurchaseQuotationListPanel = ({
   >([]);
 
   const isConfirmedView = view === "confirmed";
-  const openListColSpan = 12;
-  const confirmedListColSpan = 11;
+  const openListColSpan = 14;
+  const confirmedListColSpan = 12;
   const CONSIGNEE_ORDER = ["ISB", "KHI", "Other"] as const;
   const listStatus = view === "confirmed" ? ("confirm" as const) : ("open" as const);
 
@@ -5787,6 +5901,8 @@ const PurchaseQuotationListPanel = ({
                 <th className="text-left p-2 border-b">Inquiry No</th>
               )}
               <th className="text-left p-2 border-b">Supplier</th>
+              <th className="text-left p-2 border-b">Part Reference</th>
+              <th className="text-left p-2 border-b">Consignee</th>
               <th className="text-right p-2 border-b">Items</th>
               <th className="text-right p-2 border-b">FC Total</th>
               <th className="text-right p-2 border-b">LC Total</th>
@@ -5797,9 +5913,6 @@ const PurchaseQuotationListPanel = ({
                 </>
               )}
               <th className="text-left p-2 border-b">PO No</th>
-              {isConfirmedView && (
-                <th className="text-left p-2 border-b">Consignee</th>
-              )}
               <th className="text-center p-2 border-b">Action</th>
             </tr>
           </thead>
@@ -5849,15 +5962,9 @@ const PurchaseQuotationListPanel = ({
                       .map((po) => po.poNumber)
                       .filter(Boolean)
                       .join(", ") || "-";
-                const consignee = String(entry.purchaseOrder?.consignee || "")
-                  .trim()
-                  .toUpperCase();
-                const consigneeLabel =
-                  consignee === "ISB" || consignee === "KHI" || consignee === "OTHER"
-                    ? consignee === "OTHER"
-                      ? "Other"
-                      : consignee
-                    : entry.purchaseOrder?.consignee || "-";
+                const consigneeLabel = getQuotationListConsigneeLabel(row, {
+                  purchaseOrderConsignee: entry.purchaseOrder?.consignee,
+                });
 
                 return (
                   <tr key={entry.key} className="border-b hover:bg-muted/20">
@@ -5891,6 +5998,13 @@ const PurchaseQuotationListPanel = ({
                       </td>
                     )}
                     <td className="p-2">{supplierName}</td>
+                    <td
+                      className="p-2 max-w-[180px] truncate"
+                      title={row.PurchaseImportRequest?.partReference || ""}
+                    >
+                      {row.PurchaseImportRequest?.partReference || "-"}
+                    </td>
+                    <td className="p-2 font-medium">{consigneeLabel}</td>
                     <td className="p-2 text-right">{itemRows.length}</td>
                     <td className="p-2 text-right">
                       {Number(row.fcTotal || 0).toFixed(2)} {row.currency || ""}
@@ -5903,9 +6017,6 @@ const PurchaseQuotationListPanel = ({
                       </>
                     )}
                     <td className="p-2 font-mono text-xs">{poNumber}</td>
-                    {isConfirmedView && (
-                      <td className="p-2 font-medium">{consigneeLabel}</td>
-                    )}
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-2">
                         {action === "confirm" ? (
@@ -6066,6 +6177,9 @@ const PurchaseImportRequestTab = () => {
 
 type PurchaseQuotationConfirmRow = {
   rowId: string;
+  quotationId: string;
+  quotationNo: string;
+  inquiryNo?: string | null;
   partId: string;
   masterPartNo: string;
   partNo: string;
@@ -6103,6 +6217,57 @@ const recalcConfirmRowAmounts = (
   };
 };
 
+const buildConfirmRowsFromQuotationDetail = (
+  data: PurchaseQuotationDetailPayload,
+): PurchaseQuotationConfirmRow[] => {
+  const revised = isQuotationRevised(data);
+  return (Array.isArray(data.items) ? data.items : []).map((item) => {
+    const effective = getEffectiveQuotationItemValues(item, revised);
+    const confirmQuantity = Number(item.quotationQuantity || 0);
+    const quotationQuantity = Number(item.quotationQuantity || 0);
+    const storedWeight = Number(item.weight || 0);
+    const weight =
+      storedWeight > 0
+        ? storedWeight
+        : quotationQuantity > 0
+          ? Number(item.totalWeight || 0) / quotationQuantity
+          : 0;
+    const split = distributeConfirmSplitQuantities(
+      confirmQuantity,
+      Number(item.khiQuantity || 0),
+      Number(item.isbQuantity || 0),
+      Number(item.otherQuantity || 0),
+    );
+    const amounts = recalcConfirmRowAmounts({
+      fcRate: effective.fcRate,
+      lcRate: effective.lcRate,
+      weight,
+      confirmQuantity,
+    });
+    return {
+      rowId: createRowId(),
+      quotationId: data.id,
+      quotationNo: data.quotationNo || "",
+      inquiryNo: data.request?.requestNo || null,
+      partId: item.partId,
+      masterPartNo: item.masterPartNo || "",
+      partNo: item.partNo || "",
+      description: item.description || "",
+      brand: item.brand || "",
+      currentStock: Number(item.currentStock || 0),
+      demandQuantity: Number(item.demandQuantity || 0),
+      quotationQuantity,
+      shipDays: Number(item.shipDays || 0),
+      lastFcRate: Number(item.lastFcRate || 0),
+      fcRate: effective.fcRate,
+      lcRate: effective.lcRate,
+      weight,
+      ...split,
+      ...amounts,
+    };
+  });
+};
+
 const PurchaseQuotationConfirmForm = ({
   quotationId,
   onSaved,
@@ -6120,67 +6285,85 @@ const PurchaseQuotationConfirmForm = ({
   const [detail, setDetail] = useState<PurchaseQuotationDetailPayload | null>(null);
   const [confirmationDate, setConfirmationDate] = useState(toInputDate(new Date()));
   const [rows, setRows] = useState<PurchaseQuotationConfirmRow[]>([]);
+  const [combinableQuotations, setCombinableQuotations] = useState<
+    Array<{
+      id: string;
+      quotationNo: string;
+      inquiryNo?: string | null;
+      partReference?: string | null;
+      itemsCount: number;
+      currency?: string | null;
+    }>
+  >([]);
+  const [selectedCombineIds, setSelectedCombineIds] = useState<string[]>([]);
+  const [loadingCombineId, setLoadingCombineId] = useState<string | null>(null);
 
   const isRevised = isQuotationRevised(detail);
+  const isCombinedView = selectedCombineIds.length > 0;
 
   useEffect(() => {
     const loadQuotation = async () => {
       setLoading(true);
+      setCombinableQuotations([]);
+      setSelectedCombineIds([]);
       try {
         const res = await apiClient.getPurchaseQuotationById(quotationId);
         const data = (res as any)?.data as PurchaseQuotationDetailPayload | undefined;
         if (!data) {
           throw new Error("Quotation detail is unavailable.");
         }
-        const revised = isQuotationRevised(data);
         setDetail(data);
         setConfirmationDate(toInputDate(new Date()));
-        setRows(
-          Array.isArray(data.items)
-            ? data.items.map((item) => {
-                const effective = getEffectiveQuotationItemValues(item, revised);
-                const confirmQuantity = Number(item.quotationQuantity || 0);
-                const quotationQuantity = Number(item.quotationQuantity || 0);
-                const storedWeight = Number(item.weight || 0);
-                const weight =
-                  storedWeight > 0
-                    ? storedWeight
-                    : quotationQuantity > 0
-                      ? Number(item.totalWeight || 0) / quotationQuantity
-                      : 0;
-                const split = distributeConfirmSplitQuantities(
-                  confirmQuantity,
-                  Number(item.khiQuantity || 0),
-                  Number(item.isbQuantity || 0),
-                  Number(item.otherQuantity || 0),
-                );
-                const amounts = recalcConfirmRowAmounts({
-                  fcRate: effective.fcRate,
-                  lcRate: effective.lcRate,
-                  weight,
-                  confirmQuantity,
-                });
-                return {
-                  rowId: createRowId(),
-                  partId: item.partId,
-                  masterPartNo: item.masterPartNo || "",
-                  partNo: item.partNo || "",
-                  description: item.description || "",
-                  brand: item.brand || "",
-                  currentStock: Number(item.currentStock || 0),
-                  demandQuantity: Number(item.demandQuantity || 0),
-                  quotationQuantity,
-                  shipDays: Number(item.shipDays || 0),
-                  lastFcRate: Number(item.lastFcRate || 0),
-                  fcRate: effective.fcRate,
-                  lcRate: effective.lcRate,
-                  weight,
-                  ...split,
-                  ...amounts,
-                };
-              })
-            : [],
-        );
+        setRows(buildConfirmRowsFromQuotationDetail(data));
+
+        const supplierId = String(data.supplier?.id || "").trim();
+        if (supplierId) {
+          try {
+            const openRes = await apiClient.getPurchaseQuotations({
+              status: "open",
+              supplierId,
+              page: 1,
+              limit: 200,
+            });
+            const openRows = Array.isArray((openRes as any)?.data)
+              ? (openRes as any).data
+              : [];
+            const primaryCurrency = String(data.currency || "")
+              .trim()
+              .toUpperCase();
+            setCombinableQuotations(
+              openRows
+                .filter((row: any) => {
+                  const id = String(row.id || "");
+                  if (!id || id === quotationId) return false;
+                  const status = String(row.status || "")
+                    .trim()
+                    .toLowerCase();
+                  if (status === "confirm") return false;
+                  if ((row.PurchaseOrder || []).length > 0) return false;
+                  const currency = String(row.currency || "")
+                    .trim()
+                    .toUpperCase();
+                  if (primaryCurrency && currency && currency !== primaryCurrency) {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((row: any) => ({
+                  id: String(row.id),
+                  quotationNo: String(row.quotationNo || ""),
+                  inquiryNo: row.PurchaseImportRequest?.requestNo || null,
+                  partReference: row.PurchaseImportRequest?.partReference || null,
+                  itemsCount: Array.isArray(row.PurchaseQuotationItem)
+                    ? row.PurchaseQuotationItem.length
+                    : 0,
+                  currency: row.currency || null,
+                })),
+            );
+          } catch {
+            setCombinableQuotations([]);
+          }
+        }
       } catch (error: any) {
         toast({
           title: "Failed to load quotation",
@@ -6194,11 +6377,43 @@ const PurchaseQuotationConfirmForm = ({
       }
     };
 
-    loadQuotation();
+    void loadQuotation();
   }, [quotationId, toast]);
 
-  const updateRow = (rowId: string, patch: Partial<PurchaseQuotationConfirmRow>) => {
-    setRows((prev) => prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)));
+  const toggleCombineQuotation = async (targetId: string, checked: boolean) => {
+    if (!checked) {
+      setSelectedCombineIds((prev) => prev.filter((id) => id !== targetId));
+      setRows((prev) => prev.filter((row) => row.quotationId !== targetId));
+      return;
+    }
+
+    setLoadingCombineId(targetId);
+    try {
+      const res = await apiClient.getPurchaseQuotationById(targetId);
+      const data = (res as any)?.data as PurchaseQuotationDetailPayload | undefined;
+      if (!data) {
+        throw new Error("Selected quotation detail is unavailable.");
+      }
+      const nextRows = buildConfirmRowsFromQuotationDetail(data);
+      setRows((prev) => [
+        ...prev.filter((row) => row.quotationId !== targetId),
+        ...nextRows,
+      ]);
+      setSelectedCombineIds((prev) =>
+        prev.includes(targetId) ? prev : [...prev, targetId],
+      );
+    } catch (error: any) {
+      toast({
+        title: "Failed to add quotation",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not load the selected quotation to combine.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingCombineId(null);
+    }
   };
 
   const handleConfirmQtyChange = (rowId: string, rawValue: string) => {
@@ -6305,7 +6520,9 @@ const PurchaseQuotationConfirmForm = ({
     try {
       const response = await apiClient.confirmPurchaseQuotation(quotationId, {
         confirmationDate,
+        combineQuotationIds: selectedCombineIds,
         items: itemsToConfirm.map((row) => ({
+          quotationId: row.quotationId || quotationId,
           partId: row.partId,
           confirmQuantity: Number(row.confirmQuantity),
           khiQuantity: Number(row.khiQuantity || 0),
@@ -6319,11 +6536,16 @@ const PurchaseQuotationConfirmForm = ({
         .map((po) => po.poNumber)
         .filter(Boolean)
         .join(", ");
+      const combinedCount = selectedCombineIds.length + 1;
       toast({
-        title: "Quotation confirmed",
+        title: combinedCount > 1 ? "Quotations confirmed" : "Quotation confirmed",
         description: poLabels
-          ? `Purchase order${purchaseOrders && purchaseOrders.length > 1 ? "s" : ""} ${poLabels} created.`
-          : "Quotation has been confirmed.",
+          ? `Purchase order${purchaseOrders && purchaseOrders.length > 1 ? "s" : ""} ${poLabels} created${
+              combinedCount > 1 ? ` from ${combinedCount} quotations` : ""
+            }.`
+          : combinedCount > 1
+            ? `${combinedCount} quotations have been confirmed.`
+            : "Quotation has been confirmed.",
       });
       onSaved?.();
     } catch (error: any) {
@@ -6338,7 +6560,7 @@ const PurchaseQuotationConfirmForm = ({
     }
   };
 
-  const itemTableColSpan = SHOW_OTHER_QTY ? 17 : 16;
+  const itemTableColSpan = (SHOW_OTHER_QTY ? 17 : 16) + (isCombinedView ? 1 : 0);
 
   if (loading) {
     return (
@@ -6356,8 +6578,59 @@ const PurchaseQuotationConfirmForm = ({
           Review quotation details and confirm quantities before creating purchase orders by
           consignee (ISB / KHI / Other).
           {isRevised ? " Showing revised quotation values." : " Showing original quotation values."}
+          {isCombinedView
+            ? " Combined quotations will confirm together and create shared purchase orders."
+            : ""}
         </p>
       </div>
+
+      {combinableQuotations.length > 0 ? (
+        <div className="rounded-md border border-border p-3 space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">Combine quotations</h3>
+            <p className="text-xs text-muted-foreground">
+              This supplier has other unconfirmed quotations. Select any to confirm together
+              with this one.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {combinableQuotations.map((row) => {
+              const checked = selectedCombineIds.includes(row.id);
+              const busy = loadingCombineId === row.id;
+              return (
+                <label
+                  key={row.id}
+                  className="flex items-start gap-3 rounded-md border border-border/60 px-3 py-2 hover:bg-muted/30 cursor-pointer"
+                >
+                  <Checkbox
+                    checked={checked}
+                    disabled={saving || busy || loadingCombineId !== null}
+                    onCheckedChange={(value) => {
+                      void toggleCombineQuotation(row.id, value === true);
+                    }}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1 text-sm">
+                    <div className="font-medium font-mono text-xs">
+                      {row.quotationNo || row.id}
+                      {busy ? (
+                        <span className="ml-2 text-muted-foreground font-sans">
+                          Loading...
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Inquiry {row.inquiryNo || "-"}
+                      {row.partReference ? ` · ${row.partReference}` : ""}
+                      {` · ${row.itemsCount} item${row.itemsCount === 1 ? "" : "s"}`}
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         <div
@@ -6427,6 +6700,9 @@ const PurchaseQuotationConfirmForm = ({
           <thead className="bg-muted/40">
             <tr>
               <th className="text-center p-2 border-b w-12">#</th>
+              {isCombinedView ? (
+                <th className="text-left p-2 border-b">Quotation No</th>
+              ) : null}
               <th className="text-left p-2 border-b">Item</th>
               <th className="text-left p-2 border-b">Brand</th>
               <th className="text-right p-2 border-b">Current Stock</th>
@@ -6472,6 +6748,14 @@ const PurchaseQuotationConfirmForm = ({
                   <td className="p-2 text-center text-muted-foreground tabular-nums">
                     {index + 1}
                   </td>
+                  {isCombinedView ? (
+                    <td className="p-2 font-mono text-xs">
+                      <div>{row.quotationNo || "-"}</div>
+                      {row.inquiryNo ? (
+                        <div className="text-muted-foreground">{row.inquiryNo}</div>
+                      ) : null}
+                    </td>
+                  ) : null}
                   <td
                     className="p-2 min-w-[280px]"
                     title={`${row.masterPartNo || "-"} | ${row.partNo || "-"} | ${row.description || "-"} | ${row.brand || "-"}`}
@@ -6562,6 +6846,7 @@ const PurchaseQuotationConfirmForm = ({
             <tfoot>
               <tr className="bg-muted/40 font-semibold border-t">
                 <td className="p-2" />
+                {isCombinedView ? <td className="p-2" /> : null}
                 <td className="p-2">Totals</td>
                 <td className="p-2" />
                 <td className="p-2" />
@@ -6610,7 +6895,11 @@ const PurchaseQuotationConfirmForm = ({
           onClick={handleConfirm}
           disabled={saving || !detail || hasSplitMismatch}
         >
-          {saving ? "Confirming..." : "Confirm & Create PO"}
+          {saving
+            ? "Confirming..."
+            : isCombinedView
+              ? "Confirm Combined & Create PO"
+              : "Confirm & Create PO"}
         </Button>
       </div>
     </div>
@@ -6784,6 +7073,7 @@ const PurchaseOrderTab = ({
   const [receiveOrderLabel, setReceiveOrderLabel] = useState("");
   const [receiveDetail, setReceiveDetail] = useState<ImportPurchaseOrderReceiveDetail | null>(null);
   const [receiveLines, setReceiveLines] = useState<ImportPurchaseOrderReceiveLine[]>([]);
+  const [receivePartOptions, setReceivePartOptions] = useState<PartOption[]>([]);
   const [loadingReceiveForm, setLoadingReceiveForm] = useState(false);
   const [savingReceive, setSavingReceive] = useState(false);
   const [receiveInvoiceNo, setReceiveInvoiceNo] = useState("");
@@ -6830,6 +7120,7 @@ const PurchaseOrderTab = ({
   const resetImportPurchaseForm = () => {
     setReceiveOrderId(null);
     setReceiveLines([]);
+    setReceivePartOptions([]);
     setReceiveDetail(null);
     setReceiveInvoiceNo("");
     setReceiveInvoiceDate("");
@@ -7062,6 +7353,8 @@ const PurchaseOrderTab = ({
         );
         return {
           id: item.id,
+          partId: String(item.partId || item.part_id || "").trim(),
+          isNewRow: false,
           masterPartNo: item.masterPartNo || "",
           partNo: item.partNo || item.part_no || "-",
           description: item.description || item.part_description || "-",
@@ -7091,6 +7384,23 @@ const PurchaseOrderTab = ({
         });
         setReceiveOrderId(null);
         return;
+      }
+      try {
+        const partsRes = await apiClient.getPartsDropdown();
+        const partsData = (partsRes as any)?.data || [];
+        setReceivePartOptions(
+          partsData.map((p: any) => ({
+            id: p.id || "",
+            partNo: p.partNo || "",
+            masterPartNo: p.masterPartNo || "",
+            description: p.description || "",
+            hsCode: p.hs_code || p.hsCode || "",
+            brand: p.brand || "",
+            weight: Number(p.weight || 0),
+          })),
+        );
+      } catch {
+        setReceivePartOptions([]);
       }
       setReceiveDetail({
         supplierName: orderData.supplier?.name || order.supplier?.name || "-",
@@ -7247,10 +7557,13 @@ const PurchaseOrderTab = ({
     setReceiveLines((prev) =>
       prev.map((line) => {
         if (line.id !== lineId) return line;
-        const variance = computeImportReceiveVariance(line.orderQty, value);
+        const receiveQtyNum = Math.max(0, Math.floor(Number(value) || 0));
+        const orderQty = line.isNewRow ? receiveQtyNum : line.orderQty;
+        const variance = computeImportReceiveVariance(orderQty, value);
         const amounts = computeImportReceiveLineAmounts(line, value);
         return {
           ...line,
+          orderQty,
           receiveQty: value,
           additionalQty: variance.additionalQty,
           backQty: variance.backQty,
@@ -7260,6 +7573,108 @@ const PurchaseOrderTab = ({
         };
       }),
     );
+  };
+
+  const receivePartSelectOptions = useMemo(
+    () => buildSortedPartSelectOptions(receivePartOptions, "none", "asc"),
+    [receivePartOptions],
+  );
+
+  const addReceiveLine = () => {
+    setReceiveLines((prev) => [...prev, createEmptyReceiveLine()]);
+  };
+
+  const removeReceiveLine = (lineId: string) => {
+    setReceiveLines((prev) =>
+      prev.filter((line) => !(line.id === lineId && line.isNewRow)),
+    );
+  };
+
+  const selectPartForReceiveLine = async (lineId: string, partId: string) => {
+    if (!partId) {
+      setReceiveLines((prev) =>
+        prev.map((line) =>
+          line.id === lineId
+            ? {
+                ...line,
+                partId: "",
+                masterPartNo: "",
+                partNo: "",
+                description: "",
+                brand: "",
+                currentStock: 0,
+                weight: 0,
+                totalWeight: 0,
+                loadingPartDetails: false,
+              }
+            : line,
+        ),
+      );
+      return;
+    }
+
+    setReceiveLines((prev) =>
+      prev.map((line) =>
+        line.id === lineId ? { ...line, partId, loadingPartDetails: true } : line,
+      ),
+    );
+
+    try {
+      const res = await apiClient.getPurchaseImportPartDetails(partId);
+      if ((res as any)?.error) {
+        throw new Error(String((res as any).error));
+      }
+      const details = (res as any)?.data;
+      const option =
+        receivePartOptions.find((p) => p.id === partId) ||
+        ({
+          id: partId,
+          partNo: "",
+          masterPartNo: "",
+          description: "",
+          brand: "",
+          weight: 0,
+          hsCode: "",
+        } as PartOption);
+      const fields = buildQuotationPartFieldsFromSelection(
+        option,
+        details,
+        receivePartOptions,
+      );
+      const conversionRate = Number(receiveConversionRate) || 0;
+      setReceiveLines((prev) =>
+        prev.map((line) => {
+          if (line.id !== lineId) return line;
+          const next = {
+            ...line,
+            ...fields,
+            loadingPartDetails: false,
+          };
+          const amounts = computeImportReceiveLineAmounts(next, next.receiveQty);
+          const updatedRates = recalcReceiveLineRates(
+            { ...next, ...amounts },
+            next.fcRate,
+            conversionRate,
+          );
+          return {
+            ...updatedRates,
+            fcRateText: formatRateInput(updatedRates.fcRate),
+            loadingPartDetails: false,
+          };
+        }),
+      );
+    } catch {
+      setReceiveLines((prev) =>
+        prev.map((line) =>
+          line.id === lineId ? { ...line, loadingPartDetails: false } : line,
+        ),
+      );
+      toast({
+        title: "Failed to load part details",
+        description: "Could not fetch stock and weight for the selected part.",
+        variant: "destructive",
+      });
+    }
   };
 
   const receiveTotals = useMemo(
@@ -7344,6 +7759,18 @@ const PurchaseOrderTab = ({
   const handleSaveReceive = async () => {
     if (!receiveOrderId || receiveLines.length === 0) return;
 
+    const incompleteNewLine = receiveLines.find(
+      (line) => line.isNewRow && !String(line.partId || "").trim(),
+    );
+    if (incompleteNewLine) {
+      toast({
+        title: "Select a part",
+        description: "Choose a part for every newly added item before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const invalidLine = receiveLines.find(
       (line) => line.receiveQty.trim() === "" || Number.isNaN(Number(line.receiveQty)),
     );
@@ -7382,7 +7809,8 @@ const PurchaseOrderTab = ({
           totalExp: importPoTotalExp,
         },
         items: receiveLines.map((line) => ({
-          id: line.id,
+          id: line.isNewRow ? undefined : line.id,
+          partId: line.partId || undefined,
           receiveQty: Math.max(0, Math.floor(Number(line.receiveQty) || 0)),
           fcRate: line.fcRate,
         })),
@@ -7517,6 +7945,7 @@ const PurchaseOrderTab = ({
                         type="button"
                         size="sm"
                         variant="default"
+                        disabled={isReceivedPurchaseOrder(row.status)}
                         onClick={() => openReceiveForm(row)}
                       >
                         {isInvoiceMode ? (
@@ -7526,7 +7955,7 @@ const PurchaseOrderTab = ({
                         )}
                         {formActionLabel}
                       </Button>
-                      {!isInvoiceMode &&
+                      {isInvoiceMode &&
                       isReceivedPurchaseOrder(row.status) &&
                       isKhiConsignee(row.consignee) ? (
                         <Button
@@ -7884,6 +8313,18 @@ const PurchaseOrderTab = ({
                   : "Enter supplier invoice quantities and rates for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate. Enter expenses from Purchase Invoice. Final stock receipt is completed from Store."}
                 {receiveDetail?.isRevised ? " Showing revised quotation values." : ""}
               </p>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={loadingReceiveForm || savingReceive}
+                  onClick={addReceiveLine}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Item
+                </Button>
+              </div>
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-xs">
                   <thead className="bg-muted/40">
@@ -7917,6 +8358,7 @@ const PurchaseOrderTab = ({
                       ) : null}
                       <th className="text-right p-2">Weight</th>
                       <th className="text-right p-2">Total Weight</th>
+                      <th className="text-center p-2 min-w-[70px]">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7934,10 +8376,36 @@ const PurchaseOrderTab = ({
                           {index + 1}
                         </td>
                         <td className="p-2">
-                          <div className="font-medium">
-                            {line.masterPartNo || "-"} | {line.partNo || "-"}
-                          </div>
-                          <div className="text-muted-foreground">{line.description}</div>
+                          {line.isNewRow ? (
+                            <div className="space-y-1 min-w-[240px]">
+                              <SearchableSelect
+                                options={receivePartSelectOptions}
+                                value={line.partId}
+                                onValueChange={(partId) =>
+                                  void selectPartForReceiveLine(line.id, partId)
+                                }
+                                placeholder="Master Part | Part No"
+                                selectedDisplayLabelOnly
+                                disabled={loadingReceiveForm || savingReceive}
+                              />
+                              {line.loadingPartDetails ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Loading details...
+                                </p>
+                              ) : line.partId ? (
+                                <p className="text-xs text-muted-foreground">
+                                  {line.description || "-"}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="font-medium">
+                                {line.masterPartNo || "-"} | {line.partNo || "-"}
+                              </div>
+                              <div className="text-muted-foreground">{line.description}</div>
+                            </>
+                          )}
                         </td>
                         <td className="p-2">{line.brand || "-"}</td>
                         <td className="p-2 text-right tabular-nums">{line.currentStock}</td>
@@ -8008,6 +8476,22 @@ const PurchaseOrderTab = ({
                             ? lineAmounts.totalWeight.toFixed(4)
                             : "-"}
                         </td>
+                        <td className="p-2 text-center">
+                          {line.isNewRow ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={savingReceive}
+                              onClick={() => removeReceiveLine(line.id)}
+                              title="Remove item"
+                            >
+                              <Trash className="w-4 h-4 text-destructive" />
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </td>
                       </tr>
                     );
                     })}
@@ -8050,6 +8534,7 @@ const PurchaseOrderTab = ({
                         <td className="p-2 text-right tabular-nums">
                           {receiveTotals.totalWeight.toFixed(4)}
                         </td>
+                        <td className="p-2" />
                       </tr>
                     </tfoot>
                   ) : null}
