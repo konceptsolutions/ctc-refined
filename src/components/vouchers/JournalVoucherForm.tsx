@@ -10,8 +10,8 @@ interface JournalEntry {
   id: string;
   account: string;
   description: string;
-  drAmount: number; // FC amount
-  crAmount: number; // FC amount
+  drAmount: number | string; // FC amount; string preserves decimal typing
+  crAmount: number | string; // FC amount; string preserves decimal typing
   type: "dr" | "cr";
 }
 
@@ -44,18 +44,18 @@ export const JournalVoucherForm = ({
   const [date, setDate] = useState(getTodayDate());
   const [exchangeRate, setExchangeRate] = useState("1");
   const [drEntries, setDrEntries] = useState<JournalEntry[]>([
-    { id: "dr-1", account: "", description: "", drAmount: 0, crAmount: 0, type: "dr" }
+    { id: "dr-1", account: "", description: "", drAmount: "", crAmount: "", type: "dr" }
   ]);
   const [crEntries, setCrEntries] = useState<JournalEntry[]>([
-    { id: "cr-1", account: "", description: "", drAmount: 0, crAmount: 0, type: "cr" }
+    { id: "cr-1", account: "", description: "", drAmount: "", crAmount: "", type: "cr" }
   ]);
 
   const addDrEntry = () => {
-    setDrEntries([...drEntries, { id: `dr-${Date.now()}`, account: "", description: "", drAmount: 0, crAmount: 0, type: "dr" }]);
+    setDrEntries([...drEntries, { id: `dr-${Date.now()}`, account: "", description: "", drAmount: "", crAmount: "", type: "dr" }]);
   };
 
   const addCrEntry = () => {
-    setCrEntries([...crEntries, { id: `cr-${Date.now()}`, account: "", description: "", drAmount: 0, crAmount: 0, type: "cr" }]);
+    setCrEntries([...crEntries, { id: `cr-${Date.now()}`, account: "", description: "", drAmount: "", crAmount: "", type: "cr" }]);
   };
 
   const removeDrEntry = (id: string) => {
@@ -110,7 +110,7 @@ export const JournalVoucherForm = ({
       toast({ title: "Error", description: "Please enter at least one amount", variant: "destructive" });
       return;
     }
-    if (totalDr !== totalCr) {
+    if (Math.abs(totalDr - totalCr) > 0.0001) {
       toast({ 
         title: "Error", 
         description: `Total Dr (${formatAmount(totalDr)}) must equal Total Cr (${formatAmount(totalCr)})`, 
@@ -131,12 +131,16 @@ export const JournalVoucherForm = ({
         date,
         drEntries: drEntries.map((entry) => ({
           ...entry,
+          drAmount: Number(entry.drAmount) || 0,
+          crAmount: Number(entry.crAmount) || 0,
           ...(isInternationalSupplier
             ? { drAmountLc: (Number(entry.drAmount) || 0) * parsedExchangeRate }
             : {}),
         })),
         crEntries: crEntries.map((entry) => ({
           ...entry,
+          drAmount: Number(entry.drAmount) || 0,
+          crAmount: Number(entry.crAmount) || 0,
           ...(isInternationalSupplier
             ? { crAmountLc: (Number(entry.crAmount) || 0) * parsedExchangeRate }
             : {}),
@@ -161,8 +165,8 @@ export const JournalVoucherForm = ({
           id: "dr-1",
           account: "",
           description: "",
-          drAmount: 0,
-          crAmount: 0,
+          drAmount: "",
+          crAmount: "",
           type: "dr",
         },
       ]);
@@ -171,8 +175,8 @@ export const JournalVoucherForm = ({
           id: "cr-1",
           account: "",
           description: "",
-          drAmount: 0,
-          crAmount: 0,
+          drAmount: "",
+          crAmount: "",
           type: "cr",
         },
       ]);
@@ -298,11 +302,10 @@ export const JournalVoucherForm = ({
               <Input
                 type="number"
                 placeholder={isInternationalSupplier ? "fc amount" : "amount"}
-                value={entry.drAmount || ""}
-                onChange={(e) => {
-                  const value = parseFloat(e.target.value) || 0;
-                  updateDrEntry(entry.id, "drAmount", value);
-                }}
+                value={entry.drAmount}
+                onChange={(e) =>
+                  updateDrEntry(entry.id, "drAmount", e.target.value)
+                }
                 step="0.01"
                 min="0"
                 className="h-10"
@@ -375,11 +378,10 @@ export const JournalVoucherForm = ({
               <Input
                 type="number"
                 placeholder={isInternationalSupplier ? "fc amount" : "amount"}
-                value={entry.crAmount || ""}
-                onChange={(e) => {
-                  const value = parseFloat(e.target.value) || 0;
-                  updateCrEntry(entry.id, "crAmount", value);
-                }}
+                value={entry.crAmount}
+                onChange={(e) =>
+                  updateCrEntry(entry.id, "crAmount", e.target.value)
+                }
                 step="0.01"
                 min="0"
                 className="h-10"

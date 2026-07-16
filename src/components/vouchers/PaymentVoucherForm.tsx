@@ -10,7 +10,7 @@ interface VoucherEntry {
   id: string;
   accountDr: string;
   description: string;
-  drAmount: number; // FC amount
+  drAmount: number | string; // FC amount; string preserves decimal typing
 }
 
 interface PaymentVoucherFormProps {
@@ -48,11 +48,11 @@ export const PaymentVoucherForm = ({
   const [exchangeRate, setExchangeRate] = useState("1");
   const [crAccount, setCrAccount] = useState("");
   const [entries, setEntries] = useState<VoucherEntry[]>([
-    { id: "1", accountDr: "", description: "", drAmount: 0 }
+    { id: "1", accountDr: "", description: "", drAmount: "" }
   ]);
 
   const addEntry = () => {
-    setEntries([...entries, { id: Date.now().toString(), accountDr: "", description: "", drAmount: 0 }]);
+    setEntries([...entries, { id: Date.now().toString(), accountDr: "", description: "", drAmount: "" }]);
   };
 
   const removeEntry = (id: string) => {
@@ -111,7 +111,16 @@ export const PaymentVoucherForm = ({
         paidTo,
         date,
         crAccount,
-        entries,
+        entries: entries.map((entry) => ({
+          ...entry,
+          drAmount: Number(entry.drAmount) || 0,
+          ...(isInternationalSupplier
+            ? {
+                drAmountLc:
+                  (Number(entry.drAmount) || 0) * parsedExchangeRate,
+              }
+            : {}),
+        })),
         totalAmount,
         ...(isInternationalSupplier
           ? {
@@ -126,7 +135,7 @@ export const PaymentVoucherForm = ({
       setPaidTo("");
       setCrAccount("");
       setExchangeRate("1");
-      setEntries([{ id: "1", accountDr: "", description: "", drAmount: 0 }]);
+      setEntries([{ id: "1", accountDr: "", description: "", drAmount: "" }]);
     } finally {
       setSaving(false);
     }
@@ -247,11 +256,10 @@ export const PaymentVoucherForm = ({
               <Input
                 type="number"
                 placeholder={isInternationalSupplier ? "fc amount" : "amount"}
-                value={entry.drAmount || ""}
-                onChange={(e) => {
-                  const value = parseFloat(e.target.value) || 0;
-                  updateEntry(entry.id, "drAmount", value);
-                }}
+                value={entry.drAmount}
+                onChange={(e) =>
+                  updateEntry(entry.id, "drAmount", e.target.value)
+                }
                 step="0.01"
                 min="0"
                 className="h-10"
