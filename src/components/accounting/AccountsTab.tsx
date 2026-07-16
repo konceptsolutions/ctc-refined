@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -144,6 +144,7 @@ export const AccountsTab = () => {
           setMainGroups(result.data || []);
         }
       } catch (error) {
+        console.error("Failed to load main groups:", error);
       }
     };
 
@@ -154,6 +155,7 @@ export const AccountsTab = () => {
           setSubGroups(result.data || []);
         }
       } catch (error) {
+        console.error("Failed to load subgroups:", error);
       }
     };
 
@@ -167,30 +169,7 @@ export const AccountsTab = () => {
   // main group and subgroup together and the effect would immediately wipe the
   // loaded subgroup value.
 
-  // Fetch accounts when filters change, but only after mainGroups and subGroups are loaded
-  useEffect(() => {
-    // Skip if this is a manual fetch
-    if (isManualFetchRef.current) {
-      isManualFetchRef.current = false;
-      return;
-    }
-    // Wait for both mainGroups and subGroups to be loaded before fetching
-    // If filtering by subgroup, we need subGroups to be loaded
-    if (filterSubGroup !== "all" && subGroups.length === 0) {
-      return; // Wait for subGroups to load
-    }
-    // If filtering by mainGroup, we need mainGroups to be loaded
-    if (filterMainGroup !== "all" && mainGroups.length === 0) {
-      return; // Wait for mainGroups to load
-    }
-    // If all filters are "all", we can fetch immediately (but still wait for at least mainGroups)
-    if (filterMainGroup === "all" && filterSubGroup === "all" && mainGroups.length === 0) {
-      return; // Wait for mainGroups to load for initial fetch
-    }
-    fetchAccounts();
-  }, [filterMainGroup, filterSubGroup, filterStatus, mainGroups.length, subGroups.length]);
-
-  const fetchAccounts = async (overrideFilters?: { mainGroup?: string; subGroup?: string; status?: string }) => {
+  const fetchAccounts = useCallback(async (overrideFilters?: { mainGroup?: string; subGroup?: string; status?: string }) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -233,11 +212,6 @@ export const AccountsTab = () => {
       if (result.data) {
         const data = result.data || [];
 
-        // Log all subgroups in the response for debugging
-        const allSubgroupsInResponse = [...new Set(data.map((acc: any) =>
-          `${(acc.Subgroup || acc.subgroup)?.code || 'N/A'}-${(acc.Subgroup || acc.subgroup)?.name || 'N/A'}`
-        ))];
-
         const transformed = data.map((acc: any) => {
           const sg = acc.Subgroup || acc.subgroup;
           const mg = sg?.MainGroup || sg?.mainGroup;
@@ -254,19 +228,6 @@ export const AccountsTab = () => {
           };
         });
 
-        // Log unique subgroups after transformation
-        const uniqueSubgroups = [...new Set(transformed.map(acc => acc.subGroup).filter(Boolean))];
-        console.log('Unique subgroups in accounts list:', uniqueSubgroups);
-
-        // Check specifically for bank subgroups
-        const bankAccounts = transformed.filter(acc =>
-          acc.subGroup?.toLowerCase().includes('bank') ||
-          acc.code?.startsWith('103') ||
-          acc.code?.startsWith('108')
-        );
-        if (bankAccounts.length > 0) {
-        }
-
         setAccounts(transformed);
       } else if (result.error) {
         console.error("Accounts load failure:", result.error);
@@ -278,7 +239,30 @@ export const AccountsTab = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterMainGroup, filterSubGroup, filterStatus, mainGroups, subGroups]);
+
+  // Fetch accounts when filters change, but only after mainGroups and subGroups are loaded
+  useEffect(() => {
+    // Skip if this is a manual fetch
+    if (isManualFetchRef.current) {
+      isManualFetchRef.current = false;
+      return;
+    }
+    // Wait for both mainGroups and subGroups to be loaded before fetching
+    // If filtering by subgroup, we need subGroups to be loaded
+    if (filterSubGroup !== "all" && subGroups.length === 0) {
+      return; // Wait for subGroups to load
+    }
+    // If filtering by mainGroup, we need mainGroups to be loaded
+    if (filterMainGroup !== "all" && mainGroups.length === 0) {
+      return; // Wait for mainGroups to load
+    }
+    // If all filters are "all", we can fetch immediately (but still wait for at least mainGroups)
+    if (filterMainGroup === "all" && filterSubGroup === "all" && mainGroups.length === 0) {
+      return; // Wait for mainGroups to load for initial fetch
+    }
+    fetchAccounts();
+  }, [filterMainGroup, filterSubGroup, filterStatus, mainGroups.length, subGroups.length, fetchAccounts]);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -314,6 +298,7 @@ export const AccountsTab = () => {
             subgroup = subgroups.find((sg: any) => sg.name === formData.subGroup || sg.id === formData.subGroup);
           }
         } catch (fetchError) {
+          console.error("Failed to fetch subgroups while adding account:", fetchError);
         }
       }
 
@@ -420,6 +405,7 @@ export const AccountsTab = () => {
             subgroup = subgroups.find((sg: any) => sg.name === formData.subGroup || sg.id === formData.subGroup);
           }
         } catch (fetchError) {
+          console.error("Failed to fetch subgroups while adding person account:", fetchError);
         }
       }
 

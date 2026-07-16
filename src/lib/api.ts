@@ -2697,6 +2697,20 @@ class ApiClient {
     );
   }
 
+  async getBackOrderSummaryReport(params: {
+    supplierId: string;
+    fromDate: string;
+    toDate: string;
+  }) {
+    const queryParams = new URLSearchParams();
+    queryParams.append("supplierId", params.supplierId);
+    queryParams.append("fromDate", params.fromDate);
+    queryParams.append("toDate", params.toDate);
+    return this.request(
+      `/purchase-import/reports/back-order-summary?${queryParams.toString()}`,
+    );
+  }
+
   async getImportPurchaseOrder(orderId: string) {
     return this.request(`/purchase-import/purchase-orders/${orderId}`);
   }

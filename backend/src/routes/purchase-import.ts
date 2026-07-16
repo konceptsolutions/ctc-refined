@@ -3630,6 +3630,167 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Back Order Summary Report
+ * Filters import POs by supplier + date range; returns ISB then KHI item lines
+ * with order/received/from-back/back quantities (aggregated by part).
+ */
+router.get("/reports/back-order-summary", async (req: Request, res: Response) => {
+  try {
+    const supplierId = String(req.query.supplierId || "").trim();
+    const fromDateRaw = String(req.query.fromDate || req.query.from_date || "").trim();
+    const toDateRaw = String(req.query.toDate || req.query.to_date || "").trim();
+
+    if (!supplierId) {
+      return res.status(400).json({ error: "Supplier is required." });
+    }
+    if (!fromDateRaw || !toDateRaw) {
+      return res.status(400).json({ error: "From date and to date are required." });
+    }
+
+    const fromDate = new Date(fromDateRaw);
+    const toDate = new Date(toDateRaw);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return res.status(400).json({ error: "Invalid date range." });
+    }
+    // Inclusive end-of-day for toDate
+    toDate.setHours(23, 59, 59, 999);
+
+    const supplier = await prisma.supplier.findUnique({
+      where: { id: supplierId },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        companyName: true,
+        type: true,
+      },
+    });
+    if (!supplier) {
+      return res.status(404).json({ error: "Supplier not found." });
+    }
+
+    const orders = await prisma.purchaseOrder.findMany({
+      where: {
+        purchaseQuotationId: { not: null },
+        supplierId,
+        date: { gte: fromDate, lte: toDate },
+        consignee: { in: ["isb", "khi"] },
+        PurchaseOrderItem: {
+          some: {
+            OR: [{ backQty: { gt: 0 } }, { additionalQty: { gt: 0 } }],
+          },
+        },
+      } as any,
+      orderBy: [{ date: "asc" }, { poNumber: "asc" }],
+      include: {
+        PurchaseOrderItem: {
+          where: {
+            OR: [{ backQty: { gt: 0 } }, { additionalQty: { gt: 0 } }],
+          },
+          include: {
+            Part: {
+              select: {
+                id: true,
+                partNo: true,
+                description: true,
+                MasterPart: { select: { masterPartNo: true } },
+                Brand: { select: { name: true } },
+              },
+            },
+          },
+        },
+      } as any,
+    });
+
+    type SummaryLine = {
+      partId: string;
+      partNo: string;
+      masterPartNo: string;
+      brand: string;
+      description: string;
+      orderQty: number;
+      receivedQty: number;
+      fromBackQty: number;
+      backQty: number;
+    };
+
+    const aggregateSection = (consignee: "isb" | "khi"): SummaryLine[] => {
+      const map = new Map<string, SummaryLine>();
+      for (const po of orders as any[]) {
+        if (String(po.consignee || "").toLowerCase() !== consignee) continue;
+        for (const item of po.PurchaseOrderItem || []) {
+          const partId = String(item.partId || item.Part?.id || "");
+          if (!partId) continue;
+          const existing = map.get(partId);
+          const orderQty = Number(item.quantity) || 0;
+          const receivedQty = Number(item.receivedQty) || 0;
+          const fromBackQty = Number(item.additionalQty) || 0;
+          const backQty = Number(item.backQty) || 0;
+          if (!existing) {
+            map.set(partId, {
+              partId,
+              partNo: item.Part?.partNo || "-",
+              masterPartNo: item.Part?.MasterPart?.masterPartNo || "-",
+              brand: item.Part?.Brand?.name || "-",
+              description: item.Part?.description || "-",
+              orderQty,
+              receivedQty,
+              fromBackQty,
+              backQty,
+            });
+          } else {
+            existing.orderQty += orderQty;
+            existing.receivedQty += receivedQty;
+            existing.fromBackQty += fromBackQty;
+            existing.backQty += backQty;
+          }
+        }
+      }
+      return Array.from(map.values()).sort((a, b) =>
+        String(a.partNo).localeCompare(String(b.partNo)),
+      );
+    };
+
+    const isb = aggregateSection("isb");
+    const khi = aggregateSection("khi");
+
+    res.json({
+      data: {
+        supplier: {
+          id: supplier.id,
+          code: supplier.code,
+          name: supplier.companyName || supplier.name || supplier.code,
+        },
+        fromDate: fromDateRaw,
+        toDate: toDateRaw,
+        sections: {
+          ISB: isb,
+          KHI: khi,
+        },
+        totals: {
+          ISB: {
+            orderQty: isb.reduce((s, r) => s + r.orderQty, 0),
+            receivedQty: isb.reduce((s, r) => s + r.receivedQty, 0),
+            fromBackQty: isb.reduce((s, r) => s + r.fromBackQty, 0),
+            backQty: isb.reduce((s, r) => s + r.backQty, 0),
+          },
+          KHI: {
+            orderQty: khi.reduce((s, r) => s + r.orderQty, 0),
+            receivedQty: khi.reduce((s, r) => s + r.receivedQty, 0),
+            fromBackQty: khi.reduce((s, r) => s + r.fromBackQty, 0),
+            backQty: khi.reduce((s, r) => s + r.backQty, 0),
+          },
+        },
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error.message || "Failed to generate back order summary report",
+    });
+  }
+});
+
 router.get("/requests", async (req: Request, res: Response) => {
   try {
     const purchaseImportRequestModel = (prisma as any).purchaseImportRequest;

@@ -4,7 +4,8 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt } from "lucide-react";
+import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2 } from "lucide-react";
+import { BackOrderSummaryTab } from "@/components/purchase-import/BackOrderSummaryTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +46,8 @@ type PurchaseImportTab =
   | "revise-quotation"
   | "confirm-quotation"
   | "purchase-order"
-  | "purchase-invoice";
+  | "purchase-invoice"
+  | "back-order-summary";
 
 interface TabConfig {
   id: PurchaseImportTab;
@@ -166,6 +168,12 @@ const tabs: TabConfig[] = [
     label: "Purchase Invoice",
     icon: Receipt,
     description: "Enter purchase invoice details and import expenses",
+  },
+  {
+    id: "back-order-summary",
+    label: "Back Order Summary",
+    icon: FileBarChart2,
+    description: "Back order summary report by supplier and date range",
   },
 ];
 
@@ -8721,6 +8729,8 @@ const PurchaseImport = () => {
         return <PurchaseOrderTab mode="purchase-order" />;
       case "purchase-invoice":
         return <PurchaseOrderTab mode="purchase-invoice" />;
+      case "back-order-summary":
+        return <BackOrderSummaryTab />;
       default:
         return null;
     }
