@@ -1716,14 +1716,16 @@ function computeBalanceSheetAccountBalance(
 ): number {
   const asOfMs = asOfDate.getTime();
   const createdAtMs = new Date(account.createdAt).getTime();
-  if (createdAtMs > asOfMs) {
-    return 0;
-  }
-
   const firstVoucherDate = firstVoucherDateByAccount.get(account.id);
   const hasVoucherOnOrBefore =
     (account.VoucherEntry?.length ?? 0) > 0 ||
     (firstVoucherDate ? firstVoucherDate.getTime() <= asOfMs : false);
+
+  // A backdated posted voucher establishes the account on its accounting date,
+  // even when the account record itself was created later.
+  if (createdAtMs > asOfMs && !hasVoucherOnOrBefore) {
+    return 0;
+  }
 
   // Hide balances for accounts whose first posted activity is after the as-of date.
   if (!hasVoucherOnOrBefore) {
