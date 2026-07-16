@@ -492,7 +492,9 @@ export const VoucherManagement = () => {
         date: voucherDate,
         narration: data.paidTo || "",
         cashBankAccount: data.crAccount,
-        conversionRate: Number(data.conversionRate || 1),
+        ...(voucherCategory === "international_supplier"
+          ? { conversionRate: Number(data.conversionRate || 1) }
+          : {}),
         entries,
         totalDebit: data.totalAmountLc || data.totalAmount || 0,
         totalCredit: data.totalAmountLc || data.totalAmount || 0,
@@ -554,7 +556,9 @@ export const VoucherManagement = () => {
         date: voucherDate,
         narration: data.name || "",
         cashBankAccount: "",
-        conversionRate: Number(data.conversionRate || 1),
+        ...(voucherCategory === "international_supplier"
+          ? { conversionRate: Number(data.conversionRate || 1) }
+          : {}),
         entries: [...drEntries, ...crEntries],
         totalDebit: data.totalDrLc || data.totalDr || 0,
         totalCredit: data.totalCrLc || data.totalCr || 0,
@@ -663,7 +667,9 @@ export const VoucherManagement = () => {
           date: newVoucher.date,
           narration: newVoucher.narration,
           cashBankAccount: newVoucher.cashBankAccount,
-          conversionRate: Number(newVoucher.conversionRate || 1),
+          ...(voucherCategory === "international_supplier"
+            ? { conversionRate: Number(newVoucher.conversionRate || 1) }
+            : {}),
           chequeNumber: data.chequeNumber,
           chequeDate: data.chequeDate ? convertDateToISO(data.chequeDate) : undefined,
           entries: apiEntries,
@@ -756,6 +762,9 @@ export const VoucherManagement = () => {
         chequeDate: updatedVoucher.chequeDate ? convertDateToISO(updatedVoucher.chequeDate) : null,
         checkClearDate: updatedVoucher.checkClearDate ? convertDateToISO(updatedVoucher.checkClearDate) : null,
         isCleared: (updatedVoucher.isCleared !== undefined && updatedVoucher.isCleared !== null) ? parseInt(String(updatedVoucher.isCleared)) : null,
+        ...(updatedVoucher.conversionRate !== undefined && updatedVoucher.conversionRate !== null
+          ? { conversionRate: Number(updatedVoucher.conversionRate) }
+          : {}),
       };
 
       // ONLY include entries if they exist and are not empty

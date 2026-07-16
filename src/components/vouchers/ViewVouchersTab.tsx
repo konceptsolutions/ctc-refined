@@ -190,6 +190,30 @@ export const ViewVouchersTab = ({
   const [editChequeNumber, setEditChequeNumber] = useState("");
   const [editChequeDate, setEditChequeDate] = useState("");
   const [editIsCleared, setEditIsCleared] = useState<number | null>(null);
+  const [editExchangeRate, setEditExchangeRate] = useState("1");
+  const [editIsInternational, setEditIsInternational] = useState(false);
+  const [internationalAccountIds, setInternationalAccountIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  useEffect(() => {
+    const loadInternationalAccounts = async () => {
+      try {
+        const response = (await apiClient.getInternationalSupplierAccounts()) as any;
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        setInternationalAccountIds(
+          new Set(
+            rows
+              .map((row: any) => String(row.id || ""))
+              .filter((id: string) => id.length > 0),
+          ),
+        );
+      } catch (error) {
+        console.error("Failed to load international supplier accounts:", error);
+      }
+    };
+    loadInternationalAccounts();
+  }, []);
 
   // View dialog (read-only)
   const [viewingVoucher, setViewingVoucher] = useState<Voucher | null>(null);
@@ -586,7 +610,21 @@ export const ViewVouchersTab = ({
     }
   };
 
-  const handleEdit = (voucher: Voucher) => {
+  const isInternationalVoucher = (
+    voucher: Voucher,
+    accountIds: Set<string> = internationalAccountIds,
+  ) => {
+    if (voucher.type !== "payment" && voucher.type !== "journal") return false;
+    const rate = Number(voucher.conversionRate);
+    if (Number.isFinite(rate) && rate > 0) return true;
+    const lines = voucher.entries || voucher.VoucherEntry || [];
+    return lines.some((entry) => {
+      const accountId = String(entry.account || entry.accountId || "");
+      return accountId.length > 0 && accountIds.has(accountId);
+    });
+  };
+
+  const handleEdit = async (voucher: Voucher) => {
     if (voucher.status === "posted") {
       toast({
         title: "Cannot Edit",
@@ -595,6 +633,23 @@ export const ViewVouchersTab = ({
       });
       return;
     }
+
+    let intlIds = internationalAccountIds;
+    if (intlIds.size === 0) {
+      try {
+        const response = (await apiClient.getInternationalSupplierAccounts()) as any;
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        intlIds = new Set(
+          rows
+            .map((row: any) => String(row.id || ""))
+            .filter((id: string) => id.length > 0),
+        );
+        setInternationalAccountIds(intlIds);
+      } catch {
+        // keep empty set; rate-based detection still works
+      }
+    }
+
     setEditingVoucher(voucher);
     setEditNarration(voucher.narration);
     // Convert date to YYYY-MM-DD format for date input
@@ -660,16 +715,28 @@ export const ViewVouchersTab = ({
     setEditChequeDate(editChequeDateValue);
     setEditIsCleared(voucher.isCleared !== undefined && voucher.isCleared !== null ? Number(voucher.isCleared) : null);
 
-    // Ensure all entries have the expected fields for the edit form
-    const mappedEntries = (voucher.entries || []).map(entry => ({
-      id: entry.id || `${Date.now()}-${Math.random()}`,
-      account: entry.account || entry.accountId || "", // Consistent mapping for SearchableSelect
-      accountName: entry.accountName || "",
-      description: entry.description || "",
-      debit: Number(entry.debit || 0),
-      credit: Number(entry.credit || 0),
-      sortOrder: entry.sortOrder || 0
-    }));
+    const isIntl = isInternationalVoucher(voucher, intlIds);
+    const parsedRate = Number(voucher.conversionRate);
+    const rate =
+      Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 1;
+    setEditIsInternational(isIntl);
+    setEditExchangeRate(String(rate));
+
+    // Ensure all entries have the expected fields for the edit form.
+    // International edit form works in FC; stored amounts are LC.
+    const mappedEntries = (voucher.entries || voucher.VoucherEntry || []).map(entry => {
+      const lcDebit = Number(entry.debit || 0);
+      const lcCredit = Number(entry.credit || 0);
+      return {
+        id: entry.id || `${Date.now()}-${Math.random()}`,
+        account: entry.account || entry.accountId || "", // Consistent mapping for SearchableSelect
+        accountName: entry.accountName || "",
+        description: entry.description || "",
+        debit: isIntl ? lcDebit / rate : lcDebit,
+        credit: isIntl ? lcCredit / rate : lcCredit,
+        sortOrder: entry.sortOrder || 0
+      };
+    });
 
     // Fallback: if voucher has no entries, add an empty row to prevent empty UI
     const finalEntriesToEdit = mappedEntries.length > 0
@@ -701,10 +768,33 @@ export const ViewVouchersTab = ({
       return;
     }
 
-    const totalDebit = editEntries.reduce((sum, e) => sum + (Number(e.debit) || 0), 0);
-    const totalCredit = editEntries.reduce((sum, e) => sum + (Number(e.credit) || 0), 0);
+    const parsedExchangeRate = Number(editExchangeRate);
+    if (
+      editIsInternational &&
+      (!Number.isFinite(parsedExchangeRate) || parsedExchangeRate <= 0)
+    ) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a valid exchange rate",
+        variant: "destructive",
+      });
+      return;
+    }
+    const exchangeRateValue =
+      editIsInternational && Number.isFinite(parsedExchangeRate) && parsedExchangeRate > 0
+        ? parsedExchangeRate
+        : 1;
 
-    if (totalDebit === 0 && totalCredit === 0) {
+    const totalDebitFc = editEntries.reduce((sum, e) => sum + (Number(e.debit) || 0), 0);
+    const totalCreditFc = editEntries.reduce((sum, e) => sum + (Number(e.credit) || 0), 0);
+    const totalDebit = editIsInternational
+      ? totalDebitFc * exchangeRateValue
+      : totalDebitFc;
+    const totalCredit = editIsInternational
+      ? totalCreditFc * exchangeRateValue
+      : totalCreditFc;
+
+    if (totalDebitFc === 0 && totalCreditFc === 0) {
       toast({
         title: "Validation Error",
         description: "Please enter at least one amount",
@@ -713,10 +803,10 @@ export const ViewVouchersTab = ({
       return;
     }
 
-    if (totalDebit !== totalCredit) {
+    if (Math.abs(totalDebitFc - totalCreditFc) > 0.0001) {
       toast({
         title: "Validation Error",
-        description: `Total Debit (${formatAmount(totalDebit)}) must equal Total Credit (${formatAmount(totalCredit)})`,
+        description: `Total Debit (${formatAmount(totalDebitFc)}) must equal Total Credit (${formatAmount(totalCreditFc)})`,
         variant: "destructive",
       });
       return;
@@ -737,6 +827,16 @@ export const ViewVouchersTab = ({
       }
     }
 
+    const savedEntries = editEntries.map((entry) => ({
+      ...entry,
+      debit: editIsInternational
+        ? (Number(entry.debit) || 0) * exchangeRateValue
+        : Number(entry.debit) || 0,
+      credit: editIsInternational
+        ? (Number(entry.credit) || 0) * exchangeRateValue
+        : Number(entry.credit) || 0,
+    }));
+
     onUpdateVoucher({
       ...editingVoucher,
       narration: editNarration,
@@ -745,7 +845,8 @@ export const ViewVouchersTab = ({
       chequeNumber: editChequeNumber || undefined,
       chequeDate: editChequeDate || undefined,
       isCleared: editIsCleared !== null ? editIsCleared : undefined,
-      entries: editEntries,
+      conversionRate: editIsInternational ? exchangeRateValue : editingVoucher.conversionRate,
+      entries: savedEntries,
       totalDebit,
       totalCredit,
     });
@@ -876,8 +977,15 @@ export const ViewVouchersTab = ({
     }
   };
 
-  const totalDebit = editEntries.reduce((sum, e) => sum + e.debit, 0);
-  const totalCredit = editEntries.reduce((sum, e) => sum + e.credit, 0);
+  const totalDebit = editEntries.reduce((sum, e) => sum + (Number(e.debit) || 0), 0);
+  const totalCredit = editEntries.reduce((sum, e) => sum + (Number(e.credit) || 0), 0);
+  const parsedEditExchangeRate = Number(editExchangeRate);
+  const editExchangeRateValue =
+    Number.isFinite(parsedEditExchangeRate) && parsedEditExchangeRate > 0
+      ? parsedEditExchangeRate
+      : 0;
+  const totalDebitLc = totalDebit * editExchangeRateValue;
+  const totalCreditLc = totalCredit * editExchangeRateValue;
 
   // Helper function to format date safely
   const formatDisplayDate = (dateString: string): string => {
@@ -1333,7 +1441,7 @@ export const ViewVouchersTab = ({
 
       {/* Edit Dialog */}
       <Dialog open={!!editingVoucher} onOpenChange={() => setEditingVoucher(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className={`${editIsInternational ? "max-w-6xl" : "max-w-4xl"} max-h-[90vh] overflow-y-auto`}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5 text-primary" />
@@ -1341,6 +1449,11 @@ export const ViewVouchersTab = ({
               <span className="text-sm text-muted-foreground ml-2">
                 Voucher Id: {editingVoucher?.voucherNumber}
               </span>
+              {editIsInternational ? (
+                <span className="text-xs font-normal text-primary ml-2">
+                  (International Supplier)
+                </span>
+              ) : null}
             </DialogTitle>
           </DialogHeader>
 
@@ -1359,6 +1472,7 @@ export const ViewVouchersTab = ({
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     {editingVoucher && getVoucherTypeLabel(editingVoucher.type)}
+                    {editIsInternational ? " · International Supplier" : ""}
                   </p>
                 </div>
               </div>
@@ -1384,6 +1498,19 @@ export const ViewVouchersTab = ({
                   placeholder="Enter name"
                 />
               </div>
+              {editIsInternational ? (
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Exchange Rate</Label>
+                  <Input
+                    type="number"
+                    min="0.0001"
+                    step="0.0001"
+                    value={editExchangeRate}
+                    onChange={(e) => setEditExchangeRate(e.target.value)}
+                    placeholder="Exchange rate"
+                  />
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Date</Label>
                 <Input
@@ -1438,16 +1565,18 @@ export const ViewVouchersTab = ({
             {/* Entries Table */}
             <div className="space-y-4">
               <div className="grid grid-cols-12 gap-2 text-sm font-medium">
-                <div className="col-span-3">Account Dr/ Cr</div>
-                <div className="col-span-4">Description</div>
-                <div className="col-span-2">Dr</div>
-                <div className="col-span-2">Cr</div>
+                <div className={editIsInternational ? "col-span-2" : "col-span-3"}>Account Dr/ Cr</div>
+                <div className={editIsInternational ? "col-span-2" : "col-span-4"}>Description</div>
+                <div className="col-span-2">{editIsInternational ? "FC Dr" : "Dr"}</div>
+                {editIsInternational ? <div className="col-span-2">LC Dr</div> : null}
+                <div className="col-span-2">{editIsInternational ? "FC Cr" : "Cr"}</div>
+                {editIsInternational ? <div className="col-span-1">LC Cr</div> : null}
                 <div className="col-span-1"></div>
               </div>
 
               {editEntries.map((entry) => (
                 <div key={entry.id} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-3">
+                  <div className={editIsInternational ? "col-span-2" : "col-span-3"}>
                     <SearchableSelect
                       options={accounts}
                       value={entry.account}
@@ -1455,7 +1584,7 @@ export const ViewVouchersTab = ({
                       placeholder="Select account"
                     />
                   </div>
-                  <div className="col-span-4">
+                  <div className={editIsInternational ? "col-span-2" : "col-span-4"}>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Description</Label>
                       <Input
@@ -1467,26 +1596,58 @@ export const ViewVouchersTab = ({
                   </div>
                   <div className="col-span-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">amount</Label>
+                      <Label className="text-xs text-muted-foreground">
+                        {editIsInternational ? "fc amount" : "amount"}
+                      </Label>
                       <Input
                         type="number"
                         value={entry.debit || ""}
                         onChange={(e) => updateEntry(entry.id, "debit", Number(e.target.value))}
                         placeholder="0"
+                        step="0.01"
+                        min="0"
                       />
                     </div>
                   </div>
+                  {editIsInternational ? (
+                    <div className="col-span-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">lc amount</Label>
+                        <Input
+                          value={formatAmount((Number(entry.debit) || 0) * editExchangeRateValue)}
+                          readOnly
+                          className="bg-muted font-medium"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="col-span-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">amount</Label>
+                      <Label className="text-xs text-muted-foreground">
+                        {editIsInternational ? "fc amount" : "amount"}
+                      </Label>
                       <Input
                         type="number"
                         value={entry.credit || ""}
                         onChange={(e) => updateEntry(entry.id, "credit", Number(e.target.value))}
                         placeholder="0"
+                        step="0.01"
+                        min="0"
                       />
                     </div>
                   </div>
+                  {editIsInternational ? (
+                    <div className="col-span-1">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">lc</Label>
+                        <Input
+                          value={formatAmount((Number(entry.credit) || 0) * editExchangeRateValue)}
+                          readOnly
+                          className="bg-muted font-medium"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="col-span-1">
                     <Button
                       variant="ghost"
@@ -1501,30 +1662,61 @@ export const ViewVouchersTab = ({
               ))}
 
               {/* Totals */}
-              <div className="grid grid-cols-12 gap-2 items-center pt-4">
-                <div className="col-span-7 text-right font-semibold">Total Amount</div>
-                <div className="col-span-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Total Debit</Label>
-                    <Input
-                      value={formatAmount(totalDebit)}
-                      readOnly
-                      className="bg-muted font-medium"
-                    />
+              {editIsInternational ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+                  <div className="rounded-md border border-border p-3 space-y-2">
+                    <Label className="text-sm font-medium">FC Totals</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">FC Dr</Label>
+                        <Input value={formatAmount(totalDebit)} readOnly className="bg-muted font-medium" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">FC Cr</Label>
+                        <Input value={formatAmount(totalCredit)} readOnly className="bg-muted font-medium" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-border p-3 space-y-2">
+                    <Label className="text-sm font-medium">LC Totals</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">LC Dr</Label>
+                        <Input value={formatAmount(totalDebitLc)} readOnly className="bg-muted font-medium" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">LC Cr</Label>
+                        <Input value={formatAmount(totalCreditLc)} readOnly className="bg-muted font-medium" />
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="col-span-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Total Credit</Label>
-                    <Input
-                      value={formatAmount(totalCredit)}
-                      readOnly
-                      className="bg-muted font-medium"
-                    />
+              ) : (
+                <div className="grid grid-cols-12 gap-2 items-center pt-4">
+                  <div className="col-span-7 text-right font-semibold">Total Amount</div>
+                  <div className="col-span-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Total Debit</Label>
+                      <Input
+                        value={formatAmount(totalDebit)}
+                        readOnly
+                        className="bg-muted font-medium"
+                      />
+                    </div>
                   </div>
+                  <div className="col-span-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Total Credit</Label>
+                      <Input
+                        value={formatAmount(totalCredit)}
+                        readOnly
+                        className="bg-muted font-medium"
+                      />
+                    </div>
+                  </div>
+                  <div className="col-span-1"></div>
                 </div>
-                <div className="col-span-1"></div>
-              </div>
+              )}
               {totalDebit !== totalCredit && (
                 <div className="text-sm text-destructive text-center pt-2">
                   ⚠️ Total Debit ({formatAmount(totalDebit)}) must equal Total Credit ({formatAmount(totalCredit)})

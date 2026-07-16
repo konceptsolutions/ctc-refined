@@ -531,9 +531,13 @@ router.post('/', async (req: Request, res: Response) => {
         narration: narration || null,
         cashBankAccount: cashBankAccount || null,
         conversionRate:
-          Number.isFinite(Number(conversionRate)) && Number(conversionRate) > 0
+          conversionRate !== undefined &&
+          conversionRate !== null &&
+          conversionRate !== "" &&
+          Number.isFinite(Number(conversionRate)) &&
+          Number(conversionRate) > 0
             ? Number(conversionRate)
-            : 1,
+            : null,
         chequeNumber: chequeNumber || null,
         chequeDate: chequeDate ? new Date(chequeDate) : null,
         checkClearDate: checkClearDate ? new Date(checkClearDate) : null,
