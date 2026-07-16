@@ -6,15 +6,22 @@ export type BackOrderSummaryPrintLine = {
   masterPartNo?: string | null;
   brand?: string | null;
   description?: string | null;
+  fcRate?: number | null;
   orderQty?: number | null;
   receivedQty?: number | null;
   fromBackQty?: number | null;
   backQty?: number | null;
 };
 
+export type BackOrderSummaryPrintPoGroup = {
+  poNumber: string;
+  poDate?: string | Date | null;
+  items: BackOrderSummaryPrintLine[];
+};
+
 export type BackOrderSummaryPrintSection = {
   title: string;
-  rows: BackOrderSummaryPrintLine[];
+  groups: BackOrderSummaryPrintPoGroup[];
 };
 
 export type BackOrderSummaryPrintInput = {
@@ -43,7 +50,6 @@ const formatPrintDate = (value?: string | Date | null) => {
   if (!value) return "-";
   const dateObj = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(dateObj.getTime())) {
-    // Accept YYYY-MM-DD without timezone shift issues
     const raw = String(value);
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
       const [y, m, d] = raw.split("-");
@@ -78,6 +84,12 @@ const qty = (value: unknown) => {
   return String(n);
 };
 
+const rate = (value: unknown) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n === 0) return "-";
+  return n.toFixed(4);
+};
+
 const openPdfPrintDialog = (doc: jsPDF): boolean => {
   const pdfBlob = doc.output("blob");
   const url = URL.createObjectURL(pdfBlob);
@@ -103,15 +115,15 @@ const openPdfPrintDialog = (doc: jsPDF): boolean => {
 
 /**
  * Generates Back Order Summary Report PDF and opens the browser print dialog.
- * Layout: heading, date range, supplier, then ISB table followed by KHI table.
+ * Layout: heading, date range, supplier, ISB then KHI, each grouped by PO number.
  */
 export const printBackOrderSummary = (
   input: BackOrderSummaryPrintInput,
 ): boolean => {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 10;
+  const marginX = 8;
   const contentWidth = pageWidth - marginX * 2;
   const printedOn = formatPrintDateTime(new Date());
 
@@ -137,19 +149,27 @@ export const printBackOrderSummary = (
 
   let cursorY = 34;
 
-  const drawSection = (section: BackOrderSummaryPrintSection) => {
-    if (cursorY > pageHeight - 40) {
+  const ensureSpace = (needed = 28) => {
+    if (cursorY > pageHeight - needed) {
       doc.addPage();
       cursorY = 14;
     }
+  };
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(22, 100, 218);
-    doc.text(`${section.title} Report`, marginX, cursorY);
-    cursorY += 4;
+  const tableColumnStyles = {
+    0: { cellWidth: 7 },
+    1: { cellWidth: 24 },
+    2: { cellWidth: 18 },
+    3: { cellWidth: contentWidth - 7 - 24 - 18 - 18 - 16 - 18 - 20 - 16 },
+    4: { cellWidth: 18, halign: "right" as const },
+    5: { cellWidth: 16, halign: "right" as const },
+    6: { cellWidth: 18, halign: "right" as const },
+    7: { cellWidth: 20, halign: "right" as const },
+    8: { cellWidth: 16, halign: "right" as const },
+  };
 
-    const rows = section.rows || [];
+  const drawPoTable = (group: BackOrderSummaryPrintPoGroup) => {
+    const rows = group.items || [];
     const totals = rows.reduce(
       (acc, row) => ({
         orderQty: acc.orderQty + (Number(row.orderQty) || 0),
@@ -160,6 +180,18 @@ export const printBackOrderSummary = (
       { orderQty: 0, receivedQty: 0, fromBackQty: 0, backQty: 0 },
     );
 
+    ensureSpace(36);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(17, 17, 17);
+    const poLabel = `PO: ${text(group.poNumber || "-")}`;
+    const dateLabel =
+      group.poDate != null && group.poDate !== ""
+        ? `  |  Date: ${formatPrintDate(group.poDate)}`
+        : "";
+    doc.text(`${poLabel}${dateLabel}`, marginX, cursorY);
+    cursorY += 3;
+
     autoTable(doc, {
       startY: cursorY,
       margin: { left: marginX, right: marginX },
@@ -169,6 +201,7 @@ export const printBackOrderSummary = (
           "Item",
           "Brand",
           "Description",
+          "FC Rate",
           "Order Qty",
           "Received Qty",
           "From Back Qty",
@@ -177,12 +210,13 @@ export const printBackOrderSummary = (
       ],
       body:
         rows.length === 0
-          ? [["", "No back order items", "", "", "", "", "", ""]]
+          ? [["", "No back order items", "", "", "", "", "", "", ""]]
           : rows.map((row, index) => [
               String(index + 1),
               `${text(row.partNo || "-")}\n${text(row.masterPartNo || "-")}`,
               text(row.brand || "-"),
               text(row.description || "-"),
+              rate(row.fcRate),
               String(Number(row.orderQty || 0)),
               String(Number(row.receivedQty || 0)),
               qty(row.fromBackQty),
@@ -194,7 +228,8 @@ export const printBackOrderSummary = (
           : [
               [
                 "",
-                "Totals",
+                "PO Totals",
+                "",
                 "",
                 "",
                 String(totals.orderQty),
@@ -206,8 +241,8 @@ export const printBackOrderSummary = (
       showFoot: rows.length === 0 ? undefined : "lastPage",
       styles: {
         font: "helvetica",
-        fontSize: 8,
-        cellPadding: 1.4,
+        fontSize: 6.5,
+        cellPadding: 1.1,
         textColor: [17, 17, 17],
         lineColor: [221, 221, 221],
         lineWidth: 0.2,
@@ -218,40 +253,53 @@ export const printBackOrderSummary = (
         fillColor: [22, 100, 218],
         textColor: [255, 255, 255],
         fontStyle: "bold",
-        fontSize: 8,
+        fontSize: 6.5,
       },
       footStyles: {
         fillColor: [243, 244, 246],
         textColor: [17, 17, 17],
         fontStyle: "bold",
-        fontSize: 8,
+        fontSize: 6.5,
       },
       alternateRowStyles: { fillColor: [249, 249, 249] },
-      columnStyles: {
-        0: { cellWidth: 10 },
-        1: { cellWidth: 38 },
-        2: { cellWidth: 28 },
-        3: { cellWidth: contentWidth - 10 - 38 - 28 - 22 - 24 - 26 - 22 },
-        4: { cellWidth: 22, halign: "right" },
-        5: { cellWidth: 24, halign: "right" },
-        6: { cellWidth: 26, halign: "right" },
-        7: { cellWidth: 22, halign: "right" },
-      },
+      columnStyles: tableColumnStyles,
     });
 
     const lastY =
       (doc as any).lastAutoTable?.finalY ??
       (doc as any).previousAutoTable?.finalY ??
       cursorY + 20;
-    cursorY = lastY + 10;
+    cursorY = lastY + 8;
+  };
+
+  const drawSection = (section: BackOrderSummaryPrintSection) => {
+    ensureSpace(40);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(22, 100, 218);
+    doc.text(`${section.title} Report`, marginX, cursorY);
+    cursorY += 6;
+
+    const groups = section.groups || [];
+    if (groups.length === 0) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(102, 102, 102);
+      doc.text(`No back order items for ${section.title}`, marginX, cursorY);
+      cursorY += 10;
+      return;
+    }
+
+    groups.forEach((group) => drawPoTable(group));
+    cursorY += 2;
   };
 
   const sections =
     input.sections.length > 0
       ? input.sections
       : [
-          { title: "ISB", rows: [] },
-          { title: "KHI", rows: [] },
+          { title: "ISB", groups: [] },
+          { title: "KHI", groups: [] },
         ];
 
   sections.forEach((section) => drawSection(section));

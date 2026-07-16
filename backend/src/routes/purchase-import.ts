@@ -3632,8 +3632,8 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
 
 /**
  * Back Order Summary Report
- * Filters import POs by supplier + date range; returns ISB then KHI item lines
- * with order/received/from-back/back quantities (aggregated by part).
+ * Filters import POs by supplier + date range; returns ISB then KHI groups,
+ * each grouped by purchase order number with line items.
  */
 router.get("/reports/back-order-summary", async (req: Request, res: Response) => {
   try {
@@ -3676,18 +3676,10 @@ router.get("/reports/back-order-summary", async (req: Request, res: Response) =>
         supplierId,
         date: { gte: fromDate, lte: toDate },
         consignee: { in: ["isb", "khi"] },
-        PurchaseOrderItem: {
-          some: {
-            OR: [{ backQty: { gt: 0 } }, { additionalQty: { gt: 0 } }],
-          },
-        },
       } as any,
       orderBy: [{ date: "asc" }, { poNumber: "asc" }],
       include: {
         PurchaseOrderItem: {
-          where: {
-            OR: [{ backQty: { gt: 0 } }, { additionalQty: { gt: 0 } }],
-          },
           include: {
             Part: {
               select: {
@@ -3709,51 +3701,84 @@ router.get("/reports/back-order-summary", async (req: Request, res: Response) =>
       masterPartNo: string;
       brand: string;
       description: string;
+      fcRate: number;
       orderQty: number;
       receivedQty: number;
       fromBackQty: number;
       backQty: number;
+      poNumber?: string;
+      poDate?: string | null;
     };
 
-    const aggregateSection = (consignee: "isb" | "khi"): SummaryLine[] => {
-      const map = new Map<string, SummaryLine>();
+    type PoGroup = {
+      poId: string;
+      poNumber: string;
+      poDate: string | null;
+      items: SummaryLine[];
+    };
+
+    const buildSection = (consignee: "isb" | "khi"): PoGroup[] => {
+      const groups: PoGroup[] = [];
       for (const po of orders as any[]) {
         if (String(po.consignee || "").toLowerCase() !== consignee) continue;
-        for (const item of po.PurchaseOrderItem || []) {
-          const partId = String(item.partId || item.Part?.id || "");
-          if (!partId) continue;
-          const existing = map.get(partId);
-          const orderQty = Number(item.quantity) || 0;
-          const receivedQty = Number(item.receivedQty) || 0;
-          const fromBackQty = Number(item.additionalQty) || 0;
-          const backQty = Number(item.backQty) || 0;
-          if (!existing) {
-            map.set(partId, {
-              partId,
-              partNo: item.Part?.partNo || "-",
-              masterPartNo: item.Part?.MasterPart?.masterPartNo || "-",
-              brand: item.Part?.Brand?.name || "-",
-              description: item.Part?.description || "-",
-              orderQty,
-              receivedQty,
-              fromBackQty,
-              backQty,
-            });
-          } else {
-            existing.orderQty += orderQty;
-            existing.receivedQty += receivedQty;
-            existing.fromBackQty += fromBackQty;
-            existing.backQty += backQty;
-          }
-        }
+        const poItems = po.PurchaseOrderItem || po.purchaseOrderItem || [];
+        const poNumber = String(po.poNumber || "").trim() || "-";
+        const poDate = po.date
+          ? new Date(po.date).toISOString().split("T")[0]
+          : null;
+        const items: SummaryLine[] = poItems
+          .filter(
+            (item: any) =>
+              Number(item.backQty || 0) > 0 ||
+              Number(item.additionalQty || 0) > 0,
+          )
+          .map((item: any) => ({
+            partId: String(item.partId || item.Part?.id || ""),
+            partNo: item.Part?.partNo || "-",
+            masterPartNo: item.Part?.MasterPart?.masterPartNo || "-",
+            brand: item.Part?.Brand?.name || "-",
+            description: item.Part?.description || "-",
+            fcRate: Number(item.fcRate ?? item.fc_rate ?? 0) || 0,
+            orderQty: Number(item.quantity) || 0,
+            receivedQty: Number(item.receivedQty ?? item.received_qty ?? 0) || 0,
+            fromBackQty:
+              Number(item.additionalQty ?? item.additional_qty ?? 0) || 0,
+            backQty: Number(item.backQty ?? item.back_qty ?? 0) || 0,
+            // Also stamp PO fields on each line so the UI can recover if grouping is flattened
+            poNumber,
+            poDate,
+          }))
+          .filter((item: SummaryLine) => item.partId)
+          .sort((a: SummaryLine, b: SummaryLine) =>
+            String(a.partNo).localeCompare(String(b.partNo)),
+          );
+        if (items.length === 0) continue;
+        groups.push({
+          poId: String(po.id),
+          poNumber,
+          poDate,
+          items,
+        });
       }
-      return Array.from(map.values()).sort((a, b) =>
-        String(a.partNo).localeCompare(String(b.partNo)),
-      );
+      return groups;
     };
 
-    const isb = aggregateSection("isb");
-    const khi = aggregateSection("khi");
+    const sumLines = (groups: PoGroup[]) =>
+      groups.reduce(
+        (acc, group) => {
+          for (const row of group.items) {
+            acc.orderQty += row.orderQty;
+            acc.receivedQty += row.receivedQty;
+            acc.fromBackQty += row.fromBackQty;
+            acc.backQty += row.backQty;
+          }
+          return acc;
+        },
+        { orderQty: 0, receivedQty: 0, fromBackQty: 0, backQty: 0 },
+      );
+
+    const isb = buildSection("isb");
+    const khi = buildSection("khi");
 
     res.json({
       data: {
@@ -3769,18 +3794,8 @@ router.get("/reports/back-order-summary", async (req: Request, res: Response) =>
           KHI: khi,
         },
         totals: {
-          ISB: {
-            orderQty: isb.reduce((s, r) => s + r.orderQty, 0),
-            receivedQty: isb.reduce((s, r) => s + r.receivedQty, 0),
-            fromBackQty: isb.reduce((s, r) => s + r.fromBackQty, 0),
-            backQty: isb.reduce((s, r) => s + r.backQty, 0),
-          },
-          KHI: {
-            orderQty: khi.reduce((s, r) => s + r.orderQty, 0),
-            receivedQty: khi.reduce((s, r) => s + r.receivedQty, 0),
-            fromBackQty: khi.reduce((s, r) => s + r.fromBackQty, 0),
-            backQty: khi.reduce((s, r) => s + r.backQty, 0),
-          },
+          ISB: sumLines(isb),
+          KHI: sumLines(khi),
         },
       },
     });

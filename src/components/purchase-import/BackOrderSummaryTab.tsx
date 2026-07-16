@@ -15,10 +15,20 @@ type SummaryLine = {
   masterPartNo: string;
   brand: string;
   description: string;
+  fcRate: number;
   orderQty: number;
   receivedQty: number;
   fromBackQty: number;
   backQty: number;
+  poNumber?: string;
+  poDate?: string | null;
+};
+
+type PoGroup = {
+  poId: string;
+  poNumber: string;
+  poDate?: string | null;
+  items: SummaryLine[];
 };
 
 type ReportData = {
@@ -26,9 +36,82 @@ type ReportData = {
   fromDate: string;
   toDate: string;
   sections: {
-    ISB: SummaryLine[];
-    KHI: SummaryLine[];
+    ISB: PoGroup[];
+    KHI: PoGroup[];
   };
+};
+
+const mapSummaryLine = (line: any, index: number): SummaryLine => ({
+  partId: String(line?.partId || line?.part_id || `line-${index}`),
+  partNo: line?.partNo || line?.part_no || "-",
+  masterPartNo: line?.masterPartNo || line?.master_part_no || "-",
+  brand: line?.brand || "-",
+  description: line?.description || "-",
+  fcRate: Number(line?.fcRate ?? line?.fc_rate ?? 0) || 0,
+  orderQty: Number(line?.orderQty ?? line?.order_qty ?? line?.quantity ?? 0) || 0,
+  receivedQty:
+    Number(line?.receivedQty ?? line?.received_qty ?? 0) || 0,
+  fromBackQty:
+    Number(line?.fromBackQty ?? line?.from_back_qty ?? line?.additionalQty ?? 0) ||
+    0,
+  backQty: Number(line?.backQty ?? line?.back_qty ?? 0) || 0,
+  poNumber: line?.poNumber || line?.po_number || undefined,
+  poDate: line?.poDate ?? line?.po_date ?? null,
+});
+
+/** Normalize API section: prefer PO groups; fall back from flat item rows. */
+const normalizePoGroups = (section: unknown): PoGroup[] => {
+  if (!Array.isArray(section) || section.length === 0) return [];
+  const first = section[0] as any;
+
+  // Group shape: has items[] and is not itself a part line (no partNo at top level)
+  const looksLikePoGroup =
+    first &&
+    typeof first === "object" &&
+    Array.isArray(first.items) &&
+    !first.partNo &&
+    !first.part_no;
+
+  if (looksLikePoGroup) {
+    return section
+      .map((group: any, index: number) => {
+        const items = (Array.isArray(group.items) ? group.items : []).map(
+          (line: any, lineIndex: number) => mapSummaryLine(line, lineIndex),
+        );
+        const poNumber =
+          String(group.poNumber || group.po_number || "").trim() ||
+          String(items[0]?.poNumber || "").trim() ||
+          "-";
+        const poDate =
+          group.poDate ?? group.po_date ?? items[0]?.poDate ?? null;
+        return {
+          poId: String(group.poId || group.po_id || poNumber || `po-${index}`),
+          poNumber,
+          poDate,
+          items,
+        };
+      })
+      .filter((group) => group.items.length > 0);
+  }
+
+  // Flat item rows — group by poNumber when present, else one combined group
+  const byPo = new Map<string, PoGroup>();
+  section.forEach((line: any, index: number) => {
+    const mapped = mapSummaryLine(line, index);
+    const key = String(line?.poNumber || line?.po_number || line?.poId || "_all");
+    if (!byPo.has(key)) {
+      byPo.set(key, {
+        poId: key === "_all" ? "all" : key,
+        poNumber: String(
+          line?.poNumber || line?.po_number || (key === "_all" ? "-" : key),
+        ),
+        poDate: line?.poDate ?? line?.po_date ?? null,
+        items: [],
+      });
+    }
+    byPo.get(key)!.items.push(mapped);
+  });
+  return Array.from(byPo.values()).filter((group) => group.items.length > 0);
 };
 
 const formatQty = (value: number) => {
@@ -36,13 +119,25 @@ const formatQty = (value: number) => {
   return n > 0 ? String(n) : "-";
 };
 
-const SectionTable = ({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: SummaryLine[];
-}) => {
+const formatRate = (value: number) => {
+  const n = Number(value) || 0;
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return n.toFixed(4);
+};
+
+const formatDisplayDate = (value?: string | null) => {
+  if (!value) return "-";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-");
+    return `${d}/${m}/${y}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB");
+};
+
+const PoItemsTable = ({ group }: { group: PoGroup }) => {
+  const rows = group.items || [];
   const totals = rows.reduce(
     (acc, row) => ({
       orderQty: acc.orderQty + (Number(row.orderQty) || 0),
@@ -55,7 +150,12 @@ const SectionTable = ({
 
   return (
     <div className="space-y-2">
-      <h3 className="text-base font-semibold text-primary">{title} Report</h3>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <span className="font-semibold">PO: {group.poNumber || "-"}</span>
+        <span className="text-muted-foreground">
+          Date: {formatDisplayDate(group.poDate)}
+        </span>
+      </div>
       <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
@@ -64,6 +164,7 @@ const SectionTable = ({
               <th className="p-2 text-left font-medium">Item</th>
               <th className="p-2 text-left font-medium">Brand</th>
               <th className="p-2 text-left font-medium">Description</th>
+              <th className="p-2 text-right font-medium">FC Rate</th>
               <th className="p-2 text-right font-medium">Order Qty</th>
               <th className="p-2 text-right font-medium">Received Qty</th>
               <th className="p-2 text-right font-medium">From Back Qty</th>
@@ -74,16 +175,16 @@ const SectionTable = ({
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="p-4 text-center text-muted-foreground"
                 >
-                  No back order items for {title}
+                  No back order items
                 </td>
               </tr>
             ) : (
               rows.map((row, index) => (
                 <tr
-                  key={`${title}-${row.partId}`}
+                  key={`${group.poId}-${row.partId}-${index}`}
                   className="border-b border-border last:border-0"
                 >
                   <td className="p-2 text-muted-foreground">{index + 1}</td>
@@ -95,6 +196,9 @@ const SectionTable = ({
                   </td>
                   <td className="p-2">{row.brand || "-"}</td>
                   <td className="p-2">{row.description || "-"}</td>
+                  <td className="p-2 text-right tabular-nums">
+                    {formatRate(row.fcRate)}
+                  </td>
                   <td className="p-2 text-right tabular-nums">{row.orderQty}</td>
                   <td className="p-2 text-right tabular-nums">
                     {row.receivedQty}
@@ -112,8 +216,8 @@ const SectionTable = ({
           {rows.length > 0 ? (
             <tfoot className="bg-muted/40 font-semibold">
               <tr>
-                <td className="p-2" colSpan={4}>
-                  Totals
+                <td className="p-2" colSpan={5}>
+                  PO Totals
                 </td>
                 <td className="p-2 text-right tabular-nums">{totals.orderQty}</td>
                 <td className="p-2 text-right tabular-nums">
@@ -133,6 +237,25 @@ const SectionTable = ({
     </div>
   );
 };
+
+const ConsigneeSection = ({
+  title,
+  groups,
+}: {
+  title: string;
+  groups: PoGroup[];
+}) => (
+  <div className="space-y-4">
+    <h3 className="text-base font-semibold text-primary">{title} Report</h3>
+    {groups.length === 0 ? (
+      <p className="text-sm text-muted-foreground rounded-md border border-border p-4">
+        No back order items for {title}
+      </p>
+    ) : (
+      groups.map((group) => <PoItemsTable key={group.poId} group={group} />)
+    )}
+  </div>
+);
 
 export const BackOrderSummaryTab = () => {
   const { toast } = useToast();
@@ -212,18 +335,32 @@ export const BackOrderSummaryTab = () => {
       if (response?.error) {
         throw new Error(response.error);
       }
-      const data = response?.data as ReportData | undefined;
-      if (!data) {
+      const raw = response?.data as any;
+      if (!raw) {
         throw new Error("No report data returned.");
       }
+      const data: ReportData = {
+        supplier: raw.supplier,
+        fromDate: raw.fromDate,
+        toDate: raw.toDate,
+        sections: {
+          ISB: normalizePoGroups(raw.sections?.ISB),
+          KHI: normalizePoGroups(raw.sections?.KHI),
+        },
+      };
       setReport(data);
-      const totalRows =
+      const totalPos =
         (data.sections?.ISB?.length || 0) + (data.sections?.KHI?.length || 0);
+      const totalRows =
+        [...(data.sections?.ISB || []), ...(data.sections?.KHI || [])].reduce(
+          (sum, group) => sum + (group.items?.length || 0),
+          0,
+        );
       toast({
         title: "Report generated",
         description:
           totalRows > 0
-            ? `Found ${totalRows} back order item(s).`
+            ? `Found ${totalRows} item(s) across ${totalPos} purchase order(s).`
             : "No back order items found for the selected filters.",
       });
     } catch (error: any) {
@@ -252,8 +389,22 @@ export const BackOrderSummaryTab = () => {
       fromDate: report.fromDate,
       toDate: report.toDate,
       sections: [
-        { title: "ISB", rows: report.sections?.ISB || [] },
-        { title: "KHI", rows: report.sections?.KHI || [] },
+        {
+          title: "ISB",
+          groups: (report.sections?.ISB || []).map((group) => ({
+            poNumber: group.poNumber,
+            poDate: group.poDate,
+            items: group.items || [],
+          })),
+        },
+        {
+          title: "KHI",
+          groups: (report.sections?.KHI || []).map((group) => ({
+            poNumber: group.poNumber,
+            poDate: group.poDate,
+            items: group.items || [],
+          })),
+        },
       ],
     });
     if (!opened) {
@@ -277,7 +428,7 @@ export const BackOrderSummaryTab = () => {
               <h2 className="text-lg font-semibold">Back Order Summary Report</h2>
               <p className="text-sm text-muted-foreground">
                 Select supplier and date range, then generate or print PDF (ISB
-                then KHI).
+                then KHI, grouped by PO).
               </p>
             </div>
           </div>
@@ -346,8 +497,8 @@ export const BackOrderSummaryTab = () => {
             </div>
           </div>
 
-          <SectionTable title="ISB" rows={report.sections?.ISB || []} />
-          <SectionTable title="KHI" rows={report.sections?.KHI || []} />
+          <ConsigneeSection title="ISB" groups={report.sections?.ISB || []} />
+          <ConsigneeSection title="KHI" groups={report.sections?.KHI || []} />
         </div>
       ) : null}
     </div>

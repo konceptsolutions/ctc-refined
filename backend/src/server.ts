@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import cors from "cors";
 import * as dotenv from "dotenv";
 import * as path from "path";
@@ -12,7 +12,7 @@ const envPath = path.resolve(__dirname, `../${envFile}`);
 dotenv.config({ path: envPath, override: true });
 
 // ============================================================
-// DATABASE SAFETY GUARD — ALWAYS USE koncepts_dev
+// DATABASE SAFETY GUARD � ALWAYS USE koncepts_dev
 // Never allow any other database to be used.
 // This guard overrides stale system/user environment variables.
 // ============================================================
@@ -27,7 +27,7 @@ if (!currentDbUrl.includes(REQUIRED_DB)) {
   if (match && match[1].includes(REQUIRED_DB)) {
     process.env.DATABASE_URL = match[1].trim();
     console.warn(
-      `[SERVER] ⚠️  DATABASE_URL was pointing to wrong DB. Overridden to: ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ":****@")}`,
+      `[SERVER] ??  DATABASE_URL was pointing to wrong DB. Overridden to: ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ":****@")}`,
     );
   } else {
     throw new Error(
