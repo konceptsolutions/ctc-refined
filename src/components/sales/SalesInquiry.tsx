@@ -238,7 +238,17 @@ const extractPartModels = (part: any) => {
     .filter((m: { name: string }) => !!m.name);
 };
 
-export const SalesInquiry = () => {
+interface SalesInquiryProps {
+  /** Hide all price columns/inputs (used by the Store Part Association view). */
+  hidePrices?: boolean;
+  /** Hide the To Invoice / To Quotation / To Local Purchase shortcut buttons. */
+  hideShortcuts?: boolean;
+}
+
+export const SalesInquiry = ({
+  hidePrices = false,
+  hideShortcuts = false,
+}: SalesInquiryProps = {}) => {
   const navigate = useNavigate();
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -3200,33 +3210,37 @@ export const SalesInquiry = () => {
               {/* <p className="text-sm text-muted-foreground mt-1">Search for part details using Item filter</p> */}
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="default"
-                size="sm"
-                className="gap-2"
-                onClick={() => handleConvertFromInquiry("invoice")}
-              >
-                <FileText className="w-4 h-4" />
-                To Invoice
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="gap-2"
-                onClick={() => handleConvertFromInquiry("quotation")}
-              >
-                <ArrowRight className="w-4 h-4" />
-                To Quotation
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => handleConvertFromInquiry("dpo")}
-              >
-                <Truck className="w-4 h-4" />
-                To Local Purchase
-              </Button>
+              {!hideShortcuts && (
+                <>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => handleConvertFromInquiry("invoice")}
+                  >
+                    <FileText className="w-4 h-4" />
+                    To Invoice
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => handleConvertFromInquiry("quotation")}
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    To Quotation
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => handleConvertFromInquiry("dpo")}
+                  >
+                    <Truck className="w-4 h-4" />
+                    To Local Purchase
+                  </Button>
+                </>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -3314,15 +3328,19 @@ export const SalesInquiry = () => {
                     <TableHead className="w-[120px] text-center font-bold text-foreground">
                       New Stock Arrive
                     </TableHead>
-                    <TableHead className="w-[95px] text-center font-bold text-foreground">
-                      Cost Price
-                    </TableHead>
-                    <TableHead className="w-[90px] text-center font-bold text-foreground">
-                      Price A
-                    </TableHead>
-                    <TableHead className="w-[90px] text-center font-bold text-foreground">
-                      Price B
-                    </TableHead>
+                    {!hidePrices && (
+                      <>
+                        <TableHead className="w-[95px] text-center font-bold text-foreground">
+                          Cost Price
+                        </TableHead>
+                        <TableHead className="w-[90px] text-center font-bold text-foreground">
+                          Price A
+                        </TableHead>
+                        <TableHead className="w-[90px] text-center font-bold text-foreground">
+                          Price B
+                        </TableHead>
+                      </>
+                    )}
                     <TableHead className="w-[100px] text-center font-bold text-foreground">
                       Location
                     </TableHead>
@@ -3766,6 +3784,7 @@ export const SalesInquiry = () => {
                               );
                             })()}
                           </TableCell>
+                          {!hidePrices && (
                           <TableCell className="text-center align-top">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
@@ -3788,6 +3807,8 @@ export const SalesInquiry = () => {
                               </span>
                             )}
                           </TableCell>
+                          )}
+                          {!hidePrices && (
                           <TableCell className="text-center align-top p-1">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
@@ -3831,6 +3852,8 @@ export const SalesInquiry = () => {
                               </div>
                             )}
                           </TableCell>
+                          )}
+                          {!hidePrices && (
                           <TableCell className="text-center align-top p-1">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
@@ -3874,6 +3897,7 @@ export const SalesInquiry = () => {
                               </div>
                             )}
                           </TableCell>
+                          )}
                           <TableCell className="text-center align-top">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
@@ -3926,7 +3950,10 @@ export const SalesInquiry = () => {
                             key={`${row.id}-qty-used`}
                             className="border-b bg-muted/20"
                           >
-                            <TableCell colSpan={13} className="px-4 pt-0 pb-2">
+                            <TableCell
+                              colSpan={hidePrices ? 10 : 13}
+                              className="px-4 pt-0 pb-2"
+                            >
                               <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
                                   Quantity Used
@@ -4113,8 +4140,12 @@ export const SalesInquiry = () => {
                       <TableHead className="text-xs">Customer</TableHead>
                       {/* <TableHead className="text-xs">Customer Type</TableHead> */}
                       <TableHead className="text-xs">Qty</TableHead>
-                      <TableHead className="text-xs">Unit Price</TableHead>
-                      <TableHead className="text-xs">Line Total</TableHead>
+                      {!hidePrices && (
+                        <>
+                          <TableHead className="text-xs">Unit Price</TableHead>
+                          <TableHead className="text-xs">Line Total</TableHead>
+                        </>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -4156,12 +4187,16 @@ export const SalesInquiry = () => {
                           <TableCell className="text-xs text-muted-foreground">
                             {invoice.item?.ordered_qty || 0}
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            Rs {invoice.item?.unit_price?.toFixed(2) || '0.00'}
-                          </TableCell>
-                          <TableCell className="text-xs font-medium">
-                            Rs {invoice.item?.line_total?.toFixed(2) || '0.00'}
-                          </TableCell>
+                          {!hidePrices && (
+                            <>
+                              <TableCell className="text-xs text-muted-foreground">
+                                Rs {invoice.item?.unit_price?.toFixed(2) || '0.00'}
+                              </TableCell>
+                              <TableCell className="text-xs font-medium">
+                                Rs {invoice.item?.line_total?.toFixed(2) || '0.00'}
+                              </TableCell>
+                            </>
+                          )}
                         </TableRow>
                       ))
                     )}
@@ -4182,8 +4217,12 @@ export const SalesInquiry = () => {
                       <TableHead className="text-xs">Date</TableHead>
                       <TableHead className="text-xs">Supplier</TableHead>
                       <TableHead className="text-xs">Qty</TableHead>
-                      <TableHead className="text-xs">Rate</TableHead>
-                      <TableHead className="text-xs">Cost Price</TableHead>
+                      {!hidePrices && (
+                        <>
+                          <TableHead className="text-xs">Rate</TableHead>
+                          <TableHead className="text-xs">Cost Price</TableHead>
+                        </>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -4230,12 +4269,16 @@ export const SalesInquiry = () => {
                           <TableCell className="text-xs text-muted-foreground">
                             {row.qty}
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            Rs {row.rate.toFixed(2)}
-                          </TableCell>
-                          <TableCell className="text-xs font-medium">
-                            Rs {row.costPrice.toFixed(2)}
-                          </TableCell>
+                          {!hidePrices && (
+                            <>
+                              <TableCell className="text-xs text-muted-foreground">
+                                Rs {row.rate.toFixed(2)}
+                              </TableCell>
+                              <TableCell className="text-xs font-medium">
+                                Rs {row.costPrice.toFixed(2)}
+                              </TableCell>
+                            </>
+                          )}
                         </TableRow>
                       ))
                     )}

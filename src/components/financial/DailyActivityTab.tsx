@@ -20,6 +20,11 @@ import {
 } from "@/components/ui/collapsible";
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import {
+  printDailyActivity,
+  type DailyActivityPrintInput,
+} from "@/utils/printDailyActivityPdf";
 import {
   ChevronDown,
   FileText,
@@ -284,6 +289,55 @@ const DocumentBlock = ({
   );
 };
 
+const buildPrintInput = (data: DailyActivityData): DailyActivityPrintInput => ({
+  dateLabel: formatDate(data.date),
+  summary: data.summary,
+  salesInvoices: data.salesInvoices.map((inv) => ({
+    number: inv.number,
+    headerText: [
+      inv.customerName || "—",
+      getCustomerTypeLabel(inv.customerType),
+      getInvoicePaymentMode(inv),
+      `${inv.itemsCount} item${inv.itemsCount === 1 ? "" : "s"}`,
+    ].join("  ·  "),
+    metaText: [
+      `Date: ${formatDate(inv.date)}`,
+      `Subtotal: Rs ${formatMoney(inv.subtotal)}`,
+      inv.tax > 0 ? `Tax: Rs ${formatMoney(inv.tax)}` : "",
+      `Paid: Rs ${formatMoney(inv.paidAmount)}`,
+      `Status: ${inv.status}`,
+    ]
+      .filter(Boolean)
+      .join("  ·  "),
+    amountLabel: "Grand Total",
+    amount: inv.grandTotal,
+    items: inv.items,
+  })),
+  salesReturns: data.salesReturns.map((sr) => ({
+    number: sr.number,
+    headerText: [
+      sr.status,
+      sr.invoiceNo ? `Invoice: ${sr.invoiceNo}` : "",
+      `${sr.itemsCount} item${sr.itemsCount === 1 ? "" : "s"}`,
+    ]
+      .filter(Boolean)
+      .join("  ·  "),
+    metaText: [
+      `Customer: ${sr.customerName}`,
+      `Date: ${formatDate(sr.date)}`,
+      `Subtotal: Rs ${formatMoney(sr.subtotal)}`,
+      sr.tax > 0 ? `Tax: Rs ${formatMoney(sr.tax)}` : "",
+      sr.deduction > 0 ? `Deduction: Rs ${formatMoney(sr.deduction)}` : "",
+      `Refunded: Rs ${formatMoney(sr.paidAmount)}`,
+    ]
+      .filter(Boolean)
+      .join("  ·  "),
+    amountLabel: "Return Total",
+    amount: sr.totalAmount,
+    items: sr.items,
+  })),
+});
+
 export const DailyActivityTab = ({
   date: controlledDate,
   hideDatePicker = false,
@@ -319,6 +373,14 @@ export const DailyActivityTab = ({
     void fetchDailyActivity();
   }, [fetchDailyActivity]);
 
+  const handlePrint = () => {
+    if (!data) return;
+    const started = printDailyActivity(buildPrintInput(data));
+    if (!started) {
+      toast.error("Allow pop-ups to print the report");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -348,6 +410,7 @@ export const DailyActivityTab = ({
               )}
               Refresh
             </Button>
+            <PrintPdfButton onPrint={handlePrint} disabled={!data || loading} />
           </div>
         </CardContent>
       </Card>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Search, Edit, MoreVertical, X } from "lucide-react";
+import { Plus, Search, Edit, MoreVertical, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  ListNumberHeader,
+  ListNumberCell,
+} from "@/components/ui/list-table-number";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -82,6 +85,7 @@ interface Supplier {
   gstNumber?: string | null;
   ntn?: string | null;
   remarks?: string | null;
+  canDelete?: boolean;
 }
 
 const emptySupplier: Omit<Supplier, "id"> = {
@@ -138,6 +142,10 @@ export const SupplierManagement = () => {
     null,
   );
   const [areas, setAreas] = useState<string[]>([]);
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
 
   const fetchAreas = async () => {
     try {
@@ -302,8 +310,6 @@ export const SupplierManagement = () => {
       e.stopPropagation();
     }
 
-    
-    
     try {
       if (editingId) {
         const response = (await apiClient.updateSupplier(editingId, {
@@ -509,6 +515,31 @@ export const SupplierManagement = () => {
     setSupplierToToggle(null);
   };
 
+  const handleDelete = async () => {
+    if (!supplierToDelete) return;
+    try {
+      setDeleting(true);
+      await apiClient.deleteSupplier(supplierToDelete.id);
+      toast({
+        title: "Supplier Deleted",
+        description: `${supplierToDelete.name || supplierToDelete.companyName || "Supplier"} has been deleted successfully.`,
+      });
+      setSupplierToDelete(null);
+      await Promise.all([fetchSuppliers(), fetchAllSuppliers()]);
+    } catch (error: any) {
+      toast({
+        title: "Cannot Delete Supplier",
+        description:
+          error?.error ||
+          error?.message ||
+          "Supplier cannot be deleted because transactions exist against it.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -670,7 +701,9 @@ export const SupplierManagement = () => {
                     CONTACT NO
                   </TableHead>
                   <TableHead className="text-xs font-medium">TYPE</TableHead>
-                  <TableHead className="text-xs font-medium">CURRENCY</TableHead>
+                  <TableHead className="text-xs font-medium">
+                    CURRENCY
+                  </TableHead>
                   <TableHead className="text-xs font-medium">STATUS</TableHead>
                   <TableHead className="text-xs font-medium">ACTIONS</TableHead>
                 </TableRow>
@@ -776,6 +809,21 @@ export const SupplierManagement = () => {
                               <MoreVertical className="w-3 h-3" />
                             </Button>
                           </ActionButtonTooltip>
+                          {supplier.canDelete && (
+                            <ActionButtonTooltip
+                              label="Delete"
+                              variant="delete"
+                            >
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:text-destructive"
+                                onClick={() => setSupplierToDelete(supplier)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </ActionButtonTooltip>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -904,7 +952,7 @@ export const SupplierManagement = () => {
                   className="h-8 text-xs"
                 />
               </div>
-                                          <div className="space-y-1">
+              <div className="space-y-1">
                 <Label className="text-xs">Reference Name</Label>
                 <Input
                   placeholder="Reference"
@@ -1291,6 +1339,37 @@ export const SupplierManagement = () => {
               {supplierToToggle?.status === "active"
                 ? "Deactivate"
                 : "Activate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!supplierToDelete}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setSupplierToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Supplier</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete "
+              {supplierToDelete?.name ||
+                supplierToDelete?.companyName ||
+                "this supplier"}
+              "? This option is available because no transactions exist against
+              this supplier.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

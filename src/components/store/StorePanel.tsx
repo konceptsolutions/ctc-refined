@@ -75,6 +75,7 @@ import { StoreLocationAssign } from "./StoreLocationAssign";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { getUserRole, isStoreUserRole } from "@/utils/auth";
+import { SalesInquiry } from "@/components/sales/SalesInquiry";
 
 interface DirectPurchaseOrderItem {
   id: string;
@@ -362,8 +363,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [stockOutOrders, setStockOutOrders] = useState<StockOutOrder[]>([]);
   const [transferOutOrders, setTransferOutOrders] = useState<StockOutOrder[]>([]);
   const [partOptions, setPartOptions] = useState<StorePartOption[]>([]);
-  const [selectedAssociationPartId, setSelectedAssociationPartId] = useState("");
-  const [associationRows, setAssociationRows] = useState<Array<{ model: string; qtyUsed: number }>>([]);
   const [associationLoading, setAssociationLoading] = useState(false);
   const hasInitializedStockOutRef = useRef(false);
   const notifiedApprovedInvoiceIdsRef = useRef<Set<string>>(new Set());
@@ -562,29 +561,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     ],
     [partOptions],
   );
-
-  const fetchPartAssociation = async (partId: string) => {
-    if (!partId) {
-      setAssociationRows([]);
-      return;
-    }
-    try {
-      setAssociationLoading(true);
-      const response = await apiClient.getPart(partId);
-      const partData = (response as any)?.data || response;
-      const models = Array.isArray(partData?.models) ? partData.models : [];
-      const rows = models.map((m: any) => ({
-        model: String(m?.name || "").trim() || "N/A",
-        qtyUsed: Number(m?.qty_used ?? m?.qtyUsed ?? 0) || 0,
-      }));
-      setAssociationRows(rows);
-    } catch (error: any) {
-      setAssociationRows([]);
-      toast.error(error?.error || "Failed to load model association");
-    } finally {
-      setAssociationLoading(false);
-    }
-  };
 
   const fetchStores = async () => {
     try {
@@ -2530,69 +2506,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
                 {/* Part Association - Store User only */}
                 {typeFilter === "part-association" && isStoreOnlyUser && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                      <div className="space-y-2">
-                        <Label>Select Item</Label>
-                        <SearchableSelect
-                          options={partOptions.map(buildStorePartSelectOption)}
-                          value={selectedAssociationPartId}
-                          onValueChange={(value) => {
-                            setSelectedAssociationPartId(value);
-                            fetchPartAssociation(value);
-                          }}
-                          placeholder={
-                            associationLoading && partOptions.length === 0
-                              ? "Loading items..."
-                              : "Select item"
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <ListNumberHeader />
-                            <TableHead>Model</TableHead>
-                            <TableHead className="text-right">Quantity Used</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {!selectedAssociationPartId ? (
-                            <TableRow>
-                              <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
-                                Select an item to view model association.
-                              </TableCell>
-                            </TableRow>
-                          ) : associationLoading ? (
-                            <TableRow>
-                              <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
-                                Loading model association...
-                              </TableCell>
-                            </TableRow>
-                          ) : associationRows.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
-                                No model association found for this item.
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            associationRows.map((row, idx) => (
-                              <TableRow key={`${row.model}-${idx}`}>
-                                <ListNumberCell index={idx} />
-                                <TableCell>{row.model}</TableCell>
-                                <TableCell className="text-right font-medium">
-                                  {row.qtyUsed.toLocaleString("en-US")}
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
+                  <SalesInquiry hidePrices hideShortcuts />
                 )}
 
               </>

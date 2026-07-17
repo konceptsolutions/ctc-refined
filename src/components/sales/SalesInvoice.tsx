@@ -870,6 +870,12 @@ export const SalesInvoice = ({
   const [showSoftDeleteConfirm, setShowSoftDeleteConfirm] = useState(false);
   const [invoiceToSoftDelete, setInvoiceToSoftDelete] =
     useState<Invoice | null>(null);
+
+  // Un-approve Confirmation – for approved invoices only
+  const [showUnapproveConfirm, setShowUnapproveConfirm] = useState(false);
+  const [invoiceToUnapprove, setInvoiceToUnapprove] = useState<Invoice | null>(
+    null,
+  );
   const [showQuotationInitiateConfirm, setShowQuotationInitiateConfirm] =
     useState(false);
   const [quotationToInitiate, setQuotationToInitiate] = useState<Invoice | null>(
@@ -9054,23 +9060,41 @@ export const SalesInvoice = ({
                                 )}
                               </>
                             ) : (
-                              (inv.status === "pending" ||
-                                inv.status === "on_hold") && (
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
-                                  onClick={() =>
-                                    handleUpdateStatus(inv, "approved")
-                                  }
-                                  disabled={approvingInvoice === inv.id}
-                                >
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  {approvingInvoice === inv.id
-                                    ? "Approving..."
-                                    : "Approve"}
-                                </Button>
-                              )
+                              <>
+                                {(inv.status === "pending" ||
+                                  inv.status === "on_hold") && (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
+                                    onClick={() =>
+                                      handleUpdateStatus(inv, "approved")
+                                    }
+                                    disabled={approvingInvoice === inv.id}
+                                  >
+                                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                                    {approvingInvoice === inv.id
+                                      ? "Approving..."
+                                      : "Approve"}
+                                  </Button>
+                                )}
+                                {/* Un-approve — only for approved invoices, reverts to pending so it can be edited */}
+                                {inv.status === "approved" && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                                    onClick={() => {
+                                      setInvoiceToUnapprove(inv);
+                                      setShowUnapproveConfirm(true);
+                                    }}
+                                    title="Un-approve invoice so it can be edited"
+                                  >
+                                    <Ban className="w-3 h-3 mr-1" />
+                                    Un-approve
+                                  </Button>
+                                )}
+                              </>
                             ))}
                             {/* Print */}
                             {!isQuotation && <DropdownMenu>
@@ -10171,6 +10195,57 @@ export const SalesInvoice = ({
               className="bg-primary hover:bg-primary/90"
             >
               Delete & Reverse Stock
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Un-approve Confirmation */}
+      <AlertDialog
+        open={showUnapproveConfirm}
+        onOpenChange={(open) => {
+          setShowUnapproveConfirm(open);
+          if (!open) setInvoiceToUnapprove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              Un-approve Invoice?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will change invoice {invoiceToUnapprove?.invoiceNo} back to
+              Pending so it can be edited.
+              <br />
+              <br />
+              <strong>Un-approving will:</strong>
+              <div className="mt-2 space-y-1">
+                <ul className="list-disc list-inside">
+                  <li>Delete the vouchers created on approval</li>
+                  <li>Reverse the related account balances</li>
+                  <li>Release reserved stock</li>
+                </ul>
+              </div>
+              <br />
+              You can re-approve the invoice after editing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setInvoiceToUnapprove(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (invoiceToUnapprove) {
+                  void handleUpdateStatus(invoiceToUnapprove, "pending");
+                }
+                setShowUnapproveConfirm(false);
+                setInvoiceToUnapprove(null);
+              }}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              Un-approve
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

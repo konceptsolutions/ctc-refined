@@ -5,12 +5,50 @@ import { randomUUID } from "crypto";
 const router = express.Router();
 const prisma = new PrismaClient();
 
+const supplierUsageInclude = {
+  Account: {
+    select: {
+      id: true,
+      currentBalance: true,
+      _count: { select: { VoucherEntry: true } },
+    },
+  },
+  _count: {
+    select: {
+      DirectPurchaseOrder: true,
+      DirectPurchaseOrderReturn: true,
+      PurchaseOrder: true,
+      PurchaseImportRequest: true,
+      PurchaseQuotation: true,
+      StockMovement: true,
+      VoucherEntry: true,
+    },
+  },
+} as const;
+
+const supplierCanBeDeleted = (supplier: any) =>
+  Number(supplier.openingBalance || 0) === 0 &&
+  supplier._count.DirectPurchaseOrder === 0 &&
+  supplier._count.DirectPurchaseOrderReturn === 0 &&
+  supplier._count.PurchaseOrder === 0 &&
+  supplier._count.PurchaseImportRequest === 0 &&
+  supplier._count.PurchaseQuotation === 0 &&
+  supplier._count.StockMovement === 0 &&
+  supplier._count.VoucherEntry === 0 &&
+  supplier.Account.every(
+    (account: any) =>
+      Number(account.currentBalance || 0) === 0 &&
+      account._count.VoucherEntry === 0,
+  );
+
 const normalizeCountry = (value: any) =>
   String(value || "")
     .trim()
     .toLowerCase();
 
-const inferSupplierTypeFromCountry = (country: any): "local" | "international" => {
+const inferSupplierTypeFromCountry = (
+  country: any,
+): "local" | "international" => {
   const normalizedCountry = normalizeCountry(country);
   if (
     normalizedCountry === "" ||
@@ -22,7 +60,10 @@ const inferSupplierTypeFromCountry = (country: any): "local" | "international" =
   return "international";
 };
 
-const inferCurrencyFromCountry = (country: any, type: "local" | "international") => {
+const inferCurrencyFromCountry = (
+  country: any,
+  type: "local" | "international",
+) => {
   if (type === "local") return "PKR";
 
   const normalizedCountry = normalizeCountry(country);
@@ -57,7 +98,9 @@ const normalizeSupplierType = (
   type: any,
   country: any,
 ): "local" | "international" => {
-  const normalizedType = String(type || "").trim().toLowerCase();
+  const normalizedType = String(type || "")
+    .trim()
+    .toLowerCase();
   if (normalizedType === "local" || normalizedType === "international") {
     return normalizedType;
   }
@@ -104,7 +147,14 @@ async function generateSupplierCode(): Promise<string> {
 // GET /api/suppliers - Get all suppliers with filters and pagination
 router.get("/", async (req, res) => {
   try {
-    const { search, fieldFilter, status, type, page = "1", limit = "10" } = req.query;
+    const {
+      search,
+      fieldFilter,
+      status,
+      type,
+      page = "1",
+      limit = "10",
+    } = req.query;
 
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
@@ -119,7 +169,9 @@ router.get("/", async (req, res) => {
     }
 
     // Supplier type filter (local / international)
-    const typeFilter = String(type || "").trim().toLowerCase();
+    const typeFilter = String(type || "")
+      .trim()
+      .toLowerCase();
     if (typeFilter === "local" || typeFilter === "international") {
       where.type = typeFilter;
     }
@@ -163,7 +215,7 @@ router.get("/", async (req, res) => {
         skip,
         take: limitNum,
         orderBy: { createdAt: "desc" },
-        include: { Account: { select: { id: true } } }, // Include account IDs
+        include: supplierUsageInclude,
       }),
       prisma.supplier.count({ where }),
     ]);
@@ -171,8 +223,10 @@ router.get("/", async (req, res) => {
     // Map suppliers to include accountId
     const suppliersWithAccountId = suppliers.map((supplier: any) => ({
       ...supplier,
+      canDelete: supplierCanBeDeleted(supplier),
       accountId: supplier.Account?.length > 0 ? supplier.Account[0].id : null,
       Account: undefined, // Remove Account array from response
+      _count: undefined,
     }));
 
     res.json({
@@ -580,7 +634,8 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ error: "Supplier not found" });
     }
 
-    const effectiveCountry = country !== undefined ? country : oldSupplier.country;
+    const effectiveCountry =
+      country !== undefined ? country : oldSupplier.country;
 
     if (type !== undefined) {
       const effectiveType = normalizeSupplierType(type, effectiveCountry);
@@ -953,11 +1008,40 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/suppliers/:id - Disabled (suppliers cannot be deleted from Manage)
-router.delete("/:id", async (_req, res) => {
-  return res.status(403).json({
-    error: "Deleting suppliers is not allowed. Set status to inactive instead.",
-  });
+// DELETE /api/suppliers/:id - Allowed only when the supplier has no transactions
+router.delete("/:id", async (req, res) => {
+  try {
+    const supplier = await prisma.supplier.findUnique({
+      where: { id: req.params.id },
+      include: supplierUsageInclude,
+    });
+
+    if (!supplier) {
+      return res.status(404).json({ error: "Supplier not found" });
+    }
+
+    if (!supplierCanBeDeleted(supplier)) {
+      return res.status(409).json({
+        error:
+          "Supplier cannot be deleted because transactions exist against it.",
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.account.deleteMany({ where: { supplierId: supplier.id } }),
+      prisma.supplier.delete({ where: { id: supplier.id } }),
+    ]);
+
+    res.json({ message: "Supplier deleted successfully" });
+  } catch (error: any) {
+    if (error.code === "P2003") {
+      return res.status(409).json({
+        error:
+          "Supplier cannot be deleted because transactions exist against it.",
+      });
+    }
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;

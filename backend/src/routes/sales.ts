@@ -3920,6 +3920,72 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
       });
     }
 
+    if (status === "pending" && deliveryStatuses.includes(prevStatus)) {
+      return res.status(400).json({
+        error: "Cannot un-approve an invoice that has already been delivered.",
+      });
+    }
+
+    // ─── APPROVED → PENDING (un-approve): reverse approval side effects ──────
+    // Deletes the system vouchers created on approval (reversing account
+    // balances) and releases stock reservations, so the invoice can be edited
+    // and re-approved later.
+    if (status === "pending" && prevStatus === "approved") {
+      const hasDeliveredQty = invoice.SalesInvoiceItem.some(
+        (item) => (item.deliveredQty || 0) > 0,
+      );
+      if (hasDeliveredQty) {
+        return res.status(400).json({
+          error:
+            "Cannot un-approve: some quantities have already been delivered.",
+        });
+      }
+
+      const invoiceVouchers = await prisma.voucher.findMany({
+        where: { salesInvoiceId: id },
+        include: { VoucherEntry: true },
+      });
+
+      for (const voucher of invoiceVouchers) {
+        for (const entry of voucher.VoucherEntry) {
+          if (!entry.accountId || entry.deletedAt) continue;
+          const acc = await prisma.account.findUnique({
+            where: { id: entry.accountId },
+            include: { Subgroup: { include: { MainGroup: true } } },
+          });
+          if (!acc) continue;
+          const nature =
+            (acc as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
+          const isDR = ["asset", "expense", "cost"].includes(nature);
+          // Reverse of the increment applied when the voucher was posted
+          await prisma.account.update({
+            where: { id: entry.accountId },
+            data: {
+              currentBalance: {
+                increment: isDR
+                  ? entry.credit - entry.debit
+                  : entry.debit - entry.credit,
+              },
+            },
+          });
+        }
+      }
+
+      // Hard-delete so re-approval recreates vouchers (creation is skipped
+      // when any voucher still exists for this invoice). Entries cascade.
+      if (invoiceVouchers.length > 0) {
+        await prisma.voucher.deleteMany({
+          where: { id: { in: invoiceVouchers.map((v) => v.id) } },
+        });
+      }
+
+      // Release reservations created at approval; re-approving recreates them
+      await prisma.stockReservation.updateMany({
+        where: { invoiceId: id, status: "reserved" },
+        data: { status: "released", releasedAt: new Date() },
+      });
+    }
+
     // ─── → ON_HOLD: move stock to hold (remove from available) ──────────────
     if (
       status === "on_hold" &&

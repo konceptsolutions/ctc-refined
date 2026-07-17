@@ -2519,6 +2519,12 @@ class ApiClient {
     });
   }
 
+  async deletePurchaseImportRequest(requestId: string) {
+    return this.request(`/purchase-import/requests/${requestId}`, {
+      method: "DELETE",
+    });
+  }
+
   async getPurchaseQuotationContext(requestId: string) {
     return this.request(`/purchase-import/requests/${requestId}/quotation-context`);
   }
@@ -2682,6 +2688,12 @@ class ApiClient {
     });
   }
 
+  async deletePurchaseQuotation(quotationId: string) {
+    return this.request(`/purchase-import/quotations/${quotationId}`, {
+      method: "DELETE",
+    });
+  }
+
   async getImportPurchaseOrders(params?: { page?: number; limit?: number }) {
     const queryParams = new URLSearchParams();
     if (params) {
@@ -2713,6 +2725,12 @@ class ApiClient {
 
   async getImportPurchaseOrder(orderId: string) {
     return this.request(`/purchase-import/purchase-orders/${orderId}`);
+  }
+
+  async deleteImportPurchaseOrder(orderId: string) {
+    return this.request(`/purchase-import/purchase-orders/${orderId}`, {
+      method: "DELETE",
+    });
   }
 
   async getPurchaseImportExpectedArrivals(partIds: string[]) {

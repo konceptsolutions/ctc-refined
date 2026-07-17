@@ -4959,6 +4959,7 @@ const PurchaseInquiryListPanel = ({
   const { toast } = useToast();
   const navigate = useNavigate();
   const [confirmingRequestId, setConfirmingRequestId] = useState<string | null>(null);
+  const [deletingRequestId, setDeletingRequestId] = useState<string | null>(null);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requests, setRequests] = useState<PurchaseImportRequestRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -5095,6 +5096,39 @@ const PurchaseInquiryListPanel = ({
       });
     } finally {
       setConfirmingRequestId(null);
+    }
+  };
+
+  const handleDeleteRequest = async (requestId: string) => {
+    const row = requests.find((r) => r.id === requestId);
+    const inquiryNo = row?.requestNo || "this inquiry";
+    if (
+      !window.confirm(
+        `Delete inquiry ${inquiryNo}? This is only allowed when no quotation has been made.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingRequestId(requestId);
+    try {
+      await apiClient.deletePurchaseImportRequest(requestId);
+      toast({
+        title: "Inquiry deleted",
+        description: `Inquiry ${inquiryNo} has been deleted.`,
+      });
+      await fetchRequests();
+    } catch (error: any) {
+      toast({
+        title: "Failed to delete inquiry",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not delete the inquiry.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingRequestId(null);
     }
   };
 
@@ -5301,6 +5335,7 @@ const PurchaseInquiryListPanel = ({
             ) : (
               requests.map((row, index) => {
                 const isConfirmed = isInquiryConfirmed(row.status);
+                const hasQuotation = (row.PurchaseQuotation || []).length > 0;
                 const hasConfirmedQuotation = (row.PurchaseQuotation || []).some(
                   (quotation) =>
                     String(quotation.status || "")
@@ -5394,6 +5429,22 @@ const PurchaseInquiryListPanel = ({
                               <Pencil className="w-3.5 h-3.5 mr-1" />
                               Edit
                             </Button>
+                            {!hasQuotation ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="text-destructive hover:text-destructive"
+                                disabled={deletingRequestId === row.id}
+                                title="Delete inquiry (only when no quotation exists)"
+                                onClick={() => void handleDeleteRequest(row.id)}
+                              >
+                                <Trash className="w-3.5 h-3.5 mr-1" />
+                                {deletingRequestId === row.id
+                                  ? "Deleting..."
+                                  : "Delete"}
+                              </Button>
+                            ) : null}
                           </>
                         ) : (
                           <>
@@ -5497,6 +5548,7 @@ const PurchaseQuotationListPanel = ({
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [totalRecords, setTotalRecords] = useState(0);
   const [printingQuotationId, setPrintingQuotationId] = useState<string | null>(null);
+  const [deletingQuotationId, setDeletingQuotationId] = useState<string | null>(null);
   const [filterSupplierId, setFilterSupplierId] = useState("");
   const [filterQuotationNo, setFilterQuotationNo] = useState("");
   const [filterPartReference, setFilterPartReference] = useState("");
@@ -5644,6 +5696,39 @@ const PurchaseQuotationListPanel = ({
     setFilterPartReference("");
     setAppliedPartReference("");
     setCurrentPage(1);
+  };
+
+  const handleDeleteQuotation = async (quotationId: string) => {
+    const row = quotations.find((q) => q.id === quotationId);
+    const quotationNo = row?.quotationNo || "this quotation";
+    if (
+      !window.confirm(
+        `Delete quotation ${quotationNo}? This is only allowed when the quotation is not confirmed. If this is the last quotation for its inquiry, the inquiry will go back to unconfirmed.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingQuotationId(quotationId);
+    try {
+      await apiClient.deletePurchaseQuotation(quotationId);
+      toast({
+        title: "Quotation deleted",
+        description: `Quotation ${quotationNo} has been deleted.`,
+      });
+      await fetchQuotations();
+    } catch (error: any) {
+      toast({
+        title: "Failed to delete quotation",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not delete the quotation.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingQuotationId(null);
+    }
   };
 
   const handlePrintQuotationById = async (
@@ -6071,6 +6156,22 @@ const PurchaseQuotationListPanel = ({
                             });
                           }}
                         />
+                        {!isConfirmed ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive hover:text-destructive"
+                            disabled={deletingQuotationId === row.id}
+                            title="Delete quotation (only when not confirmed)"
+                            onClick={() => void handleDeleteQuotation(row.id)}
+                          >
+                            <Trash className="w-3.5 h-3.5 mr-1" />
+                            {deletingQuotationId === row.id
+                              ? "Deleting..."
+                              : "Delete"}
+                          </Button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -7077,6 +7178,7 @@ const PurchaseOrderTab = ({
   const [viewOrder, setViewOrder] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [receiveOrderId, setReceiveOrderId] = useState<string | null>(null);
   const [receiveOrderLabel, setReceiveOrderLabel] = useState("");
   const [receiveDetail, setReceiveDetail] = useState<ImportPurchaseOrderReceiveDetail | null>(null);
@@ -7188,6 +7290,39 @@ const PurchaseOrderTab = ({
       setViewOrderId(null);
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    const row = orders.find((o) => o.id === orderId);
+    const poNumber = row?.poNumber || "this purchase order";
+    if (
+      !window.confirm(
+        `Delete purchase order ${poNumber}? This is only allowed when the order has not been received. If this is the last order for its quotation, the quotation will go back to unconfirmed.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingOrderId(orderId);
+    try {
+      await apiClient.deleteImportPurchaseOrder(orderId);
+      toast({
+        title: "Purchase order deleted",
+        description: `Purchase order ${poNumber} has been deleted.`,
+      });
+      await fetchOrders();
+    } catch (error: any) {
+      toast({
+        title: "Failed to delete purchase order",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not delete the purchase order.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingOrderId(null);
     }
   };
 
@@ -7949,6 +8084,20 @@ const PurchaseOrderTab = ({
                           void handlePrintOrderPdf(row.id);
                         }}
                       />
+                      {!isReceivedPurchaseOrder(row.status) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive hover:text-destructive"
+                          disabled={deletingOrderId === row.id}
+                          title="Delete purchase order (only when not received)"
+                          onClick={() => void handleDeleteOrder(row.id)}
+                        >
+                          <Trash className="w-3.5 h-3.5 mr-1" />
+                          {deletingOrderId === row.id ? "Deleting..." : "Delete"}
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         size="sm"

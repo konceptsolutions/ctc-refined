@@ -4,6 +4,40 @@ import { PrismaClient } from "@prisma/client";
 const router = express.Router();
 const prisma = new PrismaClient();
 
+const customerUsageInclude = {
+  Account: {
+    select: {
+      id: true,
+      code: true,
+      currentBalance: true,
+      status: true,
+      _count: { select: { VoucherEntry: true } },
+    },
+  },
+  _count: {
+    select: {
+      Receivable: true,
+      SalesInvoice: true,
+      SalesQuotation: true,
+      SalesReturn: true,
+      VoucherEntry: true,
+    },
+  },
+} as const;
+
+const customerCanBeDeleted = (customer: any) =>
+  Number(customer.openingBalance || 0) === 0 &&
+  customer._count.Receivable === 0 &&
+  customer._count.SalesInvoice === 0 &&
+  customer._count.SalesQuotation === 0 &&
+  customer._count.SalesReturn === 0 &&
+  customer._count.VoucherEntry === 0 &&
+  customer.Account.every(
+    (account: any) =>
+      Number(account.currentBalance || 0) === 0 &&
+      account._count.VoucherEntry === 0,
+  );
+
 // GET /api/customers - Get all customers with filters and pagination
 router.get("/", async (req, res) => {
   try {
@@ -24,11 +58,7 @@ router.get("/", async (req, res) => {
     // Fetch all customers matching status filter
     const allCustomers = await prisma.customer.findMany({
       where,
-      include: {
-        Account: {
-          select: { id: true, code: true, currentBalance: true, status: true },
-        },
-      },
+      include: customerUsageInclude,
       orderBy: { createdAt: "desc" },
     });
 
@@ -85,12 +115,14 @@ router.get("/", async (req, res) => {
 
       return {
         ...customer,
+        canDelete: customerCanBeDeleted(customer),
         balance: primaryAccount
           ? Number(primaryAccount.currentBalance ?? 0)
           : Number(customer.openingBalance || 0),
         accountId: primaryAccount?.id || null,
         accounts: undefined, // Remove accounts array from response
         Account: undefined, // Clean up unused relations
+        _count: undefined,
       };
     });
 
@@ -831,11 +863,40 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/customers/:id - Disabled (customers cannot be deleted from Manage)
-router.delete("/:id", async (_req, res) => {
-  return res.status(403).json({
-    error: "Deleting customers is not allowed. Set status to closed or inactive instead.",
-  });
+// DELETE /api/customers/:id - Allowed only when the customer has no transactions
+router.delete("/:id", async (req, res) => {
+  try {
+    const customer = await prisma.customer.findUnique({
+      where: { id: req.params.id },
+      include: customerUsageInclude,
+    });
+
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    if (!customerCanBeDeleted(customer)) {
+      return res.status(409).json({
+        error:
+          "Customer cannot be deleted because transactions exist against it.",
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.account.deleteMany({ where: { customerId: customer.id } }),
+      prisma.customer.delete({ where: { id: customer.id } }),
+    ]);
+
+    res.json({ message: "Customer deleted successfully" });
+  } catch (error: any) {
+    if (error.code === "P2003") {
+      return res.status(409).json({
+        error:
+          "Customer cannot be deleted because transactions exist against it.",
+      });
+    }
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;

@@ -620,6 +620,7 @@ export const ReceivableReminders = () => {
                   </TableHead>
                   <TableHead className="font-semibold">Invoice</TableHead>
                   <TableHead className="font-semibold">Customer</TableHead>
+                  <TableHead className="font-semibold">Contact</TableHead>
                   <TableHead className="font-semibold">Term</TableHead>
                   <TableHead className="font-semibold">Due Date</TableHead>
                   <TableHead className="text-right font-semibold">Balance</TableHead>
@@ -650,6 +651,9 @@ export const ReceivableReminders = () => {
                         <p className="font-medium text-foreground">{item.customerName}</p>
                         <p className="text-xs text-muted-foreground">{item.customerCode}</p>
                       </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {item.customerContact || "-"}
                     </TableCell>
                     <TableCell>{item.term}</TableCell>
                     <TableCell>
@@ -730,7 +734,7 @@ export const ReceivableReminders = () => {
                 ))}
                 {!loadingReceivables && filteredReceivables.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                       No receivable invoices found.
                     </TableCell>
                   </TableRow>

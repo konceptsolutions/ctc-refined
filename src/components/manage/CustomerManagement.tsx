@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Users, Plus, Search, X } from "lucide-react";
+import { Users, Plus, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +18,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  ListNumberHeader,
+  ListNumberCell,
+} from "@/components/ui/list-table-number";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +32,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -48,6 +61,7 @@ interface Customer {
   category?: "Reseller" | "EndUser" | null;
   accountOpeningDate?: string | null;
   accountClosingDate?: string | null;
+  canDelete?: boolean;
   priceType?: "A" | "B" | "M" | null;
   accountId?: string | null; // Account ID for this customer
   code?: string | null;
@@ -107,6 +121,10 @@ export const CustomerManagement = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
   const [areas, setAreas] = useState<string[]>([]);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
 
   const fetchAreas = async () => {
     try {
@@ -446,6 +464,31 @@ export const CustomerManagement = () => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!customerToDelete) return;
+    try {
+      setDeleting(true);
+      await apiClient.deleteCustomer(customerToDelete.id);
+      toast({
+        title: "Customer Deleted",
+        description: `${customerToDelete.name} has been deleted successfully.`,
+      });
+      setCustomerToDelete(null);
+      await Promise.all([fetchCustomers(), fetchAllCustomers()]);
+    } catch (error: any) {
+      toast({
+        title: "Cannot Delete Customer",
+        description:
+          error?.error ||
+          error?.message ||
+          "Customer cannot be deleted because transactions exist against it.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSearch = () => {
     setCurrentPage(1);
     fetchCustomers();
@@ -506,12 +549,14 @@ export const CustomerManagement = () => {
               <Label className="text-xs text-muted-foreground">Search</Label>
               <SearchableSelect
                 placeholder="Type to search customers..."
-                options={allCustomers.map(c => ({
+                options={allCustomers.map((c) => ({
                   value: c.id,
                   label: c.name,
-                  description: `${c.email || 'No email'} • ${c.contactNo || 'No contact'}`
+                  description: `${c.email || "No email"} • ${c.contactNo || "No contact"}`,
                 }))}
-                value={allCustomers.find(c => c.name === searchTerm)?.id || ''}
+                value={
+                  allCustomers.find((c) => c.name === searchTerm)?.id || ""
+                }
                 onValueChange={(value) => {
                   if (!value) {
                     setSearchTerm("");
@@ -623,10 +668,12 @@ export const CustomerManagement = () => {
                       </TableCell>
                       <TableCell className="text-xs text-right font-medium">
                         Rs{" "}
-                        {(customer.balance ?? customer.openingBalance).toLocaleString(
-                          undefined,
-                          { minimumFractionDigits: 0, maximumFractionDigits: 2 },
-                        )}
+                        {(
+                          customer.balance ?? customer.openingBalance
+                        ).toLocaleString(undefined, {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 2,
+                        })}
                       </TableCell>
                       <TableCell className="text-xs text-right font-medium text-red-600">
                         Rs{" "}
@@ -669,6 +716,17 @@ export const CustomerManagement = () => {
                           >
                             Edit
                           </Button>
+                          {customer.canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              onClick={() => setCustomerToDelete(customer)}
+                              title="Delete customer"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -693,9 +751,11 @@ export const CustomerManagement = () => {
               <Select
                 value={rowsPerPage.toString()}
                 onValueChange={(v) => {
+                  // The useEffect on [currentPage, rowsPerPage, statusFilter]
+                  // refetches with the new values; calling fetchCustomers here
+                  // would race with a stale closure.
                   setRowsPerPage(Number(v));
                   setCurrentPage(1);
-                  setTimeout(() => fetchCustomers(), 0);
                 }}
               >
                 <SelectTrigger className="w-16 h-7 text-xs">
@@ -1134,6 +1194,33 @@ export const CustomerManagement = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!customerToDelete}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setCustomerToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete "{customerToDelete?.name}"? This option is available
+              because no transactions exist against this customer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

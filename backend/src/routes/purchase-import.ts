@@ -1705,6 +1705,63 @@ router.put("/requests/:requestId/status", async (req: Request, res: Response) =>
   }
 });
 
+// Delete purchase inquiry (entire batch) only when no quotation has been made
+router.delete("/requests/:requestId", async (req: Request, res: Response) => {
+  try {
+    const purchaseImportRequestModel = (prisma as any).purchaseImportRequest;
+    const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+    if (!purchaseImportRequestModel) {
+      return res.status(500).json({
+        error:
+          "Purchase import request model is unavailable in Prisma client. Restart backend and regenerate Prisma client.",
+      });
+    }
+
+    const requestId = String(req.params.requestId || "").trim();
+    if (!requestId) {
+      return res.status(400).json({ error: "Request id is required." });
+    }
+
+    const requestRow = await purchaseImportRequestModel.findUnique({
+      where: { id: requestId },
+      select: { id: true, batchId: true, requestNo: true },
+    });
+    if (!requestRow) {
+      return res.status(404).json({ error: "Purchase import inquiry not found." });
+    }
+
+    const batchRequestRows = await purchaseImportRequestModel.findMany({
+      where: { batchId: requestRow.batchId },
+      select: { id: true },
+    });
+    const batchRequestIds = batchRequestRows.map((row: { id: string }) => row.id);
+
+    if (purchaseQuotationModel && batchRequestIds.length > 0) {
+      const quotationCount = await purchaseQuotationModel.count({
+        where: { purchaseImportRequestId: { in: batchRequestIds } },
+      });
+      if (quotationCount > 0) {
+        return res.status(400).json({
+          error:
+            "Cannot delete this inquiry because a quotation has already been made.",
+        });
+      }
+    }
+
+    await purchaseImportRequestModel.deleteMany({
+      where: { batchId: requestRow.batchId },
+    });
+
+    res.json({
+      success: true,
+      message: `Inquiry ${requestRow.requestNo || ""} deleted successfully.`,
+      data: { batchId: requestRow.batchId, deletedCount: batchRequestIds.length },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get("/requests/:requestId/quotation-context", async (req: Request, res: Response) => {
   try {
     const purchaseImportRequestModel = (prisma as any).purchaseImportRequest;
@@ -2717,6 +2774,95 @@ router.put("/quotations/:quotationId/status", async (req: Request, res: Response
   }
 });
 
+// Delete quotation only when it has not been confirmed
+router.delete("/quotations/:quotationId", async (req: Request, res: Response) => {
+  try {
+    const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+    const purchaseOrderModel = (prisma as any).purchaseOrder;
+    if (!purchaseQuotationModel) {
+      return res.status(500).json({
+        error:
+          "Purchase quotation model is unavailable in Prisma client. Restart backend and regenerate Prisma client.",
+      });
+    }
+
+    const quotationId = String(req.params.quotationId || "").trim();
+    if (!quotationId) {
+      return res.status(400).json({ error: "Quotation id is required." });
+    }
+
+    const existing = await purchaseQuotationModel.findUnique({
+      where: { id: quotationId },
+      select: {
+        id: true,
+        quotationNo: true,
+        status: true,
+        purchaseImportRequestId: true,
+      },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Purchase quotation not found." });
+    }
+
+    if (normalizeQuotationStatus(existing.status) === "confirm") {
+      return res.status(400).json({
+        error: "Cannot delete a confirmed quotation.",
+      });
+    }
+
+    if (purchaseOrderModel) {
+      const poCount = await purchaseOrderModel.count({
+        where: { purchaseQuotationId: quotationId },
+      });
+      if (poCount > 0) {
+        return res.status(400).json({
+          error:
+            "Cannot delete this quotation because a purchase order has already been created.",
+        });
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await (tx as any).purchaseQuotation.delete({ where: { id: quotationId } });
+
+      // Inquiry status lives on every request row of the batch. When the last
+      // quotation of the batch is deleted, the inquiry goes back to pending
+      // (unconfirmed) so it can be edited or deleted again.
+      const requestRow = await (tx as any).purchaseImportRequest.findUnique({
+        where: { id: existing.purchaseImportRequestId },
+        select: { batchId: true },
+      });
+      if (!requestRow?.batchId) return;
+
+      const batchRequestRows = await (tx as any).purchaseImportRequest.findMany({
+        where: { batchId: requestRow.batchId },
+        select: { id: true },
+      });
+      const batchRequestIds = batchRequestRows.map(
+        (row: { id: string }) => row.id,
+      );
+      if (batchRequestIds.length === 0) return;
+
+      const remainingQuotations = await (tx as any).purchaseQuotation.count({
+        where: { purchaseImportRequestId: { in: batchRequestIds } },
+      });
+      if (remainingQuotations > 0) return;
+
+      await (tx as any).purchaseImportRequest.updateMany({
+        where: { batchId: requestRow.batchId },
+        data: { status: "pending", updatedAt: new Date() },
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Quotation ${existing.quotationNo || ""} deleted successfully.`,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/quotations/:quotationId/confirm", async (req: Request, res: Response) => {
   try {
     const quotationId = String(req.params.quotationId || "").trim();
@@ -3538,6 +3684,104 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
     const status =
       message.includes("Part not found") || message.includes("not found") ? 404 : 500;
     res.status(status).json({ error: message });
+  }
+});
+
+// Delete import purchase order only when it has not been received
+// Notes are written by confirmPurchaseQuotation as:
+// "Created from purchase quotation(s) Q1, Q2 (Inquiry R1) - KHI"
+const parseQuotationNosFromPoNotes = (notes: any): string[] => {
+  const text = String(notes || "").trim();
+  const match =
+    /^Created from purchase quotations?\s+(.+?)(?:\s+\(Inquiry\s.+?\))?\s+-\s+\S+$/.exec(
+      text,
+    );
+  if (!match) return [];
+  return match[1]
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+};
+
+router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
+  try {
+    const orderId = String(req.params.id || "").trim();
+    if (!orderId) {
+      return res.status(400).json({ error: "Purchase order id is required." });
+    }
+
+    const order = await prisma.purchaseOrder.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        poNumber: true,
+        status: true,
+        purchaseQuotationId: true,
+        notes: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Purchase order not found." });
+    }
+
+    if (!order.purchaseQuotationId) {
+      return res.status(400).json({
+        error: "Only import purchase orders can be deleted from this endpoint.",
+      });
+    }
+
+    // Stock enters only when the store receives the order (status becomes
+    // "Received"). Items may already carry receivedQty from the purchase
+    // invoice step, which has no stock impact, so status is the only guard.
+    const status = String(order.status || "").trim().toLowerCase();
+    if (status === "received") {
+      return res.status(400).json({
+        error: "Cannot delete a purchase order that has already been received.",
+      });
+    }
+
+    const quotationId = order.purchaseQuotationId;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.purchaseOrder.delete({ where: { id: orderId } });
+
+      const remaining = await tx.purchaseOrder.count({
+        where: { purchaseQuotationId: quotationId },
+      });
+      if (remaining > 0) return;
+
+      // No orders left from this confirmation, so the quotation goes back to
+      // its unconfirmed state. Combined confirmations link every PO to the
+      // primary quotation only, so recover the other quotation numbers from
+      // the PO notes to revert them too.
+      const combinedNos = parseQuotationNosFromPoNotes(order.notes);
+      const revertWhere = {
+        status: "confirm",
+        OR: [
+          { id: quotationId },
+          ...(combinedNos.length > 0
+            ? [{ quotationNo: { in: combinedNos } }]
+            : []),
+        ],
+      } as any;
+
+      await (tx as any).purchaseQuotation.updateMany({
+        where: { ...revertWhere, quotationType: "revised" },
+        data: { status: "revise", confirmationDate: null, updatedAt: new Date() },
+      });
+      await (tx as any).purchaseQuotation.updateMany({
+        where: { ...revertWhere, quotationType: { not: "revised" } },
+        data: { status: "pending", confirmationDate: null, updatedAt: new Date() },
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Purchase order ${order.poNumber || ""} deleted successfully.`,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
