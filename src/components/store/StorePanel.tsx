@@ -119,7 +119,8 @@ interface DirectPurchaseOrder {
 
 type StoreOrderTypeFilter =
   | "all"
-  | "receiving"
+  | "receiving-po"
+  | "receiving-dpo"
   | "stock-out"
   | "transfer-in"
   | "transfer-out"
@@ -374,7 +375,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [dateTo, setDateTo] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState<StoreOrderTypeFilter>("all");
-  const [receivingFilter, setReceivingFilter] = useState<"all" | "po" | "dpo">("all");
   const [loading, setLoading] = useState(false);
 
   // Dialog states
@@ -419,11 +419,18 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   // Fetch orders when store or filters change
   useEffect(() => {
     if (selectedStoreId) {
-      if (typeFilter === "receiving") {
-        // Fetch both Purchase Orders and Direct Purchase Orders for receiving
+      if (typeFilter === "receiving-po") {
         fetchPurchaseOrders();
-        fetchOrders(); // DPOs are receivable items
+        setOrders([]);
         setStockOutOrders([]);
+        setTransferInOrders([]);
+        setTransferOutOrders([]);
+      } else if (typeFilter === "receiving-dpo") {
+        fetchOrders();
+        setPurchaseOrders([]);
+        setStockOutOrders([]);
+        setTransferInOrders([]);
+        setTransferOutOrders([]);
       } else if (typeFilter === "stock-out") {
         fetchStockOutOrders();
         setOrders([]);
@@ -480,9 +487,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       .toLowerCase();
     if (!requestedType) return;
 
+    // Legacy combined receiving link maps to the PO receiving list.
+    const normalizedType =
+      requestedType === "receiving" ? "receiving-po" : requestedType;
+
     const allowedTypes = [
       "all",
-      "receiving",
+      "receiving-po",
+      "receiving-dpo",
       "stock-out",
       "transfer-in",
       "transfer-out",
@@ -490,10 +502,10 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     ] as const;
 
     if (
-      (allowedTypes as readonly string[]).includes(requestedType) &&
-      requestedType !== typeFilter
+      (allowedTypes as readonly string[]).includes(normalizedType) &&
+      normalizedType !== typeFilter
     ) {
-      setTypeFilter(requestedType as StoreOrderTypeFilter);
+      setTypeFilter(normalizedType as StoreOrderTypeFilter);
     }
   }, [searchParams, typeFilter, isStoreOnlyUser]);
 
@@ -503,15 +515,16 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
     const interval = setInterval(() => {
       // Keep the currently selected view up-to-date, with newest orders on top.
-      if (typeFilter === "stock-out") {
+      if (typeFilter === "receiving-po") {
+        fetchPurchaseOrders(true);
+      } else if (typeFilter === "receiving-dpo") {
+        fetchOrders(true);
+      } else if (typeFilter === "stock-out") {
         fetchStockOutOrders(true);
       } else if (typeFilter === "transfer-in") {
         fetchTransferInOrders(true);
       } else if (typeFilter === "transfer-out") {
         fetchTransferOutOrders(true);
-      } else if (typeFilter === "receiving") {
-        fetchPurchaseOrders(true);
-        fetchOrders(true);
       } else if (typeFilter === "part-association") {
         if (isStoreOnlyUser) fetchAssociationParts(true);
       } else {
@@ -615,7 +628,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
               module: "store",
               action: {
                 label: "View Order",
-                path: `/store`,
+                path: `/store/orders?type=receiving-dpo`,
               },
             });
           });
@@ -1407,13 +1420,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       setSelectedPurchaseOrder(null);
       setReceivingOrderType(null);
 
-      if (typeFilter === "receiving") {
-        await fetchOrders();
-        await fetchPurchaseOrders();
-      } else if (typeFilter === "transfer-in") {
+      if (typeFilter === "transfer-in") {
         await fetchTransferInOrders();
       } else {
         await fetchOrders();
+        await fetchPurchaseOrders();
       }
     } catch (error: any) {
       toast.error(error.error || "Failed to receive order");
@@ -1465,14 +1476,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       const matchesPart = orderContainsSelectedPart(filterPartId, order.items);
       return inDateRange && matchesSearch && matchesPart;
     })
-    : [];
-
-  // Apply receiving filter (PO vs DPO) when in receiving mode
-  const displayPurchaseOrders = typeFilter === "receiving" && receivingFilter !== "dpo"
-    ? filteredPurchaseOrders
-    : [];
-  const displayDPOs = typeFilter === "receiving" && receivingFilter !== "po"
-    ? filteredDPOs
     : [];
 
   // Filter Sales Invoices (for Delivering)
@@ -1773,13 +1776,22 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   All Orders
                 </Button>
                 <Button
-                  variant={typeFilter === "receiving" ? "default" : "outline"}
+                  variant={typeFilter === "receiving-po" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setTypeFilter("receiving")}
+                  onClick={() => setTypeFilter("receiving-po")}
                   className="gap-2"
                 >
                   <ArrowDownCircle className="w-4 h-4" />
-                  Receiving Items
+                  Receiving PO
+                </Button>
+                <Button
+                  variant={typeFilter === "receiving-dpo" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTypeFilter("receiving-dpo")}
+                  className="gap-2"
+                >
+                  <ArrowDownCircle className="w-4 h-4" />
+                  Receiving DPO
                 </Button>
                 <Button
                   variant={typeFilter === "stock-out" ? "default" : "outline"}
@@ -1830,17 +1842,19 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         <Card>
           <CardHeader>
             <CardTitle>
-              {typeFilter === "receiving"
-                ? "Receiving Items"
-                : typeFilter === "stock-out"
-                  ? "Stock Out Items"
-                  : typeFilter === "transfer-in"
-                    ? "Transfer In"
-                    : typeFilter === "transfer-out"
-                      ? "Transfer Out"
-                      : typeFilter === "part-association"
-                        ? "Part Association"
-                        : "All Orders"}
+              {typeFilter === "receiving-po"
+                ? "Receiving PO"
+                : typeFilter === "receiving-dpo"
+                  ? "Receiving DPO"
+                  : typeFilter === "stock-out"
+                    ? "Stock Out Items"
+                    : typeFilter === "transfer-in"
+                      ? "Transfer In"
+                      : typeFilter === "transfer-out"
+                        ? "Transfer Out"
+                        : typeFilter === "part-association"
+                          ? "Part Association"
+                          : "All Orders"}
               {selectedStore && ` - ${selectedStore.name}`}
             </CardTitle>
           </CardHeader>
@@ -2040,11 +2054,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   )
                 )}
 
-                {/* Receiving Items - Purchase Orders and DPOs */}
-                {typeFilter === "receiving" && (
-                  (displayPurchaseOrders.length === 0 && displayDPOs.length === 0) ? (
+                {/* Receiving PO - Purchase Orders only */}
+                {typeFilter === "receiving-po" && (
+                  filteredPurchaseOrders.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      No orders found for receiving.
+                      No purchase orders found for receiving.
                     </div>
                   ) : (
                     <div className="rounded-md border">
@@ -2054,8 +2068,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                             <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
                             <TableHead>Date</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Supplier/Store</TableHead>
+                            <TableHead>Supplier</TableHead>
                             <TableHead>Items</TableHead>
                             <TableHead>Quantity</TableHead>
                             <TableHead>Status</TableHead>
@@ -2063,8 +2076,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {/* Purchase Orders */}
-                          {displayPurchaseOrders.map((order, index) => (
+                          {filteredPurchaseOrders.map((order, index) => (
                             <TableRow key={`po-${order.id}`}>
                               <ListNumberCell index={index} />
                               <TableCell className="font-medium">
@@ -2072,9 +2084,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               </TableCell>
                               <TableCell>
                                 {format(new Date(order.date), "MMM dd, yyyy")}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">PO</Badge>
                               </TableCell>
                               <TableCell>{order.supplier_name}</TableCell>
                               <TableCell>{order.items_count} items</TableCell>
@@ -2136,20 +2145,42 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               </TableCell>
                             </TableRow>
                           ))}
-                          {/* Direct Purchase Orders (DPOs) */}
-                          {displayDPOs.map((order, index) => (
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )
+                )}
+
+                {/* Receiving DPO - Direct Purchase Orders only */}
+                {typeFilter === "receiving-dpo" && (
+                  filteredDPOs.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No direct purchase orders found for receiving.
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <ListNumberHeader />
+                            <TableHead>Order Number</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Supplier/Store</TableHead>
+                            <TableHead>Items</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredDPOs.map((order, index) => (
                             <TableRow key={`dpo-${order.id}`}>
-                              <ListNumberCell
-                                index={displayPurchaseOrders.length + index}
-                              />
+                              <ListNumberCell index={index} />
                               <TableCell className="font-medium">
                                 {order.dpo_no}
                               </TableCell>
                               <TableCell>
                                 {format(new Date(order.date), "MMM dd, yyyy")}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">DPO</Badge>
                               </TableCell>
                               <TableCell>{getDpoPartyLabel(order)}</TableCell>
                               <TableCell>{order.items_count} items</TableCell>
@@ -2159,7 +2190,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell>
                                 <Badge
                                   variant={
-                                    order.status === "Completed"
+                                    order.status === "Completed" ||
+                                    order.status === "Received"
                                       ? "default"
                                       : order.status === "Draft"
                                         ? "secondary"
@@ -2586,9 +2618,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
               await fetchTransferInOrders();
             } else {
               await fetchOrders();
-              if (typeFilter === "receiving") {
-                await fetchPurchaseOrders();
-              }
+              await fetchPurchaseOrders();
             }
           }}
         />
@@ -2609,9 +2639,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
               await fetchTransferInOrders();
             } else {
               await fetchOrders();
-              if (typeFilter === "receiving") {
-                await fetchPurchaseOrders();
-              }
+              await fetchPurchaseOrders();
             }
           }}
         />
@@ -2629,9 +2657,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             setSelectedPurchaseOrder(null);
             // Refresh orders
             await fetchPurchaseOrders();
-            if (typeFilter === "receiving") {
-              await fetchOrders();
-            }
+            await fetchOrders();
           }}
         />
       )}

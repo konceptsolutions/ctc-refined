@@ -30,9 +30,15 @@ const Store = () => {
     ? (tab as StoreTab)
     : "orders";
 
-  // Ensure /store redirects to the default tab
+  // Ensure /store redirects to the default tab. Legacy receiving routes now
+  // live on the Orders page as type filters.
   useEffect(() => {
     if (!tab) navigate("/store/orders", { replace: true });
+    else if (tab === "receiving" || tab === "receiving-po") {
+      navigate("/store/orders?type=receiving-po", { replace: true });
+    } else if (tab === "receiving-dpo") {
+      navigate("/store/orders?type=receiving-dpo", { replace: true });
+    }
   }, [tab, navigate]);
 
   const handleTabChange = (tabId: StoreTab) => navigate(`/store/${tabId}`);
@@ -59,21 +65,21 @@ const Store = () => {
         <div className="bg-card border-b border-border">
           <div className="px-4 py-2 overflow-x-auto scrollbar-hide">
             <div className="flex items-center gap-2 min-w-max">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
+              {tabs.map((tabItem) => {
+                const Icon = tabItem.icon;
                 return (
                   <button
-                    key={tab.id}
-                    onClick={() => handleTabChange(tab.id)}
+                    key={tabItem.id}
+                    onClick={() => handleTabChange(tabItem.id)}
                     className={cn(
                       "flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-medium whitespace-nowrap group",
-                      activeTab === tab.id
+                      activeTab === tabItem.id
                         ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     )}
                   >
                     <Icon className="w-4 h-4" />
-                    <span>{tab.label}</span>
+                    <span>{tabItem.label}</span>
                   </button>
                 );
               })}
