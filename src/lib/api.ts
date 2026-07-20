@@ -2529,6 +2529,12 @@ class ApiClient {
     return this.request(`/purchase-import/requests/${requestId}/quotation-context`);
   }
 
+  async getPurchaseQuotationComparison(requestId: string) {
+    return this.request(
+      `/purchase-import/requests/${requestId}/quotation-comparison`,
+    );
+  }
+
   async getLastSupplierQuotationFcRates(
     supplierId: string,
     partIds: string[],
@@ -2754,6 +2760,8 @@ class ApiClient {
         partId?: string;
         receiveQty: number;
         fcRate: number;
+        priceA?: number;
+        priceB?: number;
       }>;
       conversionRate: number;
       invoiceNo?: string;
@@ -2798,6 +2806,8 @@ class ApiClient {
           partId: item.partId,
           receiveQty: item.receiveQty,
           fcRate: item.fcRate,
+          priceA: item.priceA,
+          priceB: item.priceB,
         })),
       }),
     });

@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printPurchaseImportInquiry } from "@/utils/printPurchaseImportInquiryPdf";
 import { printPurchaseImportQuotation } from "@/utils/printPurchaseImportQuotationPdf";
+import { printPurchaseImportQuotationComparison } from "@/utils/printPurchaseImportQuotationComparisonPdf";
 import { printPurchaseImportOrder } from "@/utils/printPurchaseImportOrderPdf";
 import { apiClient } from "@/lib/api";
 import { fetchBranchAccountOptions } from "@/lib/branch-accounts";
@@ -348,6 +349,10 @@ type ImportPurchaseOrderReceiveLine = {
   lcAmount: number;
   weight: number;
   totalWeight: number;
+  priceA: number;
+  priceB: number;
+  priceAText: string;
+  priceBText: string;
   orderQty: number;
   receiveQty: string;
   additionalQty: number;
@@ -757,6 +762,9 @@ type PurchaseQuotationContextPayload = {
   requestId: string;
   requestNo: string;
   requestDate: string;
+  batchId?: string;
+  supplierCount?: number;
+  quotationsInBatch?: number;
   consignee?: string | null;
   quotationNo: string;
   quotationDate: string;
@@ -780,6 +788,104 @@ type PurchaseQuotationContextPayload = {
       lastFcRate?: number;
     }
   >;
+};
+
+type PurchaseQuotationComparisonPayload = {
+  requestId: string;
+  requestNo?: string | null;
+  baseRequestNo?: string | null;
+  requestDate?: string | null;
+  consignee?: string | null;
+  supplierCount?: number | null;
+  quotationsAvailable?: number | null;
+  suppliers: Array<{
+    supplierId: string;
+    supplierName: string;
+    quotationNo?: string | null;
+    quotationDate?: string | Date | null;
+    currency?: string | null;
+    conversionRate?: number | null;
+    fcTotal?: number | null;
+    lcTotal?: number | null;
+  }>;
+  items: Array<{
+    partId: string;
+    masterPartNo?: string | null;
+    partNo?: string | null;
+    description?: string | null;
+    brand?: string | null;
+    demandQty?: number | null;
+    quotes: Record<
+      string,
+      {
+        quotationQty: number;
+        fcRate: number;
+        lcRate: number;
+        fcAmount: number;
+        lcAmount: number;
+      } | null
+    >;
+  }>;
+};
+
+const printPurchaseQuotationComparisonPdf = async (
+  requestId: string,
+): Promise<boolean> => {
+  const [comparisonRes, requestRes] = await Promise.all([
+    apiClient.getPurchaseQuotationComparison(requestId),
+    apiClient.getPurchaseImportRequestById(requestId).catch(() => null),
+  ]);
+  const data = (comparisonRes as any)?.data as
+    | PurchaseQuotationComparisonPayload
+    | undefined;
+  if (!data) {
+    throw new Error("Comparison data is unavailable.");
+  }
+
+  const requestData = (requestRes as any)?.data as
+    | {
+        consignee?: string | null;
+        items?: Array<{
+          isbQuantity?: number | null;
+          khiQuantity?: number | null;
+          otherQuantity?: number | null;
+        }>;
+      }
+    | undefined;
+
+  const consigneeFromItems = formatConsigneesFromSplitQuantities(
+    Array.isArray(requestData?.items) ? requestData.items : [],
+    null,
+  );
+  const consigneeFromApi = String(
+    requestData?.consignee || data.consignee || "",
+  ).trim();
+  const consignee =
+    (consigneeFromItems && consigneeFromItems !== "-"
+      ? consigneeFromItems
+      : consigneeFromApi) || "-";
+
+  return printPurchaseImportQuotationComparison({
+    detail: {
+      requestNo: data.requestNo,
+      baseRequestNo: data.baseRequestNo,
+      requestDate: data.requestDate,
+      consignee,
+      supplierCount: data.supplierCount,
+      quotationsAvailable: data.quotationsAvailable,
+    },
+    suppliers: data.suppliers.map((supplier) => ({
+      supplierId: supplier.supplierId,
+      supplierName: supplier.supplierName,
+      quotationNo: supplier.quotationNo,
+      quotationDate: supplier.quotationDate,
+      currency: supplier.currency,
+      conversionRate: supplier.conversionRate,
+      fcTotal: supplier.fcTotal,
+      lcTotal: supplier.lcTotal,
+    })),
+    items: data.items,
+  });
 };
 
 type PurchaseQuotationFormItem = PurchaseQuotationContextItem & {
@@ -987,6 +1093,10 @@ const createEmptyReceiveLine = (): ImportPurchaseOrderReceiveLine => ({
   lcAmount: 0,
   weight: 0,
   totalWeight: 0,
+  priceA: 0,
+  priceB: 0,
+  priceAText: "",
+  priceBText: "",
   orderQty: 0,
   receiveQty: "",
   additionalQty: 0,
@@ -1034,6 +1144,9 @@ const formatConsigneesFromSplitQuantities = (
     .toUpperCase();
   if (fallback === "ISB" || fallback === "KHI") return fallback;
   if (fallback === "OTHER") return "Other";
+  if (fallback.includes("ISB") || fallback.includes("KHI") || fallback.includes("OTHER")) {
+    return String(fallbackConsignee || "").trim();
+  }
   return "-";
 };
 
@@ -1259,6 +1372,8 @@ const buildQuotationPartFieldsFromSelection = (
     brand: String(alternate.brand || part.brand || fromOptions?.brand || "").trim(),
     currentStock: Number(detailsData?.currentStock ?? 0),
     weight: Number(part.weight ?? alternate.weight ?? fromOptions?.weight ?? 0),
+    priceA: Number(part.priceA ?? part.price_a ?? 0),
+    priceB: Number(part.priceB ?? part.price_b ?? 0),
   };
 };
 
@@ -3234,6 +3349,10 @@ const PurchaseQuotationForm = ({
   const [replacingRowId, setReplacingRowId] = useState<string | null>(null);
   const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
+  const [printingComparison, setPrintingComparison] = useState(false);
+
+  const showQuotationComparison =
+    Number(context?.supplierCount || 0) >= 2;
 
   const partSelectOptions = useMemo(
     () => buildSortedPartSelectOptions(partOptions, itemSort, itemSortDirection),
@@ -3673,6 +3792,37 @@ const PurchaseQuotationForm = ({
     });
   };
 
+  const handlePrintComparisonPdf = async () => {
+    if (!context || !showQuotationComparison) return;
+    setPrintingComparison(true);
+    try {
+      const started = await printPurchaseQuotationComparisonPdf(requestId);
+      if (!started) {
+        toast({
+          title: "Print blocked",
+          description: "Allow pop-ups for this site and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Comparison PDF",
+        description: "Supplier quotation comparison is being generated...",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to print comparison",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not generate quotation comparison PDF.",
+        variant: "destructive",
+      });
+    } finally {
+      setPrintingComparison(false);
+    }
+  };
+
   const handleSaveQuotation = async () => {
     if (!context) return;
 
@@ -3772,10 +3922,21 @@ const PurchaseQuotationForm = ({
               : "Create quotation for the selected confirmed supplier inquiry."}
           </p>
         </div>
-        <PrintPdfButton
-          onPrint={handlePrintPdf}
-          disabled={loading || !context || sortedRows.length === 0}
-        />
+        <div className="flex items-center gap-2">
+          {showQuotationComparison ? (
+            <PrintPdfButton
+              onPrint={() => {
+                void handlePrintComparisonPdf();
+              }}
+              disabled={loading || !context || printingComparison}
+              label={printingComparison ? "Comparing..." : "Compare PDF"}
+            />
+          ) : null}
+          <PrintPdfButton
+            onPrint={handlePrintPdf}
+            disabled={loading || !context || sortedRows.length === 0}
+          />
+        </div>
       </div>
 
       {loading || !context ? (
@@ -4969,9 +5130,30 @@ const PurchaseInquiryListPanel = ({
   const [filterInquiryNo, setFilterInquiryNo] = useState("");
   const [filterPartReference, setFilterPartReference] = useState("");
   const [printingRequestId, setPrintingRequestId] = useState<string | null>(null);
+  const [comparingRequestId, setComparingRequestId] = useState<string | null>(null);
   const [supplierFilterOptions, setSupplierFilterOptions] = useState<
     Array<{ value: string; label: string }>
   >([]);
+
+  const batchSupplierCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of requests) {
+      if (!row.batchId || !row.supplierId) continue;
+      counts.set(row.batchId, (counts.get(row.batchId) || 0) + 1);
+    }
+    return counts;
+  }, [requests]);
+
+  const batchHasQuotation = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const row of requests) {
+      if (!row.batchId) continue;
+      if ((row.PurchaseQuotation || []).length > 0) {
+        map.set(row.batchId, true);
+      }
+    }
+    return map;
+  }, [requests]);
 
   const fetchRequests = useCallback(async () => {
     setLoadingRequests(true);
@@ -5227,6 +5409,36 @@ const PurchaseInquiryListPanel = ({
     }
   };
 
+  const handlePrintComparisonPdf = async (requestId: string) => {
+    setComparingRequestId(requestId);
+    try {
+      const started = await printPurchaseQuotationComparisonPdf(requestId);
+      if (!started) {
+        toast({
+          title: "Print blocked",
+          description: "Allow pop-ups for this site and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Comparison PDF",
+        description: "Supplier quotation comparison is being generated...",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to print comparison",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not generate quotation comparison PDF.",
+        variant: "destructive",
+      });
+    } finally {
+      setComparingRequestId(null);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
       {mode === "quotation" && (
@@ -5361,6 +5573,11 @@ const PurchaseInquiryListPanel = ({
                   itemRows,
                   row.consignee,
                 );
+                const batchSupplierCount = batchSupplierCounts.get(row.batchId) || 0;
+                const showComparisonPdf =
+                  mode === "quotation" &&
+                  batchSupplierCount >= 2 &&
+                  Boolean(batchHasQuotation.get(row.batchId));
                 return (
                   <tr key={row.id} className="border-b hover:bg-muted/20">
                     <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
@@ -5493,6 +5710,21 @@ const PurchaseInquiryListPanel = ({
                                 void handlePrintQuotationPdf(row.id);
                               }}
                             />
+                            {showComparisonPdf ? (
+                              <PrintPdfButton
+                                size="sm"
+                                disabled={comparingRequestId === row.id}
+                                label={
+                                  comparingRequestId === row.id
+                                    ? "Comparing..."
+                                    : "Compare PDF"
+                                }
+                                onPrint={() => {
+                                  if (comparingRequestId) return;
+                                  void handlePrintComparisonPdf(row.id);
+                                }}
+                              />
+                            ) : null}
                           </>
                         )}
                       </div>
@@ -7494,6 +7726,8 @@ const PurchaseOrderTab = ({
           { fcRate, lcRate, weight },
           existingReceive,
         );
+        const priceA = Number(item.priceA ?? item.price_a ?? 0);
+        const priceB = Number(item.priceB ?? item.price_b ?? 0);
         return {
           id: item.id,
           partId: String(item.partId || item.part_id || "").trim(),
@@ -7513,6 +7747,10 @@ const PurchaseOrderTab = ({
           lcAmount: amounts.lcAmount,
           weight,
           totalWeight: amounts.totalWeight,
+          priceA,
+          priceB,
+          priceAText: formatRateInput(priceA),
+          priceBText: formatRateInput(priceB),
           orderQty,
           receiveQty: String(existingReceive),
           additionalQty: variance.additionalQty,
@@ -7696,6 +7934,40 @@ const PurchaseOrderTab = ({
     );
   };
 
+  const handleReceivePriceChange = (
+    lineId: string,
+    field: "priceA" | "priceB",
+    raw: string,
+  ) => {
+    if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
+    const textField = field === "priceA" ? "priceAText" : "priceBText";
+    setReceiveLines((prev) =>
+      prev.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              [textField]: raw,
+              [field]: parseRateInput(raw),
+            }
+          : line,
+      ),
+    );
+  };
+
+  const handleReceivePriceBlur = (lineId: string, field: "priceA" | "priceB") => {
+    const textField = field === "priceA" ? "priceAText" : "priceBText";
+    setReceiveLines((prev) =>
+      prev.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              [textField]: formatRateInput(line[field]),
+            }
+          : line,
+      ),
+    );
+  };
+
   const handleReceiveQtyChange = (lineId: string, value: string) => {
     setReceiveLines((prev) =>
       prev.map((line) => {
@@ -7748,6 +8020,10 @@ const PurchaseOrderTab = ({
                 currentStock: 0,
                 weight: 0,
                 totalWeight: 0,
+                priceA: 0,
+                priceB: 0,
+                priceAText: "",
+                priceBText: "",
                 loadingPartDetails: false,
               }
             : line,
@@ -7793,6 +8069,8 @@ const PurchaseOrderTab = ({
             ...fields,
             loadingPartDetails: false,
           };
+          const priceA = Number(fields.priceA ?? 0);
+          const priceB = Number(fields.priceB ?? 0);
           const amounts = computeImportReceiveLineAmounts(next, next.receiveQty);
           const updatedRates = recalcReceiveLineRates(
             { ...next, ...amounts },
@@ -7802,6 +8080,10 @@ const PurchaseOrderTab = ({
           return {
             ...updatedRates,
             fcRateText: formatRateInput(updatedRates.fcRate),
+            priceA,
+            priceB,
+            priceAText: formatRateInput(priceA),
+            priceBText: formatRateInput(priceB),
             loadingPartDetails: false,
           };
         }),
@@ -7956,6 +8238,12 @@ const PurchaseOrderTab = ({
           partId: line.partId || undefined,
           receiveQty: Math.max(0, Math.floor(Number(line.receiveQty) || 0)),
           fcRate: line.fcRate,
+          ...(isInvoiceMode
+            ? {
+                priceA: line.priceA,
+                priceB: line.priceB,
+              }
+            : {}),
         })),
       });
       toast({
@@ -8361,12 +8649,13 @@ const PurchaseOrderTab = ({
           }
         }}
       >
-        <DialogContent className="max-w-[96vw] xl:max-w-7xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="left-0 top-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:rounded-none">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
             <DialogTitle>
               {formTitle} — {receiveOrderLabel}
             </DialogTitle>
           </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {loadingReceiveForm ? (
             <p className="text-sm text-muted-foreground">
               Loading {formTitle.toLowerCase()}...
@@ -8467,7 +8756,7 @@ const PurchaseOrderTab = ({
               <p className="text-sm text-muted-foreground">
                 {isInvoiceMode
                   ? "Enter supplier invoice quantities, rates, and expenses for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate."
-                  : "Enter supplier invoice quantities and rates for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate. Enter expenses from Purchase Invoice. Final stock receipt is completed from Store."}
+                  : "Enter supplier invoice quantities and rates for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate. Enter packaging and discount below; other clearing expenses can be added from Purchase Invoice. Final stock receipt is completed from Store."}
                 {receiveDetail?.isRevised ? " Showing revised quotation values." : ""}
               </p>
               <div className="flex justify-end">
@@ -8515,6 +8804,12 @@ const PurchaseOrderTab = ({
                       ) : null}
                       <th className="text-right p-2">Weight</th>
                       <th className="text-right p-2">Total Weight</th>
+                      {isInvoiceMode ? (
+                        <>
+                          <th className="text-right p-2">Price A</th>
+                          <th className="text-right p-2">Price B</th>
+                        </>
+                      ) : null}
                       <th className="text-center p-2 min-w-[70px]">Action</th>
                     </tr>
                   </thead>
@@ -8633,6 +8928,42 @@ const PurchaseOrderTab = ({
                             ? lineAmounts.totalWeight.toFixed(4)
                             : "-"}
                         </td>
+                        {isInvoiceMode ? (
+                          <>
+                            <td className="p-2 text-right">
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                className="h-8 w-24 ml-auto text-right"
+                                value={line.priceAText}
+                                onChange={(event) =>
+                                  handleReceivePriceChange(
+                                    line.id,
+                                    "priceA",
+                                    event.target.value,
+                                  )
+                                }
+                                onBlur={() => handleReceivePriceBlur(line.id, "priceA")}
+                              />
+                            </td>
+                            <td className="p-2 text-right">
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                className="h-8 w-24 ml-auto text-right"
+                                value={line.priceBText}
+                                onChange={(event) =>
+                                  handleReceivePriceChange(
+                                    line.id,
+                                    "priceB",
+                                    event.target.value,
+                                  )
+                                }
+                                onBlur={() => handleReceivePriceBlur(line.id, "priceB")}
+                              />
+                            </td>
+                          </>
+                        ) : null}
                         <td className="p-2 text-center">
                           {line.isNewRow ? (
                             <Button
@@ -8691,32 +9022,41 @@ const PurchaseOrderTab = ({
                         <td className="p-2 text-right tabular-nums">
                           {receiveTotals.totalWeight.toFixed(4)}
                         </td>
+                        {isInvoiceMode ? (
+                          <>
+                            <td className="p-2" />
+                            <td className="p-2" />
+                          </>
+                        ) : null}
                         <td className="p-2" />
                       </tr>
                     </tfoot>
                   ) : null}
                 </table>
               </div>
-              {isInvoiceMode ? (
               <div className="rounded-md border border-border p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold">Expenses</h4>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Total Exp.: </span>
-                      <span className="font-semibold tabular-nums">
-                        {formatImportPoAmount(importPoTotalExp)}
-                      </span>
+                  <h4 className="text-sm font-semibold">
+                    {isInvoiceMode ? "Expenses" : "Packaging & Discount"}
+                  </h4>
+                  {isInvoiceMode ? (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Total Exp.: </span>
+                        <span className="font-semibold tabular-nums">
+                          {formatImportPoAmount(importPoTotalExp)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Invoice Total: </span>
+                        <span className="font-semibold tabular-nums">
+                          {formatImportPoAmount(importPoInvoiceTotal)}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Invoice Total: </span>
-                      <span className="font-semibold tabular-nums">
-                        {formatImportPoAmount(importPoInvoiceTotal)}
-                      </span>
-                    </div>
-                  </div>
+                  ) : null}
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className={`grid grid-cols-1 ${isInvoiceMode ? "lg:grid-cols-3" : ""} gap-4`}>
                   <div className="space-y-2">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
@@ -8761,60 +9101,64 @@ const PurchaseOrderTab = ({
                           {formatImportPoAmount(importPoCommercialAmounts.invDiscAmt)}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Label className="text-xs font-normal w-24 shrink-0">Frt.Exp (FC)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          step="1"
-                          className="h-8 w-[100px] shrink-0 text-right text-xs"
-                          value={
-                            importExpenses.frtExp === 0 ? "" : importExpenses.frtExp
-                          }
-                          onChange={(event) =>
-                            updateImportExpense("frtExp", event.target.value)
-                          }
-                        />
-                        <div className="h-8 w-[120px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
-                          {formatImportPoAmount(importPoCommercialAmounts.frtExpLc)}
+                      {isInvoiceMode ? (
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs font-normal w-24 shrink-0">Frt.Exp (FC)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="1"
+                            className="h-8 w-[100px] shrink-0 text-right text-xs"
+                            value={
+                              importExpenses.frtExp === 0 ? "" : importExpenses.frtExp
+                            }
+                            onChange={(event) =>
+                              updateImportExpense("frtExp", event.target.value)
+                            }
+                          />
+                          <div className="h-8 w-[120px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                            {formatImportPoAmount(importPoCommercialAmounts.frtExpLc)}
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
                     </div>
                   </div>
-                  {IMPORT_PO_CLEARING_EXPENSE_SECTIONS.map((section) => (
-                    <div key={section.title} className="space-y-2">
-                      <div className="space-y-2">
-                        {section.fields.map((field) => (
-                          <div
-                            key={field.key}
-                            className="flex items-center gap-2"
-                          >
-                            <Label className="text-xs font-normal w-20 shrink-0">{field.label}</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              step={field.step || "1"}
-                              className="h-8 w-[120px] shrink-0 text-right text-xs"
-                              value={
-                                importExpenses[field.key] === 0
-                                  ? ""
-                                  : importExpenses[field.key]
-                              }
-                              onChange={(event) =>
-                                updateImportExpense(field.key, event.target.value)
-                              }
-                            />
+                  {isInvoiceMode
+                    ? IMPORT_PO_CLEARING_EXPENSE_SECTIONS.map((section) => (
+                        <div key={section.title} className="space-y-2">
+                          <div className="space-y-2">
+                            {section.fields.map((field) => (
+                              <div
+                                key={field.key}
+                                className="flex items-center gap-2"
+                              >
+                                <Label className="text-xs font-normal w-20 shrink-0">{field.label}</Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step={field.step || "1"}
+                                  className="h-8 w-[120px] shrink-0 text-right text-xs"
+                                  value={
+                                    importExpenses[field.key] === 0
+                                      ? ""
+                                      : importExpenses[field.key]
+                                  }
+                                  onChange={(event) =>
+                                    updateImportExpense(field.key, event.target.value)
+                                  }
+                                />
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                        </div>
+                      ))
+                    : null}
                 </div>
               </div>
-              ) : null}
             </div>
           )}
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0 border-t px-6 py-4">
             <Button
               type="button"
               variant="outline"

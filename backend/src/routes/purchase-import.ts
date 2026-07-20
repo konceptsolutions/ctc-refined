@@ -1014,6 +1014,8 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
         partNo: true,
         description: true,
         weight: true,
+        priceA: true,
+        priceB: true,
         Brand: { select: { name: true } },
         MasterPart: { select: { masterPartNo: true } },
       },
@@ -1132,6 +1134,8 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
           masterPartNo: part.MasterPart?.masterPartNo || "",
           brand: part.Brand?.name || "",
           weight: part.weight || 0,
+          priceA: part.priceA ?? 0,
+          priceB: part.priceB ?? 0,
         },
         currentStock,
         lastPurchases,
@@ -1355,6 +1359,10 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
       }),
     );
 
+    const allBatchItems = batchRows.flatMap(
+      (row: any) => row.PurchaseImportRequestItem || [],
+    );
+
     res.json({
       data: {
         id: selectedRequest.id,
@@ -1363,10 +1371,10 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
         baseRequestNo: getBaseRequestNo(selectedRequest.requestNo),
         requestDate: selectedRequest.createdAt,
         partReference: selectedRequest.partReference || "",
-        consignee:
-          batchRows.find((row: any) => row.consignee)?.consignee ||
-          selectedRequest.consignee ||
-          null,
+        consignee: formatConsigneesFromSplitItems(
+          allBatchItems.length > 0 ? allBatchItems : items,
+          selectedRequest.consignee,
+        ),
         notes: selectedRequest.notes || "",
         status: selectedRequest.status || "pending",
         supplierIds: batchRows
@@ -1908,6 +1916,22 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       }));
     }
 
+    const batchRows = await purchaseImportRequestModel.findMany({
+      where: { batchId: requestRow.batchId },
+      select: { id: true, supplierId: true },
+    });
+    const supplierCount = batchRows.filter((row: any) => row.supplierId).length;
+    let quotationsInBatch = 0;
+    if (purchaseQuotationModel && batchRows.length > 0) {
+      quotationsInBatch = await purchaseQuotationModel.count({
+        where: {
+          purchaseImportRequestId: {
+            in: batchRows.map((row: any) => row.id),
+          },
+        },
+      });
+    }
+
     items = await attachLastSupplierFcRates(
       requestRow.supplierId || requestRow.Supplier?.id,
       items,
@@ -1919,6 +1943,9 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         requestId: requestRow.id,
         requestNo: requestRow.requestNo,
         requestDate: requestRow.createdAt,
+        batchId: requestRow.batchId,
+        supplierCount,
+        quotationsInBatch,
         consignee,
         quotationNo,
         quotationDate,
@@ -1935,6 +1962,215 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         currencyOptions,
         defaultCurrency,
         items,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/requests/:requestId/quotation-comparison", async (req: Request, res: Response) => {
+  try {
+    const purchaseImportRequestModel = (prisma as any).purchaseImportRequest;
+    const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+    if (!purchaseImportRequestModel || !purchaseQuotationModel) {
+      return res.status(500).json({
+        error:
+          "Purchase quotation models are unavailable in Prisma client. Restart backend and regenerate Prisma client.",
+      });
+    }
+
+    const requestId = String(req.params.requestId || "").trim();
+    if (!requestId) {
+      return res.status(400).json({ error: "Request id is required." });
+    }
+
+    const requestRow = await purchaseImportRequestModel.findUnique({
+      where: { id: requestId },
+      select: {
+        id: true,
+        requestNo: true,
+        batchId: true,
+        createdAt: true,
+        consignee: true,
+        PurchaseImportRequestItem: {
+          select: {
+            khiQuantity: true,
+            isbQuantity: true,
+            otherQuantity: true,
+          },
+        },
+      },
+    });
+    if (!requestRow) {
+      return res.status(404).json({ error: "Purchase import inquiry not found." });
+    }
+
+    const batchRows = await purchaseImportRequestModel.findMany({
+      where: { batchId: requestRow.batchId },
+      orderBy: { createdAt: "asc" },
+      include: {
+        Supplier: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            companyName: true,
+          },
+        },
+        PurchaseImportRequestItem: {
+          select: {
+            khiQuantity: true,
+            isbQuantity: true,
+            otherQuantity: true,
+          },
+        },
+      },
+    });
+
+    const supplierRows = batchRows.filter((row: any) => row.supplierId);
+    if (supplierRows.length < 2) {
+      return res.status(400).json({
+        error: "Quotation comparison is available only for inquiries with multiple suppliers.",
+      });
+    }
+
+    const batchItems = batchRows.flatMap(
+      (row: any) => row.PurchaseImportRequestItem || [],
+    );
+    const consignee = formatConsigneesFromSplitItems(
+      batchItems.length > 0
+        ? batchItems
+        : requestRow.PurchaseImportRequestItem || [],
+      requestRow.consignee,
+    );
+
+    const suppliers: Array<{
+      requestId: string;
+      supplierId: string;
+      supplierName: string;
+      quotationId: string | null;
+      quotationNo: string | null;
+      quotationDate: string | null;
+      currency: string | null;
+      conversionRate: number;
+      fcTotal: number;
+      lcTotal: number;
+    }> = [];
+
+    type PartRow = {
+      partId: string;
+      masterPartNo: string;
+      partNo: string;
+      description: string;
+      brand: string;
+      demandQty: number;
+      quotes: Record<
+        string,
+        {
+          quotationQty: number;
+          fcRate: number;
+          lcRate: number;
+          fcAmount: number;
+          lcAmount: number;
+        } | null
+      >;
+    };
+
+    const partRows = new Map<string, PartRow>();
+
+    for (const batchRow of supplierRows) {
+      const supplierId = String(batchRow.supplierId);
+      const supplierName =
+        batchRow.Supplier?.companyName ||
+        batchRow.Supplier?.name ||
+        batchRow.Supplier?.code ||
+        "-";
+
+      const quotation = await purchaseQuotationModel.findFirst({
+        where: { purchaseImportRequestId: batchRow.id },
+        orderBy: { createdAt: "desc" },
+        include: {
+          PurchaseQuotationItem: {
+            orderBy: { createdAt: "asc" },
+            include: {
+              Part: {
+                select: {
+                  id: true,
+                  partNo: true,
+                  description: true,
+                  MasterPart: { select: { masterPartNo: true } },
+                  Brand: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      suppliers.push({
+        requestId: batchRow.id,
+        supplierId,
+        supplierName,
+        quotationId: quotation?.id || null,
+        quotationNo: quotation?.quotationNo || null,
+        quotationDate: quotation?.quotationDate || null,
+        currency: quotation?.currency || null,
+        conversionRate: Number(quotation?.conversionRate || 1),
+        fcTotal: Number(quotation?.fcTotal || 0),
+        lcTotal: Number(quotation?.lcTotal || 0),
+      });
+
+      for (const item of quotation?.PurchaseQuotationItem || []) {
+        const partId = String(item.partId);
+        const existing = partRows.get(partId) || {
+          partId,
+          masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
+          partNo: item.Part?.partNo || "",
+          description: item.Part?.description || "",
+          brand: item.Part?.Brand?.name || "",
+          demandQty: Number(item.demandQuantity || 0),
+          quotes: {},
+        };
+        existing.quotes[supplierId] = {
+          quotationQty: Number(item.quotationQuantity || 0),
+          fcRate: Number(item.fcRate || 0),
+          lcRate: Number(item.lcRate || 0),
+          fcAmount: Number(item.fcAmount || 0),
+          lcAmount: Number(item.lcAmount || 0),
+        };
+        partRows.set(partId, existing);
+      }
+    }
+
+    const quotationsAvailable = suppliers.filter((row) => row.quotationId).length;
+    if (quotationsAvailable === 0) {
+      return res.status(400).json({
+        error: "No quotations found for this inquiry batch.",
+      });
+    }
+
+    for (const supplier of suppliers) {
+      for (const part of partRows.values()) {
+        if (!(supplier.supplierId in part.quotes)) {
+          part.quotes[supplier.supplierId] = null;
+        }
+      }
+    }
+
+    const baseRequestNo = String(requestRow.requestNo || "").replace(/-\d+$/, "");
+
+    res.json({
+      data: {
+        requestId: requestRow.id,
+        requestNo: requestRow.requestNo,
+        baseRequestNo,
+        requestDate: requestRow.createdAt,
+        consignee,
+        supplierCount: supplierRows.length,
+        quotationsAvailable,
+        suppliers,
+        items: Array.from(partRows.values()),
       },
     });
   } catch (error: any) {
@@ -2939,6 +3175,8 @@ type ReceivePurchaseOrderItemInput = {
   partId?: string;
   receiveQty: number;
   fcRate?: number;
+  priceA?: number;
+  priceB?: number;
 };
 
 type ImportPurchaseOrderExpenses = {
@@ -3188,6 +3426,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
                 id: true,
                 partNo: true,
                 description: true,
+                priceA: true,
+                priceB: true,
                 MasterPart: { select: { masterPartNo: true } },
                 Brand: { select: { name: true } },
               },
@@ -3261,6 +3501,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       const orderQty = Number(poItem.quantity) || 0;
       const savedFcRate = Number((poItem as any).fcRate || 0);
       const useSavedAmounts = isReceived || savedFcRate > 0;
+      const partPriceA = Number(poItem.Part?.priceA || 0);
+      const partPriceB = Number(poItem.Part?.priceB || 0);
 
       if (useSavedAmounts) {
         const receiveQty = Number(poItem.receivedQty) || orderQty;
@@ -3281,6 +3523,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           lcAmount: Number(poItem.totalCost) || 0,
           weight: Number((poItem as any).weight || 0),
           totalWeight: Number((poItem as any).totalWeight || 0),
+          priceA: partPriceA,
+          priceB: partPriceB,
           orderQty,
           unitCost: Number(poItem.unitCost) || 0,
           receivedQty: receiveQty,
@@ -3335,6 +3579,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         lcAmount: lcRate * orderQty,
         weight,
         totalWeight: weight * orderQty,
+        priceA: partPriceA,
+        priceB: partPriceB,
         orderQty,
         unitCost: Number(poItem.unitCost) || 0,
         receivedQty: Number(poItem.receivedQty) || 0,
@@ -3460,12 +3706,43 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       order.PurchaseOrderItem.map((item) => String(item.id)),
     );
 
-    const receiveByItemId = new Map<string, { receiveQty: number; fcRate?: number }>();
+    const receiveByItemId = new Map<
+      string,
+      { receiveQty: number; fcRate?: number; priceA?: number; priceB?: number }
+    >();
     const newItems: Array<{
       partId: string;
       receiveQty: number;
       fcRate: number;
+      priceA?: number;
+      priceB?: number;
     }> = [];
+    const partPriceUpdates = new Map<
+      string,
+      { priceA?: number; priceB?: number }
+    >();
+
+    const queuePartPriceUpdate = (
+      partId: string,
+      priceA?: number,
+      priceB?: number,
+    ) => {
+      if (!partId) return;
+      const normalizedA =
+        priceA !== undefined && Number.isFinite(Number(priceA))
+          ? Math.max(0, Number(priceA))
+          : undefined;
+      const normalizedB =
+        priceB !== undefined && Number.isFinite(Number(priceB))
+          ? Math.max(0, Number(priceB))
+          : undefined;
+      if (normalizedA === undefined && normalizedB === undefined) return;
+      const existing = partPriceUpdates.get(partId) || {};
+      partPriceUpdates.set(partId, {
+        priceA: normalizedA ?? existing.priceA,
+        priceB: normalizedB ?? existing.priceB,
+      });
+    };
 
     for (const row of itemsRaw as ReceivePurchaseOrderItemInput[]) {
       const itemId = String(row?.id || "").trim();
@@ -3475,9 +3752,21 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         row.fcRate !== undefined && Number.isFinite(Number(row.fcRate))
           ? Math.max(0, Number(row.fcRate) || 0)
           : undefined;
+      const priceA =
+        row.priceA !== undefined && Number.isFinite(Number(row.priceA))
+          ? Math.max(0, Number(row.priceA) || 0)
+          : undefined;
+      const priceB =
+        row.priceB !== undefined && Number.isFinite(Number(row.priceB))
+          ? Math.max(0, Number(row.priceB) || 0)
+          : undefined;
 
       if (itemId && existingItemIds.has(itemId)) {
-        receiveByItemId.set(itemId, { receiveQty, fcRate });
+        receiveByItemId.set(itemId, { receiveQty, fcRate, priceA, priceB });
+        const poItem = order.PurchaseOrderItem.find((item) => item.id === itemId);
+        if (poItem) {
+          queuePartPriceUpdate(String(poItem.partId), priceA, priceB);
+        }
         continue;
       }
 
@@ -3487,7 +3776,10 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         partId,
         receiveQty,
         fcRate: fcRate ?? 0,
+        priceA,
+        priceB,
       });
+      queuePartPriceUpdate(partId, priceA, priceB);
     }
 
     if (receiveByItemId.size === 0 && newItems.length === 0) {
@@ -3585,6 +3877,17 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
             unitCost: lineUnitCost,
             totalCost: lineTotalCost,
           },
+        });
+      }
+
+      for (const [partId, prices] of partPriceUpdates.entries()) {
+        const updateData: { priceA?: number; priceB?: number } = {};
+        if (prices.priceA !== undefined) updateData.priceA = prices.priceA;
+        if (prices.priceB !== undefined) updateData.priceB = prices.priceB;
+        if (Object.keys(updateData).length === 0) continue;
+        await tx.part.update({
+          where: { id: partId },
+          data: updateData,
         });
       }
 
