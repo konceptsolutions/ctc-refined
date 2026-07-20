@@ -576,7 +576,10 @@ router.put("/:id", async (req, res) => {
 
         // Find the associated customer account
         const customerAccount = await prisma.account.findFirst({
-          where: { customerId: req.params.id },
+          where: {
+            customerId: req.params.id,
+            Subgroup: { code: "105" },
+          },
         });
 
         if (customerAccount) {
@@ -602,6 +605,14 @@ router.put("/:id", async (req, res) => {
               where: { id: customerAccount.id },
               data: updateAccountData,
             });
+            if (name !== undefined && oldCustomer.name !== name) {
+              await prisma.voucherEntry.updateMany({
+                where: { accountId: updatedAcc.id },
+                data: {
+                  accountName: `${updatedAcc.code}-${updatedAcc.name}`,
+                },
+              });
+            }
             console.log(
               `[SYNC-DEBUG] SUCCESS: Updated account ${updatedAcc.code}. New Name: "${updatedAcc.name}", Status: ${updatedAcc.status}`,
             );

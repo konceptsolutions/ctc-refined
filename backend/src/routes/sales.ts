@@ -376,7 +376,12 @@ async function findCustomerReceivableAccount(
   const include = { Subgroup: { include: { MainGroup: true } } };
 
   const byCustomerId = await tx.account.findFirst({
-    where: { status: "Active", customerId, supplierId: null },
+    where: {
+      status: "Active",
+      customerId,
+      supplierId: null,
+      Subgroup: { code: "105" },
+    },
     include,
   });
   if (byCustomerId) return byCustomerId;
@@ -387,12 +392,21 @@ async function findCustomerReceivableAccount(
         status: "Active",
         name: customerName,
         supplierId: null,
-        customerId: { not: null },
-        Subgroup: { code: { in: ["105", "201"] } },
+        OR: [{ customerId }, { customerId: null }],
+        Subgroup: { code: "105" },
       },
       include,
     });
-    if (byNameInReceivable) return byNameInReceivable;
+    if (byNameInReceivable) {
+      if (!byNameInReceivable.customerId) {
+        return tx.account.update({
+          where: { id: byNameInReceivable.id },
+          data: { customerId },
+          include,
+        });
+      }
+      return byNameInReceivable;
+    }
   }
 
   return null;
@@ -2301,35 +2315,16 @@ router.post("/invoices", async (req: Request, res: Response) => {
 
           if (customer) {
             // Find customer account in Customer Receivable subgroup (105)
-            const receivableSubgroup = await prisma.subgroup.findFirst({
-              where: {
-                OR: [
-                  { code: "105" }, // Customer Receivable
-                  { code: "201" }, // Standard Accounts Receivable subgroup
-                  { name: { contains: "Receivable" } },
-                  {
-                    MainGroup: { type: "Asset" },
-                    name: { contains: "Receivable" },
-                  },
-                ],
-              },
+            const receivableSubgroup = await prisma.subgroup.findUnique({
+              where: { code: "105" },
             });
 
             if (receivableSubgroup) {
-              customerReceivableAccount = await prisma.account.findFirst({
-                where: {
-                  subgroupId: receivableSubgroup.id,
-                  name: customer.name,
-                  status: "Active",
-                },
-                include: {
-                  Subgroup: {
-                    include: {
-                      MainGroup: true,
-                    },
-                  },
-                },
-              });
+              customerReceivableAccount =
+                await findCustomerReceivableAccount(
+                  customer.id,
+                  customer.name,
+                );
 
               // If customer account doesn't exist, create it
               if (!customerReceivableAccount && receivableSubgroup) {
@@ -2361,6 +2356,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                     openingBalance: customer.openingBalance || 0,
                     currentBalance: customer.openingBalance || 0,
                     status: "Active",
+                    customerId: customer.id,
                   } as any,
                   include: {
                     Subgroup: {
@@ -2382,14 +2378,8 @@ router.post("/invoices", async (req: Request, res: Response) => {
         let receivableAccount = customerReceivableAccount;
         if (!receivableAccount) {
           // Fallback to generic Accounts Receivable
-          const receivableSubgroup = await prisma.subgroup.findFirst({
-            where: {
-              OR: [
-                { code: "105" },
-                { code: "201" },
-                { name: { contains: "Receivable" } },
-              ],
-            },
+          const receivableSubgroup = await prisma.subgroup.findUnique({
+            where: { code: "105" },
           });
 
           if (receivableSubgroup) {
@@ -2398,7 +2388,6 @@ router.post("/invoices", async (req: Request, res: Response) => {
                 subgroupId: receivableSubgroup.id,
                 OR: [
                   { code: "105001" },
-                  { code: "201001" },
                   { name: { contains: "Accounts Receivable" } },
                   { name: { contains: "Receivable" } },
                 ],
@@ -5168,7 +5157,7 @@ router.post("/invoices/bulk-reverse", async (req: Request, res: Response) => {
         if (!customerAccount) {
           customerAccount = await findAccountByKeywords(
             ["Accounts Receivable", "Receivable", "Customer", invoice.customerName || ""],
-            ["105", "201"], // Prioritize Customer Receivable subgroup, remove 104 (Inventory)
+            ["105"],
             ["Revenue", "COGS", "Inventory"],
             tx,
           );
