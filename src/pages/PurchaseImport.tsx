@@ -8800,6 +8800,8 @@ const PurchaseOrderTab = ({
                         <>
                           <th className="text-right p-2">Unit Exp</th>
                           <th className="text-right p-2">Exp</th>
+                          <th className="text-right p-2">Unit Cost</th>
+                          <th className="text-right p-2">Cost</th>
                         </>
                       ) : null}
                       <th className="text-right p-2">Weight</th>
@@ -8822,6 +8824,8 @@ const PurchaseOrderTab = ({
                       const receiveQty = Math.max(0, Math.floor(Number(line.receiveQty) || 0));
                       const distributedExpense = receiveDistributedExpenses[index] ?? 0;
                       const unitExp = receiveQty > 0 ? distributedExpense / receiveQty : 0;
+                      const unitCost = Number(line.lcRate || 0) + unitExp;
+                      const lineCost = Number(lineAmounts.lcAmount || 0) + distributedExpense;
                       return (
                       <tr key={line.id} className="border-t">
                         <td className="p-2 text-center text-muted-foreground tabular-nums">
@@ -8917,6 +8921,18 @@ const PurchaseOrderTab = ({
                                     maximumFractionDigits: 2,
                                   })
                                 : "-"}
+                            </td>
+                            <td className="p-2 text-right tabular-nums font-medium">
+                              {unitCost.toLocaleString("en-PK", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="p-2 text-right tabular-nums font-medium">
+                              {lineCost.toLocaleString("en-PK", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
                             </td>
                           </>
                         ) : null}
@@ -9015,6 +9031,16 @@ const PurchaseOrderTab = ({
                                     maximumFractionDigits: 2,
                                   })
                                 : "-"}
+                            </td>
+                            <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {(
+                                Number(receiveTotals.lcAmount || 0) +
+                                Number(receiveExpenseTotal || 0)
+                              ).toLocaleString("en-PK", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
                             </td>
                           </>
                         ) : null}
