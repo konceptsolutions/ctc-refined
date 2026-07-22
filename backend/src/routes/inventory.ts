@@ -1566,8 +1566,8 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
     );
 
     const orderByClause = hasActiveFilter
-      ? `ORDER BY COALESCE(sm_agg.current_stock, 0) DESC, p."updatedAt" DESC`
-      : `ORDER BY p."updatedAt" DESC`;
+      ? `ORDER BY COALESCE(sm_agg.current_stock, 0) DESC, p."partNo" ASC`
+      : `ORDER BY p."partNo" ASC`;
 
     const stockDateFilterClause = stockAsOfDate
       ? `WHERE "createdAt" <= '${stockAsOfDate.toISOString()}'`
@@ -1749,7 +1749,7 @@ router.get("/balances", async (req: Request, res: Response) => {
           GROUP BY prs."partId"
         ) loc ON true
         ${whereClause}
-        ORDER BY p."updatedAt" DESC
+        ORDER BY p."partNo" ASC
         LIMIT ${limitNum} OFFSET ${skip}
       `;
 
