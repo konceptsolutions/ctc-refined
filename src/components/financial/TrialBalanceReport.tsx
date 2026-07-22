@@ -240,7 +240,7 @@ export const TrialBalanceReport = () => {
                   key={index} 
                   className={`${account.isSubgroup ? 'bg-muted/20' : 'hover:bg-muted/30'}`}
                 >
-                  {account.isSubgroup ? <TableCell /> : <ListNumberCell index={index} />}
+                  {account.isSubgroup ? <TableCell /> : <ListNumberCell index={index} total={trialBalanceData.length} />}
                   <TableCell 
                     className={account.isSubgroup ? 'font-medium' : ''}
                     style={getIndent(account.level || 0)}

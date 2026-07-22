@@ -563,7 +563,7 @@ export const StoreSalesInvoiceReceipt = ({
                       key={item.id}
                       className={isFullyDelivered ? "opacity-50" : ""}
                     >
-                      <ListNumberCell index={index} className="align-middle" />
+                      <ListNumberCell index={index} total={invoice.items.length} className="align-middle" />
                       <TableCell className="align-middle">
                         <p className="font-medium text-sm">{item.partNo}</p>
                         {item.description && (

@@ -203,7 +203,7 @@ export const InventoryAging = () => {
           <TableBody>
             {filteredItems.map((item, index) => (
               <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
-                <ListNumberCell index={index} />
+                <ListNumberCell index={index} total={filteredItems.length} />
                 <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{item.category}</TableCell>

@@ -1681,13 +1681,16 @@ router.put("/requests/:requestId/status", async (req: Request, res: Response) =>
       const batchRequestIds = batchRequestRows.map((row: { id: string }) => row.id);
       const purchaseQuotationModel = (prisma as any).purchaseQuotation;
       if (purchaseQuotationModel && batchRequestIds.length > 0) {
-        const quotationCount = await purchaseQuotationModel.count({
-          where: { purchaseImportRequestId: { in: batchRequestIds } },
+        const confirmedQuotationCount = await purchaseQuotationModel.count({
+          where: {
+            purchaseImportRequestId: { in: batchRequestIds },
+            status: "confirm",
+          },
         });
-        if (quotationCount > 0) {
+        if (confirmedQuotationCount > 0) {
           return res.status(400).json({
             error:
-              "Cannot unconfirm an inquiry that already has purchase quotations.",
+              "Cannot unconfirm an inquiry after a quotation has been confirmed.",
           });
         }
       }
@@ -2402,6 +2405,8 @@ router.get("/quotations", async (req: Request, res: Response) => {
       where.status = "confirm";
     } else if (statusFilter === "open") {
       where.status = { not: "confirm" };
+    } else if (statusFilter === "all" || !statusFilter) {
+      // no status filter
     }
     if (supplierId) {
       where.supplierId = supplierId;
@@ -2460,6 +2465,9 @@ router.get("/quotations", async (req: Request, res: Response) => {
               poNumber: true,
               status: true,
               consignee: true,
+              PurchaseOrderItem: {
+                select: { fcRate: true, receivedQty: true },
+              },
             },
             orderBy: { createdAt: "asc" },
           },
@@ -3147,6 +3155,182 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
   }
 });
 
+function isImportPurchaseOrderSavedForUnconfirm(order: {
+  status?: string | null;
+  PurchaseOrderItem?: Array<{ fcRate?: number | null; receivedQty?: number | null }>;
+}) {
+  const status = String(order.status || "")
+    .trim()
+    .toLowerCase();
+  if (
+    status === "purchase invoice pending" ||
+    status === "stock receiving pending" ||
+    status === "received"
+  ) {
+    return true;
+  }
+  return (order.PurchaseOrderItem || []).some(
+    (item) => Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+  );
+}
+
+// Notes are written by confirmPurchaseQuotation as:
+// "Created from purchase quotation(s) Q1, Q2 (Inquiry R1) - KHI"
+const parseQuotationNosFromPoNotes = (notes: any): string[] => {
+  const text = String(notes || "").trim();
+  const match =
+    /^Created from purchase quotations?\s+(.+?)(?:\s+\(Inquiry\s.+?\))?\s+-\s+\S+$/.exec(
+      text,
+    );
+  if (!match) return [];
+  return match[1]
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+};
+
+router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Response) => {
+  try {
+    const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+    if (!purchaseQuotationModel) {
+      return res.status(500).json({
+        error:
+          "Purchase quotation model is unavailable in Prisma client. Restart backend and regenerate Prisma client.",
+      });
+    }
+
+    const quotationId = String(req.params.quotationId || "").trim();
+    if (!quotationId) {
+      return res.status(400).json({ error: "Quotation id is required." });
+    }
+
+    const quotation = await purchaseQuotationModel.findUnique({
+      where: { id: quotationId },
+      select: {
+        id: true,
+        quotationNo: true,
+        status: true,
+        quotationType: true,
+      },
+    });
+    if (!quotation) {
+      return res.status(404).json({ error: "Purchase quotation not found." });
+    }
+
+    if (normalizeQuotationStatus(quotation.status) !== "confirm") {
+      return res.status(400).json({
+        error: "Only confirmed quotations can be unconfirmed.",
+      });
+    }
+
+    const linkedOrders = await prisma.purchaseOrder.findMany({
+      where: { purchaseQuotationId: quotationId },
+      select: {
+        id: true,
+        poNumber: true,
+        status: true,
+        notes: true,
+        purchaseQuotationId: true,
+        PurchaseOrderItem: {
+          select: { fcRate: true, receivedQty: true },
+        },
+      },
+    });
+
+    let orders = linkedOrders;
+    if (orders.length === 0 && quotation.quotationNo) {
+      // Combined confirmation attaches POs to the primary quotation only.
+      // Find sibling POs that still reference this quotation number in notes.
+      const candidateOrders = await prisma.purchaseOrder.findMany({
+        where: {
+          purchaseQuotationId: { not: null },
+          notes: { contains: String(quotation.quotationNo) },
+        },
+        select: {
+          id: true,
+          poNumber: true,
+          status: true,
+          notes: true,
+          purchaseQuotationId: true,
+          PurchaseOrderItem: {
+            select: { fcRate: true, receivedQty: true },
+          },
+        },
+      });
+      orders = candidateOrders.filter((order) => {
+        const nos = parseQuotationNosFromPoNotes(order.notes);
+        return nos.includes(String(quotation.quotationNo));
+      });
+    }
+
+    if (orders.some((order) => isImportPurchaseOrderSavedForUnconfirm(order))) {
+      return res.status(400).json({
+        error:
+          "Cannot unconfirm this quotation after Purchase Import has been saved.",
+      });
+    }
+
+    const orderIds = orders.map((order) => order.id);
+    const quotationIdsToRevert = new Set<string>([quotationId]);
+    for (const order of orders) {
+      if (order.purchaseQuotationId) {
+        quotationIdsToRevert.add(String(order.purchaseQuotationId));
+      }
+    }
+
+    const combinedNos = Array.from(
+      new Set(orders.flatMap((order) => parseQuotationNosFromPoNotes(order.notes))),
+    );
+
+    await prisma.$transaction(async (tx) => {
+      if (orderIds.length > 0) {
+        await tx.purchaseOrder.deleteMany({
+          where: { id: { in: orderIds } },
+        });
+      }
+
+      const revertWhere = {
+        status: "confirm",
+        OR: [
+          { id: { in: Array.from(quotationIdsToRevert) } },
+          ...(combinedNos.length > 0
+            ? [{ quotationNo: { in: combinedNos } }]
+            : []),
+        ],
+      } as any;
+
+      await (tx as any).purchaseQuotation.updateMany({
+        where: { ...revertWhere, quotationType: "revised" },
+        data: {
+          status: "revise",
+          confirmationDate: null,
+          updatedAt: new Date(),
+        },
+      });
+      await (tx as any).purchaseQuotation.updateMany({
+        where: { ...revertWhere, quotationType: { not: "revised" } },
+        data: {
+          status: "pending",
+          confirmationDate: null,
+          updatedAt: new Date(),
+        },
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Quotation ${quotation.quotationNo || ""} unconfirmed successfully.`,
+      data: {
+        id: quotation.id,
+        quotationNo: quotation.quotationNo,
+        deletedPurchaseOrderIds: orderIds,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/quotations/:quotationId/convert-to-po", async (req: Request, res: Response) => {
   try {
     const quotationId = String(req.params.quotationId || "").trim();
@@ -3192,9 +3376,11 @@ type ImportPurchaseOrderExpenses = {
   incomeTax: number;
   ed: number;
   doAmount: number;
+  crnExp: number;
+  cmExp: number;
+  agencyExp: number;
   miscExp: number;
   locFrt: number;
-  crnExp: number;
   totalExp: number;
 };
 
@@ -3209,9 +3395,11 @@ const IMPORT_PO_EXPENSE_AMOUNT_KEYS: Array<
   "incomeTax",
   "ed",
   "doAmount",
+  "crnExp",
+  "cmExp",
+  "agencyExp",
   "miscExp",
   "locFrt",
-  "crnExp",
 ];
 
 function normalizeExpenseNumber(value: unknown) {
@@ -3267,9 +3455,11 @@ function readImportPoExpensesFromOrder(order: any): ImportPurchaseOrderExpenses 
     incomeTax: normalizeExpenseNumber(order?.incomeTax),
     ed: normalizeExpenseNumber(order?.ed),
     doAmount: normalizeExpenseNumber(order?.doAmount),
+    crnExp: normalizeExpenseNumber(order?.crnExp),
+    cmExp: normalizeExpenseNumber(order?.cmExp),
+    agencyExp: normalizeExpenseNumber(order?.agencyExp),
     miscExp: normalizeExpenseNumber(order?.miscExp),
     locFrt: normalizeExpenseNumber(order?.locFrt),
-    crnExp: normalizeExpenseNumber(order?.crnExp),
   };
   const invoiceLc = normalizeExpenseNumber(order?.totalAmount);
   const conversionRate =
@@ -3307,9 +3497,11 @@ function parseImportPoExpensesFromBody(
     incomeTax: normalizeExpenseNumber(source?.incomeTax),
     ed: normalizeExpenseNumber(source?.ed),
     doAmount: normalizeExpenseNumber(source?.doAmount),
+    crnExp: normalizeExpenseNumber(source?.crnExp),
+    cmExp: normalizeExpenseNumber(source?.cmExp),
+    agencyExp: normalizeExpenseNumber(source?.agencyExp),
     miscExp: normalizeExpenseNumber(source?.miscExp),
     locFrt: normalizeExpenseNumber(source?.locFrt),
-    crnExp: normalizeExpenseNumber(source?.crnExp),
   };
   const commercial = computeImportPoCommercialAmounts(
     base,
@@ -3599,6 +3791,15 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       (sum, item) => sum + Number(item.fcAmount || 0),
       0,
     );
+    const statusLower = String(order.status || "").trim().toLowerCase();
+    const importSaved =
+      statusLower === "purchase invoice pending" ||
+      statusLower === "stock receiving pending" ||
+      statusLower === "received" ||
+      (order.PurchaseOrderItem || []).some(
+        (item: any) =>
+          Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+      );
 
     res.json({
       data: {
@@ -3613,6 +3814,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         blDate: (order as any).blDate ?? null,
         forwarder: (order as any).forwarder ?? null,
         estTimeDate: (order as any).expectedDate ?? null,
+        importSaved,
         totalAmount: order.totalAmount,
         fcTotal:
           Number((order as any).fcTotal || 0) > 0
@@ -3692,6 +3894,51 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         error: "Purchase import cannot be updated after the purchase order is received",
       });
     }
+
+    const receiveStageRaw = String(req.body?.stage || req.body?.mode || "")
+      .trim()
+      .toLowerCase();
+    const receiveStage =
+      receiveStageRaw === "invoice" ||
+      receiveStageRaw === "purchase-invoice" ||
+      receiveStageRaw === "purchase_invoice"
+        ? "invoice"
+        : "import";
+
+    const currentStatus = String(order.status || "").trim().toLowerCase();
+    const hasImportData = (order.PurchaseOrderItem || []).some(
+      (item: any) =>
+        Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+    );
+    const importReady =
+      currentStatus === "purchase invoice pending" ||
+      currentStatus === "stock receiving pending" ||
+      hasImportData;
+
+    if (receiveStage === "invoice" && !importReady) {
+      return res.status(400).json({
+        error:
+          "Save Purchase Import at least once before saving Purchase Invoice.",
+      });
+    }
+
+    if (
+      receiveStage === "import" &&
+      (currentStatus === "stock receiving pending" ||
+        currentStatus === "received")
+    ) {
+      return res.status(400).json({
+        error:
+          "Purchase Import cannot be updated after Purchase Invoice has been saved.",
+      });
+    }
+
+    const nextStatus =
+      receiveStage === "invoice"
+        ? "Stock Receiving Pending"
+        : currentStatus === "stock receiving pending" || currentStatus === "received"
+          ? String(order.status || "Purchase Invoice Pending")
+          : "Purchase Invoice Pending";
 
     const quotation = order.PurchaseQuotation;
     const isRevised = isQuotationRevisedRecord(quotation);
@@ -3918,10 +4165,13 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
           "incomeTax" = ${expenses.incomeTax},
           "ed" = ${expenses.ed},
           "doAmount" = ${expenses.doAmount},
+          "crnExp" = ${expenses.crnExp},
+          "cmExp" = ${expenses.cmExp},
+          "agencyExp" = ${expenses.agencyExp},
           "miscExp" = ${expenses.miscExp},
           "locFrt" = ${expenses.locFrt},
-          "crnExp" = ${expenses.crnExp},
           "totalExp" = ${expenses.totalExp},
+          "status" = ${nextStatus},
           "updatedAt" = ${new Date()}
         WHERE "id" = ${id}
       `;
@@ -3991,21 +4241,6 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
 });
 
 // Delete import purchase order only when it has not been received
-// Notes are written by confirmPurchaseQuotation as:
-// "Created from purchase quotation(s) Q1, Q2 (Inquiry R1) - KHI"
-const parseQuotationNosFromPoNotes = (notes: any): string[] => {
-  const text = String(notes || "").trim();
-  const match =
-    /^Created from purchase quotations?\s+(.+?)(?:\s+\(Inquiry\s.+?\))?\s+-\s+\S+$/.exec(
-      text,
-    );
-  if (!match) return [];
-  return match[1]
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-};
-
 router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
   try {
     const orderId = String(req.params.id || "").trim();
@@ -4130,7 +4365,7 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
             },
           },
           PurchaseOrderItem: {
-            select: { id: true },
+            select: { id: true, fcRate: true, receivedQty: true },
           },
         } as any,
       }),
@@ -4138,7 +4373,23 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
     ]);
 
     res.json({
-      data: orders.map((po: any) => ({
+      data: orders.map((po: any) => {
+        const items = po.PurchaseOrderItem || [];
+        const importSaved =
+          String(po.status || "")
+            .trim()
+            .toLowerCase() === "purchase invoice pending" ||
+          String(po.status || "")
+            .trim()
+            .toLowerCase() === "stock receiving pending" ||
+          String(po.status || "")
+            .trim()
+            .toLowerCase() === "received" ||
+          items.some(
+            (item: any) =>
+              Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+          );
+        return {
         id: po.id,
         poNumber: po.poNumber,
         date: po.date,
@@ -4148,6 +4399,7 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
         notes: po.notes,
         forwarder: po.forwarder ?? null,
         estTimeDate: po.expectedDate ?? null,
+        importSaved,
         supplier: po.Supplier
           ? {
               id: po.Supplier.id,
@@ -4163,8 +4415,9 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
               requestNo: po.PurchaseQuotation.PurchaseImportRequest?.requestNo || null,
             }
           : null,
-        itemsCount: po.PurchaseOrderItem.length,
-      })),
+        itemsCount: items.length,
+      };
+      }),
       pagination: {
         page,
         limit,

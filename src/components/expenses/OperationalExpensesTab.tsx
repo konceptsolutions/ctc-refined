@@ -210,7 +210,7 @@ export const OperationalExpensesTab = ({ onUpdate }: OperationalExpensesTabProps
             <TableBody>
               {filteredExpenses.map((expense, index) => (
                 <TableRow key={expense.id} className="hover:bg-muted/30 transition-colors">
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={filteredExpenses.length} />
                   <TableCell className="font-medium">{expense.date}</TableCell>
                   <TableCell className="text-primary font-medium">{expense.voucherNo}</TableCell>
                   <TableCell>

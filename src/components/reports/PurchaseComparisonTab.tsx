@@ -225,7 +225,7 @@ const PurchaseComparisonTab = () => {
               ) : (
                 comparisonData.map((row, index) => (
                 <TableRow key={row.supplier}>
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={comparisonData.length} />
                   <TableCell className="font-medium">{row.supplier}</TableCell>
                   <TableCell className="text-right">Rs {row.currentPeriod.toLocaleString()}</TableCell>
                   <TableCell className="text-right">Rs {row.previousPeriod.toLocaleString()}</TableCell>

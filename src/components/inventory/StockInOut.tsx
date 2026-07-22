@@ -1379,6 +1379,7 @@ export const StockInOut = () => {
                     index={index}
                     page={currentPage}
                     pageSize={itemsPerPage}
+                    total={totalItems}
                   />
                   <TableCell>
                     <Checkbox

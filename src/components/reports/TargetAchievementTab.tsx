@@ -231,7 +231,7 @@ const TargetAchievementTab = () => {
             <TableBody>
               {targetData.map((row, index) => (
                 <TableRow key={row.category}>
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={targetData.length} />
                   <TableCell className="font-medium">{row.category}</TableCell>
                   <TableCell className="text-right">
                     {row.category.includes("Margin") 

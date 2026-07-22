@@ -215,7 +215,7 @@ const DailyClosingTab = () => {
                     ) : (
                       accountBalances.map((account, index) => (
                         <TableRow key={account.code}>
-                          <ListNumberCell index={index} />
+                          <ListNumberCell index={index} total={accountBalances.length} />
                           <TableCell className="font-medium">{account.code}</TableCell>
                           <TableCell>{account.name}</TableCell>
                           <TableCell className="capitalize">{account.type || 'N/A'}</TableCell>

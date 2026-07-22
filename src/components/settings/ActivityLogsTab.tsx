@@ -308,7 +308,7 @@ export const ActivityLogsTab = () => {
               ) : (
                 logs.map((log, index) => (
                 <TableRow key={log.id}>
-                  <ListNumberCell index={index} page={page} pageSize={limit} />
+                  <ListNumberCell index={index} page={page} pageSize={limit} total={total} />
                   <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />

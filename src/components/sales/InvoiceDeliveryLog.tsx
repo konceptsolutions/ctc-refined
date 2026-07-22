@@ -171,7 +171,7 @@ export const InvoiceDeliveryLog = ({
                   <TableBody>
                     {pendingItems.map((item, index) => (
                       <TableRow key={item.partId}>
-                        <ListNumberCell index={index} />
+                        <ListNumberCell index={index} total={pendingItems.length} />
                         <TableCell className="font-medium">{item.partNo}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {item.description}

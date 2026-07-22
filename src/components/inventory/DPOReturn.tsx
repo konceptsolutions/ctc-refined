@@ -301,7 +301,7 @@ export const DPOReturn = () => {
                         ) : (
                             returns.map((ret, index) => (
                                 <TableRow key={ret.id} className="group hover:bg-muted/30 transition-colors">
-                                    <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
+                                    <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} total={totalRecords} />
                                     <TableCell className="font-mono font-medium">{ret.returnNumber}</TableCell>
                                     <TableCell>{ret.dpoNumber}</TableCell>
                                     <TableCell className="max-w-[200px] truncate">{ret.supplierName}</TableCell>

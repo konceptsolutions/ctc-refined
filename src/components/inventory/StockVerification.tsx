@@ -609,7 +609,7 @@ export const StockVerification = () => {
                 <TableBody>
                   {paginatedItems.map((item, index) => (
                     <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
-                      <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
+                      <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} total={filteredItems.length} />
                       <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{item.location}</TableCell>

@@ -398,7 +398,7 @@ export const GeneralJournalTab = () => {
                     ${index % 2 === 0 ? 'bg-background' : 'bg-muted/20'}
                   `}
                   >
-                    <ListNumberCell index={index} page={page} pageSize={limit} />
+                    <ListNumberCell index={index} page={page} pageSize={limit} total={totalEntries} />
                     <TableCell className="font-medium text-foreground">{entry.tId}</TableCell>
                     <TableCell>
                       <span className="px-2 py-1 bg-primary/10 text-primary rounded-md text-sm font-medium">

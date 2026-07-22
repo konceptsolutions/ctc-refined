@@ -1462,6 +1462,7 @@ export const SalesReturns = () => {
                         index={index}
                         page={currentPage}
                         pageSize={itemsPerPage}
+                        total={filteredReturns.length}
                       />
                       <TableCell>
                         <Checkbox

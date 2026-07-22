@@ -351,7 +351,7 @@ export const ReserveStock = () => {
               <TableBody>
                 {filteredItems.map((item, index) => (
                   <TableRow key={item.partId || index}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={filteredItems.length} />
                     <TableCell className="font-medium">{item.partNo}</TableCell>
                     <TableCell>{item.description}</TableCell>
                     <TableCell>{item.brand || "-"}</TableCell>

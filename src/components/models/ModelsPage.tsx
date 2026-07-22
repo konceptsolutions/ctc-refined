@@ -1076,7 +1076,7 @@ export const ModelsPage = () => {
                 ) : partModels.length > 0 ? (
                   partModels.map((model, index) => (
                     <TableRow key={model.id}>
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={partModels.length} />
                       <TableCell>
                         {editingModelId === model.id ? (
                           <Input

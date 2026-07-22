@@ -434,7 +434,7 @@ export const UsersManagementTab = () => {
               ) : (
                 users.map((user, index) => (
                 <TableRow key={user.id}>
-                  <ListNumberCell index={index} page={page} pageSize={limit} />
+                  <ListNumberCell index={index} page={page} pageSize={limit} total={total} />
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="w-9 h-9">

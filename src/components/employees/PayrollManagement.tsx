@@ -506,7 +506,7 @@ export const PayrollManagement = () => {
                 ) : (
                   rows.map((row, index) => (
                     <TableRow key={row.id}>
-                      <ListNumberCell index={index} page={currentPage} pageSize={rowsPerPage} />
+                      <ListNumberCell index={index} page={currentPage} pageSize={rowsPerPage} total={totalRecords} />
                       <TableCell>{formatPayrollMonth(row.payrollMonth)}</TableCell>
                       <TableCell>
                         <div className="font-medium">{row.employee?.name || "—"}</div>

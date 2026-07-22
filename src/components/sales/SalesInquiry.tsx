@@ -2887,7 +2887,7 @@ export const SalesInquiry = ({
 
                           return (
                             <TableRow key={item.id || index}>
-                              <ListNumberCell index={index} />
+                              <ListNumberCell index={index} total={fullInquiryData.items.length} />
                               <TableCell className="font-medium">{item.part?.partNo || 'N/A'}</TableCell>
                               <TableCell className="max-w-xs">
                                 <div>{item.part?.description || 'N/A'}</div>
@@ -3431,7 +3431,7 @@ export const SalesInquiry = ({
                             });
                           }}
                         >
-                          <ListNumberCell index={index} className="align-top" />
+                          <ListNumberCell index={index} total={lookupRows.length} className="align-top" />
                           <TableCell className="align-top">
                             <div
                               ref={(el) => {
@@ -4075,7 +4075,7 @@ export const SalesInquiry = ({
                     ) : (
                       alternateItems.map((item, index) => (
                         <TableRow key={`${item.id || item.partNo}-${index}`} className="hover:bg-muted/20">
-                          <ListNumberCell index={index} className="text-xs px-2 py-1.5 whitespace-nowrap" />
+                          <ListNumberCell index={index} total={alternateItems.length} className="text-xs px-2 py-1.5 whitespace-nowrap" />
                           <TableCell
                             className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
                             title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
@@ -4173,7 +4173,7 @@ export const SalesInquiry = ({
                     ) : (
                       salesInvoiceHistory.map((invoice, index) => (
                         <TableRow key={invoice.id} className="hover:bg-muted/20">
-                          <ListNumberCell index={index} className="text-xs" />
+                          <ListNumberCell index={index} total={salesInvoiceHistory.length} className="text-xs" />
                           <TableCell className="text-xs font-medium">{invoice.invoice_no || 'N/A'}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : 'N/A'}
@@ -4250,7 +4250,7 @@ export const SalesInquiry = ({
                     ) : (
                       combinedPurchaseHistory.map((row, index) => (
                         <TableRow key={row.id} className="hover:bg-muted/20">
-                          <ListNumberCell index={index} className="text-xs" />
+                          <ListNumberCell index={index} total={combinedPurchaseHistory.length} className="text-xs" />
                           <TableCell className="text-xs">
                             <Badge
                               variant={row.source === "local" ? "secondary" : "outline"}
@@ -4328,7 +4328,7 @@ export const SalesInquiry = ({
                     ) : (
                       modelAssociations.map((item, index) => (
                         <TableRow key={`${item.partId}-${index}`} className="hover:bg-muted/20">
-                          <ListNumberCell index={index} className="text-xs px-2 py-1.5 whitespace-nowrap" />
+                          <ListNumberCell index={index} total={modelAssociations.length} className="text-xs px-2 py-1.5 whitespace-nowrap" />
                           <TableCell
                             className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
                             title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}

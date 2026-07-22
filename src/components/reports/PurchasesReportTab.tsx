@@ -215,7 +215,7 @@ const PurchasesReportTab = () => {
               ) : (
                 purchaseData.map((record, index) => (
                   <TableRow key={record.id}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={purchaseData.length} />
                     <TableCell>{record.date}</TableCell>
                     <TableCell className="font-medium">{record.poNumber}</TableCell>
                     <TableCell>{record.supplier}</TableCell>

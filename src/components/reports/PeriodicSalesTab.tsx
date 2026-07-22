@@ -320,7 +320,7 @@ const PeriodicSalesTab = () => {
               ) : (
                 monthlyData.map((row, index) => (
                 <TableRow key={row.period}>
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={monthlyData.length} />
                   <TableCell className="font-medium">{row.period}</TableCell>
                   <TableCell className="text-right">Rs {row.grossSales.toLocaleString()}</TableCell>
                   <TableCell className="text-right">{row.orders}</TableCell>

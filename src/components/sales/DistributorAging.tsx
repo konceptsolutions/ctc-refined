@@ -309,7 +309,7 @@ export const DistributorAging = () => {
                 ) : (
                   filteredData.map((item, index) => (
                     <TableRow key={item.id} className="hover:bg-muted/30">
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={filteredData.length} />
                       <TableCell className="font-medium text-foreground">{item.customer}</TableCell>
                       <TableCell>{item.invoice_no}</TableCell>
                       <TableCell>{format(new Date(item.invoice_date), "dd/MM/yyyy")}</TableCell>

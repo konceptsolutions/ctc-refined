@@ -148,15 +148,15 @@ const tabs: TabConfig[] = [
   },
   {
     id: "revise-quotation",
-    label: "Revise Quotation",
+    label: "Revise & Confirm Quotation",
     icon: Pencil,
-    description: "Revise open purchase quotations",
+    description: "Revise and confirm open purchase quotations",
   },
   {
     id: "confirm-quotation",
-    label: "Confirm Quotation",
+    label: "Confirmed Quotation",
     icon: PackageCheck,
-    description: "Confirm quotations and review confirmed records",
+    description: "View confirmed purchase quotations",
   },
   {
     id: "purchase-order",
@@ -301,6 +301,10 @@ type PurchaseQuotationRecord = {
     poNumber: string;
     status: string;
     consignee?: string | null;
+    PurchaseOrderItem?: Array<{
+      fcRate?: number | null;
+      receivedQty?: number | null;
+    }>;
   }>;
 };
 
@@ -313,6 +317,7 @@ type ImportPurchaseOrderRecord = {
   totalAmount: number;
   notes?: string | null;
   itemsCount: number;
+  importSaved?: boolean;
   forwarder?: string | null;
   estTimeDate?: string | null;
   expectedDate?: string | null;
@@ -382,9 +387,11 @@ type ImportPurchaseOrderExpenses = {
   incomeTax: number;
   ed: number;
   doAmount: number;
+  crnExp: number;
+  cmExp: number;
+  agencyExp: number;
   miscExp: number;
   locFrt: number;
-  crnExp: number;
   totalExp: number;
 };
 
@@ -406,9 +413,11 @@ const EMPTY_IMPORT_PO_EXPENSES: ImportPurchaseOrderExpenses = {
   incomeTax: 0,
   ed: 0,
   doAmount: 0,
+  crnExp: 0,
+  cmExp: 0,
+  agencyExp: 0,
   miscExp: 0,
   locFrt: 0,
-  crnExp: 0,
   totalExp: 0,
 };
 
@@ -421,9 +430,11 @@ const IMPORT_PO_EXPENSE_AMOUNT_KEYS: ImportPoExpenseFieldKey[] = [
   "incomeTax",
   "ed",
   "doAmount",
+  "crnExp",
+  "cmExp",
+  "agencyExp",
   "miscExp",
   "locFrt",
-  "crnExp",
 ];
 
 const IMPORT_PO_CLEARING_EXPENSE_SECTIONS = [
@@ -443,9 +454,11 @@ const IMPORT_PO_CLEARING_EXPENSE_SECTIONS = [
     fields: [
       { key: "ed" as const, label: "E.D." },
       { key: "doAmount" as const, label: "D.O." },
+      { key: "crnExp" as const, label: "Dmg.Exp." },
+      { key: "cmExp" as const, label: "CRN.Exp." },
+      { key: "agencyExp" as const, label: "Agency.Exp." },
       { key: "miscExp" as const, label: "Misc.Exp." },
       { key: "locFrt" as const, label: "Loc.Frt." },
-      { key: "crnExp" as const, label: "Dmg.Exp." },
     ],
   },
 ];
@@ -530,9 +543,11 @@ function parseImportPoExpenses(raw: unknown): ImportPurchaseOrderExpenses {
     incomeTax: normalizeImportPoExpenseNumber(source.incomeTax),
     ed: normalizeImportPoExpenseNumber(source.ed),
     doAmount: normalizeImportPoExpenseNumber(source.doAmount),
+    crnExp: normalizeImportPoExpenseNumber(source.crnExp),
+    cmExp: normalizeImportPoExpenseNumber(source.cmExp),
+    agencyExp: normalizeImportPoExpenseNumber(source.agencyExp),
     miscExp: normalizeImportPoExpenseNumber(source.miscExp),
     locFrt: normalizeImportPoExpenseNumber(source.locFrt),
-    crnExp: normalizeImportPoExpenseNumber(source.crnExp),
   };
   const storedTotal = normalizeImportPoExpenseNumber(source.totalExp);
   return {
@@ -3197,7 +3212,7 @@ const PurchaseImportRequestView = ({
                 supplierRows.map((supplier, index) => (
                   <tr key={supplier.supplierId} className="border-b">
                     <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
-                      {getListRowNumber(index)}
+                      {getListRowNumber(index, 1, undefined, supplierRows.length)}
                     </td>
                     <td className="p-2">{supplier.name}</td>
                     <td className="p-2">{supplier.country}</td>
@@ -3272,7 +3287,7 @@ const PurchaseImportRequestView = ({
                     className="border-b"
                   >
                     <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
-                      {getListRowNumber(index)}
+                      {getListRowNumber(index, 1, undefined, sortedItemRows.length)}
                     </td>
                     <td className="p-2">
                       <div className="font-medium">
@@ -5155,6 +5170,23 @@ const PurchaseInquiryListPanel = ({
     return map;
   }, [requests]);
 
+  const batchHasConfirmedQuotation = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const row of requests) {
+      if (!row.batchId) continue;
+      const hasConfirmed = (row.PurchaseQuotation || []).some(
+        (quotation) =>
+          String(quotation.status || "")
+            .trim()
+            .toLowerCase() === "confirm",
+      );
+      if (hasConfirmed) {
+        map.set(row.batchId, true);
+      }
+    }
+    return map;
+  }, [requests]);
+
   const fetchRequests = useCallback(async () => {
     setLoadingRequests(true);
     try {
@@ -5270,6 +5302,49 @@ const PurchaseInquiryListPanel = ({
     } catch (error: any) {
       toast({
         title: "Failed to confirm inquiry",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not update inquiry status.",
+        variant: "destructive",
+      });
+    } finally {
+      setConfirmingRequestId(null);
+    }
+  };
+
+  const handleUnconfirmRequest = async (requestId: string) => {
+    const row = requests.find((r) => r.id === requestId);
+    if (row?.batchId && batchHasConfirmedQuotation.get(row.batchId)) {
+      toast({
+        title: "Cannot unconfirm inquiry",
+        description:
+          "A quotation for this inquiry has already been confirmed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const inquiryNo = row?.requestNo || "this inquiry";
+    if (
+      !window.confirm(
+        `Unconfirm inquiry ${inquiryNo}? It will return to pending status.`,
+      )
+    ) {
+      return;
+    }
+
+    setConfirmingRequestId(requestId);
+    try {
+      await apiClient.updatePurchaseImportRequestStatus(requestId, "pending");
+      toast({
+        title: "Inquiry unconfirmed",
+        description: "Inquiry status has been updated to pending.",
+      });
+      await fetchRequests();
+    } catch (error: any) {
+      toast({
+        title: "Failed to unconfirm inquiry",
         description:
           error?.response?.data?.error ||
           error?.message ||
@@ -5578,10 +5653,12 @@ const PurchaseInquiryListPanel = ({
                   mode === "quotation" &&
                   batchSupplierCount >= 2 &&
                   Boolean(batchHasQuotation.get(row.batchId));
+                const canUnconfirmInquiry =
+                  isConfirmed && !batchHasConfirmedQuotation.get(row.batchId);
                 return (
                   <tr key={row.id} className="border-b hover:bg-muted/20">
                     <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
-                      {getListRowNumber(index)}
+                      {getListRowNumber(index, currentPage, itemsPerPage, totalRecords)}
                     </td>
                     <td className="p-2">
                       {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}
@@ -5622,6 +5699,17 @@ const PurchaseInquiryListPanel = ({
                               >
                                 <Check className="w-3.5 h-3.5 mr-1" />
                                 Confirm
+                              </Button>
+                            ) : canUnconfirmInquiry ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void handleUnconfirmRequest(row.id)}
+                                disabled={confirmingRequestId === row.id}
+                                title="Unconfirm inquiry (only before a quotation is confirmed)"
+                              >
+                                Unconfirm
                               </Button>
                             ) : null}
                             <Button
@@ -5754,7 +5842,26 @@ const PurchaseInquiryListPanel = ({
 };
 
 type QuotationListView = "open" | "confirmed";
-type QuotationListAction = "revise" | "confirm" | "none";
+type QuotationListAction = "revise" | "confirm" | "revise-confirm" | "none";
+
+const isQuotationPurchaseImportSaved = (
+  purchaseOrders?: PurchaseQuotationRecord["PurchaseOrder"],
+) =>
+  (purchaseOrders || []).some((po) => {
+    const status = String(po.status || "")
+      .trim()
+      .toLowerCase();
+    if (
+      status === "purchase invoice pending" ||
+      status === "stock receiving pending" ||
+      status === "received"
+    ) {
+      return true;
+    }
+    return (po.PurchaseOrderItem || []).some(
+      (item) => Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+    );
+  });
 
 type PurchaseQuotationListPanelProps = {
   view: QuotationListView;
@@ -5781,6 +5888,9 @@ const PurchaseQuotationListPanel = ({
   const [totalRecords, setTotalRecords] = useState(0);
   const [printingQuotationId, setPrintingQuotationId] = useState<string | null>(null);
   const [deletingQuotationId, setDeletingQuotationId] = useState<string | null>(null);
+  const [unconfirmingQuotationId, setUnconfirmingQuotationId] = useState<string | null>(
+    null,
+  );
   const [filterSupplierId, setFilterSupplierId] = useState("");
   const [filterQuotationNo, setFilterQuotationNo] = useState("");
   const [filterPartReference, setFilterPartReference] = useState("");
@@ -5793,10 +5903,16 @@ const PurchaseQuotationListPanel = ({
   >([]);
 
   const isConfirmedView = view === "confirmed";
+  const showUnconfirmAction = action === "revise-confirm";
   const openListColSpan = 14;
   const confirmedListColSpan = 12;
   const CONSIGNEE_ORDER = ["ISB", "KHI", "Other"] as const;
-  const listStatus = view === "confirmed" ? ("confirm" as const) : ("open" as const);
+  const listStatus =
+    view === "confirmed"
+      ? ("confirm" as const)
+      : action === "revise-confirm"
+        ? ("all" as const)
+        : ("open" as const);
 
   const fetchQuotations = useCallback(async () => {
     setLoadingQuotations(true);
@@ -5960,6 +6076,49 @@ const PurchaseQuotationListPanel = ({
       });
     } finally {
       setDeletingQuotationId(null);
+    }
+  };
+
+  const handleUnconfirmQuotation = async (quotationId: string) => {
+    const row = quotations.find((q) => q.id === quotationId);
+    const quotationNo = row?.quotationNo || "this quotation";
+    if (isQuotationPurchaseImportSaved(row?.PurchaseOrder)) {
+      toast({
+        title: "Cannot unconfirm quotation",
+        description:
+          "Purchase Import has already been saved for this quotation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Unconfirm quotation ${quotationNo}? Related purchase order(s) will be deleted and the quotation will return to an open status.`,
+      )
+    ) {
+      return;
+    }
+
+    setUnconfirmingQuotationId(quotationId);
+    try {
+      await apiClient.unconfirmPurchaseQuotation(quotationId);
+      toast({
+        title: "Quotation unconfirmed",
+        description: `Quotation ${quotationNo} has been unconfirmed.`,
+      });
+      await fetchQuotations();
+    } catch (error: any) {
+      toast({
+        title: "Failed to unconfirm quotation",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not unconfirm quotation.",
+        variant: "destructive",
+      });
+    } finally {
+      setUnconfirmingQuotationId(null);
     }
   };
 
@@ -6290,11 +6449,17 @@ const PurchaseQuotationListPanel = ({
                 const consigneeLabel = getQuotationListConsigneeLabel(row, {
                   purchaseOrderConsignee: entry.purchaseOrder?.consignee,
                 });
+                const canUnconfirmQuotation =
+                  isConfirmed &&
+                  !isQuotationPurchaseImportSaved(purchaseOrders);
+                const isFirstRowForQuotation =
+                  index === 0 ||
+                  displayRows[index - 1]?.quotation.id !== row.id;
 
                 return (
                   <tr key={entry.key} className="border-b hover:bg-muted/20">
                     <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
-                      {getListRowNumber(index)}
+                      {getListRowNumber(index, currentPage, itemsPerPage, totalRecords)}
                     </td>
                     {isConfirmedView ? (
                       <>
@@ -6344,7 +6509,7 @@ const PurchaseQuotationListPanel = ({
                     <td className="p-2 font-mono text-xs">{poNumber}</td>
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        {action === "confirm" ? (
+                        {action === "confirm" || action === "revise-confirm" ? (
                           <Button
                             type="button"
                             size="sm"
@@ -6356,7 +6521,7 @@ const PurchaseQuotationListPanel = ({
                             {isConfirmed ? "Confirmed" : "Confirm"}
                           </Button>
                         ) : null}
-                        {action === "revise" ? (
+                        {action === "revise" || action === "revise-confirm" ? (
                           <Button
                             type="button"
                             size="sm"
@@ -6365,6 +6530,37 @@ const PurchaseQuotationListPanel = ({
                             disabled={isConfirmed}
                           >
                             {isRevised ? "Revise Again" : "Revise"}
+                          </Button>
+                        ) : null}
+                        {showUnconfirmAction &&
+                        isFirstRowForQuotation &&
+                        canUnconfirmQuotation ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={unconfirmingQuotationId === row.id}
+                            title="Unconfirm quotation (only before Purchase Import is saved)"
+                            onClick={() => void handleUnconfirmQuotation(row.id)}
+                          >
+                            {unconfirmingQuotationId === row.id
+                              ? "Unconfirming..."
+                              : "Unconfirm"}
+                          </Button>
+                        ) : null}
+                        {showUnconfirmAction &&
+                        isFirstRowForQuotation &&
+                        isConfirmed &&
+                        !canUnconfirmQuotation ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled
+                            title="Purchase Import already saved — quotation cannot be unconfirmed"
+                            className="opacity-50 cursor-not-allowed"
+                          >
+                            Unconfirm
                           </Button>
                         ) : null}
                         <PrintPdfButton
@@ -7289,6 +7485,8 @@ const PurchaseQuotationTab = () => {
 const PurchaseReviseQuotationTab = () => {
   const [showRevisionForm, setShowRevisionForm] = useState(false);
   const [revisionQuotationId, setRevisionQuotationId] = useState<string | null>(null);
+  const [showConfirmForm, setShowConfirmForm] = useState(false);
+  const [confirmQuotationId, setConfirmQuotationId] = useState<string | null>(null);
   const [listRefreshKey, setListRefreshKey] = useState(0);
 
   if (showRevisionForm && revisionQuotationId) {
@@ -7308,32 +7506,6 @@ const PurchaseReviseQuotationTab = () => {
     );
   }
 
-  return (
-    <PurchaseQuotationListPanel
-      key={listRefreshKey}
-      view="open"
-      action="revise"
-      title="Purchase Quotations"
-      description="Review open supplier quotations and revise rates or quantities."
-      onRevise={(quotationId) => {
-        setRevisionQuotationId(quotationId);
-        setShowRevisionForm(true);
-      }}
-    />
-  );
-};
-
-const PurchaseConfirmQuotationTab = () => {
-  const [quotationView, setQuotationView] = useState<"open" | "confirmed">("open");
-  const [showConfirmForm, setShowConfirmForm] = useState(false);
-  const [confirmQuotationId, setConfirmQuotationId] = useState<string | null>(null);
-  const [listRefreshKey, setListRefreshKey] = useState(0);
-
-  const handleQuotationViewChange = (view: "open" | "confirmed") => {
-    setQuotationView(view);
-    setListRefreshKey((value) => value + 1);
-  };
-
   if (showConfirmForm && confirmQuotationId) {
     return (
       <PurchaseQuotationConfirmForm
@@ -7351,36 +7523,33 @@ const PurchaseConfirmQuotationTab = () => {
     );
   }
 
-  const isConfirmedView = quotationView === "confirmed";
-
   return (
-    <div className="space-y-4">
-      <Tabs
-        value={quotationView}
-        onValueChange={(value) => handleQuotationViewChange(value as "open" | "confirmed")}
-      >
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="open">Purchase Quotations</TabsTrigger>
-          <TabsTrigger value="confirmed">Confirmed Quotation</TabsTrigger>
-        </TabsList>
-      </Tabs>
+    <PurchaseQuotationListPanel
+      key={listRefreshKey}
+      view="open"
+      action="revise-confirm"
+      title="Revise & Confirm Quotation"
+      description="Review open supplier quotations. Revise rates or confirm to create purchase order(s). Unconfirm is available until Purchase Import is saved."
+      onRevise={(quotationId) => {
+        setRevisionQuotationId(quotationId);
+        setShowRevisionForm(true);
+      }}
+      onConfirm={(quotationId) => {
+        setConfirmQuotationId(quotationId);
+        setShowConfirmForm(true);
+      }}
+    />
+  );
+};
 
-      <PurchaseQuotationListPanel
-        key={`${quotationView}-${listRefreshKey}`}
-        view={quotationView}
-        action={isConfirmedView ? "none" : "confirm"}
-        title={isConfirmedView ? "Confirmed Quotation" : "Purchase Quotations"}
-        description={
-          isConfirmedView
-            ? "Confirmed quotations shown separately for ISB, KHI, and Other purchase orders."
-            : "Review supplier quotations. Confirming opens a form to set confirm quantities and create purchase order(s)."
-        }
-        onConfirm={(quotationId) => {
-          setConfirmQuotationId(quotationId);
-          setShowConfirmForm(true);
-        }}
-      />
-    </div>
+const PurchaseConfirmQuotationTab = () => {
+  return (
+    <PurchaseQuotationListPanel
+      view="confirmed"
+      action="none"
+      title="Confirmed Quotation"
+      description="Confirmed quotations shown separately for ISB, KHI, and Other purchase orders."
+    />
   );
 };
 
@@ -7390,6 +7559,37 @@ const isKhiConsignee = (consignee?: string | null) =>
 const isReceivedPurchaseOrder = (status?: string | null) =>
   String(status || "").trim().toLowerCase() === "received";
 
+const normalizeImportPurchaseOrderStatus = (status?: string | null) =>
+  String(status || "").trim().toLowerCase();
+
+const isPurchaseInvoicePendingStatus = (status?: string | null) =>
+  normalizeImportPurchaseOrderStatus(status) === "purchase invoice pending";
+
+const isStockReceivingPendingStatus = (status?: string | null) =>
+  normalizeImportPurchaseOrderStatus(status) === "stock receiving pending";
+
+/** Invoice has been saved at least once (locks further Purchase Import edits). */
+const isPurchaseInvoiceCreatedStatus = (status?: string | null) =>
+  isStockReceivingPendingStatus(status) || isReceivedPurchaseOrder(status);
+
+const isImportPurchaseOrderSaved = (order: {
+  importSaved?: boolean | null;
+  status?: string | null;
+}) =>
+  Boolean(order.importSaved) ||
+  isPurchaseInvoicePendingStatus(order.status) ||
+  isStockReceivingPendingStatus(order.status) ||
+  isReceivedPurchaseOrder(order.status);
+
+const formatImportPurchaseOrderStatus = (status?: string | null) => {
+  const normalized = normalizeImportPurchaseOrderStatus(status);
+  if (normalized === "purchase invoice pending") return "Purchase Invoice Pending";
+  if (normalized === "stock receiving pending") return "Stock Receiving Pending";
+  if (normalized === "received") return "Received";
+  if (normalized === "pending") return "Pending";
+  return String(status || "-");
+};
+
 const PurchaseOrderTab = ({
   mode = "purchase-order",
 }: {
@@ -7398,7 +7598,6 @@ const PurchaseOrderTab = ({
   const isInvoiceMode = mode === "purchase-invoice";
   const formTitle = isInvoiceMode ? "Purchase Invoice" : "Purchase Import";
   const formActionLabel = isInvoiceMode ? "Purchase Invoice" : "Purchase Import";
-  const saveLabel = isInvoiceMode ? "Save Purchase Invoice" : "Save Purchase Import";
   const { toast } = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -7414,6 +7613,8 @@ const PurchaseOrderTab = ({
   const [receiveOrderId, setReceiveOrderId] = useState<string | null>(null);
   const [receiveOrderLabel, setReceiveOrderLabel] = useState("");
   const [receiveDetail, setReceiveDetail] = useState<ImportPurchaseOrderReceiveDetail | null>(null);
+  const [receiveImportSaved, setReceiveImportSaved] = useState(false);
+  const [receiveOrderStatus, setReceiveOrderStatus] = useState<string>("");
   const [receiveLines, setReceiveLines] = useState<ImportPurchaseOrderReceiveLine[]>([]);
   const [receivePartOptions, setReceivePartOptions] = useState<PartOption[]>([]);
   const [loadingReceiveForm, setLoadingReceiveForm] = useState(false);
@@ -7464,6 +7665,8 @@ const PurchaseOrderTab = ({
     setReceiveLines([]);
     setReceivePartOptions([]);
     setReceiveDetail(null);
+    setReceiveImportSaved(false);
+    setReceiveOrderStatus("");
     setReceiveInvoiceNo("");
     setReceiveInvoiceDate("");
     setReceiveBlNo("");
@@ -7692,9 +7895,31 @@ const PurchaseOrderTab = ({
   };
 
   const openReceiveForm = async (order: ImportPurchaseOrderRecord) => {
+    const importSaved = isImportPurchaseOrderSaved(order);
+    if (!isInvoiceMode && isPurchaseInvoiceCreatedStatus(order.status)) {
+      toast({
+        title: "Purchase Import locked",
+        description:
+          "Purchase Invoice has already been saved. Purchase Import can no longer be edited.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (isInvoiceMode && !importSaved) {
+      toast({
+        title: "Purchase Import required",
+        description:
+          "Save the Purchase Import form at least once before opening Purchase Invoice.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setReceiveOrderId(order.id);
     setReceiveOrderLabel(order.poNumber || "");
     setReceiveDetail(null);
+    setReceiveImportSaved(importSaved);
+    setReceiveOrderStatus(String(order.status || ""));
     setReceiveLines([]);
     setReceiveInvoiceNo("");
     setReceiveInvoiceDate("");
@@ -7709,6 +7934,37 @@ const PurchaseOrderTab = ({
     try {
       const response = await apiClient.getImportPurchaseOrder(order.id);
       const orderData: any = (response as any)?.data || response;
+      const detailImportSaved = isImportPurchaseOrderSaved({
+        importSaved: orderData.importSaved,
+        status: orderData.status,
+      });
+      if (isInvoiceMode && !detailImportSaved) {
+        toast({
+          title: "Purchase Import required",
+          description:
+            "Save the Purchase Import form at least once before opening Purchase Invoice.",
+          variant: "destructive",
+        });
+        resetImportPurchaseForm();
+        setLoadingReceiveForm(false);
+        return;
+      }
+      if (
+        !isInvoiceMode &&
+        isPurchaseInvoiceCreatedStatus(orderData.status || order.status)
+      ) {
+        toast({
+          title: "Purchase Import locked",
+          description:
+            "Purchase Invoice has already been saved. Purchase Import can no longer be edited.",
+          variant: "destructive",
+        });
+        resetImportPurchaseForm();
+        setLoadingReceiveForm(false);
+        return;
+      }
+      setReceiveImportSaved(detailImportSaved);
+      setReceiveOrderStatus(String(orderData.status || order.status || ""));
       const initialConversionRate = Number(
         orderData.conversionRate ?? orderData.quotation?.conversionRate ?? 1,
       );
@@ -8181,8 +8437,26 @@ const PurchaseOrderTab = ({
     [receiveDistributedExpenses],
   );
 
+  const saveLabel = isInvoiceMode
+    ? isStockReceivingPendingStatus(receiveOrderStatus)
+      ? "Update Purchase Invoice"
+      : "Save Purchase Invoice"
+    : receiveImportSaved
+      ? "Update Purchase Import"
+      : "Save Purchase Import";
+
   const handleSaveReceive = async () => {
     if (!receiveOrderId || receiveLines.length === 0) return;
+
+    if (!isInvoiceMode && isPurchaseInvoiceCreatedStatus(receiveOrderStatus)) {
+      toast({
+        title: "Purchase Import locked",
+        description:
+          "Purchase Invoice has already been saved. Purchase Import can no longer be edited.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const incompleteNewLine = receiveLines.find(
       (line) => line.isNewRow && !String(line.partId || "").trim(),
@@ -8221,6 +8495,7 @@ const PurchaseOrderTab = ({
     setSavingReceive(true);
     try {
       await apiClient.receiveImportPurchaseOrder(receiveOrderId, {
+        stage: isInvoiceMode ? "invoice" : "import",
         conversionRate,
         invoiceNo: receiveInvoiceNo,
         invoiceDate: receiveInvoiceDate || undefined,
@@ -8249,8 +8524,8 @@ const PurchaseOrderTab = ({
       toast({
         title: isInvoiceMode ? "Purchase invoice saved" : "Purchase import saved",
         description: isInvoiceMode
-          ? `PO ${receiveOrderLabel} invoice and expense details saved.`
-          : `PO ${receiveOrderLabel} purchase import details saved. Complete stock receipt in Store when goods arrive.`,
+          ? `PO ${receiveOrderLabel} invoice saved. Status set to Stock Receiving Pending.`
+          : `PO ${receiveOrderLabel} purchase import saved. Status set to Purchase Invoice Pending.`,
       });
       resetImportPurchaseForm();
       await fetchOrders();
@@ -8320,7 +8595,7 @@ const PurchaseOrderTab = ({
               orders.map((row, index) => (
                 <tr key={row.id} className="border-b hover:bg-muted/20">
                   <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
-                    {getListRowNumber(index)}
+                    {getListRowNumber(index, currentPage, itemsPerPage, totalRecords)}
                   </td>
                   <td className="p-2">
                     {row.date ? new Date(row.date).toLocaleDateString() : "-"}
@@ -8349,7 +8624,7 @@ const PurchaseOrderTab = ({
                       maximumFractionDigits: 2,
                     })}
                   </td>
-                  <td className="p-2 capitalize">{row.status || "-"}</td>
+                  <td className="p-2">{formatImportPurchaseOrderStatus(row.status)}</td>
                   <td className="p-2 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <Button
@@ -8386,11 +8661,36 @@ const PurchaseOrderTab = ({
                           {deletingOrderId === row.id ? "Deleting..." : "Delete"}
                         </Button>
                       ) : null}
+                      {(() => {
+                        const importSaved = isImportPurchaseOrderSaved(row);
+                        const invoiceLocked = isInvoiceMode && !importSaved;
+                        const importLocked =
+                          !isInvoiceMode &&
+                          isPurchaseInvoiceCreatedStatus(row.status);
+                        const actionDisabled =
+                          isReceivedPurchaseOrder(row.status) ||
+                          invoiceLocked ||
+                          importLocked;
+                        const listActionLabel = isInvoiceMode
+                          ? isStockReceivingPendingStatus(row.status)
+                            ? "Update Purchase Invoice"
+                            : formActionLabel
+                          : importSaved
+                            ? "Update Purchase Import"
+                            : formActionLabel;
+                        return (
                       <Button
                         type="button"
                         size="sm"
                         variant="default"
-                        disabled={isReceivedPurchaseOrder(row.status)}
+                        disabled={actionDisabled}
+                        title={
+                          importLocked
+                            ? "Purchase Invoice already saved — Purchase Import is locked"
+                            : invoiceLocked
+                            ? "Save Purchase Import at least once before opening Purchase Invoice"
+                            : undefined
+                        }
                         onClick={() => openReceiveForm(row)}
                       >
                         {isInvoiceMode ? (
@@ -8398,8 +8698,10 @@ const PurchaseOrderTab = ({
                         ) : (
                           <PackageCheck className="w-3.5 h-3.5 mr-1" />
                         )}
-                        {formActionLabel}
+                        {listActionLabel}
                       </Button>
+                        );
+                      })()}
                       {isInvoiceMode &&
                       isReceivedPurchaseOrder(row.status) &&
                       isKhiConsignee(row.consignee) ? (
@@ -8453,7 +8755,7 @@ const PurchaseOrderTab = ({
                 </div>
                 <div>
                   <span className="text-muted-foreground">Status:</span>{" "}
-                  {viewOrder.status || "-"}
+                  {formatImportPurchaseOrderStatus(viewOrder.status)}
                 </div>
                 {viewOrder.consignee ? (
                   <div>
@@ -8562,18 +8864,10 @@ const PurchaseOrderTab = ({
                       <th className="text-right p-2">Received</th>
                       <th className="text-right p-2">From Back</th>
                       <th className="text-right p-2">Back</th>
-                      <th className="text-right p-2">
-                        {viewOrder.quotation?.isRevised ? "Revised FC Rate" : "FC Rate"}
-                      </th>
-                      <th className="text-right p-2">
-                        {viewOrder.quotation?.isRevised ? "Revised FC Amount" : "FC Amount"}
-                      </th>
-                      <th className="text-right p-2">
-                        {viewOrder.quotation?.isRevised ? "Revised LC Rate" : "LC Rate"}
-                      </th>
-                      <th className="text-right p-2">
-                        {viewOrder.quotation?.isRevised ? "Revised LC Amount" : "LC Amount"}
-                      </th>
+                      <th className="text-right p-2">FC Rate</th>
+                      <th className="text-right p-2">FC Amount</th>
+                      <th className="text-right p-2">LC Rate</th>
+                      <th className="text-right p-2">LC Amount</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -8757,7 +9051,6 @@ const PurchaseOrderTab = ({
                 {isInvoiceMode
                   ? "Enter supplier invoice quantities, rates, and expenses for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate."
                   : "Enter supplier invoice quantities and rates for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate. Enter packaging and discount below; other clearing expenses can be added from Purchase Invoice. Final stock receipt is completed from Store."}
-                {receiveDetail?.isRevised ? " Showing revised quotation values." : ""}
               </p>
               <div className="flex justify-end">
                 <Button
@@ -8778,40 +9071,38 @@ const PurchaseOrderTab = ({
                       <th className="text-left p-2 whitespace-nowrap">#</th>
                       <th className="text-left p-2 min-w-[220px]">Part</th>
                       <th className="text-left p-2">Brand</th>
-                      <th className="text-right p-2">Stock</th>
-                      <th className="text-right p-2">Ship Days</th>
-                      <th className="text-right p-2">Order Qty</th>
-                      <th className="text-right p-2">Receive Qty</th>
-                      <th className="text-right p-2">From Back Qty</th>
-                      <th className="text-right p-2">Back Qty</th>
+                      {!isInvoiceMode ? (
+                        <>
+                          <th className="text-right p-2">Stock</th>
+                          <th className="text-right p-2">Ship Days</th>
+                          <th className="text-right p-2">Order Qty</th>
+                        </>
+                      ) : null}
                       <th className="text-right p-2">
-                        {receiveDetail?.isRevised ? "Revised FC Rate" : "FC Rate"}
+                        {isInvoiceMode ? "Qty" : "Receive Qty"}
                       </th>
-                      <th className="text-right p-2">
-                        {receiveDetail?.isRevised ? "Revised FC Amount" : "FC Amount"}
-                      </th>
-                      <th className="text-right p-2">
-                        {receiveDetail?.isRevised ? "Revised LC Rate" : "LC Rate"}
-                      </th>
-                      <th className="text-right p-2">
-                        {receiveDetail?.isRevised ? "Revised LC Amount" : "LC Amount"}
-                      </th>
+                      {!isInvoiceMode ? (
+                        <>
+                          <th className="text-right p-2">From Back Qty</th>
+                          <th className="text-right p-2">Back Qty</th>
+                        </>
+                      ) : null}
+                      <th className="text-right p-2">FC Rate</th>
+                      <th className="text-right p-2">FC Amount</th>
+                      <th className="text-right p-2">LC Rate</th>
+                      <th className="text-right p-2">LC Amount</th>
                       {isInvoiceMode ? (
                         <>
                           <th className="text-right p-2">Unit Exp</th>
                           <th className="text-right p-2">Exp</th>
                           <th className="text-right p-2">Unit Cost</th>
                           <th className="text-right p-2">Cost</th>
-                        </>
-                      ) : null}
-                      <th className="text-right p-2">Weight</th>
-                      <th className="text-right p-2">Total Weight</th>
-                      {isInvoiceMode ? (
-                        <>
                           <th className="text-right p-2">Price A</th>
                           <th className="text-right p-2">Price B</th>
                         </>
                       ) : null}
+                      <th className="text-right p-2">Weight</th>
+                      <th className="text-right p-2">Total Weight</th>
                       <th className="text-center p-2 min-w-[70px]">Action</th>
                     </tr>
                   </thead>
@@ -8864,9 +9155,13 @@ const PurchaseOrderTab = ({
                           )}
                         </td>
                         <td className="p-2">{line.brand || "-"}</td>
-                        <td className="p-2 text-right tabular-nums">{line.currentStock}</td>
-                        <td className="p-2 text-right tabular-nums">{line.shipDays}</td>
-                        <td className="p-2 text-right tabular-nums">{line.orderQty}</td>
+                        {!isInvoiceMode ? (
+                          <>
+                            <td className="p-2 text-right tabular-nums">{line.currentStock}</td>
+                            <td className="p-2 text-right tabular-nums">{line.shipDays}</td>
+                            <td className="p-2 text-right tabular-nums">{line.orderQty}</td>
+                          </>
+                        ) : null}
                         <td className="p-2 text-right">
                           <Input
                             type="number"
@@ -8879,12 +9174,16 @@ const PurchaseOrderTab = ({
                             className="h-8 w-24 ml-auto text-right"
                           />
                         </td>
-                        <td className="p-2 text-right text-amber-700 dark:text-amber-400 tabular-nums">
-                          {line.additionalQty > 0 ? line.additionalQty : "-"}
-                        </td>
-                        <td className="p-2 text-right text-rose-700 dark:text-rose-400 tabular-nums">
-                          {line.backQty > 0 ? line.backQty : "-"}
-                        </td>
+                        {!isInvoiceMode ? (
+                          <>
+                            <td className="p-2 text-right text-amber-700 dark:text-amber-400 tabular-nums">
+                              {line.additionalQty > 0 ? line.additionalQty : "-"}
+                            </td>
+                            <td className="p-2 text-right text-rose-700 dark:text-rose-400 tabular-nums">
+                              {line.backQty > 0 ? line.backQty : "-"}
+                            </td>
+                          </>
+                        ) : null}
                         <td className="p-2 text-right">
                           <Input
                             type="text"
@@ -8934,18 +9233,6 @@ const PurchaseOrderTab = ({
                                 maximumFractionDigits: 2,
                               })}
                             </td>
-                          </>
-                        ) : null}
-                        <td className="p-2 text-right tabular-nums">
-                          {line.weight > 0 ? line.weight.toFixed(4) : "-"}
-                        </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {lineAmounts.totalWeight > 0
-                            ? lineAmounts.totalWeight.toFixed(4)
-                            : "-"}
-                        </td>
-                        {isInvoiceMode ? (
-                          <>
                             <td className="p-2 text-right">
                               <Input
                                 type="text"
@@ -8980,6 +9267,14 @@ const PurchaseOrderTab = ({
                             </td>
                           </>
                         ) : null}
+                        <td className="p-2 text-right tabular-nums">
+                          {line.weight > 0 ? line.weight.toFixed(4) : "-"}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {lineAmounts.totalWeight > 0
+                            ? lineAmounts.totalWeight.toFixed(4)
+                            : "-"}
+                        </td>
                         <td className="p-2 text-center">
                           {line.isNewRow ? (
                             <Button
@@ -8997,7 +9292,7 @@ const PurchaseOrderTab = ({
                           )}
                         </td>
                       </tr>
-                    );
+                      );
                     })}
                   </tbody>
                   {receiveLines.length > 0 ? (
@@ -9005,24 +9300,20 @@ const PurchaseOrderTab = ({
                       <tr className="bg-muted/40 font-semibold border-t">
                         <td className="p-2" />
                         <td className="p-2">Totals</td>
-                        <td className="p-2" colSpan={3} />
-                        <td className="p-2 text-right tabular-nums">
-                          {receiveTotals.orderQty}
-                        </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {receiveTotals.receiveQty}
-                        </td>
-                        <td className="p-2" colSpan={2} />
-                        <td className="p-2" />
-                        <td className="p-2 text-right tabular-nums">
-                          {receiveTotals.fcAmount.toFixed(2)}
-                        </td>
-                        <td className="p-2" />
-                        <td className="p-2 text-right tabular-nums">
-                          {receiveTotals.lcAmount.toFixed(2)}
-                        </td>
                         {isInvoiceMode ? (
                           <>
+                            <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.receiveQty}
+                            </td>
+                            <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.fcAmount.toFixed(2)}
+                            </td>
+                            <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.lcAmount.toFixed(2)}
+                            </td>
                             <td className="p-2" />
                             <td className="p-2 text-right tabular-nums">
                               {importPoTotalExp > 0
@@ -9042,19 +9333,39 @@ const PurchaseOrderTab = ({
                                 maximumFractionDigits: 2,
                               })}
                             </td>
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.totalWeight.toFixed(4)}
+                            </td>
+                            <td className="p-2" />
                           </>
-                        ) : null}
-                        <td className="p-2" />
-                        <td className="p-2 text-right tabular-nums">
-                          {receiveTotals.totalWeight.toFixed(4)}
-                        </td>
-                        {isInvoiceMode ? (
+                        ) : (
                           <>
+                            <td className="p-2" colSpan={3} />
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.orderQty}
+                            </td>
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.receiveQty}
+                            </td>
+                            <td className="p-2" colSpan={2} />
                             <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.fcAmount.toFixed(2)}
+                            </td>
+                            <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.lcAmount.toFixed(2)}
+                            </td>
+                            <td className="p-2" />
+                            <td className="p-2 text-right tabular-nums">
+                              {receiveTotals.totalWeight.toFixed(4)}
+                            </td>
                             <td className="p-2" />
                           </>
-                        ) : null}
-                        <td className="p-2" />
+                        )}
                       </tr>
                     </tfoot>
                   ) : null}
@@ -9195,7 +9506,13 @@ const PurchaseOrderTab = ({
             </Button>
             <Button
               type="button"
-              disabled={loadingReceiveForm || savingReceive || receiveLines.length === 0}
+              disabled={
+                loadingReceiveForm ||
+                savingReceive ||
+                receiveLines.length === 0 ||
+                (!isInvoiceMode &&
+                  isPurchaseInvoiceCreatedStatus(receiveOrderStatus))
+              }
               onClick={() => void handleSaveReceive()}
             >
               {savingReceive ? "Saving..." : saveLabel}

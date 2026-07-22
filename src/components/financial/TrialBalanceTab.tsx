@@ -349,7 +349,7 @@ export const TrialBalanceTab = () => {
                         {/* Account Rows under Subgroup */}
                         {subgroup.accounts.map((account, accIdx) => (
                           <TableRow key={`${account.accountId}-${accIdx}`} className="hover:bg-muted/30">
-                            <ListNumberCell index={accIdx} />
+                            <ListNumberCell index={accIdx} total={subgroup.accounts.length} />
                             <TableCell className="pl-8 text-sm">
                               {account.label}
                             </TableCell>

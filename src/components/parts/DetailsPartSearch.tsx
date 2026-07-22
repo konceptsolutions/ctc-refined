@@ -460,6 +460,7 @@ export const DetailsPartSearch = () => {
                                                     index={index}
                                                     page={currentPage}
                                                     pageSize={itemsPerPage}
+                                                    total={filteredItems.length}
                                                     className="px-2 py-1 text-xs border-r"
                                                 />
                                                 <TableCell className="px-2 py-1 text-xs font-medium border-r part-code-font font-mono">{item.partNo}</TableCell>
@@ -564,7 +565,7 @@ export const DetailsPartSearch = () => {
                                     ) : (
                                         history.map((h, index) => (
                                             <TableRow key={h.id} className="hover:bg-muted/20">
-                                                <ListNumberCell index={index} className="px-2 py-0.5 text-[10px] border-r" />
+                                                <ListNumberCell index={index} total={history.length} className="px-2 py-0.5 text-[10px] border-r" />
                                                 <TableCell className="px-2 py-0.5 text-[10px] border-r">{h.date}</TableCell>
                                                 <TableCell className="px-2 py-0.5 text-[10px] border-r">{h.brand}</TableCell>
                                                 <TableCell className="px-2 py-0.5 text-[10px] border-r">{h.mainCategory}</TableCell>

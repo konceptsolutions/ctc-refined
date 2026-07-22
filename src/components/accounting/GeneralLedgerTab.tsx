@@ -310,7 +310,7 @@ export const GeneralLedgerTab = () => {
                               className="transition-colors hover:bg-muted/30"
                               style={{ animationDelay: `${index * 50} ms` }}
                             >
-                              <ListNumberCell index={index} />
+                              <ListNumberCell index={index} total={account.transactions.length} />
                               <TableCell>{txn.date}</TableCell>
                               <TableCell className="text-primary">{txn.journalNo}</TableCell>
                               <TableCell>{txn.reference}</TableCell>

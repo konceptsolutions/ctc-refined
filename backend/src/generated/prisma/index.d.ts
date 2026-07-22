@@ -46801,9 +46801,11 @@ export namespace Prisma {
     incomeTax: number | null
     ed: number | null
     doAmount: number | null
+    crnExp: number | null
+    cmExp: number | null
+    agencyExp: number | null
     miscExp: number | null
     locFrt: number | null
-    crnExp: number | null
     totalExp: number | null
     totalAmount: number | null
   }
@@ -46823,9 +46825,11 @@ export namespace Prisma {
     incomeTax: number | null
     ed: number | null
     doAmount: number | null
+    crnExp: number | null
+    cmExp: number | null
+    agencyExp: number | null
     miscExp: number | null
     locFrt: number | null
-    crnExp: number | null
     totalExp: number | null
     totalAmount: number | null
   }
@@ -46857,9 +46861,11 @@ export namespace Prisma {
     incomeTax: number | null
     ed: number | null
     doAmount: number | null
+    crnExp: number | null
+    cmExp: number | null
+    agencyExp: number | null
     miscExp: number | null
     locFrt: number | null
-    crnExp: number | null
     totalExp: number | null
     status: string | null
     expectedDate: Date | null
@@ -46896,9 +46902,11 @@ export namespace Prisma {
     incomeTax: number | null
     ed: number | null
     doAmount: number | null
+    crnExp: number | null
+    cmExp: number | null
+    agencyExp: number | null
     miscExp: number | null
     locFrt: number | null
-    crnExp: number | null
     totalExp: number | null
     status: string | null
     expectedDate: Date | null
@@ -46935,9 +46943,11 @@ export namespace Prisma {
     incomeTax: number
     ed: number
     doAmount: number
+    crnExp: number
+    cmExp: number
+    agencyExp: number
     miscExp: number
     locFrt: number
-    crnExp: number
     totalExp: number
     status: number
     expectedDate: number
@@ -46964,9 +46974,11 @@ export namespace Prisma {
     incomeTax?: true
     ed?: true
     doAmount?: true
+    crnExp?: true
+    cmExp?: true
+    agencyExp?: true
     miscExp?: true
     locFrt?: true
-    crnExp?: true
     totalExp?: true
     totalAmount?: true
   }
@@ -46986,9 +46998,11 @@ export namespace Prisma {
     incomeTax?: true
     ed?: true
     doAmount?: true
+    crnExp?: true
+    cmExp?: true
+    agencyExp?: true
     miscExp?: true
     locFrt?: true
-    crnExp?: true
     totalExp?: true
     totalAmount?: true
   }
@@ -47020,9 +47034,11 @@ export namespace Prisma {
     incomeTax?: true
     ed?: true
     doAmount?: true
+    crnExp?: true
+    cmExp?: true
+    agencyExp?: true
     miscExp?: true
     locFrt?: true
-    crnExp?: true
     totalExp?: true
     status?: true
     expectedDate?: true
@@ -47059,9 +47075,11 @@ export namespace Prisma {
     incomeTax?: true
     ed?: true
     doAmount?: true
+    crnExp?: true
+    cmExp?: true
+    agencyExp?: true
     miscExp?: true
     locFrt?: true
-    crnExp?: true
     totalExp?: true
     status?: true
     expectedDate?: true
@@ -47098,9 +47116,11 @@ export namespace Prisma {
     incomeTax?: true
     ed?: true
     doAmount?: true
+    crnExp?: true
+    cmExp?: true
+    agencyExp?: true
     miscExp?: true
     locFrt?: true
-    crnExp?: true
     totalExp?: true
     status?: true
     expectedDate?: true
@@ -47224,9 +47244,11 @@ export namespace Prisma {
     incomeTax: number
     ed: number
     doAmount: number
+    crnExp: number
+    cmExp: number
+    agencyExp: number
     miscExp: number
     locFrt: number
-    crnExp: number
     totalExp: number
     status: string
     expectedDate: Date | null
@@ -47282,9 +47304,11 @@ export namespace Prisma {
     incomeTax?: boolean
     ed?: boolean
     doAmount?: boolean
+    crnExp?: boolean
+    cmExp?: boolean
+    agencyExp?: boolean
     miscExp?: boolean
     locFrt?: boolean
-    crnExp?: boolean
     totalExp?: boolean
     status?: boolean
     expectedDate?: boolean
@@ -47325,9 +47349,11 @@ export namespace Prisma {
     incomeTax?: boolean
     ed?: boolean
     doAmount?: boolean
+    crnExp?: boolean
+    cmExp?: boolean
+    agencyExp?: boolean
     miscExp?: boolean
     locFrt?: boolean
-    crnExp?: boolean
     totalExp?: boolean
     status?: boolean
     expectedDate?: boolean
@@ -47366,9 +47392,11 @@ export namespace Prisma {
     incomeTax?: boolean
     ed?: boolean
     doAmount?: boolean
+    crnExp?: boolean
+    cmExp?: boolean
+    agencyExp?: boolean
     miscExp?: boolean
     locFrt?: boolean
-    crnExp?: boolean
     totalExp?: boolean
     status?: boolean
     expectedDate?: boolean
@@ -47423,9 +47451,11 @@ export namespace Prisma {
       incomeTax: number
       ed: number
       doAmount: number
+      crnExp: number
+      cmExp: number
+      agencyExp: number
       miscExp: number
       locFrt: number
-      crnExp: number
       totalExp: number
       status: string
       expectedDate: Date | null
@@ -47855,9 +47885,11 @@ export namespace Prisma {
     readonly incomeTax: FieldRef<"PurchaseOrder", 'Float'>
     readonly ed: FieldRef<"PurchaseOrder", 'Float'>
     readonly doAmount: FieldRef<"PurchaseOrder", 'Float'>
+    readonly crnExp: FieldRef<"PurchaseOrder", 'Float'>
+    readonly cmExp: FieldRef<"PurchaseOrder", 'Float'>
+    readonly agencyExp: FieldRef<"PurchaseOrder", 'Float'>
     readonly miscExp: FieldRef<"PurchaseOrder", 'Float'>
     readonly locFrt: FieldRef<"PurchaseOrder", 'Float'>
-    readonly crnExp: FieldRef<"PurchaseOrder", 'Float'>
     readonly totalExp: FieldRef<"PurchaseOrder", 'Float'>
     readonly status: FieldRef<"PurchaseOrder", 'String'>
     readonly expectedDate: FieldRef<"PurchaseOrder", 'DateTime'>
@@ -81786,9 +81818,11 @@ export namespace Prisma {
     incomeTax: 'incomeTax',
     ed: 'ed',
     doAmount: 'doAmount',
+    crnExp: 'crnExp',
+    cmExp: 'cmExp',
+    agencyExp: 'agencyExp',
     miscExp: 'miscExp',
     locFrt: 'locFrt',
-    crnExp: 'crnExp',
     totalExp: 'totalExp',
     status: 'status',
     expectedDate: 'expectedDate',
@@ -85831,9 +85865,11 @@ export namespace Prisma {
     incomeTax?: FloatFilter<"PurchaseOrder"> | number
     ed?: FloatFilter<"PurchaseOrder"> | number
     doAmount?: FloatFilter<"PurchaseOrder"> | number
+    crnExp?: FloatFilter<"PurchaseOrder"> | number
+    cmExp?: FloatFilter<"PurchaseOrder"> | number
+    agencyExp?: FloatFilter<"PurchaseOrder"> | number
     miscExp?: FloatFilter<"PurchaseOrder"> | number
     locFrt?: FloatFilter<"PurchaseOrder"> | number
-    crnExp?: FloatFilter<"PurchaseOrder"> | number
     totalExp?: FloatFilter<"PurchaseOrder"> | number
     status?: StringFilter<"PurchaseOrder"> | string
     expectedDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
@@ -85873,9 +85909,11 @@ export namespace Prisma {
     incomeTax?: SortOrder
     ed?: SortOrder
     doAmount?: SortOrder
+    crnExp?: SortOrder
+    cmExp?: SortOrder
+    agencyExp?: SortOrder
     miscExp?: SortOrder
     locFrt?: SortOrder
-    crnExp?: SortOrder
     totalExp?: SortOrder
     status?: SortOrder
     expectedDate?: SortOrderInput | SortOrder
@@ -85918,9 +85956,11 @@ export namespace Prisma {
     incomeTax?: FloatFilter<"PurchaseOrder"> | number
     ed?: FloatFilter<"PurchaseOrder"> | number
     doAmount?: FloatFilter<"PurchaseOrder"> | number
+    crnExp?: FloatFilter<"PurchaseOrder"> | number
+    cmExp?: FloatFilter<"PurchaseOrder"> | number
+    agencyExp?: FloatFilter<"PurchaseOrder"> | number
     miscExp?: FloatFilter<"PurchaseOrder"> | number
     locFrt?: FloatFilter<"PurchaseOrder"> | number
-    crnExp?: FloatFilter<"PurchaseOrder"> | number
     totalExp?: FloatFilter<"PurchaseOrder"> | number
     status?: StringFilter<"PurchaseOrder"> | string
     expectedDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
@@ -85960,9 +86000,11 @@ export namespace Prisma {
     incomeTax?: SortOrder
     ed?: SortOrder
     doAmount?: SortOrder
+    crnExp?: SortOrder
+    cmExp?: SortOrder
+    agencyExp?: SortOrder
     miscExp?: SortOrder
     locFrt?: SortOrder
-    crnExp?: SortOrder
     totalExp?: SortOrder
     status?: SortOrder
     expectedDate?: SortOrderInput | SortOrder
@@ -86007,9 +86049,11 @@ export namespace Prisma {
     incomeTax?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     ed?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     doAmount?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
+    crnExp?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
+    cmExp?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
+    agencyExp?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     miscExp?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     locFrt?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
-    crnExp?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     totalExp?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     status?: StringWithAggregatesFilter<"PurchaseOrder"> | string
     expectedDate?: DateTimeNullableWithAggregatesFilter<"PurchaseOrder"> | Date | string | null
@@ -92850,9 +92894,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -92892,9 +92938,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -92930,9 +92978,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -92972,9 +93022,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -93012,9 +93064,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -93049,9 +93103,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -93088,9 +93144,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -99133,9 +99191,11 @@ export namespace Prisma {
     incomeTax?: SortOrder
     ed?: SortOrder
     doAmount?: SortOrder
+    crnExp?: SortOrder
+    cmExp?: SortOrder
+    agencyExp?: SortOrder
     miscExp?: SortOrder
     locFrt?: SortOrder
-    crnExp?: SortOrder
     totalExp?: SortOrder
     status?: SortOrder
     expectedDate?: SortOrder
@@ -99160,9 +99220,11 @@ export namespace Prisma {
     incomeTax?: SortOrder
     ed?: SortOrder
     doAmount?: SortOrder
+    crnExp?: SortOrder
+    cmExp?: SortOrder
+    agencyExp?: SortOrder
     miscExp?: SortOrder
     locFrt?: SortOrder
-    crnExp?: SortOrder
     totalExp?: SortOrder
     totalAmount?: SortOrder
   }
@@ -99194,9 +99256,11 @@ export namespace Prisma {
     incomeTax?: SortOrder
     ed?: SortOrder
     doAmount?: SortOrder
+    crnExp?: SortOrder
+    cmExp?: SortOrder
+    agencyExp?: SortOrder
     miscExp?: SortOrder
     locFrt?: SortOrder
-    crnExp?: SortOrder
     totalExp?: SortOrder
     status?: SortOrder
     expectedDate?: SortOrder
@@ -99233,9 +99297,11 @@ export namespace Prisma {
     incomeTax?: SortOrder
     ed?: SortOrder
     doAmount?: SortOrder
+    crnExp?: SortOrder
+    cmExp?: SortOrder
+    agencyExp?: SortOrder
     miscExp?: SortOrder
     locFrt?: SortOrder
-    crnExp?: SortOrder
     totalExp?: SortOrder
     status?: SortOrder
     expectedDate?: SortOrder
@@ -99260,9 +99326,11 @@ export namespace Prisma {
     incomeTax?: SortOrder
     ed?: SortOrder
     doAmount?: SortOrder
+    crnExp?: SortOrder
+    cmExp?: SortOrder
+    agencyExp?: SortOrder
     miscExp?: SortOrder
     locFrt?: SortOrder
-    crnExp?: SortOrder
     totalExp?: SortOrder
     totalAmount?: SortOrder
   }
@@ -117282,9 +117350,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -117322,9 +117392,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -117541,9 +117613,11 @@ export namespace Prisma {
     incomeTax?: FloatFilter<"PurchaseOrder"> | number
     ed?: FloatFilter<"PurchaseOrder"> | number
     doAmount?: FloatFilter<"PurchaseOrder"> | number
+    crnExp?: FloatFilter<"PurchaseOrder"> | number
+    cmExp?: FloatFilter<"PurchaseOrder"> | number
+    agencyExp?: FloatFilter<"PurchaseOrder"> | number
     miscExp?: FloatFilter<"PurchaseOrder"> | number
     locFrt?: FloatFilter<"PurchaseOrder"> | number
-    crnExp?: FloatFilter<"PurchaseOrder"> | number
     totalExp?: FloatFilter<"PurchaseOrder"> | number
     status?: StringFilter<"PurchaseOrder"> | string
     expectedDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
@@ -118645,9 +118719,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -118686,9 +118762,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -118852,9 +118930,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -118893,9 +118973,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -127718,9 +127800,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -127758,9 +127842,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -135329,9 +135415,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -135426,9 +135514,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -135466,9 +135556,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -135505,9 +135597,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -138550,9 +138644,11 @@ export namespace Prisma {
     incomeTax?: number
     ed?: number
     doAmount?: number
+    crnExp?: number
+    cmExp?: number
+    agencyExp?: number
     miscExp?: number
     locFrt?: number
-    crnExp?: number
     totalExp?: number
     status?: string
     expectedDate?: Date | string | null
@@ -138820,9 +138916,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -138860,9 +138958,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -138899,9 +138999,11 @@ export namespace Prisma {
     incomeTax?: FloatFieldUpdateOperationsInput | number
     ed?: FloatFieldUpdateOperationsInput | number
     doAmount?: FloatFieldUpdateOperationsInput | number
+    crnExp?: FloatFieldUpdateOperationsInput | number
+    cmExp?: FloatFieldUpdateOperationsInput | number
+    agencyExp?: FloatFieldUpdateOperationsInput | number
     miscExp?: FloatFieldUpdateOperationsInput | number
     locFrt?: FloatFieldUpdateOperationsInput | number
-    crnExp?: FloatFieldUpdateOperationsInput | number
     totalExp?: FloatFieldUpdateOperationsInput | number
     status?: StringFieldUpdateOperationsInput | string
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null

@@ -849,7 +849,7 @@ export const AccountsTab = () => {
                         }`}
                     >
                       <td className={`p-3 ${LIST_NUMBER_CELL_CLASS}`}>
-                        {getListRowNumber(index, currentPage, parseInt(pageSize))}
+                        {getListRowNumber(index, currentPage, parseInt(pageSize), filteredAccounts.length)}
                       </td>
                       <td className="p-3">
                         <Checkbox

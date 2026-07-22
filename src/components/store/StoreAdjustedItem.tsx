@@ -311,7 +311,7 @@ export const StoreAdjustedItem = ({
 
                       return (
                         <TableRow key={item.id}>
-                          <ListNumberCell index={index} />
+                          <ListNumberCell index={index} total={adjustment.items.length} />
                           <TableCell className="font-medium">{item.part_no}</TableCell>
                           <TableCell className="max-w-[200px] truncate">
                             {item.part_description || "-"}

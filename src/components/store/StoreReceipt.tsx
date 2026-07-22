@@ -183,7 +183,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
                   {order.items && order.items.length > 0 ? (
                     order.items.map((item, index) => (
                       <TableRow key={item.id} className="h-12">
-                        <ListNumberCell index={index} />
+                        <ListNumberCell index={index} total={order.items.length} />
                         <TableCell className="font-medium align-middle">{item.partNo}</TableCell>
                         <TableCell className="align-middle">{item.description || "-"}</TableCell>
                         <TableCell className="align-middle">{item.brand}</TableCell>

@@ -206,7 +206,7 @@ const SalesByTypeTab = () => {
               ) : (
                 salesData.map((row, index) => (
                   <TableRow key={row.type}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={salesData.length} />
                     <TableCell className="font-medium">{row.type}</TableCell>
                     <TableCell className="text-center">{row.transactions}</TableCell>
                     <TableCell className="text-right">Rs {row.totalAmount.toLocaleString()}</TableCell>

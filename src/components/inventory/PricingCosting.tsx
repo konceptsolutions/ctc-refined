@@ -2156,7 +2156,7 @@ export const PricingCosting = () => {
                             className={item.modified ? "bg-warning/5" : ""}
                             data-part-id={item.id}
                           >
-                            <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
+                            <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} total={sortedItems.length} />
                             <TableCell>
                               <Checkbox
                                 checked={item.selected}
@@ -2705,7 +2705,7 @@ export const PricingCosting = () => {
 
                         return (
                           <TableRow key={item.id}>
-                            <ListNumberCell index={index} page={profitabilityPage} pageSize={profitabilityItemsPerPage} />
+                            <ListNumberCell index={index} page={profitabilityPage} pageSize={profitabilityItemsPerPage} total={profitabilityFilteredItems.length} />
                             <TableCell className="font-medium part-code-font font-mono">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span>{item.partNo}</span>

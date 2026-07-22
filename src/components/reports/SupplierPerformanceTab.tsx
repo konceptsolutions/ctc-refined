@@ -283,7 +283,7 @@ const SupplierPerformanceTab = () => {
             <TableBody>
               {supplierData.map((row, index) => (
                 <TableRow key={row.id}>
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={supplierData.length} />
                   <TableCell className="font-medium">{row.supplier}</TableCell>
                   <TableCell className="text-center">{row.totalOrders}</TableCell>
                   <TableCell className="text-right">Rs {row.totalValue.toLocaleString()}</TableCell>

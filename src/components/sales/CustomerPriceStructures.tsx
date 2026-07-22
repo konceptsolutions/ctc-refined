@@ -751,7 +751,7 @@ export const CustomerPriceStructures = () => {
                 ) : (
                   filteredStructures.map((item, index) => (
                     <TableRow key={item.id}>
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={filteredStructures.length} />
                       <TableCell className="font-medium">{item.customerName}</TableCell>
                       <TableCell>
                         <Badge className={`${getTypeColor(item.customerType)} border`}>

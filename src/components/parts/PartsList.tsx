@@ -137,6 +137,7 @@ export const PartsList = ({
                   index={index}
                   page={currentPage}
                   pageSize={ITEMS_PER_PAGE}
+                  total={filteredParts.length}
                 />
                 <TableCell className="font-medium text-foreground text-xs py-1.5 part-code-font font-mono">
                   {part.partNo}

@@ -159,7 +159,7 @@ const LineItemsTable = ({ items }: { items: ActivityLineItem[] }) => (
         ) : (
           items.map((item, index) => (
             <TableRow key={`${item.partNo}-${index}`}>
-              <ListNumberCell index={index} />
+              <ListNumberCell index={index} total={items.length} />
               <TableCell className="font-medium whitespace-nowrap">{item.partNo || "—"}</TableCell>
               <TableCell className="max-w-[240px] truncate" title={item.description}>
                 {item.description || "—"}

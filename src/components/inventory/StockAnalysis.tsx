@@ -550,6 +550,7 @@ export const StockAnalysis = () => {
                       index={index}
                       page={currentPage}
                       pageSize={itemsPerPage}
+                      total={filteredItems.length}
                     />
                     <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>

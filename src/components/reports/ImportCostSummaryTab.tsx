@@ -235,7 +235,7 @@ const ImportCostSummaryTab = () => {
               ) : (
                 importData.map((record, index) => (
                   <TableRow key={record.id}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={importData.length} />
                     <TableCell>{record.date}</TableCell>
                     <TableCell className="font-medium text-primary">{record.lcNumber}</TableCell>
                     <TableCell>{record.supplier}</TableCell>

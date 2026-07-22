@@ -559,7 +559,7 @@ export const MultiDimensionalReport = () => {
               <TableBody>
                 {sortedData.map((row, index) => (
                   <TableRow key={row.id} className="hover:bg-muted/20">
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={sortedData.length} />
                     <TableCell className="text-sm font-medium text-foreground pl-4">{row.dimension}</TableCell>
                     <TableCell className="text-sm text-muted-foreground text-center">{row.items}</TableCell>
                     <TableCell className="text-sm font-semibold text-foreground text-center">{row.quantity}</TableCell>

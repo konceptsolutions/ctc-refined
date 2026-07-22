@@ -346,7 +346,7 @@ export const LoanAdvanceManagement = () => {
                 ) : (
                   transactions.map((row, index) => (
                     <TableRow key={row.id}>
-                      <ListNumberCell index={index} page={currentPage} pageSize={rowsPerPage} />
+                      <ListNumberCell index={index} page={currentPage} pageSize={rowsPerPage} total={totalRecords} />
                       <TableCell>{formatDate(row.date)}</TableCell>
                       <TableCell>
                         <div className="font-medium">{row.Employee?.name || "—"}</div>

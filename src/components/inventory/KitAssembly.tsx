@@ -324,7 +324,7 @@ export const KitAssembly = () => {
               <TableBody>
                 {operations.map((op, index) => (
                   <TableRow key={op.id} className="hover:bg-muted/20 transition-colors">
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={operations.length} />
                     <TableCell className="text-sm text-muted-foreground">{op.date}</TableCell>
                     <TableCell className="text-sm font-medium text-foreground">{op.kitNo}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{op.kitName}</TableCell>

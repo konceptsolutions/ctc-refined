@@ -453,7 +453,7 @@ export const InternationalSupplierLedgersTab = () => {
                 <>
                   {entries.map((entry, index) => (
                     <TableRow key={entry.id} className="hover:bg-muted/30">
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={entries.length} />
                       <TableCell>
                         <Checkbox
                           checked={selectedEntries.includes(entry.id)}

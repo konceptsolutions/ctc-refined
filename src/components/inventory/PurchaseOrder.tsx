@@ -1911,6 +1911,7 @@ export const PurchaseOrder = () => {
                     index={index}
                     page={currentPage}
                     pageSize={itemsPerPage}
+                    total={filteredOrders.length}
                   />
                   <TableCell>
                     <Checkbox />

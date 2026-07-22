@@ -300,7 +300,7 @@ export const PaymentAccountsTab = () => {
               <TableBody>
                 {accounts.map((account, index) => (
                   <TableRow key={account.id}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={accounts.length} />
                     <TableCell className="font-medium">{account.name}</TableCell>
                     <TableCell>
                       <Badge

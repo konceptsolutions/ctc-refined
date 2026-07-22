@@ -627,7 +627,7 @@ export const StockPriceManagement = () => {
                         item.isModified && "bg-green-50/50"
                       )}
                     >
-                      <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
+                      <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} total={filteredItems.length} />
                       <TableCell>
                         <Checkbox
                           checked={selectedIds.has(item.id)}
@@ -746,7 +746,7 @@ export const StockPriceManagement = () => {
               ) : (
                 history.map((item, index) => (
                 <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={history.length} />
                   <TableCell className="text-sm text-foreground">{item.date}</TableCell>
                   <TableCell className="text-sm font-medium text-center text-primary">{item.itemsUpdated}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{item.priceField}</TableCell>

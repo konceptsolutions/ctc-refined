@@ -512,7 +512,7 @@ export const InventoryDashboard = () => {
                 <TableBody>
                   {topItemsByValue.map((item, index) => (
                     <TableRow key={item.id} className="hover:bg-muted/50">
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={topItemsByValue.length} />
                       <TableCell className="text-xs font-medium">{item.partNo}</TableCell>
                       <TableCell className="text-xs truncate max-w-[120px]">{item.name}</TableCell>
                       <TableCell className="text-xs">{item.brand}</TableCell>
@@ -549,7 +549,7 @@ export const InventoryDashboard = () => {
                 <TableBody>
                   {topItemsByQty.map((item, index) => (
                     <TableRow key={item.id} className="hover:bg-muted/50">
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={topItemsByQty.length} />
                       <TableCell className="text-xs font-medium">{item.partNo}</TableCell>
                       <TableCell className="text-xs truncate max-w-[120px]">{item.name}</TableCell>
                       <TableCell className="text-xs">{item.brand}</TableCell>
@@ -588,7 +588,7 @@ export const InventoryDashboard = () => {
               <TableBody>
                 {storeDistribution.map((store, index) => (
                   <TableRow key={index}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={storeDistribution.length} />
                     <TableCell className="font-medium">{store.store}</TableCell>
                     <TableCell className="text-center">{store.items}</TableCell>
                     <TableCell className="text-center font-medium">{store.qty}</TableCell>

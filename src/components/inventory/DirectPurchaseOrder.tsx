@@ -2046,6 +2046,7 @@ export const DirectPurchaseOrder = ({
                           index={index}
                           page={currentPage}
                           pageSize={itemsPerPage}
+                          total={totalRecords}
                         />
                         <TableCell className="font-medium">{order.dpoNo}</TableCell>
                         <TableCell>{order.invoiceNo || "-"}</TableCell>
@@ -2678,7 +2679,7 @@ export const DirectPurchaseOrder = ({
                                     selectedHistoryRowId === item.id && "bg-muted/40",
                                   )}
                                 >
-                                  <ListNumberCell index={index} />
+                                  <ListNumberCell index={index} total={formItems.length} />
                                   <TableCell>
                                     <SearchableSelect
                                       options={partSelectOptions}
@@ -3222,7 +3223,7 @@ export const DirectPurchaseOrder = ({
                     <TableBody>
                       {selectedOrder.items.map((item, index) => (
                         <TableRow key={item.id} className="hover:bg-muted/30">
-                          <ListNumberCell index={index} />
+                          <ListNumberCell index={index} total={selectedOrder.items.length} />
                           <TableCell className="font-medium">
                             {item.partNo}
                             {item.returnedQuantity > 0 && (

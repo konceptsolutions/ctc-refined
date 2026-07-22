@@ -316,7 +316,7 @@ export const StockAccountsIntegration = () => {
               <TableBody>
                 {logs.map((log, index) => (
                   <TableRow key={log.id}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={logs.length} />
                     <TableCell className="text-sm">{log.timestamp}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">

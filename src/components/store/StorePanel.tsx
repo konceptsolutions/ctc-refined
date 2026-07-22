@@ -392,6 +392,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [selectedPurchaseOrder, setSelectedPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [selectedPurchaseOrderFull, setSelectedPurchaseOrderFull] = useState<any>(null);
   const [receivingOrderType, setReceivingOrderType] = useState<"dpo" | "po" | null>(null);
+  const [receiveDate, setReceiveDate] = useState("");
   const [deleteOrderType, setDeleteOrderType] = useState<"dpo" | "po" | null>(null);
   const [selectedStockOutOrder, setSelectedStockOutOrder] = useState<StockOutOrder | null>(null);
   const [stockOutReceiptOpen, setStockOutReceiptOpen] = useState(false);
@@ -1320,11 +1321,21 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       setSelectedPurchaseOrder(null);
       setReceivingOrderType("dpo");
     } else {
-      // It's a Purchase Order
+      // It's a Purchase Order (import)
+      const poStatus = String((order as PurchaseOrder).status || "")
+        .trim()
+        .toLowerCase();
+      if (poStatus !== "stock receiving pending") {
+        toast.info(
+          "Stock receiving is available after Purchase Invoice is saved (status: Stock Receiving Pending).",
+        );
+        return;
+      }
       setSelectedPurchaseOrder(order as PurchaseOrder);
       setSelectedOrder(null);
       setReceivingOrderType("po");
     }
+    setReceiveDate("");
     setReceiveDialogOpen(true);
   };
 
@@ -1332,6 +1343,10 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     if (!selectedOrder && !selectedPurchaseOrder) return;
     if (!selectedStoreId) {
       toast.error("Please select a store first");
+      return;
+    }
+    if (receivingOrderType === "po" && !String(receiveDate || "").trim()) {
+      toast.error("Please select a receive date before receiving the purchase order");
       return;
     }
 
@@ -1398,6 +1413,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
         await apiClient.updatePurchaseOrder(selectedPurchaseOrder.id, {
           status: "Received",
+          date: receiveDate,
           ...(resolvedStoreId ? { store_id: resolvedStoreId } : {}),
           items: itemsForUpdate,
         });
@@ -1418,6 +1434,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       setReceiveDialogOpen(false);
       setSelectedOrder(null);
       setSelectedPurchaseOrder(null);
+      setReceivingOrderType(null);
+      setReceiveDate("");
       setReceivingOrderType(null);
 
       if (typeFilter === "transfer-in") {
@@ -1890,7 +1908,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                         <TableBody>
                           {mixedOrders.map((row, index) => (
                             <TableRow key={`${row.type}-${row.id}`}>
-                              <ListNumberCell index={index} />
+                              <ListNumberCell index={index} total={mixedOrders.length} />
                               <TableCell className="font-medium">{row.number}</TableCell>
                               <TableCell>
                                 {row.date ? format(new Date(row.date), "MMM dd, yyyy") : "-"}
@@ -1980,12 +1998,29 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                           <MapPin className="w-4 h-4" />
                                         </Button>
                                       )}
-                                      {(row.raw as PurchaseOrder).status !== "Received" && (
+                                      {(row.raw as PurchaseOrder).status !== "Received" &&
+                                        String((row.raw as PurchaseOrder).status || "")
+                                          .trim()
+                                          .toLowerCase() === "stock receiving pending" && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
                                           onClick={() => handleReceiveOrder(row.raw as PurchaseOrder)}
                                           title="Receive Order"
+                                        >
+                                          <CheckCircle className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      {(row.raw as PurchaseOrder).status !== "Received" &&
+                                        String((row.raw as PurchaseOrder).status || "")
+                                          .trim()
+                                          .toLowerCase() !== "stock receiving pending" && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          disabled
+                                          title="Available after Purchase Invoice is saved (Stock Receiving Pending)"
+                                          className="opacity-50 cursor-not-allowed"
                                         >
                                           <CheckCircle className="w-4 h-4" />
                                         </Button>
@@ -2078,7 +2113,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                         <TableBody>
                           {filteredPurchaseOrders.map((order, index) => (
                             <TableRow key={`po-${order.id}`}>
-                              <ListNumberCell index={index} />
+                              <ListNumberCell index={index} total={filteredPurchaseOrders.length} />
                               <TableCell className="font-medium">
                                 {order.po_number}
                               </TableCell>
@@ -2131,12 +2166,29 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       <MapPin className="w-4 h-4" />
                                     </Button>
                                   )}
-                                  {order.status !== "Received" && (
+                                  {order.status !== "Received" &&
+                                    String(order.status || "")
+                                      .trim()
+                                      .toLowerCase() === "stock receiving pending" && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => handleReceiveOrder(order)}
                                       title="Receive Order"
+                                    >
+                                      <CheckCircle className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  {order.status !== "Received" &&
+                                    String(order.status || "")
+                                      .trim()
+                                      .toLowerCase() !== "stock receiving pending" && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled
+                                      title="Available after Purchase Invoice is saved (Stock Receiving Pending)"
+                                      className="opacity-50 cursor-not-allowed"
                                     >
                                       <CheckCircle className="w-4 h-4" />
                                     </Button>
@@ -2175,7 +2227,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                         <TableBody>
                           {filteredDPOs.map((order, index) => (
                             <TableRow key={`dpo-${order.id}`}>
-                              <ListNumberCell index={index} />
+                              <ListNumberCell index={index} total={filteredDPOs.length} />
                               <TableCell className="font-medium">
                                 {order.dpo_no}
                               </TableCell>
@@ -2275,7 +2327,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                         <TableBody>
                           {filteredStockOutOrders.map((invoice, index) => (
                             <TableRow key={invoice.id}>
-                              <ListNumberCell index={index} />
+                              <ListNumberCell index={index} total={filteredStockOutOrders.length} />
                               <TableCell className="font-medium">
                                 {invoice.invoiceNo}
                               </TableCell>
@@ -2358,7 +2410,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                         <TableBody>
                           {filteredTransferInOrders.map((order, index) => (
                             <TableRow key={`tin-${order.id}`}>
-                              <ListNumberCell index={index} />
+                              <ListNumberCell index={index} total={filteredTransferInOrders.length} />
                               <TableCell className="font-medium">{order.dpo_no}</TableCell>
                               <TableCell>
                                 {format(new Date(order.date), "MMM dd, yyyy")}
@@ -2478,7 +2530,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                         <TableBody>
                           {filteredTransferOutOrders.map((invoice, index) => (
                             <TableRow key={`tout-${invoice.id}`}>
-                              <ListNumberCell index={index} />
+                              <ListNumberCell index={index} total={filteredTransferOutOrders.length} />
                               <TableCell className="font-medium">
                                 {invoice.invoiceNo}
                               </TableCell>
@@ -2664,7 +2716,18 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
 
       {/* Receive Order Dialog */}
-      <AlertDialog open={receiveDialogOpen} onOpenChange={setReceiveDialogOpen}>
+      <AlertDialog
+        open={receiveDialogOpen}
+        onOpenChange={(open) => {
+          setReceiveDialogOpen(open);
+          if (!open) {
+            setSelectedOrder(null);
+            setSelectedPurchaseOrder(null);
+            setReceivingOrderType(null);
+            setReceiveDate("");
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Receive Order</AlertDialogTitle>
@@ -2681,17 +2744,51 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {receivingOrderType === "po" ? (
+            <div className="space-y-2 py-2">
+              <Label htmlFor="store-receive-date">
+                Receive Date <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="store-receive-date"
+                type="date"
+                value={receiveDate}
+                onChange={(event) => setReceiveDate(event.target.value)}
+                required
+              />
+              {!receiveDate.trim() ? (
+                <p className="text-xs text-muted-foreground">
+                  Select a receive date to receive this purchase order and create the voucher.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel
               onClick={() => {
                 setSelectedOrder(null);
                 setSelectedPurchaseOrder(null);
                 setReceivingOrderType(null);
+                setReceiveDate("");
               }}
             >
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={confirmReceive}>
+            <AlertDialogAction
+              onClick={(event) => {
+                if (
+                  receivingOrderType === "po" &&
+                  !String(receiveDate || "").trim()
+                ) {
+                  event.preventDefault();
+                  toast.error(
+                    "Please select a receive date before receiving the purchase order",
+                  );
+                  return;
+                }
+                void confirmReceive();
+              }}
+            >
               Confirm Receive
             </AlertDialogAction>
           </AlertDialogFooter>

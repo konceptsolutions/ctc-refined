@@ -573,6 +573,7 @@ export const SubgroupsTab = () => {
                             index,
                             currentPage,
                             parseInt(pageSize),
+                            filteredSubgroups.length,
                           )}
                         </td>
                         <td className="p-3">

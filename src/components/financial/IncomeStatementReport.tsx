@@ -330,7 +330,7 @@ export const IncomeStatementReport = () => {
                       key={`rev-${index}`}
                       className="hover:bg-muted/30"
                     >
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={revenueAccounts.length} />
                       <TableCell style={getIndent(account.level || 0)}>
                         {account.code}-{account.name}
                       </TableCell>
@@ -362,7 +362,7 @@ export const IncomeStatementReport = () => {
                       key={`cost-${index}`}
                       className="hover:bg-muted/30"
                     >
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={costAccounts.length} />
                       <TableCell style={getIndent(account.level || 0)}>
                         {account.code}-{account.name}
                       </TableCell>
@@ -408,7 +408,7 @@ export const IncomeStatementReport = () => {
                       key={`exp-${index}`}
                       className="hover:bg-muted/30"
                     >
-                      <ListNumberCell index={index} />
+                      <ListNumberCell index={index} total={expenseAccounts.length} />
                       <TableCell style={getIndent(account.level || 0)}>
                         {account.code}-{account.name}
                       </TableCell>

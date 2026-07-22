@@ -201,7 +201,7 @@ const CustomerAnalysisTab = () => {
               ) : (
                 customerData.map((record, index) => (
                   <TableRow key={record.id}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={customerData.length} />
                     <TableCell className="font-medium">{record.customer}</TableCell>
                     <TableCell>{record.contact}</TableCell>
                     <TableCell className="text-center">{record.totalOrders}</TableCell>

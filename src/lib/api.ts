@@ -2583,7 +2583,7 @@ class ApiClient {
   async getPurchaseQuotations(params?: {
     page?: number;
     limit?: number;
-    status?: "open" | "confirm";
+    status?: "open" | "confirm" | "all";
     supplierId?: string;
     quotationNo?: string;
     partReference?: string;
@@ -2659,6 +2659,12 @@ class ApiClient {
     return this.request(`/purchase-import/quotations/${quotationId}/confirm`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async unconfirmPurchaseQuotation(quotationId: string) {
+    return this.request(`/purchase-import/quotations/${quotationId}/unconfirm`, {
+      method: "POST",
     });
   }
 
@@ -2755,6 +2761,7 @@ class ApiClient {
   async receiveImportPurchaseOrder(
     orderId: string,
     data: {
+      stage?: "import" | "invoice";
       items: Array<{
         id?: string;
         partId?: string;
@@ -2783,9 +2790,11 @@ class ApiClient {
         incomeTax?: number;
         ed?: number;
         doAmount?: number;
+        crnExp?: number;
+        cmExp?: number;
+        agencyExp?: number;
         miscExp?: number;
         locFrt?: number;
-        crnExp?: number;
         totalExp?: number;
       };
     },
@@ -2793,6 +2802,7 @@ class ApiClient {
     return this.request(`/purchase-import/purchase-orders/${orderId}/receive`, {
       method: "POST",
       body: JSON.stringify({
+        stage: data.stage || "import",
         conversionRate: data.conversionRate,
         invoiceNo: data.invoiceNo?.trim() || undefined,
         invoiceDate: data.invoiceDate || undefined,

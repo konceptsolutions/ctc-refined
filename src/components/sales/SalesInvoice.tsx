@@ -8796,6 +8796,7 @@ export const SalesInvoice = ({
                           index={index}
                           page={invoiceListPage}
                           pageSize={invoiceListPageSize}
+                          total={filteredInvoices.length}
                           className="hidden md:table-cell"
                         />
                         <TableCell className="md:table-cell font-bold md:font-medium p-0 md:p-4 block">

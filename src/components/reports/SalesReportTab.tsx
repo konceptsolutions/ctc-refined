@@ -240,7 +240,7 @@ const SalesReportTab = () => {
               ) : (
                 salesData.map((record, index) => (
                   <TableRow key={record.id}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={salesData.length} />
                     <TableCell>{record.date}</TableCell>
                     <TableCell className="font-medium">{record.invoiceNo}</TableCell>
                     <TableCell>{record.customer}</TableCell>

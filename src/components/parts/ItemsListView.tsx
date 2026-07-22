@@ -2048,6 +2048,7 @@ export const ItemsListView = ({
                             index={index}
                             page={currentPage}
                             pageSize={itemsPerPage}
+                            total={totalItems || filteredItems.length}
                             className="pl-4"
                           />
                           <TableCell className="pl-4">

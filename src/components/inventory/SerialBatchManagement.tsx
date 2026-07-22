@@ -199,7 +199,7 @@ export const SerialBatchManagement = () => {
             <TableBody>
               {filteredSerials.map((item, index) => (
                 <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={filteredSerials.length} />
                   <TableCell className="text-sm font-medium text-primary">{item.serialNo}</TableCell>
                   <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>
@@ -248,7 +248,7 @@ export const SerialBatchManagement = () => {
             <TableBody>
               {filteredBatches.map((item, index) => (
                 <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={filteredBatches.length} />
                   <TableCell className="text-sm font-medium text-primary">{item.batchNo}</TableCell>
                   <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>

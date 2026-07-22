@@ -445,6 +445,7 @@ export const StockBalance = () => {
                       index={index}
                       page={currentPage}
                       pageSize={itemsPerPage}
+                      total={filteredData.length}
                     />
                     <TableCell className="text-xs font-medium">{item.partNo}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{item.description}</TableCell>

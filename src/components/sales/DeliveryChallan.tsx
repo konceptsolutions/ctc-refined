@@ -934,7 +934,7 @@ export const DeliveryChallan = () => {
                       ) : (
                         filteredChallans.map((challan, index) => (
                           <TableRow key={challan.id}>
-                            <ListNumberCell index={index} />
+                            <ListNumberCell index={index} total={filteredChallans.length} />
                             <TableCell>
                               <div>
                                 <p className="font-medium text-primary text-sm">{challan.challanNo}</p>

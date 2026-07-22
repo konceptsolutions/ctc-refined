@@ -196,7 +196,7 @@ const CustomerAgingTab = () => {
             <TableBody>
               {agingData.map((row, index) => (
                 <TableRow key={row.id}>
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={agingData.length} />
                   <TableCell className="font-medium">{row.customer}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">{row.type}</Badge>

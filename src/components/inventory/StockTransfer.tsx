@@ -724,7 +724,7 @@ export const StockTransfer = () => {
               ) : (
                 transfers.map((transfer, index) => (
                   <TableRow key={transfer.id} className="hover:bg-muted/20 transition-colors">
-                    <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} />
+                    <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} total={totalTransfers} />
                     <TableCell>
                       <Checkbox
                         checked={selectedIds.includes(transfer.id)}

@@ -366,7 +366,7 @@ const StockMovementTab = () => {
               ) : (
                 filteredData.map((item, index) => (
                 <TableRow key={item.id}>
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={filteredData.length} />
                   <TableCell>
                     <div>
                       <p className="font-medium text-primary">{item.partNumber}</p>

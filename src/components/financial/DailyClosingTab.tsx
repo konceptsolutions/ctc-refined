@@ -483,7 +483,7 @@ export const DailyClosingTab = ({
               ) : (
                 data.receipts.map((row, index) => (
                   <TableRow key={`r-${row.serialNo}-${row.voucherNumber}`}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={data.receipts.length} />
                     <TableCell className="font-mono text-xs whitespace-nowrap">
                       {row.voucherNumber}
                     </TableCell>
@@ -504,7 +504,7 @@ export const DailyClosingTab = ({
               ) : (
                 data.payments.map((row, index) => (
                   <TableRow key={`p-${row.serialNo}-${row.voucherNumber}`}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={data.payments.length} />
                     <TableCell className="font-mono text-xs whitespace-nowrap">
                       {row.voucherNumber}
                     </TableCell>

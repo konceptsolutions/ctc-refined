@@ -309,7 +309,7 @@ export const MainGroupsTab = () => {
                   }`}
                 >
                   <td className={`p-3 ${LIST_NUMBER_CELL_CLASS}`}>
-                    {getListRowNumber(index, currentPage, parseInt(pageSize))}
+                    {getListRowNumber(index, currentPage, parseInt(pageSize), mainGroups.length)}
                   </td>
                   <td className="p-3 text-primary font-medium">{group.code}</td>
                   <td className="p-3 text-primary font-medium">{group.name}</td>

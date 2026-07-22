@@ -633,7 +633,7 @@ export const ReceivableReminders = () => {
               <TableBody>
                 {filteredReceivables.map((item, index) => (
                   <TableRow key={item.id} className="hover:bg-muted/30">
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={filteredReceivables.length} />
                     <TableCell>
                       <Checkbox
                         checked={selectedItems.includes(item.id)}

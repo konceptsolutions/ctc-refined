@@ -356,7 +356,7 @@ export const IncomeStatementTab = () => {
                       revenueData.map((category) => (
                         category.items.map((item, index) => (
                           <TableRow key={`rev-${item.name}`}>
-                            <ListNumberCell index={index} />
+                            <ListNumberCell index={index} total={category.items.length} />
                             <TableCell className="pl-8">{item.name}</TableCell>
                             <TableCell className="text-right font-mono">{item.amount.toLocaleString()}</TableCell>
                           </TableRow>
@@ -378,7 +378,7 @@ export const IncomeStatementTab = () => {
                       costData.map((category) => (
                         category.items.map((item, index) => (
                           <TableRow key={`cost-${item.name}`}>
-                            <ListNumberCell index={index} />
+                            <ListNumberCell index={index} total={category.items.length} />
                             <TableCell className="pl-8">{item.name}</TableCell>
                             <TableCell className="text-right font-mono">{item.amount.toLocaleString()}</TableCell>
                           </TableRow>
@@ -407,7 +407,7 @@ export const IncomeStatementTab = () => {
                       expenseData.map((category) => (
                         category.items.map((item, index) => (
                           <TableRow key={`exp-${item.name}`}>
-                            <ListNumberCell index={index} />
+                            <ListNumberCell index={index} total={category.items.length} />
                             <TableCell className="pl-8">{item.name}</TableCell>
                             <TableCell className="text-right font-mono">{item.amount.toLocaleString()}</TableCell>
                           </TableRow>

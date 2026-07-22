@@ -1356,6 +1356,7 @@ export const CurrentStock = () => {
                       index={index}
                       page={currentPage}
                       pageSize={itemsPerPage}
+                      total={totalItems}
                     />
                     <TableCell className="font-medium">
                       {item.part_no || "-"}

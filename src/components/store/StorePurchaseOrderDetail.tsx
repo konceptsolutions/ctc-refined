@@ -142,7 +142,7 @@ export const StorePurchaseOrderDetail = ({
                       {order.items && order.items.length > 0 ? (
                         order.items.map((item, index) => (
                           <TableRow key={item.id} className="h-12">
-                            <ListNumberCell index={index} className="align-middle" />
+                            <ListNumberCell index={index} total={order.items.length} className="align-middle" />
                             <TableCell className="font-medium align-middle">{item.part_no}</TableCell>
                             <TableCell className="align-middle">{item.part_description || "-"}</TableCell>
                             <TableCell className="align-middle">{item.brand || "N/A"}</TableCell>

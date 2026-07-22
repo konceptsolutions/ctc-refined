@@ -603,7 +603,7 @@ export const EmployeeManagement = () => {
                 ) : (
                   employees.map((employee, index) => (
                     <TableRow key={employee.id}>
-                      <ListNumberCell index={index} page={currentPage} pageSize={rowsPerPage} />
+                      <ListNumberCell index={index} page={currentPage} pageSize={rowsPerPage} total={totalRecords} />
                       <TableCell className="font-mono text-xs">{employee.code}</TableCell>
                       <TableCell className="font-medium">{employee.name}</TableCell>
                       <TableCell>{employee.department || "—"}</TableCell>

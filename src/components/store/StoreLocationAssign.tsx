@@ -670,7 +670,7 @@ export const StoreLocationAssign = ({
 
                         return (
                           <TableRow key={item.id} className="align-top">
-                            <ListNumberCell index={index} className="align-top py-3" />
+                            <ListNumberCell index={index} total={order.items.length} className="align-top py-3" />
                             <TableCell className="font-medium align-top py-3">{item.partNo}</TableCell>
                             <TableCell className="align-top py-3 max-w-[170px] truncate">{item.description || "-"}</TableCell>
                             <TableCell className="align-top py-3 px-2">{item.brand}</TableCell>

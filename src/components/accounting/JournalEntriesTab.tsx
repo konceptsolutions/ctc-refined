@@ -507,7 +507,7 @@ export const JournalEntriesTab = () => {
                     key={entry.id}
                     className="transition-colors hover:bg-muted/30"
                   >
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={filteredEntries.length} />
                     <TableCell className="font-medium text-primary">{entry.entryNo}</TableCell>
                     <TableCell>{entry.date}</TableCell>
                     <TableCell>{entry.reference}</TableCell>

@@ -268,7 +268,7 @@ export const ExpenseTypesTab = ({ onUpdate }: ExpenseTypesTabProps) => {
               {filteredTypes.map((type, index) => {
                 return (
                   <TableRow key={type.id} className="hover:bg-muted/30 transition-colors">
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={filteredTypes.length} />
                     <TableCell className="font-medium text-primary">{type.code}</TableCell>
                     <TableCell>
                       <div>

@@ -254,7 +254,7 @@ export const IncomeStatementTab = () => {
                     {data.revenue.accounts.length > 0 ? (
                       data.revenue.accounts.map((account, index) => (
                         <TableRow key={`rev-${account.accountId}-${index}`} className="hover:bg-muted/30">
-                          <ListNumberCell index={index} />
+                          <ListNumberCell index={index} total={data.revenue.accounts.length} />
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>
@@ -293,7 +293,7 @@ export const IncomeStatementTab = () => {
                     {data.cost.accounts.length > 0 ? (
                       data.cost.accounts.map((account, index) => (
                         <TableRow key={`cost-${account.accountId}-${index}`} className="hover:bg-muted/30">
-                          <ListNumberCell index={index} />
+                          <ListNumberCell index={index} total={data.cost.accounts.length} />
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>
@@ -343,7 +343,7 @@ export const IncomeStatementTab = () => {
                     {data.expenses.accounts.length > 0 ? (
                       data.expenses.accounts.map((account, index) => (
                         <TableRow key={`exp-${account.accountId}-${index}`} className="hover:bg-muted/30">
-                          <ListNumberCell index={index} />
+                          <ListNumberCell index={index} total={data.expenses.accounts.length} />
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>

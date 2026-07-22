@@ -5609,9 +5609,11 @@ const IMPORT_EXPENSE_ACCOUNTS: Array<{
   { field: "incomeTax", code: "302008", label: "I.T" },
   { field: "ed", code: "302009", label: "E.D" },
   { field: "doAmount", code: "302010", label: "D.O" },
+  { field: "crnExp", code: "302013", label: "Dmg.Exp" },
+  { field: "cmExp", code: "302015", label: "CRN.Exp" },
+  { field: "agencyExp", code: "302016", label: "Agency.Exp" },
   { field: "miscExp", code: "302011", label: "Misc.Exp" },
   { field: "locFrt", code: "302012", label: "Loc.Frt" },
-  { field: "crnExp", code: "302013", label: "Dmg.Exp" },
 ];
 
 /**
@@ -5623,9 +5625,20 @@ const IMPORT_EXPENSE_ACCOUNTS: Array<{
 async function receiveImportPurchaseOrder(
   orderId: string,
   storeId: string | null,
+  receiveDate?: string | Date | null,
 ) {
   const round2 = (n: any) => Math.round((Number(n) || 0) * 100) / 100;
   const round4 = (n: any) => Math.round((Number(n) || 0) * 10000) / 10000;
+
+  const parsedReceiveDate = receiveDate ? new Date(receiveDate) : null;
+  if (
+    !parsedReceiveDate ||
+    Number.isNaN(parsedReceiveDate.getTime())
+  ) {
+    throw new Error(
+      "Receive date is required to receive this purchase order and create the voucher.",
+    );
+  }
 
   return await prisma.$transaction(async (tx) => {
     const order = await tx.purchaseOrder.findUnique({
@@ -5633,6 +5646,18 @@ async function receiveImportPurchaseOrder(
       include: { PurchaseOrderItem: { include: { Part: true } } },
     });
     if (!order) throw new Error("Purchase order not found");
+
+    // Persist the store receive date on the PO for voucher/audit use.
+    if (
+      !order.date ||
+      new Date(order.date).getTime() !== parsedReceiveDate.getTime()
+    ) {
+      await tx.purchaseOrder.update({
+        where: { id: orderId },
+        data: { date: parsedReceiveDate },
+      });
+      (order as any).date = parsedReceiveDate;
+    }
 
     const supplier = order.supplierId
       ? await tx.supplier.findUnique({ where: { id: order.supplierId } })
@@ -5673,9 +5698,11 @@ async function receiveImportPurchaseOrder(
       incomeTax: round2(order.incomeTax),
       ed: round2(order.ed),
       doAmount: round2(order.doAmount),
+      crnExp: round2(order.crnExp),
+      cmExp: round2((order as any).cmExp),
+      agencyExp: round2((order as any).agencyExp),
       miscExp: round2(order.miscExp),
       locFrt: round2(order.locFrt),
-      crnExp: round2(order.crnExp),
     };
     const otherExpTotal = round2(
       Object.values(expenseAmounts).reduce((s, v) => s + v, 0),
@@ -5912,8 +5939,13 @@ async function receiveImportPurchaseOrder(
           OR: [
             { code: def.code },
             { name: def.label },
-            // Keep matching the previous chart name for Dmg.Exp (was Cm.Exp)
-            ...(def.field === "crnExp" ? [{ name: "Cm.Exp" }] : []),
+            ...(def.field === "cmExp"
+              ? [{ name: "CRN.Exp" }, { name: "Cm.Exp" }]
+              : []),
+            ...(def.field === "agencyExp"
+              ? [{ name: "Agency.Exp" }, { name: "Agency Exp" }]
+              : []),
+            ...(def.field === "crnExp" ? [{ name: "Dmg.Exp" }] : []),
           ],
         },
       });
@@ -5949,7 +5981,7 @@ async function receiveImportPurchaseOrder(
       if (jm) nextNumber = parseInt(jm[1], 10) + 1;
       const voucherNumber = `JV${String(nextNumber).padStart(4, "0")}`;
 
-      const voucherDate = (order as any).invoiceDate || order.date;
+      const voucherDate = parsedReceiveDate;
       await tx.voucher.create({
         data: {
           id: crypto.randomUUID(),
@@ -6175,14 +6207,29 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
       status === "Received" &&
       existingOrder.status !== "Received"
     ) {
+      const receiveDateRaw =
+        date || req.body?.receive_date || req.body?.receiveDate || null;
+      if (!receiveDateRaw || Number.isNaN(new Date(receiveDateRaw).getTime())) {
+        return res.status(400).json({
+          error:
+            "Receive date is required to receive this purchase order and create the voucher.",
+        });
+      }
       try {
         const result = await receiveImportPurchaseOrder(
           id,
           req.body?.store_id || null,
+          receiveDateRaw,
         );
         return res.json(result);
       } catch (err: any) {
-        return res.status(500).json({ error: err.message });
+        const message = err?.message || "Failed to receive purchase order";
+        const statusCode = String(message)
+          .toLowerCase()
+          .includes("receive date")
+          ? 400
+          : 500;
+        return res.status(statusCode).json({ error: message });
       }
     }
 

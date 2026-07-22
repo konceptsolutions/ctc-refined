@@ -257,7 +257,7 @@ const BrandWiseTab = () => {
             <TableBody>
               {brandData.map((brand, index) => (
                 <TableRow key={brand.brand}>
-                  <ListNumberCell index={index} />
+                  <ListNumberCell index={index} total={brandData.length} />
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${getBrandColor(index)}`}>

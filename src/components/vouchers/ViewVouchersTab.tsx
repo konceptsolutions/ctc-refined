@@ -1282,6 +1282,7 @@ export const ViewVouchersTab = ({
                       index={index}
                       page={currentPage}
                       pageSize={itemsPerPage}
+                      total={filteredVouchers.length}
                     />
                     <TableCell>
                       <Checkbox
@@ -1844,7 +1845,7 @@ export const ViewVouchersTab = ({
                   <TableBody>
                     {(viewingVoucher.entries || viewingVoucher.VoucherEntry || [])?.map((entry, idx) => (
                       <TableRow key={entry.id}>
-                        <ListNumberCell index={idx} />
+                        <ListNumberCell index={idx} total={(viewingVoucher.entries || viewingVoucher.VoucherEntry || []).length} />
                         <TableCell>{getAccountLabel(entry.account, entry.Account)}</TableCell>
                         <TableCell>{entry.description || "-"}</TableCell>
                         <TableCell className="text-right">

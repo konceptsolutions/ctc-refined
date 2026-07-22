@@ -642,6 +642,7 @@ export const CustomerManagement = () => {
                         index={index}
                         page={currentPage}
                         pageSize={rowsPerPage}
+                        total={totalRecords}
                       />
                       <TableCell>
                         <Checkbox

@@ -689,9 +689,11 @@ model PurchaseOrder {
   incomeTax             Float               @default(0)
   ed                    Float               @default(0)
   doAmount              Float               @default(0)
+  crnExp                Float               @default(0)
+  cmExp                 Float               @default(0)
+  agencyExp             Float               @default(0)
   miscExp               Float               @default(0)
   locFrt                Float               @default(0)
-  crnExp                Float               @default(0)
   totalExp              Float               @default(0)
   status                String              @default("Draft")
   expectedDate          DateTime?

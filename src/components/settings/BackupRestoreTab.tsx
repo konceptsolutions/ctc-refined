@@ -529,7 +529,7 @@ export const BackupRestoreTab = () => {
                 ) : (
                   backups.map((backup, index) => (
                   <TableRow key={backup.id} className={backup.status === "in_progress" ? "bg-amber-50/30" : ""}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={backups.length} />
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {backup.status === "in_progress" ? (
@@ -659,7 +659,7 @@ export const BackupRestoreTab = () => {
               <TableBody>
                 {schedules.map((schedule, index) => (
                   <TableRow key={schedule.id}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={schedules.length} />
                     <TableCell className="font-medium text-sm">{schedule.name}</TableCell>
                     <TableCell className="text-sm">{schedule.frequency}</TableCell>
                     <TableCell className="text-sm">{schedule.time}</TableCell>

@@ -316,7 +316,7 @@ export const TrialBalanceTab = () => {
                             key={`acc-${row.accountCode}-${index}`}
                             className="transition-all duration-200 hover:bg-muted/50"
                           >
-                            <ListNumberCell index={index} />
+                            <ListNumberCell index={index} total={filteredData.length} />
                             <TableCell className="pl-8 font-medium">{row.accountName}</TableCell>
                             <TableCell className="text-right font-mono">
                               {row.debit > 0 ? row.debit.toLocaleString() : '0'}

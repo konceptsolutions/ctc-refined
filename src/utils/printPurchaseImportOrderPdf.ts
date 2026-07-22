@@ -127,7 +127,6 @@ export const printPurchaseImportOrder = ({
   itemRows: PurchaseImportOrderPrintItem[];
   totals: PurchaseImportOrderPrintTotals;
 }): boolean => {
-  const isRevised = Boolean(detail.isRevised);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 8;
@@ -137,11 +136,7 @@ export const printPurchaseImportOrder = ({
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.setTextColor(17, 17, 17);
-  doc.text(
-    isRevised ? "Import Purchase Order (Revised)" : "Import Purchase Order",
-    marginX,
-    14,
-  );
+  doc.text("Import Purchase Order", marginX, 14);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
@@ -223,10 +218,10 @@ export const printPurchaseImportOrder = ({
   doc.text("Items", marginX, cursorY + 3);
   cursorY += 5;
 
-  const fcRateLabel = isRevised ? "Rev FC Rate" : "FC Rate";
-  const fcAmtLabel = isRevised ? "Rev FC Amt" : "FC Amount";
-  const lcRateLabel = isRevised ? "Rev LC Rate" : "LC Rate";
-  const lcAmtLabel = isRevised ? "Rev LC Amt" : "LC Amount";
+  const fcRateLabel = "FC Rate";
+  const fcAmtLabel = "FC Amount";
+  const lcRateLabel = "LC Rate";
+  const lcAmtLabel = "LC Amount";
 
   autoTable(doc, {
     startY: cursorY,

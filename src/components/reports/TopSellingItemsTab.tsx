@@ -238,7 +238,7 @@ const TopSellingItemsTab = () => {
                   <TableBody>
                     {items.map((item, index) => (
                       <TableRow key={item.partId}>
-                        <ListNumberCell index={index} />
+                        <ListNumberCell index={index} total={items.length} />
                         <TableCell className="font-medium">{item.partNo}</TableCell>
                         <TableCell>{item.description || "-"}</TableCell>
                         <TableCell>{item.brand || "-"}</TableCell>

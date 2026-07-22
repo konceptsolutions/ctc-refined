@@ -230,7 +230,7 @@ const ExpensesReportTab = () => {
               ) : (
                 expenseData.map((record, index) => (
                   <TableRow key={record.id}>
-                    <ListNumberCell index={index} />
+                    <ListNumberCell index={index} total={expenseData.length} />
                     <TableCell>{record.date}</TableCell>
                     <TableCell className="font-medium">{record.reference}</TableCell>
                     <TableCell>

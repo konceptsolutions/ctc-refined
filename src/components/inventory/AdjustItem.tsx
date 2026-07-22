@@ -1264,6 +1264,7 @@ export const AdjustItem = () => {
                         index={index}
                         page={currentPage}
                         pageSize={itemsPerPage}
+                        total={totalRecords}
                       />
                       <TableCell>
                         <Checkbox
