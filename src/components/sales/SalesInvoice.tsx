@@ -795,6 +795,7 @@ export const SalesInvoice = ({
   const [useCustomGst, setUseCustomGst] = useState(false);
   const [deliveredTo, setDeliveredTo] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [sourceImportPoId, setSourceImportPoId] = useState<string | null>(null);
   const [invoiceDate, setInvoiceDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -1098,9 +1099,12 @@ export const SalesInvoice = ({
       setInlineItems(mappedItems);
       setRemarks(
         draft.poNumber
-          ? `Stock out from Import PO ${draft.poNumber}`
+          ? `Stock out from Import PO ${draft.poNumber}${
+              draft.poId ? ` [importPoId:${draft.poId}]` : ""
+            }`
           : "Stock out from Import Purchase Order",
       );
+      setSourceImportPoId(draft.poId ? String(draft.poId) : null);
       setQuotationStatus("pending");
       sessionStorage.removeItem("importPoStockOutDraft");
       toast({
@@ -3597,6 +3601,9 @@ export const SalesInvoice = ({
           salesPerson: newInvoice.salesPerson || "Admin",
           deliveredTo: deliveredTo || undefined,
           remarks: remarks || undefined,
+          ...(isTransferOut && sourceImportPoId
+            ? { importPurchaseOrderId: sourceImportPoId }
+            : {}),
           items: invoiceItems,
           subtotal,
           overallDiscount: discount,
@@ -3740,6 +3747,7 @@ export const SalesInvoice = ({
     setUseCustomGst(false);
     setDeliveredTo("");
     setRemarks("");
+    setSourceImportPoId(null);
     setTerm("");
     setInvoiceDate(new Date().toISOString().split("T")[0]); // Reset to today when starting a new invoice
     setSelectedCustomerId("");

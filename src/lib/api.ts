@@ -4068,6 +4068,7 @@ class ApiClient {
     cashAmount?: number; // NEW
     deliveredTo?: string;
     remarks?: string;
+    importPurchaseOrderId?: string;
     items: Array<{
       partId: string;
       partNo: string;

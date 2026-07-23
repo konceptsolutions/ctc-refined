@@ -151,6 +151,40 @@ function getStockOutButtonLabel(status: string | undefined | null): string {
   return "Stock Out";
 }
 
+function formatPurchaseOrderStatusLabel(status?: string | null) {
+  const normalized = String(status || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "purchase invoice pending") return "Purchase Invoice Pending";
+  if (normalized === "stock receiving pending") return "Stock Receiving Pending";
+  if (normalized === "received") return "Received";
+  if (normalized === "pending") return "Pending";
+  if (normalized === "draft") return "Draft";
+  return String(status || "-");
+}
+
+function getPurchaseOrderStatusBadgeClass(status?: string | null) {
+  const normalized = String(status || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "pending") {
+    return "border-transparent bg-slate-100 text-slate-700 hover:bg-slate-100";
+  }
+  if (normalized === "purchase invoice pending") {
+    return "border-transparent bg-amber-100 text-amber-800 hover:bg-amber-100";
+  }
+  if (normalized === "stock receiving pending") {
+    return "border-transparent bg-sky-100 text-sky-800 hover:bg-sky-100";
+  }
+  if (normalized === "received") {
+    return "border-transparent bg-emerald-100 text-emerald-800 hover:bg-emerald-100";
+  }
+  if (normalized === "draft") {
+    return "border-transparent bg-gray-100 text-gray-600 hover:bg-gray-100";
+  }
+  return "border-transparent bg-muted text-muted-foreground hover:bg-muted";
+}
+
 function resolveDpoSupplierName(order: any): string {
   return (
     order.supplier_name ||
@@ -1941,15 +1975,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   </Badge>
                                 ) : row.type === "po" ? (
                                   <Badge
-                                    variant={
-                                      row.status === "Received"
-                                        ? "default"
-                                        : row.status === "Draft"
-                                          ? "secondary"
-                                          : "outline"
-                                    }
+                                    variant="secondary"
+                                    className={cn(
+                                      "whitespace-nowrap font-medium",
+                                      getPurchaseOrderStatusBadgeClass(row.status),
+                                    )}
                                   >
-                                    {row.status}
+                                    {formatPurchaseOrderStatusLabel(row.status)}
                                   </Badge>
                                 ) : (
                                   <Badge
@@ -2127,15 +2159,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               </TableCell>
                               <TableCell>
                                 <Badge
-                                  variant={
-                                    order.status === "Received"
-                                      ? "default"
-                                      : order.status === "Draft"
-                                        ? "secondary"
-                                        : "outline"
-                                  }
+                                  variant="secondary"
+                                  className={cn(
+                                    "whitespace-nowrap font-medium",
+                                    getPurchaseOrderStatusBadgeClass(order.status),
+                                  )}
                                 >
-                                  {order.status}
+                                  {formatPurchaseOrderStatusLabel(order.status)}
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">

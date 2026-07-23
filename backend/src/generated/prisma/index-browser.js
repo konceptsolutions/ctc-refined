@@ -671,6 +671,7 @@ exports.Prisma.PurchaseOrderScalarFieldEnum = {
   expectedDate: 'expectedDate',
   notes: 'notes',
   totalAmount: 'totalAmount',
+  transferOutInvoiceId: 'transferOutInvoiceId',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };

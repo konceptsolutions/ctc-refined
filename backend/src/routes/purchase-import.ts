@@ -4372,6 +4372,82 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
       prisma.purchaseOrder.count({ where }),
     ]);
 
+    const khiReceivedOrders = orders.filter((po: any) => {
+      const status = String(po.status || "")
+        .trim()
+        .toLowerCase();
+      const consignee = String(po.consignee || "")
+        .trim()
+        .toUpperCase();
+      return status === "received" && consignee === "KHI";
+    });
+
+    const stockedOutPoIds = new Set<string>();
+    const unlinkedKhiReceived = khiReceivedOrders.filter(
+      (po: any) => !po.transferOutInvoiceId,
+    );
+
+    // Prefer the saved transfer-out invoice id on the PO.
+    for (const po of khiReceivedOrders) {
+      if (po.transferOutInvoiceId) {
+        stockedOutPoIds.add(String(po.id));
+      }
+    }
+
+    // Backfill older stock-outs that only have remarks, and persist the invoice id.
+    if (unlinkedKhiReceived.length > 0) {
+      const remarkMatchers = unlinkedKhiReceived.flatMap((po: any) => {
+        const poNumber = String(po.poNumber || "").trim();
+        const matchers: string[] = [`importPoId:${po.id}`];
+        if (poNumber) {
+          matchers.push(`Stock out from Import PO ${poNumber}`);
+        }
+        return matchers;
+      });
+
+      const transferOuts = await prisma.salesInvoice.findMany({
+        where: {
+          customerType: "transfer",
+          status: { notIn: ["cancelled", "Canceled", "void", "Void"] },
+          OR: remarkMatchers.map((value) => ({
+            remarks: { contains: value, mode: "insensitive" },
+          })),
+        },
+        select: { id: true, remarks: true },
+      });
+
+      for (const invoice of transferOuts) {
+        const remarks = String(invoice.remarks || "");
+        for (const po of unlinkedKhiReceived) {
+          if (stockedOutPoIds.has(String(po.id))) continue;
+          const poNumber = String(po.poNumber || "").trim();
+          const byId = remarks.includes(`importPoId:${po.id}`);
+          const byNumber =
+            Boolean(poNumber) &&
+            remarks.toLowerCase().includes(
+              `stock out from import po ${poNumber}`.toLowerCase(),
+            );
+          if (!byId && !byNumber) continue;
+
+          stockedOutPoIds.add(String(po.id));
+          try {
+            await prisma.purchaseOrder.updateMany({
+              where: {
+                id: po.id,
+                transferOutInvoiceId: null,
+              } as any,
+              data: {
+                transferOutInvoiceId: invoice.id,
+                updatedAt: new Date(),
+              } as any,
+            });
+          } catch {
+            // Non-fatal: list still marks stockedOut from the in-memory set.
+          }
+        }
+      }
+    }
+
     res.json({
       data: orders.map((po: any) => {
         const items = po.PurchaseOrderItem || [];
@@ -4400,6 +4476,8 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
         forwarder: po.forwarder ?? null,
         estTimeDate: po.expectedDate ?? null,
         importSaved,
+        transferOutInvoiceId: po.transferOutInvoiceId || null,
+        stockedOut: stockedOutPoIds.has(String(po.id)),
         supplier: po.Supplier
           ? {
               id: po.Supplier.id,

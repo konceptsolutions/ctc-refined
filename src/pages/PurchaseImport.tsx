@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printPurchaseImportInquiry } from "@/utils/printPurchaseImportInquiryPdf";
@@ -318,6 +319,8 @@ type ImportPurchaseOrderRecord = {
   notes?: string | null;
   itemsCount: number;
   importSaved?: boolean;
+  stockedOut?: boolean;
+  transferOutInvoiceId?: string | null;
   forwarder?: string | null;
   estTimeDate?: string | null;
   expectedDate?: string | null;
@@ -7590,6 +7593,39 @@ const formatImportPurchaseOrderStatus = (status?: string | null) => {
   return String(status || "-");
 };
 
+const getImportPurchaseOrderStatusBadgeClass = (status?: string | null) => {
+  const normalized = normalizeImportPurchaseOrderStatus(status);
+  if (normalized === "pending") {
+    return "border-transparent bg-slate-100 text-slate-700 hover:bg-slate-100";
+  }
+  if (normalized === "purchase invoice pending") {
+    return "border-transparent bg-amber-100 text-amber-800 hover:bg-amber-100";
+  }
+  if (normalized === "stock receiving pending") {
+    return "border-transparent bg-sky-100 text-sky-800 hover:bg-sky-100";
+  }
+  if (normalized === "received") {
+    return "border-transparent bg-emerald-100 text-emerald-800 hover:bg-emerald-100";
+  }
+  return "border-transparent bg-muted text-muted-foreground hover:bg-muted";
+};
+
+const ImportPurchaseOrderStatusBadge = ({
+  status,
+}: {
+  status?: string | null;
+}) => (
+  <Badge
+    variant="secondary"
+    className={cn(
+      "whitespace-nowrap font-medium",
+      getImportPurchaseOrderStatusBadgeClass(status),
+    )}
+  >
+    {formatImportPurchaseOrderStatus(status)}
+  </Badge>
+);
+
 const PurchaseOrderTab = ({
   mode = "purchase-order",
 }: {
@@ -8084,6 +8120,14 @@ const PurchaseOrderTab = ({
       toast({
         title: "KHI consignee only",
         description: "Stock out from purchase order is available for KHI consignee orders.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (order.stockedOut || order.transferOutInvoiceId) {
+      toast({
+        title: "Already stocked out",
+        description: `PO ${order.poNumber} already has a transfer-out stock out.`,
         variant: "destructive",
       });
       return;
@@ -8624,7 +8668,9 @@ const PurchaseOrderTab = ({
                       maximumFractionDigits: 2,
                     })}
                   </td>
-                  <td className="p-2">{formatImportPurchaseOrderStatus(row.status)}</td>
+                  <td className="p-2">
+                    <ImportPurchaseOrderStatusBadge status={row.status} />
+                  </td>
                   <td className="p-2 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <Button
@@ -8704,7 +8750,9 @@ const PurchaseOrderTab = ({
                       })()}
                       {isInvoiceMode &&
                       isReceivedPurchaseOrder(row.status) &&
-                      isKhiConsignee(row.consignee) ? (
+                      isKhiConsignee(row.consignee) &&
+                      !row.stockedOut &&
+                      !row.transferOutInvoiceId ? (
                         <Button
                           type="button"
                           size="sm"
@@ -8753,9 +8801,9 @@ const PurchaseOrderTab = ({
                   <span className="text-muted-foreground">Supplier:</span>{" "}
                   {viewOrder.supplier?.name || viewOrder.supplier_name || "-"}
                 </div>
-                <div>
+                <div className="flex items-center gap-2">
                   <span className="text-muted-foreground">Status:</span>{" "}
-                  {formatImportPurchaseOrderStatus(viewOrder.status)}
+                  <ImportPurchaseOrderStatusBadge status={viewOrder.status} />
                 </div>
                 {viewOrder.consignee ? (
                   <div>

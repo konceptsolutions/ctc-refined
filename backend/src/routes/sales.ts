@@ -2123,6 +2123,34 @@ router.post("/invoices", async (req: Request, res: Response) => {
 
     await setInvoiceFreightCharges(invoice.id, freightAmount);
 
+    // Link transfer-out back to the source import purchase order when created from Stock Out.
+    const importPurchaseOrderId = String(
+      req.body?.importPurchaseOrderId || req.body?.import_purchase_order_id || "",
+    ).trim();
+    if (
+      normalizedCustomerType === "transfer" &&
+      importPurchaseOrderId
+    ) {
+      try {
+        await prisma.purchaseOrder.updateMany({
+          where: {
+            id: importPurchaseOrderId,
+            purchaseQuotationId: { not: null },
+            transferOutInvoiceId: null,
+          } as any,
+          data: {
+            transferOutInvoiceId: invoice.id,
+            updatedAt: new Date(),
+          } as any,
+        });
+      } catch (linkError) {
+        console.error(
+          "[Sales] Failed to link transfer-out to import PO:",
+          linkError,
+        );
+      }
+    }
+
     // Stock is reserved when the invoice is approved (not while pending)
 
     // Determine initial status - default to pending

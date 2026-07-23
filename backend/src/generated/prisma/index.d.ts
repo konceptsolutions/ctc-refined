@@ -46871,6 +46871,7 @@ export namespace Prisma {
     expectedDate: Date | null
     notes: string | null
     totalAmount: number | null
+    transferOutInvoiceId: string | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -46912,6 +46913,7 @@ export namespace Prisma {
     expectedDate: Date | null
     notes: string | null
     totalAmount: number | null
+    transferOutInvoiceId: string | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -46953,6 +46955,7 @@ export namespace Prisma {
     expectedDate: number
     notes: number
     totalAmount: number
+    transferOutInvoiceId: number
     createdAt: number
     updatedAt: number
     _all: number
@@ -47044,6 +47047,7 @@ export namespace Prisma {
     expectedDate?: true
     notes?: true
     totalAmount?: true
+    transferOutInvoiceId?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -47085,6 +47089,7 @@ export namespace Prisma {
     expectedDate?: true
     notes?: true
     totalAmount?: true
+    transferOutInvoiceId?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -47126,6 +47131,7 @@ export namespace Prisma {
     expectedDate?: true
     notes?: true
     totalAmount?: true
+    transferOutInvoiceId?: true
     createdAt?: true
     updatedAt?: true
     _all?: true
@@ -47254,6 +47260,7 @@ export namespace Prisma {
     expectedDate: Date | null
     notes: string | null
     totalAmount: number
+    transferOutInvoiceId: string | null
     createdAt: Date
     updatedAt: Date
     _count: PurchaseOrderCountAggregateOutputType | null
@@ -47314,6 +47321,7 @@ export namespace Prisma {
     expectedDate?: boolean
     notes?: boolean
     totalAmount?: boolean
+    transferOutInvoiceId?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     Supplier?: boolean | PurchaseOrder$SupplierArgs<ExtArgs>
@@ -47359,6 +47367,7 @@ export namespace Prisma {
     expectedDate?: boolean
     notes?: boolean
     totalAmount?: boolean
+    transferOutInvoiceId?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     Supplier?: boolean | PurchaseOrder$SupplierArgs<ExtArgs>
@@ -47402,6 +47411,7 @@ export namespace Prisma {
     expectedDate?: boolean
     notes?: boolean
     totalAmount?: boolean
+    transferOutInvoiceId?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }
@@ -47461,6 +47471,7 @@ export namespace Prisma {
       expectedDate: Date | null
       notes: string | null
       totalAmount: number
+      transferOutInvoiceId: string | null
       createdAt: Date
       updatedAt: Date
     }, ExtArgs["result"]["purchaseOrder"]>
@@ -47895,6 +47906,7 @@ export namespace Prisma {
     readonly expectedDate: FieldRef<"PurchaseOrder", 'DateTime'>
     readonly notes: FieldRef<"PurchaseOrder", 'String'>
     readonly totalAmount: FieldRef<"PurchaseOrder", 'Float'>
+    readonly transferOutInvoiceId: FieldRef<"PurchaseOrder", 'String'>
     readonly createdAt: FieldRef<"PurchaseOrder", 'DateTime'>
     readonly updatedAt: FieldRef<"PurchaseOrder", 'DateTime'>
   }
@@ -81828,6 +81840,7 @@ export namespace Prisma {
     expectedDate: 'expectedDate',
     notes: 'notes',
     totalAmount: 'totalAmount',
+    transferOutInvoiceId: 'transferOutInvoiceId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
   };
@@ -85875,6 +85888,7 @@ export namespace Prisma {
     expectedDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     notes?: StringNullableFilter<"PurchaseOrder"> | string | null
     totalAmount?: FloatFilter<"PurchaseOrder"> | number
+    transferOutInvoiceId?: StringNullableFilter<"PurchaseOrder"> | string | null
     createdAt?: DateTimeFilter<"PurchaseOrder"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseOrder"> | Date | string
     Supplier?: XOR<SupplierNullableRelationFilter, SupplierWhereInput> | null
@@ -85919,6 +85933,7 @@ export namespace Prisma {
     expectedDate?: SortOrderInput | SortOrder
     notes?: SortOrderInput | SortOrder
     totalAmount?: SortOrder
+    transferOutInvoiceId?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     Supplier?: SupplierOrderByWithRelationInput
@@ -85966,6 +85981,7 @@ export namespace Prisma {
     expectedDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     notes?: StringNullableFilter<"PurchaseOrder"> | string | null
     totalAmount?: FloatFilter<"PurchaseOrder"> | number
+    transferOutInvoiceId?: StringNullableFilter<"PurchaseOrder"> | string | null
     createdAt?: DateTimeFilter<"PurchaseOrder"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseOrder"> | Date | string
     Supplier?: XOR<SupplierNullableRelationFilter, SupplierWhereInput> | null
@@ -86010,6 +86026,7 @@ export namespace Prisma {
     expectedDate?: SortOrderInput | SortOrder
     notes?: SortOrderInput | SortOrder
     totalAmount?: SortOrder
+    transferOutInvoiceId?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     _count?: PurchaseOrderCountOrderByAggregateInput
@@ -86059,6 +86076,7 @@ export namespace Prisma {
     expectedDate?: DateTimeNullableWithAggregatesFilter<"PurchaseOrder"> | Date | string | null
     notes?: StringNullableWithAggregatesFilter<"PurchaseOrder"> | string | null
     totalAmount?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
+    transferOutInvoiceId?: StringNullableWithAggregatesFilter<"PurchaseOrder"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"PurchaseOrder"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"PurchaseOrder"> | Date | string
   }
@@ -92904,6 +92922,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     Supplier?: SupplierCreateNestedOneWithoutPurchaseOrderInput
@@ -92948,6 +92967,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     PurchaseOrderItem?: PurchaseOrderItemUncheckedCreateNestedManyWithoutPurchaseOrderInput
@@ -92988,6 +93008,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Supplier?: SupplierUpdateOneWithoutPurchaseOrderNestedInput
@@ -93032,6 +93053,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     PurchaseOrderItem?: PurchaseOrderItemUncheckedUpdateManyWithoutPurchaseOrderNestedInput
@@ -93074,6 +93096,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -93113,6 +93136,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -93154,6 +93178,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -99201,6 +99226,7 @@ export namespace Prisma {
     expectedDate?: SortOrder
     notes?: SortOrder
     totalAmount?: SortOrder
+    transferOutInvoiceId?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -99266,6 +99292,7 @@ export namespace Prisma {
     expectedDate?: SortOrder
     notes?: SortOrder
     totalAmount?: SortOrder
+    transferOutInvoiceId?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -99307,6 +99334,7 @@ export namespace Prisma {
     expectedDate?: SortOrder
     notes?: SortOrder
     totalAmount?: SortOrder
+    transferOutInvoiceId?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -117360,6 +117388,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     Supplier?: SupplierCreateNestedOneWithoutPurchaseOrderInput
@@ -117402,6 +117431,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     PurchaseOrderItem?: PurchaseOrderItemUncheckedCreateNestedManyWithoutPurchaseOrderInput
@@ -117623,6 +117653,7 @@ export namespace Prisma {
     expectedDate?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     notes?: StringNullableFilter<"PurchaseOrder"> | string | null
     totalAmount?: FloatFilter<"PurchaseOrder"> | number
+    transferOutInvoiceId?: StringNullableFilter<"PurchaseOrder"> | string | null
     createdAt?: DateTimeFilter<"PurchaseOrder"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseOrder"> | Date | string
   }
@@ -118729,6 +118760,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     Supplier?: SupplierCreateNestedOneWithoutPurchaseOrderInput
@@ -118772,6 +118804,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -118940,6 +118973,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Supplier?: SupplierUpdateOneWithoutPurchaseOrderNestedInput
@@ -118983,6 +119017,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -127810,6 +127845,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     PurchaseQuotation?: PurchaseQuotationCreateNestedOneWithoutPurchaseOrderInput
@@ -127852,6 +127888,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     PurchaseOrderItem?: PurchaseOrderItemUncheckedCreateNestedManyWithoutPurchaseOrderInput
@@ -135425,6 +135462,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -135524,6 +135562,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Supplier?: SupplierUpdateOneWithoutPurchaseOrderNestedInput
@@ -135566,6 +135605,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     PurchaseOrderItem?: PurchaseOrderItemUncheckedUpdateManyWithoutPurchaseOrderNestedInput
@@ -135607,6 +135647,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -138654,6 +138695,7 @@ export namespace Prisma {
     expectedDate?: Date | string | null
     notes?: string | null
     totalAmount?: number
+    transferOutInvoiceId?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -138926,6 +138968,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     PurchaseQuotation?: PurchaseQuotationUpdateOneWithoutPurchaseOrderNestedInput
@@ -138968,6 +139011,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     PurchaseOrderItem?: PurchaseOrderItemUncheckedUpdateManyWithoutPurchaseOrderNestedInput
@@ -139009,6 +139053,7 @@ export namespace Prisma {
     expectedDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     totalAmount?: FloatFieldUpdateOperationsInput | number
+    transferOutInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
