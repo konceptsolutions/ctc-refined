@@ -437,7 +437,7 @@ export const SupplierManagement = () => {
       code: supplier.code,
       type: supplier.type || "local",
       currencyName: supplier.currencyName || "",
-      name: supplier.name || "",
+      name: supplier.name || supplier.companyName || "",
       address: supplier.address || "",
       city: supplier.city || "",
       state: supplier.state || "",
@@ -745,7 +745,7 @@ export const SupplierManagement = () => {
                         />
                       </TableCell>
                       <TableCell className="text-xs max-w-[150px] truncate">
-                        {supplier.name || "-"}
+                        {supplier.name || supplier.companyName || "-"}
                       </TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate">
                         {supplier.address || "-"}
@@ -1157,7 +1157,7 @@ export const SupplierManagement = () => {
                     onClick={() => handleRemoveContactPerson(idx)}
                     className="h-6 w-6"
                   >
-                    <Trash className="w-4 h-4 text-red-500" />
+                    <Trash2 className="w-4 h-4 text-red-500" />
                   </Button>
                 </div>
               ))}

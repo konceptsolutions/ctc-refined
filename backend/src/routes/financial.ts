@@ -952,10 +952,20 @@ router.get("/international-supplier-accounts", async (_req: Request, res: Respon
   try {
     const accounts = await prisma.account.findMany({
       where: {
-        supplierId: { not: null },
-        Supplier: { type: "international" },
+        OR: [
+          {
+            supplierId: { not: null },
+            Supplier: { type: "international" },
+          },
+          {
+            Subgroup: { code: "402" },
+          },
+        ],
       },
       include: {
+        Subgroup: {
+          select: { code: true, name: true },
+        },
         Supplier: {
           select: {
             id: true,
@@ -979,8 +989,12 @@ router.get("/international-supplier-accounts", async (_req: Request, res: Respon
         supplierName:
           acc.Supplier?.companyName ||
           acc.Supplier?.name ||
-          acc.name,
+          (acc.Subgroup?.code === "402" ? "Supplier Security" : acc.name),
         currencyName: acc.Supplier?.currencyName || "USD",
+        accountCategory:
+          acc.Subgroup?.code === "402"
+            ? "supplier_security"
+            : "supplier_payable",
       })),
     });
   } catch (error: any) {
@@ -1019,8 +1033,15 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
     const acc = await prisma.account.findFirst({
       where: {
         id: String(account),
-        supplierId: { not: null },
-        Supplier: { type: "international" },
+        OR: [
+          {
+            supplierId: { not: null },
+            Supplier: { type: "international" },
+          },
+          {
+            Subgroup: { code: "402" },
+          },
+        ],
       },
       include: {
         Subgroup: { include: { MainGroup: true } },
@@ -1038,7 +1059,7 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
 
     if (!acc) {
       return res.status(404).json({
-        error: "International supplier account not found",
+        error: "International supplier or supplier security account not found",
       });
     }
 

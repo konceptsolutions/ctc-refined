@@ -5594,7 +5594,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
 });
 
 // Import-PO expense buckets -> chart-of-accounts codes under subgroup 302
-// (Purchase expenses Payables). Each of these is Dr Inventory / Cr <payable>.
+// (Import Purchase expenses Payables). Each is Dr Inventory / Cr <payable>.
 const IMPORT_EXPENSE_ACCOUNTS: Array<{
   field: string;
   code: string;

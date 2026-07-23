@@ -57,6 +57,7 @@ interface SupplierAccountOption {
   name: string;
   supplierName?: string;
   currencyName?: string;
+  accountCategory?: "supplier_payable" | "supplier_security";
 }
 
 export const InternationalSupplierLedgersTab = () => {
@@ -93,9 +94,12 @@ export const InternationalSupplierLedgersTab = () => {
     () =>
       accounts.map((acc) => ({
         value: acc.id,
-        label: acc.supplierName
-          ? `${acc.name} (${acc.supplierName})`
-          : acc.name,
+        label:
+          acc.accountCategory === "supplier_security"
+            ? `${acc.name} (Supplier Security)`
+            : acc.supplierName
+              ? `${acc.name} (${acc.supplierName})`
+              : acc.name,
       })),
     [accounts],
   );
@@ -118,6 +122,15 @@ export const InternationalSupplierLedgersTab = () => {
 
   const formatAmount = (num: number | null) =>
     currencyMode === "foreign" ? formatForeignNumber(num) : formatLocalNumber(num);
+
+  const formatExchangeRate = (rate?: number | null) => {
+    const value = Number(rate);
+    if (!Number.isFinite(value) || value <= 0) return "-";
+    return value.toLocaleString("en-PK", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    });
+  };
 
   const getDebit = (entry: LedgerEntry) =>
     currencyMode === "foreign" ? entry.debitFc : entry.debit;
@@ -198,6 +211,7 @@ export const InternationalSupplierLedgersTab = () => {
       "Voucher No",
       "Time Stamp",
       "Description",
+      ...(currencyMode === "foreign" ? ["Exchange Rate"] : []),
       `Debit (${modeLabel})`,
       `Credit (${modeLabel})`,
       `Balance (${modeLabel})`,
@@ -210,6 +224,9 @@ export const InternationalSupplierLedgersTab = () => {
           entry.voucherNo,
           entry.timeStamp,
           `"${String(entry.description || "").replace(/"/g, '""')}"`,
+          ...(currencyMode === "foreign"
+            ? [entry.conversionRate ?? ""]
+            : []),
           getDebit(entry) ?? "",
           getCredit(entry) ?? "",
           getBalance(entry),
@@ -259,6 +276,7 @@ export const InternationalSupplierLedgersTab = () => {
                 <th>Voucher No</th>
                 <th>Time Stamp</th>
                 <th>Description</th>
+                ${currencyMode === "foreign" ? '<th class="text-right">Exchange Rate</th>' : ""}
                 <th class="text-right">Dr</th>
                 <th class="text-right">Cr</th>
                 <th class="text-right">Balance</th>
@@ -273,6 +291,7 @@ export const InternationalSupplierLedgersTab = () => {
                   <td>${entry.voucherNo}</td>
                   <td>${entry.timeStamp}</td>
                   <td>${entry.description}</td>
+                ${currencyMode === "foreign" ? `<td class="text-right">${formatExchangeRate(entry.conversionRate)}</td>` : ""}
                   <td class="text-right">${formatAmount(getDebit(entry))}</td>
                   <td class="text-right">${formatAmount(getCredit(entry))}</td>
                   <td class="text-right">${formatAmount(getBalance(entry))}</td>
@@ -419,6 +438,11 @@ export const InternationalSupplierLedgersTab = () => {
                 <TableHead className="font-semibold underline">Voucher No</TableHead>
                 <TableHead className="font-semibold underline">Time Stamp</TableHead>
                 <TableHead className="font-semibold underline">Description</TableHead>
+                {currencyMode === "foreign" ? (
+                  <TableHead className="font-semibold underline text-right">
+                    Exchange Rate
+                  </TableHead>
+                ) : null}
                 <TableHead className="font-semibold underline text-right">Dr</TableHead>
                 <TableHead className="font-semibold underline text-right">Cr</TableHead>
                 <TableHead className="font-semibold underline text-right">Balance</TableHead>
@@ -427,13 +451,19 @@ export const InternationalSupplierLedgersTab = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell
+                    colSpan={currencyMode === "foreign" ? 10 : 9}
+                    className="text-center py-8 text-muted-foreground"
+                  >
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : entries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
+                  <TableCell
+                    colSpan={currencyMode === "foreign" ? 10 : 9}
+                    className="text-center py-8"
+                  >
                     <div className="flex flex-col items-center gap-2">
                       <Users className="h-12 w-12 text-muted-foreground/50" />
                       <p className="text-muted-foreground font-medium">
@@ -464,6 +494,11 @@ export const InternationalSupplierLedgersTab = () => {
                       <TableCell>{formatDisplayValue(entry.voucherNo)}</TableCell>
                       <TableCell>{formatDisplayValue(entry.timeStamp)}</TableCell>
                       <TableCell>{entry.description}</TableCell>
+                      {currencyMode === "foreign" ? (
+                        <TableCell className="text-right">
+                          {formatExchangeRate(entry.conversionRate)}
+                        </TableCell>
+                      ) : null}
                       <TableCell className="text-right">
                         {formatAmount(getDebit(entry))}
                       </TableCell>
@@ -476,7 +511,10 @@ export const InternationalSupplierLedgersTab = () => {
                     </TableRow>
                   ))}
                   <TableRow className="bg-muted font-bold">
-                    <TableCell colSpan={6} className="text-right">
+                    <TableCell
+                      colSpan={currencyMode === "foreign" ? 7 : 6}
+                      className="text-right"
+                    >
                       Total:
                     </TableCell>
                     <TableCell className="text-right">
