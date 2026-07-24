@@ -757,6 +757,28 @@ exports.Prisma.SalesInquiryItemScalarFieldEnum = {
   createdAt: 'createdAt'
 };
 
+exports.Prisma.LocalInquiryScalarFieldEnum = {
+  id: 'id',
+  inquiryNo: 'inquiryNo',
+  inquiryDate: 'inquiryDate',
+  supplierId: 'supplierId',
+  remarks: 'remarks',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LocalInquiryItemScalarFieldEnum = {
+  id: 'id',
+  inquiryId: 'inquiryId',
+  partId: 'partId',
+  quantity: 'quantity',
+  price: 'price',
+  remarks: 'remarks',
+  sortOrder: 'sortOrder',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.SalesInvoiceScalarFieldEnum = {
   id: 'id',
   invoiceNo: 'invoiceNo',
@@ -1201,6 +1223,8 @@ exports.Prisma.ModelName = {
   Role: 'Role',
   SalesInquiry: 'SalesInquiry',
   SalesInquiryItem: 'SalesInquiryItem',
+  LocalInquiry: 'LocalInquiry',
+  LocalInquiryItem: 'LocalInquiryItem',
   SalesInvoice: 'SalesInvoice',
   SalesInvoiceItem: 'SalesInvoiceItem',
   InvoiceRackShelf: 'InvoiceRackShelf',

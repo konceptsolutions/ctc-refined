@@ -10147,4 +10147,318 @@ router.post("/stock/reserve", async (req: Request, res: Response) => {
   }
 });
 
+const localInquiryInclude = {
+  Supplier: true,
+  LocalInquiryItem: {
+    include: {
+      Part: {
+        include: {
+          Brand: true,
+          Category: true,
+        },
+      },
+    },
+    orderBy: { sortOrder: "asc" as const },
+  },
+};
+
+function mapLocalInquiry(inquiry: any) {
+  const items = (inquiry.LocalInquiryItem || []).map((item: any) => ({
+    id: item.id,
+    partId: item.partId,
+    partNo: item.Part?.partNo || item.Part?.masterPartNo || "",
+    description: item.Part?.description || "",
+    brand: item.Part?.Brand?.name || "",
+    quantity: item.quantity,
+    price: item.price,
+    remarks: item.remarks || "",
+    amount: Number(item.quantity || 0) * Number(item.price || 0),
+  }));
+
+  return {
+    id: inquiry.id,
+    inquiryNo: inquiry.inquiryNo,
+    inquiryDate: inquiry.inquiryDate,
+    supplierId: inquiry.supplierId,
+    supplierName:
+      inquiry.Supplier?.name ||
+      inquiry.Supplier?.companyName ||
+      "",
+    supplierContactNo:
+      inquiry.Supplier?.phone ||
+      inquiry.Supplier?.cellNumber ||
+      "",
+    remarks: inquiry.remarks || "",
+    status: inquiry.status,
+    createdAt: inquiry.createdAt,
+    updatedAt: inquiry.updatedAt,
+    itemCount: items.length,
+    totalAmount: items.reduce(
+      (sum: number, item: any) => sum + Number(item.amount || 0),
+      0,
+    ),
+    items,
+  };
+}
+
+function normalizeLocalInquiryItems(items: any[]) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("At least one item is required");
+  }
+
+  return items.map((item: any, index: number) => {
+    const partId = String(item.partId || item.part_id || "").trim();
+    if (!partId) {
+      throw new Error(`Item ${index + 1}: part is required`);
+    }
+    const quantity = Math.max(1, parseInt(String(item.quantity ?? 1), 10) || 1);
+    const price = parseFloat(String(item.price ?? 0)) || 0;
+    return {
+      id: randomUUID(),
+      partId,
+      quantity,
+      price,
+      remarks: item.remarks ? String(item.remarks) : null,
+      sortOrder: index,
+    };
+  });
+}
+
+// GET /inventory/local-inquiries
+router.get("/local-inquiries", async (req: Request, res: Response) => {
+  try {
+    const {
+      from_date,
+      to_date,
+      supplier_id,
+      part_id,
+      partId,
+      search,
+      page = "1",
+      limit = "50",
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(1000, parseInt(String(limit), 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
+    const partFilter = String(part_id || partId || "").trim();
+
+    const where: any = {};
+    if (supplier_id) where.supplierId = String(supplier_id);
+    if (partFilter) {
+      where.LocalInquiryItem = {
+        some: { partId: partFilter },
+      };
+    }
+    if (from_date || to_date) {
+      where.inquiryDate = {};
+      if (from_date) where.inquiryDate.gte = new Date(String(from_date));
+      if (to_date) {
+        const end = new Date(String(to_date));
+        end.setHours(23, 59, 59, 999);
+        where.inquiryDate.lte = end;
+      }
+    }
+    if (search) {
+      const term = String(search).trim();
+      if (term) {
+        where.OR = [
+          { inquiryNo: { contains: term, mode: "insensitive" } },
+          { remarks: { contains: term, mode: "insensitive" } },
+          {
+            Supplier: {
+              OR: [
+                { name: { contains: term, mode: "insensitive" } },
+                { companyName: { contains: term, mode: "insensitive" } },
+              ],
+            },
+          },
+        ];
+      }
+    }
+
+    const [rows, total] = await Promise.all([
+      prisma.localInquiry.findMany({
+        where,
+        include: localInquiryInclude,
+        orderBy: [{ inquiryDate: "desc" }, { createdAt: "desc" }],
+        skip,
+        take: limitNum,
+      }),
+      prisma.localInquiry.count({ where }),
+    ]);
+
+    res.json({
+      data: rows.map(mapLocalInquiry),
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum) || 1,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /inventory/local-inquiries/:id
+router.get("/local-inquiries/:id", async (req: Request, res: Response) => {
+  try {
+    const inquiry = await prisma.localInquiry.findUnique({
+      where: { id: req.params.id },
+      include: localInquiryInclude,
+    });
+    if (!inquiry) {
+      return res.status(404).json({ error: "Local inquiry not found" });
+    }
+    res.json({ data: mapLocalInquiry(inquiry) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /inventory/local-inquiries
+router.post("/local-inquiries", async (req: Request, res: Response) => {
+  try {
+    const {
+      inquiryDate,
+      inquiry_date,
+      supplierId,
+      supplier_id,
+      remarks,
+      status,
+      items,
+    } = req.body;
+
+    const dateValue = inquiryDate || inquiry_date;
+    if (!dateValue) {
+      return res.status(400).json({ error: "Inquiry date is required" });
+    }
+
+    let normalizedItems;
+    try {
+      normalizedItems = normalizeLocalInquiryItems(items);
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    const last = await prisma.localInquiry.findFirst({
+      orderBy: { inquiryNo: "desc" },
+      select: { inquiryNo: true },
+    });
+    let nextNo = 1;
+    if (last?.inquiryNo) {
+      const match = last.inquiryNo.match(/LI-(\d+)/i);
+      if (match) nextNo = parseInt(match[1], 10) + 1;
+    }
+    const inquiryNo = `LI-${String(nextNo).padStart(4, "0")}`;
+
+    const inquiry = await prisma.localInquiry.create({
+      data: {
+        id: randomUUID(),
+        inquiryNo,
+        inquiryDate: new Date(dateValue),
+        supplierId: supplierId || supplier_id || null,
+        remarks: remarks || null,
+        status: status || "Open",
+        updatedAt: new Date(),
+        LocalInquiryItem: {
+          create: normalizedItems,
+        },
+      },
+      include: localInquiryInclude,
+    });
+
+    res.status(201).json({ data: mapLocalInquiry(inquiry) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /inventory/local-inquiries/:id
+router.put("/local-inquiries/:id", async (req: Request, res: Response) => {
+  try {
+    const existing = await prisma.localInquiry.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Local inquiry not found" });
+    }
+
+    const {
+      inquiryDate,
+      inquiry_date,
+      supplierId,
+      supplier_id,
+      remarks,
+      status,
+      items,
+    } = req.body;
+
+    const data: any = { updatedAt: new Date() };
+    if (inquiryDate !== undefined || inquiry_date !== undefined) {
+      data.inquiryDate = new Date(inquiryDate || inquiry_date);
+    }
+    if (supplierId !== undefined || supplier_id !== undefined) {
+      data.supplierId = supplierId || supplier_id || null;
+    }
+    if (remarks !== undefined) data.remarks = remarks || null;
+    if (status !== undefined) data.status = status;
+
+    if (items !== undefined) {
+      let normalizedItems;
+      try {
+        normalizedItems = normalizeLocalInquiryItems(items);
+      } catch (err: any) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      await prisma.$transaction([
+        prisma.localInquiryItem.deleteMany({
+          where: { inquiryId: req.params.id },
+        }),
+        prisma.localInquiry.update({
+          where: { id: req.params.id },
+          data: {
+            ...data,
+            LocalInquiryItem: {
+              create: normalizedItems,
+            },
+          },
+        }),
+      ]);
+    } else {
+      await prisma.localInquiry.update({
+        where: { id: req.params.id },
+        data,
+      });
+    }
+
+    const inquiry = await prisma.localInquiry.findUnique({
+      where: { id: req.params.id },
+      include: localInquiryInclude,
+    });
+
+    res.json({ data: mapLocalInquiry(inquiry) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /inventory/local-inquiries/:id
+router.delete("/local-inquiries/:id", async (req: Request, res: Response) => {
+  try {
+    await prisma.localInquiry.delete({
+      where: { id: req.params.id },
+    });
+    res.json({ success: true, message: "Local inquiry deleted successfully" });
+  } catch (error: any) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "Local inquiry not found" });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

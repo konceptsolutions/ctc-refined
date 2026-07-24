@@ -28,6 +28,7 @@ import { StockAnalysis } from "@/components/inventory/StockAnalysis";
 import { StockVerification } from "@/components/inventory/StockVerification";
 import { PurchaseOrder } from "@/components/inventory/PurchaseOrder";
 import { DirectPurchaseOrder } from "@/components/inventory/DirectPurchaseOrder";
+import { LocalInquiry } from "@/components/inventory/LocalInquiry";
 import { DPOReturn } from "@/components/inventory/DPOReturn";
 import { CurrentStock } from "@/components/inventory/CurrentStock";
 
@@ -44,6 +45,7 @@ type InventoryTab =
   | "stock-analysis"
   | "stock-verification"
   | "purchase-order"
+  | "local-inquiry"
   | "direct-purchase-order"
   | "dpo-return"
   | "store-management";
@@ -69,6 +71,7 @@ const tabs: TabConfig[] = [
   // { id: "stock-analysis", label: "Stock Analysis", icon: Activity, description: "Fast, slow & dead stock" }, // Hidden temporarily
   // { id: "stock-verification", label: "Verification", icon: ClipboardCheck, description: "Physical stock verification" }, // Hidden temporarily
   // { id: "purchase-order", label: "Purchase Order", icon: ShoppingCart, description: "Manage purchase orders" }, // Hidden temporarily
+  { id: "local-inquiry", label: "Local Inquiry", icon: ClipboardCheck, description: "Local purchase inquiries" },
   { id: "direct-purchase-order", label: "Local Purchase", icon: FileText, description: "Local purchase orders" },
   { id: "dpo-return", label: "DPO Return", icon: Undo2, description: "Manage DPO returns" },
 ];
@@ -120,6 +123,8 @@ const Inventory = () => {
         return <StockVerification />;
       case "purchase-order":
         return <PurchaseOrder />;
+      case "local-inquiry":
+        return <LocalInquiry />;
       case "direct-purchase-order":
         return <DirectPurchaseOrder />;
       case "dpo-return":

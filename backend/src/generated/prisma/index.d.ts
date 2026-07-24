@@ -229,6 +229,16 @@ export type SalesInquiry = $Result.DefaultSelection<Prisma.$SalesInquiryPayload>
  */
 export type SalesInquiryItem = $Result.DefaultSelection<Prisma.$SalesInquiryItemPayload>
 /**
+ * Model LocalInquiry
+ * 
+ */
+export type LocalInquiry = $Result.DefaultSelection<Prisma.$LocalInquiryPayload>
+/**
+ * Model LocalInquiryItem
+ * 
+ */
+export type LocalInquiryItem = $Result.DefaultSelection<Prisma.$LocalInquiryItemPayload>
+/**
  * Model SalesInvoice
  * 
  */
@@ -896,6 +906,26 @@ export class PrismaClient<
     * ```
     */
   get salesInquiryItem(): Prisma.SalesInquiryItemDelegate<ExtArgs>;
+
+  /**
+   * `prisma.localInquiry`: Exposes CRUD operations for the **LocalInquiry** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more LocalInquiries
+    * const localInquiries = await prisma.localInquiry.findMany()
+    * ```
+    */
+  get localInquiry(): Prisma.LocalInquiryDelegate<ExtArgs>;
+
+  /**
+   * `prisma.localInquiryItem`: Exposes CRUD operations for the **LocalInquiryItem** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more LocalInquiryItems
+    * const localInquiryItems = await prisma.localInquiryItem.findMany()
+    * ```
+    */
+  get localInquiryItem(): Prisma.LocalInquiryItemDelegate<ExtArgs>;
 
   /**
    * `prisma.salesInvoice`: Exposes CRUD operations for the **SalesInvoice** model.
@@ -1610,6 +1640,8 @@ export namespace Prisma {
     Role: 'Role',
     SalesInquiry: 'SalesInquiry',
     SalesInquiryItem: 'SalesInquiryItem',
+    LocalInquiry: 'LocalInquiry',
+    LocalInquiryItem: 'LocalInquiryItem',
     SalesInvoice: 'SalesInvoice',
     SalesInvoiceItem: 'SalesInvoiceItem',
     InvoiceRackShelf: 'InvoiceRackShelf',
@@ -1648,7 +1680,7 @@ export namespace Prisma {
 
   export type TypeMap<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, ClientOptions = {}> = {
     meta: {
-      modelProps: "account" | "activityLog" | "adjustment" | "adjustmentItem" | "area" | "application" | "approvalFlow" | "backup" | "backupSchedule" | "brand" | "category" | "companyProfile" | "customer" | "employee" | "employeeTransaction" | "deliveryLog" | "deliveryLogItem" | "directPurchaseOrder" | "directPurchaseOrderExpense" | "directPurchaseOrderItem" | "directPurchaseOrderReturn" | "directPurchaseOrderReturnItem" | "expenseType" | "longCatSettings" | "mainGroup" | "masterPart" | "model" | "operationalExpense" | "part" | "kitItem" | "purchaseImportRequest" | "purchaseImportRequestItem" | "purchaseQuotation" | "purchaseQuotationItem" | "postedExpense" | "priceHistory" | "purchaseOrder" | "purchaseOrderItem" | "rack" | "receivable" | "role" | "salesInquiry" | "salesInquiryItem" | "salesInvoice" | "salesInvoiceItem" | "invoiceRackShelf" | "salesQuotation" | "salesQuotationItem" | "salesReturn" | "salesReturnItem" | "shelf" | "stockMovement" | "stockReservation" | "stockVerification" | "stockVerificationItem" | "store" | "subcategory" | "subgroup" | "supplier" | "transfer" | "transferItem" | "user" | "voucher" | "voucherEntry" | "whatsAppSettings" | "partRackShelf"
+      modelProps: "account" | "activityLog" | "adjustment" | "adjustmentItem" | "area" | "application" | "approvalFlow" | "backup" | "backupSchedule" | "brand" | "category" | "companyProfile" | "customer" | "employee" | "employeeTransaction" | "deliveryLog" | "deliveryLogItem" | "directPurchaseOrder" | "directPurchaseOrderExpense" | "directPurchaseOrderItem" | "directPurchaseOrderReturn" | "directPurchaseOrderReturnItem" | "expenseType" | "longCatSettings" | "mainGroup" | "masterPart" | "model" | "operationalExpense" | "part" | "kitItem" | "purchaseImportRequest" | "purchaseImportRequestItem" | "purchaseQuotation" | "purchaseQuotationItem" | "postedExpense" | "priceHistory" | "purchaseOrder" | "purchaseOrderItem" | "rack" | "receivable" | "role" | "salesInquiry" | "salesInquiryItem" | "localInquiry" | "localInquiryItem" | "salesInvoice" | "salesInvoiceItem" | "invoiceRackShelf" | "salesQuotation" | "salesQuotationItem" | "salesReturn" | "salesReturnItem" | "shelf" | "stockMovement" | "stockReservation" | "stockVerification" | "stockVerificationItem" | "store" | "subcategory" | "subgroup" | "supplier" | "transfer" | "transferItem" | "user" | "voucher" | "voucherEntry" | "whatsAppSettings" | "partRackShelf"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -4662,6 +4694,146 @@ export namespace Prisma {
           }
         }
       }
+      LocalInquiry: {
+        payload: Prisma.$LocalInquiryPayload<ExtArgs>
+        fields: Prisma.LocalInquiryFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.LocalInquiryFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.LocalInquiryFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload>
+          }
+          findFirst: {
+            args: Prisma.LocalInquiryFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.LocalInquiryFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload>
+          }
+          findMany: {
+            args: Prisma.LocalInquiryFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload>[]
+          }
+          create: {
+            args: Prisma.LocalInquiryCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload>
+          }
+          createMany: {
+            args: Prisma.LocalInquiryCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.LocalInquiryCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload>[]
+          }
+          delete: {
+            args: Prisma.LocalInquiryDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload>
+          }
+          update: {
+            args: Prisma.LocalInquiryUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload>
+          }
+          deleteMany: {
+            args: Prisma.LocalInquiryDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.LocalInquiryUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          upsert: {
+            args: Prisma.LocalInquiryUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryPayload>
+          }
+          aggregate: {
+            args: Prisma.LocalInquiryAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateLocalInquiry>
+          }
+          groupBy: {
+            args: Prisma.LocalInquiryGroupByArgs<ExtArgs>
+            result: $Utils.Optional<LocalInquiryGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.LocalInquiryCountArgs<ExtArgs>
+            result: $Utils.Optional<LocalInquiryCountAggregateOutputType> | number
+          }
+        }
+      }
+      LocalInquiryItem: {
+        payload: Prisma.$LocalInquiryItemPayload<ExtArgs>
+        fields: Prisma.LocalInquiryItemFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.LocalInquiryItemFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.LocalInquiryItemFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload>
+          }
+          findFirst: {
+            args: Prisma.LocalInquiryItemFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.LocalInquiryItemFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload>
+          }
+          findMany: {
+            args: Prisma.LocalInquiryItemFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload>[]
+          }
+          create: {
+            args: Prisma.LocalInquiryItemCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload>
+          }
+          createMany: {
+            args: Prisma.LocalInquiryItemCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.LocalInquiryItemCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload>[]
+          }
+          delete: {
+            args: Prisma.LocalInquiryItemDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload>
+          }
+          update: {
+            args: Prisma.LocalInquiryItemUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload>
+          }
+          deleteMany: {
+            args: Prisma.LocalInquiryItemDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.LocalInquiryItemUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          upsert: {
+            args: Prisma.LocalInquiryItemUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LocalInquiryItemPayload>
+          }
+          aggregate: {
+            args: Prisma.LocalInquiryItemAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateLocalInquiryItem>
+          }
+          groupBy: {
+            args: Prisma.LocalInquiryItemGroupByArgs<ExtArgs>
+            result: $Utils.Optional<LocalInquiryItemGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.LocalInquiryItemCountArgs<ExtArgs>
+            result: $Utils.Optional<LocalInquiryItemCountAggregateOutputType> | number
+          }
+        }
+      }
       SalesInvoice: {
         payload: Prisma.$SalesInvoicePayload<ExtArgs>
         fields: Prisma.SalesInvoiceFieldRefs
@@ -7017,6 +7189,7 @@ export namespace Prisma {
     StockReservation: number
     StockVerificationItem: number
     TransferItem: number
+    LocalInquiryItem: number
   }
 
   export type PartCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -7039,6 +7212,7 @@ export namespace Prisma {
     StockReservation?: boolean | PartCountOutputTypeCountStockReservationArgs
     StockVerificationItem?: boolean | PartCountOutputTypeCountStockVerificationItemArgs
     TransferItem?: boolean | PartCountOutputTypeCountTransferItemArgs
+    LocalInquiryItem?: boolean | PartCountOutputTypeCountLocalInquiryItemArgs
   }
 
   // Custom InputTypes
@@ -7183,6 +7357,13 @@ export namespace Prisma {
    */
   export type PartCountOutputTypeCountTransferItemArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: TransferItemWhereInput
+  }
+
+  /**
+   * PartCountOutputType without action
+   */
+  export type PartCountOutputTypeCountLocalInquiryItemArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: LocalInquiryItemWhereInput
   }
 
 
@@ -7437,6 +7618,37 @@ export namespace Prisma {
    */
   export type SalesInquiryCountOutputTypeCountSalesInquiryItemArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: SalesInquiryItemWhereInput
+  }
+
+
+  /**
+   * Count Type LocalInquiryCountOutputType
+   */
+
+  export type LocalInquiryCountOutputType = {
+    LocalInquiryItem: number
+  }
+
+  export type LocalInquiryCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    LocalInquiryItem?: boolean | LocalInquiryCountOutputTypeCountLocalInquiryItemArgs
+  }
+
+  // Custom InputTypes
+  /**
+   * LocalInquiryCountOutputType without action
+   */
+  export type LocalInquiryCountOutputTypeDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryCountOutputType
+     */
+    select?: LocalInquiryCountOutputTypeSelect<ExtArgs> | null
+  }
+
+  /**
+   * LocalInquiryCountOutputType without action
+   */
+  export type LocalInquiryCountOutputTypeCountLocalInquiryItemArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: LocalInquiryItemWhereInput
   }
 
 
@@ -7984,6 +8196,7 @@ export namespace Prisma {
     PurchaseQuotation: number
     StockMovement: number
     VoucherEntry: number
+    LocalInquiry: number
   }
 
   export type SupplierCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -7995,6 +8208,7 @@ export namespace Prisma {
     PurchaseQuotation?: boolean | SupplierCountOutputTypeCountPurchaseQuotationArgs
     StockMovement?: boolean | SupplierCountOutputTypeCountStockMovementArgs
     VoucherEntry?: boolean | SupplierCountOutputTypeCountVoucherEntryArgs
+    LocalInquiry?: boolean | SupplierCountOutputTypeCountLocalInquiryArgs
   }
 
   // Custom InputTypes
@@ -8062,6 +8276,13 @@ export namespace Prisma {
    */
   export type SupplierCountOutputTypeCountVoucherEntryArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: VoucherEntryWhereInput
+  }
+
+  /**
+   * SupplierCountOutputType without action
+   */
+  export type SupplierCountOutputTypeCountLocalInquiryArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: LocalInquiryWhereInput
   }
 
 
@@ -37713,6 +37934,7 @@ export namespace Prisma {
     StockReservation?: boolean | Part$StockReservationArgs<ExtArgs>
     StockVerificationItem?: boolean | Part$StockVerificationItemArgs<ExtArgs>
     TransferItem?: boolean | Part$TransferItemArgs<ExtArgs>
+    LocalInquiryItem?: boolean | Part$LocalInquiryItemArgs<ExtArgs>
     _count?: boolean | PartCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["part"]>
 
@@ -37812,6 +38034,7 @@ export namespace Prisma {
     StockReservation?: boolean | Part$StockReservationArgs<ExtArgs>
     StockVerificationItem?: boolean | Part$StockVerificationItemArgs<ExtArgs>
     TransferItem?: boolean | Part$TransferItemArgs<ExtArgs>
+    LocalInquiryItem?: boolean | Part$LocalInquiryItemArgs<ExtArgs>
     _count?: boolean | PartCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type PartIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -37849,6 +38072,7 @@ export namespace Prisma {
       StockReservation: Prisma.$StockReservationPayload<ExtArgs>[]
       StockVerificationItem: Prisma.$StockVerificationItemPayload<ExtArgs>[]
       TransferItem: Prisma.$TransferItemPayload<ExtArgs>[]
+      LocalInquiryItem: Prisma.$LocalInquiryItemPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -38269,6 +38493,7 @@ export namespace Prisma {
     StockReservation<T extends Part$StockReservationArgs<ExtArgs> = {}>(args?: Subset<T, Part$StockReservationArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$StockReservationPayload<ExtArgs>, T, "findMany"> | Null>
     StockVerificationItem<T extends Part$StockVerificationItemArgs<ExtArgs> = {}>(args?: Subset<T, Part$StockVerificationItemArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$StockVerificationItemPayload<ExtArgs>, T, "findMany"> | Null>
     TransferItem<T extends Part$TransferItemArgs<ExtArgs> = {}>(args?: Subset<T, Part$TransferItemArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TransferItemPayload<ExtArgs>, T, "findMany"> | Null>
+    LocalInquiryItem<T extends Part$LocalInquiryItemArgs<ExtArgs> = {}>(args?: Subset<T, Part$LocalInquiryItemArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "findMany"> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -39098,6 +39323,26 @@ export namespace Prisma {
     take?: number
     skip?: number
     distinct?: TransferItemScalarFieldEnum | TransferItemScalarFieldEnum[]
+  }
+
+  /**
+   * Part.LocalInquiryItem
+   */
+  export type Part$LocalInquiryItemArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    where?: LocalInquiryItemWhereInput
+    orderBy?: LocalInquiryItemOrderByWithRelationInput | LocalInquiryItemOrderByWithRelationInput[]
+    cursor?: LocalInquiryItemWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: LocalInquiryItemScalarFieldEnum | LocalInquiryItemScalarFieldEnum[]
   }
 
   /**
@@ -54736,6 +54981,2033 @@ export namespace Prisma {
      * Choose, which related nodes to fetch as well
      */
     include?: SalesInquiryItemInclude<ExtArgs> | null
+  }
+
+
+  /**
+   * Model LocalInquiry
+   */
+
+  export type AggregateLocalInquiry = {
+    _count: LocalInquiryCountAggregateOutputType | null
+    _min: LocalInquiryMinAggregateOutputType | null
+    _max: LocalInquiryMaxAggregateOutputType | null
+  }
+
+  export type LocalInquiryMinAggregateOutputType = {
+    id: string | null
+    inquiryNo: string | null
+    inquiryDate: Date | null
+    supplierId: string | null
+    remarks: string | null
+    status: string | null
+    createdAt: Date | null
+    updatedAt: Date | null
+  }
+
+  export type LocalInquiryMaxAggregateOutputType = {
+    id: string | null
+    inquiryNo: string | null
+    inquiryDate: Date | null
+    supplierId: string | null
+    remarks: string | null
+    status: string | null
+    createdAt: Date | null
+    updatedAt: Date | null
+  }
+
+  export type LocalInquiryCountAggregateOutputType = {
+    id: number
+    inquiryNo: number
+    inquiryDate: number
+    supplierId: number
+    remarks: number
+    status: number
+    createdAt: number
+    updatedAt: number
+    _all: number
+  }
+
+
+  export type LocalInquiryMinAggregateInputType = {
+    id?: true
+    inquiryNo?: true
+    inquiryDate?: true
+    supplierId?: true
+    remarks?: true
+    status?: true
+    createdAt?: true
+    updatedAt?: true
+  }
+
+  export type LocalInquiryMaxAggregateInputType = {
+    id?: true
+    inquiryNo?: true
+    inquiryDate?: true
+    supplierId?: true
+    remarks?: true
+    status?: true
+    createdAt?: true
+    updatedAt?: true
+  }
+
+  export type LocalInquiryCountAggregateInputType = {
+    id?: true
+    inquiryNo?: true
+    inquiryDate?: true
+    supplierId?: true
+    remarks?: true
+    status?: true
+    createdAt?: true
+    updatedAt?: true
+    _all?: true
+  }
+
+  export type LocalInquiryAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which LocalInquiry to aggregate.
+     */
+    where?: LocalInquiryWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LocalInquiries to fetch.
+     */
+    orderBy?: LocalInquiryOrderByWithRelationInput | LocalInquiryOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: LocalInquiryWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LocalInquiries from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LocalInquiries.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned LocalInquiries
+    **/
+    _count?: true | LocalInquiryCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: LocalInquiryMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: LocalInquiryMaxAggregateInputType
+  }
+
+  export type GetLocalInquiryAggregateType<T extends LocalInquiryAggregateArgs> = {
+        [P in keyof T & keyof AggregateLocalInquiry]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateLocalInquiry[P]>
+      : GetScalarType<T[P], AggregateLocalInquiry[P]>
+  }
+
+
+
+
+  export type LocalInquiryGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: LocalInquiryWhereInput
+    orderBy?: LocalInquiryOrderByWithAggregationInput | LocalInquiryOrderByWithAggregationInput[]
+    by: LocalInquiryScalarFieldEnum[] | LocalInquiryScalarFieldEnum
+    having?: LocalInquiryScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: LocalInquiryCountAggregateInputType | true
+    _min?: LocalInquiryMinAggregateInputType
+    _max?: LocalInquiryMaxAggregateInputType
+  }
+
+  export type LocalInquiryGroupByOutputType = {
+    id: string
+    inquiryNo: string
+    inquiryDate: Date
+    supplierId: string | null
+    remarks: string | null
+    status: string
+    createdAt: Date
+    updatedAt: Date
+    _count: LocalInquiryCountAggregateOutputType | null
+    _min: LocalInquiryMinAggregateOutputType | null
+    _max: LocalInquiryMaxAggregateOutputType | null
+  }
+
+  type GetLocalInquiryGroupByPayload<T extends LocalInquiryGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<LocalInquiryGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof LocalInquiryGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], LocalInquiryGroupByOutputType[P]>
+            : GetScalarType<T[P], LocalInquiryGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type LocalInquirySelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    inquiryNo?: boolean
+    inquiryDate?: boolean
+    supplierId?: boolean
+    remarks?: boolean
+    status?: boolean
+    createdAt?: boolean
+    updatedAt?: boolean
+    Supplier?: boolean | LocalInquiry$SupplierArgs<ExtArgs>
+    LocalInquiryItem?: boolean | LocalInquiry$LocalInquiryItemArgs<ExtArgs>
+    _count?: boolean | LocalInquiryCountOutputTypeDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["localInquiry"]>
+
+  export type LocalInquirySelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    inquiryNo?: boolean
+    inquiryDate?: boolean
+    supplierId?: boolean
+    remarks?: boolean
+    status?: boolean
+    createdAt?: boolean
+    updatedAt?: boolean
+    Supplier?: boolean | LocalInquiry$SupplierArgs<ExtArgs>
+  }, ExtArgs["result"]["localInquiry"]>
+
+  export type LocalInquirySelectScalar = {
+    id?: boolean
+    inquiryNo?: boolean
+    inquiryDate?: boolean
+    supplierId?: boolean
+    remarks?: boolean
+    status?: boolean
+    createdAt?: boolean
+    updatedAt?: boolean
+  }
+
+  export type LocalInquiryInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    Supplier?: boolean | LocalInquiry$SupplierArgs<ExtArgs>
+    LocalInquiryItem?: boolean | LocalInquiry$LocalInquiryItemArgs<ExtArgs>
+    _count?: boolean | LocalInquiryCountOutputTypeDefaultArgs<ExtArgs>
+  }
+  export type LocalInquiryIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    Supplier?: boolean | LocalInquiry$SupplierArgs<ExtArgs>
+  }
+
+  export type $LocalInquiryPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "LocalInquiry"
+    objects: {
+      Supplier: Prisma.$SupplierPayload<ExtArgs> | null
+      LocalInquiryItem: Prisma.$LocalInquiryItemPayload<ExtArgs>[]
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      inquiryNo: string
+      inquiryDate: Date
+      supplierId: string | null
+      remarks: string | null
+      status: string
+      createdAt: Date
+      updatedAt: Date
+    }, ExtArgs["result"]["localInquiry"]>
+    composites: {}
+  }
+
+  type LocalInquiryGetPayload<S extends boolean | null | undefined | LocalInquiryDefaultArgs> = $Result.GetResult<Prisma.$LocalInquiryPayload, S>
+
+  type LocalInquiryCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = 
+    Omit<LocalInquiryFindManyArgs, 'select' | 'include' | 'distinct'> & {
+      select?: LocalInquiryCountAggregateInputType | true
+    }
+
+  export interface LocalInquiryDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['LocalInquiry'], meta: { name: 'LocalInquiry' } }
+    /**
+     * Find zero or one LocalInquiry that matches the filter.
+     * @param {LocalInquiryFindUniqueArgs} args - Arguments to find a LocalInquiry
+     * @example
+     * // Get one LocalInquiry
+     * const localInquiry = await prisma.localInquiry.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends LocalInquiryFindUniqueArgs>(args: SelectSubset<T, LocalInquiryFindUniqueArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "findUnique"> | null, null, ExtArgs>
+
+    /**
+     * Find one LocalInquiry that matches the filter or throw an error with `error.code='P2025'` 
+     * if no matches were found.
+     * @param {LocalInquiryFindUniqueOrThrowArgs} args - Arguments to find a LocalInquiry
+     * @example
+     * // Get one LocalInquiry
+     * const localInquiry = await prisma.localInquiry.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends LocalInquiryFindUniqueOrThrowArgs>(args: SelectSubset<T, LocalInquiryFindUniqueOrThrowArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "findUniqueOrThrow">, never, ExtArgs>
+
+    /**
+     * Find the first LocalInquiry that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryFindFirstArgs} args - Arguments to find a LocalInquiry
+     * @example
+     * // Get one LocalInquiry
+     * const localInquiry = await prisma.localInquiry.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends LocalInquiryFindFirstArgs>(args?: SelectSubset<T, LocalInquiryFindFirstArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "findFirst"> | null, null, ExtArgs>
+
+    /**
+     * Find the first LocalInquiry that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryFindFirstOrThrowArgs} args - Arguments to find a LocalInquiry
+     * @example
+     * // Get one LocalInquiry
+     * const localInquiry = await prisma.localInquiry.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends LocalInquiryFindFirstOrThrowArgs>(args?: SelectSubset<T, LocalInquiryFindFirstOrThrowArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "findFirstOrThrow">, never, ExtArgs>
+
+    /**
+     * Find zero or more LocalInquiries that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all LocalInquiries
+     * const localInquiries = await prisma.localInquiry.findMany()
+     * 
+     * // Get first 10 LocalInquiries
+     * const localInquiries = await prisma.localInquiry.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const localInquiryWithIdOnly = await prisma.localInquiry.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends LocalInquiryFindManyArgs>(args?: SelectSubset<T, LocalInquiryFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "findMany">>
+
+    /**
+     * Create a LocalInquiry.
+     * @param {LocalInquiryCreateArgs} args - Arguments to create a LocalInquiry.
+     * @example
+     * // Create one LocalInquiry
+     * const LocalInquiry = await prisma.localInquiry.create({
+     *   data: {
+     *     // ... data to create a LocalInquiry
+     *   }
+     * })
+     * 
+     */
+    create<T extends LocalInquiryCreateArgs>(args: SelectSubset<T, LocalInquiryCreateArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "create">, never, ExtArgs>
+
+    /**
+     * Create many LocalInquiries.
+     * @param {LocalInquiryCreateManyArgs} args - Arguments to create many LocalInquiries.
+     * @example
+     * // Create many LocalInquiries
+     * const localInquiry = await prisma.localInquiry.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends LocalInquiryCreateManyArgs>(args?: SelectSubset<T, LocalInquiryCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many LocalInquiries and returns the data saved in the database.
+     * @param {LocalInquiryCreateManyAndReturnArgs} args - Arguments to create many LocalInquiries.
+     * @example
+     * // Create many LocalInquiries
+     * const localInquiry = await prisma.localInquiry.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many LocalInquiries and only return the `id`
+     * const localInquiryWithIdOnly = await prisma.localInquiry.createManyAndReturn({ 
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends LocalInquiryCreateManyAndReturnArgs>(args?: SelectSubset<T, LocalInquiryCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "createManyAndReturn">>
+
+    /**
+     * Delete a LocalInquiry.
+     * @param {LocalInquiryDeleteArgs} args - Arguments to delete one LocalInquiry.
+     * @example
+     * // Delete one LocalInquiry
+     * const LocalInquiry = await prisma.localInquiry.delete({
+     *   where: {
+     *     // ... filter to delete one LocalInquiry
+     *   }
+     * })
+     * 
+     */
+    delete<T extends LocalInquiryDeleteArgs>(args: SelectSubset<T, LocalInquiryDeleteArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "delete">, never, ExtArgs>
+
+    /**
+     * Update one LocalInquiry.
+     * @param {LocalInquiryUpdateArgs} args - Arguments to update one LocalInquiry.
+     * @example
+     * // Update one LocalInquiry
+     * const localInquiry = await prisma.localInquiry.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends LocalInquiryUpdateArgs>(args: SelectSubset<T, LocalInquiryUpdateArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "update">, never, ExtArgs>
+
+    /**
+     * Delete zero or more LocalInquiries.
+     * @param {LocalInquiryDeleteManyArgs} args - Arguments to filter LocalInquiries to delete.
+     * @example
+     * // Delete a few LocalInquiries
+     * const { count } = await prisma.localInquiry.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends LocalInquiryDeleteManyArgs>(args?: SelectSubset<T, LocalInquiryDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more LocalInquiries.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many LocalInquiries
+     * const localInquiry = await prisma.localInquiry.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends LocalInquiryUpdateManyArgs>(args: SelectSubset<T, LocalInquiryUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create or update one LocalInquiry.
+     * @param {LocalInquiryUpsertArgs} args - Arguments to update or create a LocalInquiry.
+     * @example
+     * // Update or create a LocalInquiry
+     * const localInquiry = await prisma.localInquiry.upsert({
+     *   create: {
+     *     // ... data to create a LocalInquiry
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the LocalInquiry we want to update
+     *   }
+     * })
+     */
+    upsert<T extends LocalInquiryUpsertArgs>(args: SelectSubset<T, LocalInquiryUpsertArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "upsert">, never, ExtArgs>
+
+
+    /**
+     * Count the number of LocalInquiries.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryCountArgs} args - Arguments to filter LocalInquiries to count.
+     * @example
+     * // Count the number of LocalInquiries
+     * const count = await prisma.localInquiry.count({
+     *   where: {
+     *     // ... the filter for the LocalInquiries we want to count
+     *   }
+     * })
+    **/
+    count<T extends LocalInquiryCountArgs>(
+      args?: Subset<T, LocalInquiryCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], LocalInquiryCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a LocalInquiry.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends LocalInquiryAggregateArgs>(args: Subset<T, LocalInquiryAggregateArgs>): Prisma.PrismaPromise<GetLocalInquiryAggregateType<T>>
+
+    /**
+     * Group by LocalInquiry.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends LocalInquiryGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: LocalInquiryGroupByArgs['orderBy'] }
+        : { orderBy?: LocalInquiryGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, LocalInquiryGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetLocalInquiryGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the LocalInquiry model
+   */
+  readonly fields: LocalInquiryFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for LocalInquiry.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__LocalInquiryClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    Supplier<T extends LocalInquiry$SupplierArgs<ExtArgs> = {}>(args?: Subset<T, LocalInquiry$SupplierArgs<ExtArgs>>): Prisma__SupplierClient<$Result.GetResult<Prisma.$SupplierPayload<ExtArgs>, T, "findUniqueOrThrow"> | null, null, ExtArgs>
+    LocalInquiryItem<T extends LocalInquiry$LocalInquiryItemArgs<ExtArgs> = {}>(args?: Subset<T, LocalInquiry$LocalInquiryItemArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "findMany"> | Null>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the LocalInquiry model
+   */ 
+  interface LocalInquiryFieldRefs {
+    readonly id: FieldRef<"LocalInquiry", 'String'>
+    readonly inquiryNo: FieldRef<"LocalInquiry", 'String'>
+    readonly inquiryDate: FieldRef<"LocalInquiry", 'DateTime'>
+    readonly supplierId: FieldRef<"LocalInquiry", 'String'>
+    readonly remarks: FieldRef<"LocalInquiry", 'String'>
+    readonly status: FieldRef<"LocalInquiry", 'String'>
+    readonly createdAt: FieldRef<"LocalInquiry", 'DateTime'>
+    readonly updatedAt: FieldRef<"LocalInquiry", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * LocalInquiry findUnique
+   */
+  export type LocalInquiryFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiry to fetch.
+     */
+    where: LocalInquiryWhereUniqueInput
+  }
+
+  /**
+   * LocalInquiry findUniqueOrThrow
+   */
+  export type LocalInquiryFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiry to fetch.
+     */
+    where: LocalInquiryWhereUniqueInput
+  }
+
+  /**
+   * LocalInquiry findFirst
+   */
+  export type LocalInquiryFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiry to fetch.
+     */
+    where?: LocalInquiryWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LocalInquiries to fetch.
+     */
+    orderBy?: LocalInquiryOrderByWithRelationInput | LocalInquiryOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for LocalInquiries.
+     */
+    cursor?: LocalInquiryWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LocalInquiries from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LocalInquiries.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of LocalInquiries.
+     */
+    distinct?: LocalInquiryScalarFieldEnum | LocalInquiryScalarFieldEnum[]
+  }
+
+  /**
+   * LocalInquiry findFirstOrThrow
+   */
+  export type LocalInquiryFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiry to fetch.
+     */
+    where?: LocalInquiryWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LocalInquiries to fetch.
+     */
+    orderBy?: LocalInquiryOrderByWithRelationInput | LocalInquiryOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for LocalInquiries.
+     */
+    cursor?: LocalInquiryWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LocalInquiries from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LocalInquiries.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of LocalInquiries.
+     */
+    distinct?: LocalInquiryScalarFieldEnum | LocalInquiryScalarFieldEnum[]
+  }
+
+  /**
+   * LocalInquiry findMany
+   */
+  export type LocalInquiryFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiries to fetch.
+     */
+    where?: LocalInquiryWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LocalInquiries to fetch.
+     */
+    orderBy?: LocalInquiryOrderByWithRelationInput | LocalInquiryOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing LocalInquiries.
+     */
+    cursor?: LocalInquiryWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LocalInquiries from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LocalInquiries.
+     */
+    skip?: number
+    distinct?: LocalInquiryScalarFieldEnum | LocalInquiryScalarFieldEnum[]
+  }
+
+  /**
+   * LocalInquiry create
+   */
+  export type LocalInquiryCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * The data needed to create a LocalInquiry.
+     */
+    data: XOR<LocalInquiryCreateInput, LocalInquiryUncheckedCreateInput>
+  }
+
+  /**
+   * LocalInquiry createMany
+   */
+  export type LocalInquiryCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many LocalInquiries.
+     */
+    data: LocalInquiryCreateManyInput | LocalInquiryCreateManyInput[]
+    skipDuplicates?: boolean
+  }
+
+  /**
+   * LocalInquiry createManyAndReturn
+   */
+  export type LocalInquiryCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * The data used to create many LocalInquiries.
+     */
+    data: LocalInquiryCreateManyInput | LocalInquiryCreateManyInput[]
+    skipDuplicates?: boolean
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * LocalInquiry update
+   */
+  export type LocalInquiryUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * The data needed to update a LocalInquiry.
+     */
+    data: XOR<LocalInquiryUpdateInput, LocalInquiryUncheckedUpdateInput>
+    /**
+     * Choose, which LocalInquiry to update.
+     */
+    where: LocalInquiryWhereUniqueInput
+  }
+
+  /**
+   * LocalInquiry updateMany
+   */
+  export type LocalInquiryUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update LocalInquiries.
+     */
+    data: XOR<LocalInquiryUpdateManyMutationInput, LocalInquiryUncheckedUpdateManyInput>
+    /**
+     * Filter which LocalInquiries to update
+     */
+    where?: LocalInquiryWhereInput
+  }
+
+  /**
+   * LocalInquiry upsert
+   */
+  export type LocalInquiryUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * The filter to search for the LocalInquiry to update in case it exists.
+     */
+    where: LocalInquiryWhereUniqueInput
+    /**
+     * In case the LocalInquiry found by the `where` argument doesn't exist, create a new LocalInquiry with this data.
+     */
+    create: XOR<LocalInquiryCreateInput, LocalInquiryUncheckedCreateInput>
+    /**
+     * In case the LocalInquiry was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<LocalInquiryUpdateInput, LocalInquiryUncheckedUpdateInput>
+  }
+
+  /**
+   * LocalInquiry delete
+   */
+  export type LocalInquiryDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    /**
+     * Filter which LocalInquiry to delete.
+     */
+    where: LocalInquiryWhereUniqueInput
+  }
+
+  /**
+   * LocalInquiry deleteMany
+   */
+  export type LocalInquiryDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which LocalInquiries to delete
+     */
+    where?: LocalInquiryWhereInput
+  }
+
+  /**
+   * LocalInquiry.Supplier
+   */
+  export type LocalInquiry$SupplierArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Supplier
+     */
+    select?: SupplierSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: SupplierInclude<ExtArgs> | null
+    where?: SupplierWhereInput
+  }
+
+  /**
+   * LocalInquiry.LocalInquiryItem
+   */
+  export type LocalInquiry$LocalInquiryItemArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    where?: LocalInquiryItemWhereInput
+    orderBy?: LocalInquiryItemOrderByWithRelationInput | LocalInquiryItemOrderByWithRelationInput[]
+    cursor?: LocalInquiryItemWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: LocalInquiryItemScalarFieldEnum | LocalInquiryItemScalarFieldEnum[]
+  }
+
+  /**
+   * LocalInquiry without action
+   */
+  export type LocalInquiryDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+  }
+
+
+  /**
+   * Model LocalInquiryItem
+   */
+
+  export type AggregateLocalInquiryItem = {
+    _count: LocalInquiryItemCountAggregateOutputType | null
+    _avg: LocalInquiryItemAvgAggregateOutputType | null
+    _sum: LocalInquiryItemSumAggregateOutputType | null
+    _min: LocalInquiryItemMinAggregateOutputType | null
+    _max: LocalInquiryItemMaxAggregateOutputType | null
+  }
+
+  export type LocalInquiryItemAvgAggregateOutputType = {
+    quantity: number | null
+    price: number | null
+    sortOrder: number | null
+  }
+
+  export type LocalInquiryItemSumAggregateOutputType = {
+    quantity: number | null
+    price: number | null
+    sortOrder: number | null
+  }
+
+  export type LocalInquiryItemMinAggregateOutputType = {
+    id: string | null
+    inquiryId: string | null
+    partId: string | null
+    quantity: number | null
+    price: number | null
+    remarks: string | null
+    sortOrder: number | null
+    createdAt: Date | null
+  }
+
+  export type LocalInquiryItemMaxAggregateOutputType = {
+    id: string | null
+    inquiryId: string | null
+    partId: string | null
+    quantity: number | null
+    price: number | null
+    remarks: string | null
+    sortOrder: number | null
+    createdAt: Date | null
+  }
+
+  export type LocalInquiryItemCountAggregateOutputType = {
+    id: number
+    inquiryId: number
+    partId: number
+    quantity: number
+    price: number
+    remarks: number
+    sortOrder: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type LocalInquiryItemAvgAggregateInputType = {
+    quantity?: true
+    price?: true
+    sortOrder?: true
+  }
+
+  export type LocalInquiryItemSumAggregateInputType = {
+    quantity?: true
+    price?: true
+    sortOrder?: true
+  }
+
+  export type LocalInquiryItemMinAggregateInputType = {
+    id?: true
+    inquiryId?: true
+    partId?: true
+    quantity?: true
+    price?: true
+    remarks?: true
+    sortOrder?: true
+    createdAt?: true
+  }
+
+  export type LocalInquiryItemMaxAggregateInputType = {
+    id?: true
+    inquiryId?: true
+    partId?: true
+    quantity?: true
+    price?: true
+    remarks?: true
+    sortOrder?: true
+    createdAt?: true
+  }
+
+  export type LocalInquiryItemCountAggregateInputType = {
+    id?: true
+    inquiryId?: true
+    partId?: true
+    quantity?: true
+    price?: true
+    remarks?: true
+    sortOrder?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type LocalInquiryItemAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which LocalInquiryItem to aggregate.
+     */
+    where?: LocalInquiryItemWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LocalInquiryItems to fetch.
+     */
+    orderBy?: LocalInquiryItemOrderByWithRelationInput | LocalInquiryItemOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: LocalInquiryItemWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LocalInquiryItems from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LocalInquiryItems.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned LocalInquiryItems
+    **/
+    _count?: true | LocalInquiryItemCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: LocalInquiryItemAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: LocalInquiryItemSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: LocalInquiryItemMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: LocalInquiryItemMaxAggregateInputType
+  }
+
+  export type GetLocalInquiryItemAggregateType<T extends LocalInquiryItemAggregateArgs> = {
+        [P in keyof T & keyof AggregateLocalInquiryItem]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateLocalInquiryItem[P]>
+      : GetScalarType<T[P], AggregateLocalInquiryItem[P]>
+  }
+
+
+
+
+  export type LocalInquiryItemGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: LocalInquiryItemWhereInput
+    orderBy?: LocalInquiryItemOrderByWithAggregationInput | LocalInquiryItemOrderByWithAggregationInput[]
+    by: LocalInquiryItemScalarFieldEnum[] | LocalInquiryItemScalarFieldEnum
+    having?: LocalInquiryItemScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: LocalInquiryItemCountAggregateInputType | true
+    _avg?: LocalInquiryItemAvgAggregateInputType
+    _sum?: LocalInquiryItemSumAggregateInputType
+    _min?: LocalInquiryItemMinAggregateInputType
+    _max?: LocalInquiryItemMaxAggregateInputType
+  }
+
+  export type LocalInquiryItemGroupByOutputType = {
+    id: string
+    inquiryId: string
+    partId: string
+    quantity: number
+    price: number
+    remarks: string | null
+    sortOrder: number
+    createdAt: Date
+    _count: LocalInquiryItemCountAggregateOutputType | null
+    _avg: LocalInquiryItemAvgAggregateOutputType | null
+    _sum: LocalInquiryItemSumAggregateOutputType | null
+    _min: LocalInquiryItemMinAggregateOutputType | null
+    _max: LocalInquiryItemMaxAggregateOutputType | null
+  }
+
+  type GetLocalInquiryItemGroupByPayload<T extends LocalInquiryItemGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<LocalInquiryItemGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof LocalInquiryItemGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], LocalInquiryItemGroupByOutputType[P]>
+            : GetScalarType<T[P], LocalInquiryItemGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type LocalInquiryItemSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    inquiryId?: boolean
+    partId?: boolean
+    quantity?: boolean
+    price?: boolean
+    remarks?: boolean
+    sortOrder?: boolean
+    createdAt?: boolean
+    LocalInquiry?: boolean | LocalInquiryDefaultArgs<ExtArgs>
+    Part?: boolean | PartDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["localInquiryItem"]>
+
+  export type LocalInquiryItemSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    inquiryId?: boolean
+    partId?: boolean
+    quantity?: boolean
+    price?: boolean
+    remarks?: boolean
+    sortOrder?: boolean
+    createdAt?: boolean
+    LocalInquiry?: boolean | LocalInquiryDefaultArgs<ExtArgs>
+    Part?: boolean | PartDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["localInquiryItem"]>
+
+  export type LocalInquiryItemSelectScalar = {
+    id?: boolean
+    inquiryId?: boolean
+    partId?: boolean
+    quantity?: boolean
+    price?: boolean
+    remarks?: boolean
+    sortOrder?: boolean
+    createdAt?: boolean
+  }
+
+  export type LocalInquiryItemInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    LocalInquiry?: boolean | LocalInquiryDefaultArgs<ExtArgs>
+    Part?: boolean | PartDefaultArgs<ExtArgs>
+  }
+  export type LocalInquiryItemIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    LocalInquiry?: boolean | LocalInquiryDefaultArgs<ExtArgs>
+    Part?: boolean | PartDefaultArgs<ExtArgs>
+  }
+
+  export type $LocalInquiryItemPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "LocalInquiryItem"
+    objects: {
+      LocalInquiry: Prisma.$LocalInquiryPayload<ExtArgs>
+      Part: Prisma.$PartPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      inquiryId: string
+      partId: string
+      quantity: number
+      price: number
+      remarks: string | null
+      sortOrder: number
+      createdAt: Date
+    }, ExtArgs["result"]["localInquiryItem"]>
+    composites: {}
+  }
+
+  type LocalInquiryItemGetPayload<S extends boolean | null | undefined | LocalInquiryItemDefaultArgs> = $Result.GetResult<Prisma.$LocalInquiryItemPayload, S>
+
+  type LocalInquiryItemCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = 
+    Omit<LocalInquiryItemFindManyArgs, 'select' | 'include' | 'distinct'> & {
+      select?: LocalInquiryItemCountAggregateInputType | true
+    }
+
+  export interface LocalInquiryItemDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['LocalInquiryItem'], meta: { name: 'LocalInquiryItem' } }
+    /**
+     * Find zero or one LocalInquiryItem that matches the filter.
+     * @param {LocalInquiryItemFindUniqueArgs} args - Arguments to find a LocalInquiryItem
+     * @example
+     * // Get one LocalInquiryItem
+     * const localInquiryItem = await prisma.localInquiryItem.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends LocalInquiryItemFindUniqueArgs>(args: SelectSubset<T, LocalInquiryItemFindUniqueArgs<ExtArgs>>): Prisma__LocalInquiryItemClient<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "findUnique"> | null, null, ExtArgs>
+
+    /**
+     * Find one LocalInquiryItem that matches the filter or throw an error with `error.code='P2025'` 
+     * if no matches were found.
+     * @param {LocalInquiryItemFindUniqueOrThrowArgs} args - Arguments to find a LocalInquiryItem
+     * @example
+     * // Get one LocalInquiryItem
+     * const localInquiryItem = await prisma.localInquiryItem.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends LocalInquiryItemFindUniqueOrThrowArgs>(args: SelectSubset<T, LocalInquiryItemFindUniqueOrThrowArgs<ExtArgs>>): Prisma__LocalInquiryItemClient<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "findUniqueOrThrow">, never, ExtArgs>
+
+    /**
+     * Find the first LocalInquiryItem that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryItemFindFirstArgs} args - Arguments to find a LocalInquiryItem
+     * @example
+     * // Get one LocalInquiryItem
+     * const localInquiryItem = await prisma.localInquiryItem.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends LocalInquiryItemFindFirstArgs>(args?: SelectSubset<T, LocalInquiryItemFindFirstArgs<ExtArgs>>): Prisma__LocalInquiryItemClient<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "findFirst"> | null, null, ExtArgs>
+
+    /**
+     * Find the first LocalInquiryItem that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryItemFindFirstOrThrowArgs} args - Arguments to find a LocalInquiryItem
+     * @example
+     * // Get one LocalInquiryItem
+     * const localInquiryItem = await prisma.localInquiryItem.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends LocalInquiryItemFindFirstOrThrowArgs>(args?: SelectSubset<T, LocalInquiryItemFindFirstOrThrowArgs<ExtArgs>>): Prisma__LocalInquiryItemClient<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "findFirstOrThrow">, never, ExtArgs>
+
+    /**
+     * Find zero or more LocalInquiryItems that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryItemFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all LocalInquiryItems
+     * const localInquiryItems = await prisma.localInquiryItem.findMany()
+     * 
+     * // Get first 10 LocalInquiryItems
+     * const localInquiryItems = await prisma.localInquiryItem.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const localInquiryItemWithIdOnly = await prisma.localInquiryItem.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends LocalInquiryItemFindManyArgs>(args?: SelectSubset<T, LocalInquiryItemFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "findMany">>
+
+    /**
+     * Create a LocalInquiryItem.
+     * @param {LocalInquiryItemCreateArgs} args - Arguments to create a LocalInquiryItem.
+     * @example
+     * // Create one LocalInquiryItem
+     * const LocalInquiryItem = await prisma.localInquiryItem.create({
+     *   data: {
+     *     // ... data to create a LocalInquiryItem
+     *   }
+     * })
+     * 
+     */
+    create<T extends LocalInquiryItemCreateArgs>(args: SelectSubset<T, LocalInquiryItemCreateArgs<ExtArgs>>): Prisma__LocalInquiryItemClient<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "create">, never, ExtArgs>
+
+    /**
+     * Create many LocalInquiryItems.
+     * @param {LocalInquiryItemCreateManyArgs} args - Arguments to create many LocalInquiryItems.
+     * @example
+     * // Create many LocalInquiryItems
+     * const localInquiryItem = await prisma.localInquiryItem.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends LocalInquiryItemCreateManyArgs>(args?: SelectSubset<T, LocalInquiryItemCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many LocalInquiryItems and returns the data saved in the database.
+     * @param {LocalInquiryItemCreateManyAndReturnArgs} args - Arguments to create many LocalInquiryItems.
+     * @example
+     * // Create many LocalInquiryItems
+     * const localInquiryItem = await prisma.localInquiryItem.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many LocalInquiryItems and only return the `id`
+     * const localInquiryItemWithIdOnly = await prisma.localInquiryItem.createManyAndReturn({ 
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends LocalInquiryItemCreateManyAndReturnArgs>(args?: SelectSubset<T, LocalInquiryItemCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "createManyAndReturn">>
+
+    /**
+     * Delete a LocalInquiryItem.
+     * @param {LocalInquiryItemDeleteArgs} args - Arguments to delete one LocalInquiryItem.
+     * @example
+     * // Delete one LocalInquiryItem
+     * const LocalInquiryItem = await prisma.localInquiryItem.delete({
+     *   where: {
+     *     // ... filter to delete one LocalInquiryItem
+     *   }
+     * })
+     * 
+     */
+    delete<T extends LocalInquiryItemDeleteArgs>(args: SelectSubset<T, LocalInquiryItemDeleteArgs<ExtArgs>>): Prisma__LocalInquiryItemClient<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "delete">, never, ExtArgs>
+
+    /**
+     * Update one LocalInquiryItem.
+     * @param {LocalInquiryItemUpdateArgs} args - Arguments to update one LocalInquiryItem.
+     * @example
+     * // Update one LocalInquiryItem
+     * const localInquiryItem = await prisma.localInquiryItem.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends LocalInquiryItemUpdateArgs>(args: SelectSubset<T, LocalInquiryItemUpdateArgs<ExtArgs>>): Prisma__LocalInquiryItemClient<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "update">, never, ExtArgs>
+
+    /**
+     * Delete zero or more LocalInquiryItems.
+     * @param {LocalInquiryItemDeleteManyArgs} args - Arguments to filter LocalInquiryItems to delete.
+     * @example
+     * // Delete a few LocalInquiryItems
+     * const { count } = await prisma.localInquiryItem.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends LocalInquiryItemDeleteManyArgs>(args?: SelectSubset<T, LocalInquiryItemDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more LocalInquiryItems.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryItemUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many LocalInquiryItems
+     * const localInquiryItem = await prisma.localInquiryItem.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends LocalInquiryItemUpdateManyArgs>(args: SelectSubset<T, LocalInquiryItemUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create or update one LocalInquiryItem.
+     * @param {LocalInquiryItemUpsertArgs} args - Arguments to update or create a LocalInquiryItem.
+     * @example
+     * // Update or create a LocalInquiryItem
+     * const localInquiryItem = await prisma.localInquiryItem.upsert({
+     *   create: {
+     *     // ... data to create a LocalInquiryItem
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the LocalInquiryItem we want to update
+     *   }
+     * })
+     */
+    upsert<T extends LocalInquiryItemUpsertArgs>(args: SelectSubset<T, LocalInquiryItemUpsertArgs<ExtArgs>>): Prisma__LocalInquiryItemClient<$Result.GetResult<Prisma.$LocalInquiryItemPayload<ExtArgs>, T, "upsert">, never, ExtArgs>
+
+
+    /**
+     * Count the number of LocalInquiryItems.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryItemCountArgs} args - Arguments to filter LocalInquiryItems to count.
+     * @example
+     * // Count the number of LocalInquiryItems
+     * const count = await prisma.localInquiryItem.count({
+     *   where: {
+     *     // ... the filter for the LocalInquiryItems we want to count
+     *   }
+     * })
+    **/
+    count<T extends LocalInquiryItemCountArgs>(
+      args?: Subset<T, LocalInquiryItemCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], LocalInquiryItemCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a LocalInquiryItem.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryItemAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends LocalInquiryItemAggregateArgs>(args: Subset<T, LocalInquiryItemAggregateArgs>): Prisma.PrismaPromise<GetLocalInquiryItemAggregateType<T>>
+
+    /**
+     * Group by LocalInquiryItem.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LocalInquiryItemGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends LocalInquiryItemGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: LocalInquiryItemGroupByArgs['orderBy'] }
+        : { orderBy?: LocalInquiryItemGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, LocalInquiryItemGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetLocalInquiryItemGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the LocalInquiryItem model
+   */
+  readonly fields: LocalInquiryItemFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for LocalInquiryItem.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__LocalInquiryItemClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    LocalInquiry<T extends LocalInquiryDefaultArgs<ExtArgs> = {}>(args?: Subset<T, LocalInquiryDefaultArgs<ExtArgs>>): Prisma__LocalInquiryClient<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "findUniqueOrThrow"> | Null, Null, ExtArgs>
+    Part<T extends PartDefaultArgs<ExtArgs> = {}>(args?: Subset<T, PartDefaultArgs<ExtArgs>>): Prisma__PartClient<$Result.GetResult<Prisma.$PartPayload<ExtArgs>, T, "findUniqueOrThrow"> | Null, Null, ExtArgs>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the LocalInquiryItem model
+   */ 
+  interface LocalInquiryItemFieldRefs {
+    readonly id: FieldRef<"LocalInquiryItem", 'String'>
+    readonly inquiryId: FieldRef<"LocalInquiryItem", 'String'>
+    readonly partId: FieldRef<"LocalInquiryItem", 'String'>
+    readonly quantity: FieldRef<"LocalInquiryItem", 'Int'>
+    readonly price: FieldRef<"LocalInquiryItem", 'Float'>
+    readonly remarks: FieldRef<"LocalInquiryItem", 'String'>
+    readonly sortOrder: FieldRef<"LocalInquiryItem", 'Int'>
+    readonly createdAt: FieldRef<"LocalInquiryItem", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * LocalInquiryItem findUnique
+   */
+  export type LocalInquiryItemFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiryItem to fetch.
+     */
+    where: LocalInquiryItemWhereUniqueInput
+  }
+
+  /**
+   * LocalInquiryItem findUniqueOrThrow
+   */
+  export type LocalInquiryItemFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiryItem to fetch.
+     */
+    where: LocalInquiryItemWhereUniqueInput
+  }
+
+  /**
+   * LocalInquiryItem findFirst
+   */
+  export type LocalInquiryItemFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiryItem to fetch.
+     */
+    where?: LocalInquiryItemWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LocalInquiryItems to fetch.
+     */
+    orderBy?: LocalInquiryItemOrderByWithRelationInput | LocalInquiryItemOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for LocalInquiryItems.
+     */
+    cursor?: LocalInquiryItemWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LocalInquiryItems from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LocalInquiryItems.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of LocalInquiryItems.
+     */
+    distinct?: LocalInquiryItemScalarFieldEnum | LocalInquiryItemScalarFieldEnum[]
+  }
+
+  /**
+   * LocalInquiryItem findFirstOrThrow
+   */
+  export type LocalInquiryItemFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiryItem to fetch.
+     */
+    where?: LocalInquiryItemWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LocalInquiryItems to fetch.
+     */
+    orderBy?: LocalInquiryItemOrderByWithRelationInput | LocalInquiryItemOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for LocalInquiryItems.
+     */
+    cursor?: LocalInquiryItemWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LocalInquiryItems from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LocalInquiryItems.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of LocalInquiryItems.
+     */
+    distinct?: LocalInquiryItemScalarFieldEnum | LocalInquiryItemScalarFieldEnum[]
+  }
+
+  /**
+   * LocalInquiryItem findMany
+   */
+  export type LocalInquiryItemFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * Filter, which LocalInquiryItems to fetch.
+     */
+    where?: LocalInquiryItemWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LocalInquiryItems to fetch.
+     */
+    orderBy?: LocalInquiryItemOrderByWithRelationInput | LocalInquiryItemOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing LocalInquiryItems.
+     */
+    cursor?: LocalInquiryItemWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LocalInquiryItems from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LocalInquiryItems.
+     */
+    skip?: number
+    distinct?: LocalInquiryItemScalarFieldEnum | LocalInquiryItemScalarFieldEnum[]
+  }
+
+  /**
+   * LocalInquiryItem create
+   */
+  export type LocalInquiryItemCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * The data needed to create a LocalInquiryItem.
+     */
+    data: XOR<LocalInquiryItemCreateInput, LocalInquiryItemUncheckedCreateInput>
+  }
+
+  /**
+   * LocalInquiryItem createMany
+   */
+  export type LocalInquiryItemCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many LocalInquiryItems.
+     */
+    data: LocalInquiryItemCreateManyInput | LocalInquiryItemCreateManyInput[]
+    skipDuplicates?: boolean
+  }
+
+  /**
+   * LocalInquiryItem createManyAndReturn
+   */
+  export type LocalInquiryItemCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * The data used to create many LocalInquiryItems.
+     */
+    data: LocalInquiryItemCreateManyInput | LocalInquiryItemCreateManyInput[]
+    skipDuplicates?: boolean
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * LocalInquiryItem update
+   */
+  export type LocalInquiryItemUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * The data needed to update a LocalInquiryItem.
+     */
+    data: XOR<LocalInquiryItemUpdateInput, LocalInquiryItemUncheckedUpdateInput>
+    /**
+     * Choose, which LocalInquiryItem to update.
+     */
+    where: LocalInquiryItemWhereUniqueInput
+  }
+
+  /**
+   * LocalInquiryItem updateMany
+   */
+  export type LocalInquiryItemUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update LocalInquiryItems.
+     */
+    data: XOR<LocalInquiryItemUpdateManyMutationInput, LocalInquiryItemUncheckedUpdateManyInput>
+    /**
+     * Filter which LocalInquiryItems to update
+     */
+    where?: LocalInquiryItemWhereInput
+  }
+
+  /**
+   * LocalInquiryItem upsert
+   */
+  export type LocalInquiryItemUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * The filter to search for the LocalInquiryItem to update in case it exists.
+     */
+    where: LocalInquiryItemWhereUniqueInput
+    /**
+     * In case the LocalInquiryItem found by the `where` argument doesn't exist, create a new LocalInquiryItem with this data.
+     */
+    create: XOR<LocalInquiryItemCreateInput, LocalInquiryItemUncheckedCreateInput>
+    /**
+     * In case the LocalInquiryItem was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<LocalInquiryItemUpdateInput, LocalInquiryItemUncheckedUpdateInput>
+  }
+
+  /**
+   * LocalInquiryItem delete
+   */
+  export type LocalInquiryItemDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
+    /**
+     * Filter which LocalInquiryItem to delete.
+     */
+    where: LocalInquiryItemWhereUniqueInput
+  }
+
+  /**
+   * LocalInquiryItem deleteMany
+   */
+  export type LocalInquiryItemDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which LocalInquiryItems to delete
+     */
+    where?: LocalInquiryItemWhereInput
+  }
+
+  /**
+   * LocalInquiryItem without action
+   */
+  export type LocalInquiryItemDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiryItem
+     */
+    select?: LocalInquiryItemSelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryItemInclude<ExtArgs> | null
   }
 
 
@@ -72383,6 +74655,7 @@ export namespace Prisma {
     PurchaseQuotation?: boolean | Supplier$PurchaseQuotationArgs<ExtArgs>
     StockMovement?: boolean | Supplier$StockMovementArgs<ExtArgs>
     VoucherEntry?: boolean | Supplier$VoucherEntryArgs<ExtArgs>
+    LocalInquiry?: boolean | Supplier$LocalInquiryArgs<ExtArgs>
     _count?: boolean | SupplierCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["supplier"]>
 
@@ -72465,6 +74738,7 @@ export namespace Prisma {
     PurchaseQuotation?: boolean | Supplier$PurchaseQuotationArgs<ExtArgs>
     StockMovement?: boolean | Supplier$StockMovementArgs<ExtArgs>
     VoucherEntry?: boolean | Supplier$VoucherEntryArgs<ExtArgs>
+    LocalInquiry?: boolean | Supplier$LocalInquiryArgs<ExtArgs>
     _count?: boolean | SupplierCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type SupplierIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
@@ -72480,6 +74754,7 @@ export namespace Prisma {
       PurchaseQuotation: Prisma.$PurchaseQuotationPayload<ExtArgs>[]
       StockMovement: Prisma.$StockMovementPayload<ExtArgs>[]
       VoucherEntry: Prisma.$VoucherEntryPayload<ExtArgs>[]
+      LocalInquiry: Prisma.$LocalInquiryPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -72886,6 +75161,7 @@ export namespace Prisma {
     PurchaseQuotation<T extends Supplier$PurchaseQuotationArgs<ExtArgs> = {}>(args?: Subset<T, Supplier$PurchaseQuotationArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$PurchaseQuotationPayload<ExtArgs>, T, "findMany"> | Null>
     StockMovement<T extends Supplier$StockMovementArgs<ExtArgs> = {}>(args?: Subset<T, Supplier$StockMovementArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$StockMovementPayload<ExtArgs>, T, "findMany"> | Null>
     VoucherEntry<T extends Supplier$VoucherEntryArgs<ExtArgs> = {}>(args?: Subset<T, Supplier$VoucherEntryArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$VoucherEntryPayload<ExtArgs>, T, "findMany"> | Null>
+    LocalInquiry<T extends Supplier$LocalInquiryArgs<ExtArgs> = {}>(args?: Subset<T, Supplier$LocalInquiryArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LocalInquiryPayload<ExtArgs>, T, "findMany"> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -73418,6 +75694,26 @@ export namespace Prisma {
     take?: number
     skip?: number
     distinct?: VoucherEntryScalarFieldEnum | VoucherEntryScalarFieldEnum[]
+  }
+
+  /**
+   * Supplier.LocalInquiry
+   */
+  export type Supplier$LocalInquiryArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LocalInquiry
+     */
+    select?: LocalInquirySelect<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: LocalInquiryInclude<ExtArgs> | null
+    where?: LocalInquiryWhereInput
+    orderBy?: LocalInquiryOrderByWithRelationInput | LocalInquiryOrderByWithRelationInput[]
+    cursor?: LocalInquiryWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: LocalInquiryScalarFieldEnum | LocalInquiryScalarFieldEnum[]
   }
 
   /**
@@ -81947,6 +84243,34 @@ export namespace Prisma {
   export type SalesInquiryItemScalarFieldEnum = (typeof SalesInquiryItemScalarFieldEnum)[keyof typeof SalesInquiryItemScalarFieldEnum]
 
 
+  export const LocalInquiryScalarFieldEnum: {
+    id: 'id',
+    inquiryNo: 'inquiryNo',
+    inquiryDate: 'inquiryDate',
+    supplierId: 'supplierId',
+    remarks: 'remarks',
+    status: 'status',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+  };
+
+  export type LocalInquiryScalarFieldEnum = (typeof LocalInquiryScalarFieldEnum)[keyof typeof LocalInquiryScalarFieldEnum]
+
+
+  export const LocalInquiryItemScalarFieldEnum: {
+    id: 'id',
+    inquiryId: 'inquiryId',
+    partId: 'partId',
+    quantity: 'quantity',
+    price: 'price',
+    remarks: 'remarks',
+    sortOrder: 'sortOrder',
+    createdAt: 'createdAt'
+  };
+
+  export type LocalInquiryItemScalarFieldEnum = (typeof LocalInquiryItemScalarFieldEnum)[keyof typeof LocalInquiryItemScalarFieldEnum]
+
+
   export const SalesInvoiceScalarFieldEnum: {
     id: 'id',
     invoiceNo: 'invoiceNo',
@@ -84964,6 +87288,7 @@ export namespace Prisma {
     StockReservation?: StockReservationListRelationFilter
     StockVerificationItem?: StockVerificationItemListRelationFilter
     TransferItem?: TransferItemListRelationFilter
+    LocalInquiryItem?: LocalInquiryItemListRelationFilter
   }
 
   export type PartOrderByWithRelationInput = {
@@ -85021,6 +87346,7 @@ export namespace Prisma {
     StockReservation?: StockReservationOrderByRelationAggregateInput
     StockVerificationItem?: StockVerificationItemOrderByRelationAggregateInput
     TransferItem?: TransferItemOrderByRelationAggregateInput
+    LocalInquiryItem?: LocalInquiryItemOrderByRelationAggregateInput
   }
 
   export type PartWhereUniqueInput = Prisma.AtLeast<{
@@ -85081,6 +87407,7 @@ export namespace Prisma {
     StockReservation?: StockReservationListRelationFilter
     StockVerificationItem?: StockVerificationItemListRelationFilter
     TransferItem?: TransferItemListRelationFilter
+    LocalInquiryItem?: LocalInquiryItemListRelationFilter
   }, "id">
 
   export type PartOrderByWithAggregationInput = {
@@ -86618,6 +88945,154 @@ export namespace Prisma {
     stock?: IntWithAggregatesFilter<"SalesInquiryItem"> | number
     reservedQty?: IntWithAggregatesFilter<"SalesInquiryItem"> | number
     createdAt?: DateTimeWithAggregatesFilter<"SalesInquiryItem"> | Date | string
+  }
+
+  export type LocalInquiryWhereInput = {
+    AND?: LocalInquiryWhereInput | LocalInquiryWhereInput[]
+    OR?: LocalInquiryWhereInput[]
+    NOT?: LocalInquiryWhereInput | LocalInquiryWhereInput[]
+    id?: StringFilter<"LocalInquiry"> | string
+    inquiryNo?: StringFilter<"LocalInquiry"> | string
+    inquiryDate?: DateTimeFilter<"LocalInquiry"> | Date | string
+    supplierId?: StringNullableFilter<"LocalInquiry"> | string | null
+    remarks?: StringNullableFilter<"LocalInquiry"> | string | null
+    status?: StringFilter<"LocalInquiry"> | string
+    createdAt?: DateTimeFilter<"LocalInquiry"> | Date | string
+    updatedAt?: DateTimeFilter<"LocalInquiry"> | Date | string
+    Supplier?: XOR<SupplierNullableRelationFilter, SupplierWhereInput> | null
+    LocalInquiryItem?: LocalInquiryItemListRelationFilter
+  }
+
+  export type LocalInquiryOrderByWithRelationInput = {
+    id?: SortOrder
+    inquiryNo?: SortOrder
+    inquiryDate?: SortOrder
+    supplierId?: SortOrderInput | SortOrder
+    remarks?: SortOrderInput | SortOrder
+    status?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    Supplier?: SupplierOrderByWithRelationInput
+    LocalInquiryItem?: LocalInquiryItemOrderByRelationAggregateInput
+  }
+
+  export type LocalInquiryWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    inquiryNo?: string
+    AND?: LocalInquiryWhereInput | LocalInquiryWhereInput[]
+    OR?: LocalInquiryWhereInput[]
+    NOT?: LocalInquiryWhereInput | LocalInquiryWhereInput[]
+    inquiryDate?: DateTimeFilter<"LocalInquiry"> | Date | string
+    supplierId?: StringNullableFilter<"LocalInquiry"> | string | null
+    remarks?: StringNullableFilter<"LocalInquiry"> | string | null
+    status?: StringFilter<"LocalInquiry"> | string
+    createdAt?: DateTimeFilter<"LocalInquiry"> | Date | string
+    updatedAt?: DateTimeFilter<"LocalInquiry"> | Date | string
+    Supplier?: XOR<SupplierNullableRelationFilter, SupplierWhereInput> | null
+    LocalInquiryItem?: LocalInquiryItemListRelationFilter
+  }, "id" | "inquiryNo">
+
+  export type LocalInquiryOrderByWithAggregationInput = {
+    id?: SortOrder
+    inquiryNo?: SortOrder
+    inquiryDate?: SortOrder
+    supplierId?: SortOrderInput | SortOrder
+    remarks?: SortOrderInput | SortOrder
+    status?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    _count?: LocalInquiryCountOrderByAggregateInput
+    _max?: LocalInquiryMaxOrderByAggregateInput
+    _min?: LocalInquiryMinOrderByAggregateInput
+  }
+
+  export type LocalInquiryScalarWhereWithAggregatesInput = {
+    AND?: LocalInquiryScalarWhereWithAggregatesInput | LocalInquiryScalarWhereWithAggregatesInput[]
+    OR?: LocalInquiryScalarWhereWithAggregatesInput[]
+    NOT?: LocalInquiryScalarWhereWithAggregatesInput | LocalInquiryScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"LocalInquiry"> | string
+    inquiryNo?: StringWithAggregatesFilter<"LocalInquiry"> | string
+    inquiryDate?: DateTimeWithAggregatesFilter<"LocalInquiry"> | Date | string
+    supplierId?: StringNullableWithAggregatesFilter<"LocalInquiry"> | string | null
+    remarks?: StringNullableWithAggregatesFilter<"LocalInquiry"> | string | null
+    status?: StringWithAggregatesFilter<"LocalInquiry"> | string
+    createdAt?: DateTimeWithAggregatesFilter<"LocalInquiry"> | Date | string
+    updatedAt?: DateTimeWithAggregatesFilter<"LocalInquiry"> | Date | string
+  }
+
+  export type LocalInquiryItemWhereInput = {
+    AND?: LocalInquiryItemWhereInput | LocalInquiryItemWhereInput[]
+    OR?: LocalInquiryItemWhereInput[]
+    NOT?: LocalInquiryItemWhereInput | LocalInquiryItemWhereInput[]
+    id?: StringFilter<"LocalInquiryItem"> | string
+    inquiryId?: StringFilter<"LocalInquiryItem"> | string
+    partId?: StringFilter<"LocalInquiryItem"> | string
+    quantity?: IntFilter<"LocalInquiryItem"> | number
+    price?: FloatFilter<"LocalInquiryItem"> | number
+    remarks?: StringNullableFilter<"LocalInquiryItem"> | string | null
+    sortOrder?: IntFilter<"LocalInquiryItem"> | number
+    createdAt?: DateTimeFilter<"LocalInquiryItem"> | Date | string
+    LocalInquiry?: XOR<LocalInquiryRelationFilter, LocalInquiryWhereInput>
+    Part?: XOR<PartRelationFilter, PartWhereInput>
+  }
+
+  export type LocalInquiryItemOrderByWithRelationInput = {
+    id?: SortOrder
+    inquiryId?: SortOrder
+    partId?: SortOrder
+    quantity?: SortOrder
+    price?: SortOrder
+    remarks?: SortOrderInput | SortOrder
+    sortOrder?: SortOrder
+    createdAt?: SortOrder
+    LocalInquiry?: LocalInquiryOrderByWithRelationInput
+    Part?: PartOrderByWithRelationInput
+  }
+
+  export type LocalInquiryItemWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    AND?: LocalInquiryItemWhereInput | LocalInquiryItemWhereInput[]
+    OR?: LocalInquiryItemWhereInput[]
+    NOT?: LocalInquiryItemWhereInput | LocalInquiryItemWhereInput[]
+    inquiryId?: StringFilter<"LocalInquiryItem"> | string
+    partId?: StringFilter<"LocalInquiryItem"> | string
+    quantity?: IntFilter<"LocalInquiryItem"> | number
+    price?: FloatFilter<"LocalInquiryItem"> | number
+    remarks?: StringNullableFilter<"LocalInquiryItem"> | string | null
+    sortOrder?: IntFilter<"LocalInquiryItem"> | number
+    createdAt?: DateTimeFilter<"LocalInquiryItem"> | Date | string
+    LocalInquiry?: XOR<LocalInquiryRelationFilter, LocalInquiryWhereInput>
+    Part?: XOR<PartRelationFilter, PartWhereInput>
+  }, "id">
+
+  export type LocalInquiryItemOrderByWithAggregationInput = {
+    id?: SortOrder
+    inquiryId?: SortOrder
+    partId?: SortOrder
+    quantity?: SortOrder
+    price?: SortOrder
+    remarks?: SortOrderInput | SortOrder
+    sortOrder?: SortOrder
+    createdAt?: SortOrder
+    _count?: LocalInquiryItemCountOrderByAggregateInput
+    _avg?: LocalInquiryItemAvgOrderByAggregateInput
+    _max?: LocalInquiryItemMaxOrderByAggregateInput
+    _min?: LocalInquiryItemMinOrderByAggregateInput
+    _sum?: LocalInquiryItemSumOrderByAggregateInput
+  }
+
+  export type LocalInquiryItemScalarWhereWithAggregatesInput = {
+    AND?: LocalInquiryItemScalarWhereWithAggregatesInput | LocalInquiryItemScalarWhereWithAggregatesInput[]
+    OR?: LocalInquiryItemScalarWhereWithAggregatesInput[]
+    NOT?: LocalInquiryItemScalarWhereWithAggregatesInput | LocalInquiryItemScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"LocalInquiryItem"> | string
+    inquiryId?: StringWithAggregatesFilter<"LocalInquiryItem"> | string
+    partId?: StringWithAggregatesFilter<"LocalInquiryItem"> | string
+    quantity?: IntWithAggregatesFilter<"LocalInquiryItem"> | number
+    price?: FloatWithAggregatesFilter<"LocalInquiryItem"> | number
+    remarks?: StringNullableWithAggregatesFilter<"LocalInquiryItem"> | string | null
+    sortOrder?: IntWithAggregatesFilter<"LocalInquiryItem"> | number
+    createdAt?: DateTimeWithAggregatesFilter<"LocalInquiryItem"> | Date | string
   }
 
   export type SalesInvoiceWhereInput = {
@@ -88259,6 +90734,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationListRelationFilter
     StockMovement?: StockMovementListRelationFilter
     VoucherEntry?: VoucherEntryListRelationFilter
+    LocalInquiry?: LocalInquiryListRelationFilter
   }
 
   export type SupplierOrderByWithRelationInput = {
@@ -88302,6 +90778,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationOrderByRelationAggregateInput
     StockMovement?: StockMovementOrderByRelationAggregateInput
     VoucherEntry?: VoucherEntryOrderByRelationAggregateInput
+    LocalInquiry?: LocalInquiryOrderByRelationAggregateInput
   }
 
   export type SupplierWhereUniqueInput = Prisma.AtLeast<{
@@ -88348,6 +90825,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationListRelationFilter
     StockMovement?: StockMovementListRelationFilter
     VoucherEntry?: VoucherEntryListRelationFilter
+    LocalInquiry?: LocalInquiryListRelationFilter
   }, "id" | "code">
 
   export type SupplierOrderByWithAggregationInput = {
@@ -91860,6 +94338,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateInput = {
@@ -91912,6 +94391,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartUpdateInput = {
@@ -91964,6 +94444,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateInput = {
@@ -92016,6 +94497,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PartCreateManyInput = {
@@ -93784,6 +96266,161 @@ export namespace Prisma {
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryCreateInput = {
+    id?: string
+    inquiryNo: string
+    inquiryDate: Date | string
+    remarks?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    Supplier?: SupplierCreateNestedOneWithoutLocalInquiryInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutLocalInquiryInput
+  }
+
+  export type LocalInquiryUncheckedCreateInput = {
+    id?: string
+    inquiryNo: string
+    inquiryDate: Date | string
+    supplierId?: string | null
+    remarks?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutLocalInquiryInput
+  }
+
+  export type LocalInquiryUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    Supplier?: SupplierUpdateOneWithoutLocalInquiryNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutLocalInquiryNestedInput
+  }
+
+  export type LocalInquiryUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    supplierId?: NullableStringFieldUpdateOperationsInput | string | null
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutLocalInquiryNestedInput
+  }
+
+  export type LocalInquiryCreateManyInput = {
+    id?: string
+    inquiryNo: string
+    inquiryDate: Date | string
+    supplierId?: string | null
+    remarks?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+  }
+
+  export type LocalInquiryUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    supplierId?: NullableStringFieldUpdateOperationsInput | string | null
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryItemCreateInput = {
+    id?: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
+    createdAt?: Date | string
+    LocalInquiry: LocalInquiryCreateNestedOneWithoutLocalInquiryItemInput
+    Part: PartCreateNestedOneWithoutLocalInquiryItemInput
+  }
+
+  export type LocalInquiryItemUncheckedCreateInput = {
+    id?: string
+    inquiryId: string
+    partId: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
+    createdAt?: Date | string
+  }
+
+  export type LocalInquiryItemUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    LocalInquiry?: LocalInquiryUpdateOneRequiredWithoutLocalInquiryItemNestedInput
+    Part?: PartUpdateOneRequiredWithoutLocalInquiryItemNestedInput
+  }
+
+  export type LocalInquiryItemUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryId?: StringFieldUpdateOperationsInput | string
+    partId?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryItemCreateManyInput = {
+    id?: string
+    inquiryId: string
+    partId: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
+    createdAt?: Date | string
+  }
+
+  export type LocalInquiryItemUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryItemUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryId?: StringFieldUpdateOperationsInput | string
+    partId?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -95578,6 +98215,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateInput = {
@@ -95621,6 +98259,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUpdateInput = {
@@ -95664,6 +98303,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateInput = {
@@ -95707,6 +98347,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierCreateManyInput = {
@@ -98528,6 +101169,12 @@ export namespace Prisma {
     none?: TransferItemWhereInput
   }
 
+  export type LocalInquiryItemListRelationFilter = {
+    every?: LocalInquiryItemWhereInput
+    some?: LocalInquiryItemWhereInput
+    none?: LocalInquiryItemWhereInput
+  }
+
   export type KitItemOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
@@ -98585,6 +101232,10 @@ export namespace Prisma {
   }
 
   export type TransferItemOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
+  export type LocalInquiryItemOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
 
@@ -99702,6 +102353,89 @@ export namespace Prisma {
     reservedQty?: SortOrder
   }
 
+  export type LocalInquiryCountOrderByAggregateInput = {
+    id?: SortOrder
+    inquiryNo?: SortOrder
+    inquiryDate?: SortOrder
+    supplierId?: SortOrder
+    remarks?: SortOrder
+    status?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+  }
+
+  export type LocalInquiryMaxOrderByAggregateInput = {
+    id?: SortOrder
+    inquiryNo?: SortOrder
+    inquiryDate?: SortOrder
+    supplierId?: SortOrder
+    remarks?: SortOrder
+    status?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+  }
+
+  export type LocalInquiryMinOrderByAggregateInput = {
+    id?: SortOrder
+    inquiryNo?: SortOrder
+    inquiryDate?: SortOrder
+    supplierId?: SortOrder
+    remarks?: SortOrder
+    status?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+  }
+
+  export type LocalInquiryRelationFilter = {
+    is?: LocalInquiryWhereInput
+    isNot?: LocalInquiryWhereInput
+  }
+
+  export type LocalInquiryItemCountOrderByAggregateInput = {
+    id?: SortOrder
+    inquiryId?: SortOrder
+    partId?: SortOrder
+    quantity?: SortOrder
+    price?: SortOrder
+    remarks?: SortOrder
+    sortOrder?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type LocalInquiryItemAvgOrderByAggregateInput = {
+    quantity?: SortOrder
+    price?: SortOrder
+    sortOrder?: SortOrder
+  }
+
+  export type LocalInquiryItemMaxOrderByAggregateInput = {
+    id?: SortOrder
+    inquiryId?: SortOrder
+    partId?: SortOrder
+    quantity?: SortOrder
+    price?: SortOrder
+    remarks?: SortOrder
+    sortOrder?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type LocalInquiryItemMinOrderByAggregateInput = {
+    id?: SortOrder
+    inquiryId?: SortOrder
+    partId?: SortOrder
+    quantity?: SortOrder
+    price?: SortOrder
+    remarks?: SortOrder
+    sortOrder?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type LocalInquiryItemSumOrderByAggregateInput = {
+    quantity?: SortOrder
+    price?: SortOrder
+    sortOrder?: SortOrder
+  }
+
   export type DeliveryLogListRelationFilter = {
     every?: DeliveryLogWhereInput
     some?: DeliveryLogWhereInput
@@ -100644,7 +103378,17 @@ export namespace Prisma {
     none?: PurchaseImportRequestWhereInput
   }
 
+  export type LocalInquiryListRelationFilter = {
+    every?: LocalInquiryWhereInput
+    some?: LocalInquiryWhereInput
+    none?: LocalInquiryWhereInput
+  }
+
   export type PurchaseImportRequestOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
+  export type LocalInquiryOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
 
@@ -103120,6 +105864,13 @@ export namespace Prisma {
     connect?: TransferItemWhereUniqueInput | TransferItemWhereUniqueInput[]
   }
 
+  export type LocalInquiryItemCreateNestedManyWithoutPartInput = {
+    create?: XOR<LocalInquiryItemCreateWithoutPartInput, LocalInquiryItemUncheckedCreateWithoutPartInput> | LocalInquiryItemCreateWithoutPartInput[] | LocalInquiryItemUncheckedCreateWithoutPartInput[]
+    connectOrCreate?: LocalInquiryItemCreateOrConnectWithoutPartInput | LocalInquiryItemCreateOrConnectWithoutPartInput[]
+    createMany?: LocalInquiryItemCreateManyPartInputEnvelope
+    connect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+  }
+
   export type AdjustmentItemUncheckedCreateNestedManyWithoutPartInput = {
     create?: XOR<AdjustmentItemCreateWithoutPartInput, AdjustmentItemUncheckedCreateWithoutPartInput> | AdjustmentItemCreateWithoutPartInput[] | AdjustmentItemUncheckedCreateWithoutPartInput[]
     connectOrCreate?: AdjustmentItemCreateOrConnectWithoutPartInput | AdjustmentItemCreateOrConnectWithoutPartInput[]
@@ -103251,6 +106002,13 @@ export namespace Prisma {
     connectOrCreate?: TransferItemCreateOrConnectWithoutPartInput | TransferItemCreateOrConnectWithoutPartInput[]
     createMany?: TransferItemCreateManyPartInputEnvelope
     connect?: TransferItemWhereUniqueInput | TransferItemWhereUniqueInput[]
+  }
+
+  export type LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput = {
+    create?: XOR<LocalInquiryItemCreateWithoutPartInput, LocalInquiryItemUncheckedCreateWithoutPartInput> | LocalInquiryItemCreateWithoutPartInput[] | LocalInquiryItemUncheckedCreateWithoutPartInput[]
+    connectOrCreate?: LocalInquiryItemCreateOrConnectWithoutPartInput | LocalInquiryItemCreateOrConnectWithoutPartInput[]
+    createMany?: LocalInquiryItemCreateManyPartInputEnvelope
+    connect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
   }
 
   export type AdjustmentItemUpdateManyWithoutPartNestedInput = {
@@ -103569,6 +106327,20 @@ export namespace Prisma {
     deleteMany?: TransferItemScalarWhereInput | TransferItemScalarWhereInput[]
   }
 
+  export type LocalInquiryItemUpdateManyWithoutPartNestedInput = {
+    create?: XOR<LocalInquiryItemCreateWithoutPartInput, LocalInquiryItemUncheckedCreateWithoutPartInput> | LocalInquiryItemCreateWithoutPartInput[] | LocalInquiryItemUncheckedCreateWithoutPartInput[]
+    connectOrCreate?: LocalInquiryItemCreateOrConnectWithoutPartInput | LocalInquiryItemCreateOrConnectWithoutPartInput[]
+    upsert?: LocalInquiryItemUpsertWithWhereUniqueWithoutPartInput | LocalInquiryItemUpsertWithWhereUniqueWithoutPartInput[]
+    createMany?: LocalInquiryItemCreateManyPartInputEnvelope
+    set?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    disconnect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    delete?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    connect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    update?: LocalInquiryItemUpdateWithWhereUniqueWithoutPartInput | LocalInquiryItemUpdateWithWhereUniqueWithoutPartInput[]
+    updateMany?: LocalInquiryItemUpdateManyWithWhereWithoutPartInput | LocalInquiryItemUpdateManyWithWhereWithoutPartInput[]
+    deleteMany?: LocalInquiryItemScalarWhereInput | LocalInquiryItemScalarWhereInput[]
+  }
+
   export type AdjustmentItemUncheckedUpdateManyWithoutPartNestedInput = {
     create?: XOR<AdjustmentItemCreateWithoutPartInput, AdjustmentItemUncheckedCreateWithoutPartInput> | AdjustmentItemCreateWithoutPartInput[] | AdjustmentItemUncheckedCreateWithoutPartInput[]
     connectOrCreate?: AdjustmentItemCreateOrConnectWithoutPartInput | AdjustmentItemCreateOrConnectWithoutPartInput[]
@@ -103833,6 +106605,20 @@ export namespace Prisma {
     update?: TransferItemUpdateWithWhereUniqueWithoutPartInput | TransferItemUpdateWithWhereUniqueWithoutPartInput[]
     updateMany?: TransferItemUpdateManyWithWhereWithoutPartInput | TransferItemUpdateManyWithWhereWithoutPartInput[]
     deleteMany?: TransferItemScalarWhereInput | TransferItemScalarWhereInput[]
+  }
+
+  export type LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput = {
+    create?: XOR<LocalInquiryItemCreateWithoutPartInput, LocalInquiryItemUncheckedCreateWithoutPartInput> | LocalInquiryItemCreateWithoutPartInput[] | LocalInquiryItemUncheckedCreateWithoutPartInput[]
+    connectOrCreate?: LocalInquiryItemCreateOrConnectWithoutPartInput | LocalInquiryItemCreateOrConnectWithoutPartInput[]
+    upsert?: LocalInquiryItemUpsertWithWhereUniqueWithoutPartInput | LocalInquiryItemUpsertWithWhereUniqueWithoutPartInput[]
+    createMany?: LocalInquiryItemCreateManyPartInputEnvelope
+    set?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    disconnect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    delete?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    connect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    update?: LocalInquiryItemUpdateWithWhereUniqueWithoutPartInput | LocalInquiryItemUpdateWithWhereUniqueWithoutPartInput[]
+    updateMany?: LocalInquiryItemUpdateManyWithWhereWithoutPartInput | LocalInquiryItemUpdateManyWithWhereWithoutPartInput[]
+    deleteMany?: LocalInquiryItemScalarWhereInput | LocalInquiryItemScalarWhereInput[]
   }
 
   export type PartCreateNestedOneWithoutKitItemInput = {
@@ -104799,6 +107585,92 @@ export namespace Prisma {
     upsert?: PartUpsertWithoutSalesInquiryItemInput
     connect?: PartWhereUniqueInput
     update?: XOR<XOR<PartUpdateToOneWithWhereWithoutSalesInquiryItemInput, PartUpdateWithoutSalesInquiryItemInput>, PartUncheckedUpdateWithoutSalesInquiryItemInput>
+  }
+
+  export type SupplierCreateNestedOneWithoutLocalInquiryInput = {
+    create?: XOR<SupplierCreateWithoutLocalInquiryInput, SupplierUncheckedCreateWithoutLocalInquiryInput>
+    connectOrCreate?: SupplierCreateOrConnectWithoutLocalInquiryInput
+    connect?: SupplierWhereUniqueInput
+  }
+
+  export type LocalInquiryItemCreateNestedManyWithoutLocalInquiryInput = {
+    create?: XOR<LocalInquiryItemCreateWithoutLocalInquiryInput, LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput> | LocalInquiryItemCreateWithoutLocalInquiryInput[] | LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput[]
+    connectOrCreate?: LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput | LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput[]
+    createMany?: LocalInquiryItemCreateManyLocalInquiryInputEnvelope
+    connect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+  }
+
+  export type LocalInquiryItemUncheckedCreateNestedManyWithoutLocalInquiryInput = {
+    create?: XOR<LocalInquiryItemCreateWithoutLocalInquiryInput, LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput> | LocalInquiryItemCreateWithoutLocalInquiryInput[] | LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput[]
+    connectOrCreate?: LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput | LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput[]
+    createMany?: LocalInquiryItemCreateManyLocalInquiryInputEnvelope
+    connect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+  }
+
+  export type SupplierUpdateOneWithoutLocalInquiryNestedInput = {
+    create?: XOR<SupplierCreateWithoutLocalInquiryInput, SupplierUncheckedCreateWithoutLocalInquiryInput>
+    connectOrCreate?: SupplierCreateOrConnectWithoutLocalInquiryInput
+    upsert?: SupplierUpsertWithoutLocalInquiryInput
+    disconnect?: SupplierWhereInput | boolean
+    delete?: SupplierWhereInput | boolean
+    connect?: SupplierWhereUniqueInput
+    update?: XOR<XOR<SupplierUpdateToOneWithWhereWithoutLocalInquiryInput, SupplierUpdateWithoutLocalInquiryInput>, SupplierUncheckedUpdateWithoutLocalInquiryInput>
+  }
+
+  export type LocalInquiryItemUpdateManyWithoutLocalInquiryNestedInput = {
+    create?: XOR<LocalInquiryItemCreateWithoutLocalInquiryInput, LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput> | LocalInquiryItemCreateWithoutLocalInquiryInput[] | LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput[]
+    connectOrCreate?: LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput | LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput[]
+    upsert?: LocalInquiryItemUpsertWithWhereUniqueWithoutLocalInquiryInput | LocalInquiryItemUpsertWithWhereUniqueWithoutLocalInquiryInput[]
+    createMany?: LocalInquiryItemCreateManyLocalInquiryInputEnvelope
+    set?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    disconnect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    delete?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    connect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    update?: LocalInquiryItemUpdateWithWhereUniqueWithoutLocalInquiryInput | LocalInquiryItemUpdateWithWhereUniqueWithoutLocalInquiryInput[]
+    updateMany?: LocalInquiryItemUpdateManyWithWhereWithoutLocalInquiryInput | LocalInquiryItemUpdateManyWithWhereWithoutLocalInquiryInput[]
+    deleteMany?: LocalInquiryItemScalarWhereInput | LocalInquiryItemScalarWhereInput[]
+  }
+
+  export type LocalInquiryItemUncheckedUpdateManyWithoutLocalInquiryNestedInput = {
+    create?: XOR<LocalInquiryItemCreateWithoutLocalInquiryInput, LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput> | LocalInquiryItemCreateWithoutLocalInquiryInput[] | LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput[]
+    connectOrCreate?: LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput | LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput[]
+    upsert?: LocalInquiryItemUpsertWithWhereUniqueWithoutLocalInquiryInput | LocalInquiryItemUpsertWithWhereUniqueWithoutLocalInquiryInput[]
+    createMany?: LocalInquiryItemCreateManyLocalInquiryInputEnvelope
+    set?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    disconnect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    delete?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    connect?: LocalInquiryItemWhereUniqueInput | LocalInquiryItemWhereUniqueInput[]
+    update?: LocalInquiryItemUpdateWithWhereUniqueWithoutLocalInquiryInput | LocalInquiryItemUpdateWithWhereUniqueWithoutLocalInquiryInput[]
+    updateMany?: LocalInquiryItemUpdateManyWithWhereWithoutLocalInquiryInput | LocalInquiryItemUpdateManyWithWhereWithoutLocalInquiryInput[]
+    deleteMany?: LocalInquiryItemScalarWhereInput | LocalInquiryItemScalarWhereInput[]
+  }
+
+  export type LocalInquiryCreateNestedOneWithoutLocalInquiryItemInput = {
+    create?: XOR<LocalInquiryCreateWithoutLocalInquiryItemInput, LocalInquiryUncheckedCreateWithoutLocalInquiryItemInput>
+    connectOrCreate?: LocalInquiryCreateOrConnectWithoutLocalInquiryItemInput
+    connect?: LocalInquiryWhereUniqueInput
+  }
+
+  export type PartCreateNestedOneWithoutLocalInquiryItemInput = {
+    create?: XOR<PartCreateWithoutLocalInquiryItemInput, PartUncheckedCreateWithoutLocalInquiryItemInput>
+    connectOrCreate?: PartCreateOrConnectWithoutLocalInquiryItemInput
+    connect?: PartWhereUniqueInput
+  }
+
+  export type LocalInquiryUpdateOneRequiredWithoutLocalInquiryItemNestedInput = {
+    create?: XOR<LocalInquiryCreateWithoutLocalInquiryItemInput, LocalInquiryUncheckedCreateWithoutLocalInquiryItemInput>
+    connectOrCreate?: LocalInquiryCreateOrConnectWithoutLocalInquiryItemInput
+    upsert?: LocalInquiryUpsertWithoutLocalInquiryItemInput
+    connect?: LocalInquiryWhereUniqueInput
+    update?: XOR<XOR<LocalInquiryUpdateToOneWithWhereWithoutLocalInquiryItemInput, LocalInquiryUpdateWithoutLocalInquiryItemInput>, LocalInquiryUncheckedUpdateWithoutLocalInquiryItemInput>
+  }
+
+  export type PartUpdateOneRequiredWithoutLocalInquiryItemNestedInput = {
+    create?: XOR<PartCreateWithoutLocalInquiryItemInput, PartUncheckedCreateWithoutLocalInquiryItemInput>
+    connectOrCreate?: PartCreateOrConnectWithoutLocalInquiryItemInput
+    upsert?: PartUpsertWithoutLocalInquiryItemInput
+    connect?: PartWhereUniqueInput
+    update?: XOR<XOR<PartUpdateToOneWithWhereWithoutLocalInquiryItemInput, PartUpdateWithoutLocalInquiryItemInput>, PartUncheckedUpdateWithoutLocalInquiryItemInput>
   }
 
   export type DeliveryLogCreateNestedManyWithoutSalesInvoiceInput = {
@@ -107039,6 +109911,13 @@ export namespace Prisma {
     connect?: VoucherEntryWhereUniqueInput | VoucherEntryWhereUniqueInput[]
   }
 
+  export type LocalInquiryCreateNestedManyWithoutSupplierInput = {
+    create?: XOR<LocalInquiryCreateWithoutSupplierInput, LocalInquiryUncheckedCreateWithoutSupplierInput> | LocalInquiryCreateWithoutSupplierInput[] | LocalInquiryUncheckedCreateWithoutSupplierInput[]
+    connectOrCreate?: LocalInquiryCreateOrConnectWithoutSupplierInput | LocalInquiryCreateOrConnectWithoutSupplierInput[]
+    createMany?: LocalInquiryCreateManySupplierInputEnvelope
+    connect?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+  }
+
   export type AccountUncheckedCreateNestedManyWithoutSupplierInput = {
     create?: XOR<AccountCreateWithoutSupplierInput, AccountUncheckedCreateWithoutSupplierInput> | AccountCreateWithoutSupplierInput[] | AccountUncheckedCreateWithoutSupplierInput[]
     connectOrCreate?: AccountCreateOrConnectWithoutSupplierInput | AccountCreateOrConnectWithoutSupplierInput[]
@@ -107093,6 +109972,13 @@ export namespace Prisma {
     connectOrCreate?: VoucherEntryCreateOrConnectWithoutSupplierInput | VoucherEntryCreateOrConnectWithoutSupplierInput[]
     createMany?: VoucherEntryCreateManySupplierInputEnvelope
     connect?: VoucherEntryWhereUniqueInput | VoucherEntryWhereUniqueInput[]
+  }
+
+  export type LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput = {
+    create?: XOR<LocalInquiryCreateWithoutSupplierInput, LocalInquiryUncheckedCreateWithoutSupplierInput> | LocalInquiryCreateWithoutSupplierInput[] | LocalInquiryUncheckedCreateWithoutSupplierInput[]
+    connectOrCreate?: LocalInquiryCreateOrConnectWithoutSupplierInput | LocalInquiryCreateOrConnectWithoutSupplierInput[]
+    createMany?: LocalInquiryCreateManySupplierInputEnvelope
+    connect?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
   }
 
   export type AccountUpdateManyWithoutSupplierNestedInput = {
@@ -107207,6 +110093,20 @@ export namespace Prisma {
     deleteMany?: VoucherEntryScalarWhereInput | VoucherEntryScalarWhereInput[]
   }
 
+  export type LocalInquiryUpdateManyWithoutSupplierNestedInput = {
+    create?: XOR<LocalInquiryCreateWithoutSupplierInput, LocalInquiryUncheckedCreateWithoutSupplierInput> | LocalInquiryCreateWithoutSupplierInput[] | LocalInquiryUncheckedCreateWithoutSupplierInput[]
+    connectOrCreate?: LocalInquiryCreateOrConnectWithoutSupplierInput | LocalInquiryCreateOrConnectWithoutSupplierInput[]
+    upsert?: LocalInquiryUpsertWithWhereUniqueWithoutSupplierInput | LocalInquiryUpsertWithWhereUniqueWithoutSupplierInput[]
+    createMany?: LocalInquiryCreateManySupplierInputEnvelope
+    set?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+    disconnect?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+    delete?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+    connect?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+    update?: LocalInquiryUpdateWithWhereUniqueWithoutSupplierInput | LocalInquiryUpdateWithWhereUniqueWithoutSupplierInput[]
+    updateMany?: LocalInquiryUpdateManyWithWhereWithoutSupplierInput | LocalInquiryUpdateManyWithWhereWithoutSupplierInput[]
+    deleteMany?: LocalInquiryScalarWhereInput | LocalInquiryScalarWhereInput[]
+  }
+
   export type AccountUncheckedUpdateManyWithoutSupplierNestedInput = {
     create?: XOR<AccountCreateWithoutSupplierInput, AccountUncheckedCreateWithoutSupplierInput> | AccountCreateWithoutSupplierInput[] | AccountUncheckedCreateWithoutSupplierInput[]
     connectOrCreate?: AccountCreateOrConnectWithoutSupplierInput | AccountCreateOrConnectWithoutSupplierInput[]
@@ -107317,6 +110217,20 @@ export namespace Prisma {
     update?: VoucherEntryUpdateWithWhereUniqueWithoutSupplierInput | VoucherEntryUpdateWithWhereUniqueWithoutSupplierInput[]
     updateMany?: VoucherEntryUpdateManyWithWhereWithoutSupplierInput | VoucherEntryUpdateManyWithWhereWithoutSupplierInput[]
     deleteMany?: VoucherEntryScalarWhereInput | VoucherEntryScalarWhereInput[]
+  }
+
+  export type LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput = {
+    create?: XOR<LocalInquiryCreateWithoutSupplierInput, LocalInquiryUncheckedCreateWithoutSupplierInput> | LocalInquiryCreateWithoutSupplierInput[] | LocalInquiryUncheckedCreateWithoutSupplierInput[]
+    connectOrCreate?: LocalInquiryCreateOrConnectWithoutSupplierInput | LocalInquiryCreateOrConnectWithoutSupplierInput[]
+    upsert?: LocalInquiryUpsertWithWhereUniqueWithoutSupplierInput | LocalInquiryUpsertWithWhereUniqueWithoutSupplierInput[]
+    createMany?: LocalInquiryCreateManySupplierInputEnvelope
+    set?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+    disconnect?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+    delete?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+    connect?: LocalInquiryWhereUniqueInput | LocalInquiryWhereUniqueInput[]
+    update?: LocalInquiryUpdateWithWhereUniqueWithoutSupplierInput | LocalInquiryUpdateWithWhereUniqueWithoutSupplierInput[]
+    updateMany?: LocalInquiryUpdateManyWithWhereWithoutSupplierInput | LocalInquiryUpdateManyWithWhereWithoutSupplierInput[]
+    deleteMany?: LocalInquiryScalarWhereInput | LocalInquiryScalarWhereInput[]
   }
 
   export type StoreCreateNestedOneWithoutTransfer_Transfer_fromStoreIdToStoreInput = {
@@ -108333,6 +111247,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateWithoutAccountInput = {
@@ -108375,6 +111290,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierCreateOrConnectWithoutAccountInput = {
@@ -109034,6 +111950,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateWithoutAccountInput = {
@@ -109076,6 +111993,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type SalesInvoiceUpsertWithWhereUniqueWithoutAccountInput = {
@@ -109874,6 +112792,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutAdjustmentItemInput = {
@@ -109925,6 +112844,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutAdjustmentItemInput = {
@@ -110122,6 +113042,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutAdjustmentItemInput = {
@@ -110173,6 +113094,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type RackUpsertWithoutAdjustmentItemInput = {
@@ -110366,6 +113288,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutApplicationInput = {
@@ -110417,6 +113340,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutApplicationInput = {
@@ -110588,6 +113512,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutBrandInput = {
@@ -110639,6 +113564,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutBrandInput = {
@@ -110716,6 +113642,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutCategoryInput = {
@@ -110767,6 +113694,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutCategoryInput = {
@@ -112291,6 +115219,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateWithoutDirectPurchaseOrderInput = {
@@ -112333,6 +115262,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierCreateOrConnectWithoutDirectPurchaseOrderInput = {
@@ -112611,6 +115541,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateWithoutDirectPurchaseOrderInput = {
@@ -112653,6 +115584,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type AccountUpsertWithoutDirectPurchaseOrderBranchInput = {
@@ -113008,6 +115940,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutDirectPurchaseOrderItemInput = {
@@ -113059,6 +115992,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutDirectPurchaseOrderItemInput = {
@@ -113263,6 +116197,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutDirectPurchaseOrderItemInput = {
@@ -113314,6 +116249,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type RackUpsertWithoutDirectPurchaseOrderItemInput = {
@@ -113499,6 +116435,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateWithoutDirectPurchaseOrderReturnInput = {
@@ -113541,6 +116478,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierCreateOrConnectWithoutDirectPurchaseOrderReturnInput = {
@@ -113680,6 +116618,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateWithoutDirectPurchaseOrderReturnInput = {
@@ -113722,6 +116661,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type DirectPurchaseOrderReturnItemUpsertWithWhereUniqueWithoutDirectPurchaseOrderReturnInput = {
@@ -113837,6 +116777,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutDirectPurchaseOrderReturnItemInput = {
@@ -113888,6 +116829,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutDirectPurchaseOrderReturnItemInput = {
@@ -113996,6 +116938,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutDirectPurchaseOrderReturnItemInput = {
@@ -114047,6 +116990,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PostedExpenseCreateWithoutExpenseTypeInput = {
@@ -114253,6 +117197,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutMasterPartInput = {
@@ -114304,6 +117249,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutMasterPartInput = {
@@ -114410,6 +117356,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutModelInput = {
@@ -114461,6 +117408,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutModelInput = {
@@ -114528,6 +117476,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutModelInput = {
@@ -114579,6 +117528,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type AdjustmentItemCreateWithoutPartInput = {
@@ -115402,6 +118352,36 @@ export namespace Prisma {
     skipDuplicates?: boolean
   }
 
+  export type LocalInquiryItemCreateWithoutPartInput = {
+    id?: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
+    createdAt?: Date | string
+    LocalInquiry: LocalInquiryCreateNestedOneWithoutLocalInquiryItemInput
+  }
+
+  export type LocalInquiryItemUncheckedCreateWithoutPartInput = {
+    id?: string
+    inquiryId: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
+    createdAt?: Date | string
+  }
+
+  export type LocalInquiryItemCreateOrConnectWithoutPartInput = {
+    where: LocalInquiryItemWhereUniqueInput
+    create: XOR<LocalInquiryItemCreateWithoutPartInput, LocalInquiryItemUncheckedCreateWithoutPartInput>
+  }
+
+  export type LocalInquiryItemCreateManyPartInputEnvelope = {
+    data: LocalInquiryItemCreateManyPartInput | LocalInquiryItemCreateManyPartInput[]
+    skipDuplicates?: boolean
+  }
+
   export type AdjustmentItemUpsertWithWhereUniqueWithoutPartInput = {
     where: AdjustmentItemWhereUniqueInput
     update: XOR<AdjustmentItemUpdateWithoutPartInput, AdjustmentItemUncheckedUpdateWithoutPartInput>
@@ -116117,6 +119097,36 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"TransferItem"> | Date | string
   }
 
+  export type LocalInquiryItemUpsertWithWhereUniqueWithoutPartInput = {
+    where: LocalInquiryItemWhereUniqueInput
+    update: XOR<LocalInquiryItemUpdateWithoutPartInput, LocalInquiryItemUncheckedUpdateWithoutPartInput>
+    create: XOR<LocalInquiryItemCreateWithoutPartInput, LocalInquiryItemUncheckedCreateWithoutPartInput>
+  }
+
+  export type LocalInquiryItemUpdateWithWhereUniqueWithoutPartInput = {
+    where: LocalInquiryItemWhereUniqueInput
+    data: XOR<LocalInquiryItemUpdateWithoutPartInput, LocalInquiryItemUncheckedUpdateWithoutPartInput>
+  }
+
+  export type LocalInquiryItemUpdateManyWithWhereWithoutPartInput = {
+    where: LocalInquiryItemScalarWhereInput
+    data: XOR<LocalInquiryItemUpdateManyMutationInput, LocalInquiryItemUncheckedUpdateManyWithoutPartInput>
+  }
+
+  export type LocalInquiryItemScalarWhereInput = {
+    AND?: LocalInquiryItemScalarWhereInput | LocalInquiryItemScalarWhereInput[]
+    OR?: LocalInquiryItemScalarWhereInput[]
+    NOT?: LocalInquiryItemScalarWhereInput | LocalInquiryItemScalarWhereInput[]
+    id?: StringFilter<"LocalInquiryItem"> | string
+    inquiryId?: StringFilter<"LocalInquiryItem"> | string
+    partId?: StringFilter<"LocalInquiryItem"> | string
+    quantity?: IntFilter<"LocalInquiryItem"> | number
+    price?: FloatFilter<"LocalInquiryItem"> | number
+    remarks?: StringNullableFilter<"LocalInquiryItem"> | string | null
+    sortOrder?: IntFilter<"LocalInquiryItem"> | number
+    createdAt?: DateTimeFilter<"LocalInquiryItem"> | Date | string
+  }
+
   export type PartCreateWithoutKitItemInput = {
     id?: string
     partNo: string
@@ -116166,6 +119176,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutKitItemInput = {
@@ -116217,6 +119228,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutKitItemInput = {
@@ -116273,6 +119285,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutReferencedAsKitComponentInput = {
@@ -116324,6 +119337,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutReferencedAsKitComponentInput = {
@@ -116391,6 +119405,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutKitItemInput = {
@@ -116442,6 +119457,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PartUpsertWithoutReferencedAsKitComponentInput = {
@@ -116504,6 +119520,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutReferencedAsKitComponentInput = {
@@ -116555,6 +119572,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type SupplierCreateWithoutPurchaseImportRequestInput = {
@@ -116597,6 +119615,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateWithoutPurchaseImportRequestInput = {
@@ -116639,6 +119658,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierCreateOrConnectWithoutPurchaseImportRequestInput = {
@@ -116789,6 +119809,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateWithoutPurchaseImportRequestInput = {
@@ -116831,6 +119852,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type PurchaseImportRequestItemUpsertWithWhereUniqueWithoutPurchaseImportRequestInput = {
@@ -116938,6 +119960,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutPurchaseImportRequestItemInput = {
@@ -116989,6 +120012,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutPurchaseImportRequestItemInput = {
@@ -117089,6 +120113,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutPurchaseImportRequestItemInput = {
@@ -117140,6 +120165,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PurchaseImportRequestUpsertWithoutPurchaseImportRequestItemInput = {
@@ -117254,6 +120280,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateWithoutPurchaseQuotationInput = {
@@ -117296,6 +120323,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUncheckedCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierCreateOrConnectWithoutPurchaseQuotationInput = {
@@ -117537,6 +120565,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateWithoutPurchaseQuotationInput = {
@@ -117579,6 +120608,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUncheckedUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type PurchaseQuotationItemUpsertWithWhereUniqueWithoutPurchaseQuotationInput = {
@@ -117756,6 +120786,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutPurchaseQuotationItemInput = {
@@ -117807,6 +120838,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutPurchaseQuotationItemInput = {
@@ -117929,6 +120961,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutPurchaseQuotationItemInput = {
@@ -117980,6 +121013,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type ExpenseTypeCreateWithoutPostedExpenseInput = {
@@ -118099,6 +121133,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutPriceHistoryInput = {
@@ -118150,6 +121185,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutPriceHistoryInput = {
@@ -118217,6 +121253,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutPriceHistoryInput = {
@@ -118268,6 +121305,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type SupplierCreateWithoutPurchaseOrderInput = {
@@ -118310,6 +121348,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateWithoutPurchaseOrderInput = {
@@ -118352,6 +121391,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierCreateOrConnectWithoutPurchaseOrderInput = {
@@ -118503,6 +121543,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateWithoutPurchaseOrderInput = {
@@ -118545,6 +121586,7 @@ export namespace Prisma {
     PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type PurchaseQuotationUpsertWithoutPurchaseOrderInput = {
@@ -118667,6 +121709,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutPurchaseOrderItemInput = {
@@ -118718,6 +121761,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutPurchaseOrderItemInput = {
@@ -118874,6 +121918,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutPurchaseOrderItemInput = {
@@ -118925,6 +121970,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PurchaseOrderUpsertWithoutPurchaseOrderItemInput = {
@@ -120162,6 +123208,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutSalesInquiryItemInput = {
@@ -120213,6 +123260,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutSalesInquiryItemInput = {
@@ -120319,6 +123367,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutSalesInquiryItemInput = {
@@ -120363,6 +123412,525 @@ export namespace Prisma {
     PurchaseOrderItem?: PurchaseOrderItemUncheckedUpdateManyWithoutPartNestedInput
     PurchaseImportRequestItem?: PurchaseImportRequestItemUncheckedUpdateManyWithoutPartNestedInput
     PurchaseQuotationItem?: PurchaseQuotationItemUncheckedUpdateManyWithoutPartNestedInput
+    SalesInvoiceItem?: SalesInvoiceItemUncheckedUpdateManyWithoutPartNestedInput
+    SalesQuotationItem?: SalesQuotationItemUncheckedUpdateManyWithoutPartNestedInput
+    SalesReturnItem?: SalesReturnItemUncheckedUpdateManyWithoutPartNestedInput
+    StockMovement?: StockMovementUncheckedUpdateManyWithoutPartNestedInput
+    StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
+    StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
+    TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
+  }
+
+  export type SupplierCreateWithoutLocalInquiryInput = {
+    id?: string
+    code: string
+    type?: string
+    currencyName?: string | null
+    name?: string | null
+    companyName?: string | null
+    address?: string | null
+    city?: string | null
+    state?: string | null
+    country?: string | null
+    zipCode?: string | null
+    email?: string | null
+    phone?: string | null
+    cnic?: string | null
+    contactPerson?: string | null
+    taxId?: string | null
+    paymentTerms?: string | null
+    openingBalance?: number
+    date?: Date | string | null
+    status?: string
+    notes?: string | null
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    accountHead?: string | null
+    area?: string | null
+    cellNumber?: string | null
+    contactPersons?: NullableJsonNullValueInput | InputJsonValue
+    gstNumber?: string | null
+    ntn?: string | null
+    referenceName?: string | null
+    remarks?: string | null
+    shortTitle?: string | null
+    Account?: AccountCreateNestedManyWithoutSupplierInput
+    DirectPurchaseOrder?: DirectPurchaseOrderCreateNestedManyWithoutSupplierInput
+    DirectPurchaseOrderReturn?: DirectPurchaseOrderReturnCreateNestedManyWithoutSupplierInput
+    PurchaseOrder?: PurchaseOrderCreateNestedManyWithoutSupplierInput
+    PurchaseImportRequest?: PurchaseImportRequestCreateNestedManyWithoutSupplierInput
+    PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
+    StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
+    VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+  }
+
+  export type SupplierUncheckedCreateWithoutLocalInquiryInput = {
+    id?: string
+    code: string
+    type?: string
+    currencyName?: string | null
+    name?: string | null
+    companyName?: string | null
+    address?: string | null
+    city?: string | null
+    state?: string | null
+    country?: string | null
+    zipCode?: string | null
+    email?: string | null
+    phone?: string | null
+    cnic?: string | null
+    contactPerson?: string | null
+    taxId?: string | null
+    paymentTerms?: string | null
+    openingBalance?: number
+    date?: Date | string | null
+    status?: string
+    notes?: string | null
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    accountHead?: string | null
+    area?: string | null
+    cellNumber?: string | null
+    contactPersons?: NullableJsonNullValueInput | InputJsonValue
+    gstNumber?: string | null
+    ntn?: string | null
+    referenceName?: string | null
+    remarks?: string | null
+    shortTitle?: string | null
+    Account?: AccountUncheckedCreateNestedManyWithoutSupplierInput
+    DirectPurchaseOrder?: DirectPurchaseOrderUncheckedCreateNestedManyWithoutSupplierInput
+    DirectPurchaseOrderReturn?: DirectPurchaseOrderReturnUncheckedCreateNestedManyWithoutSupplierInput
+    PurchaseOrder?: PurchaseOrderUncheckedCreateNestedManyWithoutSupplierInput
+    PurchaseImportRequest?: PurchaseImportRequestUncheckedCreateNestedManyWithoutSupplierInput
+    PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
+    StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
+    VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+  }
+
+  export type SupplierCreateOrConnectWithoutLocalInquiryInput = {
+    where: SupplierWhereUniqueInput
+    create: XOR<SupplierCreateWithoutLocalInquiryInput, SupplierUncheckedCreateWithoutLocalInquiryInput>
+  }
+
+  export type LocalInquiryItemCreateWithoutLocalInquiryInput = {
+    id?: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
+    createdAt?: Date | string
+    Part: PartCreateNestedOneWithoutLocalInquiryItemInput
+  }
+
+  export type LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput = {
+    id?: string
+    partId: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
+    createdAt?: Date | string
+  }
+
+  export type LocalInquiryItemCreateOrConnectWithoutLocalInquiryInput = {
+    where: LocalInquiryItemWhereUniqueInput
+    create: XOR<LocalInquiryItemCreateWithoutLocalInquiryInput, LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput>
+  }
+
+  export type LocalInquiryItemCreateManyLocalInquiryInputEnvelope = {
+    data: LocalInquiryItemCreateManyLocalInquiryInput | LocalInquiryItemCreateManyLocalInquiryInput[]
+    skipDuplicates?: boolean
+  }
+
+  export type SupplierUpsertWithoutLocalInquiryInput = {
+    update: XOR<SupplierUpdateWithoutLocalInquiryInput, SupplierUncheckedUpdateWithoutLocalInquiryInput>
+    create: XOR<SupplierCreateWithoutLocalInquiryInput, SupplierUncheckedCreateWithoutLocalInquiryInput>
+    where?: SupplierWhereInput
+  }
+
+  export type SupplierUpdateToOneWithWhereWithoutLocalInquiryInput = {
+    where?: SupplierWhereInput
+    data: XOR<SupplierUpdateWithoutLocalInquiryInput, SupplierUncheckedUpdateWithoutLocalInquiryInput>
+  }
+
+  export type SupplierUpdateWithoutLocalInquiryInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    code?: StringFieldUpdateOperationsInput | string
+    type?: StringFieldUpdateOperationsInput | string
+    currencyName?: NullableStringFieldUpdateOperationsInput | string | null
+    name?: NullableStringFieldUpdateOperationsInput | string | null
+    companyName?: NullableStringFieldUpdateOperationsInput | string | null
+    address?: NullableStringFieldUpdateOperationsInput | string | null
+    city?: NullableStringFieldUpdateOperationsInput | string | null
+    state?: NullableStringFieldUpdateOperationsInput | string | null
+    country?: NullableStringFieldUpdateOperationsInput | string | null
+    zipCode?: NullableStringFieldUpdateOperationsInput | string | null
+    email?: NullableStringFieldUpdateOperationsInput | string | null
+    phone?: NullableStringFieldUpdateOperationsInput | string | null
+    cnic?: NullableStringFieldUpdateOperationsInput | string | null
+    contactPerson?: NullableStringFieldUpdateOperationsInput | string | null
+    taxId?: NullableStringFieldUpdateOperationsInput | string | null
+    paymentTerms?: NullableStringFieldUpdateOperationsInput | string | null
+    openingBalance?: FloatFieldUpdateOperationsInput | number
+    date?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    notes?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    accountHead?: NullableStringFieldUpdateOperationsInput | string | null
+    area?: NullableStringFieldUpdateOperationsInput | string | null
+    cellNumber?: NullableStringFieldUpdateOperationsInput | string | null
+    contactPersons?: NullableJsonNullValueInput | InputJsonValue
+    gstNumber?: NullableStringFieldUpdateOperationsInput | string | null
+    ntn?: NullableStringFieldUpdateOperationsInput | string | null
+    referenceName?: NullableStringFieldUpdateOperationsInput | string | null
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    shortTitle?: NullableStringFieldUpdateOperationsInput | string | null
+    Account?: AccountUpdateManyWithoutSupplierNestedInput
+    DirectPurchaseOrder?: DirectPurchaseOrderUpdateManyWithoutSupplierNestedInput
+    DirectPurchaseOrderReturn?: DirectPurchaseOrderReturnUpdateManyWithoutSupplierNestedInput
+    PurchaseOrder?: PurchaseOrderUpdateManyWithoutSupplierNestedInput
+    PurchaseImportRequest?: PurchaseImportRequestUpdateManyWithoutSupplierNestedInput
+    PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
+    StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
+    VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+  }
+
+  export type SupplierUncheckedUpdateWithoutLocalInquiryInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    code?: StringFieldUpdateOperationsInput | string
+    type?: StringFieldUpdateOperationsInput | string
+    currencyName?: NullableStringFieldUpdateOperationsInput | string | null
+    name?: NullableStringFieldUpdateOperationsInput | string | null
+    companyName?: NullableStringFieldUpdateOperationsInput | string | null
+    address?: NullableStringFieldUpdateOperationsInput | string | null
+    city?: NullableStringFieldUpdateOperationsInput | string | null
+    state?: NullableStringFieldUpdateOperationsInput | string | null
+    country?: NullableStringFieldUpdateOperationsInput | string | null
+    zipCode?: NullableStringFieldUpdateOperationsInput | string | null
+    email?: NullableStringFieldUpdateOperationsInput | string | null
+    phone?: NullableStringFieldUpdateOperationsInput | string | null
+    cnic?: NullableStringFieldUpdateOperationsInput | string | null
+    contactPerson?: NullableStringFieldUpdateOperationsInput | string | null
+    taxId?: NullableStringFieldUpdateOperationsInput | string | null
+    paymentTerms?: NullableStringFieldUpdateOperationsInput | string | null
+    openingBalance?: FloatFieldUpdateOperationsInput | number
+    date?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    notes?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    accountHead?: NullableStringFieldUpdateOperationsInput | string | null
+    area?: NullableStringFieldUpdateOperationsInput | string | null
+    cellNumber?: NullableStringFieldUpdateOperationsInput | string | null
+    contactPersons?: NullableJsonNullValueInput | InputJsonValue
+    gstNumber?: NullableStringFieldUpdateOperationsInput | string | null
+    ntn?: NullableStringFieldUpdateOperationsInput | string | null
+    referenceName?: NullableStringFieldUpdateOperationsInput | string | null
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    shortTitle?: NullableStringFieldUpdateOperationsInput | string | null
+    Account?: AccountUncheckedUpdateManyWithoutSupplierNestedInput
+    DirectPurchaseOrder?: DirectPurchaseOrderUncheckedUpdateManyWithoutSupplierNestedInput
+    DirectPurchaseOrderReturn?: DirectPurchaseOrderReturnUncheckedUpdateManyWithoutSupplierNestedInput
+    PurchaseOrder?: PurchaseOrderUncheckedUpdateManyWithoutSupplierNestedInput
+    PurchaseImportRequest?: PurchaseImportRequestUncheckedUpdateManyWithoutSupplierNestedInput
+    PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
+    StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
+    VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+  }
+
+  export type LocalInquiryItemUpsertWithWhereUniqueWithoutLocalInquiryInput = {
+    where: LocalInquiryItemWhereUniqueInput
+    update: XOR<LocalInquiryItemUpdateWithoutLocalInquiryInput, LocalInquiryItemUncheckedUpdateWithoutLocalInquiryInput>
+    create: XOR<LocalInquiryItemCreateWithoutLocalInquiryInput, LocalInquiryItemUncheckedCreateWithoutLocalInquiryInput>
+  }
+
+  export type LocalInquiryItemUpdateWithWhereUniqueWithoutLocalInquiryInput = {
+    where: LocalInquiryItemWhereUniqueInput
+    data: XOR<LocalInquiryItemUpdateWithoutLocalInquiryInput, LocalInquiryItemUncheckedUpdateWithoutLocalInquiryInput>
+  }
+
+  export type LocalInquiryItemUpdateManyWithWhereWithoutLocalInquiryInput = {
+    where: LocalInquiryItemScalarWhereInput
+    data: XOR<LocalInquiryItemUpdateManyMutationInput, LocalInquiryItemUncheckedUpdateManyWithoutLocalInquiryInput>
+  }
+
+  export type LocalInquiryCreateWithoutLocalInquiryItemInput = {
+    id?: string
+    inquiryNo: string
+    inquiryDate: Date | string
+    remarks?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    Supplier?: SupplierCreateNestedOneWithoutLocalInquiryInput
+  }
+
+  export type LocalInquiryUncheckedCreateWithoutLocalInquiryItemInput = {
+    id?: string
+    inquiryNo: string
+    inquiryDate: Date | string
+    supplierId?: string | null
+    remarks?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+  }
+
+  export type LocalInquiryCreateOrConnectWithoutLocalInquiryItemInput = {
+    where: LocalInquiryWhereUniqueInput
+    create: XOR<LocalInquiryCreateWithoutLocalInquiryItemInput, LocalInquiryUncheckedCreateWithoutLocalInquiryItemInput>
+  }
+
+  export type PartCreateWithoutLocalInquiryItemInput = {
+    id?: string
+    partNo: string
+    description?: string | null
+    hsCode?: string | null
+    weight?: number | null
+    reorderLevel?: number
+    uom?: string
+    cost?: number | null
+    purchasePrice?: number | null
+    avgCost?: number | null
+    costSource?: string | null
+    costSourceRef?: string | null
+    costUpdatedAt?: Date | string | null
+    priceA?: number | null
+    priceB?: number | null
+    priceM?: number | null
+    smc?: string | null
+    size?: string | null
+    origin?: string | null
+    type?: string
+    imageP1?: string | null
+    imageP2?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    AdjustmentItem?: AdjustmentItemCreateNestedManyWithoutPartInput
+    DirectPurchaseOrderItem?: DirectPurchaseOrderItemCreateNestedManyWithoutPartInput
+    DirectPurchaseOrderReturnItem?: DirectPurchaseOrderReturnItemCreateNestedManyWithoutPartInput
+    KitItem?: KitItemCreateNestedManyWithoutParentKitPartInput
+    ReferencedAsKitComponent?: KitItemCreateNestedManyWithoutComponentPartInput
+    Model?: ModelCreateNestedManyWithoutPartInput
+    Application?: ApplicationCreateNestedOneWithoutPartInput
+    Brand?: BrandCreateNestedOneWithoutPartInput
+    Category?: CategoryCreateNestedOneWithoutPartInput
+    MasterPart?: MasterPartCreateNestedOneWithoutPartInput
+    Subcategory?: SubcategoryCreateNestedOneWithoutPartInput
+    PartRackShelf?: PartRackShelfCreateNestedManyWithoutPartInput
+    PriceHistory?: PriceHistoryCreateNestedManyWithoutPartInput
+    PurchaseOrderItem?: PurchaseOrderItemCreateNestedManyWithoutPartInput
+    PurchaseImportRequestItem?: PurchaseImportRequestItemCreateNestedManyWithoutPartInput
+    PurchaseQuotationItem?: PurchaseQuotationItemCreateNestedManyWithoutPartInput
+    SalesInquiryItem?: SalesInquiryItemCreateNestedManyWithoutPartInput
+    SalesInvoiceItem?: SalesInvoiceItemCreateNestedManyWithoutPartInput
+    SalesQuotationItem?: SalesQuotationItemCreateNestedManyWithoutPartInput
+    SalesReturnItem?: SalesReturnItemCreateNestedManyWithoutPartInput
+    StockMovement?: StockMovementCreateNestedManyWithoutPartInput
+    StockReservation?: StockReservationCreateNestedManyWithoutPartInput
+    StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
+    TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+  }
+
+  export type PartUncheckedCreateWithoutLocalInquiryItemInput = {
+    id?: string
+    masterPartId?: string | null
+    partNo: string
+    brandId?: string | null
+    description?: string | null
+    categoryId?: string | null
+    subcategoryId?: string | null
+    applicationId?: string | null
+    hsCode?: string | null
+    weight?: number | null
+    reorderLevel?: number
+    uom?: string
+    cost?: number | null
+    purchasePrice?: number | null
+    avgCost?: number | null
+    costSource?: string | null
+    costSourceRef?: string | null
+    costUpdatedAt?: Date | string | null
+    priceA?: number | null
+    priceB?: number | null
+    priceM?: number | null
+    smc?: string | null
+    size?: string | null
+    origin?: string | null
+    type?: string
+    imageP1?: string | null
+    imageP2?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    AdjustmentItem?: AdjustmentItemUncheckedCreateNestedManyWithoutPartInput
+    DirectPurchaseOrderItem?: DirectPurchaseOrderItemUncheckedCreateNestedManyWithoutPartInput
+    DirectPurchaseOrderReturnItem?: DirectPurchaseOrderReturnItemUncheckedCreateNestedManyWithoutPartInput
+    KitItem?: KitItemUncheckedCreateNestedManyWithoutParentKitPartInput
+    ReferencedAsKitComponent?: KitItemUncheckedCreateNestedManyWithoutComponentPartInput
+    Model?: ModelUncheckedCreateNestedManyWithoutPartInput
+    PartRackShelf?: PartRackShelfUncheckedCreateNestedManyWithoutPartInput
+    PriceHistory?: PriceHistoryUncheckedCreateNestedManyWithoutPartInput
+    PurchaseOrderItem?: PurchaseOrderItemUncheckedCreateNestedManyWithoutPartInput
+    PurchaseImportRequestItem?: PurchaseImportRequestItemUncheckedCreateNestedManyWithoutPartInput
+    PurchaseQuotationItem?: PurchaseQuotationItemUncheckedCreateNestedManyWithoutPartInput
+    SalesInquiryItem?: SalesInquiryItemUncheckedCreateNestedManyWithoutPartInput
+    SalesInvoiceItem?: SalesInvoiceItemUncheckedCreateNestedManyWithoutPartInput
+    SalesQuotationItem?: SalesQuotationItemUncheckedCreateNestedManyWithoutPartInput
+    SalesReturnItem?: SalesReturnItemUncheckedCreateNestedManyWithoutPartInput
+    StockMovement?: StockMovementUncheckedCreateNestedManyWithoutPartInput
+    StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
+    StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
+    TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+  }
+
+  export type PartCreateOrConnectWithoutLocalInquiryItemInput = {
+    where: PartWhereUniqueInput
+    create: XOR<PartCreateWithoutLocalInquiryItemInput, PartUncheckedCreateWithoutLocalInquiryItemInput>
+  }
+
+  export type LocalInquiryUpsertWithoutLocalInquiryItemInput = {
+    update: XOR<LocalInquiryUpdateWithoutLocalInquiryItemInput, LocalInquiryUncheckedUpdateWithoutLocalInquiryItemInput>
+    create: XOR<LocalInquiryCreateWithoutLocalInquiryItemInput, LocalInquiryUncheckedCreateWithoutLocalInquiryItemInput>
+    where?: LocalInquiryWhereInput
+  }
+
+  export type LocalInquiryUpdateToOneWithWhereWithoutLocalInquiryItemInput = {
+    where?: LocalInquiryWhereInput
+    data: XOR<LocalInquiryUpdateWithoutLocalInquiryItemInput, LocalInquiryUncheckedUpdateWithoutLocalInquiryItemInput>
+  }
+
+  export type LocalInquiryUpdateWithoutLocalInquiryItemInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    Supplier?: SupplierUpdateOneWithoutLocalInquiryNestedInput
+  }
+
+  export type LocalInquiryUncheckedUpdateWithoutLocalInquiryItemInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    supplierId?: NullableStringFieldUpdateOperationsInput | string | null
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type PartUpsertWithoutLocalInquiryItemInput = {
+    update: XOR<PartUpdateWithoutLocalInquiryItemInput, PartUncheckedUpdateWithoutLocalInquiryItemInput>
+    create: XOR<PartCreateWithoutLocalInquiryItemInput, PartUncheckedCreateWithoutLocalInquiryItemInput>
+    where?: PartWhereInput
+  }
+
+  export type PartUpdateToOneWithWhereWithoutLocalInquiryItemInput = {
+    where?: PartWhereInput
+    data: XOR<PartUpdateWithoutLocalInquiryItemInput, PartUncheckedUpdateWithoutLocalInquiryItemInput>
+  }
+
+  export type PartUpdateWithoutLocalInquiryItemInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    partNo?: StringFieldUpdateOperationsInput | string
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    hsCode?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    reorderLevel?: IntFieldUpdateOperationsInput | number
+    uom?: StringFieldUpdateOperationsInput | string
+    cost?: NullableFloatFieldUpdateOperationsInput | number | null
+    purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
+    avgCost?: NullableFloatFieldUpdateOperationsInput | number | null
+    costSource?: NullableStringFieldUpdateOperationsInput | string | null
+    costSourceRef?: NullableStringFieldUpdateOperationsInput | string | null
+    costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    priceA?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceB?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    smc?: NullableStringFieldUpdateOperationsInput | string | null
+    size?: NullableStringFieldUpdateOperationsInput | string | null
+    origin?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: StringFieldUpdateOperationsInput | string
+    imageP1?: NullableStringFieldUpdateOperationsInput | string | null
+    imageP2?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    AdjustmentItem?: AdjustmentItemUpdateManyWithoutPartNestedInput
+    DirectPurchaseOrderItem?: DirectPurchaseOrderItemUpdateManyWithoutPartNestedInput
+    DirectPurchaseOrderReturnItem?: DirectPurchaseOrderReturnItemUpdateManyWithoutPartNestedInput
+    KitItem?: KitItemUpdateManyWithoutParentKitPartNestedInput
+    ReferencedAsKitComponent?: KitItemUpdateManyWithoutComponentPartNestedInput
+    Model?: ModelUpdateManyWithoutPartNestedInput
+    Application?: ApplicationUpdateOneWithoutPartNestedInput
+    Brand?: BrandUpdateOneWithoutPartNestedInput
+    Category?: CategoryUpdateOneWithoutPartNestedInput
+    MasterPart?: MasterPartUpdateOneWithoutPartNestedInput
+    Subcategory?: SubcategoryUpdateOneWithoutPartNestedInput
+    PartRackShelf?: PartRackShelfUpdateManyWithoutPartNestedInput
+    PriceHistory?: PriceHistoryUpdateManyWithoutPartNestedInput
+    PurchaseOrderItem?: PurchaseOrderItemUpdateManyWithoutPartNestedInput
+    PurchaseImportRequestItem?: PurchaseImportRequestItemUpdateManyWithoutPartNestedInput
+    PurchaseQuotationItem?: PurchaseQuotationItemUpdateManyWithoutPartNestedInput
+    SalesInquiryItem?: SalesInquiryItemUpdateManyWithoutPartNestedInput
+    SalesInvoiceItem?: SalesInvoiceItemUpdateManyWithoutPartNestedInput
+    SalesQuotationItem?: SalesQuotationItemUpdateManyWithoutPartNestedInput
+    SalesReturnItem?: SalesReturnItemUpdateManyWithoutPartNestedInput
+    StockMovement?: StockMovementUpdateManyWithoutPartNestedInput
+    StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
+    StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
+    TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+  }
+
+  export type PartUncheckedUpdateWithoutLocalInquiryItemInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    masterPartId?: NullableStringFieldUpdateOperationsInput | string | null
+    partNo?: StringFieldUpdateOperationsInput | string
+    brandId?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    categoryId?: NullableStringFieldUpdateOperationsInput | string | null
+    subcategoryId?: NullableStringFieldUpdateOperationsInput | string | null
+    applicationId?: NullableStringFieldUpdateOperationsInput | string | null
+    hsCode?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    reorderLevel?: IntFieldUpdateOperationsInput | number
+    uom?: StringFieldUpdateOperationsInput | string
+    cost?: NullableFloatFieldUpdateOperationsInput | number | null
+    purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
+    avgCost?: NullableFloatFieldUpdateOperationsInput | number | null
+    costSource?: NullableStringFieldUpdateOperationsInput | string | null
+    costSourceRef?: NullableStringFieldUpdateOperationsInput | string | null
+    costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    priceA?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceB?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    smc?: NullableStringFieldUpdateOperationsInput | string | null
+    size?: NullableStringFieldUpdateOperationsInput | string | null
+    origin?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: StringFieldUpdateOperationsInput | string
+    imageP1?: NullableStringFieldUpdateOperationsInput | string | null
+    imageP2?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    AdjustmentItem?: AdjustmentItemUncheckedUpdateManyWithoutPartNestedInput
+    DirectPurchaseOrderItem?: DirectPurchaseOrderItemUncheckedUpdateManyWithoutPartNestedInput
+    DirectPurchaseOrderReturnItem?: DirectPurchaseOrderReturnItemUncheckedUpdateManyWithoutPartNestedInput
+    KitItem?: KitItemUncheckedUpdateManyWithoutParentKitPartNestedInput
+    ReferencedAsKitComponent?: KitItemUncheckedUpdateManyWithoutComponentPartNestedInput
+    Model?: ModelUncheckedUpdateManyWithoutPartNestedInput
+    PartRackShelf?: PartRackShelfUncheckedUpdateManyWithoutPartNestedInput
+    PriceHistory?: PriceHistoryUncheckedUpdateManyWithoutPartNestedInput
+    PurchaseOrderItem?: PurchaseOrderItemUncheckedUpdateManyWithoutPartNestedInput
+    PurchaseImportRequestItem?: PurchaseImportRequestItemUncheckedUpdateManyWithoutPartNestedInput
+    PurchaseQuotationItem?: PurchaseQuotationItemUncheckedUpdateManyWithoutPartNestedInput
+    SalesInquiryItem?: SalesInquiryItemUncheckedUpdateManyWithoutPartNestedInput
     SalesInvoiceItem?: SalesInvoiceItemUncheckedUpdateManyWithoutPartNestedInput
     SalesQuotationItem?: SalesQuotationItemUncheckedUpdateManyWithoutPartNestedInput
     SalesReturnItem?: SalesReturnItemUncheckedUpdateManyWithoutPartNestedInput
@@ -121630,6 +125198,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutSalesInvoiceItemInput = {
@@ -121681,6 +125250,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutSalesInvoiceItemInput = {
@@ -121869,6 +125439,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutSalesInvoiceItemInput = {
@@ -121920,6 +125491,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type RackCreateWithoutInvoiceRackShelfInput = {
@@ -122739,6 +126311,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutSalesQuotationItemInput = {
@@ -122790,6 +126363,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutSalesQuotationItemInput = {
@@ -122910,6 +126484,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutSalesQuotationItemInput = {
@@ -122961,6 +126536,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type SalesQuotationUpsertWithoutSalesQuotationItemInput = {
@@ -123647,6 +127223,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutSalesReturnItemInput = {
@@ -123698,6 +127275,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutSalesReturnItemInput = {
@@ -123824,6 +127402,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutSalesReturnItemInput = {
@@ -123875,6 +127454,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type SalesReturnUpsertWithoutSalesReturnItemInput = {
@@ -124555,6 +128135,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutStockMovementInput = {
@@ -124606,6 +128187,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutStockMovementInput = {
@@ -124790,6 +128372,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestCreateNestedManyWithoutSupplierInput
     PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateWithoutStockMovementInput = {
@@ -124832,6 +128415,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUncheckedCreateNestedManyWithoutSupplierInput
     PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
     VoucherEntry?: VoucherEntryUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierCreateOrConnectWithoutStockMovementInput = {
@@ -124899,6 +128483,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutStockMovementInput = {
@@ -124950,6 +128535,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type RackUpsertWithoutStockMovementInput = {
@@ -125158,6 +128744,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUpdateManyWithoutSupplierNestedInput
     PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateWithoutStockMovementInput = {
@@ -125200,6 +128787,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUncheckedUpdateManyWithoutSupplierNestedInput
     PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
     VoucherEntry?: VoucherEntryUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type SalesInvoiceCreateWithoutStockReservationInput = {
@@ -125334,6 +128922,7 @@ export namespace Prisma {
     StockMovement?: StockMovementCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutStockReservationInput = {
@@ -125385,6 +128974,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutStockReservationInput = {
@@ -125678,6 +129268,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutStockReservationInput = {
@@ -125729,6 +129320,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type RackUpsertWithoutStockReservationInput = {
@@ -125991,6 +129583,7 @@ export namespace Prisma {
     StockMovement?: StockMovementCreateNestedManyWithoutPartInput
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutStockVerificationItemInput = {
@@ -126042,6 +129635,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutPartInput
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutStockVerificationItemInput = {
@@ -126273,6 +129867,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUpdateManyWithoutPartNestedInput
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutStockVerificationItemInput = {
@@ -126324,6 +129919,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUncheckedUpdateManyWithoutPartNestedInput
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type RackUpsertWithoutStockVerificationItemInput = {
@@ -127383,6 +130979,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutSubcategoryInput = {
@@ -127434,6 +131031,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutSubcategoryInput = {
@@ -128078,6 +131676,38 @@ export namespace Prisma {
     skipDuplicates?: boolean
   }
 
+  export type LocalInquiryCreateWithoutSupplierInput = {
+    id?: string
+    inquiryNo: string
+    inquiryDate: Date | string
+    remarks?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutLocalInquiryInput
+  }
+
+  export type LocalInquiryUncheckedCreateWithoutSupplierInput = {
+    id?: string
+    inquiryNo: string
+    inquiryDate: Date | string
+    remarks?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutLocalInquiryInput
+  }
+
+  export type LocalInquiryCreateOrConnectWithoutSupplierInput = {
+    where: LocalInquiryWhereUniqueInput
+    create: XOR<LocalInquiryCreateWithoutSupplierInput, LocalInquiryUncheckedCreateWithoutSupplierInput>
+  }
+
+  export type LocalInquiryCreateManySupplierInputEnvelope = {
+    data: LocalInquiryCreateManySupplierInput | LocalInquiryCreateManySupplierInput[]
+    skipDuplicates?: boolean
+  }
+
   export type AccountUpsertWithWhereUniqueWithoutSupplierInput = {
     where: AccountWhereUniqueInput
     update: XOR<AccountUpdateWithoutSupplierInput, AccountUncheckedUpdateWithoutSupplierInput>
@@ -128220,6 +131850,36 @@ export namespace Prisma {
   export type VoucherEntryUpdateManyWithWhereWithoutSupplierInput = {
     where: VoucherEntryScalarWhereInput
     data: XOR<VoucherEntryUpdateManyMutationInput, VoucherEntryUncheckedUpdateManyWithoutSupplierInput>
+  }
+
+  export type LocalInquiryUpsertWithWhereUniqueWithoutSupplierInput = {
+    where: LocalInquiryWhereUniqueInput
+    update: XOR<LocalInquiryUpdateWithoutSupplierInput, LocalInquiryUncheckedUpdateWithoutSupplierInput>
+    create: XOR<LocalInquiryCreateWithoutSupplierInput, LocalInquiryUncheckedCreateWithoutSupplierInput>
+  }
+
+  export type LocalInquiryUpdateWithWhereUniqueWithoutSupplierInput = {
+    where: LocalInquiryWhereUniqueInput
+    data: XOR<LocalInquiryUpdateWithoutSupplierInput, LocalInquiryUncheckedUpdateWithoutSupplierInput>
+  }
+
+  export type LocalInquiryUpdateManyWithWhereWithoutSupplierInput = {
+    where: LocalInquiryScalarWhereInput
+    data: XOR<LocalInquiryUpdateManyMutationInput, LocalInquiryUncheckedUpdateManyWithoutSupplierInput>
+  }
+
+  export type LocalInquiryScalarWhereInput = {
+    AND?: LocalInquiryScalarWhereInput | LocalInquiryScalarWhereInput[]
+    OR?: LocalInquiryScalarWhereInput[]
+    NOT?: LocalInquiryScalarWhereInput | LocalInquiryScalarWhereInput[]
+    id?: StringFilter<"LocalInquiry"> | string
+    inquiryNo?: StringFilter<"LocalInquiry"> | string
+    inquiryDate?: DateTimeFilter<"LocalInquiry"> | Date | string
+    supplierId?: StringNullableFilter<"LocalInquiry"> | string | null
+    remarks?: StringNullableFilter<"LocalInquiry"> | string | null
+    status?: StringFilter<"LocalInquiry"> | string
+    createdAt?: DateTimeFilter<"LocalInquiry"> | Date | string
+    updatedAt?: DateTimeFilter<"LocalInquiry"> | Date | string
   }
 
   export type StoreCreateWithoutTransfer_Transfer_fromStoreIdToStoreInput = {
@@ -128684,6 +132344,7 @@ export namespace Prisma {
     StockMovement?: StockMovementCreateNestedManyWithoutPartInput
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutTransferItemInput = {
@@ -128735,6 +132396,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutPartInput
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutTransferItemInput = {
@@ -129125,6 +132787,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUpdateManyWithoutPartNestedInput
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutTransferItemInput = {
@@ -129176,6 +132839,7 @@ export namespace Prisma {
     StockMovement?: StockMovementUncheckedUpdateManyWithoutPartNestedInput
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type RackUpsertWithoutTransferItem_TransferItem_toRackIdToRackInput = {
@@ -130396,6 +134060,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestCreateNestedManyWithoutSupplierInput
     PurchaseQuotation?: PurchaseQuotationCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierUncheckedCreateWithoutVoucherEntryInput = {
@@ -130438,6 +134103,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUncheckedCreateNestedManyWithoutSupplierInput
     PurchaseQuotation?: PurchaseQuotationUncheckedCreateNestedManyWithoutSupplierInput
     StockMovement?: StockMovementUncheckedCreateNestedManyWithoutSupplierInput
+    LocalInquiry?: LocalInquiryUncheckedCreateNestedManyWithoutSupplierInput
   }
 
   export type SupplierCreateOrConnectWithoutVoucherEntryInput = {
@@ -130899,6 +134565,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUpdateManyWithoutSupplierNestedInput
     PurchaseQuotation?: PurchaseQuotationUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUpdateManyWithoutSupplierNestedInput
   }
 
   export type SupplierUncheckedUpdateWithoutVoucherEntryInput = {
@@ -130941,6 +134608,7 @@ export namespace Prisma {
     PurchaseImportRequest?: PurchaseImportRequestUncheckedUpdateManyWithoutSupplierNestedInput
     PurchaseQuotation?: PurchaseQuotationUncheckedUpdateManyWithoutSupplierNestedInput
     StockMovement?: StockMovementUncheckedUpdateManyWithoutSupplierNestedInput
+    LocalInquiry?: LocalInquiryUncheckedUpdateManyWithoutSupplierNestedInput
   }
 
   export type VoucherUpsertWithoutVoucherEntryInput = {
@@ -131063,6 +134731,7 @@ export namespace Prisma {
     StockReservation?: StockReservationCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemCreateNestedManyWithoutPartInput
   }
 
   export type PartUncheckedCreateWithoutPartRackShelfInput = {
@@ -131114,6 +134783,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedCreateNestedManyWithoutPartInput
     StockVerificationItem?: StockVerificationItemUncheckedCreateNestedManyWithoutPartInput
     TransferItem?: TransferItemUncheckedCreateNestedManyWithoutPartInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedCreateNestedManyWithoutPartInput
   }
 
   export type PartCreateOrConnectWithoutPartRackShelfInput = {
@@ -131318,6 +134988,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutPartRackShelfInput = {
@@ -131369,6 +135040,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type RackUpsertWithoutPartRackShelfInput = {
@@ -132523,6 +136195,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutApplicationInput = {
@@ -132574,6 +136247,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateManyWithoutApplicationInput = {
@@ -132689,6 +136363,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutBrandInput = {
@@ -132740,6 +136415,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateManyWithoutBrandInput = {
@@ -132863,6 +136539,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutCategoryInput = {
@@ -132914,6 +136591,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateManyWithoutCategoryInput = {
@@ -134157,6 +137835,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutMasterPartInput = {
@@ -134208,6 +137887,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateManyWithoutMasterPartInput = {
@@ -134494,6 +138174,16 @@ export namespace Prisma {
     toRackId?: string | null
     toShelfId?: string | null
     quantity: number
+    createdAt?: Date | string
+  }
+
+  export type LocalInquiryItemCreateManyPartInput = {
+    id?: string
+    inquiryId: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
     createdAt?: Date | string
   }
 
@@ -135263,6 +138953,36 @@ export namespace Prisma {
     toRackId?: NullableStringFieldUpdateOperationsInput | string | null
     toShelfId?: NullableStringFieldUpdateOperationsInput | string | null
     quantity?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryItemUpdateWithoutPartInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    LocalInquiry?: LocalInquiryUpdateOneRequiredWithoutLocalInquiryItemNestedInput
+  }
+
+  export type LocalInquiryItemUncheckedUpdateWithoutPartInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryId?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryItemUncheckedUpdateManyWithoutPartInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryId?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -136303,6 +140023,46 @@ export namespace Prisma {
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryItemCreateManyLocalInquiryInput = {
+    id?: string
+    partId: string
+    quantity?: number
+    price?: number
+    remarks?: string | null
+    sortOrder?: number
+    createdAt?: Date | string
+  }
+
+  export type LocalInquiryItemUpdateWithoutLocalInquiryInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    Part?: PartUpdateOneRequiredWithoutLocalInquiryItemNestedInput
+  }
+
+  export type LocalInquiryItemUncheckedUpdateWithoutLocalInquiryInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    partId?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type LocalInquiryItemUncheckedUpdateManyWithoutLocalInquiryInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    partId?: StringFieldUpdateOperationsInput | string
+    quantity?: IntFieldUpdateOperationsInput | number
+    price?: FloatFieldUpdateOperationsInput | number
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -138440,6 +142200,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateWithoutSubcategoryInput = {
@@ -138491,6 +142252,7 @@ export namespace Prisma {
     StockReservation?: StockReservationUncheckedUpdateManyWithoutPartNestedInput
     StockVerificationItem?: StockVerificationItemUncheckedUpdateManyWithoutPartNestedInput
     TransferItem?: TransferItemUncheckedUpdateManyWithoutPartNestedInput
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutPartNestedInput
   }
 
   export type PartUncheckedUpdateManyWithoutSubcategoryInput = {
@@ -138761,6 +142523,16 @@ export namespace Prisma {
     deletedAt?: Date | string | null
     adjustmentId?: string | null
     salesInvoiceId?: string | null
+  }
+
+  export type LocalInquiryCreateManySupplierInput = {
+    id?: string
+    inquiryNo: string
+    inquiryDate: Date | string
+    remarks?: string | null
+    status?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
   }
 
   export type AccountUpdateWithoutSupplierInput = {
@@ -139255,6 +143027,38 @@ export namespace Prisma {
     salesInvoiceId?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
+  export type LocalInquiryUpdateWithoutSupplierInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    LocalInquiryItem?: LocalInquiryItemUpdateManyWithoutLocalInquiryNestedInput
+  }
+
+  export type LocalInquiryUncheckedUpdateWithoutSupplierInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    LocalInquiryItem?: LocalInquiryItemUncheckedUpdateManyWithoutLocalInquiryNestedInput
+  }
+
+  export type LocalInquiryUncheckedUpdateManyWithoutSupplierInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    inquiryNo?: StringFieldUpdateOperationsInput | string
+    inquiryDate?: DateTimeFieldUpdateOperationsInput | Date | string
+    remarks?: NullableStringFieldUpdateOperationsInput | string | null
+    status?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
   export type TransferItemCreateManyTransferInput = {
     id?: string
     partId: string
@@ -139590,6 +143394,10 @@ export namespace Prisma {
      */
     export type SalesInquiryCountOutputTypeArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = SalesInquiryCountOutputTypeDefaultArgs<ExtArgs>
     /**
+     * @deprecated Use LocalInquiryCountOutputTypeDefaultArgs instead
+     */
+    export type LocalInquiryCountOutputTypeArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = LocalInquiryCountOutputTypeDefaultArgs<ExtArgs>
+    /**
      * @deprecated Use SalesInvoiceCountOutputTypeDefaultArgs instead
      */
     export type SalesInvoiceCountOutputTypeArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = SalesInvoiceCountOutputTypeDefaultArgs<ExtArgs>
@@ -139809,6 +143617,14 @@ export namespace Prisma {
      * @deprecated Use SalesInquiryItemDefaultArgs instead
      */
     export type SalesInquiryItemArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = SalesInquiryItemDefaultArgs<ExtArgs>
+    /**
+     * @deprecated Use LocalInquiryDefaultArgs instead
+     */
+    export type LocalInquiryArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = LocalInquiryDefaultArgs<ExtArgs>
+    /**
+     * @deprecated Use LocalInquiryItemDefaultArgs instead
+     */
+    export type LocalInquiryItemArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = LocalInquiryItemDefaultArgs<ExtArgs>
     /**
      * @deprecated Use SalesInvoiceDefaultArgs instead
      */

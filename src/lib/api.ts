@@ -1529,6 +1529,83 @@ class ApiClient {
     );
   }
 
+  // Local Inquiry
+  async getLocalInquiries(params?: {
+    from_date?: string;
+    to_date?: string;
+    supplier_id?: string;
+    part_id?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/inventory/local-inquiries${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
+  async getLocalInquiry(id: string) {
+    return this.request(`/inventory/local-inquiries/${id}`);
+  }
+
+  async createLocalInquiry(data: {
+    inquiryDate: string;
+    supplierId?: string;
+    remarks?: string;
+    status?: string;
+    items: Array<{
+      partId: string;
+      quantity?: number;
+      price?: number;
+      remarks?: string;
+    }>;
+  }) {
+    return this.request("/inventory/local-inquiries", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLocalInquiry(
+    id: string,
+    data: {
+      inquiryDate?: string;
+      supplierId?: string;
+      remarks?: string;
+      status?: string;
+      items?: Array<{
+        partId: string;
+        quantity?: number;
+        price?: number;
+        remarks?: string;
+      }>;
+    },
+  ) {
+    return this.request(`/inventory/local-inquiries/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLocalInquiry(id: string) {
+    return this.request(`/inventory/local-inquiries/${id}`, {
+      method: "DELETE",
+    });
+  }
+
   async getDirectPurchaseOrdersByPart(
     partId: string,
     params?: {
