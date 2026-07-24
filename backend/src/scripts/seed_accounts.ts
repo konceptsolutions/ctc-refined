@@ -3,6 +3,7 @@ import prisma from "../config/database";
 
 const mainGroups = [
     { code: "1", name: "Current Assets", type: "Asset", displayOrder: 1 },
+    { code: "2", name: "Long Term Assets", type: "Asset", displayOrder: 2 },
     { code: "3", name: "Current Liabilities", type: "Liability", displayOrder: 3 },
     { code: "4", name: "Long Term Liabilities", type: "Liability", displayOrder: 4 },
     { code: "5", name: "Capital", type: "Equity", displayOrder: 5 },
@@ -20,7 +21,7 @@ const subGroups = [
     { code: "301", name: "Purchase Orders Payables", mainGroupCode: "3" },
     { code: "302", name: "Import Purchase expenses Payables", mainGroupCode: "3" },
     { code: "304", name: "Other Payables", mainGroupCode: "4" },
-    { code: "402", name: "Supplier Security", mainGroupCode: "4" },
+    { code: "402", name: "Supplier Security", mainGroupCode: "2" },
     { code: "501", name: "Owner Equity", mainGroupCode: "5" },
     { code: "701", name: "Goods Revenue", mainGroupCode: "7" },
     { code: "801", name: "Purchase Expenses", mainGroupCode: "8" },
