@@ -63,11 +63,12 @@ export async function syncEmployeeAccountNames(employeeId: string, employeeName:
 
 const ROLE_SUBGROUP_CONFIG: Record<
   EmployeeAccountRole,
-  { mainTypes: string[]; keywords: string[] }
+  { mainTypes: string[]; keywords: string[]; preferredCode?: string }
 > = {
   salary_payable: {
     mainTypes: ["Liability", "liability"],
     keywords: ["staff salaries", "staff salary", "salaries payable", "salaries"],
+    preferredCode: "307",
   },
   loan: {
     mainTypes: ["Asset", "asset"],
@@ -80,7 +81,18 @@ const ROLE_SUBGROUP_CONFIG: Record<
 };
 
 export async function findEmployeeSubgroup(role: EmployeeAccountRole) {
-  const { mainTypes, keywords } = ROLE_SUBGROUP_CONFIG[role];
+  const { mainTypes, keywords, preferredCode } = ROLE_SUBGROUP_CONFIG[role];
+
+  if (preferredCode) {
+    const preferredSubgroup = await prisma.subgroup.findFirst({
+      where: {
+        code: preferredCode,
+        MainGroup: { type: { in: mainTypes } },
+      },
+      include: { MainGroup: true },
+    });
+    if (preferredSubgroup) return preferredSubgroup;
+  }
 
   for (const keyword of keywords) {
     const subgroup = await prisma.subgroup.findFirst({
@@ -120,6 +132,15 @@ const STAFF_SALARY_EXPENSE_ACCOUNT_NAME = "Staff Salary Expense";
 export async function getStaffSalaryExpenseAccount() {
   const expenseSubgroup = await findSalaryExpenseSubgroup();
   if (!expenseSubgroup) return null;
+
+  const accountByCode = await prisma.account.findFirst({
+    where: {
+      subgroupId: expenseSubgroup.id,
+      code: "808001",
+      status: "Active",
+    },
+  });
+  if (accountByCode) return accountByCode;
 
   const preferredAccount = await prisma.account.findFirst({
     where: {

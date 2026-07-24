@@ -46,9 +46,11 @@ export async function fetchBranchAccountOptions(
   const subgroupsRes = (await apiClient.getSubgroups({
     mainGroupId: mainGroup.id,
     isActive: true,
-  })) as { data?: Array<{ id: string; name: string }> };
+  })) as { data?: Array<{ id: string; code?: string; name: string }> };
   const subgroups = subgroupsRes?.data || [];
-  const branchesSubgroup = subgroups.find((sg) => isBranchesSubgroup(sg.name));
+  const branchesSubgroup =
+    subgroups.find((sg) => String(sg.code || "").trim() === "305") ||
+    subgroups.find((sg) => isBranchesSubgroup(sg.name));
   if (!branchesSubgroup?.id) return [];
 
   const accountsRes = (await apiClient.getAccounts({

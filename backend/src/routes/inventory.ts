@@ -8851,7 +8851,9 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                 const freightAccount = await tx.account.findFirst({
                   where: {
                     status: "Active",
+                    Subgroup: { code: "306" },
                     OR: [
+                      { code: "306001" },
                       { name: { equals: "Local Purchase Freight", mode: "insensitive" } },
                       { name: { contains: "Local Purchase Freight", mode: "insensitive" } },
                       { name: { equals: "Direct Purchase Freight", mode: "insensitive" } },
@@ -9652,7 +9654,9 @@ router.put(
                 const freightAccount = await tx.account.findFirst({
                   where: {
                     status: "Active",
+                    Subgroup: { code: "306" },
                     OR: [
+                      { code: "306001" },
                       { name: { equals: "Local Purchase Freight", mode: "insensitive" } },
                       { name: { contains: "Local Purchase Freight", mode: "insensitive" } },
                       { name: { equals: "Direct Purchase Freight", mode: "insensitive" } },

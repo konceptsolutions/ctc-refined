@@ -329,7 +329,7 @@ router.put("/subgroups/:id", async (req: Request, res: Response) => {
 
     // Restriction removed as per user request
     // const existingSubgroup = await prisma.subgroup.findUnique({ where: { id } });
-    // if (existingSubgroup && ['101', '102', '103', '104', '301', '302', '304', '501', '701', '801', '901'].includes(existingSubgroup.code)) {
+    // if (existingSubgroup && ['101', '102', '103', '104', '301', '302', '403', '501', '701', '801', '901'].includes(existingSubgroup.code)) {
     //   return res.status(403).json({ error: 'This Subgroup is fixed and cannot be edited' });
     // }
 
@@ -348,7 +348,7 @@ router.delete("/subgroups/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Prevent deleting fixed Subgroup (codes 101, 102, 103, 104, 301, 302, 304, 501, 701, 801, 901)
+    // Prevent deleting fixed Subgroup (codes 101, 102, 103, 104, 301, 302, 403, 501, 701, 801, 901)
     const existingSubgroup = await prisma.subgroup.findUnique({
       where: { id },
     });
@@ -361,7 +361,7 @@ router.delete("/subgroups/:id", async (req: Request, res: Response) => {
         "104",
         "301",
         "302",
-        "304",
+        "403",
         "501",
         "701",
         "801",

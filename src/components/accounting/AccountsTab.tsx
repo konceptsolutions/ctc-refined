@@ -60,8 +60,16 @@ const mainGroupOptions = [
 const subGroupMapping: Record<string, string[]> = {
   "Current Assets": ["101-Inventory", "102-Cash", "103-Bank", "104-Sales Customer Receivables", "108-BANK ACCOUNT"],
   "Long Term Assets": ["206-SHOP INVESTMENT", "402-Supplier Security"],
-  "Current Liabilities": ["301-Purchase Orders Payables", "302-Import Purchase expenses Payables", "303-Salirys"],
-  "Long Term Liabilities": ["304-Other Payables"],
+  "Current Liabilities": [
+    "301-Purchase Orders Payables",
+    "302-Import Purchase expenses Payables",
+    "303-Disposed Inventory",
+    "304-Loans",
+    "305-Branches",
+    "306-Direct Purchase EXP Payable",
+    "307-Staff Salaries",
+  ],
+  "Long Term Liabilities": ["403-Other Payables"],
   "Capital": ["501-Owner's Equity"],
   "Drawings": ["601-Owner Drawings"],
   "Revenues": ["701-Sales Revenue"],
