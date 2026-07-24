@@ -38,6 +38,79 @@ const customerCanBeDeleted = (customer: any) =>
       account._count.VoucherEntry === 0,
   );
 
+/**
+ * Resolve the customer's receivable ledger account.
+ * Prefer FK / payload id; fall back to legacy accounts matched by name under subgroup 105.
+ * Never creates an account — callers that need create must do so explicitly.
+ */
+async function findCustomerLedgerAccount(
+  customerId: string,
+  opts: {
+    accountId?: string | null;
+    names?: Array<string | null | undefined>;
+  } = {},
+) {
+  const preferReceivable = (accounts: any[]) =>
+    accounts.find((a) => a.code?.startsWith("105")) ||
+    accounts.find((a) => a.Subgroup?.code === "105") ||
+    accounts[0] ||
+    null;
+
+  if (opts.accountId) {
+    const byId = await prisma.account.findFirst({
+      where: {
+        id: opts.accountId,
+        supplierId: null,
+        OR: [{ customerId }, { customerId: null }],
+      },
+      include: { Subgroup: true },
+    });
+    if (byId) return byId;
+  }
+
+  const byCustomerId = await prisma.account.findMany({
+    where: { customerId, supplierId: null },
+    include: { Subgroup: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const linked = preferReceivable(byCustomerId);
+  if (linked) return linked;
+
+  const names = [
+    ...new Set(
+      (opts.names || [])
+        .map((n) => (typeof n === "string" ? n.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
+  if (names.length === 0) return null;
+
+  const receivables = await prisma.subgroup.findFirst({
+    where: { code: "105" },
+  });
+  if (!receivables) return null;
+
+  const byName = await prisma.account.findMany({
+    where: {
+      name: { in: names },
+      subgroupId: receivables.id,
+      supplierId: null,
+      OR: [{ customerId }, { customerId: null }],
+    },
+    include: { Subgroup: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  // Prefer an account already linked to this customer, then unlinked legacy
+  const preferred =
+    byName.find((a) => a.customerId === customerId) ||
+    byName.find((a) => !a.customerId) ||
+    byName[0] ||
+    null;
+
+  return preferred;
+}
+
 // GET /api/customers - Get all customers with filters and pagination
 router.get("/", async (req, res) => {
   try {
@@ -562,7 +635,7 @@ router.put("/:id", async (req, res) => {
         : oldCustomer.openingBalance;
     const oldOpeningBalance = oldCustomer.openingBalance;
 
-    // 3. Handle Status or Name Change - Update associated account
+    // 3. Handle Status or Name Change - Update associated account (never create a new one)
     if (
       (status !== undefined && oldCustomer.status !== status) ||
       (name !== undefined && oldCustomer.name !== name)
@@ -574,12 +647,9 @@ router.put("/:id", async (req, res) => {
         console.log(`[SYNC-DEBUG] Status: ${oldCustomer.status} -> ${status}`);
         console.log(`[SYNC-DEBUG] Name: "${oldCustomer.name}" -> "${name}"`);
 
-        // Find the associated customer account
-        const customerAccount = await prisma.account.findFirst({
-          where: {
-            customerId: req.params.id,
-            Subgroup: { code: "105" },
-          },
+        const customerAccount = await findCustomerLedgerAccount(req.params.id, {
+          accountId,
+          names: [oldCustomer.name, name],
         });
 
         if (customerAccount) {
@@ -587,6 +657,11 @@ router.put("/:id", async (req, res) => {
             `[SYNC-DEBUG] Found associated account: ${customerAccount.code} ("${customerAccount.name}")`,
           );
           const updateAccountData: any = {};
+
+          // Relink legacy accounts that were matched by name only
+          if (customerAccount.customerId !== req.params.id) {
+            updateAccountData.customerId = req.params.id;
+          }
 
           // Handle Status synchronization
           if (status !== undefined && oldCustomer.status !== status) {
@@ -721,38 +796,29 @@ router.put("/:id", async (req, res) => {
           console.log("CustomerAccountId from old voucher:", customerAccountId);
           console.log("AccountId from payload:", accountId);
 
-          // Priority: 1. Payload accountId, 2. Old voucher, 3. FK lookup, 4. Name lookup
+          // Priority: 1. Payload accountId, 2. Old voucher, 3. Robust FK / name lookup
           if (!customerAccountId && accountId) {
             customerAccountId = accountId;
             console.log("Using accountId from payload:", customerAccountId);
           }
 
           if (!customerAccountId) {
-            console.log("Looking up account by customerId:", customer.id);
-            // Find by customerId FK
-            const accountByFk = await prisma.account.findFirst({
-              where: { customerId: customer.id },
-            });
-            console.log("Account found by customerId FK:", accountByFk);
-            if (accountByFk) {
-              customerAccountId = accountByFk.id;
-            } else {
-              // Fallback: Find by name (for legacy accounts without FK)
-              console.log("Falling back to name lookup...");
-              const receivables = await prisma.subgroup.findFirst({
-                where: { code: "105" },
-              });
-              if (receivables) {
-                const found = await prisma.account.findFirst({
-                  where: {
-                    OR: [
-                      { name: oldCustomer.name || undefined },
-                      { name: customer.name || undefined },
-                    ],
-                    subgroupId: receivables.id,
-                  },
+            console.log("Looking up account by customerId / name:", customer.id);
+            const accountByLookup = await findCustomerLedgerAccount(
+              customer.id,
+              {
+                accountId,
+                names: [oldCustomer.name, customer.name],
+              },
+            );
+            console.log("Account found by lookup:", accountByLookup);
+            if (accountByLookup) {
+              customerAccountId = accountByLookup.id;
+              if (accountByLookup.customerId !== customer.id) {
+                await prisma.account.update({
+                  where: { id: accountByLookup.id },
+                  data: { customerId: customer.id },
                 });
-                if (found) customerAccountId = found.id;
               }
             }
           }

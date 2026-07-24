@@ -1037,7 +1037,7 @@ export const CustomerManagement = () => {
                     onClick={() => handleRemoveContactPerson(idx)}
                     className="h-6 w-6"
                   >
-                    <Trash className="w-4 h-4 text-red-500" />
+                    <Trash2 className="w-4 h-4 text-red-500" />
                   </Button>
                 </div>
               ))}

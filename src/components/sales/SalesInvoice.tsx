@@ -2472,6 +2472,16 @@ export const SalesInvoice = ({
       .join(", ");
   }, [selectedRegisteredCustomer]);
 
+  const selectedCustomerContactNo = useMemo(() => {
+    if (!selectedRegisteredCustomer) return "";
+    return (
+      selectedRegisteredCustomer.contactNo ||
+      selectedRegisteredCustomer.cellNumber ||
+      selectedRegisteredCustomer.phone ||
+      ""
+    ).trim();
+  }, [selectedRegisteredCustomer]);
+
   const selectedCustomerPriceLabel = useMemo(() => {
     const pt = selectedRegisteredCustomer?.priceType;
     if (pt === "A") return "Price A";
@@ -2969,6 +2979,9 @@ export const SalesInvoice = ({
               type: c.type || "registered",
               address: c.address || "",
               area: c.area || null,
+              contactNo: c.contactNo || c.contact_no || "",
+              cellNumber: c.cellNumber || c.cell_number || "",
+              phone: c.contactNo || c.cellNumber || c.phone || "",
               balance: c.balance || 0,
               creditLimit: c.creditLimit || 0,
               creditDays: c.creditDays || 0,
@@ -3822,6 +3835,9 @@ export const SalesInvoice = ({
                 type: "registered" as CustomerType,
                 address: "",
                 area: null,
+                contactNo: "",
+                cellNumber: "",
+                phone: "",
                 balance: 0,
                 creditLimit: 0,
                 creditDays: 0,
@@ -4104,6 +4120,9 @@ export const SalesInvoice = ({
             type: c.type || "registered",
             address: c.address || "",
             area: c.area || null,
+            contactNo: c.contactNo || c.contact_no || "",
+            cellNumber: c.cellNumber || c.cell_number || "",
+            phone: c.contactNo || c.cellNumber || c.phone || "",
             balance: c.balance || 0,
             creditLimit: c.creditLimit || 0,
             creditDays: c.creditDays || 0,
@@ -5711,6 +5730,14 @@ export const SalesInvoice = ({
       ? addressParts.map((part) => esc(part)).join(",<br/>")
       : "";
     const areaText = matchedCustomer?.area ? esc(matchedCustomer.area) : "";
+    const contactNoText = esc(
+      String(
+        matchedCustomer?.contactNo ||
+          matchedCustomer?.cellNumber ||
+          matchedCustomer?.phone ||
+          "",
+      ).trim(),
+    );
     const totalQty =
       invoice.items?.reduce((sum, i) => sum + (i.orderedQty || 0), 0) || 0;
     const baseTotal = Number(
@@ -5858,6 +5885,11 @@ export const SalesInvoice = ({
                 ${
                   invoice.customerType === "registered" && areaText
                     ? `<div class="muted">${areaText}</div>`
+                    : ""
+                }
+                ${
+                  invoice.customerType === "registered" && contactNoText
+                    ? `<div class="muted">Contact No: ${contactNoText}</div>`
                     : ""
                 }
               </div>
@@ -6596,6 +6628,12 @@ export const SalesInvoice = ({
                         </span>
                       )}
                     </p>
+                    {selectedCustomerContactNo ? (
+                      <p className="text-sm leading-snug text-foreground">
+                        <span className="text-muted-foreground">Contact No: </span>
+                        {selectedCustomerContactNo}
+                      </p>
+                    ) : null}
                     {selectedCustomerPriceLabel && (
                       <Badge variant="secondary" className="text-xs font-semibold">
                         {selectedCustomerPriceLabel}

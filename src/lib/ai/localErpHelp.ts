@@ -41,11 +41,11 @@ const HELP_TOPICS: HelpTopic[] = [
   },
   {
     keywords: ["stock in out", "stock in/out", "stock movement"],
-    title: "Stock In/Out",
+    title: "Stock Movement",
     path: "/inventory/stock-in-out",
-    content: `**Stock In/Out** records manual stock movements (goods in or out) with reason and store location.
+    content: `**Stock Movement** records manual stock movements (goods in or out) with reason and store location.
 
-**Where:** Inventory → **Stock In/Out** (\`/inventory/stock-in-out\`)
+**Where:** Inventory → **Stock Movement** (\`/inventory/stock-in-out\`)
 
 Record movements with part, quantity, store, and narration. Use for non-purchase/non-sale stock events.`,
   },

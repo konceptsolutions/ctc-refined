@@ -893,7 +893,7 @@ export const StockInOut = () => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Stock In/Out Report</title>
+          <title>Stock Movement Report</title>
           <style>
             @media print {
               @page { margin: 1cm; }
@@ -988,7 +988,7 @@ export const StockInOut = () => {
         </head>
         <body>
           <div class="header">
-            <h1>Stock In/Out Report</h1>
+            <h1>Stock Movement Report</h1>
             <p>Generated on ${new Date().toLocaleString()}</p>
           </div>
           
