@@ -18,9 +18,11 @@ import { getCurrentDatePakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { openPrintHtml } from "@/utils/printUtils";
+import { Badge } from "@/components/ui/badge";
 import { ChevronsUpDown, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 
 type DailyClosingColumn = {
   id: string;
@@ -44,6 +46,20 @@ type DailyClosingAccountOption = {
   subgroupName: string;
 };
 
+type DailyClosingCreditInvoice = {
+  id: string;
+  invoiceNo: string;
+  invoiceDate: string;
+  customerName: string;
+  customerType: string;
+  term: string;
+  grandTotal: number;
+  paidAmount: number;
+  balance: number;
+  paymentStatus: string;
+  status: string;
+};
+
 type DailyClosingData = {
   date: string;
   columns: DailyClosingColumn[];
@@ -58,6 +74,11 @@ type DailyClosingData = {
     receipts: number;
     payments: number;
     closingBalance: number;
+  };
+  creditInvoices?: DailyClosingCreditInvoice[];
+  creditInvoiceTotals?: {
+    count: number;
+    balance: number;
   };
 };
 
@@ -444,6 +465,116 @@ export const DailyClosingTab = ({
               </Card>
             </div>
           )}
+
+          {data ? (
+            <div className="space-y-3 pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold">Outstanding Credit Invoices</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Credit invoices dated {data.date} that are not fully paid
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <Badge variant="secondary">
+                    {(data.creditInvoiceTotals?.count ?? data.creditInvoices?.length ?? 0)} invoice
+                    {(data.creditInvoiceTotals?.count ?? data.creditInvoices?.length ?? 0) === 1
+                      ? ""
+                      : "s"}
+                  </Badge>
+                  <span className="font-semibold tabular-nums text-amber-700">
+                    Due Rs{" "}
+                    {formatMoney(
+                      data.creditInvoiceTotals?.balance ??
+                        (data.creditInvoices || []).reduce(
+                          (sum, invoice) => sum + Number(invoice.balance || 0),
+                          0,
+                        ),
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <ListNumberHeader />
+                      <TableHead>Invoice No</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Term</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Balance</TableHead>
+                      <TableHead>Payment</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(data.creditInvoices || []).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={10}
+                          className="text-center text-muted-foreground py-6"
+                        >
+                          No outstanding credit invoices.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      (data.creditInvoices || []).map((invoice, index) => (
+                        <TableRow key={invoice.id}>
+                          <ListNumberCell
+                            index={index}
+                            total={(data.creditInvoices || []).length}
+                          />
+                          <TableCell className="font-mono text-xs whitespace-nowrap">
+                            {invoice.invoiceNo}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {invoice.invoiceDate
+                              ? format(new Date(invoice.invoiceDate), "dd MMM yyyy")
+                              : "-"}
+                          </TableCell>
+                          <TableCell>{invoice.customerName || "-"}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {invoice.term && invoice.term !== "-"
+                              ? `${invoice.term} days`
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatMoney(invoice.grandTotal)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatMoney(invoice.paidAmount)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-medium text-amber-700">
+                            {formatMoney(invoice.balance)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="secondary"
+                              className={cn(
+                                "capitalize",
+                                String(invoice.paymentStatus).toLowerCase() === "partial"
+                                  ? "bg-amber-100 text-amber-800 hover:bg-amber-100"
+                                  : "bg-rose-100 text-rose-800 hover:bg-rose-100",
+                              )}
+                            >
+                              {invoice.paymentStatus}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="capitalize text-xs">
+                            {String(invoice.status || "-").replace(/_/g, " ")}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

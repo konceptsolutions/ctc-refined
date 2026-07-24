@@ -1238,6 +1238,75 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
     const sumRecord = (record: Record<string, number>) =>
       Object.values(record).reduce((sum, value) => sum + Number(value || 0), 0);
 
+    // Credit invoices for the selected closing date that are not fully paid.
+    const creditInvoiceRows = await prisma.salesInvoice.findMany({
+      where: {
+        customerType: { not: "transfer" },
+        status: {
+          notIn: ["cancelled", "Canceled", "void", "Void", "draft", "Draft"],
+        },
+        paymentStatus: { in: ["unpaid", "partial"] },
+        invoiceDate: { gte: dayStart, lte: dayEnd },
+        OR: [
+          { customerType: "registered" },
+          {
+            AND: [
+              { term: { not: null } },
+              { term: { not: "" } },
+            ],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        invoiceNo: true,
+        invoiceDate: true,
+        customerName: true,
+        customerType: true,
+        term: true,
+        grandTotal: true,
+        paidAmount: true,
+        paymentStatus: true,
+        status: true,
+      },
+      orderBy: [{ invoiceDate: "asc" }, { invoiceNo: "asc" }],
+    });
+
+    const creditInvoices = creditInvoiceRows
+      .map((invoice) => {
+        const grandTotal = Number(invoice.grandTotal || 0);
+        const paidAmount = Number(invoice.paidAmount || 0);
+        const balance = Math.max(
+          0,
+          Math.round((grandTotal - paidAmount) * 100) / 100,
+        );
+        const termRaw = String(invoice.term || "").trim();
+        const termDays = parseInt(termRaw, 10);
+        const hasCreditTerm =
+          Boolean(termRaw) &&
+          termRaw.toLowerCase() !== "cash" &&
+          (!Number.isFinite(termDays) || termDays > 0);
+        const isCreditSale =
+          String(invoice.customerType || "").toLowerCase() === "registered" ||
+          hasCreditTerm;
+        return {
+          id: invoice.id,
+          invoiceNo: invoice.invoiceNo,
+          invoiceDate: invoice.invoiceDate,
+          customerName: invoice.customerName,
+          customerType: invoice.customerType,
+          term: termRaw || "-",
+          grandTotal,
+          paidAmount,
+          balance,
+          paymentStatus: invoice.paymentStatus,
+          status: invoice.status,
+          isCreditSale,
+        };
+      })
+      .filter((invoice) => invoice.isCreditSale && invoice.balance > 0.009)
+      .map(({ isCreditSale: _ignored, ...invoice }) => invoice);
+
     res.json({
       data: {
         date: dateStr,
@@ -1253,6 +1322,14 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
           receipts: sumRecord(totalReceipts),
           payments: sumRecord(totalPayments),
           closingBalance: sumRecord(closingBalances),
+        },
+        creditInvoices,
+        creditInvoiceTotals: {
+          count: creditInvoices.length,
+          balance: creditInvoices.reduce(
+            (sum, invoice) => sum + Number(invoice.balance || 0),
+            0,
+          ),
         },
       },
     });

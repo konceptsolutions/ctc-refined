@@ -1043,7 +1043,7 @@ export const DirectPurchaseOrder = ({
       toast.success(labels.deletedToast);
 
       // Warning: Stock movements are not automatically reversed (backend issue)
-      toast.warning("⚠️ Important: Please verify stock movements in Stock In/Out page. Associated stock entries may need manual review.", {
+      toast.warning("⚠️ Important: Please verify stock movements in Stock Movement page. Associated stock entries may need manual review.", {
         duration: 6000,
       });
 
@@ -3679,7 +3679,7 @@ export const DirectPurchaseOrder = ({
             <AlertDialogDescription>
               Are you sure you want to delete this local purchase order? This action cannot be undone.
               <br /><br />
-              <strong className="text-yellow-600">⚠️ Warning:</strong> Stock movements associated with this DPO will NOT be automatically deleted. You will need to manually verify and adjust stock entries in the Stock In/Out page.
+              <strong className="text-yellow-600">⚠️ Warning:</strong> Stock movements associated with this DPO will NOT be automatically deleted. You will need to manually verify and adjust stock entries in the Stock Movement page.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

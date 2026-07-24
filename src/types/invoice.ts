@@ -41,6 +41,8 @@ export interface Customer {
   name: string;
   type: CustomerType;
   phone?: string;
+  contactNo?: string;
+  cellNumber?: string;
   address?: string;
   area?: string | null;
   balance?: number;

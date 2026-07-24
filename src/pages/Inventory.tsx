@@ -61,7 +61,7 @@ const tabs: TabConfig[] = [
   // { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview & analytics" }, // Hidden temporarily
   { id: "current-stock", label: "Current Stock", icon: Package, description: "View current stock with prices" },
   { id: "store-management", label: "Store Management", icon: Store, description: "Manage stores & locations" },
-  { id: "stock-in-out", label: "Stock In/Out", icon: ArrowRightLeft, description: "Record stock movements" },
+  { id: "stock-in-out", label: "Stock Movement", icon: ArrowRightLeft, description: "Record stock movements" },
   // { id: "stock-transfer", label: "Stock Transfer", icon: Truck, description: "Transfer between locations" }, // Hidden temporarily
   { id: "adjust-item", label: "Adjust Item", icon: Settings2, description: "Stock quantity adjustments" },
   // { id: "stock-balance", label: "Balance & Valuation", icon: BarChart3, description: "Balance & valuation" }, // Hidden temporarily

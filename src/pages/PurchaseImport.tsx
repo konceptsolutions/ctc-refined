@@ -7633,7 +7633,7 @@ const PurchaseOrderTab = ({
 }) => {
   const isInvoiceMode = mode === "purchase-invoice";
   const formTitle = isInvoiceMode ? "Purchase Invoice" : "Purchase Import";
-  const formActionLabel = isInvoiceMode ? "Purchase Invoice" : "Purchase Import";
+  const formActionLabel = isInvoiceMode ? "Invoice" : "PO";
   const { toast } = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -8483,11 +8483,11 @@ const PurchaseOrderTab = ({
 
   const saveLabel = isInvoiceMode
     ? isStockReceivingPendingStatus(receiveOrderStatus)
-      ? "Update Purchase Invoice"
-      : "Save Purchase Invoice"
+      ? "Update Invoice"
+      : "Invoice"
     : receiveImportSaved
-      ? "Update Purchase Import"
-      : "Save Purchase Import";
+      ? "Update PO"
+      : "PO";
 
   const handleSaveReceive = async () => {
     if (!receiveOrderId || receiveLines.length === 0) return;
@@ -8719,10 +8719,10 @@ const PurchaseOrderTab = ({
                           importLocked;
                         const listActionLabel = isInvoiceMode
                           ? isStockReceivingPendingStatus(row.status)
-                            ? "Update Purchase Invoice"
+                            ? "Update Invoice"
                             : formActionLabel
                           : importSaved
-                            ? "Update Purchase Import"
+                            ? "Update PO"
                             : formActionLabel;
                         return (
                       <Button

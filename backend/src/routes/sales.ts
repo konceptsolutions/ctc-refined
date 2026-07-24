@@ -375,27 +375,33 @@ async function findCustomerReceivableAccount(
 ) {
   const include = { Subgroup: { include: { MainGroup: true } } };
 
-  const byCustomerId = await tx.account.findFirst({
+  // Prefer any account already linked to this customer (oldest first → keep original ledger)
+  const linkedAccounts = await tx.account.findMany({
     where: {
-      status: "Active",
       customerId,
       supplierId: null,
-      Subgroup: { code: "105" },
     },
     include,
+    orderBy: { createdAt: "asc" },
   });
-  if (byCustomerId) return byCustomerId;
+  if (linkedAccounts.length > 0) {
+    return (
+      linkedAccounts.find((a: any) => a.Subgroup?.code === "105") ||
+      linkedAccounts.find((a: any) => a.code?.startsWith("105")) ||
+      linkedAccounts[0]
+    );
+  }
 
   if (customerName) {
     const byNameInReceivable = await tx.account.findFirst({
       where: {
-        status: "Active",
         name: customerName,
         supplierId: null,
         OR: [{ customerId }, { customerId: null }],
         Subgroup: { code: "105" },
       },
       include,
+      orderBy: { createdAt: "asc" },
     });
     if (byNameInReceivable) {
       if (!byNameInReceivable.customerId) {
