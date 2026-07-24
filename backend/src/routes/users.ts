@@ -7,10 +7,11 @@ import { randomUUID } from 'crypto';
 const router = express.Router();
 
 const DEFAULT_ROLE_ID = 'role_store_user';
+const MIN_PASSWORD_LENGTH = 6;
 
-async function resolveIncomingRole(role: unknown): Promise<string> {
+async function resolveIncomingRole(role: unknown): Promise<{ id: string; name: string | null }> {
   if (typeof role !== 'string' || !role.trim()) {
-    return DEFAULT_ROLE_ID;
+    return { id: DEFAULT_ROLE_ID, name: null };
   }
   const trimmed = role.trim();
   const found = await prisma.role.findFirst({
@@ -21,7 +22,12 @@ async function resolveIncomingRole(role: unknown): Promise<string> {
       ],
     },
   });
-  return found?.id ?? DEFAULT_ROLE_ID;
+  if (!found) return { id: DEFAULT_ROLE_ID, name: null };
+  return { id: found.id, name: found.name };
+}
+
+function isAdminRoleName(name: string | null | undefined): boolean {
+  return (name || '').trim().toLowerCase() === 'admin';
 }
 
 async function roleNamesForUserRows(roleIds: string[]) {
@@ -156,7 +162,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/users - Create new user
+// POST /api/users - Create new user (Admin role accounts cannot be created here)
 router.post('/', async (req, res) => {
   try {
     const {
@@ -167,7 +173,6 @@ router.post('/', async (req, res) => {
       password,
     } = req.body;
     
-    // Get current user from request (you'll need to implement authentication middleware)
     const currentUser = (req as any).user || { name: 'System', role: 'Admin' };
 
     if (!name || !email) {
@@ -176,6 +181,12 @@ router.post('/', async (req, res) => {
 
     if (!password) {
       return res.status(400).json({ error: 'Password is required for new users' });
+    }
+
+    if (String(password).length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({
+        error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`,
+      });
     }
 
     // Check if user already exists
@@ -187,17 +198,21 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'User with this email already exists' });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const resolvedRole = await resolveIncomingRole(role);
+    if (isAdminRoleName(resolvedRole.name)) {
+      return res.status(400).json({
+        error: 'Admin accounts cannot be created from user management. Choose another role.',
+      });
+    }
 
-    const roleIdResolved = await resolveIncomingRole(role);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
       data: {
         id: randomUUID(),
         name,
         email,
-        roleId: roleIdResolved,
+        roleId: resolvedRole.id,
         status: status || 'active',
         password: hashedPassword,
         lastLogin: '-',
@@ -214,7 +229,6 @@ router.post('/', async (req, res) => {
       },
     });
 
-    // Log activity
     await logActivity({
       user: currentUser.name,
       userRole: currentUser.role,
@@ -241,7 +255,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/users/:id - Update user
+// PUT /api/users/:id - Update user (password can be changed for any role including Admin)
 router.put('/:id', async (req, res) => {
   try {
     const {
@@ -252,16 +266,44 @@ router.put('/:id', async (req, res) => {
       password,
     } = req.body;
 
+    const currentUser = (req as any).user || { name: 'System', role: 'Admin' };
+
+    const existing = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, name: true, email: true, roleId: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
     const updateData: any = {};
 
     if (name !== undefined) updateData.name = name;
     if (email !== undefined) updateData.email = email;
-    if (role !== undefined) updateData.roleId = await resolveIncomingRole(role);
     if (status !== undefined) updateData.status = status;
 
-    // Hash password if provided
-    if (password) {
-      updateData.password = await bcrypt.hash(password, 10);
+    if (role !== undefined) {
+      const resolvedRole = await resolveIncomingRole(role);
+      const existingRoleNames = await roleNamesForUserRows([existing.roleId]);
+      const existingIsAdmin = isAdminRoleName(existingRoleNames[existing.roleId]);
+      const nextIsAdmin = isAdminRoleName(resolvedRole.name);
+
+      // Do not allow promoting anyone to Admin via this screen
+      if (nextIsAdmin && !existingIsAdmin) {
+        return res.status(400).json({
+          error: 'Users cannot be promoted to Admin from user management.',
+        });
+      }
+      updateData.roleId = resolvedRole.id;
+    }
+
+    if (password !== undefined && password !== null && String(password).trim() !== '') {
+      if (String(password).length < MIN_PASSWORD_LENGTH) {
+        return res.status(400).json({
+          error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`,
+        });
+      }
+      updateData.password = await bcrypt.hash(String(password), 10);
     }
 
     const user = await prisma.user.update({
@@ -277,6 +319,20 @@ router.put('/:id', async (req, res) => {
         createdAt: true,
       },
     });
+
+    if (updateData.password) {
+      await logActivity({
+        user: currentUser.name,
+        userRole: currentUser.role,
+        action: 'Changed User Password',
+        actionType: 'update',
+        module: 'Users',
+        description: `Changed password for user: ${user.name} (${user.email})`,
+        ipAddress: getClientIp(req),
+        status: 'success',
+        details: { userId: user.id, email: user.email },
+      });
+    }
 
     const rn = await roleNamesForUserRows([user.roleId]);
     const { roleId: urid, ...rest } = user;

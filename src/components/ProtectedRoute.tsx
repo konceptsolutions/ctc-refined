@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { isAuthenticated, getUserRole, isStoreUserRole, isManagerRole, isManagerAllowedPath, getManagerHomePath, isAccountantRole, isAccountantAllowedPath, getAccountantHomePath, isSalesRole, isSalesAllowedPath, getSalesHomePath } from '@/utils/auth';
+import { isAuthenticated, getUserRole, isStoreUserRole, isManagerRole, isManagerAllowedPath, getManagerHomePath, isAccountantRole, isAccountantAllowedPath, getAccountantHomePath, isSalesRole, isSalesAllowedPath, getSalesHomePath, isAdminRole } from '@/utils/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -70,6 +70,11 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     if (!isSalesAllowedPath(path) || blockedSalesTabs) {
       return <Navigate to={getSalesHomePath()} replace />;
     }
+  }
+
+  // Settings / user administration is Admin-only
+  if (location.pathname.startsWith('/settings') && !isAdminRole()) {
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;

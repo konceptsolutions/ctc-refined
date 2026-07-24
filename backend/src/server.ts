@@ -12,7 +12,7 @@ const envPath = path.resolve(__dirname, `../${envFile}`);
 dotenv.config({ path: envPath, override: true });
 
 // ============================================================
-// DATABASE SAFETY GUARD ó ALWAYS USE koncepts_dev
+// DATABASE SAFETY GUARD ù ALWAYS USE koncepts_dev
 // Never allow any other database to be used.
 // This guard overrides stale system/user environment variables.
 // ============================================================
@@ -77,7 +77,7 @@ import advancedSearchRoutes from "./routes/advanced-search";
 import purchaseImportRoutes from "./routes/purchase-import";
 import partsDropdownRoutes from "./routes/parts-dropdown";
 import authRoutes from "./routes/auth";
-import { authenticateJWT } from "./middleware/authMiddleware";
+import { authenticateJWT, authorizeRoles } from "./middleware/authMiddleware";
 
 // Trigger restart for environment variable update
 const app = express();
@@ -588,7 +588,7 @@ app.use("/api/customers", authenticateJWT, customersRoutes);
 app.use("/api/suppliers", authenticateJWT, suppliersRoutes);
 app.use("/api/employees", authenticateJWT, employeesRoutes);
 app.use("/api/reports", authenticateJWT, reportsRoutes);
-app.use("/api/users", authenticateJWT, usersRoutes);
+app.use("/api/users", authenticateJWT, authorizeRoles("Admin"), usersRoutes);
 app.use("/api/roles", authenticateJWT, rolesRoutes);
 app.use("/api/activity-logs", authenticateJWT, activityLogsRoutes);
 app.use("/api/approval-flows", authenticateJWT, approvalFlowsRoutes);
@@ -621,7 +621,7 @@ app.use("/dev-koncepts/api/customers", authenticateJWT, customersRoutes);
 app.use("/dev-koncepts/api/suppliers", authenticateJWT, suppliersRoutes);
 app.use("/dev-koncepts/api/employees", authenticateJWT, employeesRoutes);
 app.use("/dev-koncepts/api/reports", authenticateJWT, reportsRoutes);
-app.use("/dev-koncepts/api/users", authenticateJWT, usersRoutes);
+app.use("/dev-koncepts/api/users", authenticateJWT, authorizeRoles("Admin"), usersRoutes);
 app.use("/dev-koncepts/api/roles", authenticateJWT, rolesRoutes);
 app.use("/dev-koncepts/api/activity-logs", authenticateJWT, activityLogsRoutes);
 app.use(
