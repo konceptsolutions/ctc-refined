@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { printBalanceSheet } from "@/utils/printBalanceSheetPdf";
+import { useToast } from "@/hooks/use-toast";
+import type { BalanceSheetPrintMainGroup } from "@/utils/printBalanceSheetPdf";
 
 interface BalanceSheetAccount {
   id: string;
@@ -54,6 +58,7 @@ interface SupplierAccount {
 }
 
 export const BalanceSheetTab = () => {
+  const { toast } = useToast();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [loading, setLoading] = useState(true);
   const [balanceSheetData, setBalanceSheetData] =
@@ -180,6 +185,67 @@ export const BalanceSheetTab = () => {
     return capitalTotal + netIncome;
   };
 
+  const mapPrintGroups = (
+    groups: BalanceSheetMainGroup[] | undefined,
+  ): BalanceSheetPrintMainGroup[] =>
+    (groups || [])
+      .map((mainGroup) => {
+        const visibleSubgroups = getVisibleSubgroups(
+          mainGroup.non_depreciation_sub_groups || mainGroup.coa_sub_groups,
+        );
+        return {
+          label: `${mainGroup.code}-${mainGroup.name}`,
+          total: calculateMainGroupTotal(mainGroup),
+          subgroups: visibleSubgroups.map((subgroup) => ({
+            label: `${subgroup.code}-${subgroup.name}`,
+            total: calculateSubgroupTotal(subgroup),
+            accounts: getVisibleAccounts(subgroup.coa_accounts).map(
+              (account) => ({
+                label: `${account.code}-${account.name}`,
+                balance: getAccountBalance(account) || 0,
+              }),
+            ),
+          })),
+        };
+      })
+      .filter((group) => group.subgroups.length > 0);
+
+  const handlePrint = () => {
+    if (!balanceSheetData) {
+      toast({
+        title: "No data",
+        description: "Load balance sheet data before printing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const revenue = balanceSheetData.revenue || 0;
+    const cost = balanceSheetData.cost || 0;
+    const expense = balanceSheetData.expense || 0;
+    const netIncome = revenue - cost - expense;
+
+    const opened = printBalanceSheet({
+      date: selectedDate,
+      assets: mapPrintGroups(balanceSheetData.assets),
+      liabilities: mapPrintGroups(balanceSheetData.liabilities),
+      capital: mapPrintGroups(balanceSheetData.capital),
+      totalAssets: calculateTotalAssets(),
+      totalLiabilities: calculateTotalLiabilities(),
+      totalCapital: calculateTotalCapital(),
+      netIncomeLabel: netIncome >= 0 ? "Net Income" : "Net Loss",
+      netIncome,
+    });
+
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -243,6 +309,11 @@ export const BalanceSheetTab = () => {
                 </PopoverContent>
               </Popover>
             </div>
+            <PrintPdfButton
+              onPrint={handlePrint}
+              disabled={loading || !balanceSheetData}
+              label="Print PDF"
+            />
           </div>
         </CardContent>
       </Card>

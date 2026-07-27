@@ -21,6 +21,31 @@ interface JournalVoucherFormProps {
   onAddSubgroup: () => void;
   onAddAccount: () => void;
   onSave: (data: any) => Promise<boolean>;
+  balanceMap?: Record<string, number>;
+}
+
+function AccountBalance({
+  accountId,
+  balanceMap,
+}: {
+  accountId: string;
+  balanceMap?: Record<string, number>;
+}) {
+  if (!accountId || !balanceMap || !(accountId in balanceMap)) return null;
+  const bal = balanceMap[accountId];
+  const isNeg = bal < 0;
+  const formatted = Math.abs(bal).toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  return (
+    <Input
+      readOnly
+      value={`${formatted} ${isNeg ? "Cr" : "Dr"}`}
+      className={`h-10 bg-muted/30 font-medium ${isNeg ? "text-destructive" : "text-green-600"}`}
+    />
+  );
 }
 
 export const JournalVoucherForm = ({
@@ -29,6 +54,7 @@ export const JournalVoucherForm = ({
   onAddSubgroup,
   onAddAccount,
   onSave,
+  balanceMap,
 }: JournalVoucherFormProps) => {
   const { toast } = useToast();
   const [name, setName] = useState("");
@@ -252,7 +278,10 @@ export const JournalVoucherForm = ({
           <div className={isInternationalSupplier ? "col-span-2" : "col-span-3"}>
             <Label className="text-base font-medium">Account Dr/ Cr</Label>
           </div>
-          <div className={isInternationalSupplier ? "col-span-2" : "col-span-4"}>
+          <div className="col-span-2">
+            <Label className="text-base font-medium">Balance</Label>
+          </div>
+          <div className={isInternationalSupplier ? "col-span-1" : "col-span-2"}>
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2 text-center">
@@ -260,7 +289,7 @@ export const JournalVoucherForm = ({
           </div>
           {isInternationalSupplier ? (
             <>
-              <div className="col-span-2 text-center">
+              <div className="col-span-1 text-center">
                 <Label className="text-base font-medium">LC Dr</Label>
               </div>
               <div className="col-span-2 text-center">
@@ -285,12 +314,17 @@ export const JournalVoucherForm = ({
               <SearchableSelect
                 options={accounts}
                 value={entry.account}
-                onValueChange={(v) => updateDrEntry(entry.id, "account", v)}
+                onValueChange={(v) =>
+                  updateDrEntry(entry.id, "account", v)
+                }
                 placeholder="Select..."
                 selectedDisplayLabelOnly
               />
             </div>
-            <div className={isInternationalSupplier ? "col-span-2" : "col-span-4"}>
+            <div className="col-span-2">
+              <AccountBalance accountId={entry.account} balanceMap={balanceMap} />
+            </div>
+            <div className={isInternationalSupplier ? "col-span-1" : "col-span-2"}>
               <Input
                 placeholder="Description"
                 value={entry.description}
@@ -313,7 +347,7 @@ export const JournalVoucherForm = ({
             </div>
             {isInternationalSupplier ? (
               <>
-                <div className="col-span-2">
+                <div className="col-span-1">
                   <Input
                     value={formatAmount((Number(entry.drAmount) || 0) * exchangeRateValue)}
                     readOnly
@@ -353,12 +387,17 @@ export const JournalVoucherForm = ({
               <SearchableSelect
                 options={accounts}
                 value={entry.account}
-                onValueChange={(v) => updateCrEntry(entry.id, "account", v)}
+                onValueChange={(v) =>
+                  updateCrEntry(entry.id, "account", v)
+                }
                 placeholder="Select..."
                 selectedDisplayLabelOnly
               />
             </div>
-            <div className={isInternationalSupplier ? "col-span-2" : "col-span-4"}>
+            <div className="col-span-2">
+              <AccountBalance accountId={entry.account} balanceMap={balanceMap} />
+            </div>
+            <div className={isInternationalSupplier ? "col-span-1" : "col-span-2"}>
               <Input
                 placeholder="Description"
                 value={entry.description}

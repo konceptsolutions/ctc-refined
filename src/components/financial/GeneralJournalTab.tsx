@@ -6,11 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
-import { BookOpen, ArrowUpDown, Search, Calendar as CalendarIcon, Filter, Download, Printer } from "lucide-react";
+import { BookOpen, ArrowUpDown, Search, Calendar as CalendarIcon, Filter, Download } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import { printGeneralJournal } from "@/utils/printGeneralJournalPdf";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -149,68 +149,26 @@ export const GeneralJournalTab = () => {
   };
 
   const handlePrint = () => {
-    const totalDebit = entries.reduce((sum, entry) => sum + entry.debit, 0);
-    const totalCredit = entries.reduce((sum, entry) => sum + entry.credit, 0);
-
-    const html = `
-      <html>
-        <head>
-          <title>General Journal</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f4f4f4; }
-            .text-right { text-align: right; }
-            .total-row { font-weight: bold; background-color: #f9f9f9; }
-          </style>
-        </head>
-        <body>
-          <h1>General Journal</h1>
-          <p>Period: ${fromDate} to ${toDate}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>T_Id</th>
-                <th>Voucher No</th>
-                <th>Date</th>
-                <th>Account</th>
-                <th>Description</th>
-                <th class="text-right">Debit</th>
-                <th class="text-right">Credit</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${entries.map(entry => `
-                <tr>
-                  <td>${entry.tId}</td>
-                  <td>${entry.VoucherNo}</td>
-                  <td>${entry.date}</td>
-                  <td>${entry.account}</td>
-                  <td>${entry.description}</td>
-                  <td class="text-right">${formatNumber(entry.debit)}</td>
-                  <td class="text-right">${formatNumber(entry.credit)}</td>
-                </tr>
-              `).join('')}
-              <tr class="total-row">
-                <td colspan="5" class="text-right">Total</td>
-                <td class="text-right">${formatNumber(totalDebit)}</td>
-                <td class="text-right">${formatNumber(totalCredit)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-    openPrintHtml(html, {
-      onBlocked: () =>
-        toast({
-          title: "Error",
-          description: "Please allow popups to print the report",
-          variant: "destructive",
-        }),
+    const opened = printGeneralJournal({
+      fromDate,
+      toDate,
+      entries: entries.map((entry) => ({
+        tId: entry.tId,
+        voucherNo: entry.VoucherNo,
+        date: entry.date,
+        account: entry.account,
+        description: entry.description,
+        debit: entry.debit,
+        credit: entry.credit,
+      })),
     });
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
   };
 
   const totalDebit = entries.reduce((sum, entry) => sum + entry.debit, 0);
@@ -241,7 +199,7 @@ export const GeneralJournalTab = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print" />
+            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span className="px-3 py-1 bg-muted rounded-full">
                 {totalEntries} entries

@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import { printDailyClosing } from "@/utils/printDailyClosingPdf";
 import { Badge } from "@/components/ui/badge";
 import { ChevronsUpDown, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -142,104 +142,6 @@ const sectionHeaderRow = (columns: DailyClosingColumn[], title: string) => (
   </TableRow>
 );
 
-const buildPrintHtml = (data: DailyClosingData) => {
-  const headerCells = data.columns
-    .map(
-      (col) =>
-        `<th style="min-width:90px;text-align:right;font-size:10px;white-space:nowrap;">${col.name}</th>`,
-    )
-    .join("");
-
-  const valueCells = (
-    values: Record<string, number>,
-    bold = false,
-  ) =>
-    data.columns
-      .map((col) => {
-        const value = Number(values[col.id] || 0);
-        return `<td style="text-align:right;${bold ? "font-weight:700;" : ""}">${formatMoney(value)}</td>`;
-      })
-      .join("");
-
-  const txnRows = (rows: DailyClosingMatrixRow[]) =>
-    rows.length === 0
-      ? `<tr><td colspan="${3 + data.columns.length}" style="text-align:center;color:#666;">—</td></tr>`
-      : rows
-          .map(
-            (row) => `
-      <tr>
-        <td style="text-align:center;">${row.serialNo}</td>
-        <td>${row.voucherNumber}</td>
-        <td>${row.description}</td>
-        ${data.columns
-          .map((col) => {
-            const value = Number(row.amounts[col.id] || 0);
-            return `<td style="text-align:right;">${value === 0 ? "0" : formatMoney(value)}</td>`;
-          })
-          .join("")}
-      </tr>`,
-          )
-          .join("");
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <title>Daily Closing - ${data.date}</title>
-  <style>
-    @page { size: A4; margin: 10mm; }
-    body { font-family: Arial, sans-serif; padding: 12px; color: #111; font-size: 11px; }
-    h1 { font-size: 18px; margin: 0 0 4px; }
-    .subtitle { color: #666; font-size: 11px; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; }
-    th { background: #1e3a8a; color: #fff; padding: 6px 4px; border: 1px solid #cbd5e1; }
-    td { border: 1px solid #cbd5e1; padding: 4px 6px; vertical-align: top; }
-    .section td { background: #e2e8f0; font-weight: 700; text-align: center; }
-    .summary td { background: #f8fafc; font-weight: 700; }
-  </style>
-</head>
-<body>
-  <h1>Daily Closing — Cash &amp; Bank</h1>
-  <p class="subtitle">Date: ${data.date} · Printed ${new Date().toLocaleString()}</p>
-  <table>
-    <thead>
-      <tr>
-        <th style="width:40px;">S no</th>
-        <th style="width:70px;">V no</th>
-        <th style="min-width:200px;text-align:left;">Desc</th>
-        ${headerCells}
-      </tr>
-    </thead>
-    <tbody>
-      <tr class="summary">
-        <td></td><td></td>
-        <td style="text-align:right;">Opening Balances:</td>
-        ${valueCells(data.openingBalances, true)}
-      </tr>
-      <tr class="section"><td colspan="${3 + data.columns.length}">Receipts</td></tr>
-      ${txnRows(data.receipts)}
-      <tr class="summary">
-        <td></td><td></td>
-        <td style="text-align:right;">Total Receipts:</td>
-        ${valueCells(data.totalReceipts, true)}
-      </tr>
-      <tr class="section"><td colspan="${3 + data.columns.length}">Payments</td></tr>
-      ${txnRows(data.payments)}
-      <tr class="summary">
-        <td></td><td></td>
-        <td style="text-align:right;">Total Payments:</td>
-        ${valueCells(data.totalPayments, true)}
-      </tr>
-      <tr class="summary">
-        <td></td><td></td>
-        <td style="text-align:right;">Closing Balances:</td>
-        ${valueCells(data.closingBalances, true)}
-      </tr>
-    </tbody>
-  </table>
-</body>
-</html>`;
-};
-
 export const DailyClosingTab = ({
   date: controlledDate,
   hideDatePicker = false,
@@ -330,11 +232,19 @@ export const DailyClosingTab = ({
 
   const handlePrint = () => {
     if (!data) return;
-    const started = openPrintHtml(buildPrintHtml(data), {
-      paperSize: "A4",
-      onBlocked: () => toast.error("Allow pop-ups to print the report"),
+    const opened = printDailyClosing({
+      date: data.date,
+      columns: data.columns.map((col) => ({ id: col.id, name: col.name })),
+      openingBalances: data.openingBalances,
+      receipts: data.receipts,
+      payments: data.payments,
+      totalReceipts: data.totalReceipts,
+      totalPayments: data.totalPayments,
+      closingBalances: data.closingBalances,
     });
-    if (!started) return;
+    if (!opened) {
+      toast.error("Allow pop-ups to print the report");
+    }
   };
 
   const columns = data?.columns || [];

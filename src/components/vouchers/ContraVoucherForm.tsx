@@ -21,9 +21,34 @@ interface ContraVoucherFormProps {
   onAddSubgroup: () => void;
   onAddAccount: () => void;
   onSave: (data: any) => Promise<boolean>;
+  balanceMap?: Record<string, number>;
 }
 
-export const ContraVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, onAddAccount, onSave }: ContraVoucherFormProps) => {
+function AccountBalance({
+  accountId,
+  balanceMap,
+}: {
+  accountId: string;
+  balanceMap?: Record<string, number>;
+}) {
+  if (!accountId || !balanceMap || !(accountId in balanceMap)) return null;
+  const bal = balanceMap[accountId];
+  const isNeg = bal < 0;
+  const formatted = Math.abs(bal).toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  return (
+    <Input
+      readOnly
+      value={`${formatted} ${isNeg ? "Cr" : "Dr"}`}
+      className={`h-10 bg-muted/30 font-medium ${isNeg ? "text-destructive" : "text-green-600"}`}
+    />
+  );
+}
+
+export const ContraVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, onAddAccount, onSave, balanceMap }: ContraVoucherFormProps) => {
   const { toast } = useToast();
   const [name, setName] = useState("");
   // Initialize date in YYYY-MM-DD format for date input
@@ -199,7 +224,10 @@ export const ContraVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, o
           <div className="col-span-3">
             <Label className="text-base font-medium">Account Dr/ Cr</Label>
           </div>
-          <div className="col-span-4">
+          <div className="col-span-2">
+            <Label className="text-base font-medium">Balance</Label>
+          </div>
+          <div className="col-span-2">
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2">
@@ -218,11 +246,16 @@ export const ContraVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, o
               <SearchableSelect
                 options={cashBankAccounts}
                 value={entry.account}
-                onValueChange={(v) => updateDrEntry(entry.id, "account", v)}
+                onValueChange={(v) =>
+                  updateDrEntry(entry.id, "account", v)
+                }
                 placeholder="Select..."
               />
             </div>
-            <div className="col-span-4">
+            <div className="col-span-2">
+              <AccountBalance accountId={entry.account} balanceMap={balanceMap} />
+            </div>
+            <div className="col-span-2">
               <Input
                 placeholder="Description"
                 value={entry.description}
@@ -275,11 +308,16 @@ export const ContraVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, o
               <SearchableSelect
                 options={cashBankAccounts}
                 value={entry.account}
-                onValueChange={(v) => updateCrEntry(entry.id, "account", v)}
+                onValueChange={(v) =>
+                  updateCrEntry(entry.id, "account", v)
+                }
                 placeholder="Select..."
               />
             </div>
-            <div className="col-span-4">
+            <div className="col-span-2">
+              <AccountBalance accountId={entry.account} balanceMap={balanceMap} />
+            </div>
+            <div className="col-span-2">
               <Input
                 placeholder="Description"
                 value={entry.description}

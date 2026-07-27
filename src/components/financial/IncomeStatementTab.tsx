@@ -7,6 +7,9 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { Separator } from "@/components/ui/separator";
 import { getCurrentDatePakistan, getStartOfCurrentMonthPakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { printIncomeStatement } from "@/utils/printIncomeStatementPdf";
+import { useToast } from "@/hooks/use-toast";
 
 interface IncomeAccount {
   accountId: string;
@@ -60,6 +63,7 @@ interface IncomeStatementData {
 }
 
 export const IncomeStatementTab = () => {
+  const { toast } = useToast();
   const [fromDate, setFromDate] = useState(() => getStartOfCurrentMonthPakistan());
   const [toDate, setToDate] = useState(() => getCurrentDatePakistan());
   const [data, setData] = useState<IncomeStatementData | null>(null);
@@ -194,6 +198,47 @@ export const IncomeStatementTab = () => {
     return `${day}/${month}/${year}`;
   };
 
+  const handlePrint = () => {
+    if (!data) {
+      toast({
+        title: "No data",
+        description: "Load income statement data before printing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const opened = printIncomeStatement({
+      fromDate: data.from,
+      toDate: data.to,
+      revenue: data.revenue.accounts.map((acc) => ({
+        label: acc.label,
+        amount: acc.amount,
+      })),
+      cost: data.cost.accounts.map((acc) => ({
+        label: acc.label,
+        amount: acc.amount,
+      })),
+      expenses: data.expenses.accounts.map((acc) => ({
+        label: acc.label,
+        amount: acc.amount,
+      })),
+      totalRevenue: data.revenue.total,
+      totalCost: data.cost.total,
+      grossProfit: data.gross.amount,
+      totalExpenses: data.expenses.total,
+      netIncome: data.net.amount,
+    });
+
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Filter Section */}
@@ -220,6 +265,11 @@ export const IncomeStatementTab = () => {
             />
             <span className="text-sm text-muted-foreground">{formatDateDisplay(toDate)}</span>
           </div>
+          <PrintPdfButton
+            onPrint={handlePrint}
+            disabled={loading || !data}
+            label="Print PDF"
+          />
         </div>
       </div>
 

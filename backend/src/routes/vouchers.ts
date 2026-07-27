@@ -12,11 +12,23 @@ const VOUCHER_TYPE_PREFIX: Record<string, string> = {
   contra: "CV",
 };
 
+const RECEIPT_KIND_PREFIX: Record<string, string> = {
+  cash: "RVC",
+  bank: "RVB",
+  cheque: "RVCH",
+};
+
 const VOUCHER_SEQUENCE_FLOORS: Record<string, number> = {
   payment: 2000,
   receipt: 1000,
   journal: 3000,
   contra: 100,
+};
+
+const RECEIPT_KIND_FLOORS: Record<string, number> = {
+  cash: 1000,
+  bank: 1000,
+  cheque: 1000,
 };
 
 function parseVoucherSequence(
@@ -29,6 +41,33 @@ function parseVoucherSequence(
   if (!match) return null;
   const n = parseInt(match[1], 10);
   return Number.isFinite(n) ? n : null;
+}
+
+async function allocateNextReceiptVoucherNumber(
+  kind: string,
+): Promise<string> {
+  const normalizedKind = String(kind).trim().toLowerCase();
+  const prefix = RECEIPT_KIND_PREFIX[normalizedKind];
+  if (!prefix) {
+    throw new Error("Invalid receipt voucher kind");
+  }
+
+  const vouchers = await prisma.voucher.findMany({
+    where: { type: "receipt" },
+    select: { voucherNumber: true },
+  });
+
+  let maxSeq = 0;
+  for (const voucher of vouchers) {
+    const seq = parseVoucherSequence(voucher.voucherNumber, prefix);
+    if (seq !== null && seq > maxSeq) {
+      maxSeq = seq;
+    }
+  }
+
+  const floor = RECEIPT_KIND_FLOORS[normalizedKind] ?? 1000;
+  const nextSeq = Math.max(maxSeq + 1, floor + 1);
+  return `${prefix}${String(nextSeq).padStart(4, "0")}`;
 }
 
 async function allocateNextVoucherNumber(type: string): Promise<string> {
@@ -401,6 +440,29 @@ router.get('/', async (req: Request, res: Response) => {
 router.get("/next-number", async (req: Request, res: Response) => {
   try {
     const type = String(req.query.type ?? "").trim().toLowerCase();
+    const receiptKind = String(req.query.receipt_kind ?? "")
+      .trim()
+      .toLowerCase();
+
+    if (type === "receipt" && receiptKind) {
+      if (!RECEIPT_KIND_PREFIX[receiptKind]) {
+        return res.status(400).json({ error: "Invalid receipt voucher kind" });
+      }
+
+      const voucherNumber = await allocateNextReceiptVoucherNumber(receiptKind);
+      const prefix = RECEIPT_KIND_PREFIX[receiptKind];
+      const sequence = parseVoucherSequence(voucherNumber, prefix) ?? 0;
+
+      return res.json({
+        data: {
+          type,
+          receiptKind,
+          voucherNumber,
+          sequence,
+        },
+      });
+    }
+
     if (!VOUCHER_TYPE_PREFIX[type]) {
       return res.status(400).json({ error: "Invalid voucher type" });
     }

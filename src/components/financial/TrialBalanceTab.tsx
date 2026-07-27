@@ -12,6 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { printTrialBalance } from "@/utils/printTrialBalancePdf";
+import { useToast } from "@/hooks/use-toast";
 
 interface TrialBalanceAccount {
   accountId: string;
@@ -37,6 +40,7 @@ interface TrialBalanceData {
 }
 
 export const TrialBalanceTab = () => {
+  const { toast } = useToast();
   const [fromDateObj, setFromDateObj] = useState<Date | undefined>(() => {
     const d = new Date();
     d.setDate(1);
@@ -224,12 +228,46 @@ export const TrialBalanceTab = () => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   };
 
-  const formatDateDisplay = (dateString: string): string => {
-    const date = new Date(dateString);
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = String(date.getFullYear()).slice(-2);
-    return `${day}/${month}/${year}`;
+  const handlePrint = () => {
+    if (!data) {
+      toast({
+        title: "No data",
+        description: "Load trial balance data before printing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const rows = data.rows.flatMap((subgroup) => [
+      {
+        label: subgroup.subGroupLabel,
+        debit: subgroup.subTotalDebit,
+        credit: subgroup.subTotalCredit,
+        isSubgroup: true,
+      },
+      ...subgroup.accounts.map((account) => ({
+        label: account.label,
+        debit: account.debit,
+        credit: account.credit,
+        isSubgroup: false,
+      })),
+    ]);
+
+    const opened = printTrialBalance({
+      fromDate,
+      toDate,
+      rows,
+      totalDebit: data.totalDebit,
+      totalCredit: data.totalCredit,
+    });
+
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -296,6 +334,11 @@ export const TrialBalanceTab = () => {
               </PopoverContent>
             </Popover>
           </div>
+          <PrintPdfButton
+            onPrint={handlePrint}
+            disabled={loading || !data}
+            label="Print PDF"
+          />
         </div>
       </div>
 

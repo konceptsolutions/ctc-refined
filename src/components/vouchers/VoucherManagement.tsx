@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { CreditCard, Receipt, FileText, ArrowRightLeft, List, Plus } from "lucide-react";
 import { PaymentVoucherForm } from "./PaymentVoucherForm";
@@ -26,8 +27,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
-import { isCashBankAccount } from "@/utils/cashBankMode";
-import { buildVoucherAccountOptions } from "@/utils/voucherAccounts";
+import { isCashBankAccount, isCashLedgerAccount, isBankLedgerAccount } from "@/utils/cashBankMode";
+import { buildVoucherAccountOptions, buildBalanceMap, findCashDiscountAccount } from "@/utils/voucherAccounts";
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 
 export interface Voucher {
@@ -68,22 +69,53 @@ export interface VoucherEntry {
 }
 
 type MainTab = "new" | "view";
-type VoucherTab = "payment" | "receipt" | "journal" | "contra";
+type ReceiptVoucherKind = "cash" | "bank" | "cheque";
+type VoucherTab =
+  | "receipt-cash"
+  | "receipt-bank"
+  | "receipt-cheque"
+  | "payment"
+  | "journal"
+  | "contra";
 type VoucherCategory = "general" | "international_supplier";
 
+const VOUCHER_DB_TYPE: Record<VoucherTab, Voucher["type"]> = {
+  "receipt-cash": "receipt",
+  "receipt-bank": "receipt",
+  "receipt-cheque": "receipt",
+  payment: "payment",
+  journal: "journal",
+  contra: "contra",
+};
+
 const VOUCHER_TYPE_PREFIX: Record<VoucherTab, string> = {
+  "receipt-cash": "RVC",
+  "receipt-bank": "RVB",
+  "receipt-cheque": "RVCH",
   payment: "PV",
-  receipt: "RV",
   journal: "JV",
   contra: "CV",
 };
 
 const VOUCHER_SEQUENCE_FLOORS: Record<VoucherTab, number> = {
+  "receipt-cash": 1000,
+  "receipt-bank": 1000,
+  "receipt-cheque": 1000,
   payment: 2000,
-  receipt: 1000,
   journal: 3000,
   contra: 100,
 };
+
+function getReceiptKind(tab: VoucherTab): ReceiptVoucherKind | null {
+  if (tab === "receipt-cash") return "cash";
+  if (tab === "receipt-bank") return "bank";
+  if (tab === "receipt-cheque") return "cheque";
+  return null;
+}
+
+function isReceiptTab(tab: VoucherTab): boolean {
+  return getReceiptKind(tab) !== null;
+}
 
 function parseVoucherSequence(
   voucherNumber: string,
@@ -99,13 +131,14 @@ function parseVoucherSequence(
 
 function maxVoucherSequence(
   voucherList: Voucher[],
-  type: VoucherTab,
+  tab: VoucherTab,
 ): number {
-  const prefix = VOUCHER_TYPE_PREFIX[type];
-  const floor = VOUCHER_SEQUENCE_FLOORS[type];
+  const prefix = VOUCHER_TYPE_PREFIX[tab];
+  const dbType = VOUCHER_DB_TYPE[tab];
+  const floor = VOUCHER_SEQUENCE_FLOORS[tab];
   let maxSeq = floor;
   for (const voucher of voucherList) {
-    if (voucher.type !== type) continue;
+    if (voucher.type !== dbType) continue;
     const seq = parseVoucherSequence(voucher.voucherNumber, prefix);
     if (seq !== null && seq > maxSeq) {
       maxSeq = seq;
@@ -120,13 +153,42 @@ const mainTabs: { id: MainTab; label: string; icon: React.ElementType }[] = [
 ];
 
 const voucherTabs: { id: VoucherTab; label: string; icon: React.ElementType }[] = [
+  { id: "receipt-cash", label: "Receipt Voucher Cash", icon: Receipt },
+  { id: "receipt-bank", label: "Receipt Voucher Bank", icon: Receipt },
+  { id: "receipt-cheque", label: "Receipt Voucher Cheque", icon: Receipt },
   { id: "payment", label: "Payment Voucher", icon: CreditCard },
-  { id: "receipt", label: "Receipt Voucher", icon: Receipt },
   { id: "journal", label: "Journal Voucher", icon: FileText },
   { id: "contra", label: "Contra Voucher", icon: ArrowRightLeft },
 ];
 
 const internationalVoucherTabs: VoucherTab[] = ["payment", "journal"];
+
+const VOUCHER_TAB_ALIASES: Record<string, VoucherTab> = {
+  "receipt-cash": "receipt-cash",
+  rvc: "receipt-cash",
+  receipt: "receipt-cash",
+  rv: "receipt-cash",
+  "receipt-bank": "receipt-bank",
+  rvb: "receipt-bank",
+  "receipt-cheque": "receipt-cheque",
+  rvch: "receipt-cheque",
+  payment: "payment",
+  pv: "payment",
+  journal: "journal",
+  jv: "journal",
+  contra: "contra",
+  cv: "contra",
+};
+
+function resolveMainTab(mode: string | null): MainTab {
+  if (mode === "new" || mode === "view") return mode;
+  return "view";
+}
+
+function resolveVoucherTab(tab: string | null): VoucherTab {
+  if (!tab) return "receipt-cash";
+  return VOUCHER_TAB_ALIASES[tab.toLowerCase()] ?? "receipt-cash";
+}
 
 // Sample accounts
 const initialAccounts = [
@@ -153,8 +215,32 @@ const initialAccounts = [
 
 export const VoucherManagement = () => {
   const { toast } = useToast();
-  const [mainTab, setMainTab] = useState<MainTab>("view");
-  const [activeTab, setActiveTab] = useState<VoucherTab>("payment");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const mainTab = resolveMainTab(searchParams.get("mode"));
+  const activeTab = resolveVoucherTab(searchParams.get("tab"));
+
+  const setMainTab = useCallback(
+    (tab: MainTab) => {
+      const next = new URLSearchParams(searchParams);
+      next.set("mode", tab);
+      if (tab === "new" && !next.get("tab")) {
+        next.set("tab", "receipt-cash");
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const setActiveTab = useCallback(
+    (tab: VoucherTab) => {
+      const next = new URLSearchParams(searchParams);
+      next.set("mode", "new");
+      next.set("tab", tab);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
   const [voucherCategory, setVoucherCategory] = useState<VoucherCategory>("general");
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,6 +250,7 @@ export const VoucherManagement = () => {
   const [subgroups, setSubgroups] = useState<{ id: string, name: string, code: string, mainGroupId: string }[]>([]);
   const [accountsList, setAccountsList] = useState<SearchableSelectOption[]>([]);
   const [rawAccounts, setRawAccounts] = useState<any[]>([]);
+  const [balanceMap, setBalanceMap] = useState<Record<string, number>>({});
 
   // Dialog states
   const [showSubgroupDialog, setShowSubgroupDialog] = useState(false);
@@ -175,12 +262,31 @@ export const VoucherManagement = () => {
   const [newAccountCode, setNewAccountCode] = useState("");
   const [selectedSubgroup, setSelectedSubgroup] = useState("");
 
-  const [voucherCounters, setVoucherCounters] = useState({
-    receipt: VOUCHER_SEQUENCE_FLOORS.receipt,
+  const [voucherCounters, setVoucherCounters] = useState<
+    Record<VoucherTab, number>
+  >({
+    "receipt-cash": VOUCHER_SEQUENCE_FLOORS["receipt-cash"],
+    "receipt-bank": VOUCHER_SEQUENCE_FLOORS["receipt-bank"],
+    "receipt-cheque": VOUCHER_SEQUENCE_FLOORS["receipt-cheque"],
     payment: VOUCHER_SEQUENCE_FLOORS.payment,
     journal: VOUCHER_SEQUENCE_FLOORS.journal,
     contra: VOUCHER_SEQUENCE_FLOORS.contra,
   });
+
+  const receiptKind = getReceiptKind(activeTab);
+
+  const receiptDrAccounts = useMemo(() => {
+    if (!receiptKind) return [];
+    return rawAccounts
+      .filter((acc: any) => {
+        if (receiptKind === "cash") return isCashLedgerAccount(acc);
+        return isBankLedgerAccount(acc);
+      })
+      .map((acc: any) => ({
+        value: acc.id,
+        label: `${acc.code} - ${acc.name}`,
+      }));
+  }, [rawAccounts, receiptKind]);
 
   const cashBankAccounts = useMemo(() => {
     return rawAccounts
@@ -191,9 +297,15 @@ export const VoucherManagement = () => {
       }));
   }, [rawAccounts]);
 
+  const cashDiscountAccountId = useMemo(
+    () => findCashDiscountAccount(rawAccounts)?.id,
+    [rawAccounts],
+  );
+
   const applyAccountsData = (accountsData: any[]) => {
     setRawAccounts(accountsData);
     setAccountsList(buildVoucherAccountOptions(accountsData));
+    setBalanceMap(buildBalanceMap(accountsData));
   };
 
   const refreshAccounts = useCallback(async () => {
@@ -245,18 +357,17 @@ export const VoucherManagement = () => {
         // Update counters locally based on existing vouchers
         if (vouchersRes.data) {
           const list = vouchersRes.data as any[];
-          const counters = { ...VOUCHER_SEQUENCE_FLOORS };
+          const counters: Record<VoucherTab, number> = {
+            "receipt-cash": VOUCHER_SEQUENCE_FLOORS["receipt-cash"],
+            "receipt-bank": VOUCHER_SEQUENCE_FLOORS["receipt-bank"],
+            "receipt-cheque": VOUCHER_SEQUENCE_FLOORS["receipt-cheque"],
+            payment: VOUCHER_SEQUENCE_FLOORS.payment,
+            journal: VOUCHER_SEQUENCE_FLOORS.journal,
+            contra: VOUCHER_SEQUENCE_FLOORS.contra,
+          };
 
-          list.forEach((v) => {
-            const type = v.type as VoucherTab;
-            if (!VOUCHER_TYPE_PREFIX[type]) return;
-            const seq = parseVoucherSequence(
-              v.voucherNumber,
-              VOUCHER_TYPE_PREFIX[type],
-            );
-            if (seq !== null && seq > counters[type]) {
-              counters[type] = seq;
-            }
+          (Object.keys(VOUCHER_TYPE_PREFIX) as VoucherTab[]).forEach((tab) => {
+            counters[tab] = maxVoucherSequence(list, tab);
           });
           setVoucherCounters(counters);
         }
@@ -288,7 +399,7 @@ export const VoucherManagement = () => {
     ) {
       setActiveTab("payment");
     }
-  }, [voucherCategory, activeTab]);
+  }, [voucherCategory, activeTab, setActiveTab]);
 
   const handleAddSubgroup = () => {
     setShowSubgroupDialog(true);
@@ -418,8 +529,8 @@ export const VoucherManagement = () => {
   };
 
   const handleSaveVoucher = async (data: any): Promise<boolean> => {
-    const voucherType = data.type as VoucherTab;
-    if (!VOUCHER_TYPE_PREFIX[voucherType]) {
+    const voucherTab = (data.voucherTab ?? activeTab) as VoucherTab;
+    if (!VOUCHER_TYPE_PREFIX[voucherTab]) {
       toast({
         title: "Error",
         description: "Invalid voucher type",
@@ -428,11 +539,18 @@ export const VoucherManagement = () => {
       return false;
     }
 
+    const voucherDbType = VOUCHER_DB_TYPE[voucherTab];
+    const receiptKindForSave =
+      (data.receiptKind as ReceiptVoucherKind | undefined) ??
+      getReceiptKind(voucherTab) ??
+      undefined;
+
     let voucherNumber: string;
     let nextNum: number;
     try {
       const nextRes = (await apiClient.getNextVoucherNumber(
-        voucherType,
+        voucherDbType,
+        receiptKindForSave,
       )) as any;
       if (nextRes.error || !nextRes.data?.voucherNumber) {
         toast({
@@ -447,9 +565,9 @@ export const VoucherManagement = () => {
         nextRes.data.sequence ??
         parseVoucherSequence(
           voucherNumber,
-          VOUCHER_TYPE_PREFIX[voucherType],
+          VOUCHER_TYPE_PREFIX[voucherTab],
         ) ??
-        maxVoucherSequence(vouchers, voucherType) + 1;
+        maxVoucherSequence(vouchers, voucherTab) + 1;
     } catch (error: any) {
       toast({
         title: "Error",
@@ -502,22 +620,55 @@ export const VoucherManagement = () => {
         createdAt: new Date().toISOString(),
       };
     } else if (data.type === "receipt") {
-      // Convert Receipt Voucher data
-      const entries: VoucherEntry[] = paymentReceiptEntries.map((entry: any) => ({
-        id: entry.id,
-        account: entry.accountCr ?? entry.account,
-        description: entry.description || "",
-        debit: 0,
-        credit: entry.crAmount ?? entry.credit ?? 0,
-      }));
-      // Add the Dr account entry
+      const cashReceived =
+        Number(data.totalReceived ?? data.totalAmount ?? 0) || 0;
+      const cashDiscount = Number(data.cashDiscount ?? 0) || 0;
+      const voucherTotal = cashReceived + cashDiscount;
+
+      // Convert Receipt Voucher data — Cr lines are cash received per account
+      const entries: VoucherEntry[] = paymentReceiptEntries.map(
+        (entry: any) => ({
+          id: entry.id,
+          account: entry.accountCr ?? entry.account,
+          description: entry.description || "",
+          debit: 0,
+          credit: entry.crAmount ?? entry.credit ?? 0,
+        }),
+      );
+
+      // Dr cash/bank for amount actually received
       entries.unshift({
         id: `dr-${Date.now()}`,
         account: data.drAccount,
         description: `Receipt from ${data.receivedFrom}`,
-        debit: data.totalAmount || 0,
+        debit: cashReceived,
         credit: 0,
       });
+
+      // Cash discount: Dr Cash (Discount), Cr selected Account Cr line
+      if (cashDiscount > 0 && data.cashDiscountAccount) {
+        const discountCrAccount = paymentReceiptEntries.find(
+          (entry: any) => entry.accountCr,
+        )?.accountCr;
+
+        entries.push({
+          id: `dr-disc-${Date.now()}`,
+          account: data.cashDiscountAccount,
+          description: "Cash discount",
+          debit: cashDiscount,
+          credit: 0,
+        });
+
+        if (discountCrAccount) {
+          entries.push({
+            id: `cr-disc-${Date.now()}`,
+            account: discountCrAccount,
+            description: "Cash discount",
+            debit: 0,
+            credit: cashDiscount,
+          });
+        }
+      }
 
       newVoucher = {
         id: Date.now().toString(),
@@ -527,8 +678,8 @@ export const VoucherManagement = () => {
         narration: data.receivedFrom || "",
         cashBankAccount: data.drAccount,
         entries,
-        totalDebit: data.totalAmount || 0,
-        totalCredit: data.totalAmount || 0,
+        totalDebit: voucherTotal,
+        totalCredit: voucherTotal,
         status: "posted",
         createdAt: new Date().toISOString(),
       };
@@ -645,7 +796,8 @@ export const VoucherManagement = () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) {
           const retryRes = (await apiClient.getNextVoucherNumber(
-            voucherType,
+            voucherDbType,
+            receiptKindForSave,
           )) as any;
           if (retryRes.error || !retryRes.data?.voucherNumber) {
             break;
@@ -655,7 +807,7 @@ export const VoucherManagement = () => {
             retryRes.data.sequence ??
             parseVoucherSequence(
               activeVoucherNumber,
-              VOUCHER_TYPE_PREFIX[voucherType],
+              VOUCHER_TYPE_PREFIX[voucherTab],
             ) ??
             activeNextNum + 1;
           newVoucher = { ...newVoucher, voucherNumber: activeVoucherNumber };
@@ -699,7 +851,7 @@ export const VoucherManagement = () => {
         setVouchers((prev) => [savedVoucher, ...prev]);
         setVoucherCounters((prev) => ({
           ...prev,
-          [voucherType]: Math.max(prev[voucherType] ?? 0, nextNum),
+          [voucherTab]: Math.max(prev[voucherTab] ?? 0, nextNum),
         }));
         setMainTab("view");
 
@@ -816,9 +968,9 @@ export const VoucherManagement = () => {
     }
   };
 
-  const generateVoucherNo = () => {
-    const next = voucherCounters.receipt + 1;
-    return `RV${String(next).padStart(4, "0")}`;
+  const generateVoucherNo = (tab: VoucherTab = activeTab) => {
+    const next = voucherCounters[tab] + 1;
+    return `${VOUCHER_TYPE_PREFIX[tab]}${String(next).padStart(4, "0")}`;
   };
 
   return (
@@ -907,16 +1059,22 @@ export const VoucherManagement = () => {
                 onAddSubgroup={handleAddSubgroup}
                 onAddAccount={handleAddAccount}
                 onSave={handleSaveVoucher}
+                balanceMap={balanceMap}
               />
             )}
-            {activeTab === "receipt" && (
+            {isReceiptTab(activeTab) && receiptKind && (
               <ReceiptVoucherForm
+                key={activeTab}
+                receiptKind={receiptKind}
                 accounts={accountsList}
-                cashBankAccounts={cashBankAccounts}
+                drAccountOptions={receiptDrAccounts}
                 onAddSubgroup={handleAddSubgroup}
                 onAddAccount={handleAddAccount}
                 onSave={handleSaveVoucher}
-                generateVoucherNo={generateVoucherNo}
+                generateVoucherNo={() => generateVoucherNo(activeTab)}
+                balanceMap={balanceMap}
+                voucherTab={activeTab}
+                cashDiscountAccountId={cashDiscountAccountId}
               />
             )}
             {activeTab === "journal" && (
@@ -926,6 +1084,7 @@ export const VoucherManagement = () => {
                 onAddSubgroup={handleAddSubgroup}
                 onAddAccount={handleAddAccount}
                 onSave={handleSaveVoucher}
+                balanceMap={balanceMap}
               />
             )}
             {activeTab === "contra" && (
@@ -935,6 +1094,7 @@ export const VoucherManagement = () => {
                 onAddSubgroup={handleAddSubgroup}
                 onAddAccount={handleAddAccount}
                 onSave={handleSaveVoucher}
+                balanceMap={balanceMap}
               />
             )}
           </div>

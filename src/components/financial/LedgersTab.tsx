@@ -13,11 +13,11 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Users, Download, Printer } from "lucide-react";
+import { Users, Download } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import { printLedgers } from "@/utils/printLedgersPdf";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -224,63 +224,30 @@ export const LedgersTab = () => {
   };
 
   const handlePrint = () => {
-    const html = `
-      <html>
-        <head>
-          <title>Ledgers</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f4f4f4; }
-            .text-right { text-align: right; }
-          </style>
-        </head>
-        <body>
-          <h1>Ledgers</h1>
-          <p>Period: ${fromDate ? format(fromDate, "dd/MM/yyyy") : ""} to ${toDate ? format(toDate, "dd/MM/yyyy") : ""}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>T_Id</th>
-                <th>Voucher No</th>
-                <th>Time Stamp</th>
-                <th>Description</th>
-                <th class="text-right">Dr</th>
-                <th class="text-right">Cr</th>
-                <th class="text-right">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${entries
-        .map(
-          (entry) => `
-                <tr>
-                  <td>${entry.tId ?? "-"}</td>
-                  <td>${entry.voucherNo}</td>
-                  <td>${entry.timeStamp}</td>
-                  <td>${entry.description}</td>
-                  <td class="text-right">${formatNumber(entry.debit)}</td>
-                  <td class="text-right">${formatNumber(entry.credit)}</td>
-                  <td class="text-right">${formatNumber(entry.balance)}</td>
-                </tr>
-              `,
-        )
-        .join("")}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-    openPrintHtml(html, {
-      onBlocked: () =>
-        toast({
-          title: "Error",
-          description: "Please allow popups to print the report",
-          variant: "destructive",
-        }),
+    const selectedAccountLabel =
+      accounts.find((a) => a.id === selectedAccount)?.name || selectedAccount;
+    const opened = printLedgers({
+      title: "Ledgers",
+      fromDate,
+      toDate,
+      accountLabel: selectedAccountLabel || undefined,
+      entries: entries.map((entry) => ({
+        tId: entry.tId,
+        voucherNo: entry.voucherNo,
+        timeStamp: entry.timeStamp,
+        description: entry.description,
+        debit: entry.debit,
+        credit: entry.credit,
+        balance: entry.balance,
+      })),
     });
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -296,7 +263,7 @@ export const LedgersTab = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print" />
+            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
           </div>
         </div>
       </CardHeader>

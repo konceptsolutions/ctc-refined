@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,28 +13,98 @@ interface VoucherEntry {
   crAmount: number;
 }
 
+type ReceiptVoucherKind = "cash" | "bank" | "cheque";
+
 interface ReceiptVoucherFormProps {
+  receiptKind: ReceiptVoucherKind;
   accounts: { value: string; label: string }[];
-  cashBankAccounts: { value: string; label: string }[];
+  drAccountOptions: { value: string; label: string }[];
+  cashDiscountAccountId?: string;
   onAddSubgroup: () => void;
   onAddAccount: () => void;
   onSave: (data: any) => Promise<boolean>;
   generateVoucherNo: () => string;
+  balanceMap?: Record<string, number>;
+  voucherTab: string;
 }
 
-export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, onAddAccount, onSave, generateVoucherNo }: ReceiptVoucherFormProps) => {
+const RECEIPT_KIND_META: Record<
+  ReceiptVoucherKind,
+  { title: string; prefix: string; drLabel: string }
+> = {
+  cash: {
+    title: "Receipt Voucher Cash",
+    prefix: "RVC",
+    drLabel: "Dr Account (Cash)",
+  },
+  bank: {
+    title: "Receipt Voucher Bank",
+    prefix: "RVB",
+    drLabel: "Dr Account (Bank)",
+  },
+  cheque: {
+    title: "Receipt Voucher Cheque",
+    prefix: "RVCH",
+    drLabel: "Dr Account (Bank)",
+  },
+};
+
+function AccountBalance({
+  accountId,
+  balanceMap,
+}: {
+  accountId: string;
+  balanceMap?: Record<string, number>;
+}) {
+  if (!accountId || !balanceMap || !(accountId in balanceMap)) return null;
+  const bal = balanceMap[accountId];
+  const isNeg = bal < 0;
+  const formatted = Math.abs(bal).toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  return (
+    <Input
+      readOnly
+      value={`${formatted} ${isNeg ? "Cr" : "Dr"}`}
+      className={`h-10 bg-muted/30 font-medium ${isNeg ? "text-destructive" : "text-green-600"}`}
+    />
+  );
+}
+
+export const ReceiptVoucherForm = ({
+  receiptKind,
+  accounts,
+  drAccountOptions,
+  onAddSubgroup,
+  onAddAccount,
+  onSave,
+  generateVoucherNo,
+  balanceMap,
+  voucherTab,
+  cashDiscountAccountId,
+}: ReceiptVoucherFormProps) => {
   const { toast } = useToast();
-  const cashBankValues = new Set(cashBankAccounts.map((a) => a.value));
-  // RV: Account Cr must NOT include cash/bank accounts.
-  const receiptCrOptions = accounts.filter((a) => !cashBankValues.has(a.value));
+  const kindMeta = RECEIPT_KIND_META[receiptKind];
+
+  const drAccountValues = useMemo(
+    () => new Set(drAccountOptions.map((a) => a.value)),
+    [drAccountOptions],
+  );
+
+  const receiptCrOptions = useMemo(
+    () => accounts.filter((a) => !drAccountValues.has(a.value)),
+    [accounts, drAccountValues],
+  );
+
   const [receivedFrom, setReceivedFrom] = useState("");
-  const [voucherNo, setVoucherNo] = useState(generateVoucherNo());
-  // Initialize date in YYYY-MM-DD format for date input
+  const [voucherNo, setVoucherNo] = useState(generateVoucherNo);
   const getTodayDate = () => {
     const today = new Date();
     const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
 
@@ -42,67 +112,154 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
   const [drAccount, setDrAccount] = useState("");
   const [chequeNumber, setChequeNumber] = useState("");
   const [chequeDate, setChequeDate] = useState("");
+  const [cashDiscount, setCashDiscount] = useState(0);
   const [entries, setEntries] = useState<VoucherEntry[]>([
-    { id: "1", accountCr: "", description: "", crAmount: 0 }
+    { id: "1", accountCr: "", description: "", crAmount: 0 },
   ]);
 
+  useEffect(() => {
+    setVoucherNo(generateVoucherNo());
+    setDrAccount("");
+    setChequeNumber("");
+    setChequeDate("");
+    setCashDiscount(0);
+    // Reset form fields when switching cash / bank / cheque receipt type
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receiptKind]);
+
+  useEffect(() => {
+    if (drAccount && !drAccountValues.has(drAccount)) {
+      setDrAccount("");
+    }
+  }, [drAccount, drAccountValues]);
+
   const addEntry = () => {
-    setEntries([...entries, { id: Date.now().toString(), accountCr: "", description: "", crAmount: 0 }]);
+    setEntries([
+      ...entries,
+      { id: Date.now().toString(), accountCr: "", description: "", crAmount: 0 },
+    ]);
   };
 
   const removeEntry = (id: string) => {
     if (entries.length > 1) {
-      setEntries(entries.filter(e => e.id !== id));
+      setEntries(entries.filter((e) => e.id !== id));
     }
   };
 
-  const updateEntry = (id: string, field: keyof VoucherEntry, value: string | number) => {
-    setEntries(entries.map(e => e.id === id ? { ...e, [field]: value } : e));
+  const updateEntry = (
+    id: string,
+    field: keyof VoucherEntry,
+    value: string | number,
+  ) => {
+    setEntries(entries.map((e) => (e.id === id ? { ...e, [field]: value } : e)));
   };
 
-  // Format amount helper
   const formatAmount = (amount: number): string => {
     return amount.toLocaleString("en-PK", {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 2,
     });
   };
 
-  const totalAmount = entries.reduce((sum, e) => sum + (Number(e.crAmount) || 0), 0);
+  const totalReceived = entries.reduce(
+    (sum, e) => sum + (Number(e.crAmount) || 0),
+    0,
+  );
+  const discountAmount = receiptKind === "cash" ? Number(cashDiscount) || 0 : 0;
+  const totalAmount = totalReceived + discountAmount;
 
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     if (saving) return;
     if (!receivedFrom) {
-      toast({ title: "Error", description: "Please enter 'Received From' field", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Please enter 'Received From' field",
+        variant: "destructive",
+      });
       return;
     }
     if (!drAccount) {
-      toast({ title: "Error", description: "Please select Dr Account", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: `Please select ${kindMeta.drLabel}`,
+        variant: "destructive",
+      });
       return;
     }
-    if (entries.some(e => !e.accountCr)) {
-      toast({ title: "Error", description: "Please select Account Cr for all entries", variant: "destructive" });
+    if (entries.some((e) => !e.accountCr)) {
+      toast({
+        title: "Error",
+        description: "Please select Account Cr for all entries",
+        variant: "destructive",
+      });
       return;
     }
-    if (totalAmount === 0) {
-      toast({ title: "Error", description: "Please enter at least one amount", variant: "destructive" });
+    if (totalReceived === 0) {
+      toast({
+        title: "Error",
+        description: "Please enter at least one amount",
+        variant: "destructive",
+      });
       return;
+    }
+    if (discountAmount > 0) {
+      if (!cashDiscountAccountId) {
+        toast({
+          title: "Error",
+          description:
+            "Cash discount account (701003 – Cash (Discount)) is not configured",
+          variant: "destructive",
+        });
+        return;
+      }
+      const crAccountForDiscount = entries.find((e) => e.accountCr)?.accountCr;
+      if (!crAccountForDiscount) {
+        toast({
+          title: "Error",
+          description: "Select Account Cr before applying cash discount",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    if (receiptKind === "cheque") {
+      if (!chequeNumber.trim()) {
+        toast({
+          title: "Error",
+          description: "Please enter Cheque Number",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!chequeDate) {
+        toast({
+          title: "Error",
+          description: "Please enter Cheque Date",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     setSaving(true);
     try {
       const saved = await onSave({
         type: "receipt",
+        receiptKind,
+        voucherTab,
         receivedFrom,
         voucherNo,
         date,
         drAccount,
         entries,
+        totalReceived,
+        cashDiscount: discountAmount,
+        cashDiscountAccount: cashDiscountAccountId,
         totalAmount,
-        chequeNumber,
-        chequeDate,
+        chequeNumber: receiptKind === "cheque" ? chequeNumber : "",
+        chequeDate: receiptKind === "cheque" ? chequeDate : "",
       });
 
       if (!saved) return;
@@ -112,6 +269,7 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
       setDrAccount("");
       setChequeNumber("");
       setChequeDate("");
+      setCashDiscount(0);
       setEntries([{ id: "1", accountCr: "", description: "", crAmount: 0 }]);
     } finally {
       setSaving(false);
@@ -120,28 +278,38 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
             <Receipt className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Receipt Voucher</h2>
-            <p className="text-sm text-muted-foreground">RV</p>
+            <h2 className="text-lg font-semibold text-foreground">
+              {kindMeta.title}
+            </h2>
+            <p className="text-sm text-muted-foreground">{kindMeta.prefix}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onAddSubgroup} className="text-muted-foreground hover:text-foreground">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAddSubgroup}
+            className="text-muted-foreground hover:text-foreground"
+          >
             + Add New Subgroup
           </Button>
-          <Button variant="ghost" size="sm" onClick={onAddAccount} className="text-muted-foreground hover:text-foreground">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAddAccount}
+            className="text-muted-foreground hover:text-foreground"
+          >
             + Add New Account
           </Button>
         </div>
       </div>
 
-      {/* Received From, Voucher No and Date */}
       <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
         <div className="lg:col-span-3">
           <Input
@@ -161,7 +329,9 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
         </div>
         <div>
           <div className="relative">
-            <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Date</Label>
+            <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">
+              Date
+            </Label>
             <Input
               type="date"
               value={date}
@@ -172,48 +342,74 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
         </div>
       </div>
 
-      {/* Cheque Info */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="relative">
-          <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Cheque Number</Label>
-          <Input
-            placeholder="Cheque Number"
-            value={chequeNumber}
-            onChange={(e) => setChequeNumber(e.target.value)}
-            className="h-11"
-          />
+      {receiptKind === "cheque" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="relative">
+            <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">
+              Cheque Number
+            </Label>
+            <Input
+              placeholder="Cheque Number"
+              value={chequeNumber}
+              onChange={(e) => setChequeNumber(e.target.value)}
+              className="h-11"
+            />
+          </div>
+          <div className="relative">
+            <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">
+              Cheque Date
+            </Label>
+            <Input
+              type="date"
+              value={chequeDate}
+              onChange={(e) => setChequeDate(e.target.value)}
+              className="h-11"
+            />
+          </div>
         </div>
-        <div className="relative">
-          <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Cheque Date</Label>
-          <Input
-            type="date"
-            value={chequeDate}
-            onChange={(e) => setChequeDate(e.target.value)}
-            className="h-11"
-          />
-        </div>
-      </div>
+      )}
 
-      {/* Dr Account */}
-      <div className="space-y-1">
-        <Label className="text-sm text-primary">Dr Account</Label>
-        <div className="max-w-md">
+      <div className="grid grid-cols-12 gap-4 items-end">
+        <div className="col-span-4 space-y-1">
+          <Label className="text-sm text-primary">{kindMeta.drLabel}</Label>
           <SearchableSelect
-            options={cashBankAccounts}
+            options={drAccountOptions}
             value={drAccount}
             onValueChange={setDrAccount}
             placeholder="Select..."
           />
         </div>
+        <div className="col-span-2 space-y-1">
+          <Label className="text-sm text-muted-foreground">Balance</Label>
+          <AccountBalance accountId={drAccount} balanceMap={balanceMap} />
+        </div>
+        {receiptKind === "cash" && (
+          <div className="col-span-3 space-y-1">
+            <Label className="text-sm text-muted-foreground">Cash Discount</Label>
+            <Input
+              type="number"
+              placeholder="0.00"
+              value={cashDiscount || ""}
+              onChange={(e) =>
+                setCashDiscount(parseFloat(e.target.value) || 0)
+              }
+              step="0.01"
+              min="0"
+              className="h-10"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Entries Table */}
       <div className="space-y-4">
         <div className="grid grid-cols-12 gap-4 items-center">
           <div className="col-span-4">
             <Label className="text-base font-medium">Account Cr</Label>
           </div>
-          <div className="col-span-5">
+          <div className="col-span-2">
+            <Label className="text-base font-medium">Balance</Label>
+          </div>
+          <div className="col-span-3">
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2">
@@ -233,11 +429,19 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
                 selectedDisplayLabelOnly
               />
             </div>
-            <div className="col-span-5">
+            <div className="col-span-2">
+              <AccountBalance
+                accountId={entry.accountCr}
+                balanceMap={balanceMap}
+              />
+            </div>
+            <div className="col-span-3">
               <Input
                 placeholder="Description"
                 value={entry.description}
-                onChange={(e) => updateEntry(entry.id, "description", e.target.value)}
+                onChange={(e) =>
+                  updateEntry(entry.id, "description", e.target.value)
+                }
                 className="h-10"
               />
             </div>
@@ -279,11 +483,12 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
         </Button>
       </div>
 
-      {/* Total Amount */}
       <div className="flex items-center justify-end gap-4">
         <Label className="text-base font-medium">Total Amount</Label>
         <div className="relative w-48">
-          <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Total Amount</Label>
+          <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">
+            Total Amount
+          </Label>
           <Input
             value={formatAmount(totalAmount)}
             readOnly
@@ -292,9 +497,13 @@ export const ReceiptVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, 
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex items-center justify-end gap-2">
-        <Button onClick={handleSave} variant="ghost" className="gap-2" disabled={saving}>
+        <Button
+          onClick={handleSave}
+          variant="ghost"
+          className="gap-2"
+          disabled={saving}
+        >
           <Save className="w-4 h-4" />
           Save
         </Button>

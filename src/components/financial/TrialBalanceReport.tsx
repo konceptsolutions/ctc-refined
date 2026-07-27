@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
-import { Users, Download, Printer } from "lucide-react";
+import { Users, Download } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import { printTrialBalance } from "@/utils/printTrialBalancePdf";
 import { getCurrentDatePakistan, getStartOfCurrentMonthPakistan } from "@/utils/dateUtils";
 
 interface TrialBalanceAccount {
@@ -111,57 +111,25 @@ export const TrialBalanceReport = () => {
   };
 
   const handlePrint = () => {
-    const html = `
-      <html>
-        <head>
-          <title>Trial Balance</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f4f4f4; }
-            .text-right { text-align: right; }
-            .total-row { font-weight: bold; background-color: #f9f9f9; }
-          </style>
-        </head>
-        <body>
-          <h1>Trial Balance</h1>
-          <p>Period: ${fromDate} to ${toDate}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th class="text-right">Dr</th>
-                <th class="text-right">Cr</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${trialBalanceData.map(acc => `
-                <tr>
-                  <td>${acc.code}-${acc.name}</td>
-                  <td class="text-right">${formatNumber(acc.debit)}</td>
-                  <td class="text-right">${formatNumber(acc.credit)}</td>
-                </tr>
-              `).join('')}
-              <tr class="total-row">
-                <td>Total</td>
-                <td class="text-right">${formatNumber(totalDebit)}</td>
-                <td class="text-right">${formatNumber(totalCredit)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-    openPrintHtml(html, {
-      onBlocked: () =>
-        toast({
-          title: "Error",
-          description: "Please allow popups to print the report",
-          variant: "destructive",
-        }),
+    const opened = printTrialBalance({
+      fromDate,
+      toDate,
+      rows: trialBalanceData.map((acc) => ({
+        label: `${acc.code}-${acc.name}`,
+        debit: acc.debit,
+        credit: acc.credit,
+        isSubgroup: acc.isSubgroup,
+      })),
+      totalDebit,
+      totalCredit,
     });
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -177,7 +145,7 @@ export const TrialBalanceReport = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print" />
+            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
           </div>
         </div>
       </CardHeader>

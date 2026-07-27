@@ -63,3 +63,11 @@ export function getAccountCashBankMode(account: AccountWithSubgroup): CashBankPa
     accountName: account.name,
   });
 }
+
+export function isCashLedgerAccount(account: AccountWithSubgroup): boolean {
+  return isCashBankAccount(account) && getAccountCashBankMode(account) === "cash";
+}
+
+export function isBankLedgerAccount(account: AccountWithSubgroup): boolean {
+  return isCashBankAccount(account) && getAccountCashBankMode(account) === "online";
+}

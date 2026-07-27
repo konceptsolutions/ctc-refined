@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GeneralJournalTab } from "./GeneralJournalTab";
 import { TrialBalanceTab } from "./TrialBalanceTab";
@@ -8,8 +8,49 @@ import { LedgersTab } from "./LedgersTab";
 import { InternationalSupplierLedgersTab } from "./InternationalSupplierLedgersTab";
 import { DailyClosingModule } from "./DailyClosingModule";
 
+const VALID_TABS = [
+  "general-journal",
+  "trial-balance",
+  "income-statement",
+  "balance-sheet",
+  "ledgers",
+  "international-supplier-ledgers",
+  "daily-closing",
+] as const;
+
+type FinancialTab = (typeof VALID_TABS)[number];
+
+const TAB_ALIASES: Record<string, FinancialTab> = {
+  journal: "general-journal",
+  "general-journal": "general-journal",
+  trial: "trial-balance",
+  "trial-balance": "trial-balance",
+  income: "income-statement",
+  "income-statement": "income-statement",
+  balance: "balance-sheet",
+  "balance-sheet": "balance-sheet",
+  ledger: "ledgers",
+  ledgers: "ledgers",
+  "international-supplier-ledgers": "international-supplier-ledgers",
+  "daily-closing": "daily-closing",
+  closing: "daily-closing",
+};
+
+function resolveTab(tab: string | null): FinancialTab {
+  if (!tab) return "general-journal";
+  return TAB_ALIASES[tab.toLowerCase()] ?? "general-journal";
+}
+
 export const FinancialStatementsModule = () => {
-  const [activeTab, setActiveTab] = useState("general-journal");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = resolveTab(searchParams.get("tab"));
+
+  const setActiveTab = (tab: string) => {
+    const next = resolveTab(tab);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("tab", next);
+    setSearchParams(nextParams, { replace: true });
+  };
 
   return (
     <div className="space-y-4">

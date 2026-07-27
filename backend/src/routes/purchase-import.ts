@@ -1,11 +1,23 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "crypto";
+import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
 
 const router = express.Router();
 
 const REQUEST_NO_BASE_REGEX = /^PIR-\d+/;
 const CONSIGNEE_VALUES = ["ISB", "KHI", "Other"] as const;
+const INQUIRY_SALES_PERIOD_MONTHS = [3, 6, 9, 12] as const;
+/** Same statuses used by sales reports — excludes pending / hold / cancelled */
+const INQUIRY_SALES_INVOICE_STATUSES = [
+  "approved",
+  "partially_delivered",
+  "fully_delivered",
+  "delivered",
+  "return",
+  "partially_return",
+  "completed",
+];
 
 const normalizeSupplierIds = (supplierIdsRaw: any): string[] =>
   Array.from(
@@ -1141,6 +1153,74 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
         lastPurchases,
       },
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** Sold qty by part for the last N months (3 / 6 / 9 / 12). Used by import inquiry Sales column. */
+router.post("/parts-sales", async (req: Request, res: Response) => {
+  try {
+    const partIds: string[] = Array.from(
+      new Set(
+        (Array.isArray(req.body?.partIds) ? (req.body.partIds as unknown[]) : [])
+          .map((id) => String(id ?? "").trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+    const months = Number(req.body?.months);
+    if (
+      !INQUIRY_SALES_PERIOD_MONTHS.includes(
+        months as (typeof INQUIRY_SALES_PERIOD_MONTHS)[number],
+      )
+    ) {
+      return res.status(400).json({
+        error: "months must be one of 3, 6, 9, or 12",
+      });
+    }
+
+    const salesByPartId: Record<string, number> = {};
+    for (const partId of partIds) {
+      salesByPartId[partId] = 0;
+    }
+
+    if (partIds.length === 0) {
+      return res.json({ data: salesByPartId });
+    }
+
+    const fromDate = new Date();
+    fromDate.setMonth(fromDate.getMonth() - months);
+    fromDate.setHours(0, 0, 0, 0);
+
+    const rows = await prisma.$queryRaw<
+      Array<{ partId: string; salesQty: number | string | bigint | null }>
+    >`
+      SELECT
+        sii."partId" AS "partId",
+        COALESCE(
+          SUM(
+            CASE
+              WHEN COALESCE(sii."deliveredQty", 0) > 0 THEN sii."deliveredQty"
+              ELSE sii."orderedQty"
+            END
+          ),
+          0
+        ) AS "salesQty"
+      FROM "SalesInvoiceItem" sii
+      INNER JOIN "SalesInvoice" si ON si.id = sii."invoiceId"
+      WHERE sii."partId" IN (${Prisma.join(partIds)})
+        AND si."invoiceDate" >= ${fromDate}
+        AND si.status IN (${Prisma.join(INQUIRY_SALES_INVOICE_STATUSES)})
+      GROUP BY sii."partId"
+    `;
+
+    for (const row of rows) {
+      const partId = String(row.partId || "");
+      if (!partId) continue;
+      salesByPartId[partId] = Number(row.salesQty || 0);
+    }
+
+    return res.json({ data: salesByPartId });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

@@ -226,7 +226,25 @@ class ApiClient {
 
   // Public GET method for direct API calls
   async get<T>(endpoint: string, options: any = {}): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, { method: "GET", ...options });
+    const { params, ...rest } = options || {};
+    let url = endpoint;
+    if (params && typeof params === "object") {
+      const queryParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (
+          value !== undefined &&
+          value !== null &&
+          !(typeof value === "string" && value === "")
+        ) {
+          queryParams.append(key, String(value));
+        }
+      });
+      const qs = queryParams.toString();
+      if (qs) {
+        url = `${endpoint}${endpoint.includes("?") ? "&" : "?"}${qs}`;
+      }
+    }
+    return this.request<T>(url, { method: "GET", ...rest });
   }
 
   // Public POST method
@@ -2508,6 +2526,16 @@ class ApiClient {
     );
   }
 
+  async getPurchaseImportPartsSales(data: {
+    partIds: string[];
+    months: 3 | 6 | 9 | 12;
+  }) {
+    return this.request(`/purchase-import/parts-sales`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   async getPurchaseImportAlternateParts(partId: string) {
     return this.request(`/purchase-import/alternate-parts/${partId}`);
   }
@@ -3770,11 +3798,15 @@ class ApiClient {
     return this.request(`/vouchers/${id}`);
   }
 
-  async getNextVoucherNumber(type: string) {
+  async getNextVoucherNumber(type: string, receiptKind?: string) {
     const query = new URLSearchParams({ type });
+    if (receiptKind) {
+      query.set("receipt_kind", receiptKind);
+    }
     query.set("_t", Date.now().toString());
     return this.request<{
       type: string;
+      receiptKind?: string;
       voucherNumber: string;
       sequence: number;
     }>(`/vouchers/next-number?${query.toString()}`);

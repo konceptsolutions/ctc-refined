@@ -4,14 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
-import { Calendar as CalendarIcon, Download, Printer, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { Calendar as CalendarIcon, Download, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import { printIncomeStatement } from "@/utils/printIncomeStatementPdf";
+import { useToast } from "@/hooks/use-toast";
 
 interface IncomeCategory {
   name: string;
@@ -19,6 +20,7 @@ interface IncomeCategory {
 }
 
 export const IncomeStatementTab = () => {
+  const { toast } = useToast();
   const [revenueData, setRevenueData] = useState<IncomeCategory[]>([]);
   const [costData, setCostData] = useState<IncomeCategory[]>([]);
   const [expenseData, setExpenseData] = useState<IncomeCategory[]>([]);
@@ -113,47 +115,36 @@ export const IncomeStatementTab = () => {
   console.log("Rendering - Expenses:", expenseData.length, "categories, Total:", totalExpenses);
 
   const handlePrint = () => {
-    const printHTML = `
-      <html>
-        <head>
-          <title>Income Statement</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { text-align: center; color: #333; }
-            .section { margin-top: 20px; }
-            .item { padding: 4px 0; }
-            .total { font-weight: bold; padding: 8px 0; border-top: 2px solid #333; }
-            @media print { button { display: none; } }
-          </style>
-        </head>
-        <body>
-          <h1>Income Statement - ${fromDate ? format(fromDate, "dd/MM/yyyy") : ""} to ${toDate ? format(toDate, "dd/MM/yyyy") : ""}</h1>
-          <div class="section">
-            <h2>Revenue</h2>
-            ${revenueData.map(cat => `
-              <div class="item">
-                <strong>${cat.name}</strong>: Rs ${cat.items.reduce((s, item) => s + item.amount, 0).toLocaleString()}
-              </div>
-            `).join('')}
-            <div class="total">Total Revenue: Rs ${totalRevenue.toLocaleString()}</div>
-          </div>
-          <div class="section">
-            <h2>Expenses</h2>
-            ${expenseData.map(cat => `
-              <div class="item">
-                <strong>${cat.name}</strong>: Rs ${cat.items.reduce((s, item) => s + item.amount, 0).toLocaleString()}
-              </div>
-            `).join('')}
-            <div class="total">Total Expenses: Rs ${totalExpenses.toLocaleString()}</div>
-          </div>
-          <div class="section">
-            <div class="total">Net Income: Rs ${netIncome.toLocaleString()}</div>
-          </div>
-          <button onclick="window.print()">Print</button>
-        </body>
-      </html>
-    `;
-    openPrintHtml(printHTML);
+    const revenueAccounts = revenueData.flatMap((cat) =>
+      cat.items.map((item) => ({ label: item.name, amount: item.amount })),
+    );
+    const costAccounts = costData.flatMap((cat) =>
+      cat.items.map((item) => ({ label: item.name, amount: item.amount })),
+    );
+    const expenseAccounts = expenseData.flatMap((cat) =>
+      cat.items.map((item) => ({ label: item.name, amount: item.amount })),
+    );
+
+    const opened = printIncomeStatement({
+      fromDate: fromDate ? format(fromDate, "yyyy-MM-dd") : "",
+      toDate: toDate ? format(toDate, "yyyy-MM-dd") : "",
+      revenue: revenueAccounts,
+      cost: costAccounts,
+      expenses: expenseAccounts,
+      totalRevenue,
+      totalCost,
+      grossProfit,
+      totalExpenses,
+      netIncome,
+    });
+
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleExport = () => {
@@ -328,7 +319,7 @@ export const IncomeStatementTab = () => {
               >
                 Search
               </Button>
-              <PrintPdfButton onPrint={handlePrint} label="Print" />
+              <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
               <Button variant="outline" size="sm" className="transition-all duration-200 hover:scale-105" onClick={handleExport}>
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV

@@ -167,9 +167,9 @@ const tabs: TabConfig[] = [
   },
   {
     id: "purchase-invoice",
-    label: "Purchase Invoice",
+    label: "Invoice",
     icon: Receipt,
-    description: "Enter purchase invoice details and import expenses",
+    description: "Enter invoice details and import expenses",
   },
   {
     id: "back-order-summary",
@@ -217,6 +217,7 @@ type ItemRow = {
   id: string;
   partId: string;
   currentStock: number;
+  salesQty: number;
   khiQuantity: number;
   isbQuantity: number;
   otherQuantity: number;
@@ -228,6 +229,7 @@ type ItemRow = {
 
 type InquiryItemSort = "none" | "alphabetical" | "numeric" | "description" | "hsCode";
 type SortDirection = "asc" | "desc";
+type InquirySalesPeriodMonths = 3 | 6 | 9 | 12;
 
 type PurchaseImportRequestRecord = {
   id: string;
@@ -485,15 +487,33 @@ function computeImportPoCommercialAmounts(
   >,
   invoiceLcAmount: number,
   conversionRate: number,
+  invoiceFcAmount = 0,
 ) {
   const invoiceLc = Math.max(0, Number(invoiceLcAmount) || 0);
+  const invoiceFc = Math.max(0, Number(invoiceFcAmount) || 0);
   const rate = Math.max(0, Number(conversionRate) || 0);
   const pkgExpPercent = normalizeImportPoExpenseNumber(expenses.pkgExpPercent);
   const invDiscPercent = normalizeImportPoExpenseNumber(expenses.invDiscPercent);
   const frtExp = normalizeImportPoExpenseNumber(expenses.frtExp);
+  const pkgExpAmt = (invoiceLc * pkgExpPercent) / 100;
+  const invDiscAmt = (invoiceLc * invDiscPercent) / 100;
+  const pkgExpFcAmt =
+    invoiceFc > 0
+      ? (invoiceFc * pkgExpPercent) / 100
+      : rate > 0
+        ? pkgExpAmt / rate
+        : 0;
+  const invDiscFcAmt =
+    invoiceFc > 0
+      ? (invoiceFc * invDiscPercent) / 100
+      : rate > 0
+        ? invDiscAmt / rate
+        : 0;
   return {
-    pkgExpAmt: (invoiceLc * pkgExpPercent) / 100,
-    invDiscAmt: (invoiceLc * invDiscPercent) / 100,
+    pkgExpAmt,
+    pkgExpFcAmt,
+    invDiscAmt,
+    invDiscFcAmt,
     frtExpLc: frtExp * rate,
   };
 }
@@ -933,6 +953,81 @@ const parseRateInput = (raw: string): number => {
   return Math.round(parsed * 10000) / 10000;
 };
 
+type LinkedExpenseKind = "pkg" | "disc";
+type LinkedExpenseField = "percent" | "fc" | "lc";
+
+type LinkedExpenseText = {
+  percent: string;
+  fc: string;
+  lc: string;
+};
+
+const EMPTY_LINKED_EXPENSE_TEXT: LinkedExpenseText = {
+  percent: "",
+  fc: "",
+  lc: "",
+};
+
+function calcLinkedExpenseValues(
+  field: LinkedExpenseField,
+  rawValue: number,
+  invoiceFc: number,
+  invoiceLc: number,
+  conversionRate: number,
+): { percent: number; fc: number; lc: number } {
+  const value = Math.max(0, Number(rawValue) || 0);
+  const fcTotal = Math.max(0, Number(invoiceFc) || 0);
+  const lcTotal = Math.max(0, Number(invoiceLc) || 0);
+  const rate = Math.max(0, Number(conversionRate) || 0);
+
+  if (field === "percent") {
+    return {
+      percent: value,
+      fc: (fcTotal * value) / 100,
+      lc: (lcTotal * value) / 100,
+    };
+  }
+
+  if (field === "fc") {
+    const percent = fcTotal > 0 ? (value / fcTotal) * 100 : 0;
+    return {
+      percent,
+      fc: value,
+      lc: lcTotal > 0 ? (lcTotal * percent) / 100 : rate > 0 ? value * rate : 0,
+    };
+  }
+
+  const percent = lcTotal > 0 ? (value / lcTotal) * 100 : 0;
+  return {
+    percent,
+    fc: fcTotal > 0 ? (fcTotal * percent) / 100 : rate > 0 ? value / rate : 0,
+    lc: value,
+  };
+}
+
+function formatLinkedExpenseText(values: {
+  percent: number;
+  fc: number;
+  lc: number;
+}): LinkedExpenseText {
+  return {
+    percent: formatRateInput(values.percent),
+    fc: formatRateInput(values.fc),
+    lc: formatRateInput(values.lc),
+  };
+}
+
+function buildLinkedExpenseTextFromPercent(
+  percent: number,
+  invoiceFc: number,
+  invoiceLc: number,
+  conversionRate: number,
+): LinkedExpenseText {
+  return formatLinkedExpenseText(
+    calcLinkedExpenseValues("percent", percent, invoiceFc, invoiceLc, conversionRate),
+  );
+}
+
 const QUOTATION_QTY_COL_CLASS = "text-right p-2 border-b w-24 whitespace-nowrap";
 const QUOTATION_SHIP_DAYS_COL_CLASS = "text-right p-2 border-b w-20 whitespace-nowrap";
 const QUOTATION_FC_RATE_COL_CLASS = "text-right p-2 border-b w-24 whitespace-nowrap";
@@ -1082,6 +1177,7 @@ const createEmptyItem = (): ItemRow => ({
   id: createRowId(),
   partId: "",
   currentStock: 0,
+  salesQty: 0,
   khiQuantity: 0,
   isbQuantity: 0,
   otherQuantity: 0,
@@ -1575,6 +1671,9 @@ const PurchaseImportRequestForm = ({
   const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
   const [brandFilter, setBrandFilter] = useState("all");
+  const [salesPeriodMonths, setSalesPeriodMonths] =
+    useState<InquirySalesPeriodMonths>(3);
+  const [loadingSalesQty, setLoadingSalesQty] = useState(false);
   const [openItemSelectRowId, setOpenItemSelectRowId] = useState<string | null>(null);
   const [jumpToItemRowId, setJumpToItemRowId] = useState("");
   const [highlightedItemRowId, setHighlightedItemRowId] = useState<string | null>(
@@ -1719,6 +1818,7 @@ const PurchaseImportRequestForm = ({
                     id: `row-${item.partId}-${index}-${Math.random().toString(16).slice(2)}`,
                     partId: item.partId || "",
                     currentStock: Number(item.currentStock || 0),
+                    salesQty: 0,
                     khiQuantity,
                     isbQuantity,
                     otherQuantity,
@@ -2045,6 +2145,7 @@ const PurchaseImportRequestForm = ({
       updateItem(rowId, {
         partId: "",
         currentStock: 0,
+        salesQty: 0,
         weight: 0,
         lastPurchases: [],
       });
@@ -2094,6 +2195,7 @@ const PurchaseImportRequestForm = ({
     updateItem(rowId, {
       partId,
       weight: localWeight,
+      salesQty: 0,
       loadingDetails: true,
     });
     try {
@@ -2119,6 +2221,66 @@ const PurchaseImportRequestForm = ({
       });
     }
   };
+
+  const inquiryPartIdsKey = items
+    .map((row) => row.partId)
+    .filter(Boolean)
+    .join("|");
+
+  useEffect(() => {
+    const partIds = Array.from(
+      new Set(
+        inquiryPartIdsKey
+          .split("|")
+          .map((id) => id.trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (partIds.length === 0) {
+      setItems((prev) =>
+        prev.map((row) => (row.salesQty === 0 ? row : { ...row, salesQty: 0 })),
+      );
+      return;
+    }
+
+    let cancelled = false;
+    const loadSales = async () => {
+      setLoadingSalesQty(true);
+      try {
+        const res = await apiClient.getPurchaseImportPartsSales({
+          partIds,
+          months: salesPeriodMonths,
+        });
+        if (cancelled) return;
+        const salesByPartId =
+          ((res as any)?.data as Record<string, number> | undefined) || {};
+        setItems((prev) =>
+          prev.map((row) => {
+            if (!row.partId) {
+              return row.salesQty === 0 ? row : { ...row, salesQty: 0 };
+            }
+            const nextQty = Number(salesByPartId[row.partId] || 0);
+            return row.salesQty === nextQty ? row : { ...row, salesQty: nextQty };
+          }),
+        );
+      } catch {
+        if (cancelled) return;
+        toast({
+          title: "Failed to load sales",
+          description: "Could not fetch sold quantities for the selected period.",
+          variant: "destructive",
+        });
+      } finally {
+        if (!cancelled) setLoadingSalesQty(false);
+      }
+    };
+
+    void loadSales();
+    return () => {
+      cancelled = true;
+    };
+  }, [inquiryPartIdsKey, salesPeriodMonths, toast]);
 
   const handleSave = async () => {
     const currentItems = itemsRef.current;
@@ -2584,6 +2746,27 @@ const PurchaseImportRequestForm = ({
               className="w-[180px] [&_input]:h-9 [&_input]:text-sm"
               disabled={loadingForm}
             />
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                Sales Period
+              </Label>
+              <Select
+                value={String(salesPeriodMonths)}
+                onValueChange={(value) =>
+                  setSalesPeriodMonths(Number(value) as InquirySalesPeriodMonths)
+                }
+              >
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="3">3 Months</SelectItem>
+                  <SelectItem value="6">6 Months</SelectItem>
+                  <SelectItem value="9">9 Months</SelectItem>
+                  <SelectItem value="12">1 Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
               <SelectTrigger className="w-[220px]">
                 <SelectValue />
@@ -2626,6 +2809,12 @@ const PurchaseImportRequestForm = ({
                 <th className="text-center p-2 border-b w-12 bg-muted/40">#</th>
                 <th className="text-left p-2 border-b bg-muted/40">Item</th>
                 <th className="text-right p-2 border-b bg-muted/40">Current Stock</th>
+                <th className="text-right p-2 border-b bg-muted/40 whitespace-nowrap">
+                  Sales
+                  <span className="block text-[10px] font-normal text-muted-foreground">
+                    {salesPeriodMonths === 12 ? "1 Year" : `${salesPeriodMonths} Mo`}
+                  </span>
+                </th>
                 <th className={`${INQUIRY_ISB_QTY_HEAD_CLASS} bg-muted/40`}>ISB Qty</th>
                 <th className={`${INQUIRY_KHI_QTY_HEAD_CLASS} bg-muted/40`}>KHI Qty</th>
                 <th className="text-right p-2 border-b bg-muted/40">Total Demand</th>
@@ -2638,7 +2827,7 @@ const PurchaseImportRequestForm = ({
               {inquiryVirtualPaddingTop > 0 ? (
                 <tr aria-hidden="true">
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     style={{
                       height: inquiryVirtualPaddingTop,
                       padding: 0,
@@ -2682,6 +2871,13 @@ const PurchaseImportRequestForm = ({
                       )}
                     </td>
                     <td className="p-2 border-b text-right">{row.currentStock}</td>
+                    <td className="p-2 border-b text-right tabular-nums">
+                      {!row.partId
+                        ? "-"
+                        : loadingSalesQty
+                          ? "..."
+                          : row.salesQty}
+                    </td>
                     <td className="p-2 border-b">
                       <Input
                         type="number"
@@ -2755,7 +2951,7 @@ const PurchaseImportRequestForm = ({
                   </tr>
                   {SHOW_INQUIRY_LAST_PURCHASES ? (
                   <tr>
-                    <td colSpan={9} className="px-2 pb-3 border-b">
+                    <td colSpan={10} className="px-2 pb-3 border-b">
                       <div className="rounded-md border border-dashed border-border p-2">
                         <p className="text-xs font-medium mb-2">Last 3 Purchases</p>
                         {row.lastPurchases.length === 0 ? (
@@ -2802,7 +2998,7 @@ const PurchaseImportRequestForm = ({
               {inquiryVirtualPaddingBottom > 0 ? (
                 <tr aria-hidden="true">
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     style={{
                       height: inquiryVirtualPaddingBottom,
                       padding: 0,
@@ -7586,7 +7782,7 @@ const isImportPurchaseOrderSaved = (order: {
 
 const formatImportPurchaseOrderStatus = (status?: string | null) => {
   const normalized = normalizeImportPurchaseOrderStatus(status);
-  if (normalized === "purchase invoice pending") return "Purchase Invoice Pending";
+  if (normalized === "purchase invoice pending") return "Invoice Pending";
   if (normalized === "stock receiving pending") return "Stock Receiving Pending";
   if (normalized === "received") return "Received";
   if (normalized === "pending") return "Pending";
@@ -7632,7 +7828,7 @@ const PurchaseOrderTab = ({
   mode?: "purchase-order" | "purchase-invoice";
 }) => {
   const isInvoiceMode = mode === "purchase-invoice";
-  const formTitle = isInvoiceMode ? "Purchase Invoice" : "Purchase Import";
+  const formTitle = isInvoiceMode ? "Invoice" : "Purchase Import";
   const formActionLabel = isInvoiceMode ? "Invoice" : "PO";
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -7653,6 +7849,13 @@ const PurchaseOrderTab = ({
   const [receiveOrderStatus, setReceiveOrderStatus] = useState<string>("");
   const [receiveLines, setReceiveLines] = useState<ImportPurchaseOrderReceiveLine[]>([]);
   const [receivePartOptions, setReceivePartOptions] = useState<PartOption[]>([]);
+  const [jumpToReceiveLineId, setJumpToReceiveLineId] = useState("");
+  const [highlightedReceiveLineId, setHighlightedReceiveLineId] = useState<
+    string | null
+  >(null);
+  const receiveLineRowRefs = useRef<Record<string, HTMLTableRowElement | null>>(
+    {},
+  );
   const [loadingReceiveForm, setLoadingReceiveForm] = useState(false);
   const [savingReceive, setSavingReceive] = useState(false);
   const [receiveInvoiceNo, setReceiveInvoiceNo] = useState("");
@@ -7665,9 +7868,12 @@ const PurchaseOrderTab = ({
   const [importExpenses, setImportExpenses] = useState<ImportPurchaseOrderExpenses>(
     EMPTY_IMPORT_PO_EXPENSES,
   );
-  const [importExpensePercentText, setImportExpensePercentText] = useState({
-    pkgExpPercent: "",
-    invDiscPercent: "",
+  const [importExpenseLinkedText, setImportExpenseLinkedText] = useState<{
+    pkg: LinkedExpenseText;
+    disc: LinkedExpenseText;
+  }>({
+    pkg: { ...EMPTY_LINKED_EXPENSE_TEXT },
+    disc: { ...EMPTY_LINKED_EXPENSE_TEXT },
   });
 
   const updateImportExpense = (key: ImportPoExpenseFieldKey, value: string) => {
@@ -7677,29 +7883,33 @@ const PurchaseOrderTab = ({
     }));
   };
 
-  const updateImportExpensePercent = (
-    key: "pkgExpPercent" | "invDiscPercent",
-    raw: string,
-  ) => {
-    if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
-    setImportExpensePercentText((prev) => ({ ...prev, [key]: raw }));
-    setImportExpenses((prev) => ({
-      ...prev,
-      [key]: parseRateInput(raw),
-    }));
-  };
-
-  const resetImportExpensePercentText = (
+  const resetImportExpenseLinkedText = (
     expenses: Pick<ImportPurchaseOrderExpenses, "pkgExpPercent" | "invDiscPercent">,
+    invoiceFc = 0,
+    invoiceLc = 0,
+    conversionRate = 1,
   ) => ({
-    pkgExpPercent: formatRateInput(expenses.pkgExpPercent),
-    invDiscPercent: formatRateInput(expenses.invDiscPercent),
+    pkg: buildLinkedExpenseTextFromPercent(
+      expenses.pkgExpPercent,
+      invoiceFc,
+      invoiceLc,
+      conversionRate,
+    ),
+    disc: buildLinkedExpenseTextFromPercent(
+      expenses.invDiscPercent,
+      invoiceFc,
+      invoiceLc,
+      conversionRate,
+    ),
   });
 
   const resetImportPurchaseForm = () => {
     setReceiveOrderId(null);
     setReceiveLines([]);
     setReceivePartOptions([]);
+    setJumpToReceiveLineId("");
+    setHighlightedReceiveLineId(null);
+    receiveLineRowRefs.current = {};
     setReceiveDetail(null);
     setReceiveImportSaved(false);
     setReceiveOrderStatus("");
@@ -7711,7 +7921,10 @@ const PurchaseOrderTab = ({
     setReceiveEstTimeDate("");
     setReceiveConversionRate("1");
     setImportExpenses({ ...EMPTY_IMPORT_PO_EXPENSES });
-    setImportExpensePercentText({ pkgExpPercent: "", invDiscPercent: "" });
+    setImportExpenseLinkedText({
+      pkg: { ...EMPTY_LINKED_EXPENSE_TEXT },
+      disc: { ...EMPTY_LINKED_EXPENSE_TEXT },
+    });
   };
 
   const fetchOrders = useCallback(async () => {
@@ -7936,7 +8149,7 @@ const PurchaseOrderTab = ({
       toast({
         title: "Purchase Import locked",
         description:
-          "Purchase Invoice has already been saved. Purchase Import can no longer be edited.",
+          "Invoice has already been saved. Purchase Import can no longer be edited.",
         variant: "destructive",
       });
       return;
@@ -7945,7 +8158,7 @@ const PurchaseOrderTab = ({
       toast({
         title: "Purchase Import required",
         description:
-          "Save the Purchase Import form at least once before opening Purchase Invoice.",
+          "Save the Purchase Import form at least once before opening Invoice.",
         variant: "destructive",
       });
       return;
@@ -7965,7 +8178,13 @@ const PurchaseOrderTab = ({
     setReceiveEstTimeDate("");
     setReceiveConversionRate("1");
     setImportExpenses({ ...EMPTY_IMPORT_PO_EXPENSES });
-    setImportExpensePercentText({ pkgExpPercent: "", invDiscPercent: "" });
+    setImportExpenseLinkedText({
+      pkg: { ...EMPTY_LINKED_EXPENSE_TEXT },
+      disc: { ...EMPTY_LINKED_EXPENSE_TEXT },
+    });
+    setJumpToReceiveLineId("");
+    setHighlightedReceiveLineId(null);
+    receiveLineRowRefs.current = {};
     setLoadingReceiveForm(true);
     try {
       const response = await apiClient.getImportPurchaseOrder(order.id);
@@ -7978,7 +8197,7 @@ const PurchaseOrderTab = ({
         toast({
           title: "Purchase Import required",
           description:
-            "Save the Purchase Import form at least once before opening Purchase Invoice.",
+            "Save the Purchase Import form at least once before opening Invoice.",
           variant: "destructive",
         });
         resetImportPurchaseForm();
@@ -7992,7 +8211,7 @@ const PurchaseOrderTab = ({
         toast({
           title: "Purchase Import locked",
           description:
-            "Purchase Invoice has already been saved. Purchase Import can no longer be edited.",
+            "Invoice has already been saved. Purchase Import can no longer be edited.",
           variant: "destructive",
         });
         resetImportPurchaseForm();
@@ -8094,7 +8313,14 @@ const PurchaseOrderTab = ({
       setReceiveLines(lines);
       const loadedExpenses = parseImportPoExpenses(orderData.expenses);
       setImportExpenses(loadedExpenses);
-      setImportExpensePercentText(resetImportExpensePercentText(loadedExpenses));
+      setImportExpenseLinkedText(
+        resetImportExpenseLinkedText(
+          loadedExpenses,
+          0,
+          0,
+          initialConversionRate,
+        ),
+      );
     } catch (error: any) {
       toast({
         title: "Failed to load purchase import",
@@ -8425,6 +8651,49 @@ const PurchaseOrderTab = ({
     [receiveLines],
   );
 
+  const receiveItemJumpOptions = useMemo(
+    () =>
+      receiveLines
+        .filter((line) => line.partId)
+        .map((line) => ({
+          value: line.id,
+          label: `${line.masterPartNo || "-"} | ${line.partNo || "-"}`,
+          description: line.description || "-",
+        })),
+    [receiveLines],
+  );
+
+  const scrollToReceiveLineRow = useCallback((lineId: string) => {
+    if (!lineId) return;
+    requestAnimationFrame(() => {
+      const rowEl = receiveLineRowRefs.current[lineId];
+      rowEl?.scrollIntoView({ block: "center", behavior: "smooth" });
+      setHighlightedReceiveLineId(lineId);
+      window.setTimeout(() => {
+        setHighlightedReceiveLineId((current) =>
+          current === lineId ? null : current,
+        );
+      }, 2000);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!jumpToReceiveLineId) return;
+    scrollToReceiveLineRow(jumpToReceiveLineId);
+  }, [jumpToReceiveLineId, receiveLines, scrollToReceiveLineRow]);
+
+  useEffect(() => {
+    if (!jumpToReceiveLineId) return;
+    if (!receiveLines.some((line) => line.id === jumpToReceiveLineId && line.partId)) {
+      setJumpToReceiveLineId("");
+    }
+  }, [receiveLines, jumpToReceiveLineId]);
+
+  const handleReceiveItemJump = (lineId: string) => {
+    setJumpToReceiveLineId(lineId);
+    scrollToReceiveLineRow(lineId);
+  };
+
   const receiveConversionRateNum = Number(receiveConversionRate);
   const effectiveReceiveConversionRate =
     Number.isFinite(receiveConversionRateNum) && receiveConversionRateNum > 0
@@ -8437,15 +8706,82 @@ const PurchaseOrderTab = ({
         importExpenses,
         receiveTotals.lcAmount,
         effectiveReceiveConversionRate,
+        receiveTotals.fcAmount,
       ),
     [
       importExpenses.pkgExpPercent,
       importExpenses.invDiscPercent,
       importExpenses.frtExp,
       receiveTotals.lcAmount,
+      receiveTotals.fcAmount,
       effectiveReceiveConversionRate,
     ],
   );
+
+  const updateLinkedExpenseField = (
+    kind: LinkedExpenseKind,
+    field: LinkedExpenseField,
+    raw: string,
+  ) => {
+    if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
+
+    const values = calcLinkedExpenseValues(
+      field,
+      parseRateInput(raw),
+      receiveTotals.fcAmount,
+      receiveTotals.lcAmount,
+      effectiveReceiveConversionRate,
+    );
+
+    setImportExpenseLinkedText((prev) => ({
+      ...prev,
+      [kind]: {
+        ...formatLinkedExpenseText(values),
+        [field]: raw,
+      },
+    }));
+
+    setImportExpenses((prev) => ({
+      ...prev,
+      [kind === "pkg" ? "pkgExpPercent" : "invDiscPercent"]: values.percent,
+    }));
+  };
+
+  const blurLinkedExpenseField = (kind: LinkedExpenseKind) => {
+    const percent =
+      kind === "pkg"
+        ? importExpenses.pkgExpPercent
+        : importExpenses.invDiscPercent;
+    setImportExpenseLinkedText((prev) => ({
+      ...prev,
+      [kind]: buildLinkedExpenseTextFromPercent(
+        percent,
+        receiveTotals.fcAmount,
+        receiveTotals.lcAmount,
+        effectiveReceiveConversionRate,
+      ),
+    }));
+  };
+
+  // Recalculate FC/LC displays when invoice totals or exchange rate change.
+  useEffect(() => {
+    setImportExpenseLinkedText(
+      resetImportExpenseLinkedText(
+        {
+          pkgExpPercent: importExpenses.pkgExpPercent,
+          invDiscPercent: importExpenses.invDiscPercent,
+        },
+        receiveTotals.fcAmount,
+        receiveTotals.lcAmount,
+        effectiveReceiveConversionRate,
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only resync when invoice base amounts change
+  }, [
+    receiveTotals.fcAmount,
+    receiveTotals.lcAmount,
+    effectiveReceiveConversionRate,
+  ]);
 
   const importPoTotalExp = useMemo(
     () =>
@@ -8496,7 +8832,7 @@ const PurchaseOrderTab = ({
       toast({
         title: "Purchase Import locked",
         description:
-          "Purchase Invoice has already been saved. Purchase Import can no longer be edited.",
+          "Invoice has already been saved. Purchase Import can no longer be edited.",
         variant: "destructive",
       });
       return;
@@ -8566,22 +8902,22 @@ const PurchaseOrderTab = ({
         })),
       });
       toast({
-        title: isInvoiceMode ? "Purchase invoice saved" : "Purchase import saved",
+        title: isInvoiceMode ? "Invoice saved" : "Purchase import saved",
         description: isInvoiceMode
           ? `PO ${receiveOrderLabel} invoice saved. Status set to Stock Receiving Pending.`
-          : `PO ${receiveOrderLabel} purchase import saved. Status set to Purchase Invoice Pending.`,
+          : `PO ${receiveOrderLabel} purchase import saved. Status set to Invoice Pending.`,
       });
       resetImportPurchaseForm();
       await fetchOrders();
     } catch (error: any) {
       toast({
         title: isInvoiceMode
-          ? "Failed to save purchase invoice"
+          ? "Failed to save invoice"
           : "Failed to save purchase import",
         description:
           error?.message ||
           (isInvoiceMode
-            ? "Could not save purchase invoice details."
+            ? "Could not save invoice details."
             : "Could not save purchase import details."),
         variant: "destructive",
       });
@@ -8594,7 +8930,7 @@ const PurchaseOrderTab = ({
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
       <div>
         <h2 className="text-base font-semibold">
-          {isInvoiceMode ? "Purchase Invoice" : "Import Purchase Orders"}
+          {isInvoiceMode ? "Invoice" : "Import Purchase Orders"}
         </h2>
         <p className="text-sm text-muted-foreground">
           {isInvoiceMode
@@ -8732,9 +9068,9 @@ const PurchaseOrderTab = ({
                         disabled={actionDisabled}
                         title={
                           importLocked
-                            ? "Purchase Invoice already saved — Purchase Import is locked"
+                            ? "Invoice already saved — Purchase Import is locked"
                             : invoiceLocked
-                            ? "Save Purchase Import at least once before opening Purchase Invoice"
+                            ? "Save Purchase Import at least once before opening Invoice"
                             : undefined
                         }
                         onClick={() => openReceiveForm(row)}
@@ -8890,15 +9226,144 @@ const PurchaseOrderTab = ({
                     })}
                   </div>
                 ) : null}
-                {Number(viewOrder.expenses?.totalExp || 0) > 0 ? (
-                  <div>
-                    <span className="text-muted-foreground">Total Exp.:</span>{" "}
-                    {Number(viewOrder.expenses.totalExp).toLocaleString("en-PK", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </div>
-                ) : null}
               </div>
+              {(() => {
+                const viewExpenses = parseImportPoExpenses(viewOrder.expenses);
+                const invoiceLc = Number(
+                  viewOrder.totalAmount || viewOrder.total_amount || 0,
+                );
+                const invoiceFc = Number(
+                  viewOrder.fcTotal || viewOrder.fc_total || 0,
+                );
+                const conversionRate = (() => {
+                  const rate = Number(
+                    viewOrder.conversionRate ?? viewOrder.conversion_rate ?? 0,
+                  );
+                  return Number.isFinite(rate) && rate > 0 ? rate : 1;
+                })();
+                const commercial = computeImportPoCommercialAmounts(
+                  viewExpenses,
+                  invoiceLc,
+                  conversionRate,
+                  invoiceFc,
+                );
+                const totalExp =
+                  viewExpenses.totalExp > 0
+                    ? viewExpenses.totalExp
+                    : computeImportPoTotalExp(
+                        viewExpenses,
+                        invoiceLc,
+                        conversionRate,
+                      );
+                const invoiceTotal = computeImportPoInvoiceTotal(
+                  invoiceLc,
+                  totalExp,
+                  commercial.invDiscAmt,
+                );
+                const hasCommercial =
+                  viewExpenses.pkgExpPercent > 0 ||
+                  viewExpenses.invDiscPercent > 0 ||
+                  viewExpenses.frtExp > 0 ||
+                  commercial.pkgExpAmt > 0 ||
+                  commercial.invDiscAmt > 0;
+                const hasClearing = IMPORT_PO_EXPENSE_AMOUNT_KEYS.some(
+                  (key) => Number(viewExpenses[key] || 0) > 0,
+                );
+                const showExpenses =
+                  isInvoiceMode || hasCommercial || hasClearing || totalExp > 0;
+
+                if (!showExpenses) return null;
+
+                return (
+                  <div className="rounded-md border border-border p-3 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="text-sm font-semibold">Expenses</h4>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Total Exp.: </span>
+                          <span className="font-semibold tabular-nums">
+                            {formatImportPoAmount(totalExp)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Invoice Total: </span>
+                          <span className="font-semibold tabular-nums">
+                            {formatImportPoAmount(invoiceTotal)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                      <div className="space-y-2 min-w-0 overflow-x-auto">
+                        <div className="inline-flex flex-col gap-2">
+                          <div className="flex items-center gap-2 pl-20">
+                            <span className="w-[72px] shrink-0 text-[10px] text-muted-foreground text-center">
+                              %
+                            </span>
+                            <span className="w-[90px] shrink-0 text-[10px] text-muted-foreground text-center">
+                              FC
+                            </span>
+                            <span className="w-[90px] shrink-0 text-[10px] text-muted-foreground text-center">
+                              LC
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs w-20 shrink-0">Pkg.Exp.</span>
+                            <span className="h-8 w-[72px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                              {formatRateInput(viewExpenses.pkgExpPercent) || "0"}
+                            </span>
+                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                              {formatImportPoAmount(commercial.pkgExpFcAmt)}
+                            </span>
+                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                              {formatImportPoAmount(commercial.pkgExpAmt)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs w-20 shrink-0">Inv.Disc.</span>
+                            <span className="h-8 w-[72px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                              {formatRateInput(viewExpenses.invDiscPercent) || "0"}
+                            </span>
+                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                              {formatImportPoAmount(commercial.invDiscFcAmt)}
+                            </span>
+                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                              {formatImportPoAmount(commercial.invDiscAmt)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs w-20 shrink-0">Frt.Exp (FC)</span>
+                            <span className="h-8 w-[72px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                              {formatImportPoAmount(viewExpenses.frtExp)}
+                            </span>
+                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                              {formatImportPoAmount(commercial.frtExpLc)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {IMPORT_PO_CLEARING_EXPENSE_SECTIONS.map((section) => (
+                        <div key={section.title} className="space-y-2 min-w-0">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {section.title}
+                          </p>
+                          {section.fields.map((field) => (
+                            <div
+                              key={field.key}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <span className="text-xs w-20 shrink-0">{field.label}</span>
+                              <span className="h-8 min-w-[100px] px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                                {formatImportPoAmount(Number(viewExpenses[field.key] || 0))}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               {viewOrder.notes ? (
                 <p className="text-muted-foreground">{viewOrder.notes}</p>
               ) : null}
@@ -9098,9 +9563,23 @@ const PurchaseOrderTab = ({
               <p className="text-sm text-muted-foreground">
                 {isInvoiceMode
                   ? "Enter supplier invoice quantities, rates, and expenses for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate."
-                  : "Enter supplier invoice quantities and rates for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate. Enter packaging and discount below; other clearing expenses can be added from Purchase Invoice. Final stock receipt is completed from Store."}
+                  : "Enter supplier invoice quantities and rates for this import purchase order. FC rate and exchange rate can be changed; LC rate is FC rate × exchange rate. Enter packaging and discount below; other clearing expenses can be added from Invoice. Final stock receipt is completed from Store."}
               </p>
-              <div className="flex justify-end">
+              <div className="flex items-end justify-between gap-2 flex-wrap">
+                {receiveItemJumpOptions.length > 0 ? (
+                  <div className="w-full sm:w-[320px] space-y-1">
+                    <Label className="text-xs">Item Filter</Label>
+                    <SearchableSelect
+                      options={receiveItemJumpOptions}
+                      value={jumpToReceiveLineId}
+                      onValueChange={handleReceiveItemJump}
+                      placeholder="Go to item..."
+                      selectedDisplayLabelOnly
+                    />
+                  </div>
+                ) : (
+                  <div />
+                )}
                 <Button
                   type="button"
                   size="sm"
@@ -9166,7 +9645,17 @@ const PurchaseOrderTab = ({
                       const unitCost = Number(line.lcRate || 0) + unitExp;
                       const lineCost = Number(lineAmounts.lcAmount || 0) + distributedExpense;
                       return (
-                      <tr key={line.id} className="border-t">
+                      <tr
+                        key={line.id}
+                        ref={(el) => {
+                          receiveLineRowRefs.current[line.id] = el;
+                        }}
+                        className={cn(
+                          "border-t",
+                          highlightedReceiveLineId === line.id &&
+                            "bg-primary/10 ring-2 ring-primary/30 ring-inset",
+                        )}
+                      >
                         <td className="p-2 text-center text-muted-foreground tabular-nums">
                           {index + 1}
                         </td>
@@ -9441,50 +9930,101 @@ const PurchaseOrderTab = ({
                     </div>
                   ) : null}
                 </div>
-                <div className={`grid grid-cols-1 ${isInvoiceMode ? "lg:grid-cols-3" : ""} gap-4`}>
-                  <div className="space-y-2">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Label className="text-xs font-normal w-24 shrink-0">Pkg.Exp.%</Label>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          className="h-8 w-[100px] shrink-0 text-right text-xs"
-                          value={importExpensePercentText.pkgExpPercent}
-                          onChange={(event) =>
-                            updateImportExpensePercent("pkgExpPercent", event.target.value)
-                          }
-                          onBlur={() => {
-                            setImportExpensePercentText((prev) => ({
-                              ...prev,
-                              pkgExpPercent: formatRateInput(importExpenses.pkgExpPercent),
-                            }));
-                          }}
-                        />
-                        <div className="h-8 w-[120px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
-                          {formatImportPoAmount(importPoCommercialAmounts.pkgExpAmt)}
-                        </div>
+                <div
+                  className={`grid grid-cols-1 gap-6 ${
+                    isInvoiceMode ? "xl:grid-cols-3" : ""
+                  }`}
+                >
+                  <div className="space-y-2 min-w-0 overflow-x-auto">
+                    <div className="inline-flex flex-col gap-2">
+                      <div className="flex items-center gap-2 pl-24">
+                        <span className="w-[88px] shrink-0 text-[10px] text-muted-foreground text-center">
+                          %
+                        </span>
+                        <span className="w-[110px] shrink-0 text-[10px] text-muted-foreground text-center">
+                          FC Amount
+                        </span>
+                        <span className="w-[110px] shrink-0 text-[10px] text-muted-foreground text-center">
+                          LC Amount
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Label className="text-xs font-normal w-24 shrink-0">Inv.Disc.%</Label>
+                        <Label className="text-xs font-normal w-24 shrink-0">Pkg.Exp.</Label>
                         <Input
                           type="text"
                           inputMode="decimal"
-                          className="h-8 w-[100px] shrink-0 text-right text-xs"
-                          value={importExpensePercentText.invDiscPercent}
+                          className="h-8 w-[88px] shrink-0 text-right text-xs"
+                          placeholder="%"
+                          title="Pkg.Exp. %"
+                          value={importExpenseLinkedText.pkg.percent}
                           onChange={(event) =>
-                            updateImportExpensePercent("invDiscPercent", event.target.value)
+                            updateLinkedExpenseField("pkg", "percent", event.target.value)
                           }
-                          onBlur={() => {
-                            setImportExpensePercentText((prev) => ({
-                              ...prev,
-                              invDiscPercent: formatRateInput(importExpenses.invDiscPercent),
-                            }));
-                          }}
+                          onBlur={() => blurLinkedExpenseField("pkg")}
                         />
-                        <div className="h-8 w-[120px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
-                          {formatImportPoAmount(importPoCommercialAmounts.invDiscAmt)}
-                        </div>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="h-8 w-[110px] shrink-0 text-right text-xs"
+                          placeholder="FC"
+                          title="Pkg.Exp. foreign currency amount"
+                          value={importExpenseLinkedText.pkg.fc}
+                          onChange={(event) =>
+                            updateLinkedExpenseField("pkg", "fc", event.target.value)
+                          }
+                          onBlur={() => blurLinkedExpenseField("pkg")}
+                        />
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="h-8 w-[110px] shrink-0 text-right text-xs"
+                          placeholder="LC"
+                          title="Pkg.Exp. local currency amount"
+                          value={importExpenseLinkedText.pkg.lc}
+                          onChange={(event) =>
+                            updateLinkedExpenseField("pkg", "lc", event.target.value)
+                          }
+                          onBlur={() => blurLinkedExpenseField("pkg")}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-normal w-24 shrink-0">Inv.Disc.</Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="h-8 w-[88px] shrink-0 text-right text-xs"
+                          placeholder="%"
+                          title="Inv.Disc. %"
+                          value={importExpenseLinkedText.disc.percent}
+                          onChange={(event) =>
+                            updateLinkedExpenseField("disc", "percent", event.target.value)
+                          }
+                          onBlur={() => blurLinkedExpenseField("disc")}
+                        />
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="h-8 w-[110px] shrink-0 text-right text-xs"
+                          placeholder="FC"
+                          title="Inv.Disc. foreign currency amount"
+                          value={importExpenseLinkedText.disc.fc}
+                          onChange={(event) =>
+                            updateLinkedExpenseField("disc", "fc", event.target.value)
+                          }
+                          onBlur={() => blurLinkedExpenseField("disc")}
+                        />
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="h-8 w-[110px] shrink-0 text-right text-xs"
+                          placeholder="LC"
+                          title="Inv.Disc. local currency amount"
+                          value={importExpenseLinkedText.disc.lc}
+                          onChange={(event) =>
+                            updateLinkedExpenseField("disc", "lc", event.target.value)
+                          }
+                          onBlur={() => blurLinkedExpenseField("disc")}
+                        />
                       </div>
                       {isInvoiceMode ? (
                         <div className="flex items-center gap-2">
@@ -9493,7 +10033,7 @@ const PurchaseOrderTab = ({
                             type="number"
                             min={0}
                             step="1"
-                            className="h-8 w-[100px] shrink-0 text-right text-xs"
+                            className="h-8 w-[88px] shrink-0 text-right text-xs"
                             value={
                               importExpenses.frtExp === 0 ? "" : importExpenses.frtExp
                             }
@@ -9501,7 +10041,7 @@ const PurchaseOrderTab = ({
                               updateImportExpense("frtExp", event.target.value)
                             }
                           />
-                          <div className="h-8 w-[120px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                          <div className="h-8 w-[110px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
                             {formatImportPoAmount(importPoCommercialAmounts.frtExpLc)}
                           </div>
                         </div>
@@ -9510,31 +10050,34 @@ const PurchaseOrderTab = ({
                   </div>
                   {isInvoiceMode
                     ? IMPORT_PO_CLEARING_EXPENSE_SECTIONS.map((section) => (
-                        <div key={section.title} className="space-y-2">
-                          <div className="space-y-2">
-                            {section.fields.map((field) => (
-                              <div
-                                key={field.key}
-                                className="flex items-center gap-2"
-                              >
-                                <Label className="text-xs font-normal w-20 shrink-0">{field.label}</Label>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  step={field.step || "1"}
-                                  className="h-8 w-[120px] shrink-0 text-right text-xs"
-                                  value={
-                                    importExpenses[field.key] === 0
-                                      ? ""
-                                      : importExpenses[field.key]
-                                  }
-                                  onChange={(event) =>
-                                    updateImportExpense(field.key, event.target.value)
-                                  }
-                                />
-                              </div>
-                            ))}
-                          </div>
+                        <div key={section.title} className="space-y-2 min-w-0">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {section.title}
+                          </p>
+                          {section.fields.map((field) => (
+                            <div
+                              key={field.key}
+                              className="flex items-center gap-2"
+                            >
+                              <Label className="text-xs font-normal w-20 shrink-0">
+                                {field.label}
+                              </Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                step={field.step || "1"}
+                                className="h-8 w-full max-w-[140px] text-right text-xs"
+                                value={
+                                  importExpenses[field.key] === 0
+                                    ? ""
+                                    : importExpenses[field.key]
+                                }
+                                onChange={(event) =>
+                                  updateImportExpense(field.key, event.target.value)
+                                }
+                              />
+                            </div>
+                          ))}
                         </div>
                       ))
                     : null}

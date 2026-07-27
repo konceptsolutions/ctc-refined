@@ -16,7 +16,7 @@ import { Users, Download } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import { printLedgers } from "@/utils/printLedgersPdf";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -252,66 +252,34 @@ export const InternationalSupplierLedgersTab = () => {
       currencyMode === "foreign"
         ? `Foreign Currency (${currencyName})`
         : "Local Currency";
-    const html = `
-      <html>
-        <head>
-          <title>International Supplier Ledger</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f4f4f4; }
-            .text-right { text-align: right; }
-          </style>
-        </head>
-        <body>
-          <h1>International Supplier Ledger</h1>
-          <p>Currency mode: ${modeLabel}</p>
-          <p>Period: ${fromDate ? format(fromDate, "dd/MM/yyyy") : ""} to ${toDate ? format(toDate, "dd/MM/yyyy") : ""}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>T_Id</th>
-                <th>Voucher No</th>
-                <th>Time Stamp</th>
-                <th>Description</th>
-                ${currencyMode === "foreign" ? '<th class="text-right">Exchange Rate</th>' : ""}
-                <th class="text-right">Dr</th>
-                <th class="text-right">Cr</th>
-                <th class="text-right">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${entries
-                .map(
-                  (entry) => `
-                <tr>
-                  <td>${entry.tId ?? "-"}</td>
-                  <td>${entry.voucherNo}</td>
-                  <td>${entry.timeStamp}</td>
-                  <td>${entry.description}</td>
-                ${currencyMode === "foreign" ? `<td class="text-right">${formatExchangeRate(entry.conversionRate)}</td>` : ""}
-                  <td class="text-right">${formatAmount(getDebit(entry))}</td>
-                  <td class="text-right">${formatAmount(getCredit(entry))}</td>
-                  <td class="text-right">${formatAmount(getBalance(entry))}</td>
-                </tr>
-              `,
-                )
-                .join("")}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-    openPrintHtml(html, {
-      onBlocked: () =>
-        toast({
-          title: "Error",
-          description: "Please allow popups to print the report",
-          variant: "destructive",
-        }),
+    const selectedAccountLabel =
+      accountOptions.find((a) => a.value === selectedAccount)?.label ||
+      selectedAccount;
+    const opened = printLedgers({
+      title: "International Supplier Ledger",
+      fromDate,
+      toDate,
+      accountLabel: selectedAccountLabel || undefined,
+      subtitle: `Currency mode: ${modeLabel}`,
+      showExchangeRate: currencyMode === "foreign",
+      entries: entries.map((entry) => ({
+        tId: entry.tId,
+        voucherNo: entry.voucherNo,
+        timeStamp: entry.timeStamp,
+        description: entry.description,
+        debit: getDebit(entry),
+        credit: getCredit(entry),
+        balance: getBalance(entry),
+        exchangeRate: entry.conversionRate,
+      })),
     });
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -327,7 +295,7 @@ export const InternationalSupplierLedgersTab = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print" />
+            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
           </div>
         </div>
       </CardHeader>

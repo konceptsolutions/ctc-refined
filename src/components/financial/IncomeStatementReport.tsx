@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
-import { Users, Download, Printer } from "lucide-react";
+import { Users, Download } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import { printIncomeStatement } from "@/utils/printIncomeStatementPdf";
 
 interface IncomeAccount {
   code: string;
@@ -157,99 +157,35 @@ export const IncomeStatementReport = () => {
   };
 
   const handlePrint = () => {
-    const html = `
-      <html>
-        <head>
-          <title>Income Statement</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f4f4f4; }
-            .text-right { text-align: right; }
-            .total-row { font-weight: bold; background-color: #f9f9f9; }
-          </style>
-        </head>
-        <body>
-          <h1>Income Statement</h1>
-          <p>Period: ${fromDate} to ${toDate}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th class="text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td colspan="2"><strong>REVENUE</strong></td></tr>
-              ${revenueAccounts
-                .map(
-                  (acc) => `
-                <tr>
-                  <td>${acc.code}-${acc.name}</td>
-                  <td class="text-right">${formatNumber(acc.amount)}</td>
-                </tr>
-              `,
-                )
-                .join("")}
-              <tr class="total-row">
-                <td>Total Revenue</td>
-                <td class="text-right">${formatNumber(totalRevenue)}</td>
-              </tr>
-              <tr><td colspan="2"></td></tr>
-              <tr><td colspan="2"><strong>COST OF GOODS SOLD</strong></td></tr>
-              ${costAccounts
-                .map(
-                  (acc) => `
-                <tr>
-                  <td>${acc.code}-${acc.name}</td>
-                  <td class="text-right">${formatNumber(acc.amount)}</td>
-                </tr>
-              `,
-                )
-                .join("")}
-              <tr class="total-row">
-                <td>Total Cost</td>
-                <td class="text-right">${formatNumber(totalCost)}</td>
-              </tr>
-              <tr class="total-row">
-                <td>${grossProfit >= 0 ? "Gross Profit" : "Gross Loss"}</td>
-                <td class="text-right">${formatNumber(Math.abs(grossProfit))}</td>
-              </tr>
-              <tr><td colspan="2"></td></tr>
-              <tr><td colspan="2"><strong>EXPENSES</strong></td></tr>
-              ${expenseAccounts
-                .map(
-                  (acc) => `
-                <tr>
-                  <td>${acc.code}-${acc.name}</td>
-                  <td class="text-right">${formatNumber(acc.amount)}</td>
-                </tr>
-              `,
-                )
-                .join("")}
-              <tr class="total-row">
-                <td>Total Expenses</td>
-                <td class="text-right">${formatNumber(totalExpenses)}</td>
-              </tr>
-              <tr class="total-row">
-                <td>${netIncome >= 0 ? "Net Income" : "Net Loss"}</td>
-                <td class="text-right">${formatNumber(Math.abs(netIncome))}</td>
-              </tr>
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-    openPrintHtml(html, {
-      onBlocked: () =>
-        toast({
-          title: "Error",
-          description: "Please allow popups to print the report",
-          variant: "destructive",
-        }),
+    const opened = printIncomeStatement({
+      fromDate,
+      toDate,
+      revenue: revenueAccounts.map((acc) => ({
+        label: `${acc.code}-${acc.name}`,
+        amount: acc.amount,
+      })),
+      cost: costAccounts.map((acc) => ({
+        label: `${acc.code}-${acc.name}`,
+        amount: acc.amount,
+      })),
+      expenses: expenseAccounts.map((acc) => ({
+        label: `${acc.code}-${acc.name}`,
+        amount: acc.amount,
+      })),
+      totalRevenue,
+      totalCost,
+      grossProfit,
+      totalExpenses,
+      netIncome,
     });
+
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -265,7 +201,7 @@ export const IncomeStatementReport = () => {
               <Download className="h-4 w-4 mr-1" />
               Export CSV
             </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print" />
+            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
           </div>
         </div>
       </CardHeader>

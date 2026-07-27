@@ -155,7 +155,7 @@ function formatPurchaseOrderStatusLabel(status?: string | null) {
   const normalized = String(status || "")
     .trim()
     .toLowerCase();
-  if (normalized === "purchase invoice pending") return "Purchase Invoice Pending";
+  if (normalized === "purchase invoice pending") return "Invoice Pending";
   if (normalized === "stock receiving pending") return "Stock Receiving Pending";
   if (normalized === "received") return "Received";
   if (normalized === "pending") return "Pending";
@@ -1361,7 +1361,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         .toLowerCase();
       if (poStatus !== "stock receiving pending") {
         toast.info(
-          "Stock receiving is available after Purchase Invoice is saved (status: Stock Receiving Pending).",
+          "Stock receiving is available after Invoice is saved (status: Stock Receiving Pending).",
         );
         return;
       }
@@ -2051,7 +2051,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                           variant="ghost"
                                           size="sm"
                                           disabled
-                                          title="Available after Purchase Invoice is saved (Stock Receiving Pending)"
+                                          title="Available after Invoice is saved (Stock Receiving Pending)"
                                           className="opacity-50 cursor-not-allowed"
                                         >
                                           <CheckCircle className="w-4 h-4" />
@@ -2217,7 +2217,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       variant="ghost"
                                       size="sm"
                                       disabled
-                                      title="Available after Purchase Invoice is saved (Stock Receiving Pending)"
+                                      title="Available after Invoice is saved (Stock Receiving Pending)"
                                       className="opacity-50 cursor-not-allowed"
                                     >
                                       <CheckCircle className="w-4 h-4" />

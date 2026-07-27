@@ -20,6 +20,31 @@ interface PaymentVoucherFormProps {
   onAddSubgroup: () => void;
   onAddAccount: () => void;
   onSave: (data: any) => Promise<boolean>;
+  balanceMap?: Record<string, number>;
+}
+
+function AccountBalance({
+  accountId,
+  balanceMap,
+}: {
+  accountId: string;
+  balanceMap?: Record<string, number>;
+}) {
+  if (!accountId || !balanceMap || !(accountId in balanceMap)) return null;
+  const bal = balanceMap[accountId];
+  const isNeg = bal < 0;
+  const formatted = Math.abs(bal).toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  return (
+    <Input
+      readOnly
+      value={`${formatted} ${isNeg ? "Cr" : "Dr"}`}
+      className={`h-10 bg-muted/30 font-medium ${isNeg ? "text-destructive" : "text-green-600"}`}
+    />
+  );
 }
 
 export const PaymentVoucherForm = ({
@@ -29,6 +54,7 @@ export const PaymentVoucherForm = ({
   onAddSubgroup,
   onAddAccount,
   onSave,
+  balanceMap,
 }: PaymentVoucherFormProps) => {
   const { toast } = useToast();
   const cashBankValues = new Set(cashBankAccounts.map((a) => a.value));
@@ -203,14 +229,20 @@ export const PaymentVoucherForm = ({
       </div>
 
       {/* Cr Account */}
-      <div className="space-y-1">
-        <Label className="text-sm text-primary">Cr Account</Label>
-        <SearchableSelect
-          options={cashBankAccounts}
-          value={crAccount}
-          onValueChange={setCrAccount}
-          placeholder="Select..."
-        />
+      <div className="grid grid-cols-12 gap-4 items-end">
+        <div className="col-span-4 space-y-1">
+          <Label className="text-sm text-primary">Cr Account</Label>
+          <SearchableSelect
+            options={cashBankAccounts}
+            value={crAccount}
+            onValueChange={setCrAccount}
+            placeholder="Select..."
+          />
+        </div>
+        <div className="col-span-2 space-y-1">
+          <Label className="text-sm text-muted-foreground">Balance</Label>
+          <AccountBalance accountId={crAccount} balanceMap={balanceMap} />
+        </div>
       </div>
 
       {/* Entries Table */}
@@ -219,10 +251,13 @@ export const PaymentVoucherForm = ({
           <div className="col-span-3">
             <Label className="text-base font-medium">Account Dr</Label>
           </div>
-          <div className="col-span-4">
+          <div className="col-span-2">
+            <Label className="text-base font-medium">Balance</Label>
+          </div>
+          <div className={isInternationalSupplier ? "col-span-2" : "col-span-3"}>
             <Label className="text-base font-medium">Description</Label>
           </div>
-          <div className={isInternationalSupplier ? "col-span-2" : "col-span-2"}>
+          <div className="col-span-2">
             <Label className="text-base font-medium">{isInternationalSupplier ? "FC Dr" : "Dr"}</Label>
           </div>
           {isInternationalSupplier ? (
@@ -239,12 +274,20 @@ export const PaymentVoucherForm = ({
               <SearchableSelect
                 options={paymentDrOptions}
                 value={entry.accountDr}
-                onValueChange={(v) => updateEntry(entry.id, "accountDr", v)}
+                onValueChange={(v) =>
+                  updateEntry(entry.id, "accountDr", v)
+                }
                 placeholder="Select..."
                 selectedDisplayLabelOnly
               />
             </div>
-            <div className="col-span-4">
+            <div className="col-span-2">
+              <AccountBalance
+                accountId={entry.accountDr}
+                balanceMap={balanceMap}
+              />
+            </div>
+            <div className={isInternationalSupplier ? "col-span-2" : "col-span-3"}>
               <Input
                 placeholder="Description"
                 value={entry.description}

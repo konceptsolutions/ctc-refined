@@ -5,6 +5,7 @@ type RawAccount = {
   code?: string | null;
   name?: string | null;
   status?: string | null;
+  currentBalance?: number | null;
   subgroup?: {
     code?: string | null;
     name?: string | null;
@@ -31,6 +32,28 @@ function getMainGroup(account: RawAccount) {
 export function isActiveLedgerAccount(account: RawAccount): boolean {
   const status = String(account.status ?? "Active").trim().toLowerCase();
   return status === "active";
+}
+
+/** Cash discount ledger (701003 – Cash (Discount)). */
+export function findCashDiscountAccount(
+  rawAccounts: RawAccount[],
+): RawAccount | undefined {
+  return rawAccounts.find(
+    (acc) =>
+      String(acc.code ?? "").trim() === "701003" ||
+      /cash\s*\(discount\)/i.test(String(acc.name ?? "")),
+  );
+}
+
+/** Map of accountId → currentBalance for display in voucher forms. */
+export function buildBalanceMap(rawAccounts: RawAccount[]): Record<string, number> {
+  const map: Record<string, number> = {};
+  rawAccounts.forEach((acc) => {
+    if (acc.currentBalance !== undefined && acc.currentBalance !== null) {
+      map[acc.id] = acc.currentBalance;
+    }
+  });
+  return map;
 }
 
 /** All active chart accounts usable on payment/receipt/journal/contra lines. */

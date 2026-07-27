@@ -941,7 +941,14 @@ export const ViewVouchersTab = ({
     setEditEntries(editEntries.filter((e) => e.id !== id));
   };
 
-  const getVoucherTypeLabel = (type: string) => {
+  const getVoucherTypeLabel = (type: string, voucherNumber?: string) => {
+    if (type === "receipt" && voucherNumber) {
+      const upper = voucherNumber.toUpperCase();
+      if (upper.startsWith("RVC")) return "RVC";
+      if (upper.startsWith("RVCH")) return "RVCH";
+      if (upper.startsWith("RVB")) return "RVB";
+      if (upper.startsWith("RV")) return "RV";
+    }
     switch (type) {
       case "payment": return "PV";
       case "receipt": return "RV";
@@ -1464,7 +1471,11 @@ export const ViewVouchersTab = ({
               <div className="flex items-center gap-3">
                 <div className="bg-primary/10 p-2 rounded">
                   <span className="text-primary font-bold">
-                    {editingVoucher && getVoucherTypeLabel(editingVoucher.type)}
+                    {editingVoucher &&
+                      getVoucherTypeLabel(
+                        editingVoucher.type,
+                        editingVoucher.voucherNumber,
+                      )}
                   </span>
                 </div>
                 <div>
@@ -1472,7 +1483,11 @@ export const ViewVouchersTab = ({
                     {editingVoucher?.type.charAt(0).toUpperCase() + (editingVoucher?.type.slice(1) || "")} Voucher
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    {editingVoucher && getVoucherTypeLabel(editingVoucher.type)}
+                    {editingVoucher &&
+                      getVoucherTypeLabel(
+                        editingVoucher.type,
+                        editingVoucher.voucherNumber,
+                      )}
                     {editIsInternational ? " · International Supplier" : ""}
                   </p>
                 </div>
