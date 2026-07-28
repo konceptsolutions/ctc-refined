@@ -302,18 +302,33 @@ export const VoucherManagement = () => {
     [rawAccounts],
   );
 
-  const applyAccountsData = (accountsData: any[]) => {
+  const applyAccountsData = (
+    accountsData: any[],
+    ledgerBalances?: Record<string, number>,
+  ) => {
     setRawAccounts(accountsData);
     setAccountsList(buildVoucherAccountOptions(accountsData));
-    setBalanceMap(buildBalanceMap(accountsData));
+    if (ledgerBalances && Object.keys(ledgerBalances).length > 0) {
+      setBalanceMap(ledgerBalances);
+    } else {
+      setBalanceMap(buildBalanceMap(accountsData));
+    }
   };
 
   const refreshAccounts = useCallback(async () => {
-    const accountsRes = await apiClient.getAccounts({ status: "Active" });
+    const [accountsRes, balancesRes] = await Promise.all([
+      apiClient.getAccounts({ status: "Active" }),
+      apiClient.getAccountBalances(),
+    ]);
     const raw = accountsRes as any;
     const accountsData = Array.isArray(raw) ? raw : (raw.data || []);
+    const balancesRaw = balancesRes as any;
+    const ledgerBalances =
+      balancesRaw?.data && typeof balancesRaw.data === "object"
+        ? balancesRaw.data
+        : undefined;
     if (accountsData.length > 0) {
-      applyAccountsData(accountsData);
+      applyAccountsData(accountsData, ledgerBalances);
     }
   }, []);
 
@@ -322,9 +337,10 @@ export const VoucherManagement = () => {
     const fetchAllData = async () => {
       try {
         setLoading(true);
-        const [vouchersRes, accountsRes, subgroupsRes, mainGroupsRes] = await Promise.all([
+        const [vouchersRes, accountsRes, balancesRes, subgroupsRes, mainGroupsRes] = await Promise.all([
           apiClient.getVouchers({ limit: 1000 }),
           apiClient.getAccounts({ status: "Active" }),
+          apiClient.getAccountBalances(),
           apiClient.getSubgroups(),
           apiClient.getMainGroups()
         ]);
@@ -350,8 +366,13 @@ export const VoucherManagement = () => {
         const accountsData = Array.isArray(rawAccountsPayload)
           ? rawAccountsPayload
           : (rawAccountsPayload.data || []);
+        const balancesRaw = balancesRes as any;
+        const ledgerBalances =
+          balancesRaw?.data && typeof balancesRaw.data === "object"
+            ? balancesRaw.data
+            : undefined;
         if (accountsData.length > 0) {
-          applyAccountsData(accountsData);
+          applyAccountsData(accountsData, ledgerBalances);
         }
 
         // Update counters locally based on existing vouchers

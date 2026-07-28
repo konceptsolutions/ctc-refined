@@ -7960,7 +7960,7 @@ export const SalesInvoice = ({
 
             {/* Payment Section */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-muted/30 rounded-lg border">
-              <div className="md:col-span-4 grid grid-cols-2 grid-rows-[auto_auto_auto] gap-x-3 gap-y-3 min-w-0 items-start">
+              <div className="md:col-span-4 grid grid-cols-2 grid-rows-[auto_auto_auto_auto] gap-x-3 gap-y-3 min-w-0 items-start">
                 <div className="space-y-2 row-start-1 col-start-1">
                   <Label className="text-xs">Discount</Label>
                   <Input
@@ -7984,7 +7984,16 @@ export const SalesInvoice = ({
                     className="text-sm min-h-[4.5rem]"
                   />
                 </div>
-                <div className="space-y-2 hidden row-start-2 col-start-1">
+                <div
+                  className={cn(
+                    "space-y-2 col-start-1",
+                    isQuotation
+                      ? "hidden"
+                      : isTransferOut
+                        ? "row-start-3"
+                        : "row-start-4",
+                  )}
+                >
                   <Label className="text-xs">Freight Charges</Label>
                   <Input
                     type="number"

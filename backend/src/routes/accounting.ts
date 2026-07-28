@@ -409,6 +409,61 @@ router.get("/accounts", async (req: Request, res: Response) => {
   }
 });
 
+/** Ledger-calculated balances for all accounts (opening + posted voucher entries). */
+router.get("/account-balances", async (req: Request, res: Response) => {
+  try {
+    const accounts = await prisma.account.findMany({
+      include: {
+        Subgroup: {
+          include: {
+            MainGroup: true,
+          },
+        },
+      },
+    });
+
+    const entryTotals = await prisma.voucherEntry.groupBy({
+      by: ["accountId"],
+      where: {
+        accountId: { not: null },
+        Voucher: {
+          status: "posted",
+          OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+        },
+      },
+      _sum: {
+        debit: true,
+        credit: true,
+      },
+    });
+
+    const totalsByAccountId = new Map<string, { debit: number; credit: number }>();
+    for (const row of entryTotals) {
+      if (!row.accountId) continue;
+      totalsByAccountId.set(row.accountId, {
+        debit: row._sum.debit ?? 0,
+        credit: row._sum.credit ?? 0,
+      });
+    }
+
+    const balances: Record<string, number> = {};
+    for (const account of accounts) {
+      const accountType = account.Subgroup?.MainGroup?.type || "asset";
+      const totals = totalsByAccountId.get(account.id) ?? { debit: 0, credit: 0 };
+      balances[account.id] = calculateAccountBalance(
+        account.openingBalance ?? 0,
+        totals.debit,
+        totals.credit,
+        accountType,
+      );
+    }
+
+    res.json({ data: balances });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/accounts", async (req: Request, res: Response) => {
   try {
     const {

@@ -2067,6 +2067,10 @@ class ApiClient {
     );
   }
 
+  async getAccountBalances() {
+    return this.request("/accounting/account-balances");
+  }
+
   async getMainGroups() {
     return this.request("/accounting/main-groups");
   }

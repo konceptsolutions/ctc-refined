@@ -137,37 +137,37 @@ const PurchaseImportListPagination = ({
 const tabs: TabConfig[] = [
   {
     id: "inquiry",
-    label: "Purchase Import Inquiry",
+    label: "Inquiry",
     icon: FileText,
     description: "Create and manage purchase import inquiries",
   },
   {
     id: "quotation",
-    label: "Purchase Quotation",
+    label: "Quotation",
     icon: Check,
     description: "Create quotations from confirmed inquiries",
   },
   {
     id: "revise-quotation",
-    label: "Revise & Confirm Quotation",
+    label: "Revise Quotation",
     icon: Pencil,
-    description: "Revise and confirm open purchase quotations",
+    description: "Revise open purchase quotations",
   },
   {
     id: "confirm-quotation",
-    label: "Confirmed Quotation",
+    label: "Confirmation",
     icon: PackageCheck,
     description: "View confirmed purchase quotations",
   },
   {
     id: "purchase-order",
-    label: "Purchase Order",
+    label: "Shipments",
     icon: ShoppingCart,
     description: "Purchase orders created from confirmed quotations",
   },
   {
     id: "purchase-invoice",
-    label: "Invoice",
+    label: "Invoices",
     icon: Receipt,
     description: "Enter invoice details and import expenses",
   },
@@ -1535,29 +1535,6 @@ const filterAlternateOptions = (
   });
 };
 
-const hasInquiryAlternateConflict = (
-  items: Array<{ partId: string }>,
-  partOptions: PartOption[],
-): boolean => {
-  const partById = new Map(partOptions.map((part) => [part.id, part]));
-  const occupiedKeys = new Set<string>();
-
-  for (const row of items) {
-    if (!row.partId) continue;
-    const part = partById.get(row.partId);
-    if (!part) continue;
-    const keys = [
-      String(part.partNo || "").trim().toLowerCase(),
-      String(part.masterPartNo || "").trim().toLowerCase(),
-    ].filter(Boolean);
-    if (keys.some((key) => occupiedKeys.has(key))) {
-      return true;
-    }
-    keys.forEach((key) => occupiedKeys.add(key));
-  }
-  return false;
-};
-
 const fetchAlternatePartsFromPartsApi = async (
   partId: string,
   current: Pick<PartOption, "partNo" | "masterPartNo">,
@@ -1872,7 +1849,7 @@ const PurchaseImportRequestForm = ({
   const selectedPartIdsKey = items.map((row) => row.partId).join("|");
 
   // One shared options list — never rebuild a full catalog copy per row.
-  // Duplicate / alternate conflicts are enforced on select in fetchPartDetails.
+  // Allow duplicate items/alternates (no uniqueness enforcement on select).
   const partSelectOptions = useMemo(() => {
     const selectedPartIds = new Set(
       selectedPartIdsKey.split("|").filter(Boolean),
@@ -2152,44 +2129,8 @@ const PurchaseImportRequestForm = ({
       return;
     }
 
-    const duplicate = itemsRef.current.find(
-      (row) => row.id !== rowId && row.partId === partId,
-    );
-    if (duplicate) {
-      toast({
-        title: "Part already added",
-        description: "This item is already selected on another row.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+    // Allow duplicate items and alternates; we only validate required fields on save.
     const candidatePart = partById.get(partId);
-    const occupiedKeys = new Set<string>();
-    for (const row of itemsRef.current) {
-      if (row.id === rowId || !row.partId) continue;
-      const selected = partById.get(row.partId);
-      if (!selected) continue;
-      const partNo = String(selected.partNo || "").trim().toLowerCase();
-      const master = String(selected.masterPartNo || "").trim().toLowerCase();
-      if (partNo) occupiedKeys.add(partNo);
-      if (master) occupiedKeys.add(master);
-    }
-    if (candidatePart) {
-      const candidateKeys = [
-        String(candidatePart.partNo || "").trim().toLowerCase(),
-        String(candidatePart.masterPartNo || "").trim().toLowerCase(),
-      ].filter(Boolean);
-      if (candidateKeys.some((key) => occupiedKeys.has(key))) {
-        toast({
-          title: "Alternate item not allowed",
-          description:
-            "An alternate item with the same Part No or Master Part No is already on this inquiry.",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
 
     const localWeight = Number(candidatePart?.weight || 0);
     updateItem(rowId, {
@@ -2302,24 +2243,6 @@ const PurchaseImportRequestForm = ({
     const validItems = currentItems.filter(
       (row) => row.partId && getInquiryRowDemandQuantity(row) > 0,
     );
-    const uniquePartIds = new Set(validItems.map((row) => row.partId));
-    if (uniquePartIds.size !== validItems.length) {
-      toast({
-        title: "Duplicate items",
-        description: "Each item can only be selected once on the inquiry.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (hasInquiryAlternateConflict(validItems, partOptions)) {
-      toast({
-        title: "Alternate items not allowed",
-        description:
-          "You cannot add alternate items with the same Part No or Master Part No on one inquiry.",
-        variant: "destructive",
-      });
-      return;
-    }
     if (validItems.length === 0) {
       toast({
         title: "Items required",
@@ -3723,16 +3646,6 @@ const PurchaseQuotationForm = ({
       return;
     }
 
-    const duplicate = rows.find((row) => row.rowId !== rowId && row.partId === partId);
-    if (duplicate) {
-      toast({
-        title: "Part already added",
-        description: "This part is already on the quotation.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     updateRow(rowId, { partId, loadingPartDetails: true });
     try {
       const res = await apiClient.getPurchaseImportPartDetails(partId);
@@ -3823,21 +3736,12 @@ const PurchaseQuotationForm = ({
   const handleReplaceWithAlternate = async (rowId: string, alternate: PartOption) => {
     if (replacingRowId) return;
 
-    let blocked = false;
+    // Allow duplicate items/alternates on the same quotation.
+    // We still update the selected row immediately, then hydrate details below.
     setRows((prev) => {
       const targetRow = prev.find((row) => row.rowId === rowId);
-      if (!targetRow?.partId) {
-        blocked = true;
-        return prev;
-      }
-      if (alternate.id === targetRow.partId) {
-        blocked = true;
-        return prev;
-      }
-      if (prev.some((row) => row.rowId !== rowId && row.partId === alternate.id)) {
-        blocked = true;
-        return prev;
-      }
+      if (!targetRow) return prev;
+
       const fields = buildQuotationPartFieldsFromSelection(
         alternate,
         null,
@@ -3849,25 +3753,6 @@ const PurchaseQuotationForm = ({
           : row,
       );
     });
-
-    if (blocked) {
-      const targetRow = rows.find((row) => row.rowId === rowId);
-      if (!targetRow?.partId) return;
-      if (alternate.id === targetRow.partId) {
-        toast({
-          title: "Already selected",
-          description: "This item is already on this quotation line.",
-          variant: "destructive",
-        });
-        return;
-      }
-      toast({
-        title: "Part already added",
-        description: "This part is already on the quotation.",
-        variant: "destructive",
-      });
-      return;
-    }
 
     closeReplacePanel();
     setReplacingRowId(rowId);
@@ -4129,7 +4014,7 @@ const PurchaseQuotationForm = ({
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">Purchase Quotation</h2>
+          <h2 className="text-base font-semibold">Quotation</h2>
           <p className="text-sm text-muted-foreground">
             {existingQuotationId
               ? "View and update the saved quotation for this inquiry."
@@ -4729,21 +4614,11 @@ const PurchaseQuotationRevisionForm = ({
   const handleReplaceWithAlternate = async (rowId: string, alternate: PartOption) => {
     if (replacingRowId) return;
 
-    let blocked = false;
+    // Allow duplicate items/alternates on the same quotation.
     setRows((prev) => {
       const targetRow = prev.find((row) => row.rowId === rowId);
-      if (!targetRow?.partId) {
-        blocked = true;
-        return prev;
-      }
-      if (alternate.id === targetRow.partId) {
-        blocked = true;
-        return prev;
-      }
-      if (prev.some((row) => row.rowId !== rowId && row.partId === alternate.id)) {
-        blocked = true;
-        return prev;
-      }
+      if (!targetRow) return prev;
+
       const fields = buildQuotationPartFieldsFromSelection(
         alternate,
         null,
@@ -4755,25 +4630,6 @@ const PurchaseQuotationRevisionForm = ({
           : row,
       );
     });
-
-    if (blocked) {
-      const targetRow = rows.find((row) => row.rowId === rowId);
-      if (!targetRow?.partId) return;
-      if (alternate.id === targetRow.partId) {
-        toast({
-          title: "Already selected",
-          description: "This item is already on this quotation line.",
-          variant: "destructive",
-        });
-        return;
-      }
-      toast({
-        title: "Part already added",
-        description: "This part is already on the quotation.",
-        variant: "destructive",
-      });
-      return;
-    }
 
     closeReplacePanel();
     setReplacingRowId(rowId);
@@ -4979,7 +4835,7 @@ const PurchaseQuotationRevisionForm = ({
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">Revise Purchase Quotation</h2>
+          <h2 className="text-base font-semibold">Revise Quotation</h2>
           <p className="text-sm text-muted-foreground">
             Update quotation with revised FC/LC rates and revised quotation date.
           </p>
@@ -5717,7 +5573,7 @@ const PurchaseInquiryListPanel = ({
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
       {mode === "quotation" && (
         <div>
-          <h2 className="text-base font-semibold">Purchase Quotation</h2>
+          <h2 className="text-base font-semibold">Quotation</h2>
           <p className="text-sm text-muted-foreground">
             Select a confirmed inquiry to create or update a supplier quotation.
           </p>
@@ -6102,14 +5958,14 @@ const PurchaseQuotationListPanel = ({
   >([]);
 
   const isConfirmedView = view === "confirmed";
-  const showUnconfirmAction = action === "revise-confirm";
+  const showUnconfirmAction = action === "revise-confirm" || action === "confirm";
   const openListColSpan = 14;
   const confirmedListColSpan = 12;
   const CONSIGNEE_ORDER = ["ISB", "KHI", "Other"] as const;
   const listStatus =
     view === "confirmed"
       ? ("confirm" as const)
-      : action === "revise-confirm"
+      : action === "revise-confirm" || action === "confirm"
         ? ("all" as const)
         : ("open" as const);
 
@@ -6708,7 +6564,8 @@ const PurchaseQuotationListPanel = ({
                     <td className="p-2 font-mono text-xs">{poNumber}</td>
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        {action === "confirm" || action === "revise-confirm" ? (
+                        {!isConfirmedView &&
+                        (action === "confirm" || action === "revise-confirm") ? (
                           <Button
                             type="button"
                             size="sm"
@@ -6720,7 +6577,8 @@ const PurchaseQuotationListPanel = ({
                             {isConfirmed ? "Confirmed" : "Confirm"}
                           </Button>
                         ) : null}
-                        {action === "revise" || action === "revise-confirm" ? (
+                        {!isConfirmedView &&
+                        (action === "revise" || action === "revise-confirm") ? (
                           <Button
                             type="button"
                             size="sm"
@@ -7682,10 +7540,9 @@ const PurchaseQuotationTab = () => {
 };
 
 const PurchaseReviseQuotationTab = () => {
+  const navigate = useNavigate();
   const [showRevisionForm, setShowRevisionForm] = useState(false);
   const [revisionQuotationId, setRevisionQuotationId] = useState<string | null>(null);
-  const [showConfirmForm, setShowConfirmForm] = useState(false);
-  const [confirmQuotationId, setConfirmQuotationId] = useState<string | null>(null);
   const [listRefreshKey, setListRefreshKey] = useState(0);
 
   if (showRevisionForm && revisionQuotationId) {
@@ -7705,50 +7562,49 @@ const PurchaseReviseQuotationTab = () => {
     );
   }
 
-  if (showConfirmForm && confirmQuotationId) {
-    return (
-      <PurchaseQuotationConfirmForm
-        quotationId={confirmQuotationId}
-        onCancel={() => {
-          setShowConfirmForm(false);
-          setConfirmQuotationId(null);
-        }}
-        onSaved={() => {
-          setShowConfirmForm(false);
-          setConfirmQuotationId(null);
-          setListRefreshKey((value) => value + 1);
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => navigate("/purchase-import/confirm-quotation")}
+        >
+          Back to Confirmation
+        </Button>
+      </div>
+      <PurchaseQuotationListPanel
+        key={listRefreshKey}
+        view="open"
+        action="revise"
+        title="Revise Quotation"
+        description="Review open supplier quotations and revise rates."
+        onRevise={(quotationId) => {
+          setRevisionQuotationId(quotationId);
+          setShowRevisionForm(true);
         }}
       />
-    );
-  }
-
-  return (
-    <PurchaseQuotationListPanel
-      key={listRefreshKey}
-      view="open"
-      action="revise-confirm"
-      title="Revise & Confirm Quotation"
-      description="Review open supplier quotations. Revise rates or confirm to create purchase order(s). Unconfirm is available until Purchase Import is saved."
-      onRevise={(quotationId) => {
-        setRevisionQuotationId(quotationId);
-        setShowRevisionForm(true);
-      }}
-      onConfirm={(quotationId) => {
-        setConfirmQuotationId(quotationId);
-        setShowConfirmForm(true);
-      }}
-    />
+    </div>
   );
 };
 
 const PurchaseConfirmQuotationTab = () => {
   return (
-    <PurchaseQuotationListPanel
-      view="confirmed"
-      action="none"
-      title="Confirmed Quotation"
-      description="Confirmed quotations shown separately for ISB, KHI, and Other purchase orders."
-    />
+    <div className="space-y-4">
+      <PurchaseQuotationListPanel
+        view="open"
+        action="confirm"
+        title="Confirmation"
+        description="Review open supplier quotations and confirm to create shipment record(s)."
+      />
+      <PurchaseQuotationListPanel
+        view="confirmed"
+        action="none"
+        title="Confirmed List"
+        description="Confirmed quotations split by consignee."
+      />
+    </div>
   );
 };
 
@@ -8930,7 +8786,7 @@ const PurchaseOrderTab = ({
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
       <div>
         <h2 className="text-base font-semibold">
-          {isInvoiceMode ? "Invoice" : "Import Purchase Orders"}
+          {isInvoiceMode ? "Invoices" : "Shipments"}
         </h2>
         <p className="text-sm text-muted-foreground">
           {isInvoiceMode
@@ -9124,9 +8980,9 @@ const PurchaseOrderTab = ({
       <Dialog open={!!viewOrderId} onOpenChange={(open) => !open && setViewOrderId(null)}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              Purchase Order {viewOrder?.po_number || viewOrder?.poNumber || ""}
-            </DialogTitle>
+                  <DialogTitle>
+                    Shipment {viewOrder?.po_number || viewOrder?.poNumber || ""}
+                  </DialogTitle>
           </DialogHeader>
           {loadingDetail ? (
             <p className="text-sm text-muted-foreground">Loading order details...</p>

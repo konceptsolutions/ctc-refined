@@ -45,7 +45,7 @@ export function findCashDiscountAccount(
   );
 }
 
-/** Map of accountId → currentBalance for display in voucher forms. */
+/** Map of accountId → ledger balance for display in voucher forms. */
 export function buildBalanceMap(rawAccounts: RawAccount[]): Record<string, number> {
   const map: Record<string, number> = {};
   rawAccounts.forEach((acc) => {
