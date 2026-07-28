@@ -46,6 +46,8 @@ export interface Customer {
   address?: string;
   area?: string | null;
   balance?: number;
+  /** Receivable ledger account for the customer (used for ledger-based previous balance). */
+  accountId?: string | null;
   creditLimit?: number;
   creditDays?: number;
   priceType?: "A" | "B" | "M" | null;
@@ -181,6 +183,8 @@ export interface Invoice {
   /** Present on sales invoices converted from quotations */
   quotationId?: string | null;
   remarks?: string | null;
+  previousBalance?: number;
+  customerBalance?: number;
 }
 
 export interface StockReservation {

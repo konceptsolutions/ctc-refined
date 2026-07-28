@@ -1787,6 +1787,80 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
+    // Compute invoice-time receivable balances from ledger entries instead of
+    // relying on Account.currentBalance (which can drift from historical view).
+    let previousBalance: number | undefined;
+    let customerBalance: number | undefined;
+    const receivableEntry = await prisma.voucherEntry.findFirst({
+      where: {
+        salesInvoiceId: id,
+        accountId: { not: null },
+        Voucher: { status: "posted" },
+        Account: {
+          Subgroup: { code: "105" },
+        },
+      },
+      include: {
+        Voucher: {
+          select: { id: true, date: true, createdAt: true },
+        },
+        Account: {
+          include: {
+            Subgroup: {
+              include: { MainGroup: true },
+            },
+          },
+        },
+      },
+      orderBy: [{ Voucher: { date: "asc" } }, { sortOrder: "asc" }],
+    });
+
+    if (receivableEntry?.accountId && receivableEntry.Account) {
+      const accountType =
+        (receivableEntry.Account as any).Subgroup?.MainGroup?.type || "asset";
+      const calcChange = (debit: number, credit: number) =>
+        ["asset", "expense", "cost"].includes(String(accountType).toLowerCase())
+          ? debit - credit
+          : credit - debit;
+
+      const priorEntries = await prisma.voucherEntry.findMany({
+        where: {
+          accountId: receivableEntry.accountId,
+          Voucher: {
+            status: "posted",
+            AND: [
+              { OR: [{ isCleared: null }, { isCleared: { not: 0 } }] },
+              {
+                OR: [
+                  { date: { lt: receivableEntry.Voucher.date } },
+                  {
+                    date: receivableEntry.Voucher.date,
+                    createdAt: { lt: receivableEntry.Voucher.createdAt },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      });
+
+      const priorDebit = priorEntries.reduce((sum, e) => sum + (e.debit || 0), 0);
+      const priorCredit = priorEntries.reduce(
+        (sum, e) => sum + (e.credit || 0),
+        0,
+      );
+
+      previousBalance =
+        Number(receivableEntry.Account.openingBalance || 0) +
+        calcChange(priorDebit, priorCredit);
+      customerBalance =
+        previousBalance +
+        calcChange(
+          Number(receivableEntry.debit || 0),
+          Number(receivableEntry.credit || 0),
+        );
+    }
+
     const stockMovements = await prisma.stockMovement.findMany({
       where: {
         referenceType: "sales_invoice",
@@ -1801,7 +1875,7 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
       orderBy: { createdAt: "asc" },
     });
 
-    res.json({ ...invoice, stockMovements });
+    res.json({ ...invoice, stockMovements, previousBalance, customerBalance });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

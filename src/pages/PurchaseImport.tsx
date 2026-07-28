@@ -7590,13 +7590,39 @@ const PurchaseReviseQuotationTab = () => {
 };
 
 const PurchaseConfirmQuotationTab = () => {
+  const [showConfirmForm, setShowConfirmForm] = useState(false);
+  const [confirmQuotationId, setConfirmQuotationId] = useState<string | null>(null);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
+
+  if (showConfirmForm && confirmQuotationId) {
+    return (
+      <PurchaseQuotationConfirmForm
+        quotationId={confirmQuotationId}
+        onCancel={() => {
+          setShowConfirmForm(false);
+          setConfirmQuotationId(null);
+        }}
+        onSaved={() => {
+          setShowConfirmForm(false);
+          setConfirmQuotationId(null);
+          setListRefreshKey((value) => value + 1);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PurchaseQuotationListPanel
+        key={listRefreshKey}
         view="open"
         action="confirm"
         title="Confirmation"
         description="Review open supplier quotations and confirm to create shipment record(s)."
+        onConfirm={(quotationId) => {
+          setConfirmQuotationId(quotationId);
+          setShowConfirmForm(true);
+        }}
       />
       <PurchaseQuotationListPanel
         view="confirmed"

@@ -11,8 +11,17 @@ const customerUsageInclude = {
       code: true,
       currentBalance: true,
       status: true,
+      customerId: true,
+      openingBalance: true,
+      Subgroup: {
+        select: {
+          code: true,
+          MainGroup: { select: { type: true } },
+        },
+      },
       _count: { select: { VoucherEntry: true } },
     },
+    orderBy: { createdAt: "asc" as const },
   },
   _count: {
     select: {
@@ -24,6 +33,54 @@ const customerUsageInclude = {
     },
   },
 } as const;
+
+const pickPrimaryReceivableAccountFromCustomer = (customer: any) => {
+  const accounts = Array.isArray(customer?.Account) ? customer.Account : [];
+  const isReceivable = (a: any) =>
+    String(a?.code || "").startsWith("105") ||
+    String(a?.Subgroup?.code || "") === "105";
+
+  return (
+    accounts.find((a: any) => a.customerId === customer.id && isReceivable(a)) ||
+    accounts.find((a: any) => a.customerId === customer.id) ||
+    accounts.find((a: any) => isReceivable(a)) ||
+    accounts[0] ||
+    null
+  );
+};
+
+const calculateBalanceChangeByType = (
+  debit: number,
+  credit: number,
+  accountType: string,
+) => {
+  const t = String(accountType || "").toLowerCase();
+  if (["asset", "expense", "cost"].includes(t)) return debit - credit;
+  return credit - debit;
+};
+
+async function getLiveLedgerBalanceForAccount(account: any): Promise<number> {
+  if (!account?.id) return 0;
+  const aggregate = await prisma.voucherEntry.aggregate({
+    where: {
+      accountId: account.id,
+      Voucher: {
+        status: "posted",
+        OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+      },
+    },
+    _sum: {
+      debit: true,
+      credit: true,
+    },
+  });
+
+  const totalDebit = Number(aggregate._sum.debit || 0);
+  const totalCredit = Number(aggregate._sum.credit || 0);
+  const opening = Number(account.openingBalance || 0);
+  const accountType = String(account?.Subgroup?.MainGroup?.type || "asset");
+  return opening + calculateBalanceChangeByType(totalDebit, totalCredit, accountType);
+}
 
 const customerCanBeDeleted = (customer: any) =>
   Number(customer.openingBalance || 0) === 0 &&
@@ -180,24 +237,23 @@ router.get("/", async (req, res) => {
     const paginatedCustomers = filteredCustomers.slice(skip, skip + limitNum);
 
     // Map customers to include accountId and balance from linked receivable account
-    const customersWithAccountId = paginatedCustomers.map((customer: any) => {
-      // Find the primary account (usually starting with 105 for receivables)
-      const primaryAccount =
-        customer.Account?.find((a: any) => a.code?.startsWith("105")) ||
-        customer.Account?.[0];
+    const customersWithAccountId = await Promise.all(paginatedCustomers.map(async (customer: any) => {
+      // Resolve primary receivable account deterministically to match ledger.
+      const primaryAccount = pickPrimaryReceivableAccountFromCustomer(customer);
+      const liveBalance = primaryAccount
+        ? await getLiveLedgerBalanceForAccount(primaryAccount)
+        : Number(customer.openingBalance || 0);
 
       return {
         ...customer,
         canDelete: customerCanBeDeleted(customer),
-        balance: primaryAccount
-          ? Number(primaryAccount.currentBalance ?? 0)
-          : Number(customer.openingBalance || 0),
+        balance: liveBalance,
         accountId: primaryAccount?.id || null,
         accounts: undefined, // Remove accounts array from response
         Account: undefined, // Clean up unused relations
         _count: undefined,
       };
-    });
+    }));
 
     res.json({
       data: customersWithAccountId,
@@ -220,7 +276,21 @@ router.get("/:id", async (req, res) => {
       where: { id: req.params.id },
       include: {
         Account: {
-          select: { id: true, code: true, currentBalance: true, status: true },
+          select: {
+            id: true,
+            code: true,
+            currentBalance: true,
+            status: true,
+            customerId: true,
+            openingBalance: true,
+            Subgroup: {
+              select: {
+                code: true,
+                MainGroup: { select: { type: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
         },
       },
     });
@@ -229,13 +299,11 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Customer not found" });
     }
 
-    // Find primary account (starting with 105)
-    const primaryAccount =
-      customer.Account?.find((a: any) => a.code?.startsWith("105")) ||
-      customer.Account?.[0];
+    // Resolve primary receivable account deterministically to match ledger.
+    const primaryAccount = pickPrimaryReceivableAccountFromCustomer(customer);
 
     const balance = primaryAccount
-      ? Number(primaryAccount.currentBalance ?? 0)
+      ? await getLiveLedgerBalanceForAccount(primaryAccount)
       : Number(customer.openingBalance || 0);
     const accountId = primaryAccount?.id || null;
 

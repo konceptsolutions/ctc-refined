@@ -592,6 +592,11 @@ export const SalesInvoice = ({
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [ledgerPreviousBalance, setLedgerPreviousBalance] = useState<
+    number | null
+  >(null);
+  const [loadingLedgerPreviousBalance, setLoadingLedgerPreviousBalance] =
+    useState(false);
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
   const [customerPriceType, setCustomerPriceType] = useState<
     "A" | "B" | "M" | null
@@ -2983,6 +2988,7 @@ export const SalesInvoice = ({
               cellNumber: c.cellNumber || c.cell_number || "",
               phone: c.contactNo || c.cellNumber || c.phone || "",
               balance: c.balance || 0,
+              accountId: c.accountId || c.account_id || null,
               creditLimit: c.creditLimit || 0,
               creditDays: c.creditDays || 0,
               priceType: c.priceType || null,
@@ -3009,6 +3015,56 @@ export const SalesInvoice = ({
       fetchCustomers();
     }
   }, [isTransferOut]);
+
+  // Compute previous balance using ledger up to the selected invoice date.
+  // This makes the "Previous Balance" match the Ledger screen.
+  useEffect(() => {
+    const fetchLedgerBalance = async () => {
+      if (isTransferOut) {
+        setLedgerPreviousBalance(null);
+        return;
+      }
+      if (newInvoice.customerType !== "registered") {
+        setLedgerPreviousBalance(null);
+        return;
+      }
+      if (!selectedCustomerId) return;
+
+      const customer = customers.find((c) => c.id === selectedCustomerId);
+      const accountId = (customer as any)?.accountId || null;
+      if (!accountId) {
+        setLedgerPreviousBalance(Number(customer?.balance ?? 0) || 0);
+        return;
+      }
+
+      setLedgerPreviousBalance(null);
+      setLoadingLedgerPreviousBalance(true);
+      try {
+        const resp: any = await apiClient.getLedgers({
+          account: accountId,
+          to_date: invoiceDate,
+          page: 1,
+          limit: 1000,
+        });
+
+        const entries = Array.isArray(resp?.data)
+          ? resp.data
+          : Array.isArray(resp?.data?.data)
+            ? resp.data.data
+            : [];
+
+        const last = entries.length ? entries[entries.length - 1] : null;
+        const bal = Number(last?.balance ?? 0);
+        setLedgerPreviousBalance(Number.isFinite(bal) ? bal : 0);
+      } catch {
+        setLedgerPreviousBalance(null);
+      } finally {
+        setLoadingLedgerPreviousBalance(false);
+      }
+    };
+
+    fetchLedgerBalance();
+  }, [selectedCustomerId, invoiceDate, newInvoice.customerType, isTransferOut, customers]);
 
   useEffect(() => {
     if (!editingInvoiceId || selectedCustomerId) return;
@@ -6161,6 +6217,14 @@ export const SalesInvoice = ({
       const fullInv = resp?.data || resp;
       setInvoiceForPrint({
         ...invoice,
+        previousBalance:
+          fullInv?.previousBalance != null
+            ? Number(fullInv.previousBalance)
+            : invoice.previousBalance,
+        customerBalance:
+          fullInv?.customerBalance != null
+            ? Number(fullInv.customerBalance)
+            : invoice.customerBalance,
         taxPercentage:
           fullInv?.taxPercentage != null
             ? Number(fullInv.taxPercentage)
@@ -8442,9 +8506,14 @@ export const SalesInvoice = ({
                             Previous Balance:
                           </span>
                           <span
-                            className={`font-semibold tracking-tight ${customer.balance && customer.balance > 0 ? "text-red-600" : "text-emerald-600"}`}
+                            className={`font-semibold tracking-tight ${(ledgerPreviousBalance ?? customer.balance ?? 0) && (ledgerPreviousBalance ?? customer.balance ?? 0) > 0 ? "text-red-600" : "text-emerald-600"}`}
                           >
-                            Rs {customer.balance?.toFixed(2) || "0.00"}
+                            Rs{" "}
+                            {loadingLedgerPreviousBalance
+                              ? "0.00"
+                              : (ledgerPreviousBalance ?? customer.balance ?? 0).toFixed(
+                                  2,
+                                )}
                           </span>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap text-[11px] bg-background/50 py-1 px-2 rounded border border-border/40">

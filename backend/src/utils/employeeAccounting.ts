@@ -391,25 +391,15 @@ export async function postOpeningBalanceJv(params: {
   amount: number;
   accountRole: EmployeeAccountRole;
 }) {
-  const voucher = await postEmployeeOpeningBalanceChange({
+  // Opening is carried only by the JV — do not set Account.openingBalance
+  // or ledgers will double-count (static OB row + voucher).
+  return postEmployeeOpeningBalanceChange({
     ...params,
     amount: params.amount,
     narration: `Employee opening balance: ${params.employeeName} (${params.employeeCode})`,
     entryDescription: `Opening balance (${params.accountRole})`,
     offsetDescription: "Employee opening balance offset",
   });
-
-  if (!voucher) return null;
-
-  await prisma.account.update({
-    where: { id: params.account.id },
-    data: {
-      openingBalance: params.amount,
-      updatedAt: new Date(),
-    },
-  });
-
-  return voucher;
 }
 
 export async function adjustEmployeeOpeningBalance(params: {
@@ -425,7 +415,9 @@ export async function adjustEmployeeOpeningBalance(params: {
   const delta = params.newOpening - params.previousOpening;
   if (Math.abs(delta) < 0.01) return null;
 
-  const voucher = await postEmployeeOpeningBalanceChange({
+  // Opening is carried only by the JV — do not set Account.openingBalance
+  // or ledgers will double-count (static OB row + voucher).
+  return postEmployeeOpeningBalanceChange({
     employeeId: params.employeeId,
     employeeName: params.employeeName,
     employeeCode: params.employeeCode,
@@ -437,18 +429,6 @@ export async function adjustEmployeeOpeningBalance(params: {
     entryDescription: `Opening balance adjustment (${params.accountRole})`,
     offsetDescription: "Employee opening balance adjustment offset",
   });
-
-  if (!voucher) return null;
-
-  await prisma.account.update({
-    where: { id: params.account.id },
-    data: {
-      openingBalance: params.newOpening,
-      updatedAt: new Date(),
-    },
-  });
-
-  return voucher;
 }
 
 async function postEmployeeOpeningBalanceChange(params: {

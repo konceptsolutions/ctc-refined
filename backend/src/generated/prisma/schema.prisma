@@ -512,6 +512,7 @@ model Part {
   StockReservation              StockReservation[]
   StockVerificationItem         StockVerificationItem[]
   TransferItem                  TransferItem[]
+  LocalInquiryItem              LocalInquiryItem[]
 }
 
 model KitItem {
@@ -807,6 +808,32 @@ model SalesInquiryItem {
   createdAt     DateTime     @default(now())
   SalesInquiry  SalesInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
   Part          Part         @relation(fields: [partId], references: [id], onDelete: Cascade)
+}
+
+model LocalInquiry {
+  id               String             @id @default(uuid())
+  inquiryNo        String             @unique
+  inquiryDate      DateTime
+  supplierId       String?
+  remarks          String?
+  status           String             @default("Open")
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  Supplier         Supplier?          @relation(fields: [supplierId], references: [id])
+  LocalInquiryItem LocalInquiryItem[]
+}
+
+model LocalInquiryItem {
+  id           String       @id @default(uuid())
+  inquiryId    String
+  partId       String
+  quantity     Int          @default(1)
+  price        Float        @default(0)
+  remarks      String?
+  sortOrder    Int          @default(0)
+  createdAt    DateTime     @default(now())
+  LocalInquiry LocalInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  Part         Part         @relation(fields: [partId], references: [id], onDelete: Cascade)
 }
 
 model SalesInvoice {
@@ -1171,6 +1198,7 @@ model Supplier {
   PurchaseQuotation         PurchaseQuotation[]
   StockMovement             StockMovement[]
   VoucherEntry              VoucherEntry[]
+  LocalInquiry              LocalInquiry[]
 }
 
 model Transfer {
