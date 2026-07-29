@@ -4843,4 +4843,213 @@ router.get("/requests", async (req: Request, res: Response) => {
   }
 });
 
+// GET /part-inquiry?partId=...
+// Returns PO/CO/BO qty split by ISB and KHI, plus PO records and quotation records.
+router.get("/part-inquiry", async (req: Request, res: Response) => {
+  try {
+    const partId = String(req.query.partId || "").trim();
+    if (!partId) {
+      return res.status(400).json({ error: "partId is required" });
+    }
+
+    const emptyQty = () => ({ isb: { po: 0, co: 0, bo: 0 }, khi: { po: 0, co: 0, bo: 0 } });
+    const qty = emptyQty();
+
+    const normalizeConsignee = (value: unknown): "isb" | "khi" | null => {
+      const raw = String(value || "").trim().toUpperCase();
+      if (raw === "ISB" || raw === "ISD" || raw.includes("ISLAMABAD")) return "isb";
+      if (raw === "KHI" || raw.includes("KARACHI")) return "khi";
+      return null;
+    };
+
+    const consigneeFromStore = (store: any): "isb" | "khi" | null => {
+      const text = `${store?.code || ""} ${store?.name || ""}`.toUpperCase();
+      if (text.includes("ISB") || text.includes("ISLAMABAD")) return "isb";
+      if (text.includes("KHI") || text.includes("KARACHI")) return "khi";
+      return null;
+    };
+
+    const addQty = (loc: "isb" | "khi", field: "po" | "co" | "bo", amount: number) => {
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      qty[loc][field] += amount;
+    };
+
+    // --- Import PO items ---
+    const poItems = await (prisma as any).purchaseOrderItem.findMany({
+      where: { partId },
+      include: {
+        PurchaseOrder: {
+          select: {
+            id: true,
+            poNumber: true,
+            date: true,
+            status: true,
+            currency: true,
+            consignee: true,
+            purchaseQuotationId: true,
+            Supplier: { select: { id: true, name: true, companyName: true } },
+          },
+        },
+      },
+    });
+
+    // --- Direct PO items ---
+    const dpoItems = await (prisma as any).directPurchaseOrderItem.findMany({
+      where: { partId },
+      include: {
+        DirectPurchaseOrder: {
+          select: {
+            id: true,
+            dpoNumber: true,
+            date: true,
+            status: true,
+            Supplier: { select: { id: true, name: true, companyName: true } },
+            Store: { select: { id: true, code: true, name: true } },
+          },
+        },
+      },
+    });
+
+    // --- Quotation items ---
+    const quotationItems = await (prisma as any).purchaseQuotationItem.findMany({
+      where: { partId },
+      include: {
+        PurchaseQuotation: {
+          select: {
+            id: true,
+            quotationNo: true,
+            quotationDate: true,
+            confirmationDate: true,
+            status: true,
+            currency: true,
+            Supplier: { select: { id: true, name: true, companyName: true } },
+            PurchaseImportRequest: {
+              select: { requestNo: true, consignee: true },
+            },
+          },
+        },
+      },
+    });
+
+    // --- Inquiry items (for PO when import form filled but no PO yet) ---
+    const inquiryItems = await (prisma as any).purchaseImportRequestItem.findMany({
+      where: { partId },
+      include: {
+        PurchaseImportRequest: {
+          select: {
+            id: true,
+            requestNo: true,
+            consignee: true,
+            status: true,
+            PurchaseQuotation: {
+              select: {
+                id: true,
+                PurchaseOrder: { select: { id: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const requestHasPo = (request: any) =>
+      (request?.PurchaseQuotation || []).some(
+        (q: any) => (q.PurchaseOrder || []).length > 0,
+      );
+
+    for (const item of inquiryItems) {
+      const request = item.PurchaseImportRequest;
+      if (!request || requestHasPo(request)) continue;
+      addQty("isb", "po", Number(item.isbQuantity || 0));
+      addQty("khi", "po", Number(item.khiQuantity || 0));
+    }
+
+    for (const item of poItems) {
+      const loc = normalizeConsignee(item.PurchaseOrder?.consignee);
+      const quantity = Number(item.quantity || 0);
+      const backQty = Number(item.backQty || 0);
+      if (loc) {
+        addQty(loc, "po", quantity);
+        addQty(loc, "bo", backQty);
+      }
+    }
+
+    for (const item of dpoItems) {
+      const loc = consigneeFromStore(item.DirectPurchaseOrder?.Store);
+      if (loc) {
+        addQty(loc, "po", Number(item.quantity || 0));
+      }
+    }
+
+    const confirmedQuotationItems = quotationItems.filter((item: any) => {
+      const status = String(item.PurchaseQuotation?.status || "").toLowerCase();
+      return status === "confirm" || status === "confirmed";
+    });
+
+    for (const item of confirmedQuotationItems) {
+      const loc = normalizeConsignee(
+        item.PurchaseQuotation?.PurchaseImportRequest?.consignee,
+      );
+      const quotationQty = Number(item.quotationQuantity || 0);
+      if (loc) {
+        addQty(loc, "co", quotationQty);
+      }
+    }
+
+    const poRecords = poItems.map((item: any) => ({
+      id: item.PurchaseOrder?.id,
+      type: item.PurchaseOrder?.purchaseQuotationId ? "Import" : "PO",
+      poNo: item.PurchaseOrder?.poNumber,
+      date: item.PurchaseOrder?.date,
+      status: item.PurchaseOrder?.status,
+      currency: item.PurchaseOrder?.currency,
+      consignee: item.PurchaseOrder?.consignee,
+      supplier: item.PurchaseOrder?.Supplier?.name || item.PurchaseOrder?.Supplier?.companyName,
+      qty: item.quantity,
+      receivedQty: item.receivedQty,
+      backQty: item.backQty,
+      unitCost: item.unitCost,
+      fcRate: item.fcRate,
+    }));
+
+    const dpoRecords = dpoItems.map((item: any) => ({
+      id: item.DirectPurchaseOrder?.id,
+      type: "DPO",
+      poNo: item.DirectPurchaseOrder?.dpoNumber,
+      date: item.DirectPurchaseOrder?.date,
+      status: item.DirectPurchaseOrder?.status,
+      consignee: consigneeFromStore(item.DirectPurchaseOrder?.Store) || null,
+      supplier: item.DirectPurchaseOrder?.Supplier?.name || item.DirectPurchaseOrder?.Supplier?.companyName,
+      qty: item.quantity,
+      unitCost: item.purchasePrice,
+    }));
+
+    const quotationRecords = quotationItems.map((item: any) => ({
+      id: item.id,
+      quotationId: item.PurchaseQuotation?.id,
+      quotationNo: item.PurchaseQuotation?.quotationNo,
+      date: item.PurchaseQuotation?.quotationDate,
+      confirmationDate: item.PurchaseQuotation?.confirmationDate,
+      status: item.PurchaseQuotation?.status,
+      currency: item.PurchaseQuotation?.currency,
+      requestNo: item.PurchaseQuotation?.PurchaseImportRequest?.requestNo,
+      consignee: item.PurchaseQuotation?.PurchaseImportRequest?.consignee,
+      supplier: item.PurchaseQuotation?.Supplier?.name || item.PurchaseQuotation?.Supplier?.companyName,
+      demandQty: item.demandQuantity,
+      quotationQty: item.quotationQuantity,
+      fcRate: item.fcRate || item.revisedFcRate,
+      lcRate: item.lcRate || item.revisedLcRate,
+    }));
+
+    res.json({
+      isb: qty.isb,
+      khi: qty.khi,
+      poRecords: [...poRecords, ...dpoRecords],
+      quotationRecords,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

@@ -643,7 +643,19 @@ export const VoucherManagement = () => {
     } else if (data.type === "receipt") {
       const cashReceived =
         Number(data.totalReceived ?? data.totalAmount ?? 0) || 0;
-      const cashDiscount = Number(data.cashDiscount ?? 0) || 0;
+
+      // Cash discount is per-line on the receipt form (cash receipt vouchers only).
+      const discountLines = paymentReceiptEntries
+        .map((entry: any) => ({
+          accountCr: entry.accountCr ?? entry.account,
+          discount: Number(entry.cashDiscount ?? 0) || 0,
+        }))
+        .filter((l: any) => l.discount > 0 && !!l.accountCr);
+
+      const cashDiscount = discountLines.reduce(
+        (sum: number, l: any) => sum + (Number(l.discount) || 0),
+        0,
+      );
       const voucherTotal = cashReceived + cashDiscount;
 
       // Convert Receipt Voucher data — Cr lines are cash received per account
@@ -668,25 +680,23 @@ export const VoucherManagement = () => {
 
       // Cash discount: Dr Cash (Discount), Cr selected Account Cr line
       if (cashDiscount > 0 && data.cashDiscountAccount) {
-        const discountCrAccount = paymentReceiptEntries.find(
-          (entry: any) => entry.accountCr,
-        )?.accountCr;
-
-        entries.push({
-          id: `dr-disc-${Date.now()}`,
-          account: data.cashDiscountAccount,
-          description: "Cash discount",
-          debit: cashDiscount,
-          credit: 0,
-        });
-
-        if (discountCrAccount) {
+        // Create a cash discount journal pair per account line
+        // so the Cr side matches the same account that received the amount.
+        for (const line of discountLines) {
           entries.push({
-            id: `cr-disc-${Date.now()}`,
-            account: discountCrAccount,
+            id: `dr-disc-${Date.now()}-${String(line.accountCr)}`,
+            account: data.cashDiscountAccount,
+            description: "Cash discount",
+            debit: line.discount,
+            credit: 0,
+          });
+
+          entries.push({
+            id: `cr-disc-${Date.now()}-${String(line.accountCr)}`,
+            account: line.accountCr,
             description: "Cash discount",
             debit: 0,
-            credit: cashDiscount,
+            credit: line.discount,
           });
         }
       }

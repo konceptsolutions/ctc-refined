@@ -11,6 +11,7 @@ interface VoucherEntry {
   accountCr: string;
   description: string;
   crAmount: number;
+  cashDiscount: number;
 }
 
 type ReceiptVoucherKind = "cash" | "bank" | "cheque";
@@ -112,9 +113,8 @@ export const ReceiptVoucherForm = ({
   const [drAccount, setDrAccount] = useState("");
   const [chequeNumber, setChequeNumber] = useState("");
   const [chequeDate, setChequeDate] = useState("");
-  const [cashDiscount, setCashDiscount] = useState(0);
   const [entries, setEntries] = useState<VoucherEntry[]>([
-    { id: "1", accountCr: "", description: "", crAmount: 0 },
+    { id: "1", accountCr: "", description: "", crAmount: 0, cashDiscount: 0 },
   ]);
 
   useEffect(() => {
@@ -122,7 +122,6 @@ export const ReceiptVoucherForm = ({
     setDrAccount("");
     setChequeNumber("");
     setChequeDate("");
-    setCashDiscount(0);
     // Reset form fields when switching cash / bank / cheque receipt type
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receiptKind]);
@@ -136,7 +135,13 @@ export const ReceiptVoucherForm = ({
   const addEntry = () => {
     setEntries([
       ...entries,
-      { id: Date.now().toString(), accountCr: "", description: "", crAmount: 0 },
+      {
+        id: Date.now().toString(),
+        accountCr: "",
+        description: "",
+        crAmount: 0,
+        cashDiscount: 0,
+      },
     ]);
   };
 
@@ -165,7 +170,9 @@ export const ReceiptVoucherForm = ({
     (sum, e) => sum + (Number(e.crAmount) || 0),
     0,
   );
-  const discountAmount = receiptKind === "cash" ? Number(cashDiscount) || 0 : 0;
+  const discountAmount = receiptKind === "cash"
+    ? entries.reduce((sum, e) => sum + (Number(e.cashDiscount) || 0), 0)
+    : 0;
   const totalAmount = totalReceived + discountAmount;
 
   const [saving, setSaving] = useState(false);
@@ -214,8 +221,12 @@ export const ReceiptVoucherForm = ({
         });
         return;
       }
-      const crAccountForDiscount = entries.find((e) => e.accountCr)?.accountCr;
-      if (!crAccountForDiscount) {
+
+      // If a line has discount, it must have its own Account Cr selected.
+      const invalidDiscountLine = entries.find(
+        (e) => Number(e.cashDiscount || 0) > 0 && !e.accountCr,
+      );
+      if (invalidDiscountLine) {
         toast({
           title: "Error",
           description: "Select Account Cr before applying cash discount",
@@ -269,8 +280,7 @@ export const ReceiptVoucherForm = ({
       setDrAccount("");
       setChequeNumber("");
       setChequeDate("");
-      setCashDiscount(0);
-      setEntries([{ id: "1", accountCr: "", description: "", crAmount: 0 }]);
+      setEntries([{ id: "1", accountCr: "", description: "", crAmount: 0, cashDiscount: 0 }]);
     } finally {
       setSaving(false);
     }
@@ -383,44 +393,33 @@ export const ReceiptVoucherForm = ({
           <Label className="text-sm text-muted-foreground">Balance</Label>
           <AccountBalance accountId={drAccount} balanceMap={balanceMap} />
         </div>
-        {receiptKind === "cash" && (
-          <div className="col-span-3 space-y-1">
-            <Label className="text-sm text-muted-foreground">Cash Discount</Label>
-            <Input
-              type="number"
-              placeholder="0.00"
-              value={cashDiscount || ""}
-              onChange={(e) =>
-                setCashDiscount(parseFloat(e.target.value) || 0)
-              }
-              step="0.01"
-              min="0"
-              className="h-10"
-            />
-          </div>
-        )}
       </div>
 
       <div className="space-y-4">
         <div className="grid grid-cols-12 gap-4 items-center">
-          <div className="col-span-4">
+          <div className={receiptKind === "cash" ? "col-span-3" : "col-span-4"}>
             <Label className="text-base font-medium">Account Cr</Label>
           </div>
           <div className="col-span-2">
             <Label className="text-base font-medium">Balance</Label>
           </div>
-          <div className="col-span-3">
+          <div className={receiptKind === "cash" ? "col-span-2" : "col-span-3"}>
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2">
             <Label className="text-base font-medium">Cr</Label>
           </div>
+          {receiptKind === "cash" && (
+            <div className="col-span-2">
+              <Label className="text-base font-medium">Cash Discount</Label>
+            </div>
+          )}
           <div className="col-span-1"></div>
         </div>
 
         {entries.map((entry) => (
           <div key={entry.id} className="grid grid-cols-12 gap-4 items-center">
-            <div className="col-span-4">
+            <div className={receiptKind === "cash" ? "col-span-3" : "col-span-4"}>
               <SearchableSelect
                 options={receiptCrOptions}
                 value={entry.accountCr}
@@ -435,7 +434,7 @@ export const ReceiptVoucherForm = ({
                 balanceMap={balanceMap}
               />
             </div>
-            <div className="col-span-3">
+            <div className={receiptKind === "cash" ? "col-span-2" : "col-span-3"}>
               <Input
                 placeholder="Description"
                 value={entry.description}
@@ -459,6 +458,24 @@ export const ReceiptVoucherForm = ({
                 className="h-10"
               />
             </div>
+
+            {receiptKind === "cash" && (
+              <div className="col-span-2">
+                <Input
+                  type="number"
+                  placeholder="discount"
+                  value={entry.cashDiscount || ""}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 0;
+                    updateEntry(entry.id, "cashDiscount", value);
+                  }}
+                  step="0.01"
+                  min="0"
+                  className="h-10"
+                />
+              </div>
+            )}
+
             <div className="col-span-1 flex justify-center">
               <Button
                 variant="ghost"

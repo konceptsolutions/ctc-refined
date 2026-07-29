@@ -2854,6 +2854,10 @@ class ApiClient {
     });
   }
 
+  async getPurchaseInquiryByPart(partId: string) {
+    return this.request(`/purchase-import/part-inquiry?partId=${encodeURIComponent(partId)}`);
+  }
+
   async getPurchaseImportExpectedArrivals(partIds: string[]) {
     const ids = Array.from(
       new Set(partIds.map((id) => String(id || "").trim()).filter(Boolean)),
