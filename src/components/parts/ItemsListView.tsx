@@ -195,6 +195,7 @@ interface ItemsListViewProps {
   brandOptions?: { value: string; label: string }[];
   descriptionOptions?: { value: string; label: string }[];
   masterPartOptions?: { value: string; label: string }[];
+  partNoOptions?: { value: string; label: string }[];
 }
 
 export const ItemsListView = ({
@@ -226,6 +227,7 @@ export const ItemsListView = ({
   brandOptions = [],
   descriptionOptions = [],
   masterPartOptions = [],
+  partNoOptions: partNoOptionsProp = [],
 }: ItemsListViewProps) => {
   const { toast } = useToast();
   const [pageJumpValue, setPageJumpValue] = useState<string>("");
@@ -460,10 +462,11 @@ export const ItemsListView = ({
   }, [items, masterPartOptions, useFilteredOptions]);
 
   const partNoOptions = useMemo(() => {
+    if (!useFilteredOptions && partNoOptionsProp.length > 0) return partNoOptionsProp;
     return Array.from(
       new Set(items.map((item) => item.partNo).filter(Boolean)),
     ).map((val) => ({ value: val, label: val }));
-  }, [items]);
+  }, [items, partNoOptionsProp, useFilteredOptions]);
 
   const finalBrandOptions = useMemo(() => {
     if (!useFilteredOptions && brandOptions.length > 0) return brandOptions;
@@ -819,9 +822,11 @@ export const ItemsListView = ({
     };
 
     if (searchFilters.search) params.search = searchFilters.search;
+    // SWAPPED: UI Master Part No → DB part_no, UI Part No → DB master_part_no
     if (searchFilters.master_part_no)
-      params.master_part_no = searchFilters.master_part_no;
-    if (searchFilters.part_no) params.part_no = searchFilters.part_no;
+      params.part_no = searchFilters.master_part_no;
+    if (searchFilters.part_no)
+      params.master_part_no = searchFilters.part_no;
     if (searchFilters.brand_name) params.brand_name = searchFilters.brand_name;
     if (searchFilters.description) params.description = searchFilters.description;
     if (searchFilters.part_type && searchFilters.part_type !== "all")
@@ -854,8 +859,9 @@ export const ItemsListView = ({
       const createdRaw = part.createdAt || part.created_at;
       return {
         id: part.id,
-        masterPartNo: part.master_part_no || part.masterPartNo || "",
-        partNo: part.part_no || part.partNo || "",
+        // SWAPPED to match Items List UI convention
+        masterPartNo: part.part_no || part.partNo || "",
+        partNo: part.master_part_no || part.masterPartNo || "",
         brand: part.brand_name || part.brand || "",
         type: part.type || "single",
         description: part.description || "",
@@ -1719,6 +1725,22 @@ export const ItemsListView = ({
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">
+                    Part No
+                  </label>
+                  <SearchableSelect
+                    options={partNoOptions}
+                    placeholder="Type to search"
+                    value={localInputValues.part_no}
+                    onValueChange={(value) => updateFilter("part_no", value)}
+                    className="h-8 text-xs"
+                    aria-label="Part No"
+                    data-preserve-case="true"
+                    maxDisplayedOptions={500}
+                    requireSearchAbove={500}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
                     Master Part No
                   </label>
                   <SearchableSelect
@@ -1731,20 +1753,8 @@ export const ItemsListView = ({
                     className="h-8 text-xs"
                     aria-label="Master Part No"
                     data-preserve-case="true"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Part No
-                  </label>
-                  <SearchableSelect
-                    options={partNoOptions}
-                    placeholder="Type to search"
-                    value={localInputValues.part_no}
-                    onValueChange={(value) => updateFilter("part_no", value)}
-                    className="h-8 text-xs"
-                    aria-label="Part No"
-                    data-preserve-case="true"
+                    maxDisplayedOptions={500}
+                    requireSearchAbove={500}
                   />
                 </div>
                 <div className="space-y-1">

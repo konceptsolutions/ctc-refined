@@ -4931,40 +4931,13 @@ router.get("/part-inquiry", async (req: Request, res: Response) => {
       },
     });
 
-    // --- Inquiry items (for PO when import form filled but no PO yet) ---
-    const inquiryItems = await (prisma as any).purchaseImportRequestItem.findMany({
-      where: { partId },
-      include: {
-        PurchaseImportRequest: {
-          select: {
-            id: true,
-            requestNo: true,
-            consignee: true,
-            status: true,
-            PurchaseQuotation: {
-              select: {
-                id: true,
-                PurchaseOrder: { select: { id: true } },
-              },
-            },
-          },
-        },
-      },
-    });
+    const isPoReceived = (status: unknown) =>
+      String(status || "").trim().toLowerCase() === "received";
 
-    const requestHasPo = (request: any) =>
-      (request?.PurchaseQuotation || []).some(
-        (q: any) => (q.PurchaseOrder || []).length > 0,
-      );
-
-    for (const item of inquiryItems) {
-      const request = item.PurchaseImportRequest;
-      if (!request || requestHasPo(request)) continue;
-      addQty("isb", "po", Number(item.isbQuantity || 0));
-      addQty("khi", "po", Number(item.khiQuantity || 0));
-    }
-
+    // PO qty: only from saved shipment POs (and DPOs) that are not yet received.
+    // Pending / open quotations and inquiry split qty must NOT count toward PO.
     for (const item of poItems) {
+      if (isPoReceived(item.PurchaseOrder?.status)) continue;
       const loc = normalizeConsignee(item.PurchaseOrder?.consignee);
       const quantity = Number(item.quantity || 0);
       const backQty = Number(item.backQty || 0);
@@ -4975,25 +4948,27 @@ router.get("/part-inquiry", async (req: Request, res: Response) => {
     }
 
     for (const item of dpoItems) {
+      const status = String(item.DirectPurchaseOrder?.status || "").toLowerCase();
+      if (status === "cancelled") continue;
       const loc = consigneeFromStore(item.DirectPurchaseOrder?.Store);
       if (loc) {
         addQty(loc, "po", Number(item.quantity || 0));
       }
     }
 
-    const confirmedQuotationItems = quotationItems.filter((item: any) => {
-      const status = String(item.PurchaseQuotation?.status || "").toLowerCase();
-      return status === "confirm" || status === "confirmed";
-    });
-
-    for (const item of confirmedQuotationItems) {
-      const loc = normalizeConsignee(
-        item.PurchaseQuotation?.PurchaseImportRequest?.consignee,
-      );
-      const quotationQty = Number(item.quotationQuantity || 0);
-      if (loc) {
-        addQty(loc, "co", quotationQty);
-      }
+    // CO qty: "PO saved once" stage (before / around purchase invoice),
+    // i.e. import PO exists and is not received yet.
+    // This matches the workflow step user requested.
+    for (const item of poItems) {
+      if (isPoReceived(item.PurchaseOrder?.status)) continue;
+      const loc = normalizeConsignee(item.PurchaseOrder?.consignee);
+      const status = String(item.PurchaseOrder?.status || "").trim().toLowerCase();
+      const isBeforeOrAroundInvoiceStage =
+        status === "purchase invoice pending" ||
+        status === "stock receiving pending" ||
+        status === "draft";
+      if (!loc || !isBeforeOrAroundInvoiceStage) continue;
+      addQty(loc, "co", Number(item.quantity || 0));
     }
 
     const poRecords = poItems.map((item: any) => ({

@@ -177,15 +177,14 @@ export const printPurchaseImportInquiry = ({
   autoTable(doc, {
     startY: cursorY,
     margin: { left: marginX, right: marginX },
-    head: [["Supplier", "Country", "Area", "Currency"]],
+    head: [["Supplier", "Country", "Area"]],
     body:
       supplierRows.length === 0
-        ? [["No suppliers", "", "", ""]]
+        ? [["No suppliers", "", ""]]
         : supplierRows.map((supplier) => [
             text(supplier.name),
             text(supplier.country),
             text(supplier.area),
-            text(supplier.currencyName),
           ]),
     styles: {
       font: "helvetica",
@@ -211,7 +210,7 @@ export const printPurchaseImportInquiry = ({
       ) {
         data.cell.styles.halign = "center";
         data.cell.styles.textColor = [102, 102, 102];
-        data.cell.colSpan = 4;
+        data.cell.colSpan = 3;
       }
     },
   });
@@ -234,35 +233,23 @@ export const printPurchaseImportInquiry = ({
       [
         "#",
         "Item",
-        "Brand",
-        "Stock",
-        "ISB",
-        "KHI",
-        "Total Qty",
+        "Qty",
         "Weight",
         "Total Weight",
       ],
     ],
     body:
       itemRows.length === 0
-        ? [["", "No items", "", "", "", "", "", "", ""]]
+        ? [["", "No items", "", "", ""]]
         : itemRows.map((item, index) => [
             String(index + 1),
             `${text(item.masterPartNo)} | ${text(item.partNo)}\n${text(item.description)}`,
-            text(item.brand),
-            String(Number(item.currentStock || 0)),
-            String(item.isbQuantity),
-            String(item.khiQuantity),
             String(item.totalDemand),
             item.weight.toFixed(2),
             item.totalWeight.toFixed(2),
           ]),
     foot: [
       [
-        "",
-        "",
-        "",
-        "",
         "",
         "Totals",
         String(totals.qty),
@@ -296,15 +283,11 @@ export const printPurchaseImportInquiry = ({
     },
     alternateRowStyles: { fillColor: [249, 249, 249] },
     columnStyles: {
-      0: { cellWidth: 8 },
-      1: { cellWidth: 52 },
-      2: { cellWidth: 20 },
-      3: { halign: "right", cellWidth: 14 },
-      4: { halign: "right", cellWidth: 14 },
-      5: { halign: "right", cellWidth: 14 },
-      6: { halign: "right", cellWidth: 18 },
-      7: { halign: "right", cellWidth: 16 },
-      8: { halign: "right", cellWidth: 18 },
+      0: { cellWidth: 10 },
+      1: { cellWidth: 110 },
+      2: { halign: "right", cellWidth: 20 },
+      3: { halign: "right", cellWidth: 22 },
+      4: { halign: "right", cellWidth: 24 },
     },
     didParseCell: (data) => {
       if (itemRows.length === 0 && data.section === "body") {
@@ -313,18 +296,17 @@ export const printPurchaseImportInquiry = ({
           data.cell.styles.textColor = [102, 102, 102];
         }
       }
-      if (data.section === "head" && data.column.index >= 3) {
+      if (data.section === "head" && data.column.index >= 2) {
         data.cell.styles.halign = "right";
       }
       if (data.section === "foot") {
-        if (data.column.index === 5) data.cell.styles.halign = "right";
-        if (data.column.index >= 6) data.cell.styles.halign = "right";
+        if (data.column.index === 1) data.cell.styles.halign = "right";
+        if (data.column.index >= 2) data.cell.styles.halign = "right";
       }
       if (data.section === "body" && data.column.index === 1 && itemRows.length > 0) {
-        // First line (part nos) bold feel via darker text; description stays same cell
         data.cell.styles.fontStyle = "normal";
       }
-      if (data.section === "body" && data.column.index === 6 && itemRows.length > 0) {
+      if (data.section === "body" && data.column.index === 2 && itemRows.length > 0) {
         data.cell.styles.fontStyle = "bold";
       }
     },

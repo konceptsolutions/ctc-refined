@@ -60,10 +60,11 @@ interface TabConfig {
   description: string;
 }
 
-const defaultInventoryTab: InventoryTab = "current-stock";
+const defaultInventoryTab: InventoryTab = "purchase-inquiry";
 
 const tabs: TabConfig[] = [
   // { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview & analytics" }, // Hidden temporarily
+  { id: "purchase-inquiry", label: "Purchase Inquiry", icon: Search, description: "Purchase inquiry with PO/CO/BO details" },
   { id: "current-stock", label: "Current Stock", icon: Package, description: "View current stock with prices" },
   { id: "store-management", label: "Store Management", icon: Store, description: "Manage stores & locations" },
   { id: "stock-in-out", label: "Stock Movement", icon: ArrowRightLeft, description: "Record stock movements" },
@@ -74,7 +75,6 @@ const tabs: TabConfig[] = [
   // { id: "stock-analysis", label: "Stock Analysis", icon: Activity, description: "Fast, slow & dead stock" }, // Hidden temporarily
   // { id: "stock-verification", label: "Verification", icon: ClipboardCheck, description: "Physical stock verification" }, // Hidden temporarily
   // { id: "purchase-order", label: "Purchase Order", icon: ShoppingCart, description: "Manage purchase orders" }, // Hidden temporarily
-  { id: "purchase-inquiry", label: "Purchase Inquiry", icon: Search, description: "Purchase inquiry with PO/CO/BO details" },
   { id: "local-inquiry", label: "Local Inquiry", icon: ClipboardCheck, description: "Local purchase inquiries" },
   { id: "direct-purchase-order", label: "Local Purchase", icon: FileText, description: "Local purchase orders" },
   { id: "dpo-return", label: "DPO Return", icon: Undo2, description: "Manage DPO returns" },

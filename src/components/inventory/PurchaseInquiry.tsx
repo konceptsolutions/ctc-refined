@@ -441,8 +441,8 @@ export const PurchaseInquiry = () => {
 
               {/* PO / CO / BO Legend */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[11px] text-muted-foreground">
-                <span><span className="font-semibold text-foreground">PO</span> = Purchase order / inquiry qty</span>
-                <span><span className="font-semibold text-foreground">CO</span> = Confirmed quotation qty</span>
+                <span><span className="font-semibold text-foreground">PO</span> = Open shipment / direct PO qty (clears when received)</span>
+                <span><span className="font-semibold text-foreground">CO</span> = PO saved stage qty (before invoice)</span>
                 <span><span className="font-semibold text-foreground">BO</span> = Back order qty</span>
                 <span className="text-foreground/70">Split by ISB and KHI consignee</span>
               </div>

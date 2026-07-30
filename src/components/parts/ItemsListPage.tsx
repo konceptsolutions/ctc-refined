@@ -36,6 +36,9 @@ export const ItemsListPage = ({
   const [masterPartOptions, setMasterPartOptions] = useState<
     { value: string; label: string }[]
   >([]);
+  const [partNoOptions, setPartNoOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
   const [searchFilters, setSearchFilters] = useState({
     search: "",
     master_part_no: "",
@@ -90,12 +93,13 @@ export const ItemsListPage = ({
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const [cats, subs, apps, brands, mParts, partsForDescriptions] = await Promise.all([
+        const [cats, subs, apps, brands, mParts, partNos, partsForDescriptions] = await Promise.all([
           apiClient.getAllCategories?.(),
           apiClient.getAllSubcategories?.(undefined, "all"),
           apiClient.getAllApplications?.(),
           apiClient.getAllBrands?.(),
           apiClient.getMasterParts?.(),
+          apiClient.getPartNos?.(),
           apiClient.getPartEntryList?.({ limit: "all", page: 1 }),
         ]);
 
@@ -138,13 +142,35 @@ export const ItemsListPage = ({
         });
         setBrandOptions(Array.from(uniqueBrands).map((b) => ({ value: b, label: b })));
 
+        // Master Part No filter options = DB part_no values
+        // Part No filter options = DB master_part_no values
+        const partNosData = Array.isArray((partNos as any)?.data)
+          ? (partNos as any).data
+          : Array.isArray(partNos)
+            ? partNos
+            : [];
+        const uniqueMasterPartUi = new Set<string>();
+        partNosData.forEach((pn: any) => {
+          const val = typeof pn === "string" ? pn : pn.part_no || pn.partNo || "";
+          if (val && String(val).trim()) uniqueMasterPartUi.add(String(val).trim());
+        });
+        setMasterPartOptions(
+          Array.from(uniqueMasterPartUi)
+            .sort((a, b) => a.localeCompare(b))
+            .map((mp) => ({ value: mp, label: mp })),
+        );
+
         const masterPartsData = Array.isArray((mParts as any)?.data) ? (mParts as any).data : Array.isArray(mParts) ? mParts : [];
-        const uniqueMasterParts = new Set<string>();
+        const uniquePartNoUi = new Set<string>();
         masterPartsData.forEach((mp: any) => {
           const val = typeof mp === "string" ? mp : mp.master_part_no || mp.name || "";
-          if (val && val.trim()) uniqueMasterParts.add(val.trim());
+          if (val && val.trim()) uniquePartNoUi.add(val.trim());
         });
-        setMasterPartOptions(Array.from(uniqueMasterParts).map((mp) => ({ value: mp, label: mp })));
+        setPartNoOptions(
+          Array.from(uniquePartNoUi)
+            .sort((a, b) => a.localeCompare(b))
+            .map((pn) => ({ value: pn, label: pn })),
+        );
 
         const partRows = Array.isArray((partsForDescriptions as any)?.data)
           ? (partsForDescriptions as any).data
@@ -292,8 +318,10 @@ export const ItemsListPage = ({
 
     return {
       id: p.id,
-      masterPartNo: p.master_part_no || "",
-      partNo: p.part_no || "",
+      // SWAPPED to match Part Entry / Items List UI convention:
+      // UI "Part No" = DB master_part_no, UI "Master Part No" = DB part_no
+      masterPartNo: p.part_no || "",
+      partNo: p.master_part_no || "",
       brand: p.brand_name || "",
       type: p.type || "single",
       description: p.description || "",
@@ -357,16 +385,16 @@ export const ItemsListPage = ({
 
     setItemsLoading(true);
     try {
-      // Fetch items matching part_no
+      // UI values are swapped vs DB columns:
+      // UI Part No = DB master_part_no, UI Master Part No = DB part_no
       const partNoParams: any = {
-        part_no: partNo,
+        master_part_no: partNo,
         limit: 1000,
       };
       const partNoResponse = await apiClient.getParts(partNoParams);
 
-      // Fetch items matching master_part_no (if different from part_no)
       const masterPartNoParams: any = {
-        master_part_no: masterPartNo,
+        part_no: masterPartNo,
         limit: 1000,
       };
       const masterPartNoResponse =
@@ -421,7 +449,8 @@ export const ItemsListPage = ({
       if (onPartsUpdate) {
         const transformedParts = mergedItems.map((p: any) => ({
           id: p.id,
-          partNo: p.part_no || "",
+          // SWAPPED for Part Entry PartsList convention
+          partNo: p.master_part_no || "",
           brand: p.brand_name || p.brand || "-",
           uom: p.uom || "NOS",
           cost: p.cost ? parseFloat(p.cost) : null,
@@ -429,7 +458,7 @@ export const ItemsListPage = ({
           avgCost: p.avgCost ? parseFloat(p.avgCost) : null,
           price: p.price_a ? parseFloat(p.price_a) : null,
           stock: p.quantity || p.current_stock || p.stock || 0, // Stock quantity from API
-          masterPartNo: (p.master_part_no || p.masterPartNo || "").trim(),
+          masterPartNo: (p.part_no || "").trim(),
           weight: p.weight ? String(p.weight) : "-",
         }));
         onPartsUpdate(transformedParts);
@@ -491,10 +520,12 @@ export const ItemsListPage = ({
       };
 
       // Add search filters - use activeFilters, not the stale filters parameter
+      // SWAPPED: UI Master Part No → DB part_no, UI Part No → DB master_part_no
       if (activeFilters.search) params.search = activeFilters.search;
       if (activeFilters.master_part_no)
-        params.master_part_no = activeFilters.master_part_no;
-      if (activeFilters.part_no) params.part_no = activeFilters.part_no;
+        params.part_no = activeFilters.master_part_no;
+      if (activeFilters.part_no)
+        params.master_part_no = activeFilters.part_no;
       if (activeFilters.brand_name)
         params.brand_name = activeFilters.brand_name;
       if (activeFilters.description)
@@ -613,7 +644,8 @@ export const ItemsListPage = ({
         ) {
           const transformedParts = partsData.map((p: any) => ({
             id: p.id,
-            partNo: p.part_no || "",
+            // SWAPPED for Part Entry PartsList convention
+            partNo: p.master_part_no || "",
             brand: p.brand_name || p.brand || "-",
             uom: p.uom || "NOS",
             cost: p.cost ? parseFloat(p.cost) : null,
@@ -621,7 +653,7 @@ export const ItemsListPage = ({
             avgCost: p.avgCost ? parseFloat(p.avgCost) : null,
             price: p.price_a ? parseFloat(p.price_a) : null,
             stock: p.quantity || p.current_stock || p.stock || 0, // Stock quantity from API
-            masterPartNo: (p.master_part_no || p.masterPartNo || "").trim(),
+            masterPartNo: (p.part_no || "").trim(),
             weight: p.weight ? String(p.weight) : "-",
           }));
           onPartsUpdate(transformedParts);
@@ -675,6 +707,7 @@ export const ItemsListPage = ({
       brandOptions={brandOptions}
       descriptionOptions={descriptionOptions}
       masterPartOptions={masterPartOptions}
+      partNoOptions={partNoOptions}
       onFiltersChange={(filters) => {
         setSearchFilters(filters);
         // Reset to page 1 when filters change
@@ -955,7 +988,8 @@ export const ItemsListPage = ({
 
           // Refresh in background without blocking UI
           if (!isEdit && searchFilters.master_part_no) {
-            const newPartMasterPartNo = (apiData.master_part_no || "").trim();
+            // UI Master Part No is stored in DB part_no
+            const newPartMasterPartNo = (apiData.part_no || "").trim();
             const filterMasterPartNo = (
               searchFilters.master_part_no || ""
             ).trim();

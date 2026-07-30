@@ -532,6 +532,11 @@ class ApiClient {
     return this.request(`/dropdowns/master-parts${query}`);
   }
 
+  async getPartNos(search?: string) {
+    const query = search ? `?search=${encodeURIComponent(search)}` : "";
+    return this.request(`/dropdowns/part-nos${query}`);
+  }
+
   async getBrands(search?: string, limit?: number) {
     const params = new URLSearchParams();
     if (search) params.append("search", search);

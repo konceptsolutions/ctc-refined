@@ -8,20 +8,77 @@ const router = express.Router();
 router.get("/master-parts", async (req: Request, res: Response) => {
   try {
     const { search } = req.query;
+    const searchTerm = String(search || "").trim();
 
-    const where = search
-      ? { masterPartNo: { contains: search as string } }
-      : {};
+    // Prefer distinct master part numbers actually used by active parts,
+    // then merge with MasterPart table so nothing is missing.
+    const [fromParts, fromMasterTable] = await Promise.all([
+      prisma.part.findMany({
+        where: {
+          status: "active",
+          masterPartId: { not: null },
+          ...(searchTerm
+            ? {
+                MasterPart: {
+                  masterPartNo: { contains: searchTerm, mode: "insensitive" },
+                },
+              }
+            : {}),
+        },
+        select: {
+          masterPartId: true,
+          MasterPart: { select: { masterPartNo: true } },
+        },
+        distinct: ["masterPartId"],
+      }),
+      prisma.masterPart.findMany({
+        where: searchTerm
+          ? { masterPartNo: { contains: searchTerm, mode: "insensitive" } }
+          : {},
+        select: { masterPartNo: true },
+        orderBy: { masterPartNo: "asc" },
+      }),
+    ]);
 
-    // Fetch ALL master parts without any limit
-    const masterParts = await prisma.masterPart.findMany({
-      where,
-      select: { masterPartNo: true },
-      orderBy: { masterPartNo: "asc" },
-      // Explicitly no limit - get all records
+    const unique = new Set<string>();
+    for (const row of fromParts) {
+      const val = String(row.MasterPart?.masterPartNo || "").trim();
+      if (val) unique.add(val);
+    }
+    for (const row of fromMasterTable) {
+      const val = String(row.masterPartNo || "").trim();
+      if (val) unique.add(val);
+    }
+
+    res.json(Array.from(unique).sort((a, b) => a.localeCompare(b)));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all distinct part numbers used by active parts
+router.get("/part-nos", async (req: Request, res: Response) => {
+  try {
+    const { search } = req.query;
+    const searchTerm = String(search || "").trim();
+
+    const rows = await prisma.part.findMany({
+      where: {
+        status: "active",
+        partNo: searchTerm
+          ? { contains: searchTerm, mode: "insensitive" }
+          : { not: "" },
+      },
+      select: { partNo: true },
+      distinct: ["partNo"],
+      orderBy: { partNo: "asc" },
     });
 
-    res.json(masterParts.map((mp) => mp.masterPartNo));
+    res.json(
+      rows
+        .map((r) => String(r.partNo || "").trim())
+        .filter(Boolean),
+    );
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
