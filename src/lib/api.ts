@@ -2926,7 +2926,8 @@ class ApiClient {
         invoiceDate: data.invoiceDate || undefined,
         blNo: data.blNo?.trim() || undefined,
         blDate: data.blDate || undefined,
-        forwarder: data.forwarder?.trim() || undefined,
+        forwarder:
+          typeof data.forwarder === "string" ? data.forwarder.trim() : "",
         estTimeDate: data.estTimeDate || undefined,
         expenses: data.expenses,
         items: data.items.map((item) => ({

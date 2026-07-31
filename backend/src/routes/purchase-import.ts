@@ -28,6 +28,39 @@ const normalizeSupplierIds = (supplierIdsRaw: any): string[] =>
     ),
   );
 
+/** Live DBs may be missing this column if migration 20260713120000 was not applied. */
+let purchaseOrderForwarderColumnReady: Promise<void> | null = null;
+const ensurePurchaseOrderForwarderColumn = async () => {
+  if (!purchaseOrderForwarderColumnReady) {
+    purchaseOrderForwarderColumnReady = (async () => {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "PurchaseOrder" ADD COLUMN IF NOT EXISTS "forwarder" TEXT`,
+      );
+    })().catch((error) => {
+      purchaseOrderForwarderColumnReady = null;
+      throw error;
+    });
+  }
+  await purchaseOrderForwarderColumnReady;
+};
+
+const readPurchaseOrderForwarder = async (
+  orderId: string,
+): Promise<string | null> => {
+  try {
+    await ensurePurchaseOrderForwarderColumn();
+    const rows = await prisma.$queryRawUnsafe<Array<{ forwarder: string | null }>>(
+      `SELECT "forwarder" FROM "PurchaseOrder" WHERE "id" = $1 LIMIT 1`,
+      orderId,
+    );
+    const value = rows?.[0]?.forwarder;
+    const trimmed = String(value ?? "").trim();
+    return trimmed || null;
+  } catch {
+    return null;
+  }
+};
+
 const normalizeItems = (itemsRaw: any) =>
   (Array.isArray(itemsRaw) ? itemsRaw : [])
     .map((item: any) => {
@@ -3679,6 +3712,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Purchase order id is required." });
     }
 
+    await ensurePurchaseOrderForwarderColumn();
+
     const order = await prisma.purchaseOrder.findUnique({
       where: { id },
       include: {
@@ -3881,6 +3916,10 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
       );
 
+    const forwarderValue =
+      String((order as any).forwarder ?? "").trim() ||
+      (await readPurchaseOrderForwarder(order.id));
+
     res.json({
       data: {
         id: order.id,
@@ -3892,7 +3931,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         invoiceDate: (order as any).invoiceDate ?? null,
         blNo: (order as any).blNo ?? null,
         blDate: (order as any).blDate ?? null,
-        forwarder: (order as any).forwarder ?? null,
+        forwarder: forwarderValue,
         estTimeDate: (order as any).expectedDate ?? null,
         importSaved,
         totalAmount: order.totalAmount,
@@ -3946,6 +3985,9 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
     if (!Number.isFinite(conversionRate) || conversionRate <= 0) {
       return res.status(400).json({ error: "Valid conversion rate is required" });
     }
+
+    // Ensure forwarder column exists on live DB before save.
+    await ensurePurchaseOrderForwarderColumn();
 
     const order = await prisma.purchaseOrder.findUnique({
       where: { id },
@@ -4256,6 +4298,16 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         WHERE "id" = ${id}
       `;
 
+      // Also write via Prisma so generated clients that include the field stay in sync.
+      try {
+        await tx.purchaseOrder.update({
+          where: { id },
+          data: { forwarder } as any,
+        });
+      } catch {
+        // Column may still be unknown to an outdated Prisma client; raw update above is source of truth.
+      }
+
       return tx.purchaseOrder.findUnique({
         where: { id },
         include: {
@@ -4278,6 +4330,11 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       return res.status(404).json({ error: "Purchase order not found after receive" });
     }
 
+    const savedForwarder =
+      String((updated as any).forwarder ?? "").trim() ||
+      (await readPurchaseOrderForwarder(id)) ||
+      forwarder;
+
     res.json({
       data: {
         id: updated.id,
@@ -4291,7 +4348,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         invoiceDate: (updated as any).invoiceDate ?? null,
         blNo: (updated as any).blNo ?? null,
         blDate: (updated as any).blDate ?? null,
-        forwarder: (updated as any).forwarder ?? null,
+        forwarder: savedForwarder,
         estTimeDate: (updated as any).expectedDate ?? null,
         expenses: readImportPoExpensesFromOrder(updated),
         items: updated.PurchaseOrderItem.map((item) => ({
