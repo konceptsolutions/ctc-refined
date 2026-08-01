@@ -158,7 +158,11 @@ const statusBadge = (status: string) => {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export const PurchaseInquiry = () => {
+export const PurchaseInquiry = ({
+  initialPartId,
+}: {
+  initialPartId?: string;
+} = {}) => {
   // Multi-item list + active row
   const [items, setItems] = useState<PartResult[]>([]);
   const [activePartId, setActivePartId] = useState<string | null>(null);
@@ -526,6 +530,36 @@ export const PurchaseInquiry = () => {
     },
     [upsertItem, activatePart],
   );
+
+  // Prefill from parent (e.g. Import Inquiry item popup)
+  const loadedInitialPartRef = useRef<string | null>(null);
+  useEffect(() => {
+    const partId = String(initialPartId || "").trim();
+    if (!partId || loadedInitialPartRef.current === partId) return;
+    loadedInitialPartRef.current = partId;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resp = await (apiClient as any).getPart(partId);
+        if (cancelled) return;
+        const data = resp?.data || resp;
+        const part = mapApiPartToResult({ ...data, id: data?.id || partId });
+        if (!part.id) return;
+        await handleSelectPart(part);
+      } catch {
+        if (!cancelled) {
+          toast({
+            title: "Failed to load part",
+            description: "Could not open the selected item in Purchase Inquiry.",
+            variant: "destructive",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialPartId, handleSelectPart]);
 
   const handleActivateRow = useCallback(
     (part: PartResult) => {

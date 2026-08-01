@@ -32,6 +32,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printPurchaseImportInquiry, buildPurchaseImportInquiryPdfBlob } from "@/utils/printPurchaseImportInquiryPdf";
 import { buildPurchaseImportInquiryExcelBlob } from "@/utils/buildPurchaseImportInquiryExcel";
+import { PurchaseInquiry } from "@/components/inventory/PurchaseInquiry";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1690,6 +1691,9 @@ const PurchaseImportRequestForm = ({
   const [highlightedItemRowId, setHighlightedItemRowId] = useState<string | null>(
     null,
   );
+  const [purchaseInquiryPopupPartId, setPurchaseInquiryPopupPartId] = useState<
+    string | null
+  >(null);
   const itemRowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
   const isEditMode = Boolean(requestId);
@@ -2894,17 +2898,43 @@ const PurchaseImportRequestForm = ({
                       {index + 1}
                     </td>
                     <td className="p-2 border-b min-w-[320px]">
-                      <SearchableSelect
-                        options={partSelectOptions}
-                        value={row.partId}
-                        onValueChange={(partId) => fetchPartDetails(row.id, partId)}
-                        placeholder="Master Part | Part No"
-                        disabled={loadingForm}
-                        autoOpen={openItemSelectRowId === row.id}
-                      />
-                      {row.loadingDetails && (
-                        <p className="text-xs text-muted-foreground mt-1">Loading details...</p>
-                      )}
+                      <div className="flex items-start gap-1.5">
+                        <div className="min-w-0 flex-1">
+                          <SearchableSelect
+                            options={partSelectOptions}
+                            value={row.partId}
+                            onValueChange={(partId) =>
+                              fetchPartDetails(row.id, partId)
+                            }
+                            placeholder="Master Part | Part No"
+                            disabled={loadingForm || isViewMode}
+                            autoOpen={openItemSelectRowId === row.id}
+                          />
+                          {row.loadingDetails && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Loading details...
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className="h-8 w-8 shrink-0"
+                          disabled={!row.partId || loadingForm}
+                          title={
+                            row.partId
+                              ? "Open Purchase Inquiry for this item"
+                              : "Select an item first"
+                          }
+                          onClick={() => {
+                            if (!row.partId) return;
+                            setPurchaseInquiryPopupPartId(row.partId);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </td>
                     <td className="p-2 border-b text-right">{row.currentStock}</td>
                     <td className="p-2 border-b text-right tabular-nums">
@@ -3292,6 +3322,27 @@ const PurchaseImportRequestForm = ({
           </Button>
         </div>
       )}
+
+      <Dialog
+        open={Boolean(purchaseInquiryPopupPartId)}
+        onOpenChange={(open) => {
+          if (!open) setPurchaseInquiryPopupPartId(null);
+        }}
+      >
+        <DialogContent className="left-0 top-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:rounded-none">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
+            <DialogTitle>Purchase Inquiry</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+            {purchaseInquiryPopupPartId ? (
+              <PurchaseInquiry
+                key={purchaseInquiryPopupPartId}
+                initialPartId={purchaseInquiryPopupPartId}
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
