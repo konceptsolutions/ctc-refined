@@ -47,7 +47,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -4115,178 +4114,211 @@ export const SalesInquiry = ({
 
           {/* History + Part Association */}
           <div className="mt-6 grid grid-cols-1 xl:grid-cols-5 gap-4">
-            <div className="xl:col-span-3">
-              <Tabs defaultValue="last-sales-invoice">
-                <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="last-sales-invoice" className="flex items-center gap-1.5 text-xs">
-                <FileText className="h-3.5 w-3.5" />
-                Last Sales Invoice
-              </TabsTrigger>
-              <TabsTrigger value="last-dpo" className="flex items-center gap-1.5 text-xs">
-                <Truck className="h-3.5 w-3.5" />
-                Last Purchase
-              </TabsTrigger>
-                </TabsList>
-
-            {/* Last Sales Invoice Tab */}
-            <TabsContent value="last-sales-invoice" className="mt-4">
-              <div className="rounded-md border bg-card">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <ListNumberHeader className="text-xs" />
-                      <TableHead className="text-xs">Invoice No</TableHead>
-                      <TableHead className="text-xs">Date</TableHead>
-                      <TableHead className="text-xs">Customer</TableHead>
-                      {/* <TableHead className="text-xs">Customer Type</TableHead> */}
-                      <TableHead className="text-xs">Qty</TableHead>
-                      {!hidePrices && (
-                        <>
-                          <TableHead className="text-xs">Unit Price</TableHead>
-                          <TableHead className="text-xs">Line Total</TableHead>
-                        </>
-                      )}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!selectedPart ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm opacity-50">
-                          Select a part to view sales history
-                        </TableCell>
+            <div className="xl:col-span-3 space-y-4">
+              {/* Last Sales Invoice — always visible */}
+              <div className="rounded-md border bg-card p-3">
+                <div className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5" />
+                  Last Sales Invoice
+                  {selectedPart && (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      for {selectedPart.partNo}
+                    </span>
+                  )}
+                </div>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <ListNumberHeader className="text-xs" />
+                        <TableHead className="text-xs">Invoice No</TableHead>
+                        <TableHead className="text-xs">Date</TableHead>
+                        <TableHead className="text-xs">Customer</TableHead>
+                        <TableHead className="text-xs">Qty</TableHead>
+                        {!hidePrices && (
+                          <>
+                            <TableHead className="text-xs">Unit Price</TableHead>
+                            <TableHead className="text-xs">Line Total</TableHead>
+                          </>
+                        )}
                       </TableRow>
-                    ) : loadingSalesInvoiceHistory ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
-                          <div className="flex items-center justify-center gap-2">
-                            <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                            Loading sales invoice history...
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : salesInvoiceHistory.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm italic">
-                          No sales invoice history available for this part
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      salesInvoiceHistory.map((invoice, index) => (
-                        <TableRow key={invoice.id} className="hover:bg-muted/20">
-                          <ListNumberCell index={index} total={salesInvoiceHistory.length} className="text-xs" />
-                          <TableCell className="text-xs font-medium">{invoice.invoice_no || 'N/A'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : 'N/A'}
+                    </TableHeader>
+                    <TableBody>
+                      {!selectedPart ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={hidePrices ? 5 : 7}
+                            className="text-center py-8 text-muted-foreground text-sm opacity-50"
+                          >
+                            Select a part to view sales history
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{invoice.customer_name || 'N/A'}</TableCell>
-                          {/* <TableCell className="text-xs text-muted-foreground">
-                            <Badge variant={invoice.customer_type === 'walking' ? 'secondary' : 'default'} className="text-xs">
-                              {getCustomerTypeLabel(invoice.customer_type)}
-                            </Badge>
-                          </TableCell> */}
-                          <TableCell className="text-xs text-muted-foreground">
-                            {invoice.item?.ordered_qty || 0}
-                          </TableCell>
-                          {!hidePrices && (
-                            <>
-                              <TableCell className="text-xs text-muted-foreground">
-                                Rs {invoice.item?.unit_price?.toFixed(2) || '0.00'}
-                              </TableCell>
-                              <TableCell className="text-xs font-medium">
-                                Rs {invoice.item?.line_total?.toFixed(2) || '0.00'}
-                              </TableCell>
-                            </>
-                          )}
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </TabsContent>
-
-            {/* Combined Local PO + Import Purchase Order history */}
-            <TabsContent value="last-dpo" className="mt-4">
-              <div className="rounded-md border bg-card">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <ListNumberHeader className="text-xs" />
-                      <TableHead className="text-xs">Type</TableHead>
-                      <TableHead className="text-xs">PO No</TableHead>
-                      <TableHead className="text-xs">Date</TableHead>
-                      <TableHead className="text-xs">Supplier</TableHead>
-                      <TableHead className="text-xs">Qty</TableHead>
-                      {!hidePrices && (
-                        <>
-                          <TableHead className="text-xs">Rate</TableHead>
-                          <TableHead className="text-xs">Cost Price</TableHead>
-                        </>
-                      )}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!selectedPart ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm opacity-50">
-                          Select a part to view purchase history
-                        </TableCell>
-                      </TableRow>
-                    ) : loadingCombinedPurchaseHistory ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
-                          <div className="flex items-center justify-center gap-2">
-                            <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                            Loading purchase history...
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : combinedPurchaseHistory.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm italic">
-                          No local or import purchase history available for this part
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      combinedPurchaseHistory.map((row, index) => (
-                        <TableRow key={row.id} className="hover:bg-muted/20">
-                          <ListNumberCell index={index} total={combinedPurchaseHistory.length} className="text-xs" />
-                          <TableCell className="text-xs">
-                            <Badge
-                              variant={row.source === "local" ? "secondary" : "outline"}
-                              className="text-[10px] px-1.5 py-0"
-                            >
-                              {row.source === "local" ? "Local" : "Import"}
-                            </Badge>
+                      ) : loadingSalesInvoiceHistory ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={hidePrices ? 5 : 7}
+                            className="text-center py-8 text-muted-foreground text-sm"
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                              Loading sales invoice history...
+                            </div>
                           </TableCell>
-                          <TableCell className="text-xs font-medium">{row.poNo}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {row.date ? format(new Date(row.date), "dd MMM yyyy") : "N/A"}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {row.supplier}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {row.qty}
-                          </TableCell>
-                          {!hidePrices && (
-                            <>
-                              <TableCell className="text-xs text-muted-foreground">
-                                Rs {row.rate.toFixed(2)}
-                              </TableCell>
-                              <TableCell className="text-xs font-medium">
-                                Rs {row.costPrice.toFixed(2)}
-                              </TableCell>
-                            </>
-                          )}
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      ) : salesInvoiceHistory.length === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={hidePrices ? 5 : 7}
+                            className="text-center py-8 text-muted-foreground text-sm italic"
+                          >
+                            No sales invoice history available for this part
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        salesInvoiceHistory.map((invoice, index) => (
+                          <TableRow key={invoice.id} className="hover:bg-muted/20">
+                            <ListNumberCell
+                              index={index}
+                              total={salesInvoiceHistory.length}
+                              className="text-xs"
+                            />
+                            <TableCell className="text-xs font-medium">
+                              {invoice.invoice_no || "N/A"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {invoice.invoice_date
+                                ? format(new Date(invoice.invoice_date), "dd MMM yyyy")
+                                : "N/A"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {invoice.customer_name || "N/A"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {invoice.item?.ordered_qty || 0}
+                            </TableCell>
+                            {!hidePrices && (
+                              <>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  Rs {invoice.item?.unit_price?.toFixed(2) || "0.00"}
+                                </TableCell>
+                                <TableCell className="text-xs font-medium">
+                                  Rs {invoice.item?.line_total?.toFixed(2) || "0.00"}
+                                </TableCell>
+                              </>
+                            )}
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
-            </TabsContent>
-              </Tabs>
+
+              {/* Last Purchase — always visible */}
+              <div className="rounded-md border bg-card p-3">
+                <div className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+                  <Truck className="h-3.5 w-3.5" />
+                  Last Purchase
+                  {selectedPart && (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      for {selectedPart.partNo}
+                    </span>
+                  )}
+                </div>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <ListNumberHeader className="text-xs" />
+                        <TableHead className="text-xs">Type</TableHead>
+                        <TableHead className="text-xs">PO No</TableHead>
+                        <TableHead className="text-xs">Date</TableHead>
+                        <TableHead className="text-xs">Supplier</TableHead>
+                        <TableHead className="text-xs">Qty</TableHead>
+                        {!hidePrices && (
+                          <>
+                            <TableHead className="text-xs">Rate</TableHead>
+                            <TableHead className="text-xs">Cost Price</TableHead>
+                          </>
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {!selectedPart ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={hidePrices ? 6 : 8}
+                            className="text-center py-8 text-muted-foreground text-sm opacity-50"
+                          >
+                            Select a part to view purchase history
+                          </TableCell>
+                        </TableRow>
+                      ) : loadingCombinedPurchaseHistory ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={hidePrices ? 6 : 8}
+                            className="text-center py-8 text-muted-foreground text-sm"
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                              Loading purchase history...
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : combinedPurchaseHistory.length === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={hidePrices ? 6 : 8}
+                            className="text-center py-8 text-muted-foreground text-sm italic"
+                          >
+                            No local or import purchase history available for this part
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        combinedPurchaseHistory.map((row, index) => (
+                          <TableRow key={row.id} className="hover:bg-muted/20">
+                            <ListNumberCell
+                              index={index}
+                              total={combinedPurchaseHistory.length}
+                              className="text-xs"
+                            />
+                            <TableCell className="text-xs">
+                              <Badge
+                                variant={row.source === "local" ? "secondary" : "outline"}
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {row.source === "local" ? "Local" : "Import"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs font-medium">{row.poNo}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {row.date
+                                ? format(new Date(row.date), "dd MMM yyyy")
+                                : "N/A"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {row.supplier}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {row.qty}
+                            </TableCell>
+                            {!hidePrices && (
+                              <>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  Rs {row.rate.toFixed(2)}
+                                </TableCell>
+                                <TableCell className="text-xs font-medium">
+                                  Rs {row.costPrice.toFixed(2)}
+                                </TableCell>
+                              </>
+                            )}
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
             </div>
 
             <div className="xl:col-span-2 rounded-md border bg-card p-3 flex flex-col min-h-[420px]">
