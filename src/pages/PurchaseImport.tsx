@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2 } from "lucide-react";
+import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2, ChevronDown, ChevronUp, Mail } from "lucide-react";
 import { BackOrderSummaryTab } from "@/components/purchase-import/BackOrderSummaryTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,14 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { printPurchaseImportInquiry } from "@/utils/printPurchaseImportInquiryPdf";
+import { printPurchaseImportInquiry, buildPurchaseImportInquiryPdfBlob } from "@/utils/printPurchaseImportInquiryPdf";
+import { buildPurchaseImportInquiryExcelBlob } from "@/utils/buildPurchaseImportInquiryExcel";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { printPurchaseImportQuotation } from "@/utils/printPurchaseImportQuotationPdf";
 import { printPurchaseImportQuotationComparison } from "@/utils/printPurchaseImportQuotationComparisonPdf";
 import { printPurchaseImportOrder } from "@/utils/printPurchaseImportOrderPdf";
@@ -186,6 +193,7 @@ type SupplierOption = {
   area: string;
   type: "local" | "international";
   currencyName?: string;
+  email?: string;
 };
 
 type PartOption = {
@@ -769,6 +777,26 @@ type PurchaseImportRequestEditPayload = {
   notes?: string;
   status?: string;
   supplierIds: string[];
+  supplier?: {
+    id: string;
+    code?: string;
+    name?: string;
+    email?: string | null;
+    country?: string | null;
+    area?: string | null;
+    currencyName?: string | null;
+    type?: string | null;
+  } | null;
+  suppliers?: Array<{
+    id: string;
+    code?: string;
+    name?: string;
+    email?: string | null;
+    country?: string | null;
+    area?: string | null;
+    currencyName?: string | null;
+    type?: string | null;
+  }>;
   items: Array<{
     id?: string;
     partId: string;
@@ -1651,6 +1679,12 @@ const PurchaseImportRequestForm = ({
   const [salesPeriodMonths, setSalesPeriodMonths] =
     useState<InquirySalesPeriodMonths>(3);
   const [loadingSalesQty, setLoadingSalesQty] = useState(false);
+  /** Expand Sales column to show invoice details for the selected period. */
+  const [salesDetailsExpanded, setSalesDetailsExpanded] = useState(false);
+  const [salesDetailsByPartId, setSalesDetailsByPartId] = useState<
+    Record<string, any[]>
+  >({});
+  const [loadingSalesDetails, setLoadingSalesDetails] = useState(false);
   const [openItemSelectRowId, setOpenItemSelectRowId] = useState<string | null>(null);
   const [jumpToItemRowId, setJumpToItemRowId] = useState("");
   const [highlightedItemRowId, setHighlightedItemRowId] = useState<string | null>(
@@ -1679,11 +1713,13 @@ const PurchaseImportRequestForm = ({
     [items, itemSort, itemSortDirection, partOptions],
   );
 
+  const inquiryTableColSpan = 10;
+
   const inquiryItemsScrollRef = useRef<HTMLDivElement>(null);
   const inquiryRowVirtualizer = useVirtualizer({
     count: sortedItems.length,
     getScrollElement: () => inquiryItemsScrollRef.current,
-    estimateSize: () => 52,
+    estimateSize: () => (salesDetailsExpanded ? 220 : 52),
     overscan: 12,
   });
   const inquiryRowVirtualizerRef = useRef(inquiryRowVirtualizer);
@@ -1696,6 +1732,10 @@ const PurchaseImportRequestForm = ({
       ? inquiryRowVirtualizer.getTotalSize() -
         inquiryVirtualItems[inquiryVirtualItems.length - 1].end
       : 0;
+
+  useEffect(() => {
+    inquiryRowVirtualizerRef.current.measure();
+  }, [salesDetailsExpanded, salesDetailsByPartId, loadingSalesDetails]);
 
   const loadSuppliers = async () => {
     const suppliersRes = await apiClient.getSuppliers({
@@ -2223,6 +2263,61 @@ const PurchaseImportRequestForm = ({
     };
   }, [inquiryPartIdsKey, salesPeriodMonths, toast]);
 
+  useEffect(() => {
+    if (!salesDetailsExpanded) return;
+
+    const partIds = Array.from(
+      new Set(
+        inquiryPartIdsKey
+          .split("|")
+          .map((id) => id.trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (partIds.length === 0) {
+      setSalesDetailsByPartId({});
+      return;
+    }
+
+    let cancelled = false;
+    const loadSalesDetails = async () => {
+      setLoadingSalesDetails(true);
+      try {
+        const entries = await Promise.all(
+          partIds.map(async (partId) => {
+            try {
+              const response = await apiClient.getSalesInvoicesByPart(partId, {
+                page: 1,
+                limit: 200,
+                months: salesPeriodMonths,
+              });
+              const rows = Array.isArray(response)
+                ? response
+                : Array.isArray((response as any)?.data)
+                  ? (response as any).data
+                  : [];
+              return [partId, rows] as const;
+            } catch {
+              return [partId, []] as const;
+            }
+          }),
+        );
+        if (cancelled) return;
+        const next: Record<string, any[]> = {};
+        for (const [partId, rows] of entries) next[partId] = rows;
+        setSalesDetailsByPartId(next);
+      } finally {
+        if (!cancelled) setLoadingSalesDetails(false);
+      }
+    };
+
+    void loadSalesDetails();
+    return () => {
+      cancelled = true;
+    };
+  }, [salesDetailsExpanded, inquiryPartIdsKey, salesPeriodMonths]);
+
   const handleSave = async () => {
     const currentItems = itemsRef.current;
     const incompleteRows = currentItems.filter(
@@ -2733,10 +2828,28 @@ const PurchaseImportRequestForm = ({
                 <th className="text-left p-2 border-b bg-muted/40">Item</th>
                 <th className="text-right p-2 border-b bg-muted/40">Current Stock</th>
                 <th className="text-right p-2 border-b bg-muted/40 whitespace-nowrap">
-                  Sales
-                  <span className="block text-[10px] font-normal text-muted-foreground">
-                    {salesPeriodMonths === 12 ? "1 Year" : `${salesPeriodMonths} Mo`}
-                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-end gap-1 w-full hover:text-primary"
+                    onClick={() => setSalesDetailsExpanded((prev) => !prev)}
+                    title={
+                      salesDetailsExpanded
+                        ? "Hide sales details"
+                        : "Show sales details for selected period"
+                    }
+                  >
+                    <span className="text-right">
+                      Sales
+                      <span className="block text-[10px] font-normal text-muted-foreground">
+                        {salesPeriodMonths === 12 ? "1 Year" : `${salesPeriodMonths} Mo`}
+                      </span>
+                    </span>
+                    {salesDetailsExpanded ? (
+                      <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                  </button>
                 </th>
                 <th className={`${INQUIRY_ISB_QTY_HEAD_CLASS} bg-muted/40`}>ISB Qty</th>
                 <th className={`${INQUIRY_KHI_QTY_HEAD_CLASS} bg-muted/40`}>KHI Qty</th>
@@ -2750,7 +2863,7 @@ const PurchaseImportRequestForm = ({
               {inquiryVirtualPaddingTop > 0 ? (
                 <tr aria-hidden="true">
                   <td
-                    colSpan={10}
+                    colSpan={inquiryTableColSpan}
                     style={{
                       height: inquiryVirtualPaddingTop,
                       padding: 0,
@@ -2795,11 +2908,29 @@ const PurchaseImportRequestForm = ({
                     </td>
                     <td className="p-2 border-b text-right">{row.currentStock}</td>
                     <td className="p-2 border-b text-right tabular-nums">
-                      {!row.partId
-                        ? "-"
-                        : loadingSalesQty
-                          ? "..."
-                          : row.salesQty}
+                      <button
+                        type="button"
+                        className={cn(
+                          "w-full text-right tabular-nums hover:text-primary",
+                          row.partId && "underline-offset-2 hover:underline",
+                        )}
+                        disabled={!row.partId}
+                        onClick={() => {
+                          if (!row.partId) return;
+                          setSalesDetailsExpanded(true);
+                        }}
+                        title={
+                          row.partId
+                            ? "Show sales details for selected period"
+                            : undefined
+                        }
+                      >
+                        {!row.partId
+                          ? "-"
+                          : loadingSalesQty
+                            ? "..."
+                            : row.salesQty}
+                      </button>
                     </td>
                     <td className="p-2 border-b">
                       <Input
@@ -2872,9 +3003,82 @@ const PurchaseImportRequestForm = ({
                       </Button>
                     </td>
                   </tr>
+                  {salesDetailsExpanded && row.partId ? (
+                    <tr>
+                      <td colSpan={inquiryTableColSpan} className="px-2 pb-3 border-b bg-muted/20">
+                        <div className="rounded-md border border-border bg-card p-2">
+                          <p className="text-xs font-medium mb-2">
+                            Sales details
+                            <span className="ml-1 font-normal text-muted-foreground">
+                              ({salesPeriodMonths === 12 ? "1 Year" : `${salesPeriodMonths} Months`})
+                            </span>
+                          </p>
+                          {loadingSalesDetails && !salesDetailsByPartId[row.partId] ? (
+                            <p className="text-xs text-muted-foreground">Loading sales...</p>
+                          ) : (salesDetailsByPartId[row.partId] || []).length === 0 ? (
+                            <p className="text-xs text-muted-foreground italic">
+                              No sales found in the selected period.
+                            </p>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-muted-foreground">
+                                    <th className="text-left py-1 pr-2">Invoice No</th>
+                                    <th className="text-left py-1 pr-2">Date</th>
+                                    <th className="text-left py-1 pr-2">Customer</th>
+                                    <th className="text-left py-1 pr-2">Category</th>
+                                    <th className="text-right py-1 pr-2">Qty</th>
+                                    <th className="text-right py-1 pr-2">Unit Price</th>
+                                    <th className="text-right py-1">Line Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(salesDetailsByPartId[row.partId] || []).map((inv, invIdx) => (
+                                    <tr
+                                      key={`${row.id}-sale-${inv.id || invIdx}`}
+                                      className="border-t"
+                                    >
+                                      <td className="py-1 pr-2 font-medium whitespace-nowrap">
+                                        {inv.invoice_no || "-"}
+                                      </td>
+                                      <td className="py-1 pr-2 whitespace-nowrap">
+                                        {inv.invoice_date
+                                          ? new Date(inv.invoice_date).toLocaleDateString()
+                                          : "-"}
+                                      </td>
+                                      <td className="py-1 pr-2 max-w-[180px] truncate" title={inv.customer_name || ""}>
+                                        {inv.customer_name || "-"}
+                                      </td>
+                                      <td className="py-1 pr-2 max-w-[120px] truncate" title={inv.customer_category || ""}>
+                                        {inv.customer_category || "-"}
+                                      </td>
+                                      <td className="py-1 pr-2 text-right tabular-nums">
+                                        {Number(
+                                          inv.item?.sold_qty ??
+                                            inv.item?.ordered_qty ??
+                                            0,
+                                        ).toLocaleString("en-US")}
+                                      </td>
+                                      <td className="py-1 pr-2 text-right tabular-nums">
+                                        {Number(inv.item?.unit_price ?? 0).toFixed(2)}
+                                      </td>
+                                      <td className="py-1 text-right tabular-nums font-medium">
+                                        {Number(inv.item?.line_total ?? 0).toFixed(2)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                   {SHOW_INQUIRY_LAST_PURCHASES ? (
                   <tr>
-                    <td colSpan={10} className="px-2 pb-3 border-b">
+                    <td colSpan={inquiryTableColSpan} className="px-2 pb-3 border-b">
                       <div className="rounded-md border border-dashed border-border p-2">
                         <p className="text-xs font-medium mb-2">Last 3 Purchases</p>
                         {row.lastPurchases.length === 0 ? (
@@ -2921,7 +3125,7 @@ const PurchaseImportRequestForm = ({
               {inquiryVirtualPaddingBottom > 0 ? (
                 <tr aria-hidden="true">
                   <td
-                    colSpan={10}
+                    colSpan={inquiryTableColSpan}
                     style={{
                       height: inquiryVirtualPaddingBottom,
                       padding: 0,
@@ -3092,6 +3296,22 @@ const PurchaseImportRequestForm = ({
   );
 };
 
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const base64 = result.includes(",") ? result.split(",")[1] : result;
+      if (!base64) {
+        reject(new Error("Failed to encode attachment"));
+        return;
+      }
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error("Failed to read attachment"));
+    reader.readAsDataURL(blob);
+  });
+
 const PurchaseImportRequestView = ({
   requestId,
   onBack,
@@ -3106,6 +3326,13 @@ const PurchaseImportRequestView = ({
   const [partOptions, setPartOptions] = useState<PartOption[]>([]);
   const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailFormat, setEmailFormat] = useState<"pdf" | "excel">("pdf");
+  const [emailTo, setEmailTo] = useState("");
+  const [emailCc, setEmailCc] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;
 
@@ -3139,6 +3366,7 @@ const PurchaseImportRequestView = ({
             area: s.area || "-",
             type: s.type === "international" ? "international" : "local",
             currencyName: s.currencyName || "",
+            email: String(s.email || "").trim() || undefined,
           })),
         );
         setPartOptions(
@@ -3259,6 +3487,142 @@ const PurchaseImportRequestView = ({
     });
   };
 
+  const inquiryConfirmed = isInquiryConfirmed(detail?.status);
+
+  const openEmailDialog = (format: "pdf" | "excel") => {
+    if (!detail) return;
+    if (!isInquiryConfirmed(detail.status)) {
+      toast({
+        title: "Confirm inquiry first",
+        description: "Email is available only after the inquiry is confirmed.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const inquiryNo = detail.requestNo || "Inquiry";
+
+    // Prefer this inquiry row's saved supplier email; fall back to batch suppliers.
+    const emailsFromApi = [
+      detail.supplier?.email,
+      ...((detail.suppliers || []).map((supplier) => supplier.email) || []),
+    ]
+      .map((email) => String(email || "").trim())
+      .filter(Boolean);
+
+    const emailsFromOptions = (detail.supplierIds || [])
+      .map((id) => supplierOptions.find((row) => row.id === id)?.email)
+      .map((email) => String(email || "").trim())
+      .filter(Boolean);
+
+    const supplierEmails = Array.from(
+      new Set([...emailsFromApi, ...emailsFromOptions]),
+    );
+
+    // If this inquiry has its own supplier email, use only that for To.
+    const currentSupplierEmail = String(detail.supplier?.email || "").trim();
+    const toValue = currentSupplierEmail || supplierEmails.join(", ");
+
+    setEmailFormat(format);
+    setEmailTo(toValue);
+    setEmailCc("");
+    setEmailSubject(
+      `Purchase Import Inquiry ${inquiryNo}${
+        format === "excel" ? " (Excel)" : " (PDF)"
+      }`,
+    );
+    setEmailMessage(
+      `Dear Supplier,\n\nPlease find attached Purchase Import Inquiry ${inquiryNo}.\n\nRegards,\nCrystal Trading\nsales@crystaltrading.pk`,
+    );
+    setEmailDialogOpen(true);
+
+    if (!toValue) {
+      toast({
+        title: "No supplier email saved",
+        description:
+          "This supplier has no email on file. Enter an address manually, or save an email on the supplier.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSendInquiryEmail = async () => {
+    if (!detail) return;
+    const to = emailTo.trim();
+    if (!to) {
+      toast({
+        title: "Recipient required",
+        description: "Enter at least one email address in To.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!emailSubject.trim()) {
+      toast({
+        title: "Subject required",
+        description: "Enter an email subject.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSendingEmail(true);
+    try {
+      const payload = {
+        detail,
+        supplierRows,
+        itemRows: sortedItemRows,
+        totals,
+      };
+      const inquiryNo = String(detail.requestNo || "inquiry").replace(
+        /[^\w.-]+/g,
+        "_",
+      );
+      const blob =
+        emailFormat === "excel"
+          ? await buildPurchaseImportInquiryExcelBlob(payload)
+          : buildPurchaseImportInquiryPdfBlob(payload);
+      const attachmentBase64 = await blobToBase64(blob);
+      const filename =
+        emailFormat === "excel"
+          ? `Purchase_Import_Inquiry_${inquiryNo}.xlsx`
+          : `Purchase_Import_Inquiry_${inquiryNo}.pdf`;
+      const contentType =
+        emailFormat === "excel"
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "application/pdf";
+
+      const response = (await apiClient.sendEmailWithAttachment({
+        to,
+        cc: emailCc.trim() || undefined,
+        subject: emailSubject.trim(),
+        message: emailMessage.trim() || undefined,
+        filename,
+        contentType,
+        attachmentBase64,
+      })) as any;
+
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+
+      setEmailDialogOpen(false);
+      toast({
+        title: "Email sent",
+        description: `Inquiry sent as ${emailFormat.toUpperCase()} from sales@crystaltrading.pk.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to send email",
+        description:
+          error?.message ||
+          "Could not send email. Check SMTP settings on the server.",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   if (loading || !detail) {
     return (
       <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
@@ -3276,13 +3640,133 @@ const PurchaseImportRequestView = ({
             Read-only inquiry details.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <PrintPdfButton onPrint={handlePrintPdf} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1"
+                disabled={!inquiryConfirmed}
+                title={
+                  inquiryConfirmed
+                    ? "Email inquiry to supplier"
+                    : "Confirm the inquiry before sending email"
+                }
+              >
+                <Mail className="h-4 w-4" />
+                Email
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={!inquiryConfirmed}
+                onClick={() => openEmailDialog("pdf")}
+              >
+                Email in PDF format
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!inquiryConfirmed}
+                onClick={() => openEmailDialog("excel")}
+              >
+                Email in Excel format
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button type="button" variant="outline" onClick={onBack}>
             Back to List
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={emailDialogOpen}
+        onOpenChange={(open) => {
+          if (!sendingEmail) setEmailDialogOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Email Inquiry ({emailFormat === "excel" ? "Excel" : "PDF"})
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-xs text-muted-foreground">
+              Sent from <span className="font-medium">sales@crystaltrading.pk</span>{" "}
+              (Hostinger SMTP).
+            </p>
+            <div className="space-y-1">
+              <Label htmlFor="inquiry-email-to">To</Label>
+              <Input
+                id="inquiry-email-to"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="supplier@example.com"
+                disabled={sendingEmail}
+              />
+              {detail.supplier?.email ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Auto-filled from supplier{" "}
+                  <span className="font-medium">
+                    {detail.supplier.name || "selected supplier"}
+                  </span>
+                  .
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="inquiry-email-cc">CC (optional)</Label>
+              <Input
+                id="inquiry-email-cc"
+                value={emailCc}
+                onChange={(e) => setEmailCc(e.target.value)}
+                placeholder="optional@example.com"
+                disabled={sendingEmail}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="inquiry-email-subject">Subject</Label>
+              <Input
+                id="inquiry-email-subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                disabled={sendingEmail}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="inquiry-email-message">Message</Label>
+              <Textarea
+                id="inquiry-email-message"
+                value={emailMessage}
+                onChange={(e) => setEmailMessage(e.target.value)}
+                rows={6}
+                disabled={sendingEmail}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={sendingEmail}
+              onClick={() => setEmailDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={sendingEmail}
+              onClick={() => void handleSendInquiryEmail()}
+            >
+              {sendingEmail ? "Sending..." : "Send Email"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div className="rounded-md border p-3">
@@ -7722,6 +8206,10 @@ const PurchaseOrderTab = ({
   const [viewOrderId, setViewOrderId] = useState<string | null>(null);
   const [viewOrder, setViewOrder] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [viewItemPriceDrafts, setViewItemPriceDrafts] = useState<
+    Record<string, { priceA: string; priceB: string }>
+  >({});
+  const [updatingViewPrices, setUpdatingViewPrices] = useState(false);
   const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [receiveOrderId, setReceiveOrderId] = useState<string | null>(null);
@@ -7843,10 +8331,22 @@ const PurchaseOrderTab = ({
     setViewOrderId(orderId);
     setLoadingDetail(true);
     setViewOrder(null);
+    setViewItemPriceDrafts({});
+    setUpdatingViewPrices(false);
     try {
       const response = await apiClient.getImportPurchaseOrder(orderId);
       const orderData = (response as any)?.data || response;
       setViewOrder(orderData);
+      const drafts: Record<string, { priceA: string; priceB: string }> = {};
+      for (const item of orderData?.items || []) {
+        const key = String(item.id || item.partId || "");
+        if (!key) continue;
+        drafts[key] = {
+          priceA: formatRateInput(Number(item.priceA ?? item.price_a ?? 0)),
+          priceB: formatRateInput(Number(item.priceB ?? item.price_b ?? 0)),
+        };
+      }
+      setViewItemPriceDrafts(drafts);
     } catch (error: any) {
       toast({
         title: "Failed to load purchase order",
@@ -7856,6 +8356,176 @@ const PurchaseOrderTab = ({
       setViewOrderId(null);
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const handleViewItemPriceChange = (
+    itemKey: string,
+    field: "priceA" | "priceB",
+    raw: string,
+  ) => {
+    if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
+    setViewItemPriceDrafts((prev) => ({
+      ...prev,
+      [itemKey]: {
+        priceA: prev[itemKey]?.priceA ?? "",
+        priceB: prev[itemKey]?.priceB ?? "",
+        [field]: raw,
+      },
+    }));
+  };
+
+  const handleUpdateAllViewItemPrices = async () => {
+    const items = Array.isArray(viewOrder?.items) ? viewOrder.items : [];
+    const poLabel = String(
+      viewOrder?.poNumber || viewOrder?.po_number || "",
+    ).trim();
+
+    type PriceChange = {
+      itemKey: string;
+      partId: string;
+      priceA: number;
+      priceB: number;
+      label: string;
+    };
+
+    const changes: PriceChange[] = [];
+    for (const item of items) {
+      const partId = String(item.partId || item.part_id || "").trim();
+      const itemKey = String(item.id || partId || "");
+      if (!partId || !itemKey) continue;
+
+      const draft = viewItemPriceDrafts[itemKey];
+      if (!draft) continue;
+
+      const priceA = parseRateInput(draft.priceA);
+      const priceB = parseRateInput(draft.priceB);
+      if (
+        !Number.isFinite(priceA) ||
+        priceA < 0 ||
+        !Number.isFinite(priceB) ||
+        priceB < 0
+      ) {
+        toast({
+          title: "Invalid prices",
+          description: `Enter valid non-negative Price A / B for ${
+            item.masterPartNo || item.partNo || "item"
+          }.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const originalA = Number(item.priceA ?? item.price_a ?? 0) || 0;
+      const originalB = Number(item.priceB ?? item.price_b ?? 0) || 0;
+      if (
+        Math.abs(priceA - originalA) < 0.00005 &&
+        Math.abs(priceB - originalB) < 0.00005
+      ) {
+        continue;
+      }
+
+      changes.push({
+        itemKey,
+        partId,
+        priceA,
+        priceB,
+        label:
+          [item.masterPartNo || item.master_part_no, item.partNo || item.part_no]
+            .filter(Boolean)
+            .join(" | ") || partId,
+      });
+    }
+
+    if (changes.length === 0) {
+      toast({
+        title: "No price changes",
+        description: "Edit Price A or Price B on one or more items first.",
+      });
+      return;
+    }
+
+    setUpdatingViewPrices(true);
+    try {
+      const results = await Promise.allSettled(
+        changes.map((change) =>
+          apiClient.updatePartPrices(change.partId, {
+            priceA: change.priceA,
+            priceB: change.priceB,
+            reason: `Updated from Purchase Invoice ${poLabel}`.trim(),
+          }),
+        ),
+      );
+
+      const succeeded = changes.filter((_, index) => results[index]?.status === "fulfilled");
+      const failed = changes.filter((_, index) => results[index]?.status === "rejected");
+
+      if (succeeded.length > 0) {
+        const succeededByKey = new Map(
+          succeeded.map((change) => [change.itemKey, change]),
+        );
+        setViewOrder((prev: any) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: (prev.items || []).map((row: any) => {
+              const rowKey = String(row.id || row.partId || "");
+              const change =
+                succeededByKey.get(rowKey) ||
+                succeeded.find(
+                  (entry) => entry.partId === String(row.partId || ""),
+                );
+              if (!change) return row;
+              return {
+                ...row,
+                priceA: change.priceA,
+                priceB: change.priceB,
+              };
+            }),
+          };
+        });
+        setViewItemPriceDrafts((prev) => {
+          const next = { ...prev };
+          for (const change of succeeded) {
+            next[change.itemKey] = {
+              priceA: formatRateInput(change.priceA),
+              priceB: formatRateInput(change.priceB),
+            };
+          }
+          return next;
+        });
+      }
+
+      if (failed.length > 0 && succeeded.length > 0) {
+        toast({
+          title: "Partial update",
+          description: `Updated ${succeeded.length} item(s). Failed: ${failed
+            .map((entry) => entry.label)
+            .join(", ")}.`,
+          variant: "destructive",
+        });
+      } else if (failed.length > 0) {
+        toast({
+          title: "Failed to update prices",
+          description: `Could not update: ${failed
+            .map((entry) => entry.label)
+            .join(", ")}.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Prices updated",
+          description: `Updated Price A / B for ${succeeded.length} item(s).`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Failed to update prices",
+        description: error?.message || "Could not update Price A / B.",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingViewPrices(false);
     }
   };
 
@@ -8244,23 +8914,80 @@ const PurchaseOrderTab = ({
     try {
       const response = await apiClient.getImportPurchaseOrder(order.id);
       const orderData: any = (response as any)?.data || response;
-      const items = (orderData?.items || [])
-        .map((item: any) => {
+      const rawItems = Array.isArray(orderData?.items) ? orderData.items : [];
+
+      // Match Invoice "Unit Cost" = LC rate + per-unit share of import expenses
+      const expenses = parseImportPoExpenses(orderData?.expenses);
+      const invoiceLc = Number(
+        orderData?.totalAmount ?? orderData?.total_amount ?? 0,
+      );
+      const conversionRate = (() => {
+        const rate = Number(
+          orderData?.conversionRate ??
+            orderData?.conversion_rate ??
+            orderData?.quotation?.conversionRate ??
+            0,
+        );
+        return Number.isFinite(rate) && rate > 0 ? rate : 1;
+      })();
+      const totalExp =
+        expenses.totalExp > 0
+          ? expenses.totalExp
+          : computeImportPoTotalExp(expenses, invoiceLc, conversionRate);
+
+      const linesForExpenseShare = rawItems.map((item: any) => {
+        const receiveQty = Math.max(
+          0,
+          Math.floor(
+            Number(
+              item.receivedQty ?? item.received_qty ?? item.receiveQty ?? 0,
+            ),
+          ),
+        );
+        return {
+          receiveQty,
+          weight: Number(item.weight || 0),
+        };
+      });
+      const distributedExpenses = computeImportPoDistributedExpenses(
+        linesForExpenseShare,
+        totalExp,
+      );
+
+      const items = rawItems
+        .map((item: any, index: number) => {
           const partId = String(item.partId || item.part_id || "").trim();
           const quantity = Math.max(
             0,
             Math.floor(
-              Number(item.receivedQty ?? item.received_qty ?? item.receiveQty ?? 0),
+              Number(
+                item.receivedQty ?? item.received_qty ?? item.receiveQty ?? 0,
+              ),
             ),
           );
           if (!partId || quantity <= 0) return null;
+
+          const lcRate =
+            Number(
+              item.lcRate ??
+                item.lc_rate ??
+                item.unitCost ??
+                item.unit_cost ??
+                0,
+            ) || 0;
+          const distributedExpense = distributedExpenses[index] ?? 0;
+          const unitExp = quantity > 0 ? distributedExpense / quantity : 0;
+          // Same formula as Invoice Unit Cost column
+          const unitCost = lcRate + unitExp;
+
           return {
             partId,
             quantity,
             partNo: item.partNo || item.part_no || "",
             masterPartNo: item.masterPartNo || item.master_part_no || "",
             description: item.description || item.part_description || "",
-            purchasePrice: Number(item.unitCost ?? item.unit_cost ?? 0) || 0,
+            unitCost,
+            purchasePrice: unitCost,
           };
         })
         .filter(Boolean);
@@ -9003,11 +9730,22 @@ const PurchaseOrderTab = ({
         />
       )}
 
-      <Dialog open={!!viewOrderId} onOpenChange={(open) => !open && setViewOrderId(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <Dialog
+        open={!!viewOrderId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewOrderId(null);
+            setViewOrder(null);
+            setViewItemPriceDrafts({});
+            setUpdatingViewPrices(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-7xl w-[95vw] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
                   <DialogTitle>
-                    Shipment {viewOrder?.po_number || viewOrder?.poNumber || ""}
+                    {isInvoiceMode ? "Invoice" : "Shipment"}{" "}
+                    {viewOrder?.po_number || viewOrder?.poNumber || ""}
                   </DialogTitle>
           </DialogHeader>
           {loadingDetail ? (
@@ -9249,6 +9987,21 @@ const PurchaseOrderTab = ({
               {viewOrder.notes ? (
                 <p className="text-muted-foreground">{viewOrder.notes}</p>
               ) : null}
+              {isInvoiceMode ? (
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-xs text-muted-foreground">
+                    Edit Price A / B on items, then update all changed prices.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={updatingViewPrices}
+                    onClick={() => void handleUpdateAllViewItemPrices()}
+                  >
+                    {updatingViewPrices ? "Updating..." : "Update Prices"}
+                  </Button>
+                </div>
+              ) : null}
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-xs">
                   <thead className="bg-muted/40">
@@ -9263,6 +10016,12 @@ const PurchaseOrderTab = ({
                       <th className="text-right p-2">FC Amount</th>
                       <th className="text-right p-2">LC Rate</th>
                       <th className="text-right p-2">LC Amount</th>
+                      {isInvoiceMode ? (
+                        <>
+                          <th className="text-right p-2">Price A</th>
+                          <th className="text-right p-2">Price B</th>
+                        </>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -9290,8 +10049,19 @@ const PurchaseOrderTab = ({
                           item.total_cost ??
                           lcRate * orderQty,
                       );
+                      const itemKey = String(
+                        item.id || item.partId || item.part_id || "",
+                      );
+                      const priceDraft = viewItemPriceDrafts[itemKey] || {
+                        priceA: formatRateInput(
+                          Number(item.priceA ?? item.price_a ?? 0),
+                        ),
+                        priceB: formatRateInput(
+                          Number(item.priceB ?? item.price_b ?? 0),
+                        ),
+                      };
                       return (
-                      <tr key={item.id} className="border-t">
+                      <tr key={item.id || itemKey} className="border-t">
                         <td className="p-2 font-mono">
                           {item.masterPartNo || item.master_part_no || "-"} |{" "}
                           {item.partNo || item.part_no || "-"}
@@ -9319,6 +10089,38 @@ const PurchaseOrderTab = ({
                         <td className="p-2 text-right tabular-nums">
                           {lcAmount.toFixed(2)}
                         </td>
+                        {isInvoiceMode ? (
+                          <>
+                            <td className="p-2">
+                              <Input
+                                className="h-8 w-[6.5rem] ml-auto text-right tabular-nums"
+                                value={priceDraft.priceA}
+                                disabled={updatingViewPrices}
+                                onChange={(e) =>
+                                  handleViewItemPriceChange(
+                                    itemKey,
+                                    "priceA",
+                                    e.target.value,
+                                  )
+                                }
+                              />
+                            </td>
+                            <td className="p-2">
+                              <Input
+                                className="h-8 w-[6.5rem] ml-auto text-right tabular-nums"
+                                value={priceDraft.priceB}
+                                disabled={updatingViewPrices}
+                                onChange={(e) =>
+                                  handleViewItemPriceChange(
+                                    itemKey,
+                                    "priceB",
+                                    e.target.value,
+                                  )
+                                }
+                              />
+                            </td>
+                          </>
+                        ) : null}
                       </tr>
                     );
                     })}

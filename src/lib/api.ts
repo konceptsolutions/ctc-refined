@@ -894,6 +894,13 @@ class ApiClient {
     return this.request(`/inventory/cost-lookup/${partId}`);
   }
 
+  async getPartCostLookupBatch(partIds: string[]) {
+    return this.request(`/inventory/cost-lookup/batch`, {
+      method: "POST",
+      body: JSON.stringify({ partIds }),
+    });
+  }
+
   async getPartLocations(partId: string) {
     return this.request<any[]>(
       `/inventory/part-locations/${partId}?t=${Date.now()}`,
@@ -2599,6 +2606,21 @@ class ApiClient {
     return this.request(`/purchase-import/requests/${requestId}`);
   }
 
+  async sendEmailWithAttachment(data: {
+    to: string | string[];
+    cc?: string | string[];
+    subject: string;
+    message?: string;
+    filename: string;
+    contentType?: string;
+    attachmentBase64: string;
+  }) {
+    return this.request(`/email/send`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   async updatePurchaseImportRequest(
     requestId: string,
     data: {
@@ -4161,6 +4183,7 @@ class ApiClient {
     params?: {
       page?: number;
       limit?: number;
+      months?: 3 | 6 | 9 | 12 | number;
     },
   ) {
     const queryParams = new URLSearchParams();

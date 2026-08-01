@@ -1731,18 +1731,19 @@ router.get("/model-associations/:modelName", async (req: Request, res: Response)
     if (!modelName) {
       return res.status(400).json({ error: "Model name is required" });
     }
-    if (!application) {
-      return res.status(400).json({ error: "Application is required" });
-    }
 
     const modelRows = await prisma.model.findMany({
       where: {
         name: { equals: modelName, mode: "insensitive" },
         Part: {
           status: "active",
-          Application: {
-            name: { equals: application, mode: "insensitive" },
-          },
+          ...(application
+            ? {
+                Application: {
+                  name: { equals: application, mode: "insensitive" },
+                },
+              }
+            : {}),
         },
       },
       include: {

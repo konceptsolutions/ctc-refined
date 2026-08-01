@@ -7,6 +7,15 @@ import { getPakistanFinancialYearBounds } from "../utils/pakistanFinancialYear";
 
 const router = express.Router();
 
+/** Same statuses as import-inquiry Sales column (`/purchase-import/parts-sales`). */
+const INQUIRY_SALES_INVOICE_STATUSES = [
+  "approved",
+  "partially_delivered",
+  "fully_delivered",
+  "delivered",
+  "return",
+] as const;
+
 /** Persist freight when Prisma client predates freightCharges column (run prisma generate when dev server is stopped). */
 async function setInvoiceFreightCharges(
   invoiceId: string,
@@ -1885,15 +1894,44 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
 router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
   try {
     const { partId } = req.params;
-    const { page = "1", limit = "50" } = req.query;
+    const { page = "1", limit = "50", months } = req.query;
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
+    const monthsNum = Number(months);
+    const validMonths =
+      Number.isFinite(monthsNum) && [3, 6, 9, 12].includes(monthsNum)
+        ? monthsNum
+        : null;
+
+    const invoiceDateFilter =
+      validMonths !== null
+        ? (() => {
+            const from = new Date();
+            from.setHours(0, 0, 0, 0);
+            from.setMonth(from.getMonth() - validMonths);
+            return { gte: from };
+          })()
+        : undefined;
+
+    // When period filter is used (import inquiry), match Sales column rules:
+    // only approved/delivered-like invoices, same date window.
+    const inquiryStatusFilter =
+      validMonths !== null
+        ? { status: { in: [...INQUIRY_SALES_INVOICE_STATUSES] } }
+        : {};
+
     // Find all sales invoice items for this part
     const invoiceItems = await prisma.salesInvoiceItem.findMany({
-      where: { partId },
+      where: {
+        partId,
+        SalesInvoice: {
+          ...(invoiceDateFilter ? { invoiceDate: invoiceDateFilter } : {}),
+          ...inquiryStatusFilter,
+        },
+      },
       include: {
         SalesInvoice: {
           include: {
@@ -1924,8 +1962,19 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
       ...new Set(invoiceItems.map((item) => item.invoiceId)),
     ];
     const invoices = await prisma.salesInvoice.findMany({
-      where: { id: { in: uniqueInvoiceIds } },
+      where: {
+        id: { in: uniqueInvoiceIds },
+        ...(invoiceDateFilter ? { invoiceDate: invoiceDateFilter } : {}),
+        ...inquiryStatusFilter,
+      },
       include: {
+        Customer: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+          },
+        },
         SalesInvoiceItem: {
           where: { partId },
           include: {
@@ -1939,7 +1988,7 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
         },
       },
       orderBy: {
-        invoiceNo: "desc",
+        invoiceDate: "desc",
       },
     });
 
@@ -1949,12 +1998,17 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
         const itemForPart = inv.SalesInvoiceItem?.find(
           (item) => item.partId === partId,
         );
+        const orderedQty = Number(itemForPart?.orderedQty || 0);
+        const deliveredQty = Number(itemForPart?.deliveredQty || 0);
+        // Match import-inquiry Sales column qty rule
+        const soldQty = deliveredQty > 0 ? deliveredQty : orderedQty;
         return {
           id: inv.id,
           invoice_no: inv.invoiceNo,
           invoice_date: inv.invoiceDate,
           customer_name: inv.customerName,
           customer_type: inv.customerType,
+          customer_category: inv.Customer?.category || null,
           status: inv.status,
           payment_status: inv.paymentStatus,
           grand_total: inv.grandTotal,
@@ -1971,8 +2025,9 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
               part_no: itemForPart.partNo,
               part_description: itemForPart.description,
               brand: itemForPart.brand || itemForPart.Part?.Brand?.name || "",
-              ordered_qty: itemForPart.orderedQty,
-              delivered_qty: itemForPart.deliveredQty,
+              ordered_qty: orderedQty,
+              delivered_qty: deliveredQty,
+              sold_qty: soldQty,
               pending_qty: itemForPart.pendingQty,
               unit_price: itemForPart.unitPrice,
               discount: itemForPart.discount,

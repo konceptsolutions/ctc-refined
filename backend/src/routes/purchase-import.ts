@@ -1449,6 +1449,19 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
         PurchaseImportRequestItem: {
           orderBy: { createdAt: "asc" },
         },
+        Supplier: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            companyName: true,
+            email: true,
+            country: true,
+            area: true,
+            currencyName: true,
+            type: true,
+          },
+        },
       },
     });
 
@@ -1476,6 +1489,37 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
       (row: any) => row.PurchaseImportRequestItem || [],
     );
 
+    const suppliers = batchRows
+      .map((row: any) => row.Supplier)
+      .filter(Boolean)
+      .map((supplier: any) => ({
+        id: supplier.id,
+        code: supplier.code || "",
+        name: supplier.companyName || supplier.name || supplier.code || "-",
+        email: String(supplier.email || "").trim() || null,
+        country: supplier.country || null,
+        area: supplier.area || null,
+        currencyName: supplier.currencyName || null,
+        type: supplier.type || null,
+      }));
+
+    const currentSupplier = selectedBatchRow?.Supplier
+      ? {
+          id: selectedBatchRow.Supplier.id,
+          code: selectedBatchRow.Supplier.code || "",
+          name:
+            selectedBatchRow.Supplier.companyName ||
+            selectedBatchRow.Supplier.name ||
+            selectedBatchRow.Supplier.code ||
+            "-",
+          email: String(selectedBatchRow.Supplier.email || "").trim() || null,
+          country: selectedBatchRow.Supplier.country || null,
+          area: selectedBatchRow.Supplier.area || null,
+          currencyName: selectedBatchRow.Supplier.currencyName || null,
+          type: selectedBatchRow.Supplier.type || null,
+        }
+      : null;
+
     res.json({
       data: {
         id: selectedRequest.id,
@@ -1493,6 +1537,8 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
         supplierIds: batchRows
           .map((row: any) => row.supplierId)
           .filter((id: any) => typeof id === "string" && id.trim() !== ""),
+        supplier: currentSupplier,
+        suppliers,
         items,
       },
     });

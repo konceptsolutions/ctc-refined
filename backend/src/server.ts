@@ -77,6 +77,7 @@ import advancedSearchRoutes from "./routes/advanced-search";
 import purchaseImportRoutes from "./routes/purchase-import";
 import partsDropdownRoutes from "./routes/parts-dropdown";
 import authRoutes from "./routes/auth";
+import emailRoutes from "./routes/email";
 import { authenticateJWT, authorizeRoles } from "./middleware/authMiddleware";
 
 // Trigger restart for environment variable update
@@ -609,6 +610,7 @@ app.use("/api/stock-details", authenticateJWT, stockDetailsRoutes);
 app.use("/api/advanced-search", authenticateJWT, advancedSearchRoutes);
 app.use("/api/advanced-search", authenticateJWT, advancedSearchRoutes);
 app.use("/api/purchase-import", authenticateJWT, purchaseImportRoutes);
+app.use("/api/email", authenticateJWT, emailRoutes);
 
 // Dev-Koncepts deployment: all API under /dev-koncepts/api when frontend is at /dev-koncepts/ (so requests hit this backend, not main app)
 app.use("/dev-koncepts/api/parts", authenticateJWT, partsRoutes);
@@ -665,6 +667,7 @@ app.use(
   authenticateJWT,
   purchaseImportRoutes,
 );
+app.use("/dev-koncepts/api/email", authenticateJWT, emailRoutes);
 
 // RESTART TRIGGER - EXPLICIT FORCE AT 2026-02-03 18:22
 console.log(

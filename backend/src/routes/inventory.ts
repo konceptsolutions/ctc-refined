@@ -1321,28 +1321,28 @@ router.get("/rack-shelf-balances", async (req: Request, res: Response) => {
 router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
   try {
     const { partId } = req.params;
-    console.log(`[API] Cost Lookup hit for ${partId}`);
 
-    // Use queryRaw to replicate parts.ts logic exactly including joins
-    // Cast result to any[] to avoid TS issues
+    // Scope stock/reservation aggregates to this part only (full-table GROUP BY was very slow).
     const result = (await prisma.$queryRaw`
       SELECT 
         p.id, p."avgCost", p.cost, p."purchasePrice", p."priceA",
-        COALESCE(st.stock, 0) as current_stock,
-        COALESCE(rs.reserved, 0) as reserved_stock
+        COALESCE((
+          SELECT SUM(
+            CASE
+              WHEN sm."referenceType" IS NULL OR sm."referenceType" != 'stock_reservation'
+                THEN (CASE WHEN sm.type = 'in' THEN sm.quantity ELSE -sm.quantity END)
+              ELSE 0
+            END
+          )
+          FROM "StockMovement" sm
+          WHERE sm."partId" = p.id
+        ), 0) as current_stock,
+        COALESCE((
+          SELECT SUM(sr.quantity)
+          FROM "StockReservation" sr
+          WHERE sr."partId" = p.id AND sr.status = 'reserved'
+        ), 0) as reserved_stock
       FROM "Part" p
-      LEFT JOIN (
-          SELECT "partId", 
-            SUM(CASE WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as stock
-          FROM "StockMovement"
-          GROUP BY "partId"
-      ) st ON p.id = st."partId"
-      LEFT JOIN (
-          SELECT "partId", SUM(quantity) as reserved
-          FROM "StockReservation"
-          WHERE status = 'reserved'
-          GROUP BY "partId"
-      ) rs ON p.id = rs."partId"
       WHERE p.id = ${partId}
     `) as any[];
 
@@ -1387,6 +1387,113 @@ router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
       purchase_price: row.purchasePrice || 0,
       price_a: row.priceA || 0,
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** Batch cost lookup for transfer-out / stock-out item grids. */
+router.post("/cost-lookup/batch", async (req: Request, res: Response) => {
+  try {
+    const partIds: string[] = Array.from(
+      new Set(
+        (Array.isArray(req.body?.partIds) ? (req.body.partIds as unknown[]) : [])
+          .map((id) => String(id ?? "").trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+
+    if (partIds.length === 0) {
+      return res.json({ data: {} });
+    }
+
+    const result = (await prisma.$queryRaw`
+      SELECT 
+        p.id, p."avgCost", p.cost, p."purchasePrice", p."priceA",
+        COALESCE((
+          SELECT SUM(
+            CASE
+              WHEN sm."referenceType" IS NULL OR sm."referenceType" != 'stock_reservation'
+                THEN (CASE WHEN sm.type = 'in' THEN sm.quantity ELSE -sm.quantity END)
+              ELSE 0
+            END
+          )
+          FROM "StockMovement" sm
+          WHERE sm."partId" = p.id
+        ), 0) as current_stock,
+        COALESCE((
+          SELECT SUM(sr.quantity)
+          FROM "StockReservation" sr
+          WHERE sr."partId" = p.id AND sr.status = 'reserved'
+        ), 0) as reserved_stock
+      FROM "Part" p
+      WHERE p.id IN (${Prisma.join(partIds)})
+    `) as any[];
+
+    const zeroCostIds = result
+      .filter((row) => !(row.avgCost || row.cost || row.purchasePrice))
+      .map((row) => String(row.id));
+
+    const adjustmentCostByPartId: Record<string, number> = {};
+    if (zeroCostIds.length > 0) {
+      const adjustments = await prisma.adjustmentItem.findMany({
+        where: {
+          partId: { in: zeroCostIds },
+          Adjustment: { status: "approved", deletedAt: null },
+          cost: { not: null, gt: 0 },
+        },
+        orderBy: [
+          { Adjustment: { date: "desc" } },
+          { Adjustment: { createdAt: "desc" } },
+        ],
+        select: { partId: true, cost: true },
+      });
+      for (const adj of adjustments) {
+        if (adjustmentCostByPartId[adj.partId] == null && adj.cost != null) {
+          adjustmentCostByPartId[adj.partId] = Number(adj.cost) || 0;
+        }
+      }
+    }
+
+    const data: Record<
+      string,
+      {
+        part_id: string;
+        current_stock: number;
+        reserved_stock: number;
+        available_stock: number;
+        avg_cost: number;
+        cost: number;
+        purchase_price: number;
+        price_a: number;
+      }
+    > = {};
+
+    for (const row of result) {
+      const id = String(row.id);
+      const cost = Number(row.cost || 0);
+      const purchasePrice = Number(row.purchasePrice || 0);
+      const avgCost =
+        Number(row.avgCost || 0) ||
+        cost ||
+        purchasePrice ||
+        adjustmentCostByPartId[id] ||
+        0;
+      const currentStock = parseInt(row.current_stock) || 0;
+      const reservedStock = parseInt(row.reserved_stock) || 0;
+      data[id] = {
+        part_id: id,
+        current_stock: currentStock,
+        reserved_stock: reservedStock,
+        available_stock: Math.max(0, currentStock - reservedStock),
+        avg_cost: avgCost,
+        cost,
+        purchase_price: purchasePrice,
+        price_a: Number(row.priceA || 0),
+      };
+    }
+
+    return res.json({ data });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1991,28 +2098,28 @@ router.get("/balances", async (req: Request, res: Response) => {
 router.get("/cost-lookup/:partId", async (req: Request, res: Response) => {
   try {
     const { partId } = req.params;
-    console.log(`[API] Cost Lookup hit for ${partId}`);
 
-    // Use queryRaw to replicate parts.ts logic exactly including joins
-    // Cast result to any[] to avoid TS issues
+    // Scope stock/reservation aggregates to this part only (full-table GROUP BY was very slow).
     const result = (await prisma.$queryRaw`
       SELECT 
         p.id, p."avgCost", p.cost, p."purchasePrice", p."priceA",
-        COALESCE(st.stock, 0) as current_stock,
-        COALESCE(rs.reserved, 0) as reserved_stock
+        COALESCE((
+          SELECT SUM(
+            CASE
+              WHEN sm."referenceType" IS NULL OR sm."referenceType" != 'stock_reservation'
+                THEN (CASE WHEN sm.type = 'in' THEN sm.quantity ELSE -sm.quantity END)
+              ELSE 0
+            END
+          )
+          FROM "StockMovement" sm
+          WHERE sm."partId" = p.id
+        ), 0) as current_stock,
+        COALESCE((
+          SELECT SUM(sr.quantity)
+          FROM "StockReservation" sr
+          WHERE sr."partId" = p.id AND sr.status = 'reserved'
+        ), 0) as reserved_stock
       FROM "Part" p
-      LEFT JOIN (
-          SELECT "partId", 
-            SUM(CASE WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as stock
-          FROM "StockMovement"
-          GROUP BY "partId"
-      ) st ON p.id = st."partId"
-      LEFT JOIN (
-          SELECT "partId", SUM(quantity) as reserved
-          FROM "StockReservation"
-          WHERE status = 'reserved'
-          GROUP BY "partId"
-      ) rs ON p.id = rs."partId"
       WHERE p.id = ${partId}
     `) as any[];
 

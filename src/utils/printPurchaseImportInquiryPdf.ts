@@ -79,21 +79,20 @@ const toInputDate = (value?: string | Date | null) => {
 
 const text = (value: unknown) => String(value ?? "");
 
-/**
- * Generates the Purchase Import Inquiry PDF with the same content/layout
- * as the previous HTML print view (A4, header cards, suppliers, items).
- */
-export const printPurchaseImportInquiry = ({
-  detail,
-  supplierRows,
-  itemRows,
-  totals,
-}: {
+type InquiryPrintPayload = {
   detail: PurchaseImportInquiryPrintDetail;
   supplierRows: InquiryViewSupplierRow[];
   itemRows: InquiryViewItemRow[];
   totals: { qty: number; weight: number };
-}): boolean => {
+};
+
+/** Build the Purchase Import Inquiry PDF document (does not open print). */
+export const buildPurchaseImportInquiryPdfDoc = ({
+  detail,
+  supplierRows,
+  itemRows,
+  totals,
+}: InquiryPrintPayload): jsPDF => {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 12;
@@ -321,6 +320,21 @@ export const printPurchaseImportInquiry = ({
   doc.setTextColor(102, 102, 102);
   doc.text("Computer-generated document.", marginX, finalY);
 
+  return doc;
+};
+
+/** Build inquiry PDF as a Blob (for email attachment). */
+export const buildPurchaseImportInquiryPdfBlob = (
+  payload: InquiryPrintPayload,
+): Blob => buildPurchaseImportInquiryPdfDoc(payload).output("blob");
+
+/**
+ * Generates the Purchase Import Inquiry PDF and opens the browser print dialog.
+ */
+export const printPurchaseImportInquiry = (
+  payload: InquiryPrintPayload,
+): boolean => {
+  const doc = buildPurchaseImportInquiryPdfDoc(payload);
   const pdfBlob = doc.output("blob");
   const url = URL.createObjectURL(pdfBlob);
   const printWindow = window.open(url, "_blank");
