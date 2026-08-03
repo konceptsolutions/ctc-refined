@@ -147,6 +147,13 @@ const fmt = (n: number | undefined | null, digits = 2) =>
 const fmtQty = (n: number | undefined | null) =>
   Number.isFinite(Number(n)) ? Number(n).toLocaleString("en-US") : "—";
 
+/** Always show Part No | Master Part (mapped fields: masterPart=part_no, partNo=master_part_no). */
+const fmtPartNos = (item: Pick<PartResult, "partNo" | "masterPart">) => {
+  const partNo = String(item.masterPart || "").trim() || "N/A";
+  const masterPart = String(item.partNo || "").trim() || "N/A";
+  return `${partNo} | ${masterPart}`;
+};
+
 const statusBadge = (status: string) => {
   const s = String(status || "").toLowerCase();
   if (s === "completed" || s === "received" || s === "confirm" || s === "confirmed")
@@ -211,6 +218,13 @@ export const PurchaseInquiry = ({
     reOrderLevel: number;
   } | null>(null);
   const [savingPrices, setSavingPrices] = useState(false);
+
+  // Editable Price A / B + O.Lvl (alternate parts)
+  type AltPriceDraft = { priceA: string; priceB: string; reOrderLevel: string };
+  type AltPriceBaseline = { priceA: number; priceB: number; reOrderLevel: number };
+  const [altEdits, setAltEdits] = useState<Record<string, AltPriceDraft>>({});
+  const [altBaselines, setAltBaselines] = useState<Record<string, AltPriceBaseline>>({});
+  const [savingAltPrices, setSavingAltPrices] = useState(false);
 
   const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -343,6 +357,13 @@ export const PurchaseInquiry = ({
         priceB: nextB,
         reOrderLevel: nextLvl,
       });
+      setAlternateItems((prev) =>
+        prev.map((p) =>
+          p.id === selectedPart.id
+            ? { ...p, priceA: nextA, priceB: nextB, reOrderLevel: nextLvl }
+            : p,
+        ),
+      );
       setSearchResults((prev) =>
         prev.map((p) =>
           p.id === selectedPart.id
@@ -379,6 +400,225 @@ export const PurchaseInquiry = ({
     editPriceB,
     editReorderLevel,
     upsertItem,
+  ]);
+
+  const altPricesDirty = useMemo(() => {
+    return alternateItems.some((item) => {
+      if (!item.id) return false;
+      const draft = altEdits[item.id];
+      const base = altBaselines[item.id];
+      if (!draft || !base) return false;
+      return (
+        (parsePriceInput(draft.priceA) ?? base.priceA) !== base.priceA ||
+        (parsePriceInput(draft.priceB) ?? base.priceB) !== base.priceB ||
+        (parsePriceInput(draft.reOrderLevel) ?? base.reOrderLevel) !== base.reOrderLevel
+      );
+    });
+  }, [alternateItems, altEdits, altBaselines]);
+
+  const setAltEditField = useCallback(
+    (partId: string, field: keyof AltPriceDraft, value: string) => {
+      setAltEdits((prev) => ({
+        ...prev,
+        [partId]: {
+          priceA: prev[partId]?.priceA ?? "",
+          priceB: prev[partId]?.priceB ?? "",
+          reOrderLevel: prev[partId]?.reOrderLevel ?? "",
+          [field]: value,
+        },
+      }));
+    },
+    [],
+  );
+
+  const applyAlternatePriceUpdates = useCallback(
+    (
+      updates: Array<{
+        id: string;
+        priceA: number;
+        priceB: number;
+        reOrderLevel: number;
+        item: PartResult;
+      }>,
+    ) => {
+      if (updates.length === 0) return;
+      const byId = new Map(updates.map((u) => [u.id, u]));
+      setAlternateItems((prev) =>
+        prev.map((p) => {
+          const u = byId.get(p.id);
+          return u
+            ? { ...p, priceA: u.priceA, priceB: u.priceB, reOrderLevel: u.reOrderLevel }
+            : p;
+        }),
+      );
+      for (const u of updates) {
+        upsertItem({
+          ...u.item,
+          priceA: u.priceA,
+          priceB: u.priceB,
+          reOrderLevel: u.reOrderLevel,
+        });
+      }
+      setAltBaselines((prev) => {
+        const next = { ...prev };
+        for (const u of updates) {
+          next[u.id] = {
+            priceA: u.priceA,
+            priceB: u.priceB,
+            reOrderLevel: u.reOrderLevel,
+          };
+        }
+        return next;
+      });
+      setAltEdits((prev) => {
+        const next = { ...prev };
+        for (const u of updates) {
+          next[u.id] = {
+            priceA: priceInputValue(u.priceA),
+            priceB: priceInputValue(u.priceB),
+            reOrderLevel: String(u.reOrderLevel),
+          };
+        }
+        return next;
+      });
+      const activeUpdate = selectedPart?.id ? byId.get(selectedPart.id) : undefined;
+      if (activeUpdate) {
+        setPriceBaseline({
+          priceA: activeUpdate.priceA,
+          priceB: activeUpdate.priceB,
+          reOrderLevel: activeUpdate.reOrderLevel,
+        });
+        setEditPriceA(priceInputValue(activeUpdate.priceA));
+        setEditPriceB(priceInputValue(activeUpdate.priceB));
+        setEditReorderLevel(String(activeUpdate.reOrderLevel));
+      }
+    },
+    [upsertItem, selectedPart?.id],
+  );
+
+  const handleSaveAlternatePrices = useCallback(async () => {
+    const dirtyRows = alternateItems.filter((item) => {
+      if (!item.id) return false;
+      const draft = altEdits[item.id];
+      const base = altBaselines[item.id];
+      if (!draft || !base) return false;
+      const nextA = parsePriceInput(draft.priceA);
+      const nextB = parsePriceInput(draft.priceB);
+      const nextLvlRaw = parsePriceInput(draft.reOrderLevel);
+      if (nextA === null || nextB === null || nextLvlRaw === null) return true;
+      const nextLvl = Math.max(0, Math.floor(nextLvlRaw));
+      return (
+        nextA !== base.priceA || nextB !== base.priceB || nextLvl !== base.reOrderLevel
+      );
+    });
+    if (dirtyRows.length === 0) return;
+
+    for (const item of dirtyRows) {
+      const draft = altEdits[item.id];
+      const nextA = parsePriceInput(draft.priceA);
+      const nextB = parsePriceInput(draft.priceB);
+      const nextLvlRaw = parsePriceInput(draft.reOrderLevel);
+      if (nextA === null || nextB === null || nextLvlRaw === null) {
+        toast({
+          title: "Invalid value",
+          description: `Enter valid non-negative numbers for ${item.partNo || "alternate"} (Price A, Price B, O.Lvl).`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setSavingAltPrices(true);
+    const savedUpdates: Array<{
+      id: string;
+      priceA: number;
+      priceB: number;
+      reOrderLevel: number;
+      item: PartResult;
+    }> = [];
+    try {
+      for (const item of dirtyRows) {
+        const draft = altEdits[item.id];
+        const base = altBaselines[item.id];
+        const nextA = parsePriceInput(draft.priceA)!;
+        const nextB = parsePriceInput(draft.priceB)!;
+        const nextLvl = Math.max(0, Math.floor(parsePriceInput(draft.reOrderLevel)!));
+        const aChanged = nextA !== base.priceA;
+        const bChanged = nextB !== base.priceB;
+        const lvlChanged = nextLvl !== base.reOrderLevel;
+
+        if (aChanged || bChanged) {
+          const pricePayload: { priceA?: number; priceB?: number } = {};
+          if (aChanged) pricePayload.priceA = nextA;
+          if (bChanged) pricePayload.priceB = nextB;
+          const response = (await apiClient.updatePartPrices(item.id, pricePayload)) as {
+            error?: string;
+          };
+          if (response?.error) {
+            toast({
+              title: "Failed to update price",
+              description: `${item.partNo || item.id}: ${response.error}`,
+              variant: "destructive",
+            });
+            // Apply any rows already saved before this failure
+            if (savedUpdates.length > 0) {
+              applyAlternatePriceUpdates(savedUpdates);
+            }
+            return;
+          }
+        }
+
+        if (lvlChanged) {
+          const response = (await apiClient.updatePart(item.id, {
+            reorder_level: nextLvl,
+          })) as { error?: string };
+          if (response?.error) {
+            toast({
+              title: "Failed to update O.Lvl",
+              description: `${item.partNo || item.id}: ${response.error}`,
+              variant: "destructive",
+            });
+            if (savedUpdates.length > 0) {
+              applyAlternatePriceUpdates(savedUpdates);
+            }
+            return;
+          }
+        }
+
+        savedUpdates.push({
+          id: item.id,
+          priceA: nextA,
+          priceB: nextB,
+          reOrderLevel: nextLvl,
+          item,
+        });
+      }
+
+      applyAlternatePriceUpdates(savedUpdates);
+      toast({
+        title: "Updated",
+        description:
+          savedUpdates.length === 1
+            ? "Alternate Price A / B / O.Lvl saved."
+            : `${savedUpdates.length} alternate parts updated.`,
+      });
+    } catch (error: any) {
+      if (savedUpdates.length > 0) {
+        applyAlternatePriceUpdates(savedUpdates);
+      }
+      toast({
+        title: "Failed to update alternates",
+        description: error?.message || String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAltPrices(false);
+    }
+  }, [
+    alternateItems,
+    altEdits,
+    altBaselines,
+    applyAlternatePriceUpdates,
   ]);
 
   // ── Part search ──────────────────────────────────────────────────────────────
@@ -702,6 +942,42 @@ export const PurchaseInquiry = ({
     void loadAlternateItems();
   }, [selectedPart?.id, selectedPart?.partNo, selectedPart?.masterPart]);
 
+  // Load PO/CO/BO inquiry qty for alternate parts (same details as main item row)
+  useEffect(() => {
+    for (const item of alternateItems) {
+      if (!item.id) continue;
+      if (inquiryByPartId[item.id]) continue;
+      void loadInquiryForPart(item.id);
+    }
+  }, [alternateItems, inquiryByPartId, loadInquiryForPart]);
+
+  // Sync editable drafts when the alternate list membership changes (not on price saves)
+  const alternateIdsKey = useMemo(
+    () => alternateItems.map((i) => i.id).filter(Boolean).join("|"),
+    [alternateItems],
+  );
+
+  useEffect(() => {
+    const nextEdits: Record<string, AltPriceDraft> = {};
+    const nextBaselines: Record<string, AltPriceBaseline> = {};
+    for (const item of alternateItems) {
+      if (!item.id) continue;
+      const a = Number(item.priceA) || 0;
+      const b = Number(item.priceB) || 0;
+      const lvl = Math.max(0, Math.floor(Number(item.reOrderLevel) || 0));
+      nextEdits[item.id] = {
+        priceA: priceInputValue(a),
+        priceB: priceInputValue(b),
+        reOrderLevel: String(lvl),
+      };
+      nextBaselines[item.id] = { priceA: a, priceB: b, reOrderLevel: lvl };
+    }
+    setAltEdits(nextEdits);
+    setAltBaselines(nextBaselines);
+    // Only re-init when which alternates are shown changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alternateIdsKey]);
+
   // ── Sales history for active part ────────────────────────────────────────────
 
   useEffect(() => {
@@ -908,7 +1184,13 @@ export const PurchaseInquiry = ({
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className={LIST_NUMBER_HEAD_CLASS} rowSpan={2}>#</TableHead>
-                      <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>Part No</TableHead>
+                      <TableHead
+                        className="text-xs whitespace-nowrap"
+                        rowSpan={2}
+                        title="Part No | Master Part"
+                      >
+                        Part No / Master
+                      </TableHead>
                       <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>Brand</TableHead>
                       <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>Origin</TableHead>
                       <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>Qty</TableHead>
@@ -958,11 +1240,11 @@ export const PurchaseInquiry = ({
                           onClick={() => handleActivateRow(item)}
                         >
                           <ListNumberCell index={index} total={items.length} className="text-xs" />
-                          <TableCell className="text-xs font-medium whitespace-nowrap">
-                            {item.partNo}
-                            {item.masterPart && item.masterPart !== item.partNo && (
-                              <span className="text-muted-foreground ml-1">| {item.masterPart}</span>
-                            )}
+                          <TableCell
+                            className="text-xs font-medium whitespace-nowrap"
+                            title={fmtPartNos(item)}
+                          >
+                            {fmtPartNos(item)}
                           </TableCell>
                           <TableCell className="text-xs">{item.brand}</TableCell>
                           <TableCell className="text-xs">{item.origin}</TableCell>
@@ -1103,28 +1385,115 @@ export const PurchaseInquiry = ({
             </div>
           )}
 
-          {/* Alternate Items */}
+          {/* Alternate Items — same detail columns as selected item row */}
           {selectedPart && (
             <div className="rounded-md border bg-card p-3 flex flex-col min-h-[160px]">
-              <div className="mb-2">
-                <div className="text-sm font-semibold">Alternate Items</div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold">Alternate Items</div>
+                  <div className="text-xs text-muted-foreground">
+                    Edit Price A / B / O.Lvl, then Update — same as the selected item
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 text-xs gap-1.5"
+                  disabled={!altPricesDirty || savingAltPrices || alternateItems.length === 0}
+                  onClick={() => void handleSaveAlternatePrices()}
+                >
+                  {savingAltPrices ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                  Update
+                </Button>
               </div>
-              <div className="rounded-md border overflow-y-auto flex-1 min-h-0 max-h-[320px]">
-                <Table className="table-fixed">
+              <div className="rounded-md border overflow-x-auto flex-1 min-h-0 max-h-[360px]">
+                <Table className="text-xs">
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <ListNumberHeader className="text-xs w-9 px-2" />
-                      <TableHead className="text-xs w-[22%] px-2">Part</TableHead>
-                      <TableHead className="text-xs w-[28%] px-2">Description</TableHead>
-                      <TableHead className="text-xs w-14 px-2">Brand</TableHead>
-                      <TableHead className="text-xs text-right w-[4.75rem] px-2 whitespace-nowrap">Stock</TableHead>
-                      <TableHead className="text-xs text-center w-16 px-2">Action</TableHead>
+                      <ListNumberHeader className="text-xs px-2" rowSpan={2} />
+                      <TableHead
+                        className="text-xs whitespace-nowrap px-2"
+                        rowSpan={2}
+                        title="Part No | Master Part"
+                      >
+                        Part No / Master
+                      </TableHead>
+                      <TableHead className="text-xs whitespace-nowrap px-2" rowSpan={2}>
+                        Description
+                      </TableHead>
+                      <TableHead className="text-xs whitespace-nowrap px-2" rowSpan={2}>
+                        Brand
+                      </TableHead>
+                      <TableHead className="text-xs whitespace-nowrap px-2" rowSpan={2}>
+                        Price A
+                      </TableHead>
+                      <TableHead className="text-xs whitespace-nowrap px-2" rowSpan={2}>
+                        Price B
+                      </TableHead>
+                      <TableHead className="text-xs whitespace-nowrap px-2" rowSpan={2}>
+                        Stock
+                      </TableHead>
+                      <TableHead className="text-xs whitespace-nowrap px-2" rowSpan={2}>
+                        Rev
+                      </TableHead>
+                      <TableHead className="text-xs whitespace-nowrap px-2" rowSpan={2}>
+                        Cost
+                      </TableHead>
+                      <TableHead
+                        colSpan={3}
+                        className="text-xs text-center whitespace-nowrap bg-blue-50 dark:bg-blue-950 border-x"
+                      >
+                        ISB
+                      </TableHead>
+                      <TableHead
+                        colSpan={3}
+                        className="text-xs text-center whitespace-nowrap bg-amber-50 dark:bg-amber-950 border-x"
+                      >
+                        KHI
+                      </TableHead>
+                      <TableHead
+                        className="text-xs whitespace-nowrap px-2"
+                        rowSpan={2}
+                        title="Reorder level"
+                      >
+                        O.Lvl
+                      </TableHead>
+                      <TableHead className="text-xs text-center w-14 px-2" rowSpan={2}>
+                        Action
+                      </TableHead>
+                    </TableRow>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="text-xs text-center whitespace-nowrap bg-blue-50/70 dark:bg-blue-950/70 border-x">
+                        PO
+                      </TableHead>
+                      <TableHead className="text-xs text-center whitespace-nowrap bg-blue-50/70 dark:bg-blue-950/70">
+                        CO
+                      </TableHead>
+                      <TableHead className="text-xs text-center whitespace-nowrap bg-blue-50/70 dark:bg-blue-950/70 border-r">
+                        BO
+                      </TableHead>
+                      <TableHead className="text-xs text-center whitespace-nowrap bg-amber-50/70 dark:bg-amber-950/70 border-x">
+                        PO
+                      </TableHead>
+                      <TableHead className="text-xs text-center whitespace-nowrap bg-amber-50/70 dark:bg-amber-950/70">
+                        CO
+                      </TableHead>
+                      <TableHead className="text-xs text-center whitespace-nowrap bg-amber-50/70 dark:bg-amber-950/70 border-r">
+                        BO
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loadingAlternateItems ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                        <TableCell
+                          colSpan={16}
+                          className="text-center py-8 text-sm text-muted-foreground"
+                        >
                           <div className="flex items-center justify-center gap-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                             Loading alternates...
@@ -1133,50 +1502,165 @@ export const PurchaseInquiry = ({
                       </TableRow>
                     ) : alternateItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground italic">
+                        <TableCell
+                          colSpan={16}
+                          className="text-center py-8 text-sm text-muted-foreground italic"
+                        >
                           No alternate items found.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      alternateItems.map((item, index) => (
-                        <TableRow key={`${item.id || item.partNo}-${index}`} className="hover:bg-muted/20">
-                          <ListNumberCell
-                            index={index}
-                            total={alternateItems.length}
-                            className="text-xs px-2 py-1.5 whitespace-nowrap"
-                          />
-                          <TableCell
-                            className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
-                            title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                      alternateItems.map((item, index) => {
+                        const rowInquiry = item.id
+                          ? inquiryByPartId[item.id]
+                          : undefined;
+                        const rowLoading = Boolean(item.id) && !rowInquiry;
+                        const draft = item.id ? altEdits[item.id] : undefined;
+                        return (
+                          <TableRow
+                            key={`${item.id || item.partNo}-${index}`}
+                            className="hover:bg-muted/20"
                           >
-                            {`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
-                          </TableCell>
-                          <TableCell
-                            className="text-xs px-2 py-1.5 max-w-0 truncate"
-                            title={item.description || "N/A"}
-                          >
-                            {item.description || "N/A"}
-                          </TableCell>
-                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">
-                            {item.brand || "N/A"}
-                          </TableCell>
-                          <TableCell className="text-xs text-right font-semibold px-2 py-1.5 whitespace-nowrap tabular-nums">
-                            {Number(item.stock || 0).toLocaleString("en-US")}
-                          </TableCell>
-                          <TableCell className="text-xs text-center px-2 py-1.5">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-primary hover:bg-primary/10"
-                              onClick={() => handleSelectAlternate(item)}
-                              title="Switch to this alternate"
-                              disabled={!item.id}
+                            <ListNumberCell
+                              index={index}
+                              total={alternateItems.length}
+                              className="text-xs px-2 py-1.5 whitespace-nowrap"
+                            />
+                            <TableCell
+                              className="text-xs font-medium px-2 py-1.5 whitespace-nowrap"
+                              title={fmtPartNos(item)}
                             >
-                              <ArrowLeftRight className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                              {fmtPartNos(item)}
+                            </TableCell>
+                            <TableCell
+                              className="text-xs px-2 py-1.5 max-w-[180px] truncate"
+                              title={item.description || "N/A"}
+                            >
+                              {item.description || "N/A"}
+                            </TableCell>
+                            <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">
+                              {item.brand || "N/A"}
+                            </TableCell>
+                            <TableCell className="text-xs p-1">
+                              {item.id ? (
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={draft?.priceA ?? priceInputValue(item.priceA)}
+                                  onChange={(e) =>
+                                    setAltEditField(item.id, "priceA", e.target.value)
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      void handleSaveAlternatePrices();
+                                    }
+                                  }}
+                                  disabled={savingAltPrices}
+                                  className="h-7 w-[88px] px-1.5 text-xs text-right tabular-nums"
+                                  placeholder="0.00"
+                                />
+                              ) : (
+                                <span className="tabular-nums px-1.5">{fmt(item.priceA)}</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs p-1">
+                              {item.id ? (
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={draft?.priceB ?? priceInputValue(item.priceB)}
+                                  onChange={(e) =>
+                                    setAltEditField(item.id, "priceB", e.target.value)
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      void handleSaveAlternatePrices();
+                                    }
+                                  }}
+                                  disabled={savingAltPrices}
+                                  className="h-7 w-[88px] px-1.5 text-xs text-right tabular-nums"
+                                  placeholder="0.00"
+                                />
+                              ) : (
+                                <span className="tabular-nums px-1.5">{fmt(item.priceB)}</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs px-2 py-1.5 tabular-nums text-right font-semibold">
+                              {fmtQty(item.stock)}
+                            </TableCell>
+                            <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">
+                              {item.grade || "—"}
+                            </TableCell>
+                            <TableCell className="text-xs px-2 py-1.5 tabular-nums text-right">
+                              {fmt(item.cost)}
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums text-center font-semibold bg-blue-50/50 dark:bg-blue-950/30 border-x">
+                              {renderQtyCell(rowInquiry?.isb.po, rowLoading)}
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums text-center font-semibold bg-blue-50/50 dark:bg-blue-950/30">
+                              {renderQtyCell(rowInquiry?.isb.co, rowLoading)}
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums text-center font-semibold bg-blue-50/50 dark:bg-blue-950/30 border-r">
+                              {renderQtyCell(rowInquiry?.isb.bo, rowLoading)}
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums text-center font-semibold bg-amber-50/50 dark:bg-amber-950/30 border-x">
+                              {renderQtyCell(rowInquiry?.khi.po, rowLoading)}
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums text-center font-semibold bg-amber-50/50 dark:bg-amber-950/30">
+                              {renderQtyCell(rowInquiry?.khi.co, rowLoading)}
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums text-center font-semibold bg-amber-50/50 dark:bg-amber-950/30 border-r">
+                              {renderQtyCell(rowInquiry?.khi.bo, rowLoading)}
+                            </TableCell>
+                            <TableCell className="text-xs p-1">
+                              {item.id ? (
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={
+                                    draft?.reOrderLevel ??
+                                    String(Math.max(0, Math.floor(Number(item.reOrderLevel) || 0)))
+                                  }
+                                  onChange={(e) =>
+                                    setAltEditField(item.id, "reOrderLevel", e.target.value)
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      void handleSaveAlternatePrices();
+                                    }
+                                  }}
+                                  disabled={savingAltPrices}
+                                  className="h-7 w-[72px] px-1.5 text-xs text-right tabular-nums"
+                                  placeholder="0"
+                                  title="Reorder level"
+                                />
+                              ) : (
+                                <span className="tabular-nums px-1.5">
+                                  {fmtQty(item.reOrderLevel)}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-center px-2 py-1.5">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-primary hover:bg-primary/10"
+                                onClick={() => handleSelectAlternate(item)}
+                                title="Switch to this alternate"
+                                disabled={!item.id}
+                              >
+                                <ArrowLeftRight className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>

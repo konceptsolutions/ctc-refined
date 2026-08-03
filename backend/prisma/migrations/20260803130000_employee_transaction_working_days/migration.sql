@@ -1,0 +1,2 @@
+ALTER TABLE "EmployeeTransaction"
+ADD COLUMN IF NOT EXISTS "workingDays" DOUBLE PRECISION;

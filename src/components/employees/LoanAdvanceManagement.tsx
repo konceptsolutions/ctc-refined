@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Pencil, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,7 @@ import {
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { getCurrentDatePakistan } from "@/utils/dateUtils";
 
 type EmployeeOption = {
   id: string;
@@ -45,6 +46,12 @@ type CashBankOption = {
   label: string;
 };
 
+type LoanAdvanceTxType =
+  | "advance_issue"
+  | "loan_issue"
+  | "loan_recovery"
+  | "advance_recovery";
+
 type LoanAdvanceTransaction = {
   id: string;
   type: string;
@@ -58,7 +65,11 @@ type LoanAdvanceTransaction = {
     name: string;
     status?: string;
   } | null;
-  Voucher?: { voucherNumber?: string; type?: string } | null;
+  Voucher?: {
+    voucherNumber?: string;
+    type?: string;
+    cashBankAccount?: string | null;
+  } | null;
 };
 
 const TX_TYPE_LABELS: Record<string, string> = {
@@ -71,6 +82,11 @@ const TX_TYPE_LABELS: Record<string, string> = {
 const ISSUE_TX_TYPE_OPTIONS = [
   { value: "advance_issue", label: "Advance Issue" },
   { value: "loan_issue", label: "Loan Issue" },
+] as const;
+
+const RECOVERY_TX_TYPE_OPTIONS = [
+  { value: "advance_recovery", label: "Advance Recovery" },
+  { value: "loan_recovery", label: "Loan Recovery" },
 ] as const;
 
 const formatMoney = (value: number) =>
@@ -86,9 +102,25 @@ const formatDate = (value?: string | null) => {
   return date.toLocaleDateString("en-GB");
 };
 
+const todayDateMax = () => getCurrentDatePakistan();
+
+const isFutureDate = (value?: string | null) => {
+  const v = String(value || "").trim();
+  if (!v) return false;
+  return v > todayDateMax();
+};
+
 const getTypeBadgeVariant = (type: string) => {
   if (type.endsWith("_issue")) return "default";
   return "secondary";
+};
+
+const isIssueType = (type: string) =>
+  type === "advance_issue" || type === "loan_issue";
+
+const toDateInputValue = (value?: string | null) => {
+  if (!value) return getCurrentDatePakistan();
+  return String(value).split("T")[0];
 };
 
 export const LoanAdvanceManagement = () => {
@@ -105,10 +137,11 @@ export const LoanAdvanceManagement = () => {
   const [cashBankAccounts, setCashBankAccounts] = useState<CashBankOption[]>([]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [formType, setFormType] = useState<(typeof ISSUE_TX_TYPE_OPTIONS)[number]["value"]>("advance_issue");
+  const [formType, setFormType] = useState<LoanAdvanceTxType>("advance_issue");
   const [formEmployeeId, setFormEmployeeId] = useState("");
-  const [formDate, setFormDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [formDate, setFormDate] = useState(() => getCurrentDatePakistan());
   const [formAmount, setFormAmount] = useState("");
   const [formCashBankAccountId, setFormCashBankAccountId] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -116,6 +149,11 @@ export const LoanAdvanceManagement = () => {
   const selectedEmployee = useMemo(
     () => employees.find((employee) => employee.id === formEmployeeId) || null,
     [employees, formEmployeeId],
+  );
+
+  const formTypeOptions = useMemo(
+    () => (isIssueType(formType) ? ISSUE_TX_TYPE_OPTIONS : RECOVERY_TX_TYPE_OPTIONS),
+    [formType],
   );
 
   const fetchTransactions = useCallback(async () => {
@@ -193,9 +231,10 @@ export const LoanAdvanceManagement = () => {
   const totalPages = Math.max(1, Math.ceil(totalRecords / rowsPerPage));
 
   const resetForm = () => {
+    setEditingId(null);
     setFormType("advance_issue");
     setFormEmployeeId("");
-    setFormDate(new Date().toISOString().split("T")[0]);
+    setFormDate(getCurrentDatePakistan());
     setFormAmount("");
     setFormCashBankAccountId("");
     setFormDescription("");
@@ -204,6 +243,23 @@ export const LoanAdvanceManagement = () => {
   const openCreateDialog = () => {
     resetForm();
     setIsFormOpen(true);
+  };
+
+  const openEditDialog = (row: LoanAdvanceTransaction) => {
+    const type = (row.type || "advance_issue") as LoanAdvanceTxType;
+    setEditingId(row.id);
+    setFormType(type);
+    setFormEmployeeId(row.Employee?.id || "");
+    setFormDate(toDateInputValue(row.date));
+    setFormAmount(String(Number(row.amount || 0)));
+    setFormCashBankAccountId(row.Voucher?.cashBankAccount || "");
+    setFormDescription(row.description || "");
+    setIsFormOpen(true);
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsFormOpen(open);
+    if (!open) resetForm();
   };
 
   const handleSave = async () => {
@@ -235,31 +291,49 @@ export const LoanAdvanceManagement = () => {
       return;
     }
 
+    if (isFutureDate(formDate)) {
+      toast({
+        title: "Validation",
+        description: "Date cannot be in the future.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
-      const response = await apiClient.createEmployeeTransaction(formEmployeeId, {
-        type: formType,
-        date: formDate,
-        amount,
-        cashBankAccountId: formCashBankAccountId,
-        description: formDescription || undefined,
-      });
+      const response = editingId
+        ? await apiClient.updateEmployeeLoanAdvanceTransaction(editingId, {
+            employeeId: formEmployeeId,
+            type: formType,
+            date: formDate,
+            amount,
+            cashBankAccountId: formCashBankAccountId,
+            description: formDescription || undefined,
+          })
+        : await apiClient.createEmployeeTransaction(formEmployeeId, {
+            type: formType,
+            date: formDate,
+            amount,
+            cashBankAccountId: formCashBankAccountId,
+            description: formDescription || undefined,
+          });
 
       if ((response as any)?.error) {
         throw new Error((response as any).error);
       }
 
       toast({
-        title: "Transaction posted",
-        description: `${TX_TYPE_LABELS[formType]} recorded successfully.`,
+        title: editingId ? "Transaction updated" : "Transaction posted",
+        description: `${TX_TYPE_LABELS[formType]} ${editingId ? "updated" : "recorded"} successfully.`,
       });
-      setIsFormOpen(false);
+      handleDialogOpenChange(false);
       await fetchTransactions();
       await fetchEmployees();
     } catch (error: any) {
       toast({
         title: "Save failed",
-        description: error.message || "Could not post transaction.",
+        description: error.message || "Could not save transaction.",
         variant: "destructive",
       });
     } finally {
@@ -328,18 +402,19 @@ export const LoanAdvanceManagement = () => {
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Voucher</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead className="w-[70px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       Loading transactions...
                     </TableCell>
                   </TableRow>
                 ) : transactions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No loan or advance transactions found.
                     </TableCell>
                   </TableRow>
@@ -365,6 +440,17 @@ export const LoanAdvanceManagement = () => {
                       </TableCell>
                       <TableCell className="max-w-[240px] truncate">
                         {row.description || "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="Edit entry"
+                          onClick={() => openEditDialog(row)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -419,26 +505,36 @@ export const LoanAdvanceManagement = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+      <Dialog open={isFormOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Issue Loan / Advance</DialogTitle>
+            <DialogTitle>
+              {editingId ? "Edit Loan / Advance" : "Issue Loan / Advance"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Transaction Type *</Label>
-              <Select value={formType} onValueChange={(value) => setFormType(value as typeof formType)}>
+              <Select
+                value={formType}
+                onValueChange={(value) => setFormType(value as LoanAdvanceTxType)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ISSUE_TX_TYPE_OPTIONS.map((option) => (
+                  {formTypeOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {editingId && !isIssueType(formType) ? (
+                <p className="text-xs text-muted-foreground">
+                  Recovery entries can be edited, but cannot be switched to issue types.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label>Employee *</Label>
@@ -463,7 +559,12 @@ export const LoanAdvanceManagement = () => {
             </div>
             <div className="space-y-2">
               <Label>Date *</Label>
-              <Input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} />
+              <Input
+                type="date"
+                max={todayDateMax()}
+                value={formDate}
+                onChange={(e) => setFormDate(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label>Amount *</Label>
@@ -499,11 +600,11 @@ export const LoanAdvanceManagement = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsFormOpen(false)}>
+            <Button variant="outline" onClick={() => handleDialogOpenChange(false)}>
               Cancel
             </Button>
             <Button onClick={() => void handleSave()} disabled={saving}>
-              {saving ? "Saving..." : "Post Transaction"}
+              {saving ? "Saving..." : editingId ? "Update" : "Post Transaction"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -38,6 +38,7 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { calculateAccruedSalary } from "@/lib/employeePayroll";
+import { getCurrentDatePakistan } from "@/utils/dateUtils";
 
 type EmployeeRow = {
   id: string;
@@ -132,10 +133,22 @@ const formatDate = (value?: string | null) => {
   return date.toLocaleDateString("en-GB");
 };
 
-const getCurrentPayrollMonth = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+const todayDateMax = () => getCurrentDatePakistan();
+const currentMonthMax = () => getCurrentDatePakistan().slice(0, 7);
+
+const isFutureDate = (value?: string | null) => {
+  const v = String(value || "").trim();
+  if (!v) return false;
+  return v > todayDateMax();
 };
+
+const isFutureMonth = (value?: string | null) => {
+  const v = String(value || "").trim();
+  if (!v) return false;
+  return v > currentMonthMax();
+};
+
+const getCurrentPayrollMonth = () => currentMonthMax();
 
 export const EmployeeManagement = () => {
   const { toast } = useToast();
@@ -155,9 +168,10 @@ export const EmployeeManagement = () => {
 
   const [txEmployee, setTxEmployee] = useState<EmployeeRow | null>(null);
   const [txType, setTxType] = useState<string>("salary_payment");
-  const [txDate, setTxDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [txDate, setTxDate] = useState(() => getCurrentDatePakistan());
   const [txPayrollMonth, setTxPayrollMonth] = useState(() => getCurrentPayrollMonth());
   const [txAmount, setTxAmount] = useState("");
+  const [txWorkingDays, setTxWorkingDays] = useState("26");
   const [txAbsentDays, setTxAbsentDays] = useState("");
   const [txLoanRecovery, setTxLoanRecovery] = useState("");
   const [txAdvanceRecovery, setTxAdvanceRecovery] = useState("");
@@ -230,7 +244,7 @@ export const EmployeeManagement = () => {
     if (txType === "salary_accrual" && txEmployee) {
       return calculateAccruedSalary(
         Number(txEmployee.monthlySalary || 0),
-        Number(txEmployee.workingDays || 26),
+        Number(txWorkingDays || txEmployee.workingDays || 26),
         Number(txAbsentDays || 0),
       );
     }
@@ -238,14 +252,14 @@ export const EmployeeManagement = () => {
       return amount > 0 ? amount : Number(txEmployee?.monthlySalary || 0);
     }
     return amount;
-  }, [txAbsentDays, txAmount, txEmployee, txType]);
+  }, [txAbsentDays, txAmount, txEmployee, txType, txWorkingDays]);
 
   const daysWorkedPreview = useMemo(() => {
     if (txType !== "salary_accrual" || !txEmployee) return 0;
-    const workingDays = Number(txEmployee.workingDays || 26);
+    const workingDays = Math.max(1, Number(txWorkingDays || txEmployee.workingDays || 26));
     const absentDays = Math.min(Math.max(Number(txAbsentDays || 0), 0), workingDays);
     return workingDays - absentDays;
-  }, [txAbsentDays, txEmployee, txType]);
+  }, [txAbsentDays, txEmployee, txType, txWorkingDays]);
 
   const netSalaryPreview = useMemo(() => {
     if (!txSupportsRecoveries) return grossSalaryPreview;
@@ -303,9 +317,10 @@ export const EmployeeManagement = () => {
   const openTransactionDialog = (employee: EmployeeRow, type: string) => {
     setTxEmployee(employee);
     setTxType(type);
-    setTxDate(new Date().toISOString().split("T")[0]);
+    setTxDate(getCurrentDatePakistan());
     setTxPayrollMonth(getCurrentPayrollMonth());
     setTxAmount("");
+    setTxWorkingDays(String(Number(employee.workingDays || 26)));
     setTxAbsentDays("0");
     setTxLoanRecovery("");
     setTxAdvanceRecovery("");
@@ -346,6 +361,24 @@ export const EmployeeManagement = () => {
       toast({
         title: "Validation",
         description: "Joining date is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isFutureDate(formData.joiningDate)) {
+      toast({
+        title: "Validation",
+        description: "Joining date cannot be in the future.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isFutureDate(formData.openingBalanceDate)) {
+      toast({
+        title: "Validation",
+        description: "Opening balance date cannot be in the future.",
         variant: "destructive",
       });
       return;
@@ -438,6 +471,28 @@ export const EmployeeManagement = () => {
 
   const handleSaveTransaction = async () => {
     if (!txEmployee) return;
+
+    if (isFutureDate(txDate)) {
+      toast({
+        title: "Validation",
+        description: "Date cannot be in the future.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      (txType === "salary_accrual" || txType === "salary_payment") &&
+      isFutureMonth(txPayrollMonth)
+    ) {
+      toast({
+        title: "Validation",
+        description: "Payroll month cannot be in the future.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if ((txType === "salary_accrual" || txType === "salary_payment") && !txPayrollMonth) {
       toast({
         title: "Validation",
@@ -448,8 +503,16 @@ export const EmployeeManagement = () => {
     }
 
     if (txType === "salary_accrual") {
-      const workingDays = Number(txEmployee.workingDays || 26);
+      const workingDays = Number(txWorkingDays || 0);
       const absentDays = Number(txAbsentDays || 0);
+      if (!Number.isFinite(workingDays) || workingDays < 1) {
+        toast({
+          title: "Validation",
+          description: "Working days must be at least 1.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (absentDays < 0) {
         toast({
           title: "Validation",
@@ -493,6 +556,7 @@ export const EmployeeManagement = () => {
         payrollMonth: txType === "salary_accrual" || txType === "salary_payment" ? txPayrollMonth : undefined,
         amount: txType === "salary_accrual" ? undefined : Number(txAmount || 0),
         absentDays: txType === "salary_accrual" ? Number(txAbsentDays || 0) : undefined,
+        workingDays: txType === "salary_accrual" ? Number(txWorkingDays || 0) : undefined,
         loanRecovery: Number(txLoanRecovery || 0),
         advanceRecovery: Number(txAdvanceRecovery || 0),
         cashBankAccountId: txCashBankAccountId || undefined,
@@ -729,6 +793,7 @@ export const EmployeeManagement = () => {
               <Input
                 type="date"
                 required
+                max={todayDateMax()}
                 value={formData.joiningDate}
                 onChange={(e) => setFormData({ ...formData, joiningDate: e.target.value })}
               />
@@ -793,6 +858,7 @@ export const EmployeeManagement = () => {
               <Label>Opening Balance Date</Label>
               <Input
                 type="date"
+                max={todayDateMax()}
                 value={formData.openingBalanceDate}
                 onChange={(e) => setFormData({ ...formData, openingBalanceDate: e.target.value })}
               />
@@ -863,14 +929,14 @@ export const EmployeeManagement = () => {
       </Dialog>
 
       <Dialog open={Boolean(txEmployee)} onOpenChange={(open) => !open && setTxEmployee(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-4 overflow-hidden p-6">
+          <DialogHeader className="shrink-0">
             <DialogTitle>
               {TX_TYPE_LABELS[txType] || "Employee Transaction"}
               {txEmployee ? ` — ${txEmployee.name}` : ""}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1">
             <div className="space-y-2">
               <Label>Transaction Type</Label>
               <Select value={txType} onValueChange={setTxType}>
@@ -888,13 +954,19 @@ export const EmployeeManagement = () => {
             </div>
             <div className="space-y-2">
               <Label>Date</Label>
-              <Input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} />
+              <Input
+                type="date"
+                max={todayDateMax()}
+                value={txDate}
+                onChange={(e) => setTxDate(e.target.value)}
+              />
             </div>
             {(txType === "salary_accrual" || txType === "salary_payment") && (
               <div className="space-y-2">
                 <Label>Payroll Month</Label>
                 <Input
                   type="month"
+                  max={currentMonthMax()}
                   value={txPayrollMonth}
                   onChange={(e) => setTxPayrollMonth(e.target.value)}
                 />
@@ -907,17 +979,27 @@ export const EmployeeManagement = () => {
                     <Label>Working Days</Label>
                     <Input
                       type="number"
-                      value={txEmployee.workingDays || 26}
-                      disabled
-                      className="bg-muted"
+                      min={1}
+                      value={txWorkingDays}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setTxWorkingDays(next);
+                        const maxDays = Math.max(1, Number(next || 0));
+                        if (Number(txAbsentDays || 0) > maxDays) {
+                          setTxAbsentDays(String(maxDays));
+                        }
+                      }}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Default from employee profile ({Number(txEmployee.workingDays || 26)}). Change only for this payroll.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label>Absent Days</Label>
                     <Input
                       type="number"
                       min={0}
-                      max={txEmployee.workingDays || 26}
+                      max={Math.max(1, Number(txWorkingDays || 26))}
                       value={txAbsentDays}
                       onChange={(e) => setTxAbsentDays(e.target.value)}
                     />
@@ -925,7 +1007,7 @@ export const EmployeeManagement = () => {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Monthly salary: {formatMoney(txEmployee.monthlySalary)} · Days worked:{" "}
-                  {daysWorkedPreview} / {txEmployee.workingDays || 26}
+                  {daysWorkedPreview} / {Math.max(1, Number(txWorkingDays || 26))}
                 </p>
               </>
             ) : (
@@ -1014,7 +1096,7 @@ export const EmployeeManagement = () => {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setTxEmployee(null)}>
               Cancel
             </Button>

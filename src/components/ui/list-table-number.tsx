@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { TableCell, TableHead } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
@@ -38,12 +39,15 @@ export function getListRowNumber(
 export function ListNumberHeader({
   label = "#",
   className,
+  ...props
 }: {
   label?: string;
   className?: string;
-}) {
+} & ComponentProps<typeof TableHead>) {
   return (
-    <TableHead className={cn(LIST_NUMBER_HEAD_CLASS, className)}>{label}</TableHead>
+    <TableHead className={cn(LIST_NUMBER_HEAD_CLASS, className)} {...props}>
+      {label}
+    </TableHead>
   );
 }
 

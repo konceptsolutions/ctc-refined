@@ -264,6 +264,18 @@ function validateSaleReturnByPart(
   return null;
 }
 
+/**
+ * Allow overselling when nothing is reserved (available may be 0).
+ * Block only when qty exceeds available AND reserved stock exists.
+ */
+function shouldBlockSaleQtyForReservedStock(
+  qty: number,
+  available: number,
+  reserved: number,
+): boolean {
+  return qty > available && reserved > 0;
+}
+
 function effectiveReturnQtyFromDraft(
   draftVal: string | undefined,
   lineCap: number,
@@ -3712,7 +3724,7 @@ export const SalesInvoice = ({
       }
     }
 
-    // Validate stock (rack/shelf is chosen at stock-out in Store, not on the invoice)
+    // Validate stock: allow save when available is 0 / short, unless reserved qty exists
     for (const item of inlineItems) {
       if (!item.selectedPartId || item.qty <= 0) continue;
 
@@ -3724,11 +3736,19 @@ export const SalesInvoice = ({
         : part.partNo;
 
       const stockBalance = partStockBalances[part.id];
-      const currentStock = stockBalance?.available_stock ?? part.availableQty;
-      if (item.qty > currentStock) {
+      const reserved =
+        stockBalance?.reserved_stock ?? Number(part.reservedQty || 0);
+      const inStock =
+        stockBalance?.current_stock ?? Number(part.stockQty || 0);
+      const available =
+        stockBalance?.available_stock ??
+        part.availableQty ??
+        Math.max(0, inStock - reserved);
+
+      if (shouldBlockSaleQtyForReservedStock(item.qty, available, reserved)) {
         toast({
-          title: "Insufficient Total Stock",
-          description: `Quantity (${item.qty}) for ${partNoDesc} exceeds available total stock (${currentStock}).`,
+          title: "Insufficient Available Stock",
+          description: `Quantity (${item.qty}) for ${partNoDesc} exceeds available stock (${available}) while ${reserved} is reserved. Reduce qty or free reserved stock before saving.`,
           variant: "destructive",
         });
         return;
@@ -7718,25 +7738,36 @@ export const SalesInvoice = ({
                                   value={item.qty || ""}
                                   onChange={(e) => {
                                     const val = parseInt(e.target.value) || 0;
-                                    const currentStock =
-                                      (part?.id
-                                        ? partStockBalances[part.id]
-                                        : null
-                                      )?.available_stock ??
-                                      (part?.availableQty || 0);
+                                    const stockBalance = part?.id
+                                      ? partStockBalances[part.id]
+                                      : null;
+                                    const reserved =
+                                      stockBalance?.reserved_stock ??
+                                      Number(part?.reservedQty || 0);
+                                    const inStock =
+                                      stockBalance?.current_stock ??
+                                      Number(part?.stockQty || 0);
+                                    const available = stockBalance
+                                      ? (stockBalance.available_stock ??
+                                        Math.max(0, inStock - reserved))
+                                      : Number(part?.availableQty || 0);
+
                                     if (
-                                      val > currentStock &&
-                                      currentStock >= 0
+                                      shouldBlockSaleQtyForReservedStock(
+                                        val,
+                                        available,
+                                        reserved,
+                                      )
                                     ) {
                                       toast({
-                                        title: "Insufficient Stock",
-                                        description: `Cannot enter ${val}. Available stock is only ${currentStock}.`,
+                                        title: "Insufficient Available Stock",
+                                        description: `Cannot enter ${val}. Available is ${available} with ${reserved} reserved.`,
                                         variant: "destructive",
                                       });
                                       handleUpdateInlineItem(
                                         item.id,
                                         "qty",
-                                        currentStock,
+                                        Math.max(0, available),
                                       );
                                     } else
                                       handleUpdateInlineItem(

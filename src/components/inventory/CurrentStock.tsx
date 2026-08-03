@@ -1054,8 +1054,8 @@ export const CurrentStock = () => {
       headers.join(","),
         ...exportData.map((item) =>
         [
-            escapeCsv(item.part_no),
             escapeCsv(item.master_part_no),
+            escapeCsv(item.part_no),
             escapeCsv(item.brand),
             escapeCsv(item.category),
             escapeCsv(item.description),
@@ -1359,9 +1359,9 @@ export const CurrentStock = () => {
                       total={totalItems}
                     />
                     <TableCell className="font-medium">
-                      {item.part_no || "-"}
+                      {item.master_part_no || "-"}
                     </TableCell>
-                    <TableCell>{item.master_part_no || "-"}</TableCell>
+                    <TableCell>{item.part_no || "-"}</TableCell>
                     <TableCell>{item.brand || "-"}</TableCell>
                     <TableCell>{item.category || "-"}</TableCell>
                     <TableCell className="max-w-[200px] truncate">
@@ -1414,7 +1414,8 @@ export const CurrentStock = () => {
             <DialogDescription>
               Detailed location of{" "}
               {viewingItem?.brand ? `${viewingItem.brand} - ` : ""}
-              {viewingItem?.part_no} - {viewingItem?.description}
+              {viewingItem?.master_part_no || viewingItem?.part_no} -{" "}
+              {viewingItem?.description}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -1492,7 +1493,8 @@ export const CurrentStock = () => {
             <DialogDescription>
               Assign locations for{" "}
               {editingItem?.brand ? `${editingItem.brand} - ` : ""}
-              {editingItem?.part_no} - {editingItem?.description}
+              {editingItem?.master_part_no || editingItem?.part_no} -{" "}
+              {editingItem?.description}
             </DialogDescription>
           </DialogHeader>
 

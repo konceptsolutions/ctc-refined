@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Banknote, Plus, Printer, Receipt, Search } from "lucide-react";
+import { Banknote, Pencil, Plus, Printer, Receipt, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { calculateAccruedSalary } from "@/lib/employeePayroll";
 import { printPayslipPdf } from "@/utils/payslipPdf";
+import { getCurrentDatePakistan } from "@/utils/dateUtils";
 
 type PayrollRow = {
   id: string;
@@ -80,10 +81,22 @@ type EmployeeOption = {
   advanceBalance: number;
 };
 
-const getCurrentPayrollMonth = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+const todayDateMax = () => getCurrentDatePakistan();
+const currentMonthMax = () => getCurrentDatePakistan().slice(0, 7);
+
+const isFutureDate = (value?: string | null) => {
+  const v = String(value || "").trim();
+  if (!v) return false;
+  return v > todayDateMax();
 };
+
+const isFutureMonth = (value?: string | null) => {
+  const v = String(value || "").trim();
+  if (!v) return false;
+  return v > currentMonthMax();
+};
+
+const getCurrentPayrollMonth = () => currentMonthMax();
 
 const formatMoney = (value: number) =>
   Number(value || 0).toLocaleString("en-PK", {
@@ -127,9 +140,12 @@ export const PayrollManagement = () => {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
 
   const [isAccrueOpen, setIsAccrueOpen] = useState(false);
+  const [editingPayrollId, setEditingPayrollId] = useState<string | null>(null);
+  const [editingPaidAmount, setEditingPaidAmount] = useState(0);
   const [accrueEmployeeId, setAccrueEmployeeId] = useState("");
-  const [accrueDate, setAccrueDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [accrueDate, setAccrueDate] = useState(() => getCurrentDatePakistan());
   const [accruePayrollMonth, setAccruePayrollMonth] = useState(() => getCurrentPayrollMonth());
+  const [accrueWorkingDays, setAccrueWorkingDays] = useState("26");
   const [accrueAbsentDays, setAccrueAbsentDays] = useState("0");
   const [accrueLoanRecovery, setAccrueLoanRecovery] = useState("");
   const [accrueAdvanceRecovery, setAccrueAdvanceRecovery] = useState("");
@@ -137,7 +153,7 @@ export const PayrollManagement = () => {
   const [accrueSaving, setAccrueSaving] = useState(false);
 
   const [payRow, setPayRow] = useState<PayrollRow | null>(null);
-  const [payDate, setPayDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [payDate, setPayDate] = useState(() => getCurrentDatePakistan());
   const [payAmount, setPayAmount] = useState("");
   const [payCashBankAccountId, setPayCashBankAccountId] = useState("");
   const [payDescription, setPayDescription] = useState("");
@@ -223,14 +239,21 @@ export const PayrollManagement = () => {
     [accrueEmployeeId, employees],
   );
 
+  useEffect(() => {
+    if (!selectedAccrueEmployee) return;
+    if (editingPayrollId) return;
+    setAccrueWorkingDays(String(Number(selectedAccrueEmployee.workingDays || 26)));
+    setAccrueAbsentDays("0");
+  }, [selectedAccrueEmployee?.id, editingPayrollId]);
+
   const grossSalaryPreview = useMemo(() => {
     if (!selectedAccrueEmployee) return 0;
     return calculateAccruedSalary(
       selectedAccrueEmployee.monthlySalary,
-      selectedAccrueEmployee.workingDays,
+      Number(accrueWorkingDays || selectedAccrueEmployee.workingDays || 26),
       Number(accrueAbsentDays || 0),
     );
-  }, [accrueAbsentDays, selectedAccrueEmployee]);
+  }, [accrueAbsentDays, accrueWorkingDays, selectedAccrueEmployee]);
 
   const netSalaryPreview = useMemo(
     () =>
@@ -254,21 +277,68 @@ export const PayrollManagement = () => {
 
   const openPayDialog = (row: PayrollRow) => {
     setPayRow(row);
-    setPayDate(new Date().toISOString().split("T")[0]);
+    setPayDate(getCurrentDatePakistan());
     setPayAmount(String(row.outstanding || ""));
     setPayCashBankAccountId(cashBankAccounts[0]?.id || "");
     setPayDescription(`Salary payment for ${formatPayrollMonth(row.payrollMonth)}`);
   };
 
-  const openAccrueDialog = () => {
+  const resetAccrueForm = () => {
+    setEditingPayrollId(null);
+    setEditingPaidAmount(0);
     setAccrueEmployeeId("");
-    setAccrueDate(new Date().toISOString().split("T")[0]);
+    setAccrueDate(getCurrentDatePakistan());
     setAccruePayrollMonth(getCurrentPayrollMonth());
+    setAccrueWorkingDays("26");
     setAccrueAbsentDays("0");
     setAccrueLoanRecovery("");
     setAccrueAdvanceRecovery("");
     setAccrueDescription("");
+  };
+
+  const openAccrueDialog = () => {
+    resetAccrueForm();
     setIsAccrueOpen(true);
+  };
+
+  const openEditPayrollDialog = (row: PayrollRow) => {
+    if (row.hasAccrual === false) {
+      toast({
+        title: "Cannot edit",
+        description: "Payment-only rows have no accrual to edit.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (row.paymentStatus === "paid") {
+      toast({
+        title: "Cannot edit",
+        description: "Fully paid payroll cannot be edited.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setEditingPayrollId(row.id);
+    setEditingPaidAmount(Number(row.paidAmount || 0));
+    setAccrueEmployeeId(row.employeeId);
+    setAccrueDate(String(row.date || "").split("T")[0] || getCurrentDatePakistan());
+    setAccruePayrollMonth(row.payrollMonth || getCurrentPayrollMonth());
+    setAccrueWorkingDays(String(Number(row.workingDays || row.employee?.workingDays || 26)));
+    setAccrueAbsentDays(String(Number(row.absentDays || 0)));
+    setAccrueLoanRecovery(
+      Number(row.loanRecovery || 0) > 0 ? String(row.loanRecovery) : "",
+    );
+    setAccrueAdvanceRecovery(
+      Number(row.advanceRecovery || 0) > 0 ? String(row.advanceRecovery) : "",
+    );
+    setAccrueDescription(row.description || "");
+    setIsAccrueOpen(true);
+  };
+
+  const handleAccrueDialogOpenChange = (open: boolean) => {
+    setIsAccrueOpen(open);
+    if (!open) resetAccrueForm();
   };
 
   const handleAccrue = async () => {
@@ -290,10 +360,37 @@ export const PayrollManagement = () => {
       return;
     }
 
+    if (isFutureMonth(accruePayrollMonth)) {
+      toast({
+        title: "Validation",
+        description: "Payroll month cannot be in the future.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isFutureDate(accrueDate)) {
+      toast({
+        title: "Validation",
+        description: "Accrual date cannot be in the future.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!selectedAccrueEmployee) return;
 
+    const workingDays = Number(accrueWorkingDays || 0);
     const absentDays = Number(accrueAbsentDays || 0);
-    if (absentDays < 0 || absentDays > selectedAccrueEmployee.workingDays) {
+    if (!Number.isFinite(workingDays) || workingDays < 1) {
+      toast({
+        title: "Validation",
+        description: "Working days must be at least 1.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (absentDays < 0 || absentDays > workingDays) {
       toast({
         title: "Validation",
         description: "Absent days must be between 0 and working days.",
@@ -311,33 +408,55 @@ export const PayrollManagement = () => {
       return;
     }
 
+    if (netSalaryPreview + 0.01 < editingPaidAmount) {
+      toast({
+        title: "Validation",
+        description: `Net payable cannot be less than amount already paid (${formatMoney(editingPaidAmount)}).`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setAccrueSaving(true);
     try {
-      const response = await apiClient.createEmployeeTransaction(accrueEmployeeId, {
-        type: "salary_accrual",
-        date: accrueDate,
-        payrollMonth: accruePayrollMonth,
-        absentDays,
-        loanRecovery: Number(accrueLoanRecovery || 0),
-        advanceRecovery: Number(accrueAdvanceRecovery || 0),
-        description: accrueDescription || undefined,
-      });
+      const response = editingPayrollId
+        ? await apiClient.updateEmployeePayrollTransaction(editingPayrollId, {
+            date: accrueDate,
+            payrollMonth: accruePayrollMonth,
+            workingDays,
+            absentDays,
+            loanRecovery: Number(accrueLoanRecovery || 0),
+            advanceRecovery: Number(accrueAdvanceRecovery || 0),
+            description: accrueDescription || undefined,
+          })
+        : await apiClient.createEmployeeTransaction(accrueEmployeeId, {
+            type: "salary_accrual",
+            date: accrueDate,
+            payrollMonth: accruePayrollMonth,
+            workingDays,
+            absentDays,
+            loanRecovery: Number(accrueLoanRecovery || 0),
+            advanceRecovery: Number(accrueAdvanceRecovery || 0),
+            description: accrueDescription || undefined,
+          });
 
       if ((response as any)?.error) {
         throw new Error((response as any).error);
       }
 
       toast({
-        title: "Payroll accrued",
-        description: `Salary accrued for ${selectedAccrueEmployee.name}.`,
+        title: editingPayrollId ? "Payroll updated" : "Payroll accrued",
+        description: editingPayrollId
+          ? `Salary accrual updated for ${selectedAccrueEmployee.name}.`
+          : `Salary accrued for ${selectedAccrueEmployee.name}.`,
       });
-      setIsAccrueOpen(false);
+      handleAccrueDialogOpenChange(false);
       await fetchPayroll();
       await fetchEmployees();
     } catch (error: any) {
       toast({
-        title: "Accrual failed",
-        description: error.message || "Could not accrue salary.",
+        title: editingPayrollId ? "Update failed" : "Accrual failed",
+        description: error.message || "Could not save payroll.",
         variant: "destructive",
       });
     } finally {
@@ -347,6 +466,15 @@ export const PayrollManagement = () => {
 
   const handlePay = async () => {
     if (!payRow) return;
+
+    if (isFutureDate(payDate)) {
+      toast({
+        title: "Validation",
+        description: "Payment date cannot be in the future.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const amount = Number(payAmount || 0);
     if (amount <= 0) {
@@ -537,6 +665,16 @@ export const PayrollManagement = () => {
                           <Button size="sm" variant="outline" onClick={() => handlePrint(row)}>
                             <Printer className="h-3.5 w-3.5" />
                           </Button>
+                          {row.hasAccrual !== false && row.paymentStatus !== "paid" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              title="Edit payroll"
+                              onClick={() => openEditPayrollDialog(row)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : null}
                           {row.hasAccrual !== false && row.outstanding > 0.01 ? (
                             <Button size="sm" variant="outline" onClick={() => openPayDialog(row)}>
                               <Banknote className="h-3.5 w-3.5 mr-1" />
@@ -599,7 +737,7 @@ export const PayrollManagement = () => {
       </Card>
 
       <Dialog open={Boolean(payRow)} onOpenChange={(open) => !open && setPayRow(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               Pay Salary
@@ -628,7 +766,12 @@ export const PayrollManagement = () => {
               </div>
               <div className="space-y-2">
                 <Label>Payment Date *</Label>
-                <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                <Input
+                  type="date"
+                  max={todayDateMax()}
+                  value={payDate}
+                  onChange={(e) => setPayDate(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Amount *</Label>
@@ -674,18 +817,22 @@ export const PayrollManagement = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isAccrueOpen} onOpenChange={setIsAccrueOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+      <Dialog open={isAccrueOpen} onOpenChange={handleAccrueDialogOpenChange}>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-4 overflow-hidden p-6">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Receipt className="h-4 w-4" />
-              Accrue Salary
+              {editingPayrollId ? "Edit Payroll Accrual" : "Accrue Salary"}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1">
             <div className="space-y-2">
               <Label>Employee *</Label>
-              <Select value={accrueEmployeeId} onValueChange={setAccrueEmployeeId}>
+              <Select
+                value={accrueEmployeeId}
+                onValueChange={setAccrueEmployeeId}
+                disabled={Boolean(editingPayrollId)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
@@ -697,19 +844,34 @@ export const PayrollManagement = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {editingPayrollId ? (
+                <p className="text-xs text-muted-foreground">
+                  Employee cannot be changed while editing.
+                  {editingPaidAmount > 0.01
+                    ? ` Already paid: ${formatMoney(editingPaidAmount)}.`
+                    : ""}
+                </p>
+              ) : null}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Payroll Month *</Label>
                 <Input
                   type="month"
+                  max={currentMonthMax()}
                   value={accruePayrollMonth}
+                  disabled={editingPaidAmount > 0.01}
                   onChange={(e) => setAccruePayrollMonth(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Accrual Date *</Label>
-                <Input type="date" value={accrueDate} onChange={(e) => setAccrueDate(e.target.value)} />
+                <Input
+                  type="date"
+                  max={todayDateMax()}
+                  value={accrueDate}
+                  onChange={(e) => setAccrueDate(e.target.value)}
+                />
               </div>
             </div>
             {selectedAccrueEmployee ? (
@@ -717,14 +879,29 @@ export const PayrollManagement = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Working Days</Label>
-                    <Input value={selectedAccrueEmployee.workingDays} disabled className="bg-muted" />
+                    <Input
+                      type="number"
+                      min={1}
+                      value={accrueWorkingDays}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setAccrueWorkingDays(next);
+                        const maxDays = Math.max(1, Number(next || 0));
+                        if (Number(accrueAbsentDays || 0) > maxDays) {
+                          setAccrueAbsentDays(String(maxDays));
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Default from employee ({Number(selectedAccrueEmployee.workingDays || 26)}). Change only for this payroll.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label>Absent Days</Label>
                     <Input
                       type="number"
                       min={0}
-                      max={selectedAccrueEmployee.workingDays}
+                      max={Math.max(1, Number(accrueWorkingDays || 26))}
                       value={accrueAbsentDays}
                       onChange={(e) => setAccrueAbsentDays(e.target.value)}
                     />
@@ -776,12 +953,16 @@ export const PayrollManagement = () => {
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAccrueOpen(false)}>
+          <DialogFooter className="shrink-0">
+            <Button variant="outline" onClick={() => handleAccrueDialogOpenChange(false)}>
               Cancel
             </Button>
             <Button onClick={() => void handleAccrue()} disabled={accrueSaving}>
-              {accrueSaving ? "Saving..." : "Accrue Salary"}
+              {accrueSaving
+                ? "Saving..."
+                : editingPayrollId
+                  ? "Update Payroll"
+                  : "Accrue Salary"}
             </Button>
           </DialogFooter>
         </DialogContent>

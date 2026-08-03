@@ -23104,6 +23104,7 @@ export namespace Prisma {
   export type EmployeeTransactionAvgAggregateOutputType = {
     amount: number | null
     absentDays: number | null
+    workingDays: number | null
     loanRecovery: number | null
     advanceRecovery: number | null
     netPaid: number | null
@@ -23112,6 +23113,7 @@ export namespace Prisma {
   export type EmployeeTransactionSumAggregateOutputType = {
     amount: number | null
     absentDays: number | null
+    workingDays: number | null
     loanRecovery: number | null
     advanceRecovery: number | null
     netPaid: number | null
@@ -23125,6 +23127,7 @@ export namespace Prisma {
     payrollMonth: string | null
     amount: number | null
     absentDays: number | null
+    workingDays: number | null
     loanRecovery: number | null
     advanceRecovery: number | null
     netPaid: number | null
@@ -23143,6 +23146,7 @@ export namespace Prisma {
     payrollMonth: string | null
     amount: number | null
     absentDays: number | null
+    workingDays: number | null
     loanRecovery: number | null
     advanceRecovery: number | null
     netPaid: number | null
@@ -23161,6 +23165,7 @@ export namespace Prisma {
     payrollMonth: number
     amount: number
     absentDays: number
+    workingDays: number
     loanRecovery: number
     advanceRecovery: number
     netPaid: number
@@ -23176,6 +23181,7 @@ export namespace Prisma {
   export type EmployeeTransactionAvgAggregateInputType = {
     amount?: true
     absentDays?: true
+    workingDays?: true
     loanRecovery?: true
     advanceRecovery?: true
     netPaid?: true
@@ -23184,6 +23190,7 @@ export namespace Prisma {
   export type EmployeeTransactionSumAggregateInputType = {
     amount?: true
     absentDays?: true
+    workingDays?: true
     loanRecovery?: true
     advanceRecovery?: true
     netPaid?: true
@@ -23197,6 +23204,7 @@ export namespace Prisma {
     payrollMonth?: true
     amount?: true
     absentDays?: true
+    workingDays?: true
     loanRecovery?: true
     advanceRecovery?: true
     netPaid?: true
@@ -23215,6 +23223,7 @@ export namespace Prisma {
     payrollMonth?: true
     amount?: true
     absentDays?: true
+    workingDays?: true
     loanRecovery?: true
     advanceRecovery?: true
     netPaid?: true
@@ -23233,6 +23242,7 @@ export namespace Prisma {
     payrollMonth?: true
     amount?: true
     absentDays?: true
+    workingDays?: true
     loanRecovery?: true
     advanceRecovery?: true
     netPaid?: true
@@ -23338,6 +23348,7 @@ export namespace Prisma {
     payrollMonth: string | null
     amount: number
     absentDays: number
+    workingDays: number | null
     loanRecovery: number
     advanceRecovery: number
     netPaid: number
@@ -23375,6 +23386,7 @@ export namespace Prisma {
     payrollMonth?: boolean
     amount?: boolean
     absentDays?: boolean
+    workingDays?: boolean
     loanRecovery?: boolean
     advanceRecovery?: boolean
     netPaid?: boolean
@@ -23395,6 +23407,7 @@ export namespace Prisma {
     payrollMonth?: boolean
     amount?: boolean
     absentDays?: boolean
+    workingDays?: boolean
     loanRecovery?: boolean
     advanceRecovery?: boolean
     netPaid?: boolean
@@ -23415,6 +23428,7 @@ export namespace Prisma {
     payrollMonth?: boolean
     amount?: boolean
     absentDays?: boolean
+    workingDays?: boolean
     loanRecovery?: boolean
     advanceRecovery?: boolean
     netPaid?: boolean
@@ -23448,6 +23462,7 @@ export namespace Prisma {
       payrollMonth: string | null
       amount: number
       absentDays: number
+      workingDays: number | null
       loanRecovery: number
       advanceRecovery: number
       netPaid: number
@@ -23858,6 +23873,7 @@ export namespace Prisma {
     readonly payrollMonth: FieldRef<"EmployeeTransaction", 'String'>
     readonly amount: FieldRef<"EmployeeTransaction", 'Float'>
     readonly absentDays: FieldRef<"EmployeeTransaction", 'Float'>
+    readonly workingDays: FieldRef<"EmployeeTransaction", 'Float'>
     readonly loanRecovery: FieldRef<"EmployeeTransaction", 'Float'>
     readonly advanceRecovery: FieldRef<"EmployeeTransaction", 'Float'>
     readonly netPaid: FieldRef<"EmployeeTransaction", 'Float'>
@@ -83732,6 +83748,7 @@ export namespace Prisma {
     payrollMonth: 'payrollMonth',
     amount: 'amount',
     absentDays: 'absentDays',
+    workingDays: 'workingDays',
     loanRecovery: 'loanRecovery',
     advanceRecovery: 'advanceRecovery',
     netPaid: 'netPaid',
@@ -86139,6 +86156,7 @@ export namespace Prisma {
     payrollMonth?: StringNullableFilter<"EmployeeTransaction"> | string | null
     amount?: FloatFilter<"EmployeeTransaction"> | number
     absentDays?: FloatFilter<"EmployeeTransaction"> | number
+    workingDays?: FloatNullableFilter<"EmployeeTransaction"> | number | null
     loanRecovery?: FloatFilter<"EmployeeTransaction"> | number
     advanceRecovery?: FloatFilter<"EmployeeTransaction"> | number
     netPaid?: FloatFilter<"EmployeeTransaction"> | number
@@ -86159,6 +86177,7 @@ export namespace Prisma {
     payrollMonth?: SortOrderInput | SortOrder
     amount?: SortOrder
     absentDays?: SortOrder
+    workingDays?: SortOrderInput | SortOrder
     loanRecovery?: SortOrder
     advanceRecovery?: SortOrder
     netPaid?: SortOrder
@@ -86182,6 +86201,7 @@ export namespace Prisma {
     payrollMonth?: StringNullableFilter<"EmployeeTransaction"> | string | null
     amount?: FloatFilter<"EmployeeTransaction"> | number
     absentDays?: FloatFilter<"EmployeeTransaction"> | number
+    workingDays?: FloatNullableFilter<"EmployeeTransaction"> | number | null
     loanRecovery?: FloatFilter<"EmployeeTransaction"> | number
     advanceRecovery?: FloatFilter<"EmployeeTransaction"> | number
     netPaid?: FloatFilter<"EmployeeTransaction"> | number
@@ -86202,6 +86222,7 @@ export namespace Prisma {
     payrollMonth?: SortOrderInput | SortOrder
     amount?: SortOrder
     absentDays?: SortOrder
+    workingDays?: SortOrderInput | SortOrder
     loanRecovery?: SortOrder
     advanceRecovery?: SortOrder
     netPaid?: SortOrder
@@ -86228,6 +86249,7 @@ export namespace Prisma {
     payrollMonth?: StringNullableWithAggregatesFilter<"EmployeeTransaction"> | string | null
     amount?: FloatWithAggregatesFilter<"EmployeeTransaction"> | number
     absentDays?: FloatWithAggregatesFilter<"EmployeeTransaction"> | number
+    workingDays?: FloatNullableWithAggregatesFilter<"EmployeeTransaction"> | number | null
     loanRecovery?: FloatWithAggregatesFilter<"EmployeeTransaction"> | number
     advanceRecovery?: FloatWithAggregatesFilter<"EmployeeTransaction"> | number
     netPaid?: FloatWithAggregatesFilter<"EmployeeTransaction"> | number
@@ -93115,6 +93137,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -93134,6 +93157,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -93151,6 +93175,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -93170,6 +93195,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -93188,6 +93214,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -93205,6 +93232,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -93222,6 +93250,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -100312,6 +100341,7 @@ export namespace Prisma {
     payrollMonth?: SortOrder
     amount?: SortOrder
     absentDays?: SortOrder
+    workingDays?: SortOrder
     loanRecovery?: SortOrder
     advanceRecovery?: SortOrder
     netPaid?: SortOrder
@@ -100325,6 +100355,7 @@ export namespace Prisma {
   export type EmployeeTransactionAvgOrderByAggregateInput = {
     amount?: SortOrder
     absentDays?: SortOrder
+    workingDays?: SortOrder
     loanRecovery?: SortOrder
     advanceRecovery?: SortOrder
     netPaid?: SortOrder
@@ -100338,6 +100369,7 @@ export namespace Prisma {
     payrollMonth?: SortOrder
     amount?: SortOrder
     absentDays?: SortOrder
+    workingDays?: SortOrder
     loanRecovery?: SortOrder
     advanceRecovery?: SortOrder
     netPaid?: SortOrder
@@ -100356,6 +100388,7 @@ export namespace Prisma {
     payrollMonth?: SortOrder
     amount?: SortOrder
     absentDays?: SortOrder
+    workingDays?: SortOrder
     loanRecovery?: SortOrder
     advanceRecovery?: SortOrder
     netPaid?: SortOrder
@@ -100369,6 +100402,7 @@ export namespace Prisma {
   export type EmployeeTransactionSumOrderByAggregateInput = {
     amount?: SortOrder
     absentDays?: SortOrder
+    workingDays?: SortOrder
     loanRecovery?: SortOrder
     advanceRecovery?: SortOrder
     netPaid?: SortOrder
@@ -114353,6 +114387,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -114370,6 +114405,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -114477,6 +114513,7 @@ export namespace Prisma {
     payrollMonth?: StringNullableFilter<"EmployeeTransaction"> | string | null
     amount?: FloatFilter<"EmployeeTransaction"> | number
     absentDays?: FloatFilter<"EmployeeTransaction"> | number
+    workingDays?: FloatNullableFilter<"EmployeeTransaction"> | number | null
     loanRecovery?: FloatFilter<"EmployeeTransaction"> | number
     advanceRecovery?: FloatFilter<"EmployeeTransaction"> | number
     netPaid?: FloatFilter<"EmployeeTransaction"> | number
@@ -133367,6 +133404,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -133385,6 +133423,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -137217,6 +137256,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -137317,6 +137357,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -137334,6 +137375,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -137351,6 +137393,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -143151,6 +143194,7 @@ export namespace Prisma {
     payrollMonth?: string | null
     amount: number
     absentDays?: number
+    workingDays?: number | null
     loanRecovery?: number
     advanceRecovery?: number
     netPaid?: number
@@ -143268,6 +143312,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -143286,6 +143331,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number
@@ -143303,6 +143349,7 @@ export namespace Prisma {
     payrollMonth?: NullableStringFieldUpdateOperationsInput | string | null
     amount?: FloatFieldUpdateOperationsInput | number
     absentDays?: FloatFieldUpdateOperationsInput | number
+    workingDays?: NullableFloatFieldUpdateOperationsInput | number | null
     loanRecovery?: FloatFieldUpdateOperationsInput | number
     advanceRecovery?: FloatFieldUpdateOperationsInput | number
     netPaid?: FloatFieldUpdateOperationsInput | number

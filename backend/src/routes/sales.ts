@@ -282,6 +282,22 @@ async function getReservedQuantity(partId: string): Promise<number> {
   }
 }
 
+/**
+ * Allow invoice save when available is 0 / short of qty, unless reserved stock exists.
+ * Block only when required qty exceeds available AND reserved > 0.
+ */
+function stockBlocksInvoiceSave(
+  requiredQty: number,
+  stock: number,
+  reserved: number,
+): { blocked: boolean; available: number } {
+  const available = stock - reserved;
+  return {
+    available,
+    blocked: requiredQty > available && reserved > 0,
+  };
+}
+
 // Robust helper to find account by name keywords with optional exclusion
 async function findAccountByKeywords(
   keywords: string[],
@@ -1333,15 +1349,19 @@ router.post(
         return res.status(404).json({ error: "Quotation not found" });
       }
 
-      // Check stock availability
+      // Check stock availability — allow short/zero available unless reserved stock exists
       for (const item of quotation.SalesQuotationItem) {
         const stock = await getStockBalance(item.partId);
         const reserved = await getReservedQuantity(item.partId);
-        const available = stock - reserved;
+        const { blocked, available } = stockBlocksInvoiceSave(
+          item.quantity,
+          stock,
+          reserved,
+        );
 
-        if (available < item.quantity) {
+        if (blocked) {
           return res.status(400).json({
-            error: `Insufficient stock for part ${item.partNo}. Available: ${available}, Required: ${item.quantity}`,
+            error: `Insufficient stock for part ${item.partNo}. Available: ${available}, Reserved: ${reserved}, Required: ${item.quantity}`,
           });
         }
       }
@@ -2107,15 +2127,19 @@ router.post("/invoices", async (req: Request, res: Response) => {
         ? String(term ?? "").trim() || null
         : payment.walkInTerm;
 
-    // Check stock availability
+    // Check stock availability — allow short/zero available unless reserved stock exists
     for (const item of items) {
       const stock = await getStockBalance(item.partId);
       const reserved = await getReservedQuantity(item.partId);
-      const available = stock - reserved;
+      const { blocked, available } = stockBlocksInvoiceSave(
+        item.orderedQty,
+        stock,
+        reserved,
+      );
 
-      if (available < item.orderedQty) {
+      if (blocked) {
         return res.status(400).json({
-          error: `Insufficient stock for part ${item.partNo}. Available: ${available}, Required: ${item.orderedQty}`,
+          error: `Insufficient stock for part ${item.partNo}. Available: ${available}, Reserved: ${reserved}, Required: ${item.orderedQty}`,
         });
       }
     }

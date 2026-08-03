@@ -283,6 +283,30 @@ export async function applyBalanceChange(
   });
 }
 
+/** Reverse posted balances and remove a system employee voucher. */
+export async function reverseEmployeeVoucher(voucherId: string) {
+  const voucher = await prisma.voucher.findUnique({
+    where: { id: voucherId },
+    include: {
+      VoucherEntry: {
+        select: { accountId: true, debit: true, credit: true },
+      },
+    },
+  });
+  if (!voucher) return;
+
+  if (voucher.status === "posted") {
+    for (const entry of voucher.VoucherEntry) {
+      if (!entry.accountId) continue;
+      // Swap debit/credit to reverse the original balance effect
+      await applyBalanceChange(entry.accountId, entry.credit, entry.debit);
+    }
+  }
+
+  await prisma.voucherEntry.deleteMany({ where: { voucherId } });
+  await prisma.voucher.delete({ where: { id: voucherId } });
+}
+
 type VoucherEntryInput = {
   accountId: string;
   accountName: string;

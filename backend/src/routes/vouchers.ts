@@ -319,7 +319,7 @@ router.get('/', async (req: Request, res: Response) => {
             }
           }
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ date: "desc" }, { voucherNumber: "desc" }],
         skip,
         take: limitNum,
       }),

@@ -333,6 +333,7 @@ exports.Prisma.EmployeeTransactionScalarFieldEnum = {
   payrollMonth: 'payrollMonth',
   amount: 'amount',
   absentDays: 'absentDays',
+  workingDays: 'workingDays',
   loanRecovery: 'loanRecovery',
   advanceRecovery: 'advanceRecovery',
   netPaid: 'netPaid',

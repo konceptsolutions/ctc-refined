@@ -2515,6 +2515,7 @@ class ApiClient {
       payrollMonth?: string;
       amount?: number;
       absentDays?: number;
+      workingDays?: number;
       loanRecovery?: number;
       advanceRecovery?: number;
       cashBankAccountId?: string;
@@ -2523,6 +2524,41 @@ class ApiClient {
   ) {
     return this.request(`/employees/${employeeId}/transactions`, {
       method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateEmployeeLoanAdvanceTransaction(
+    txId: string,
+    data: {
+      employeeId?: string;
+      type?: "advance_issue" | "loan_issue" | "loan_recovery" | "advance_recovery";
+      date?: string;
+      amount?: number;
+      cashBankAccountId?: string;
+      description?: string;
+    },
+  ) {
+    return this.request(`/employees/loan-advance-transactions/${txId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateEmployeePayrollTransaction(
+    txId: string,
+    data: {
+      date?: string;
+      payrollMonth?: string;
+      workingDays?: number;
+      absentDays?: number;
+      loanRecovery?: number;
+      advanceRecovery?: number;
+      description?: string;
+    },
+  ) {
+    return this.request(`/employees/payroll-transactions/${txId}`, {
+      method: "PUT",
       body: JSON.stringify(data),
     });
   }
