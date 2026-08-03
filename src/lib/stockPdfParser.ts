@@ -1,6 +1,8 @@
 import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+// Prefer the Vite-bundled worker (correct MIME + cache-busted). Fall back to /public copy.
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc || "/pdf.worker.min.mjs";
 
 export interface PdfStockRow {
   partNo: string;
