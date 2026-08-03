@@ -217,10 +217,13 @@ router.post('/', async (req, res) => {
             actionType: 'backup',
             module: 'Backup',
             description: `Completed backup: ${backup.name} (${backup.size})`,
+            entityType: 'backup',
+            entityId: backup.id,
+            entityLabel: backup.name,
             ipAddress: getClientIp(req),
             status: 'success',
-            details: { backupId: backup.id, type: backup.type, size: backup.size },
-          });
+            details: { type: backup.type, size: `${finalSize} MB` },
+          }, req);
         }
       } catch (error) {
         clearInterval(progressInterval);
@@ -235,10 +238,13 @@ router.post('/', async (req, res) => {
       actionType: 'backup',
       module: 'Backup',
       description: `Started backup: ${backup.name}`,
+      entityType: 'backup',
+      entityId: backup.id,
+      entityLabel: backup.name,
       ipAddress: getClientIp(req),
       status: 'success',
-      details: { backupId: backup.id, type: backup.type },
-    });
+      details: { type: backup.type },
+    }, req);
 
     res.status(201).json({ data: backup });
   } catch (error: any) {

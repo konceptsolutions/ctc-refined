@@ -41,21 +41,30 @@ import {
   Clock,
   Loader2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Printer,
+  RefreshCw,
+  Database,
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
+import { getCurrentDatePakistan } from "@/utils/dateUtils";
+import { Label } from "@/components/ui/label";
 
 interface ActivityLog {
   id: string;
   timestamp: string;
   user: string;
+  userId?: string | null;
   userRole: string;
   action: string;
-  actionType: "login" | "create" | "update" | "delete" | "export" | "approve" | "login_failed";
+  actionType: string;
   module: string;
   description: string;
-  ipAddress: string;
+  entityType?: string | null;
+  entityId?: string | null;
+  entityLabel?: string | null;
+  ipAddress?: string;
   status: "success" | "warning" | "error";
   details?: Record<string, string>;
 }
@@ -67,7 +76,11 @@ const actionIcons: Record<string, React.ReactNode> = {
   update: <Edit className="w-4 h-4" />,
   delete: <Trash className="w-4 h-4" />,
   export: <Download className="w-4 h-4" />,
+  print: <Printer className="w-4 h-4" />,
+  status_change: <RefreshCw className="w-4 h-4" />,
   approve: <CheckCircle className="w-4 h-4" />,
+  backup: <Database className="w-4 h-4" />,
+  restore: <Database className="w-4 h-4" />,
   login_failed: <XCircle className="w-4 h-4" />,
 };
 
@@ -77,7 +90,11 @@ const actionColors: Record<string, string> = {
   update: "bg-amber-100 text-amber-700",
   delete: "bg-red-100 text-red-700",
   export: "bg-purple-100 text-purple-700",
+  print: "bg-indigo-100 text-indigo-700",
+  status_change: "bg-sky-100 text-sky-700",
   approve: "bg-emerald-100 text-emerald-700",
+  backup: "bg-slate-100 text-slate-700",
+  restore: "bg-slate-100 text-slate-700",
   login_failed: "bg-red-100 text-red-700",
 };
 
@@ -101,6 +118,7 @@ export const ActivityLogsTab = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [moduleFilter, setModuleFilter] = useState("all");
   const [actionFilter, setActionFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState(() => getCurrentDatePakistan());
   const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
@@ -112,69 +130,107 @@ export const ActivityLogsTab = () => {
     error: 0,
   });
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (signal?: AbortSignal) => {
     try {
       setLoading(true);
-      const params: any = {
+      const params: Record<string, string | number> = {
         page,
         limit,
       };
-      if (searchQuery) params.search = searchQuery;
+      if (searchQuery.trim()) params.search = searchQuery.trim();
       if (moduleFilter !== "all") params.module = moduleFilter;
       if (actionFilter !== "all") params.actionType = actionFilter;
+      if (dateFilter) {
+        params.fromDate = dateFilter;
+        params.toDate = dateFilter;
+      }
 
       const response = await apiClient.getActivityLogs(params);
+      if (signal?.aborted) return;
+
       if (response.error) {
         toast.error(response.error);
+        setLogs([]);
+        return;
+      }
+
+      const rows = Array.isArray(response.data) ? response.data : [];
+      setLogs(rows);
+
+      if (response.pagination) {
+        setTotal(Number(response.pagination.total) || 0);
       } else {
-        setLogs(response.data || []);
-        if (response.pagination) {
-          setTotal(response.pagination.total);
-        }
-        // Update stats from backend if available
-        if (response.stats) {
-          setStats(response.stats);
-        } else {
-          // Fallback: calculate from current page if stats not available
-          setStats({
-            total: response.pagination?.total || 0,
-            success: (response.data || []).filter((l: ActivityLog) => l.status === "success").length,
-            warning: (response.data || []).filter((l: ActivityLog) => l.status === "warning").length,
-            error: (response.data || []).filter((l: ActivityLog) => l.status === "error").length,
-          });
-        }
+        setTotal(rows.length);
+      }
+
+      const responseStats = (response as { stats?: typeof stats }).stats;
+      if (responseStats) {
+        setStats({
+          total: Number(responseStats.total) || 0,
+          success: Number(responseStats.success) || 0,
+          warning: Number(responseStats.warning) || 0,
+          error: Number(responseStats.error) || 0,
+        });
+      } else {
+        setStats({
+          total: Number(response.pagination?.total) || rows.length,
+          success: rows.filter((l) => l.status === "success").length,
+          warning: rows.filter((l) => l.status === "warning").length,
+          error: rows.filter((l) => l.status === "error").length,
+        });
       }
     } catch (error: any) {
+      if (signal?.aborted) return;
       toast.error(error.message || "Failed to fetch activity logs");
+      setLogs([]);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLogs();
-  }, [page, moduleFilter, actionFilter]);
+    setPage(1);
+  }, [searchQuery, moduleFilter, actionFilter, dateFilter]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      if (page === 1) {
-        fetchLogs();
-      } else {
-        setPage(1);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+      void fetchLogs(controller.signal);
+    }, searchQuery ? 400 : 0);
 
-  // Stats are now fetched from backend and stored in state
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, moduleFilter, actionFilter, searchQuery, dateFilter]);
 
-  const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase();
+  const getInitials = (name?: string | null) => {
+    const parts = String(name || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (parts.length === 0) return "?";
+    return parts
+      .map((n) => n[0] || "")
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   const handleExport = () => {
     const csvContent = [
-      ["Timestamp", "User", "Action", "Module", "Description", "IP Address", "Status"],
+      ["Timestamp", "User", "User ID", "Action", "Module", "Entity", "Entity ID", "Description", "Status"],
       ...logs.map(log => [
-        log.timestamp, log.user, log.action, log.module, log.description, log.ipAddress, log.status
+        log.timestamp,
+        log.user,
+        log.userId || "",
+        log.action,
+        log.module,
+        log.entityLabel || log.entityType || "",
+        log.entityId || "",
+        log.description,
+        log.status,
       ])
     ].map(row => row.join(",")).join("\n");
 
@@ -240,6 +296,19 @@ export const ActivityLogsTab = () => {
               className="pl-9 w-48"
             />
           </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="activity-date" className="text-xs text-muted-foreground whitespace-nowrap">
+              Date
+            </Label>
+            <Input
+              id="activity-date"
+              type="date"
+              value={dateFilter}
+              max={getCurrentDatePakistan()}
+              onChange={(e) => setDateFilter(e.target.value || getCurrentDatePakistan())}
+              className="w-40"
+            />
+          </div>
           <Select value={moduleFilter} onValueChange={setModuleFilter}>
             <SelectTrigger className="w-36">
               <SelectValue placeholder="All Modules" />
@@ -252,6 +321,9 @@ export const ActivityLogsTab = () => {
               <SelectItem value="Users">Users</SelectItem>
               <SelectItem value="Reports">Reports</SelectItem>
               <SelectItem value="Purchase">Purchase</SelectItem>
+              <SelectItem value="Purchase Import">Purchase Import</SelectItem>
+              <SelectItem value="Vouchers">Vouchers</SelectItem>
+              <SelectItem value="Backup">Backup</SelectItem>
             </SelectContent>
           </Select>
           <Select value={actionFilter} onValueChange={setActionFilter}>
@@ -264,8 +336,11 @@ export const ActivityLogsTab = () => {
               <SelectItem value="create">Create</SelectItem>
               <SelectItem value="update">Update</SelectItem>
               <SelectItem value="delete">Delete</SelectItem>
+              <SelectItem value="print">Print</SelectItem>
+              <SelectItem value="status_change">Status Change</SelectItem>
               <SelectItem value="export">Export</SelectItem>
               <SelectItem value="approve">Approve</SelectItem>
+              <SelectItem value="backup">Backup</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -286,8 +361,8 @@ export const ActivityLogsTab = () => {
                 <TableHead>USER</TableHead>
                 <TableHead>ACTION</TableHead>
                 <TableHead>MODULE</TableHead>
+                <TableHead>ENTITY</TableHead>
                 <TableHead>DESCRIPTION</TableHead>
-                <TableHead>IP ADDRESS</TableHead>
                 <TableHead>STATUS</TableHead>
                 <TableHead>DETAILS</TableHead>
               </TableRow>
@@ -337,15 +412,33 @@ export const ActivityLogsTab = () => {
                   <TableCell>
                     <Badge variant="secondary">{log.module}</Badge>
                   </TableCell>
-                  <TableCell className="text-sm max-w-xs truncate">{log.description}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{log.ipAddress}</TableCell>
+                  <TableCell className="text-sm max-w-[12rem]">
+                    {log.entityLabel || log.entityType ? (
+                      <div>
+                        <p className="whitespace-normal break-words font-medium">
+                          {log.entityLabel || log.entityType}
+                        </p>
+                        {log.entityId &&
+                          log.entityLabel &&
+                          log.entityId !== log.entityLabel &&
+                          !/^[0-9a-f-]{36}$/i.test(log.entityId) && (
+                          <p className="text-xs text-muted-foreground truncate">{log.entityId}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm max-w-md whitespace-normal break-words">
+                    {log.description}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={statusColors[log.status]}>
                       {log.status}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {log.details && (
+                    {(log.details || log.entityType || log.userId) && (
                       <Button variant="ghost" size="sm" className="text-primary" onClick={() => setSelectedLog(log)}>
                         View
                       </Button>
@@ -403,6 +496,9 @@ export const ActivityLogsTab = () => {
                 <div>
                   <p className="text-xs text-muted-foreground">User</p>
                   <p className="font-medium">{selectedLog.user}</p>
+                  {selectedLog.userId && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{selectedLog.userId}</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Action</p>
@@ -416,6 +512,13 @@ export const ActivityLogsTab = () => {
                   <p className="text-xs text-muted-foreground">Timestamp</p>
                   <p className="font-medium">{selectedLog.timestamp ? new Date(selectedLog.timestamp).toLocaleString() : 'N/A'}</p>
                 </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Entity</p>
+                  <p className="font-medium">{selectedLog.entityLabel || selectedLog.entityType || '—'}</p>
+                  {selectedLog.entityId && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{selectedLog.entityId}</p>
+                  )}
+                </div>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Description</p>
@@ -428,7 +531,7 @@ export const ActivityLogsTab = () => {
                     {Object.entries(selectedLog.details).map(([key, value]) => (
                       <div key={key} className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{key}:</span>
-                        <span className="font-medium">{value}</span>
+                        <span className="font-medium">{String(value)}</span>
                       </div>
                     ))}
                   </div>

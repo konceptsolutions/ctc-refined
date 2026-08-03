@@ -42,15 +42,25 @@ model ActivityLog {
   id          String   @id @default(uuid())
   timestamp   String
   user        String
+  userId      String?
   userRole    String
   action      String
   actionType  String
   module      String
   description String
+  entityType  String?
+  entityId    String?
+  entityLabel String?
   ipAddress   String
   status      String   @default("success")
   details     String?
   createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([actionType])
+  @@index([module])
 }
 
 model Adjustment {

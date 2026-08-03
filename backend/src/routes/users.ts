@@ -231,15 +231,19 @@ router.post('/', async (req, res) => {
 
     await logActivity({
       user: currentUser.name,
+      userId: currentUser.id,
       userRole: currentUser.role,
       action: 'Created User',
       actionType: 'create',
       module: 'Users',
       description: `Created new user: ${name} (${email})`,
+      entityType: 'user',
+      entityId: user.id,
+      entityLabel: user.email,
       ipAddress: getClientIp(req),
       status: 'success',
-      details: { userId: user.id, email: user.email, roleId: user.roleId },
-    });
+      details: { email: user.email, roleId: user.roleId },
+    }, req);
 
     const rn = await roleNamesForUserRows([user.roleId]);
     const { roleId: rid, ...rest } = user;
@@ -323,15 +327,19 @@ router.put('/:id', async (req, res) => {
     if (updateData.password) {
       await logActivity({
         user: currentUser.name,
+        userId: currentUser.id,
         userRole: currentUser.role,
         action: 'Changed User Password',
         actionType: 'update',
         module: 'Users',
         description: `Changed password for user: ${user.name} (${user.email})`,
+        entityType: 'user',
+        entityId: user.id,
+        entityLabel: user.email,
         ipAddress: getClientIp(req),
         status: 'success',
-        details: { userId: user.id, email: user.email },
-      });
+        details: { email: user.email },
+      }, req);
     }
 
     const rn = await roleNamesForUserRows([user.roleId]);
@@ -368,15 +376,19 @@ router.delete('/:id', async (req, res) => {
     const currentUser = (req as any).user || { name: 'System', role: 'Admin' };
     await logActivity({
       user: currentUser.name,
+      userId: currentUser.id,
       userRole: currentUser.role,
       action: 'Deleted User',
       actionType: 'delete',
       module: 'Users',
       description: `Deleted user: ${deletedUser?.name || 'Unknown'} (${deletedUser?.email || 'Unknown'})`,
+      entityType: 'user',
+      entityId: req.params.id,
+      entityLabel: deletedUser?.email || deletedUser?.name || req.params.id,
       ipAddress: getClientIp(req),
       status: 'success',
-      details: { userId: req.params.id },
-    });
+      details: { email: deletedUser?.email || null },
+    }, req);
 
     res.json({ message: 'User deleted successfully' });
   } catch (error: any) {

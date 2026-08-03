@@ -4976,7 +4976,10 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
       },
     });
 
-    res.json(updatedInvoice);
+    res.json({
+      ...updatedInvoice,
+      previousStatus: prevStatus,
+    });
   } catch (error: any) {
     console.error("Status update error:", error);
     res.status(500).json({ error: error.message });

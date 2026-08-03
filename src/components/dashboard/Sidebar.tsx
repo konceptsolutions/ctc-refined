@@ -92,7 +92,7 @@ export const Sidebar = () => {
     { Icon: Settings2, path: "/manage", label: "Manage" },
     // { Icon: BookMarked, path: "/docs", label: "Documentation" },
     // { Icon: BarChart3, path: "/reports", label: "Reports" },
-    { Icon: Settings, path: "/settings", label: "Settings" },
+    { Icon: Settings, path: "/settings/users", label: "Settings" },
   ];
   const isStoreUser = getUserRole() === "store" || isStoreUserRole();
   const isManager = isManagerRole();

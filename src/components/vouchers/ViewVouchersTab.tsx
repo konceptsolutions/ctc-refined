@@ -538,6 +538,17 @@ export const ViewVouchersTab = ({
 
     printWindow.document.write(printContent);
     printWindow.document.close();
+
+    void apiClient.logActivity({
+      action: "Printed Voucher",
+      actionType: "print",
+      module: "Vouchers",
+      description: `Printed voucher ${voucher.voucherNumber || voucher.id}`,
+      entityType: "voucher",
+      entityId: voucher.id,
+      entityLabel: voucher.voucherNumber || voucher.id,
+      details: { type: voucher.type },
+    });
   };
 
   // Handle Search button

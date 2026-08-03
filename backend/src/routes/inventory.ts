@@ -991,9 +991,54 @@ router.post("/update-location", async (req: Request, res: Response) => {
       });
     }
 
+    // Enrich response for activity logging (human-readable part/location labels)
+    const [part, store, rack, shelf] = await Promise.all([
+      prisma.part.findUnique({
+        where: { id: part_id },
+        select: {
+          id: true,
+          partNo: true,
+          MasterPart: { select: { masterPartNo: true } },
+        },
+      }),
+      storeKey
+        ? prisma.store.findUnique({
+            where: { id: storeKey },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+      rackKey
+        ? prisma.rack.findUnique({
+            where: { id: rackKey },
+            select: { codeNo: true },
+          })
+        : Promise.resolve(null),
+      shelfKey
+        ? prisma.shelf.findUnique({
+            where: { id: shelfKey },
+            select: { shelfNo: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    const masterPartNo = (part as any)?.MasterPart?.masterPartNo || null;
+
     res.status(201).json({
       message: "Location updated successfully (PartRackShelf only)",
-      data: record,
+      data: {
+        ...record,
+        partId: part_id,
+        partNo: part?.partNo || masterPartNo || null,
+        masterPartNo,
+        storeName: store?.name || null,
+        rackCode: rack?.codeNo || null,
+        shelfNo: shelf?.shelfNo || null,
+        quantity: qtyVal,
+        type,
+        locationLabel: [store?.name, rack?.codeNo, shelf?.shelfNo]
+          .filter(Boolean)
+          .join(" / "),
+      },
     });
   } catch (error: any) {
     console.error(`[API] Error in update-location: ${error.message}`);
@@ -1182,9 +1227,59 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
       return { success: true };
     });
 
+    const targetStoreId = target?.store_id || null;
+    const targetRackId = target?.rack_id || null;
+    const targetShelfId = target?.shelf_id || null;
+
+    const [part, store, rack, shelf] = await Promise.all([
+      prisma.part.findUnique({
+        where: { id: part_id },
+        select: {
+          id: true,
+          partNo: true,
+          MasterPart: { select: { masterPartNo: true } },
+        },
+      }),
+      targetStoreId
+        ? prisma.store.findUnique({
+            where: { id: targetStoreId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+      targetRackId
+        ? prisma.rack.findUnique({
+            where: { id: targetRackId },
+            select: { codeNo: true },
+          })
+        : Promise.resolve(null),
+      targetShelfId
+        ? prisma.shelf.findUnique({
+            where: { id: targetShelfId },
+            select: { shelfNo: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    const masterPartNo = (part as any)?.MasterPart?.masterPartNo || null;
+
     res.status(201).json({
       message: "Stock transferred successfully",
-      data: result,
+      data: {
+        ...result,
+        partId: part_id,
+        partNo: part?.partNo || masterPartNo || null,
+        masterPartNo,
+        quantity: qtyVal,
+        storeName: store?.name || null,
+        rackCode: rack?.codeNo || null,
+        shelfNo: shelf?.shelfNo || null,
+        targetStoreName: store?.name || null,
+        targetRackCode: rack?.codeNo || null,
+        targetShelfNo: shelf?.shelfNo || null,
+        locationLabel: [store?.name, rack?.codeNo, shelf?.shelfNo]
+          .filter(Boolean)
+          .join(" / "),
+      },
     });
   } catch (error: any) {
     console.error(`[API] Error in transfer-location: ${error.message}`);
@@ -2676,6 +2771,7 @@ router.post("/transfers", async (req: Request, res: Response) => {
     res.status(201).json({
       id: transfer.id,
       transfer_number: transfer.transferNumber,
+      transferNumber: transfer.transferNumber,
       date: transfer.date,
       status: transfer.status,
       total_qty: transfer.totalQty,
@@ -2831,8 +2927,10 @@ router.put("/transfers/:id", async (req: Request, res: Response) => {
     res.json({
       id: transfer.id,
       transfer_number: transfer.transferNumber,
+      transferNumber: transfer.transferNumber,
       date: transfer.date,
       status: transfer.status,
+      previousStatus: existingTransfer.status,
       total_qty: transfer.totalQty,
       items_count: (transfer as any).TransferItem.length,
     });
@@ -2853,7 +2951,12 @@ router.delete("/transfers/:id", async (req: Request, res: Response) => {
 
     await prisma.transfer.delete({ where: { id } });
 
-    res.json({ message: "Transfer deleted successfully" });
+    res.json({
+      message: "Transfer deleted successfully",
+      id: transfer.id,
+      transfer_number: transfer.transferNumber,
+      transferNumber: transfer.transferNumber,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -3625,7 +3728,17 @@ router.post("/adjustments", async (req: Request, res: Response) => {
         });
       }
 
-      return { id: adjustment.id, voucherNumber };
+      return {
+        id: adjustment.id,
+        adjustmentNo: adjustment.adjustmentNo,
+        adjustment_no: adjustment.adjustmentNo,
+        subject: adjustment.subject,
+        addInventory: adjustment.addInventory,
+        add_inventory: adjustment.addInventory,
+        status: adjustment.status,
+        voucherNumber,
+        items_count: items.length,
+      };
     });
 
     res.status(201).json({ success: true, ...result });
@@ -4581,8 +4694,14 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
 
     res.json({
       id: result.id,
+      adjustmentNo: result.adjustmentNo,
+      adjustment_no: result.adjustmentNo,
       date: result.date,
       subject: result.subject,
+      addInventory: result.addInventory,
+      add_inventory: result.addInventory,
+      status: result.status,
+      previousStatus: existingAdjustment.status,
       total_amount: result.totalAmount,
       items_count: result.AdjustmentItem?.length || 0,
     });
@@ -4965,10 +5084,15 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
 
     res.json({
       id: updatedAdjustment.id,
+      adjustmentNo: updatedAdjustment.adjustmentNo,
+      adjustment_no: updatedAdjustment.adjustmentNo,
       date: updatedAdjustment.date,
       subject: updatedAdjustment.subject,
+      addInventory: updatedAdjustment.addInventory,
+      add_inventory: updatedAdjustment.addInventory,
       total_amount: updatedAdjustment.totalAmount,
       status: updatedAdjustment.status,
+      previousStatus: "pending",
       voucher_id: updatedAdjustment.voucherId,
       voucher_number: updatedAdjustment.voucher?.voucherNumber || null,
       voucher_status: updatedAdjustment.voucher?.status || null,
@@ -5169,6 +5293,12 @@ router.delete("/adjustments/:id", async (req: Request, res: Response) => {
     await client.query("COMMIT");
     res.json({
       message: "Adjustment deleted and entries reversed successfully",
+      id: adjustment.id,
+      adjustmentNo: adjustment.adjustmentNo,
+      adjustment_no: adjustment.adjustmentNo,
+      subject: adjustment.subject,
+      status: "deleted",
+      previousStatus: adjustment.status,
     });
   } catch (error: any) {
     if (client) await client.query("ROLLBACK");
@@ -6135,7 +6265,10 @@ async function receiveImportPurchaseOrder(
     return {
       id: updated.id,
       po_number: updated.poNumber,
+      poNumber: updated.poNumber,
       status: updated.status,
+      previousStatus: order.status,
+      isImport: true,
       total_amount: updated.totalAmount,
       voucher_total: totalDebit,
     };
@@ -6272,7 +6405,14 @@ router.put("/purchase-orders/:id/locations", async (req: Request, res: Response)
       }
     });
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      id: order.id,
+      po_number: order.poNumber,
+      poNumber: order.poNumber,
+      status: order.status,
+      isImport: Boolean((order as any).purchaseQuotationId),
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -6813,8 +6953,11 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
     res.json({
       id: order.id,
       po_number: order.poNumber,
+      poNumber: order.poNumber,
       date: order.date,
       status: order.status,
+      previousStatus: existingOrder.status,
+      isImport: Boolean((existingOrder as any).purchaseQuotationId),
       total_amount: order.totalAmount,
       items_count: order.PurchaseOrderItem.length,
     });
@@ -9911,7 +10054,14 @@ router.put(
         return updated;
       });
 
-      res.json(order);
+      res.json({
+        ...order,
+        previousStatus: existingOrder.status,
+        dpoNumber: (order as any).dpoNumber ?? existingOrder.dpoNumber,
+        dpo_number: (order as any).dpoNumber ?? existingOrder.dpoNumber,
+        orderType: (order as any).orderType ?? existingOrder.orderType,
+        order_type: (order as any).orderType ?? existingOrder.orderType,
+      });
     } catch (error: any) {
       console.error("Error updating DPO:", error);
       res.status(500).json({ error: error.message });

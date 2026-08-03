@@ -9696,11 +9696,15 @@ export namespace Prisma {
     id: string | null
     timestamp: string | null
     user: string | null
+    userId: string | null
     userRole: string | null
     action: string | null
     actionType: string | null
     module: string | null
     description: string | null
+    entityType: string | null
+    entityId: string | null
+    entityLabel: string | null
     ipAddress: string | null
     status: string | null
     details: string | null
@@ -9711,11 +9715,15 @@ export namespace Prisma {
     id: string | null
     timestamp: string | null
     user: string | null
+    userId: string | null
     userRole: string | null
     action: string | null
     actionType: string | null
     module: string | null
     description: string | null
+    entityType: string | null
+    entityId: string | null
+    entityLabel: string | null
     ipAddress: string | null
     status: string | null
     details: string | null
@@ -9726,11 +9734,15 @@ export namespace Prisma {
     id: number
     timestamp: number
     user: number
+    userId: number
     userRole: number
     action: number
     actionType: number
     module: number
     description: number
+    entityType: number
+    entityId: number
+    entityLabel: number
     ipAddress: number
     status: number
     details: number
@@ -9743,11 +9755,15 @@ export namespace Prisma {
     id?: true
     timestamp?: true
     user?: true
+    userId?: true
     userRole?: true
     action?: true
     actionType?: true
     module?: true
     description?: true
+    entityType?: true
+    entityId?: true
+    entityLabel?: true
     ipAddress?: true
     status?: true
     details?: true
@@ -9758,11 +9774,15 @@ export namespace Prisma {
     id?: true
     timestamp?: true
     user?: true
+    userId?: true
     userRole?: true
     action?: true
     actionType?: true
     module?: true
     description?: true
+    entityType?: true
+    entityId?: true
+    entityLabel?: true
     ipAddress?: true
     status?: true
     details?: true
@@ -9773,11 +9793,15 @@ export namespace Prisma {
     id?: true
     timestamp?: true
     user?: true
+    userId?: true
     userRole?: true
     action?: true
     actionType?: true
     module?: true
     description?: true
+    entityType?: true
+    entityId?: true
+    entityLabel?: true
     ipAddress?: true
     status?: true
     details?: true
@@ -9861,11 +9885,15 @@ export namespace Prisma {
     id: string
     timestamp: string
     user: string
+    userId: string | null
     userRole: string
     action: string
     actionType: string
     module: string
     description: string
+    entityType: string | null
+    entityId: string | null
+    entityLabel: string | null
     ipAddress: string
     status: string
     details: string | null
@@ -9893,11 +9921,15 @@ export namespace Prisma {
     id?: boolean
     timestamp?: boolean
     user?: boolean
+    userId?: boolean
     userRole?: boolean
     action?: boolean
     actionType?: boolean
     module?: boolean
     description?: boolean
+    entityType?: boolean
+    entityId?: boolean
+    entityLabel?: boolean
     ipAddress?: boolean
     status?: boolean
     details?: boolean
@@ -9908,11 +9940,15 @@ export namespace Prisma {
     id?: boolean
     timestamp?: boolean
     user?: boolean
+    userId?: boolean
     userRole?: boolean
     action?: boolean
     actionType?: boolean
     module?: boolean
     description?: boolean
+    entityType?: boolean
+    entityId?: boolean
+    entityLabel?: boolean
     ipAddress?: boolean
     status?: boolean
     details?: boolean
@@ -9923,11 +9959,15 @@ export namespace Prisma {
     id?: boolean
     timestamp?: boolean
     user?: boolean
+    userId?: boolean
     userRole?: boolean
     action?: boolean
     actionType?: boolean
     module?: boolean
     description?: boolean
+    entityType?: boolean
+    entityId?: boolean
+    entityLabel?: boolean
     ipAddress?: boolean
     status?: boolean
     details?: boolean
@@ -9942,11 +9982,15 @@ export namespace Prisma {
       id: string
       timestamp: string
       user: string
+      userId: string | null
       userRole: string
       action: string
       actionType: string
       module: string
       description: string
+      entityType: string | null
+      entityId: string | null
+      entityLabel: string | null
       ipAddress: string
       status: string
       details: string | null
@@ -10347,11 +10391,15 @@ export namespace Prisma {
     readonly id: FieldRef<"ActivityLog", 'String'>
     readonly timestamp: FieldRef<"ActivityLog", 'String'>
     readonly user: FieldRef<"ActivityLog", 'String'>
+    readonly userId: FieldRef<"ActivityLog", 'String'>
     readonly userRole: FieldRef<"ActivityLog", 'String'>
     readonly action: FieldRef<"ActivityLog", 'String'>
     readonly actionType: FieldRef<"ActivityLog", 'String'>
     readonly module: FieldRef<"ActivityLog", 'String'>
     readonly description: FieldRef<"ActivityLog", 'String'>
+    readonly entityType: FieldRef<"ActivityLog", 'String'>
+    readonly entityId: FieldRef<"ActivityLog", 'String'>
+    readonly entityLabel: FieldRef<"ActivityLog", 'String'>
     readonly ipAddress: FieldRef<"ActivityLog", 'String'>
     readonly status: FieldRef<"ActivityLog", 'String'>
     readonly details: FieldRef<"ActivityLog", 'String'>
@@ -83521,11 +83569,15 @@ export namespace Prisma {
     id: 'id',
     timestamp: 'timestamp',
     user: 'user',
+    userId: 'userId',
     userRole: 'userRole',
     action: 'action',
     actionType: 'actionType',
     module: 'module',
     description: 'description',
+    entityType: 'entityType',
+    entityId: 'entityId',
+    entityLabel: 'entityLabel',
     ipAddress: 'ipAddress',
     status: 'status',
     details: 'details',
@@ -84995,11 +85047,15 @@ export namespace Prisma {
     id?: StringFilter<"ActivityLog"> | string
     timestamp?: StringFilter<"ActivityLog"> | string
     user?: StringFilter<"ActivityLog"> | string
+    userId?: StringNullableFilter<"ActivityLog"> | string | null
     userRole?: StringFilter<"ActivityLog"> | string
     action?: StringFilter<"ActivityLog"> | string
     actionType?: StringFilter<"ActivityLog"> | string
     module?: StringFilter<"ActivityLog"> | string
     description?: StringFilter<"ActivityLog"> | string
+    entityType?: StringNullableFilter<"ActivityLog"> | string | null
+    entityId?: StringNullableFilter<"ActivityLog"> | string | null
+    entityLabel?: StringNullableFilter<"ActivityLog"> | string | null
     ipAddress?: StringFilter<"ActivityLog"> | string
     status?: StringFilter<"ActivityLog"> | string
     details?: StringNullableFilter<"ActivityLog"> | string | null
@@ -85010,11 +85066,15 @@ export namespace Prisma {
     id?: SortOrder
     timestamp?: SortOrder
     user?: SortOrder
+    userId?: SortOrderInput | SortOrder
     userRole?: SortOrder
     action?: SortOrder
     actionType?: SortOrder
     module?: SortOrder
     description?: SortOrder
+    entityType?: SortOrderInput | SortOrder
+    entityId?: SortOrderInput | SortOrder
+    entityLabel?: SortOrderInput | SortOrder
     ipAddress?: SortOrder
     status?: SortOrder
     details?: SortOrderInput | SortOrder
@@ -85028,11 +85088,15 @@ export namespace Prisma {
     NOT?: ActivityLogWhereInput | ActivityLogWhereInput[]
     timestamp?: StringFilter<"ActivityLog"> | string
     user?: StringFilter<"ActivityLog"> | string
+    userId?: StringNullableFilter<"ActivityLog"> | string | null
     userRole?: StringFilter<"ActivityLog"> | string
     action?: StringFilter<"ActivityLog"> | string
     actionType?: StringFilter<"ActivityLog"> | string
     module?: StringFilter<"ActivityLog"> | string
     description?: StringFilter<"ActivityLog"> | string
+    entityType?: StringNullableFilter<"ActivityLog"> | string | null
+    entityId?: StringNullableFilter<"ActivityLog"> | string | null
+    entityLabel?: StringNullableFilter<"ActivityLog"> | string | null
     ipAddress?: StringFilter<"ActivityLog"> | string
     status?: StringFilter<"ActivityLog"> | string
     details?: StringNullableFilter<"ActivityLog"> | string | null
@@ -85043,11 +85107,15 @@ export namespace Prisma {
     id?: SortOrder
     timestamp?: SortOrder
     user?: SortOrder
+    userId?: SortOrderInput | SortOrder
     userRole?: SortOrder
     action?: SortOrder
     actionType?: SortOrder
     module?: SortOrder
     description?: SortOrder
+    entityType?: SortOrderInput | SortOrder
+    entityId?: SortOrderInput | SortOrder
+    entityLabel?: SortOrderInput | SortOrder
     ipAddress?: SortOrder
     status?: SortOrder
     details?: SortOrderInput | SortOrder
@@ -85064,11 +85132,15 @@ export namespace Prisma {
     id?: StringWithAggregatesFilter<"ActivityLog"> | string
     timestamp?: StringWithAggregatesFilter<"ActivityLog"> | string
     user?: StringWithAggregatesFilter<"ActivityLog"> | string
+    userId?: StringNullableWithAggregatesFilter<"ActivityLog"> | string | null
     userRole?: StringWithAggregatesFilter<"ActivityLog"> | string
     action?: StringWithAggregatesFilter<"ActivityLog"> | string
     actionType?: StringWithAggregatesFilter<"ActivityLog"> | string
     module?: StringWithAggregatesFilter<"ActivityLog"> | string
     description?: StringWithAggregatesFilter<"ActivityLog"> | string
+    entityType?: StringNullableWithAggregatesFilter<"ActivityLog"> | string | null
+    entityId?: StringNullableWithAggregatesFilter<"ActivityLog"> | string | null
+    entityLabel?: StringNullableWithAggregatesFilter<"ActivityLog"> | string | null
     ipAddress?: StringWithAggregatesFilter<"ActivityLog"> | string
     status?: StringWithAggregatesFilter<"ActivityLog"> | string
     details?: StringNullableWithAggregatesFilter<"ActivityLog"> | string | null
@@ -91792,11 +91864,15 @@ export namespace Prisma {
     id?: string
     timestamp: string
     user: string
+    userId?: string | null
     userRole: string
     action: string
     actionType: string
     module: string
     description: string
+    entityType?: string | null
+    entityId?: string | null
+    entityLabel?: string | null
     ipAddress: string
     status?: string
     details?: string | null
@@ -91807,11 +91883,15 @@ export namespace Prisma {
     id?: string
     timestamp: string
     user: string
+    userId?: string | null
     userRole: string
     action: string
     actionType: string
     module: string
     description: string
+    entityType?: string | null
+    entityId?: string | null
+    entityLabel?: string | null
     ipAddress: string
     status?: string
     details?: string | null
@@ -91822,11 +91902,15 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     timestamp?: StringFieldUpdateOperationsInput | string
     user?: StringFieldUpdateOperationsInput | string
+    userId?: NullableStringFieldUpdateOperationsInput | string | null
     userRole?: StringFieldUpdateOperationsInput | string
     action?: StringFieldUpdateOperationsInput | string
     actionType?: StringFieldUpdateOperationsInput | string
     module?: StringFieldUpdateOperationsInput | string
     description?: StringFieldUpdateOperationsInput | string
+    entityType?: NullableStringFieldUpdateOperationsInput | string | null
+    entityId?: NullableStringFieldUpdateOperationsInput | string | null
+    entityLabel?: NullableStringFieldUpdateOperationsInput | string | null
     ipAddress?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     details?: NullableStringFieldUpdateOperationsInput | string | null
@@ -91837,11 +91921,15 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     timestamp?: StringFieldUpdateOperationsInput | string
     user?: StringFieldUpdateOperationsInput | string
+    userId?: NullableStringFieldUpdateOperationsInput | string | null
     userRole?: StringFieldUpdateOperationsInput | string
     action?: StringFieldUpdateOperationsInput | string
     actionType?: StringFieldUpdateOperationsInput | string
     module?: StringFieldUpdateOperationsInput | string
     description?: StringFieldUpdateOperationsInput | string
+    entityType?: NullableStringFieldUpdateOperationsInput | string | null
+    entityId?: NullableStringFieldUpdateOperationsInput | string | null
+    entityLabel?: NullableStringFieldUpdateOperationsInput | string | null
     ipAddress?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     details?: NullableStringFieldUpdateOperationsInput | string | null
@@ -91852,11 +91940,15 @@ export namespace Prisma {
     id?: string
     timestamp: string
     user: string
+    userId?: string | null
     userRole: string
     action: string
     actionType: string
     module: string
     description: string
+    entityType?: string | null
+    entityId?: string | null
+    entityLabel?: string | null
     ipAddress: string
     status?: string
     details?: string | null
@@ -91867,11 +91959,15 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     timestamp?: StringFieldUpdateOperationsInput | string
     user?: StringFieldUpdateOperationsInput | string
+    userId?: NullableStringFieldUpdateOperationsInput | string | null
     userRole?: StringFieldUpdateOperationsInput | string
     action?: StringFieldUpdateOperationsInput | string
     actionType?: StringFieldUpdateOperationsInput | string
     module?: StringFieldUpdateOperationsInput | string
     description?: StringFieldUpdateOperationsInput | string
+    entityType?: NullableStringFieldUpdateOperationsInput | string | null
+    entityId?: NullableStringFieldUpdateOperationsInput | string | null
+    entityLabel?: NullableStringFieldUpdateOperationsInput | string | null
     ipAddress?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     details?: NullableStringFieldUpdateOperationsInput | string | null
@@ -91882,11 +91978,15 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     timestamp?: StringFieldUpdateOperationsInput | string
     user?: StringFieldUpdateOperationsInput | string
+    userId?: NullableStringFieldUpdateOperationsInput | string | null
     userRole?: StringFieldUpdateOperationsInput | string
     action?: StringFieldUpdateOperationsInput | string
     actionType?: StringFieldUpdateOperationsInput | string
     module?: StringFieldUpdateOperationsInput | string
     description?: StringFieldUpdateOperationsInput | string
+    entityType?: NullableStringFieldUpdateOperationsInput | string | null
+    entityId?: NullableStringFieldUpdateOperationsInput | string | null
+    entityLabel?: NullableStringFieldUpdateOperationsInput | string | null
     ipAddress?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     details?: NullableStringFieldUpdateOperationsInput | string | null
@@ -99477,11 +99577,15 @@ export namespace Prisma {
     id?: SortOrder
     timestamp?: SortOrder
     user?: SortOrder
+    userId?: SortOrder
     userRole?: SortOrder
     action?: SortOrder
     actionType?: SortOrder
     module?: SortOrder
     description?: SortOrder
+    entityType?: SortOrder
+    entityId?: SortOrder
+    entityLabel?: SortOrder
     ipAddress?: SortOrder
     status?: SortOrder
     details?: SortOrder
@@ -99492,11 +99596,15 @@ export namespace Prisma {
     id?: SortOrder
     timestamp?: SortOrder
     user?: SortOrder
+    userId?: SortOrder
     userRole?: SortOrder
     action?: SortOrder
     actionType?: SortOrder
     module?: SortOrder
     description?: SortOrder
+    entityType?: SortOrder
+    entityId?: SortOrder
+    entityLabel?: SortOrder
     ipAddress?: SortOrder
     status?: SortOrder
     details?: SortOrder
@@ -99507,11 +99615,15 @@ export namespace Prisma {
     id?: SortOrder
     timestamp?: SortOrder
     user?: SortOrder
+    userId?: SortOrder
     userRole?: SortOrder
     action?: SortOrder
     actionType?: SortOrder
     module?: SortOrder
     description?: SortOrder
+    entityType?: SortOrder
+    entityId?: SortOrder
+    entityLabel?: SortOrder
     ipAddress?: SortOrder
     status?: SortOrder
     details?: SortOrder

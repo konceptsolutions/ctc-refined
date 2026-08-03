@@ -79,10 +79,13 @@ import partsDropdownRoutes from "./routes/parts-dropdown";
 import authRoutes from "./routes/auth";
 import emailRoutes from "./routes/email";
 import { authenticateJWT, authorizeRoles } from "./middleware/authMiddleware";
+import { activityAuditMiddleware } from "./middleware/activityAuditMiddleware";
 
 // Trigger restart for environment variable update
 const app = express();
 const PORT = process.env.PORT || 5000;
+const apiAuth = [authenticateJWT, activityAuditMiddleware];
+const apiAdminAuth = [authenticateJWT, authorizeRoles("Admin"), activityAuditMiddleware];
 
 // Middleware - CORS configuration
 const allowedOrigins = process.env.CORS_ORIGIN
@@ -578,96 +581,68 @@ app.get("/api/inventory/adjustment-parts", async (req, res) => {
   }
 });
 
-app.use("/api/parts", authenticateJWT, partsRoutes);
-app.use("/api/dropdowns", authenticateJWT, dropdownsRoutes);
-app.use("/api/inventory", authenticateJWT, inventoryRoutes);
-app.use("/api/expenses", authenticateJWT, expensesRoutes);
-app.use("/api/accounting", authenticateJWT, accountingRoutes);
+app.use("/api/parts", ...apiAuth, partsRoutes);
+app.use("/api/dropdowns", ...apiAuth, dropdownsRoutes);
+app.use("/api/inventory", ...apiAuth, inventoryRoutes);
+app.use("/api/expenses", ...apiAuth, expensesRoutes);
+app.use("/api/accounting", ...apiAuth, accountingRoutes);
 app.use("/api/financial", financialRoutes); // Temporarily disabled auth for testing
 app.use("/api/public-financial", financialRoutes); // Public route for testing
-app.use("/api/customers", authenticateJWT, customersRoutes);
-app.use("/api/suppliers", authenticateJWT, suppliersRoutes);
-app.use("/api/employees", authenticateJWT, employeesRoutes);
-app.use("/api/reports", authenticateJWT, reportsRoutes);
-app.use("/api/users", authenticateJWT, authorizeRoles("Admin"), usersRoutes);
-app.use("/api/roles", authenticateJWT, rolesRoutes);
-app.use("/api/activity-logs", authenticateJWT, activityLogsRoutes);
-app.use("/api/approval-flows", authenticateJWT, approvalFlowsRoutes);
-app.use("/api/backups", authenticateJWT, backupsRoutes);
-app.use("/api/company-profile", authenticateJWT, companyProfileRoutes);
-app.use("/api/whatsapp-settings", authenticateJWT, whatsappSettingsRoutes);
-app.use("/api/longcat-settings", authenticateJWT, longcatSettingsRoutes);
-app.use("/api/ai-assistant", authenticateJWT, aiAssistantRoutes);
-app.use("/api/vouchers", authenticateJWT, vouchersRoutes);
+app.use("/api/customers", ...apiAuth, customersRoutes);
+app.use("/api/suppliers", ...apiAuth, suppliersRoutes);
+app.use("/api/employees", ...apiAuth, employeesRoutes);
+app.use("/api/reports", ...apiAuth, reportsRoutes);
+app.use("/api/users", ...apiAdminAuth, usersRoutes);
+app.use("/api/roles", ...apiAuth, rolesRoutes);
+app.use("/api/activity-logs", ...apiAuth, activityLogsRoutes);
+app.use("/api/approval-flows", ...apiAuth, approvalFlowsRoutes);
+app.use("/api/backups", ...apiAuth, backupsRoutes);
+app.use("/api/company-profile", ...apiAuth, companyProfileRoutes);
+app.use("/api/whatsapp-settings", ...apiAuth, whatsappSettingsRoutes);
+app.use("/api/longcat-settings", ...apiAuth, longcatSettingsRoutes);
+app.use("/api/ai-assistant", ...apiAuth, aiAssistantRoutes);
+app.use("/api/vouchers", ...apiAuth, vouchersRoutes);
 // Legacy/compat alias (some clients call this path directly)
-app.use("/api/getVouchers", authenticateJWT, vouchersRoutes);
-app.use("/api/sales", authenticateJWT, salesRoutes);
-app.use("/api/sales-returns", authenticateJWT, salesReturnsRoutes);
-app.use("/api/parts-dropdown", authenticateJWT, partsDropdownRoutes);
-app.use("/api/dpo-returns", authenticateJWT, dpoReturnsRoutes);
-app.use("/api/sales-returns", authenticateJWT, salesReturnsRoutes);
-app.use("/api/stock-details", authenticateJWT, stockDetailsRoutes);
-app.use("/api/advanced-search", authenticateJWT, advancedSearchRoutes);
-app.use("/api/advanced-search", authenticateJWT, advancedSearchRoutes);
-app.use("/api/purchase-import", authenticateJWT, purchaseImportRoutes);
-app.use("/api/email", authenticateJWT, emailRoutes);
+app.use("/api/getVouchers", ...apiAuth, vouchersRoutes);
+app.use("/api/sales", ...apiAuth, salesRoutes);
+app.use("/api/sales-returns", ...apiAuth, salesReturnsRoutes);
+app.use("/api/parts-dropdown", ...apiAuth, partsDropdownRoutes);
+app.use("/api/dpo-returns", ...apiAuth, dpoReturnsRoutes);
+app.use("/api/sales-returns", ...apiAuth, salesReturnsRoutes);
+app.use("/api/stock-details", ...apiAuth, stockDetailsRoutes);
+app.use("/api/advanced-search", ...apiAuth, advancedSearchRoutes);
+app.use("/api/advanced-search", ...apiAuth, advancedSearchRoutes);
+app.use("/api/purchase-import", ...apiAuth, purchaseImportRoutes);
+app.use("/api/email", ...apiAuth, emailRoutes);
 
 // Dev-Koncepts deployment: all API under /dev-koncepts/api when frontend is at /dev-koncepts/ (so requests hit this backend, not main app)
-app.use("/dev-koncepts/api/parts", authenticateJWT, partsRoutes);
-app.use("/dev-koncepts/api/dropdowns", authenticateJWT, dropdownsRoutes);
-app.use("/dev-koncepts/api/inventory", authenticateJWT, inventoryRoutes);
-app.use("/dev-koncepts/api/expenses", authenticateJWT, expensesRoutes);
-app.use("/dev-koncepts/api/accounting", authenticateJWT, accountingRoutes);
-app.use("/dev-koncepts/api/financial", authenticateJWT, financialRoutes);
-app.use("/dev-koncepts/api/customers", authenticateJWT, customersRoutes);
-app.use("/dev-koncepts/api/suppliers", authenticateJWT, suppliersRoutes);
-app.use("/dev-koncepts/api/employees", authenticateJWT, employeesRoutes);
-app.use("/dev-koncepts/api/reports", authenticateJWT, reportsRoutes);
-app.use("/dev-koncepts/api/users", authenticateJWT, authorizeRoles("Admin"), usersRoutes);
-app.use("/dev-koncepts/api/roles", authenticateJWT, rolesRoutes);
-app.use("/dev-koncepts/api/activity-logs", authenticateJWT, activityLogsRoutes);
-app.use(
-  "/dev-koncepts/api/approval-flows",
-  authenticateJWT,
-  approvalFlowsRoutes,
-);
-app.use("/dev-koncepts/api/backups", authenticateJWT, backupsRoutes);
-app.use(
-  "/dev-koncepts/api/company-profile",
-  authenticateJWT,
-  companyProfileRoutes,
-);
-app.use(
-  "/dev-koncepts/api/whatsapp-settings",
-  authenticateJWT,
-  whatsappSettingsRoutes,
-);
-app.use(
-  "/dev-koncepts/api/longcat-settings",
-  authenticateJWT,
-  longcatSettingsRoutes,
-);
-app.use(
-  "/dev-koncepts/api/ai-assistant",
-  authenticateJWT,
-  aiAssistantRoutes,
-);
-app.use("/dev-koncepts/api/vouchers", authenticateJWT, vouchersRoutes);
-app.use("/dev-koncepts/api/getVouchers", authenticateJWT, vouchersRoutes);
-app.use("/dev-koncepts/api/sales", authenticateJWT, salesRoutes);
-app.use("/dev-koncepts/api/dpo-returns", authenticateJWT, dpoReturnsRoutes);
-app.use("/dev-koncepts/api/sales-returns", authenticateJWT, salesReturnsRoutes);
-app.use(
-  "/dev-koncepts/api/advanced-search",
-  authenticateJWT,
-  advancedSearchRoutes,
-);
-app.use(
-  "/dev-koncepts/api/purchase-import",
-  authenticateJWT,
-  purchaseImportRoutes,
-);
-app.use("/dev-koncepts/api/email", authenticateJWT, emailRoutes);
+app.use("/dev-koncepts/api/parts", ...apiAuth, partsRoutes);
+app.use("/dev-koncepts/api/dropdowns", ...apiAuth, dropdownsRoutes);
+app.use("/dev-koncepts/api/inventory", ...apiAuth, inventoryRoutes);
+app.use("/dev-koncepts/api/expenses", ...apiAuth, expensesRoutes);
+app.use("/dev-koncepts/api/accounting", ...apiAuth, accountingRoutes);
+app.use("/dev-koncepts/api/financial", ...apiAuth, financialRoutes);
+app.use("/dev-koncepts/api/customers", ...apiAuth, customersRoutes);
+app.use("/dev-koncepts/api/suppliers", ...apiAuth, suppliersRoutes);
+app.use("/dev-koncepts/api/employees", ...apiAuth, employeesRoutes);
+app.use("/dev-koncepts/api/reports", ...apiAuth, reportsRoutes);
+app.use("/dev-koncepts/api/users", ...apiAdminAuth, usersRoutes);
+app.use("/dev-koncepts/api/roles", ...apiAuth, rolesRoutes);
+app.use("/dev-koncepts/api/activity-logs", ...apiAuth, activityLogsRoutes);
+app.use("/dev-koncepts/api/approval-flows", ...apiAuth, approvalFlowsRoutes);
+app.use("/dev-koncepts/api/backups", ...apiAuth, backupsRoutes);
+app.use("/dev-koncepts/api/company-profile", ...apiAuth, companyProfileRoutes);
+app.use("/dev-koncepts/api/whatsapp-settings", ...apiAuth, whatsappSettingsRoutes);
+app.use("/dev-koncepts/api/longcat-settings", ...apiAuth, longcatSettingsRoutes);
+app.use("/dev-koncepts/api/ai-assistant", ...apiAuth, aiAssistantRoutes);
+app.use("/dev-koncepts/api/vouchers", ...apiAuth, vouchersRoutes);
+app.use("/dev-koncepts/api/getVouchers", ...apiAuth, vouchersRoutes);
+app.use("/dev-koncepts/api/sales", ...apiAuth, salesRoutes);
+app.use("/dev-koncepts/api/dpo-returns", ...apiAuth, dpoReturnsRoutes);
+app.use("/dev-koncepts/api/sales-returns", ...apiAuth, salesReturnsRoutes);
+app.use("/dev-koncepts/api/advanced-search", ...apiAuth, advancedSearchRoutes);
+app.use("/dev-koncepts/api/purchase-import", ...apiAuth, purchaseImportRoutes);
+app.use("/dev-koncepts/api/email", ...apiAuth, emailRoutes);
 
 // RESTART TRIGGER - EXPLICIT FORCE AT 2026-02-03 18:22
 console.log(

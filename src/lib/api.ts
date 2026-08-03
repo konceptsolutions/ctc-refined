@@ -3498,6 +3498,9 @@ class ApiClient {
     search?: string;
     module?: string;
     actionType?: string;
+    userId?: string;
+    entityType?: string;
+    entityId?: string;
     page?: number;
     limit?: number;
     fromDate?: string;
@@ -3519,6 +3522,34 @@ class ApiClient {
     return this.request(
       `/activity-logs${queryString ? `?${queryString}` : ""}`,
     );
+  }
+
+  async logActivity(data: {
+    action?: string;
+    actionType:
+      | "login"
+      | "login_failed"
+      | "create"
+      | "update"
+      | "delete"
+      | "export"
+      | "print"
+      | "status_change"
+      | "approve"
+      | "backup"
+      | "restore";
+    module: string;
+    description: string;
+    entityType?: string;
+    entityId?: string;
+    entityLabel?: string;
+    status?: "success" | "warning" | "error";
+    details?: Record<string, any>;
+  }) {
+    return this.request("/activity-logs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   }
 
   // Approval Flows API

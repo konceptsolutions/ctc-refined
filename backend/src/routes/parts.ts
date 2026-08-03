@@ -2637,6 +2637,8 @@ router.post("/:id/make-kit", async (req: Request, res: Response) => {
       message: "Kit created successfully",
       data: {
         part_id: id,
+        part_no: kitPart?.partNo || null,
+        partNo: kitPart?.partNo || null,
         quantity,
         current_stock_before: currentKitStock,
         avg_cost_before: currentKitAvg,
@@ -2914,6 +2916,8 @@ router.post("/:id/break-kit", async (req: Request, res: Response) => {
       message: "Kit broken successfully",
       data: {
         part_id: id,
+        part_no: kitPart?.partNo || null,
+        partNo: kitPart?.partNo || null,
         quantity,
         current_stock_before: currentKitStock,
       },
@@ -3507,6 +3511,9 @@ router.delete("/:id", async (req: Request, res: Response) => {
 
     res.json({
       message: "Part deleted successfully",
+      id: part.id,
+      part_no: part.partNo,
+      partNo: part.partNo,
       deletedRelatedRecords:
         totalRelated > 0
           ? {

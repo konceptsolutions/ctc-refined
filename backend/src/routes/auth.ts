@@ -69,15 +69,19 @@ router.post('/login', async (req, res) => {
         // Log activity
         await logActivity({
             user: user.name,
+            userId: user.id,
             userRole: user.role,
             action: 'User Login',
             actionType: 'login',
             module: 'Auth',
             description: `User ${user.email} logged in successfully`,
+            entityType: 'user',
+            entityId: user.id,
+            entityLabel: user.email,
             ipAddress: getClientIp(req),
             status: 'success',
-            details: { userId: user.id, email: user.email },
-        });
+            details: { email: user.email },
+        }, req);
 
         res.json({
             token,
@@ -148,15 +152,19 @@ router.post('/forgot-password', async (req, res) => {
 
         await logActivity({
             user: user.name,
+            userId: user.id,
             userRole: user.role,
             action: 'Password Changed',
             actionType: 'update',
             module: 'Auth',
             description: `Password changed using forgot-password for ${user.email}`,
+            entityType: 'user',
+            entityId: user.id,
+            entityLabel: user.email,
             ipAddress: getClientIp(req),
             status: 'success',
-            details: { userId: user.id, email: user.email },
-        });
+            details: { email: user.email },
+        }, req);
 
         return res.json({ success: true, message: 'Password updated successfully' });
     } catch (error: any) {

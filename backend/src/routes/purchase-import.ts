@@ -1397,6 +1397,7 @@ router.post("/requests", async (req: Request, res: Response) => {
     res.status(201).json({
       data: {
         batchId,
+        requestNo: baseRequestNo,
         baseRequestNo,
         createdCount: itemRecordCount,
         requestCount,
@@ -1780,7 +1781,10 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
 
     res.json({
       data: {
+        id: requestId,
         batchId,
+        requestNo: baseRequestNo,
+        baseRequestNo,
         updatedCount: itemRecordCount,
         requestCount,
         supplierCount: supplierIds.length,
@@ -1811,11 +1815,13 @@ router.put("/requests/:requestId/status", async (req: Request, res: Response) =>
     const status = normalizeRequestStatus(req.body?.status);
     const requestRow = await purchaseImportRequestModel.findUnique({
       where: { id: requestId },
-      select: { id: true, batchId: true },
+      select: { id: true, batchId: true, status: true, requestNo: true },
     });
     if (!requestRow) {
       return res.status(404).json({ error: "Purchase import inquiry not found." });
     }
+
+    const previousStatus = requestRow.status || null;
 
     if (status === "confirm") {
       const supplierRowsCount = await purchaseImportRequestModel.count({
@@ -1865,8 +1871,11 @@ router.put("/requests/:requestId/status", async (req: Request, res: Response) =>
 
     res.json({
       data: {
+        id: requestRow.id,
         batchId: requestRow.batchId,
+        requestNo: requestRow.requestNo,
         status,
+        previousStatus,
         updatedCount: updateResult.count || 0,
       },
     });
@@ -1925,7 +1934,12 @@ router.delete("/requests/:requestId", async (req: Request, res: Response) => {
     res.json({
       success: true,
       message: `Inquiry ${requestRow.requestNo || ""} deleted successfully.`,
-      data: { batchId: requestRow.batchId, deletedCount: batchRequestIds.length },
+      data: {
+        id: requestRow.id,
+        batchId: requestRow.batchId,
+        requestNo: requestRow.requestNo,
+        deletedCount: batchRequestIds.length,
+      },
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
