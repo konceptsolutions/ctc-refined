@@ -94,7 +94,10 @@ const Login = () => {
             if (response.token) {
                 const backendRoleName = (response.user?.role || "").toString().trim().toLowerCase();
                 const effectiveRole: 'admin' | 'store' = backendRoleName === "store user" ? "store" : "admin";
-                saveAuth(effectiveRole, response.token);
+                saveAuth(effectiveRole, response.token, {
+                    loginStartTime: response.user?.loginStartTime ?? null,
+                    loginEndTime: response.user?.loginEndTime ?? null,
+                });
                 toast.success(`Login Successful - ${effectiveRole === 'admin' ? 'Administrator' : 'Store'} Access Granted`);
 
                 // Redirect

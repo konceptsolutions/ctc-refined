@@ -181,15 +181,13 @@ export const SearchableSelect = React.memo(function SearchableSelect({
     );
   }, [placeholder, createLabel, props.name, props.id, props["aria-label"], className]);
 
-  // Calculate dropdown position
+  // Calculate dropdown position (viewport coords for position:fixed)
   const updateDropdownPosition = React.useCallback(() => {
     const anchor = inputRef.current ?? containerRef.current;
     if (anchor) {
       const rect = anchor.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
-      const scrollY = window.scrollY;
-      const scrollX = window.scrollX;
       const dropdownHeight = 240; // max-h-60 = 240px
       const spaceBelow = viewportHeight - rect.bottom;
       const spaceAbove = rect.top;
@@ -202,7 +200,8 @@ export const SearchableSelect = React.memo(function SearchableSelect({
       const openAbove =
         spaceBelow < absoluteMinimumSpace && spaceAbove - spaceBelow > 200;
 
-      // Calculate top position (using getBoundingClientRect which is relative to viewport)
+      // getBoundingClientRect is viewport-relative — do not add scroll offsets
+      // when the portal uses position:fixed.
       let top: number;
       if (openAbove) {
         // ONLY in extreme cases where we absolutely can't show dropdown below
@@ -230,18 +229,15 @@ export const SearchableSelect = React.memo(function SearchableSelect({
         }
       }
 
-      // Convert to absolute position (add scroll offset)
-      top = top + scrollY;
-
       // Match dropdown width to the input field (never wider than the trigger)
-      let left = rect.left + scrollX;
+      let left = rect.left;
       const dropdownWidth = rect.width;
 
-      if (left + dropdownWidth > viewportWidth + scrollX - padding) {
-        left = viewportWidth + scrollX - dropdownWidth - padding;
+      if (left + dropdownWidth > viewportWidth - padding) {
+        left = viewportWidth - dropdownWidth - padding;
       }
-      if (left < scrollX + padding) {
-        left = scrollX + padding;
+      if (left < padding) {
+        left = padding;
       }
 
       setDropdownPosition({
@@ -350,8 +346,9 @@ export const SearchableSelect = React.memo(function SearchableSelect({
     if (newValue.length > 0) {
       openDropdown();
     } else {
-      setIsOpen(false);
-      if (value) {
+      // Keep the list open while clearing so users can browse all options
+      openDropdown();
+      if (value && value !== "__all__") {
         onValueChange("");
       }
     }
@@ -384,7 +381,8 @@ export const SearchableSelect = React.memo(function SearchableSelect({
       setIsOpen(true);
       return;
     }
-    if (!value) {
+    // Sentinel "all" values should open with an empty query so the full list shows
+    if (!value || value === "__all__") {
       openDropdown();
       setSearchQuery("");
       return;
@@ -515,12 +513,17 @@ export const SearchableSelect = React.memo(function SearchableSelect({
           onKeyDown={handleKeyDown}
           onClick={() => {
             if (disabled) return;
+            if (!value || value === "__all__") {
+              setSearchQuery("");
+              openDropdown();
+              return;
+            }
             if (value && displayValue) {
               if (!isFocused) {
                 setSearchQuery(displayValue);
                 selectAllInputText();
-                openDropdown();
               }
+              openDropdown();
               return;
             }
             if (!isOpen) {

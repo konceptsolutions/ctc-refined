@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Users, Download } from "lucide-react";
+import { Users, Download, Eye } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
@@ -27,10 +27,12 @@ import {
   SearchableSelect,
   SearchableSelectOption,
 } from "@/components/ui/searchable-select";
+import { VoucherViewDialog } from "@/components/vouchers/VoucherViewDialog";
 
 interface LedgerEntry {
   id: number;
   tId: number | null;
+  voucherId?: string | null;
   voucherNo: string;
   timeStamp: string;
   description: string;
@@ -72,6 +74,10 @@ export const LedgersTab = () => {
   const [subGroups, setSubGroups] = useState<AccountGroup[]>([]);
   const [accounts, setAccounts] = useState<AccountGroup[]>([]);
   const [loading, setLoading] = useState(false);
+  const [viewingVoucher, setViewingVoucher] = useState<{
+    id?: string | null;
+    number?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     const fetchAccountGroups = async () => {
@@ -445,7 +451,26 @@ export const LedgersTab = () => {
                       </TableCell>
                       <TableCell>{formatDisplayValue(entry.tId)}</TableCell>
                       <TableCell>
-                        {formatDisplayValue(entry.voucherNo)}
+                        <div className="flex items-center gap-1">
+                          <span>{formatDisplayValue(entry.voucherNo)}</span>
+                          {entry.voucherNo && entry.voucherNo !== "-" ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-primary"
+                              title="View voucher"
+                              onClick={() =>
+                                setViewingVoucher({
+                                  id: entry.voucherId,
+                                  number: entry.voucherNo,
+                                })
+                              }
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {formatDisplayValue(entry.timeStamp)}
@@ -485,6 +510,14 @@ export const LedgersTab = () => {
           </Table>
         </div>
       </CardContent>
+      <VoucherViewDialog
+        open={Boolean(viewingVoucher)}
+        onOpenChange={(open) => {
+          if (!open) setViewingVoucher(null);
+        }}
+        voucherId={viewingVoucher?.id}
+        voucherNumber={viewingVoucher?.number}
+      />
     </Card>
   );
 };

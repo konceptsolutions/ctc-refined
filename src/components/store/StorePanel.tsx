@@ -499,7 +499,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       }
 
       // Store users should keep receiving approved-invoice notifications
-      // even when they are not currently on Stock Out Items.
+      // even when they are not currently on Sales Stock Out.
       if (isStoreOnlyUser && typeFilter !== "stock-out" && typeFilter !== "all") {
         fetchStockOutOrders(true);
       }
@@ -899,11 +899,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             notifiedApprovedInvoiceIdsRef.current.add(invoice.id);
             addNotification({
               title: "New Invoice Approved",
-              message: `New invoice (${invoice.invoiceNo || "N/A"}) is created and approved. Refresh the page to view invoice in Stock Out Items.`,
+              message: `New invoice (${invoice.invoiceNo || "N/A"}) is created and approved. Refresh the page to view invoice in Sales Stock Out.`,
               type: "info",
               module: "store",
               action: {
-                label: "Open Stock Out Items",
+                label: "Open Sales Stock Out",
                 path: "/store/orders?type=stock-out",
               },
             });
@@ -1834,7 +1834,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   className="gap-2"
                 >
                   <ArrowDownCircle className="w-4 h-4" />
-                  Receiving PO
+                  Import Order
                 </Button>
                 <Button
                   variant={typeFilter === "receiving-dpo" ? "default" : "outline"}
@@ -1843,7 +1843,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   className="gap-2"
                 >
                   <ArrowDownCircle className="w-4 h-4" />
-                  Receiving DPO
+                  Local Order
                 </Button>
                 <Button
                   variant={typeFilter === "stock-out" ? "default" : "outline"}
@@ -1852,7 +1852,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   className="gap-2"
                 >
                   <ArrowUpCircle className="w-4 h-4" />
-                  Stock Out Items
+                  Sales Stock Out
                 </Button>
                 <Button
                   variant={typeFilter === "transfer-in" ? "default" : "outline"}
@@ -1895,11 +1895,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           <CardHeader>
             <CardTitle>
               {typeFilter === "receiving-po"
-                ? "Receiving PO"
+                ? "Import Order"
                 : typeFilter === "receiving-dpo"
-                  ? "Receiving DPO"
+                  ? "Local Order"
                   : typeFilter === "stock-out"
-                    ? "Stock Out Items"
+                    ? "Sales Stock Out"
                     : typeFilter === "transfer-in"
                       ? "Transfer In"
                       : typeFilter === "transfer-out"
@@ -2121,7 +2121,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   )
                 )}
 
-                {/* Receiving PO - Purchase Orders only */}
+                {/* Import Order - Purchase Orders only */}
                 {typeFilter === "receiving-po" && (
                   filteredPurchaseOrders.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
@@ -2233,7 +2233,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   )
                 )}
 
-                {/* Receiving DPO - Direct Purchase Orders only */}
+                {/* Local Order - Direct Purchase Orders only */}
                 {typeFilter === "receiving-dpo" && (
                   filteredDPOs.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
@@ -2333,7 +2333,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   )
                 )}
 
-                {/* Stock Out Items - Sales Invoices */}
+                {/* Sales Stock Out - Sales Invoices */}
                 {typeFilter === "stock-out" && (
                   filteredStockOutOrders.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">

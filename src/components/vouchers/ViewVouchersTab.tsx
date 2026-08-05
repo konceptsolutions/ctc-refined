@@ -593,8 +593,8 @@ export const ViewVouchersTab = ({
   const filteredVouchers = vouchers;
   const getVoucherMode = (voucher: Voucher): "cash" | "online" | "-" => {
     if (voucher.type !== "payment" && voucher.type !== "receipt") return "-";
-    if (!voucher.cashBankAccount) return "-";
     if (voucher.mode === "cash" || voucher.mode === "online") return voucher.mode;
+    if (!voucher.cashBankAccount) return "-";
     const account = rawAccounts.find((acc) => acc.id === voucher.cashBankAccount);
     if (account) return getAccountCashBankMode(account);
     return "cash";

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { apiClient, getApiBaseUrl } from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   AlertDialog,
@@ -71,6 +72,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 interface DirectPurchaseOrderItem {
   id: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand: string;
   uom: string;
@@ -230,8 +232,8 @@ export const DirectPurchaseOrder = ({
   const [totalRecords, setTotalRecords] = useState(0);
 
   // View mode state
-  const [viewMode, setViewMode] = useState<ViewMode>("create");
-  const [pageView, setPageView] = useState<"form" | "list">("form");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [pageView, setPageView] = useState<"form" | "list">("list");
   const [selectedOrder, setSelectedOrder] = useState<DirectPurchaseOrder | null>(null);
 
   // View dialog
@@ -950,14 +952,11 @@ export const DirectPurchaseOrder = ({
   };
 
   const handlePageViewChange = (value: string) => {
-    const next = value as "form" | "list";
-    setPageView(next);
-    if (next === "form") {
-      if (viewMode === "list") {
-        setViewMode("create");
-      }
+    if (value === "form") {
+      handleNewOrder();
       return;
     }
+    setPageView("list");
     setViewMode("list");
   };
 
@@ -984,6 +983,7 @@ export const DirectPurchaseOrder = ({
     items: (dpo.items || []).map((item: any) => ({
       id: item.id,
       partNo: item.part_no,
+      masterPartNo: item.master_part_no || item.masterPartNo || "",
       description: item.part_description || item.part_no,
       brand: item.brand || "",
       uom: item.uom || "pcs",
@@ -1547,13 +1547,13 @@ export const DirectPurchaseOrder = ({
     () =>
       parts.map((p) => ({
         value: p.id,
-        label: [p.partNo, p.masterPartNo && p.masterPartNo !== p.partNo ? p.masterPartNo : null]
+        label: [p.masterPartNo, p.partNo && p.partNo !== p.masterPartNo ? p.partNo : null]
           .filter(Boolean)
-          .join(" / "),
+          .join(" | "),
         description: [
           p.description || null,
           p.brand ? `Brand: ${p.brand}` : null,
-          p.masterPartNo && p.masterPartNo !== p.partNo ? `Master: ${p.masterPartNo}` : null,
+          p.partNo && p.partNo !== p.masterPartNo ? `Master: ${p.partNo}` : null,
         ]
           .filter(Boolean)
           .join(" | "),
@@ -1886,6 +1886,7 @@ export const DirectPurchaseOrder = ({
         return {
           partId: item.part_id,
           partNo: item.part_no,
+          masterPartNo: item.master_part_no || item.masterPartNo || "",
           description: item.part_description || "",
           brand: item.brand || "",
           purchasedQty: item.quantity,
@@ -1985,9 +1986,15 @@ export const DirectPurchaseOrder = ({
       {/* Orders Card */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg font-semibold">
-            {labels.allOrdersTitle} ({filteredOrders.length})
-          </CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-lg font-semibold">
+              {labels.allOrdersTitle} ({filteredOrders.length})
+            </CardTitle>
+            <Button type="button" size="sm" onClick={handleNewOrder}>
+              <Plus className="w-4 h-4 mr-1" />
+              {labels.newButton}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {/* Search and Filter */}
@@ -3211,7 +3218,7 @@ export const DirectPurchaseOrder = ({
                     <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm shadow-sm">
                       <TableRow>
                         <ListNumberHeader />
-                        <TableHead className="min-w-[120px]">Part No</TableHead>
+                        <TableHead className="min-w-[120px]">Part No | Master Part</TableHead>
                         <TableHead className="min-w-[150px]">Description</TableHead>
                         <TableHead className="min-w-[80px]">Brand</TableHead>
                         <TableHead className="min-w-[60px]">UoM</TableHead>
@@ -3225,7 +3232,10 @@ export const DirectPurchaseOrder = ({
                         <TableRow key={item.id} className="hover:bg-muted/30">
                           <ListNumberCell index={index} total={selectedOrder.items.length} />
                           <TableCell className="font-medium">
-                            {item.partNo}
+                            {formatPartIdentityFromDb({
+                              partNo: item.partNo,
+                              masterPartNo: item.masterPartNo,
+                            })}
                             {item.returnedQuantity > 0 && (
                               <Badge variant="destructive" className="ml-2 text-[10px] h-5 px-1.5">
                                 Returned {item.returnedQuantity === item.quantity ? "(All)" : `(${item.returnedQuantity})`}
@@ -3405,7 +3415,12 @@ export const DirectPurchaseOrder = ({
                   {returnItems.map((item) => (
                     <TableRow key={item.partId} className="group hover:bg-muted/20 transition-colors">
                       <TableCell>
-                        <div className="font-medium text-foreground">{item.partNo} / {item.brand}</div>
+                        <div className="font-medium text-foreground">
+                          {formatPartIdentityFromDb({
+                            partNo: item.partNo,
+                            masterPartNo: item.masterPartNo,
+                          })} / {item.brand}
+                        </div>
                         <div className="text-xs text-muted-foreground truncate max-w-[300px]">{item.description}</div>
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
@@ -3535,8 +3550,8 @@ export const DirectPurchaseOrder = ({
       <div className="mb-2 flex items-center justify-between gap-2">
         <Tabs value={pageView} onValueChange={handlePageViewChange}>
           <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="form">{labels.formTabLabel}</TabsTrigger>
             <TabsTrigger value="list">{labels.listTabLabel}</TabsTrigger>
+            <TabsTrigger value="form">{labels.formTabLabel}</TabsTrigger>
           </TabsList>
         </Tabs>
         {showBackToInquiry && showForm && (

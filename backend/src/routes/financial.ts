@@ -854,6 +854,7 @@ router.get("/ledgers", async (req: Request, res: Response) => {
         type: "voucher",
         entryDate: entry.Voucher.date,
         entryNo: entry.Voucher.voucherNumber,
+        voucherId: entry.Voucher?.id || null,
         description: entry.description || entry.Voucher.narration || "",
         debit: entry.debit,
         credit: entry.credit,
@@ -873,6 +874,7 @@ router.get("/ledgers", async (req: Request, res: Response) => {
         ledgerEntries.push({
           id: entry.id,
           tId: tIdCounter++,
+          voucherId: entry.voucherId || null,
           voucherNo: entry.entryNo,
           timeStamp: formatDate(new Date(entry.entryDate)),
           description: entry.description,
@@ -1158,6 +1160,7 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
     const allEntries = voucherEntries.map((entry: any) => ({
       entryDate: entry.Voucher.date,
       entryNo: entry.Voucher.voucherNumber,
+      voucherId: entry.Voucher?.id || null,
       description: entry.description || entry.Voucher.narration || "",
       debit: entry.debit || 0,
       credit: entry.credit || 0,
@@ -1181,6 +1184,7 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
       ledgerEntries.push({
         id: entry.id,
         tId: tIdCounter++,
+        voucherId: entry.voucherId || null,
         voucherNo: entry.entryNo,
         timeStamp: formatDate(new Date(entry.entryDate)),
         description: entry.description,

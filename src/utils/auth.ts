@@ -11,6 +11,8 @@ export interface AuthData {
   loginTime: number;
   expirationTime: number;
   token: string;
+  loginStartTime?: string | null;
+  loginEndTime?: string | null;
 }
 
 const decodeJwtPayload = (token: string): Record<string, any> | null => {
@@ -28,7 +30,11 @@ const decodeJwtPayload = (token: string): Record<string, any> | null => {
 /**
  * Save authentication data with 24-hour expiration
  */
-export const saveAuth = (userRole: 'admin' | 'store', token: string): void => {
+export const saveAuth = (
+  userRole: 'admin' | 'store',
+  token: string,
+  loginHours?: { loginStartTime?: string | null; loginEndTime?: string | null },
+): void => {
   const loginTime = Date.now();
   const expirationTime = loginTime + (EXPIRATION_HOURS * 60 * 60 * 1000); // 24 hours in milliseconds
 
@@ -37,12 +43,33 @@ export const saveAuth = (userRole: 'admin' | 'store', token: string): void => {
     loginTime,
     expirationTime,
     token,
+    loginStartTime: loginHours?.loginStartTime || null,
+    loginEndTime: loginHours?.loginEndTime || null,
   };
 
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
   // Also keep token for easy access
   localStorage.setItem('authToken', token);
   localStorage.setItem('userRole', userRole);
+};
+
+export const getStoredLoginHours = (): {
+  loginStartTime: string | null;
+  loginEndTime: string | null;
+} => {
+  try {
+    const authDataStr = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!authDataStr) {
+      return { loginStartTime: null, loginEndTime: null };
+    }
+    const authData: AuthData = JSON.parse(authDataStr);
+    return {
+      loginStartTime: authData.loginStartTime || null,
+      loginEndTime: authData.loginEndTime || null,
+    };
+  } catch {
+    return { loginStartTime: null, loginEndTime: null };
+  }
 };
 
 /**

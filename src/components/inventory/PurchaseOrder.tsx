@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 import apiClient from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import {
   ShoppingCart,
   Plus,
@@ -66,6 +67,7 @@ import { Separator } from "@/components/ui/separator";
 interface PurchaseOrderItem {
   id: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand: string;
   uom: string;
@@ -466,7 +468,9 @@ const ViewOrderDialog = ({ open, onOpenChange, order, statusColors, formatCurren
                   order.items.map((item, idx) => (
                     <TableRow key={item.id} className="hover:bg-muted/50">
                       <TableCell className="text-sm">{idx + 1}</TableCell>
-                      <TableCell className="text-sm font-medium">{item.partNo}</TableCell>
+                      <TableCell className="text-sm font-medium">
+                        {formatPartIdentityFromDb(item)}
+                      </TableCell>
                       <TableCell className="text-sm">{item.description}</TableCell>
                       <TableCell className="text-sm">{item.brand}</TableCell>
                       <TableCell className="text-sm">{item.uom || "pcs"}</TableCell>
@@ -618,7 +622,7 @@ export const PurchaseOrder = () => {
   const [loading, setLoading] = useState(false);
 
   // Available data for dropdowns
-  const [availableParts, setAvailableParts] = useState<{ id: string; partNo: string; description: string; brand: string; uom: string; price: number; cost: number; currentStock: number; lastPurchaseDate: string; application?: string; category?: string; subcategory?: string }[]>([]);
+  const [availableParts, setAvailableParts] = useState<{ id: string; partNo: string; masterPartNo?: string; description: string; brand: string; uom: string; price: number; cost: number; currentStock: number; lastPurchaseDate: string; application?: string; category?: string; subcategory?: string }[]>([]);
   const [availableSuppliers, setAvailableSuppliers] = useState<string[]>([]);
   const [availableSuppliersData, setAvailableSuppliersData] = useState<{ id: string; code: string; companyName: string }[]>([]);
   const [availableStores, setAvailableStores] = useState<{ id: string; name: string }[]>([]);
@@ -695,6 +699,7 @@ export const PurchaseOrder = () => {
         const items: PurchaseOrderItem[] = (po.items || []).map((item: any) => ({
           id: item.id || String(Date.now()),
           partNo: item.part_no || item.partNo || "",
+          masterPartNo: item.master_part_no || item.masterPartNo || "",
           description: item.part_description || item.description || "",
           brand: item.brand || "N/A",
           uom: "pcs",
@@ -774,6 +779,7 @@ export const PurchaseOrder = () => {
         const partsWithStock = partsData.map((part: any) => ({
           id: part.id,
           partNo: part.part_no || part.partNo,
+          masterPartNo: part.master_part_no || part.masterPartNo || "",
           description: part.description || "",
           brand: part.brand_name || part.brand?.name || "N/A",
           uom: part.uom || "pcs",
@@ -996,6 +1002,7 @@ export const PurchaseOrder = () => {
           return {
             id: item.id || String(Date.now()),
             partNo: partNo,
+            masterPartNo: item.master_part_no || item.masterPartNo || part?.masterPartNo || "",
             description: item.part_description || item.description || "",
             brand: item.brand || "N/A",
             uom: "pcs",
@@ -1249,6 +1256,7 @@ export const PurchaseOrder = () => {
         items: orderData.items.map((item: any) => ({
           id: item.id || String(Date.now()),
           partNo: item.part_no || item.partNo || "",
+          masterPartNo: item.master_part_no || item.masterPartNo || "",
           description: item.part_description || item.description || "",
           brand: item.brand || "N/A",
           uom: "pcs",
@@ -2161,7 +2169,7 @@ export const PurchaseOrder = () => {
                     <div className="relative part-search-dropdown">
                       <div className="relative">
                         <Input
-                          value={isDropdownOpen ? searchQuery : (selectedPart ? selectedPart.partNo : "")}
+                          value={isDropdownOpen ? searchQuery : (selectedPart ? formatPartIdentityFromDb(selectedPart) : "")}
                           onChange={(e) => {
                             setPartSearchQueries(prev => ({ ...prev, [item.id]: e.target.value }));
                             setOpenDropdowns(prev => ({ ...prev, [item.id]: true }));
@@ -2217,7 +2225,7 @@ export const PurchaseOrder = () => {
                                   item.partId === part.id && "bg-primary/10 text-primary"
                                 )}
                               >
-                                <div className="font-medium text-sm">{part.partNo}</div>
+                                <div className="font-medium text-sm">{formatPartIdentityFromDb(part)}</div>
                                 <div className="text-xs text-muted-foreground space-y-0.5">
                                   <div>Application: {part.application || "N/A"}</div>
                                   <div>Brand: {part.brand || "N/A"}</div>
@@ -2782,7 +2790,9 @@ export const PurchaseOrder = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {receiveItems.map((item) => (
-                      <SelectItem key={item.id} value={item.partNo}>{item.partNo}</SelectItem>
+                      <SelectItem key={item.id} value={item.partNo}>
+                        {formatPartIdentityFromDb(item)}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -2792,7 +2802,7 @@ export const PurchaseOrder = () => {
                 <>
                   {/* Item Info */}
                   <div className="p-3 bg-muted/30 rounded-lg">
-                    <p className="text-sm font-medium">{selectedItemDetails.partNo}</p>
+                    <p className="text-sm font-medium">{formatPartIdentityFromDb(selectedItemDetails)}</p>
                     <p className="text-xs text-muted-foreground">{selectedItemDetails.description}</p>
                   </div>
 
@@ -2896,7 +2906,7 @@ export const PurchaseOrder = () => {
                         onClick={() => setSelectedReceiveItem(item.partNo)}
                       >
                         <div>
-                          <p className="text-xs font-medium">{item.partNo}</p>
+                          <p className="text-xs font-medium">{formatPartIdentityFromDb(item)}</p>
                           <p className="text-xs text-muted-foreground">{item.description}</p>
                         </div>
                         <span className="text-sm font-medium">{item.currentStock || 0}</span>

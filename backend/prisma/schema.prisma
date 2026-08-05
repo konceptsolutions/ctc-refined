@@ -1250,15 +1250,17 @@ model TransferItem {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String?
-  roleId    String   @default("Staff")
-  status    String   @default("active")
-  lastLogin String?  @default("-")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(uuid())
+  name           String
+  email          String   @unique
+  password       String?
+  roleId         String   @default("Staff")
+  status         String   @default("active")
+  lastLogin      String?  @default("-")
+  loginStartTime String?
+  loginEndTime   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Voucher {

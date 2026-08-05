@@ -313,11 +313,17 @@ router.get('/', async (req: Request, res: Response) => {
                 select: {
                   id: true,
                   code: true,
-                  name: true
-                }
-              }
-            }
-          }
+                  name: true,
+                  Subgroup: {
+                    select: {
+                      code: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         orderBy: [{ date: "desc" }, { voucherNumber: "desc" }],
         skip,
@@ -326,13 +332,38 @@ router.get('/', async (req: Request, res: Response) => {
       prisma.voucher.count({ where }),
     ]);
 
-    const paymentReceiptVouchers = vouchers.filter(
-      (voucher) =>
-        (voucher.type === 'payment' || voucher.type === 'receipt') &&
-        Boolean(voucher.cashBankAccount),
-    );
+    const resolveCashBankIdFromEntries = (voucher: (typeof vouchers)[number]): string | null => {
+      if (voucher.cashBankAccount) return voucher.cashBankAccount;
+      if (voucher.type !== "payment" && voucher.type !== "receipt") return null;
+      const side = voucher.type === "receipt" ? "debit" : "credit";
+      let bestId: string | null = null;
+      let bestAmt = 0;
+      for (const entry of voucher.VoucherEntry) {
+        const amt = side === "debit" ? Number(entry.debit || 0) : Number(entry.credit || 0);
+        if (amt <= 0 || !entry.accountId || !entry.Account) continue;
+        const subgroupCode = String(entry.Account.Subgroup?.code || "");
+        const isCashBank =
+          subgroupCode.startsWith("102") ||
+          subgroupCode.startsWith("103") ||
+          subgroupCode.startsWith("108") ||
+          /cash|bank/i.test(String(entry.Account.Subgroup?.name || "")) ||
+          /cash|bank/i.test(String(entry.Account.name || ""));
+        if (!isCashBank) continue;
+        if (amt > bestAmt) {
+          bestAmt = amt;
+          bestId = entry.accountId;
+        }
+      }
+      return bestId;
+    };
+
     const cashBankAccountIds = Array.from(
-      new Set(paymentReceiptVouchers.map((voucher) => voucher.cashBankAccount!).filter(Boolean)),
+      new Set(
+        vouchers
+          .filter((v) => v.type === "payment" || v.type === "receipt")
+          .map((v) => resolveCashBankIdFromEntries(v))
+          .filter((id): id is string => Boolean(id)),
+      ),
     );
     const cashBankAccounts = cashBankAccountIds.length
       ? await prisma.account.findMany({
@@ -369,8 +400,9 @@ router.get('/', async (req: Request, res: Response) => {
     ) {
       filteredVouchers = filteredVouchers.filter((voucher) => {
         if (voucher.type !== 'payment' && voucher.type !== 'receipt') return false;
-        if (!voucher.cashBankAccount) return false;
-        const mode = accountModeById.get(voucher.cashBankAccount) ?? 'cash';
+        const cashBankId = resolveCashBankIdFromEntries(voucher);
+        if (!cashBankId) return false;
+        const mode = accountModeById.get(cashBankId) ?? 'cash';
         return mode === requestedMode;
       });
     }
@@ -389,17 +421,19 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     // Transform vouchers to match frontend format
-    const transformedVouchers = filteredVouchers.map((voucher) => ({
+    const transformedVouchers = filteredVouchers.map((voucher) => {
+      const cashBankId = resolveCashBankIdFromEntries(voucher);
+      return {
       id: voucher.id,
       voucherNumber: voucher.voucherNumber,
       type: voucher.type,
       date: voucher.date.toISOString().split('T')[0],
       narration: voucher.narration || '',
-      cashBankAccount: voucher.cashBankAccount || '',
+      cashBankAccount: cashBankId || voucher.cashBankAccount || '',
       conversionRate: (voucher as any).conversionRate ?? undefined,
       mode:
         voucher.type === 'payment' || voucher.type === 'receipt'
-          ? accountModeById.get(voucher.cashBankAccount || '') ?? 'cash'
+          ? (cashBankId ? accountModeById.get(cashBankId) ?? 'cash' : undefined)
           : undefined,
       chequeNumber: voucher.chequeNumber || undefined,
       chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
@@ -420,7 +454,8 @@ router.get('/', async (req: Request, res: Response) => {
       adjustmentId: (voucher as any).adjustmentId,
       isSystemGenerated: (voucher as any).isSystemGenerated,
       createdAt: voucher.createdAt.toISOString(),
-    }));
+    };
+    });
 
     res.json({
       data: transformedVouchers,

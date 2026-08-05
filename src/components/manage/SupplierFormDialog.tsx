@@ -66,9 +66,11 @@ export type SupplierFormSavedSupplier = {
   code?: string | null;
 };
 
-const emptyForm = (): SupplierFormValues => ({
+const emptyForm = (
+  type: "local" | "international" = "local",
+): SupplierFormValues => ({
   code: "",
-  type: "local",
+  type,
   currencyName: "",
   name: "",
   companyName: "",
@@ -103,6 +105,10 @@ interface SupplierFormDialogProps {
   onOpenChange: (open: boolean) => void;
   onSaved?: (supplier: SupplierFormSavedSupplier) => void;
   title?: string;
+  /** Initial supplier type when the dialog opens. */
+  defaultType?: "local" | "international";
+  /** When true, supplier type cannot be changed. */
+  typeLocked?: boolean;
 }
 
 export function SupplierFormDialog({
@@ -110,8 +116,12 @@ export function SupplierFormDialog({
   onOpenChange,
   onSaved,
   title = "Add New Supplier",
+  defaultType = "local",
+  typeLocked = false,
 }: SupplierFormDialogProps) {
-  const [formData, setFormData] = useState<SupplierFormValues>(emptyForm());
+  const [formData, setFormData] = useState<SupplierFormValues>(() =>
+    emptyForm(defaultType),
+  );
   const [areas, setAreas] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -130,10 +140,10 @@ export function SupplierFormDialog({
 
   useEffect(() => {
     if (open) {
-      setFormData(emptyForm());
+      setFormData(emptyForm(defaultType));
       fetchAreas();
     }
-  }, [open]);
+  }, [open, defaultType]);
 
   const handleInputChange = (field: keyof SupplierFormValues, value: any) => {
     setFormData((prev) => {
@@ -150,6 +160,11 @@ export function SupplierFormDialog({
 
       if (field === "type" && value !== "international") {
         updated.currencyName = "";
+      }
+      if (field === "type" && value === "international") {
+        updated.cnic = "";
+        updated.gstNumber = "";
+        updated.ntn = "";
       }
 
       return updated;
@@ -218,7 +233,10 @@ export function SupplierFormDialog({
         zipCode: formData.zipCode || undefined,
         email: formData.email || undefined,
         phone: formData.phone || undefined,
-        cnic: formData.cnic || undefined,
+        cnic:
+          formData.type === "international"
+            ? undefined
+            : formData.cnic || undefined,
         contactPerson: formData.contactPerson || undefined,
         taxId: formData.taxId || undefined,
         paymentTerms: formData.paymentTerms || undefined,
@@ -232,8 +250,14 @@ export function SupplierFormDialog({
         area: formData.area || undefined,
         cellNumber: formData.cellNumber || undefined,
         contactPersons: formData.contactPersons || [],
-        gstNumber: formData.gstNumber || undefined,
-        ntn: formData.ntn || undefined,
+        gstNumber:
+          formData.type === "international"
+            ? undefined
+            : formData.gstNumber || undefined,
+        ntn:
+          formData.type === "international"
+            ? undefined
+            : formData.ntn || undefined,
         remarks: formData.remarks || undefined,
       };
 
@@ -270,6 +294,40 @@ export function SupplierFormDialog({
         </DialogHeader>
 
         <div className="space-y-4 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-md border border-border bg-muted/20 p-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Supplier Type</Label>
+              <Select
+                value={formData.type}
+                onValueChange={(v) =>
+                  handleInputChange("type", v as "local" | "international")
+                }
+                disabled={typeLocked}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Select supplier type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">Local</SelectItem>
+                  <SelectItem value="international">International</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {formData.type === "international" && (
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Currency Name</Label>
+                <Input
+                  placeholder="e.g. USD"
+                  value={formData.currencyName || ""}
+                  onChange={(e) =>
+                    handleInputChange("currencyName", e.target.value)
+                  }
+                  className="h-8 text-xs uppercase"
+                />
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Title</Label>
@@ -430,35 +488,37 @@ export function SupplierFormDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">CNIC</Label>
-              <Input
-                placeholder="CNIC number"
-                value={formData.cnic || ""}
-                onChange={(e) => handleInputChange("cnic", e.target.value)}
-                className="h-8 text-xs"
-              />
+          {formData.type !== "international" && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">CNIC</Label>
+                <Input
+                  placeholder="CNIC number"
+                  value={formData.cnic || ""}
+                  onChange={(e) => handleInputChange("cnic", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">GST Number</Label>
+                <Input
+                  placeholder="GST Number"
+                  value={formData.gstNumber || ""}
+                  onChange={(e) => handleInputChange("gstNumber", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">NTN</Label>
+                <Input
+                  placeholder="NTN"
+                  value={formData.ntn || ""}
+                  onChange={(e) => handleInputChange("ntn", e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">GST Number</Label>
-              <Input
-                placeholder="GST Number"
-                value={formData.gstNumber || ""}
-                onChange={(e) => handleInputChange("gstNumber", e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">NTN</Label>
-              <Input
-                placeholder="NTN"
-                value={formData.ntn || ""}
-                onChange={(e) => handleInputChange("ntn", e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
+          )}
 
           <div className="border border-border p-3 rounded-lg space-y-3 bg-muted/10">
             <div className="flex justify-between items-center">
@@ -592,40 +652,7 @@ export function SupplierFormDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Type</Label>
-              <Select
-                value={formData.type}
-                onValueChange={(v) =>
-                  handleInputChange("type", v as "local" | "international")
-                }
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="local">Local</SelectItem>
-                  <SelectItem value="international">International</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
-
-          {formData.type === "international" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Currency Name</Label>
-                <Input
-                  placeholder="e.g. USD"
-                  value={formData.currencyName || ""}
-                  onChange={(e) =>
-                    handleInputChange("currencyName", e.target.value)
-                  }
-                  className="h-8 text-xs uppercase"
-                />
-              </div>
-            </div>
-          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">

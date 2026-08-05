@@ -28,6 +28,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 
 const priceInputValue = (n: number | undefined | null) =>
   Number.isFinite(Number(n)) ? String(Number(n)) : "";
@@ -147,11 +151,11 @@ const fmt = (n: number | undefined | null, digits = 2) =>
 const fmtQty = (n: number | undefined | null) =>
   Number.isFinite(Number(n)) ? Number(n).toLocaleString("en-US") : "—";
 
-/** Always show Part No | Master Part (mapped fields: masterPart=part_no, partNo=master_part_no). */
+/** Always show Part No | Master Part (mapped fields: partNo=master_part_no, masterPart=part_no). */
 const fmtPartNos = (item: Pick<PartResult, "partNo" | "masterPart">) => {
-  const partNo = String(item.masterPart || "").trim() || "N/A";
-  const masterPart = String(item.partNo || "").trim() || "N/A";
-  return `${partNo} | ${masterPart}`;
+  const partNo = String(item.partNo || "").trim() || "N/A";
+  const masterPart = String(item.masterPart || "").trim() || "N/A";
+  return partNo !== masterPart ? `${partNo} | ${masterPart}` : partNo;
 };
 
 const statusBadge = (status: string) => {
@@ -680,17 +684,6 @@ export const PurchaseInquiry = ({
         quantity: Number(item.quantity ?? item.qty_used ?? 0),
       }));
       setModelAssociations(mapped);
-
-      setAssociationDescriptionFilter((prev) => {
-        const cur = prev.trim().toLowerCase();
-        if (!cur) return "";
-        return mapped.some((i) => String(i.description || "").toLowerCase() === cur) ? prev : "";
-      });
-      setAssociationApplicationFilter((prev) => {
-        const cur = prev.trim().toLowerCase();
-        if (!cur) return "";
-        return mapped.some((i) => String(i.application || "").toLowerCase() === cur) ? prev : "";
-      });
     } catch {
       setModelAssociations([]);
     } finally {
@@ -1059,6 +1052,56 @@ export const PurchaseInquiry = ({
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [modelAssociations, associationDescriptionFilter]);
+
+  const associationDescriptionFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => {
+      const options: SearchableSelectOption[] = [
+        { value: "__all__", label: "Description" },
+        ...associationDescriptionOptions.map((name) => ({
+          value: name,
+          label: name,
+        })),
+      ];
+      if (
+        associationDescriptionFilter &&
+        !associationDescriptionOptions.some(
+          (n) => n === associationDescriptionFilter,
+        )
+      ) {
+        options.push({
+          value: associationDescriptionFilter,
+          label: associationDescriptionFilter,
+        });
+      }
+      return options;
+    },
+    [associationDescriptionOptions, associationDescriptionFilter],
+  );
+
+  const associationApplicationFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => {
+      const options: SearchableSelectOption[] = [
+        { value: "__all__", label: "Application" },
+        ...associationApplicationOptions.map((name) => ({
+          value: name,
+          label: name,
+        })),
+      ];
+      if (
+        associationApplicationFilter &&
+        !associationApplicationOptions.some(
+          (n) => n === associationApplicationFilter,
+        )
+      ) {
+        options.push({
+          value: associationApplicationFilter,
+          label: associationApplicationFilter,
+        });
+      }
+      return options;
+    },
+    [associationApplicationOptions, associationApplicationFilter],
+  );
 
   const filteredModelAssociations = useMemo(() => {
     const desc = associationDescriptionFilter.trim().toLowerCase();
@@ -1712,70 +1755,30 @@ export const PurchaseInquiry = ({
                 )}
 
                 <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <Select
+                  <SearchableSelect
+                    options={associationDescriptionFilterOptions}
                     value={associationDescriptionFilter || "__all__"}
                     onValueChange={(value) =>
-                      setAssociationDescriptionFilter(value === "__all__" ? "" : value)
+                      setAssociationDescriptionFilter(
+                        value === "__all__" ? "" : value,
+                      )
                     }
+                    placeholder="Description"
+                    className="w-[180px] [&_input]:h-8 [&_input]:text-xs"
                     disabled={!selectedModelName || loadingModelAssociations}
-                  >
-                    <SelectTrigger className="h-8 w-[180px] text-xs">
-                      <SelectValue placeholder="Description" />
-                    </SelectTrigger>
-                    <SelectContent className="z-[10000] max-h-60">
-                      <SelectItem value="__all__" className="text-xs">
-                        All Descriptions
-                      </SelectItem>
-                      {associationDescriptionOptions.map((name) => (
-                        <SelectItem key={name} value={name} className="text-xs">
-                          {name}
-                        </SelectItem>
-                      ))}
-                      {associationDescriptionFilter &&
-                        !associationDescriptionOptions.some(
-                          (n) => n === associationDescriptionFilter,
-                        ) && (
-                          <SelectItem
-                            value={associationDescriptionFilter}
-                            className="text-xs"
-                          >
-                            {associationDescriptionFilter}
-                          </SelectItem>
-                        )}
-                    </SelectContent>
-                  </Select>
-                  <Select
+                  />
+                  <SearchableSelect
+                    options={associationApplicationFilterOptions}
                     value={associationApplicationFilter || "__all__"}
                     onValueChange={(value) =>
-                      setAssociationApplicationFilter(value === "__all__" ? "" : value)
+                      setAssociationApplicationFilter(
+                        value === "__all__" ? "" : value,
+                      )
                     }
+                    placeholder="Application"
+                    className="w-[180px] [&_input]:h-8 [&_input]:text-xs"
                     disabled={!selectedModelName || loadingModelAssociations}
-                  >
-                    <SelectTrigger className="h-8 w-[180px] text-xs">
-                      <SelectValue placeholder="Application" />
-                    </SelectTrigger>
-                    <SelectContent className="z-[10000] max-h-60">
-                      <SelectItem value="__all__" className="text-xs">
-                        All Applications
-                      </SelectItem>
-                      {associationApplicationOptions.map((name) => (
-                        <SelectItem key={name} value={name} className="text-xs">
-                          {name}
-                        </SelectItem>
-                      ))}
-                      {associationApplicationFilter &&
-                        !associationApplicationOptions.some(
-                          (n) => n === associationApplicationFilter,
-                        ) && (
-                          <SelectItem
-                            value={associationApplicationFilter}
-                            className="text-xs"
-                          >
-                            {associationApplicationFilter}
-                          </SelectItem>
-                        )}
-                    </SelectContent>
-                  </Select>
+                  />
                 </div>
 
                 <div className="rounded-md border overflow-y-auto flex-1 min-h-0">
@@ -1818,9 +1821,11 @@ export const PurchaseInquiry = ({
                             <ListNumberCell index={index} total={filteredModelAssociations.length} className="text-xs px-2 py-1.5" />
                             <TableCell
                               className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
-                              title={`${item.masterPart} | ${item.partNo}`}
+                              title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
                             >
-                              {item.masterPart || item.partNo || "N/A"}
+                              {item.masterPart && item.partNo && item.masterPart !== item.partNo
+                                ? `${item.masterPart} | ${item.partNo}`
+                                : item.masterPart || item.partNo || "N/A"}
                             </TableCell>
                             <TableCell
                               className="text-xs px-2 py-1.5 max-w-0 truncate"

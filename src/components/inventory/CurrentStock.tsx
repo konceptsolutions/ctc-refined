@@ -56,6 +56,7 @@ import {
   generateStockCompareExcel,
   type SystemStockItem,
 } from "@/lib/stockCompareReport";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 
 interface StockItem {
   part_id: string;
@@ -352,7 +353,9 @@ export const CurrentStock = () => {
         setParts(
           partsData.map((part: any) => ({
             value: part.id,
-            label: `${part.partNo} - ${part.description || ""}`,
+            label: [formatPartIdentityFromDb(part), part.description]
+              .filter(Boolean)
+              .join(" - "),
           })),
         );
       }
@@ -1414,7 +1417,7 @@ export const CurrentStock = () => {
             <DialogDescription>
               Detailed location of{" "}
               {viewingItem?.brand ? `${viewingItem.brand} - ` : ""}
-              {viewingItem?.master_part_no || viewingItem?.part_no} -{" "}
+              {viewingItem ? formatPartIdentityFromDb(viewingItem) : ""} -{" "}
               {viewingItem?.description}
             </DialogDescription>
           </DialogHeader>
@@ -1493,7 +1496,7 @@ export const CurrentStock = () => {
             <DialogDescription>
               Assign locations for{" "}
               {editingItem?.brand ? `${editingItem.brand} - ` : ""}
-              {editingItem?.master_part_no || editingItem?.part_no} -{" "}
+              {editingItem ? formatPartIdentityFromDb(editingItem) : ""} -{" "}
               {editingItem?.description}
             </DialogDescription>
           </DialogHeader>

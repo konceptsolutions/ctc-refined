@@ -34,6 +34,10 @@ import { printPurchaseImportInquiry, buildPurchaseImportInquiryPdfBlob } from "@
 import { buildPurchaseImportInquiryExcelBlob } from "@/utils/buildPurchaseImportInquiryExcel";
 import { PurchaseInquiry } from "@/components/inventory/PurchaseInquiry";
 import {
+  SupplierFormDialog,
+  type SupplierFormSavedSupplier,
+} from "@/components/manage/SupplierFormDialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -238,7 +242,9 @@ type ItemRow = {
 
 type InquiryItemSort = "none" | "alphabetical" | "numeric" | "description" | "hsCode";
 type SortDirection = "asc" | "desc";
-type InquirySalesPeriodMonths = 3 | 6 | 9 | 12;
+
+/** Import inquiry sales qty/details always cover the trailing 12 months. */
+const INQUIRY_SALES_PERIOD_MONTHS = 12;
 
 type PurchaseImportRequestRecord = {
   id: string;
@@ -1136,64 +1142,6 @@ const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
   loadingPartDetails: false,
 });
 
-type NewSupplierForm = {
-  code: string;
-  type: "local" | "international";
-  currencyName: string;
-  companyName: string;
-  name: string;
-  shortTitle: string;
-  referenceName: string;
-  address: string;
-  area: string;
-  city: string;
-  state: string;
-  country: string;
-  zipCode: string;
-  phone: string;
-  cellNumber: string;
-  email: string;
-  cnic: string;
-  gstNumber: string;
-  ntn: string;
-  taxId: string;
-  paymentTerms: string;
-  openingBalance: string;
-  date: string;
-  status: "active" | "inactive";
-  notes: string;
-  remarks: string;
-};
-
-const emptyNewSupplierForm: NewSupplierForm = {
-  code: "",
-  type: "local",
-  currencyName: "",
-  companyName: "",
-  name: "",
-  shortTitle: "",
-  referenceName: "",
-  address: "",
-  area: "",
-  city: "",
-  state: "",
-  country: "",
-  zipCode: "",
-  phone: "",
-  cellNumber: "",
-  email: "",
-  cnic: "",
-  gstNumber: "",
-  ntn: "",
-  taxId: "",
-  paymentTerms: "",
-  openingBalance: "",
-  date: "",
-  status: "active",
-  notes: "",
-  remarks: "",
-};
-
 const createRowId = () =>
   `row-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -1668,19 +1616,14 @@ const PurchaseImportRequestForm = ({
   itemsRef.current = items;
   const [notes, setNotes] = useState("");
   const [isSupplierDialogOpen, setIsSupplierDialogOpen] = useState(false);
-  const [addingSupplier, setAddingSupplier] = useState(false);
-  const [newSupplierForm, setNewSupplierForm] =
-    useState<NewSupplierForm>(emptyNewSupplierForm);
   const [loadingEditRequest, setLoadingEditRequest] = useState(false);
   const [inquiryNumber, setInquiryNumber] = useState("");
   const [inquiryDate, setInquiryDate] = useState(() => toInputDate(new Date()));
   const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
   const [brandFilter, setBrandFilter] = useState("all");
-  const [salesPeriodMonths, setSalesPeriodMonths] =
-    useState<InquirySalesPeriodMonths>(3);
   const [loadingSalesQty, setLoadingSalesQty] = useState(false);
-  /** Expand Sales column to show invoice details for the selected period. */
+  /** Expand Sales column to show invoice details for the trailing year. */
   const [salesDetailsExpanded, setSalesDetailsExpanded] = useState(false);
   const [salesDetailsByPartId, setSalesDetailsByPartId] = useState<
     Record<string, any[]>
@@ -2018,98 +1961,25 @@ const PurchaseImportRequestForm = ({
     setSupplierRows((prev) => prev.filter((row) => row.id !== rowId));
   };
 
-  const handleSupplierFieldChange = (field: keyof NewSupplierForm, value: string) => {
-    setNewSupplierForm((prev) => {
-      const next = { ...prev, [field]: value };
-      if (field === "name") {
-        const initials = value
-          .trim()
-          .split(/\s+/)
-          .filter(Boolean)
-          .map((w) => w[0].toUpperCase())
-          .join("")
-          .slice(0, 3);
-        next.shortTitle = initials;
-      }
-      return next;
+  const handleSupplierSaved = async (created: SupplierFormSavedSupplier) => {
+    await loadSuppliers();
+    if (created?.id) {
+      setSupplierRows((prev) => {
+        const emptyRowIndex = prev.findIndex((row) => !row.supplierId);
+        if (emptyRowIndex >= 0) {
+          return prev.map((row, index) =>
+            index === emptyRowIndex
+              ? { ...row, supplierId: created.id }
+              : row,
+          );
+        }
+        return [...prev, { id: createRowId(), supplierId: created.id }];
+      });
+    }
+    toast({
+      title: "Supplier added",
+      description: "New supplier has been created and selected.",
     });
-  };
-
-  const handleCreateSupplier = async () => {
-    const companyOrName =
-      newSupplierForm.companyName.trim() || newSupplierForm.name.trim();
-    if (!companyOrName) {
-      toast({
-        title: "Supplier name required",
-        description: "Please enter at least company name or title.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setAddingSupplier(true);
-    try {
-      const payload = {
-        code: newSupplierForm.code.trim() || undefined,
-        type: newSupplierForm.type,
-        currencyName:
-          newSupplierForm.type === "international"
-            ? newSupplierForm.currencyName.trim() || undefined
-            : undefined,
-        companyName: companyOrName,
-        name: newSupplierForm.name.trim() || undefined,
-        shortTitle: newSupplierForm.shortTitle.trim() || undefined,
-        referenceName: newSupplierForm.referenceName.trim() || undefined,
-        address: newSupplierForm.address.trim() || undefined,
-        area: newSupplierForm.area.trim() || undefined,
-        city: newSupplierForm.city.trim() || undefined,
-        state: newSupplierForm.state.trim() || undefined,
-        country: newSupplierForm.country.trim() || undefined,
-        zipCode: newSupplierForm.zipCode.trim() || undefined,
-        phone: newSupplierForm.phone.trim() || undefined,
-        cellNumber: newSupplierForm.cellNumber.trim() || undefined,
-        email: newSupplierForm.email.trim() || undefined,
-        cnic: newSupplierForm.cnic.trim() || undefined,
-        gstNumber: newSupplierForm.gstNumber.trim() || undefined,
-        ntn: newSupplierForm.ntn.trim() || undefined,
-        taxId: newSupplierForm.taxId.trim() || undefined,
-        paymentTerms: newSupplierForm.paymentTerms.trim() || undefined,
-        openingBalance: Number(newSupplierForm.openingBalance || 0),
-        date: newSupplierForm.date || undefined,
-        status: newSupplierForm.status,
-        notes: newSupplierForm.notes.trim() || undefined,
-        remarks: newSupplierForm.remarks.trim() || undefined,
-      };
-      const created = await apiClient.createSupplier(payload as any);
-      const createdId = (created as any)?.data?.id;
-      await loadSuppliers();
-      if (createdId) {
-        setSupplierRows((prev) => {
-          const emptyRowIndex = prev.findIndex((row) => !row.supplierId);
-          if (emptyRowIndex >= 0) {
-            return prev.map((row, index) =>
-              index === emptyRowIndex ? { ...row, supplierId: createdId } : row,
-            );
-          }
-          return [...prev, { id: createRowId(), supplierId: createdId }];
-        });
-      }
-      setNewSupplierForm(emptyNewSupplierForm);
-      setIsSupplierDialogOpen(false);
-      toast({
-        title: "Supplier added",
-        description: "New supplier has been created and selected.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Failed to add supplier",
-        description:
-          error?.response?.data?.error || error?.message || "Could not create supplier.",
-        variant: "destructive",
-      });
-    } finally {
-      setAddingSupplier(false);
-    }
   };
 
   const addItemRow = useCallback(() => {
@@ -2235,7 +2105,7 @@ const PurchaseImportRequestForm = ({
       try {
         const res = await apiClient.getPurchaseImportPartsSales({
           partIds,
-          months: salesPeriodMonths,
+          months: INQUIRY_SALES_PERIOD_MONTHS,
         });
         if (cancelled) return;
         const salesByPartId =
@@ -2253,7 +2123,7 @@ const PurchaseImportRequestForm = ({
         if (cancelled) return;
         toast({
           title: "Failed to load sales",
-          description: "Could not fetch sold quantities for the selected period.",
+          description: "Could not fetch sold quantities for the last 12 months.",
           variant: "destructive",
         });
       } finally {
@@ -2265,7 +2135,7 @@ const PurchaseImportRequestForm = ({
     return () => {
       cancelled = true;
     };
-  }, [inquiryPartIdsKey, salesPeriodMonths, toast]);
+  }, [inquiryPartIdsKey, toast]);
 
   useEffect(() => {
     if (!salesDetailsExpanded) return;
@@ -2294,7 +2164,7 @@ const PurchaseImportRequestForm = ({
               const response = await apiClient.getSalesInvoicesByPart(partId, {
                 page: 1,
                 limit: 200,
-                months: salesPeriodMonths,
+                months: INQUIRY_SALES_PERIOD_MONTHS,
               });
               const rows = Array.isArray(response)
                 ? response
@@ -2320,7 +2190,7 @@ const PurchaseImportRequestForm = ({
     return () => {
       cancelled = true;
     };
-  }, [salesDetailsExpanded, inquiryPartIdsKey, salesPeriodMonths]);
+  }, [salesDetailsExpanded, inquiryPartIdsKey]);
 
   const handleSave = async () => {
     const currentItems = itemsRef.current;
@@ -2449,302 +2319,15 @@ const PurchaseImportRequestForm = ({
         </div>
       </div>
 
-      <Dialog open={isSupplierDialogOpen} onOpenChange={setIsSupplierDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add New Supplier</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Code (optional)</Label>
-                <Input
-                  value={newSupplierForm.code}
-                  onChange={(e) => handleSupplierFieldChange("code", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Type</Label>
-                <Select
-                  value={newSupplierForm.type}
-                  onValueChange={(value: "local" | "international") =>
-                    setNewSupplierForm((prev) => ({
-                      ...prev,
-                      type: value,
-                      currencyName:
-                        value === "international" ? prev.currencyName : "",
-                    }))
-                  }
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="local">Local</SelectItem>
-                    <SelectItem value="international">International</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {newSupplierForm.type === "international" && (
-                <div className="space-y-1">
-                  <Label className="text-xs">Currency Name</Label>
-                  <Input
-                    value={newSupplierForm.currencyName}
-                    onChange={(e) =>
-                      handleSupplierFieldChange("currencyName", e.target.value)
-                    }
-                    placeholder="e.g. USD"
-                    className="h-8 text-xs uppercase"
-                  />
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label className="text-xs">Company Name</Label>
-                <Input
-                  value={newSupplierForm.companyName}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("companyName", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Title</Label>
-                <Input
-                  value={newSupplierForm.name}
-                  onChange={(e) => handleSupplierFieldChange("name", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Short Title</Label>
-                <Input
-                  value={newSupplierForm.shortTitle}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("shortTitle", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Address</Label>
-              <Input
-                value={newSupplierForm.address}
-                onChange={(e) => handleSupplierFieldChange("address", e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Area</Label>
-                <Input
-                  value={newSupplierForm.area}
-                  onChange={(e) => handleSupplierFieldChange("area", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">City</Label>
-                <Input
-                  value={newSupplierForm.city}
-                  onChange={(e) => handleSupplierFieldChange("city", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">State</Label>
-                <Input
-                  value={newSupplierForm.state}
-                  onChange={(e) => handleSupplierFieldChange("state", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Country</Label>
-                <Input
-                  value={newSupplierForm.country}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("country", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Zip Code</Label>
-                <Input
-                  value={newSupplierForm.zipCode}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("zipCode", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Phone</Label>
-                <Input
-                  value={newSupplierForm.phone}
-                  onChange={(e) => handleSupplierFieldChange("phone", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Cell Number</Label>
-                <Input
-                  value={newSupplierForm.cellNumber}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("cellNumber", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1 lg:col-span-2">
-                <Label className="text-xs">Email</Label>
-                <Input
-                  type="email"
-                  value={newSupplierForm.email}
-                  onChange={(e) => handleSupplierFieldChange("email", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">CNIC</Label>
-                <Input
-                  value={newSupplierForm.cnic}
-                  onChange={(e) => handleSupplierFieldChange("cnic", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">GST Number</Label>
-                <Input
-                  value={newSupplierForm.gstNumber}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("gstNumber", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">NTN</Label>
-                <Input
-                  value={newSupplierForm.ntn}
-                  onChange={(e) => handleSupplierFieldChange("ntn", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Tax ID</Label>
-                <Input
-                  value={newSupplierForm.taxId}
-                  onChange={(e) => handleSupplierFieldChange("taxId", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Payment Terms</Label>
-                <Input
-                  value={newSupplierForm.paymentTerms}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("paymentTerms", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Opening Balance</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={newSupplierForm.openingBalance}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("openingBalance", e.target.value)
-                  }
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Account Opening Date</Label>
-                <Input
-                  type="date"
-                  value={newSupplierForm.date}
-                  onChange={(e) => handleSupplierFieldChange("date", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Status</Label>
-                <Select
-                  value={newSupplierForm.status}
-                  onValueChange={(value: "active" | "inactive") =>
-                    setNewSupplierForm((prev) => ({ ...prev, status: value }))
-                  }
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Notes</Label>
-                <Textarea
-                  value={newSupplierForm.notes}
-                  onChange={(e) => handleSupplierFieldChange("notes", e.target.value)}
-                  className="text-xs min-h-[60px]"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Remarks</Label>
-                <Textarea
-                  value={newSupplierForm.remarks}
-                  onChange={(e) =>
-                    handleSupplierFieldChange("remarks", e.target.value)
-                  }
-                  className="text-xs min-h-[60px]"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                type="button"
-                onClick={handleCreateSupplier}
-                disabled={addingSupplier}
-                className="flex-1"
-              >
-                {addingSupplier ? "Saving..." : "Save Supplier"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsSupplierDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-<div className="space-y-3">
+      <SupplierFormDialog
+        open={isSupplierDialogOpen}
+        onOpenChange={setIsSupplierDialogOpen}
+        onSaved={handleSupplierSaved}
+        title="Add International Supplier"
+        defaultType="international"
+        typeLocked
+      />
+      <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Items</h3>
           <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -2768,27 +2351,6 @@ const PurchaseImportRequestForm = ({
               className="w-[180px] [&_input]:h-9 [&_input]:text-sm"
               disabled={loadingForm}
             />
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground whitespace-nowrap">
-                Sales Period
-              </Label>
-              <Select
-                value={String(salesPeriodMonths)}
-                onValueChange={(value) =>
-                  setSalesPeriodMonths(Number(value) as InquirySalesPeriodMonths)
-                }
-              >
-                <SelectTrigger className="w-[130px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="3">3 Months</SelectItem>
-                  <SelectItem value="6">6 Months</SelectItem>
-                  <SelectItem value="9">9 Months</SelectItem>
-                  <SelectItem value="12">1 Year</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
               <SelectTrigger className="w-[220px]">
                 <SelectValue />
@@ -2839,13 +2401,13 @@ const PurchaseImportRequestForm = ({
                     title={
                       salesDetailsExpanded
                         ? "Hide sales details"
-                        : "Show sales details for selected period"
+                        : "Show sales details for the last 12 months"
                     }
                   >
                     <span className="text-right">
                       Sales
                       <span className="block text-[10px] font-normal text-muted-foreground">
-                        {salesPeriodMonths === 12 ? "1 Year" : `${salesPeriodMonths} Mo`}
+                        1 Year
                       </span>
                     </span>
                     {salesDetailsExpanded ? (
@@ -2906,7 +2468,7 @@ const PurchaseImportRequestForm = ({
                             onValueChange={(partId) =>
                               fetchPartDetails(row.id, partId)
                             }
-                            placeholder="Master Part | Part No"
+                            placeholder="Part No | Master Part"
                             disabled={loadingForm || isViewMode}
                             autoOpen={openItemSelectRowId === row.id}
                           />
@@ -2924,7 +2486,7 @@ const PurchaseImportRequestForm = ({
                           disabled={!row.partId || loadingForm}
                           title={
                             row.partId
-                              ? "Open Purchase Inquiry for this item"
+                              ? "View Purchase Inquiry for this item"
                               : "Select an item first"
                           }
                           onClick={() => {
@@ -2932,7 +2494,7 @@ const PurchaseImportRequestForm = ({
                             setPurchaseInquiryPopupPartId(row.partId);
                           }}
                         >
-                          <Plus className="h-4 w-4" />
+                          <Eye className="h-4 w-4" />
                         </Button>
                       </div>
                     </td>
@@ -3040,7 +2602,7 @@ const PurchaseImportRequestForm = ({
                           <p className="text-xs font-medium mb-2">
                             Sales details
                             <span className="ml-1 font-normal text-muted-foreground">
-                              ({salesPeriodMonths === 12 ? "1 Year" : `${salesPeriodMonths} Months`})
+                              (1 Year)
                             </span>
                           </p>
                           {loadingSalesDetails && !salesDetailsByPartId[row.partId] ? (
@@ -3453,21 +3015,39 @@ const PurchaseImportRequestView = ({
     };
   }, [requestId, toast]);
 
-  const supplierRows = useMemo(
-    () =>
-      (detail?.supplierIds || []).map((supplierId) => {
-        const supplier = supplierOptions.find((row) => row.id === supplierId);
-        return {
-          supplierId,
-          name: supplier?.label || supplierId,
-          country: supplier?.country || "-",
-          area: supplier?.area || "-",
-          type: supplier?.type || "-",
-          currencyName: supplier?.currencyName || "-",
-        };
-      }),
-    [detail?.supplierIds, supplierOptions],
-  );
+  const supplierRows = useMemo(() => {
+    // View/print should show only the supplier tied to this inquiry row,
+    // not all suppliers in the same batch.
+    const current = detail?.supplier;
+    if (current?.id) {
+      const option = supplierOptions.find((row) => row.id === current.id);
+      return [
+        {
+          supplierId: current.id,
+          name: current.name || option?.label || current.id,
+          country: current.country || option?.country || "-",
+          area: current.area || option?.area || "-",
+          type: current.type || option?.type || "-",
+          currencyName: current.currencyName || option?.currencyName || "-",
+        },
+      ];
+    }
+
+    // Backward-compatible fallback for legacy rows.
+    const legacyId = (detail?.supplierIds || []).find(Boolean);
+    if (!legacyId) return [];
+    const supplier = supplierOptions.find((row) => row.id === legacyId);
+    return [
+      {
+        supplierId: legacyId,
+        name: supplier?.label || legacyId,
+        country: supplier?.country || "-",
+        area: supplier?.area || "-",
+        type: supplier?.type || "-",
+        currencyName: supplier?.currencyName || "-",
+      },
+    ];
+  }, [detail?.supplier, detail?.supplierIds, supplierOptions]);
 
   const itemRows = useMemo(
     () =>
@@ -4713,7 +4293,7 @@ const PurchaseQuotationForm = ({
                               options={partSelectOptions}
                               value={row.partId}
                               onValueChange={(partId) => selectPartForRow(row.rowId, partId)}
-                              placeholder="Master Part | Part No"
+                              placeholder="Part No | Master Part"
                               selectedDisplayLabelOnly
                               disabled={loading || saving}
                             />
@@ -6204,7 +5784,7 @@ const PurchaseInquiryListPanel = ({
                     ? "No inquiries found."
                     : (
                       <>
-                        No inquiries found. Use <span className="font-medium">New Inquiry</span> or the Inquiry Form tab.
+                        No inquiries found. Use <span className="font-medium">New Inquiry</span> to create one.
                       </>
                     )}
                 </td>
@@ -7220,7 +6800,7 @@ const PurchaseQuotationListPanel = ({
 
 const PurchaseImportRequestTab = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [requestView, setRequestView] = useState<"form" | "list">("form");
+  const [requestView, setRequestView] = useState<"form" | "list">("list");
   const showRequestForm = requestView === "form";
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [viewingRequestId, setViewingRequestId] = useState<string | null>(null);
@@ -7259,11 +6839,17 @@ const PurchaseImportRequestTab = () => {
     <div className="space-y-4">
       <Tabs
         value={requestView}
-        onValueChange={(v) => setRequestView(v as "form" | "list")}
+        onValueChange={(v) => {
+          if (v === "list") {
+            goToRequestList();
+            return;
+          }
+          goToNewRequestForm();
+        }}
       >
         <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="form">Inquiry Form</TabsTrigger>
           <TabsTrigger value="list">Inquiry List</TabsTrigger>
+          <TabsTrigger value="form">Inquiry Form</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -9792,13 +9378,14 @@ const PurchaseOrderTab = ({
           }
         }}
       >
-        <DialogContent className="max-w-7xl w-[95vw] max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="left-0 top-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:rounded-none">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
                   <DialogTitle>
                     {isInvoiceMode ? "Invoice" : "Shipment"}{" "}
                     {viewOrder?.po_number || viewOrder?.poNumber || ""}
                   </DialogTitle>
           </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {loadingDetail ? (
             <p className="text-sm text-muted-foreground">Loading order details...</p>
           ) : viewOrder ? (
@@ -10053,11 +9640,48 @@ const PurchaseOrderTab = ({
                   </Button>
                 </div>
               ) : null}
+              {(() => {
+                const viewItems = viewOrder.items || [];
+                const viewExpenses = parseImportPoExpenses(viewOrder.expenses);
+                const invoiceLc = Number(
+                  viewOrder.totalAmount || viewOrder.total_amount || 0,
+                );
+                const conversionRate = (() => {
+                  const rate = Number(
+                    viewOrder.conversionRate ?? viewOrder.conversion_rate ?? 0,
+                  );
+                  return Number.isFinite(rate) && rate > 0 ? rate : 1;
+                })();
+                const viewTotalExp =
+                  viewExpenses.totalExp > 0
+                    ? viewExpenses.totalExp
+                    : computeImportPoTotalExp(
+                        viewExpenses,
+                        invoiceLc,
+                        conversionRate,
+                      );
+                const viewDistributedExpenses = isInvoiceMode
+                  ? computeImportPoDistributedExpenses(
+                      viewItems.map((row: any) => {
+                        const rowReceived = Number(
+                          row.receivedQty ?? row.received_qty ?? 0,
+                        );
+                        const rowOrder = Number(row.orderQty ?? row.quantity ?? 0);
+                        return {
+                          receiveQty: rowReceived > 0 ? rowReceived : rowOrder,
+                          weight: Number(row.weight || 0),
+                        };
+                      }),
+                      viewTotalExp,
+                    )
+                  : viewItems.map(() => 0);
+
+                return (
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-xs">
                   <thead className="bg-muted/40">
                     <tr>
-                      <th className="text-left p-2">Master Part | Part No</th>
+                      <th className="text-left p-2">Part No | Master Part</th>
                       <th className="text-left p-2">Description</th>
                       <th className="text-right p-2">Order Qty</th>
                       <th className="text-right p-2">Received</th>
@@ -10069,6 +9693,10 @@ const PurchaseOrderTab = ({
                       <th className="text-right p-2">LC Amount</th>
                       {isInvoiceMode ? (
                         <>
+                          <th className="text-right p-2">Unit Exp</th>
+                          <th className="text-right p-2">Exp</th>
+                          <th className="text-right p-2">Unit Cost</th>
+                          <th className="text-right p-2">Cost</th>
                           <th className="text-right p-2">Price A</th>
                           <th className="text-right p-2">Price B</th>
                         </>
@@ -10076,7 +9704,7 @@ const PurchaseOrderTab = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {(viewOrder.items || []).map((item: any) => {
+                    {viewItems.map((item: any, itemIndex: number) => {
                       const orderQty = Number(item.orderQty ?? item.quantity ?? 0);
                       const receivedQty = Number(
                         item.receivedQty ?? item.received_qty ?? 0,
@@ -10100,6 +9728,11 @@ const PurchaseOrderTab = ({
                           item.total_cost ??
                           lcRate * orderQty,
                       );
+                      const qtyForCost = receivedQty > 0 ? receivedQty : orderQty;
+                      const distributedExpense = viewDistributedExpenses[itemIndex] ?? 0;
+                      const unitExp = qtyForCost > 0 ? distributedExpense / qtyForCost : 0;
+                      const unitCost = lcRate + unitExp;
+                      const lineCost = lcAmount + distributedExpense;
                       const itemKey = String(
                         item.id || item.partId || item.part_id || "",
                       );
@@ -10142,6 +9775,34 @@ const PurchaseOrderTab = ({
                         </td>
                         {isInvoiceMode ? (
                           <>
+                            <td className="p-2 text-right tabular-nums">
+                              {viewTotalExp > 0
+                                ? unitExp.toLocaleString("en-PK", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })
+                                : "-"}
+                            </td>
+                            <td className="p-2 text-right tabular-nums">
+                              {viewTotalExp > 0
+                                ? distributedExpense.toLocaleString("en-PK", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })
+                                : "-"}
+                            </td>
+                            <td className="p-2 text-right tabular-nums font-medium">
+                              {unitCost.toLocaleString("en-PK", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="p-2 text-right tabular-nums font-medium">
+                              {lineCost.toLocaleString("en-PK", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
                             <td className="p-2">
                               <Input
                                 className="h-8 w-[6.5rem] ml-auto text-right tabular-nums"
@@ -10178,8 +9839,11 @@ const PurchaseOrderTab = ({
                   </tbody>
                 </table>
               </div>
+                );
+              })()}
             </div>
           ) : null}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -10403,7 +10067,7 @@ const PurchaseOrderTab = ({
                                 onValueChange={(partId) =>
                                   void selectPartForReceiveLine(line.id, partId)
                                 }
-                                placeholder="Master Part | Part No"
+                                placeholder="Part No | Master Part"
                                 selectedDisplayLabelOnly
                                 disabled={loadingReceiveForm || savingReceive}
                               />

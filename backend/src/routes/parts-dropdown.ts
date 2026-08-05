@@ -47,7 +47,7 @@ router.get("/dropdown", async (req: Request, res: Response) => {
         }
 
         // Use select to fetch ONLY what is needed for the dropdown label
-        // Label format: Master Part | Part No (brand) for easy filtering
+        // Label format: Part No (master_part_no) | Master Part (part_no)
         const parts = await prisma.part.findMany({
             where,
             select: {

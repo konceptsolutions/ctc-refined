@@ -621,9 +621,7 @@ export const SalesInvoice = ({
 
   // New / Edit Invoice State
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
-  const [documentView, setDocumentView] = useState<"form" | "list">(
-    canUseDocumentForm ? "form" : "list",
-  );
+  const [documentView, setDocumentView] = useState<"form" | "list">("list");
   const showDocumentForm = canUseDocumentForm && documentView === "form";
   const [newInvoice, setNewInvoice] = useState<Partial<Invoice>>({
     customerType: isTransferOut ? "transfer" : "registered",
@@ -1104,7 +1102,7 @@ export const SalesInvoice = ({
             unitPrice: poUnit,
             selectedPriceType: "U" as const,
             partNoFallback: item.masterPartNo
-              ? `${item.masterPartNo} | ${item.partNo || ""}`
+              ? `${item.partNo || ""} | ${item.masterPartNo}`.replace(/^\s*\|\s*|\s*\|\s*$/g, "").trim() || item.partNo
               : item.partNo,
             descriptionFallback: item.description,
           };
@@ -6694,11 +6692,17 @@ export const SalesInvoice = ({
         {canUseDocumentForm ? (
           <Tabs
             value={documentView}
-            onValueChange={(v) => setDocumentView(v as "form" | "list")}
+            onValueChange={(v) => {
+              if (v === "list") {
+                setDocumentView("list");
+                return;
+              }
+              resetForm();
+            }}
           >
             <TabsList className="grid w-full max-w-md grid-cols-2">
-              <TabsTrigger value="form">{docFormLabel}</TabsTrigger>
               <TabsTrigger value="list">{docListLabel}</TabsTrigger>
+              <TabsTrigger value="form">{docFormLabel}</TabsTrigger>
             </TabsList>
           </Tabs>
         ) : (
@@ -7224,7 +7228,7 @@ export const SalesInvoice = ({
                                           const partLabel =
                                             masterPartNo &&
                                             masterPartNo !== partNo
-                                              ? `${masterPartNo} | ${partNo}`
+                                              ? `${partNo} | ${masterPartNo}`
                                               : partNo;
                                           return description
                                             ? `${partLabel} - ${description}`
@@ -9293,9 +9297,21 @@ export const SalesInvoice = ({
           {/* Invoices Table */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              {docListLabel}
-            </CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base">
+                {docListLabel}
+              </CardTitle>
+              {canUseDocumentForm && (
+                <Button type="button" size="sm" onClick={() => resetForm()}>
+                  <Plus className="w-4 h-4 mr-1" />
+                  {isQuotation
+                    ? "New Quotation"
+                    : isTransferOut
+                      ? "New Transfer Out"
+                      : "New Invoice"}
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {loadingInvoices ? (

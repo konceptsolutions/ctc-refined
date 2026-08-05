@@ -53,7 +53,7 @@ function buildPartOptions(parts: Array<Record<string, unknown>>): {
 
     return {
       value: id,
-      label: `${partNo} | ${masterPartNo} | ${brand}`,
+      label: `${masterPartNo} | ${partNo} | ${brand}`,
       description,
     };
   });

@@ -28,6 +28,7 @@ import DetailsPartSearchPage from "./pages/DetailsPartSearch";
 import NotFound from "./pages/NotFound";
 import Documentation from "./pages/Documentation";
 import ProtectedRoute from "./components/ProtectedRoute";
+import LoginHoursGuard from "./components/auth/LoginHoursGuard";
 import { AppAIAssistant } from "./components/chatbot/AppAIAssistant";
 
 const queryClient = new QueryClient();
@@ -39,6 +40,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter basename="/">
+          <LoginHoursGuard />
           <Routes>
             {/* Login route - accessible without authentication */}
             <Route path="/login" element={<Login />} />

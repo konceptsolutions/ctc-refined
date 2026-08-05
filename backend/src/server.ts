@@ -78,14 +78,14 @@ import purchaseImportRoutes from "./routes/purchase-import";
 import partsDropdownRoutes from "./routes/parts-dropdown";
 import authRoutes from "./routes/auth";
 import emailRoutes from "./routes/email";
-import { authenticateJWT, authorizeRoles } from "./middleware/authMiddleware";
+import { authenticateJWT, authorizeRoles, enforceLoginWindow } from "./middleware/authMiddleware";
 import { activityAuditMiddleware } from "./middleware/activityAuditMiddleware";
 
-// Trigger restart for environment variable update
+// Trigger restart for environment variable update + prisma client reload 2026-08-05b
 const app = express();
 const PORT = process.env.PORT || 5000;
-const apiAuth = [authenticateJWT, activityAuditMiddleware];
-const apiAdminAuth = [authenticateJWT, authorizeRoles("Admin"), activityAuditMiddleware];
+const apiAuth = [authenticateJWT, enforceLoginWindow, activityAuditMiddleware];
+const apiAdminAuth = [authenticateJWT, enforceLoginWindow, authorizeRoles("Admin"), activityAuditMiddleware];
 
 // Middleware - CORS configuration
 const allowedOrigins = process.env.CORS_ORIGIN

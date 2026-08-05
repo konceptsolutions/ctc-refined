@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Users, Download } from "lucide-react";
+import { Users, Download, Eye } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
@@ -33,12 +33,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { VoucherViewDialog } from "@/components/vouchers/VoucherViewDialog";
 
 type CurrencyMode = "local" | "foreign";
 
 interface LedgerEntry {
   id: number | string;
   tId: number | null;
+  voucherId?: string | null;
   voucherNo: string;
   timeStamp: string;
   description: string;
@@ -75,6 +77,10 @@ export const InternationalSupplierLedgersTab = () => {
   const [accounts, setAccounts] = useState<SupplierAccountOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [currencyName, setCurrencyName] = useState("USD");
+  const [viewingVoucher, setViewingVoucher] = useState<{
+    id?: string | null;
+    number?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     const loadAccounts = async () => {
@@ -459,7 +465,28 @@ export const InternationalSupplierLedgersTab = () => {
                         />
                       </TableCell>
                       <TableCell>{formatDisplayValue(entry.tId)}</TableCell>
-                      <TableCell>{formatDisplayValue(entry.voucherNo)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <span>{formatDisplayValue(entry.voucherNo)}</span>
+                          {entry.voucherNo && entry.voucherNo !== "-" ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-primary"
+                              title="View voucher"
+                              onClick={() =>
+                                setViewingVoucher({
+                                  id: entry.voucherId,
+                                  number: entry.voucherNo,
+                                })
+                              }
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                        </div>
+                      </TableCell>
                       <TableCell>{formatDisplayValue(entry.timeStamp)}</TableCell>
                       <TableCell>{entry.description}</TableCell>
                       {currencyMode === "foreign" ? (
@@ -503,6 +530,14 @@ export const InternationalSupplierLedgersTab = () => {
           </Table>
         </div>
       </CardContent>
+      <VoucherViewDialog
+        open={Boolean(viewingVoucher)}
+        onOpenChange={(open) => {
+          if (!open) setViewingVoucher(null);
+        }}
+        voucherId={viewingVoucher?.id}
+        voucherNumber={viewingVoucher?.number}
+      />
     </Card>
   );
 };

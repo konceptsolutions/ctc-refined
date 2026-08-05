@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import prisma from '../config/database';
 import { logActivity, getClientIp } from '../utils/activityLogger';
 import { randomUUID } from 'crypto';
+import { getLoginHours, getLoginHoursMap, normalizeLoginTime, setLoginHours } from '../utils/loginHours';
 
 const router = express.Router();
 
@@ -103,12 +104,15 @@ router.get('/', async (req, res) => {
     ]);
 
     const roleNames = await roleNamesForUserRows(users.map((u) => u.roleId));
+    const loginHours = await getLoginHoursMap(users.map((u) => u.id));
 
     // Format dates
     const formattedUsers = users.map((user) => {
       const { roleId, ...rest } = user;
+      const hours = loginHours[user.id] || { loginStartTime: null, loginEndTime: null };
       return {
         ...rest,
+        ...hours,
         role: roleNames[roleId] ?? roleId,
         createdAt: user.createdAt.toISOString().split('T')[0],
       };
@@ -149,10 +153,12 @@ router.get('/:id', async (req, res) => {
     }
 
     const rn = await roleNamesForUserRows([user.roleId]);
+    const hours = (await getLoginHours(user.id)) || { loginStartTime: null, loginEndTime: null };
     const { roleId, ...rest } = user;
     res.json({
       data: {
         ...rest,
+        ...hours,
         role: rn[roleId] ?? roleId,
         createdAt: user.createdAt.toISOString().split('T')[0],
       },
@@ -250,6 +256,8 @@ router.post('/', async (req, res) => {
     res.status(201).json({
       data: {
         ...rest,
+        loginStartTime: null,
+        loginEndTime: null,
         role: rn[rid] ?? rid,
         createdAt: user.createdAt.toISOString().split('T')[0],
       },
@@ -268,13 +276,20 @@ router.put('/:id', async (req, res) => {
       role,
       status,
       password,
+      loginStartTime,
+      loginEndTime,
     } = req.body;
 
     const currentUser = (req as any).user || { name: 'System', role: 'Admin' };
 
     const existing = await prisma.user.findUnique({
       where: { id: req.params.id },
-      select: { id: true, name: true, email: true, roleId: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        roleId: true,
+      },
     });
     if (!existing) {
       return res.status(404).json({ error: 'User not found' });
@@ -310,19 +325,79 @@ router.put('/:id', async (req, res) => {
       updateData.password = await bcrypt.hash(String(password), 10);
     }
 
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        roleId: true,
-        status: true,
-        lastLogin: true,
-        createdAt: true,
-      },
-    });
+    let nextHours: { loginStartTime: string | null; loginEndTime: string | null } | null = null;
+    if (loginStartTime !== undefined || loginEndTime !== undefined) {
+      const existingRoleNames = await roleNamesForUserRows([existing.roleId]);
+      if (isAdminRoleName(existingRoleNames[existing.roleId])) {
+        return res.status(400).json({
+          error: 'Login hours cannot be set for admin users.',
+        });
+      }
+
+      const existingHours = (await getLoginHours(existing.id)) || {
+        loginStartTime: null,
+        loginEndTime: null,
+      };
+      const nextStart = loginStartTime !== undefined
+        ? normalizeLoginTime(loginStartTime)
+        : existingHours.loginStartTime;
+      const nextEnd = loginEndTime !== undefined
+        ? normalizeLoginTime(loginEndTime)
+        : existingHours.loginEndTime;
+
+      if (loginStartTime !== undefined && loginStartTime !== null && String(loginStartTime).trim() !== '' && nextStart === undefined) {
+        return res.status(400).json({ error: 'Invalid login start time. Use HH:mm.' });
+      }
+      if (loginEndTime !== undefined && loginEndTime !== null && String(loginEndTime).trim() !== '' && nextEnd === undefined) {
+        return res.status(400).json({ error: 'Invalid login end time. Use HH:mm.' });
+      }
+
+      const startValue = nextStart ?? null;
+      const endValue = nextEnd ?? null;
+      if ((startValue && !endValue) || (!startValue && endValue)) {
+        return res.status(400).json({
+          error: 'Both login start and end time are required, or clear both.',
+        });
+      }
+      if (startValue && endValue && startValue === endValue) {
+        return res.status(400).json({ error: 'Login start and end time cannot be the same.' });
+      }
+
+      nextHours = { loginStartTime: startValue, loginEndTime: endValue };
+    }
+
+    const userSelect = {
+      id: true,
+      name: true,
+      email: true,
+      roleId: true,
+      status: true,
+      lastLogin: true,
+      createdAt: true,
+    } as const;
+
+    const user = Object.keys(updateData).length
+      ? await prisma.user.update({
+          where: { id: req.params.id },
+          data: updateData,
+          select: userSelect,
+        })
+      : await prisma.user.findUnique({
+          where: { id: req.params.id },
+          select: userSelect,
+        });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (nextHours) {
+      await setLoginHours(user.id, nextHours.loginStartTime, nextHours.loginEndTime);
+    }
+    const hours = nextHours || (await getLoginHours(user.id)) || {
+      loginStartTime: null,
+      loginEndTime: null,
+    };
 
     if (updateData.password) {
       await logActivity({
@@ -342,11 +417,37 @@ router.put('/:id', async (req, res) => {
       }, req);
     }
 
+    if (nextHours) {
+      const hoursLabel = hours.loginStartTime && hours.loginEndTime
+        ? `${hours.loginStartTime} – ${hours.loginEndTime}`
+        : 'cleared';
+      await logActivity({
+        user: currentUser.name,
+        userId: currentUser.id,
+        userRole: currentUser.role,
+        action: 'Updated User Login Hours',
+        actionType: 'update',
+        module: 'Users',
+        description: `Set login hours for ${user.name} (${user.email}): ${hoursLabel}`,
+        entityType: 'user',
+        entityId: user.id,
+        entityLabel: user.email,
+        ipAddress: getClientIp(req),
+        status: 'success',
+        details: {
+          email: user.email,
+          loginStartTime: hours.loginStartTime,
+          loginEndTime: hours.loginEndTime,
+        },
+      }, req);
+    }
+
     const rn = await roleNamesForUserRows([user.roleId]);
     const { roleId: urid, ...rest } = user;
     res.json({
       data: {
         ...rest,
+        ...hours,
         role: rn[urid] ?? urid,
         createdAt: user.createdAt.toISOString().split('T')[0],
       },

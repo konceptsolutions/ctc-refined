@@ -65,6 +65,7 @@ import {
   formatPriceLastUpdatedLabel,
 } from "@/lib/part-price-dates";
 import { getCustomerTypeLabel } from "@/types/invoice";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 
 interface Inquiry {
   id: string;
@@ -391,6 +392,10 @@ export const SalesInquiry = ({
   const [selectedModelName, setSelectedModelName] = useState("");
   const [modelAssociations, setModelAssociations] = useState<ModelAssociationItem[]>([]);
   const [loadingModelAssociations, setLoadingModelAssociations] = useState(false);
+  const [associationDescriptionFilter, setAssociationDescriptionFilter] =
+    useState("");
+  const [associationApplicationFilter, setAssociationApplicationFilter] =
+    useState("");
   const [alternateItems, setAlternateItems] = useState<PartDetail[]>([]);
   const [loadingAlternateItems, setLoadingAlternateItems] = useState(false);
   const [lookupRowPriceBaselines, setLookupRowPriceBaselines] = useState<
@@ -1439,10 +1444,10 @@ export const SalesInquiry = ({
   }, [lookupRowHighlightIndex, showLookupRowDropdown]);
 
   const getItemLabel = (part: PartDetail) => {
-    const leftPart =
-      part.masterPart && part.masterPart !== part.partNo
-        ? `${part.masterPart} | ${part.partNo}`
-        : part.partNo;
+    const leftPart = formatPartIdentityFromUi({
+      partNo: part.partNo,
+      masterPart: part.masterPart,
+    });
     return part.description ? `${leftPart} - ${part.description}` : leftPart;
   };
 
@@ -1455,43 +1460,30 @@ export const SalesInquiry = ({
       : rawApplication;
   };
 
-  const loadModelAssociations = async (
-    modelName: string,
-    application: string,
-    showApplicationToast = true,
-  ) => {
+  const loadModelAssociations = async (modelName: string) => {
     const cleanModel = String(modelName || "").trim();
     if (!cleanModel) return;
 
-    const selectedApplication = normalizeAssociationApplication(application);
     setSelectedModelName(cleanModel);
-
-    if (!selectedApplication) {
-      setModelAssociations([]);
-      setLoadingModelAssociations(false);
-      if (showApplicationToast) {
-        toast({
-          title: "Application required",
-          description:
-            "Part association is filtered by both model and application.",
-          variant: "destructive",
-        });
-      }
-      return;
-    }
-
     setLoadingModelAssociations(true);
     try {
-      const response = await apiClient.getPartsByModelAssociation(
-        cleanModel,
-        selectedApplication,
-      );
-      const data = Array.isArray((response as any)?.data)
+      const response = await apiClient.getPartsByModelAssociation(cleanModel);
+      const raw = Array.isArray((response as any)?.data)
         ? (response as any).data
         : Array.isArray(response)
           ? response
           : [];
-      setModelAssociations(data);
+      const mapped: ModelAssociationItem[] = raw.map((item: any) => ({
+        partId: String(item.part_id || item.partId || ""),
+        masterPart: String(item.master_part_no || item.masterPart || ""),
+        partNo: String(item.part_no || item.partNo || ""),
+        description: String(item.description || ""),
+        brand: String(item.brand_name || item.brand || ""),
+        application: String(item.application_name || item.application || ""),
+        model: String(item.model_name || item.model || cleanModel),
+        quantity: Number(item.quantity ?? item.qty_used ?? 0),
+      }));
+      setModelAssociations(mapped);
     } catch {
       setModelAssociations([]);
       toast({
@@ -1504,13 +1496,114 @@ export const SalesInquiry = ({
     }
   };
 
-  const handleSelectPart = async (part: PartDetail) => {
+  const associationDescriptionOptions = useMemo(() => {
+    const app = associationApplicationFilter.trim().toLowerCase();
+    const set = new Set<string>();
+    for (const item of modelAssociations) {
+      if (app && String(item.application || "").toLowerCase() !== app) continue;
+      const desc = String(item.description || "").trim();
+      if (desc && desc !== "N/A") set.add(desc);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [modelAssociations, associationApplicationFilter]);
+
+  const associationApplicationOptions = useMemo(() => {
+    const desc = associationDescriptionFilter.trim().toLowerCase();
+    const set = new Set<string>();
+    for (const item of modelAssociations) {
+      if (desc && String(item.description || "").toLowerCase() !== desc) continue;
+      const app = String(item.application || "").trim();
+      if (app && app !== "N/A") set.add(app);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [modelAssociations, associationDescriptionFilter]);
+
+  const associationDescriptionFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => {
+      const options: SearchableSelectOption[] = [
+        { value: "__all__", label: "Description" },
+        ...associationDescriptionOptions.map((name) => ({
+          value: name,
+          label: name,
+        })),
+      ];
+      if (
+        associationDescriptionFilter &&
+        !associationDescriptionOptions.some(
+          (n) => n === associationDescriptionFilter,
+        )
+      ) {
+        options.push({
+          value: associationDescriptionFilter,
+          label: associationDescriptionFilter,
+        });
+      }
+      return options;
+    },
+    [associationDescriptionOptions, associationDescriptionFilter],
+  );
+
+  const associationApplicationFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => {
+      const options: SearchableSelectOption[] = [
+        { value: "__all__", label: "Application" },
+        ...associationApplicationOptions.map((name) => ({
+          value: name,
+          label: name,
+        })),
+      ];
+      if (
+        associationApplicationFilter &&
+        !associationApplicationOptions.some(
+          (n) => n === associationApplicationFilter,
+        )
+      ) {
+        options.push({
+          value: associationApplicationFilter,
+          label: associationApplicationFilter,
+        });
+      }
+      return options;
+    },
+    [associationApplicationOptions, associationApplicationFilter],
+  );
+
+  const filteredModelAssociations = useMemo(() => {
+    const desc = associationDescriptionFilter.trim().toLowerCase();
+    const app = associationApplicationFilter.trim().toLowerCase();
+    return modelAssociations.filter((item) => {
+      if (desc && String(item.description || "").toLowerCase() !== desc)
+        return false;
+      if (app && String(item.application || "").toLowerCase() !== app)
+        return false;
+      return true;
+    });
+  }, [
+    modelAssociations,
+    associationDescriptionFilter,
+    associationApplicationFilter,
+  ]);
+
+  const handleSelectPart = async (
+    part: PartDetail,
+    opts?: { resetAssociationFilters?: boolean },
+  ) => {
+    const resetFilters = opts?.resetAssociationFilters !== false;
+    const samePart =
+      Boolean(selectedPart?.id) && selectedPart?.id === part.id;
+
     setSelectedPart(part);
     setItemSearch(getItemLabel(part));
     setShowItemDropdown(false);
     setSelectedModelName("");
     setModelAssociations([]);
     setLoadingModelAssociations(false);
+    if (resetFilters && !samePart) {
+      setAssociationDescriptionFilter("");
+      setAssociationApplicationFilter(
+        normalizeAssociationApplication(String(part.application || "")),
+      );
+    }
 
     // Fetch full part details if we have the ID
     if (part.id) {
@@ -1595,12 +1688,18 @@ export const SalesInquiry = ({
 
         setSelectedPart(fullPartDetails);
         setItemSearch(getItemLabel(fullPartDetails));
-        if (transformedModels.length > 0) {
-          await loadModelAssociations(
-            transformedModels[0]?.name || "",
+        if (resetFilters && !samePart) {
+          const nextApplication = normalizeAssociationApplication(
             fullPartDetails.application || "",
-            false,
           );
+          if (nextApplication) {
+            setAssociationApplicationFilter(nextApplication);
+          }
+          if (transformedModels.length > 0) {
+            await loadModelAssociations(transformedModels[0]?.name || "");
+          }
+        } else if (!selectedModelName && transformedModels.length > 0) {
+          await loadModelAssociations(transformedModels[0]?.name || "");
         }
       } catch (error: any) {
         // Keep the selected part from list if API fails
@@ -1617,6 +1716,8 @@ export const SalesInquiry = ({
     setSelectedModelName("");
     setModelAssociations([]);
     setLoadingModelAssociations(false);
+    setAssociationDescriptionFilter("");
+    setAssociationApplicationFilter("");
     setShowItemDropdown(false);
   };
 
@@ -2173,11 +2274,7 @@ export const SalesInquiry = ({
       : []);
 
   const handleModelAssociationClick = async (modelName: string) => {
-    await loadModelAssociations(
-      modelName,
-      String(selectedPart?.application || ""),
-      true,
-    );
+    await loadModelAssociations(modelName);
   };
 
   const handleRefreshParts = async () => {
@@ -2861,7 +2958,7 @@ export const SalesInquiry = ({
                       <TableHeader>
                         <TableRow className="bg-muted/50">
                           <ListNumberHeader className="font-semibold" />
-                          <TableHead className="font-semibold">Part No</TableHead>
+                          <TableHead className="font-semibold">Part No | Master Part</TableHead>
                           <TableHead className="font-semibold">Description</TableHead>
                           <TableHead className="font-semibold text-center">Requested Qty</TableHead>
                           <TableHead className="font-semibold text-right">Purchase Price</TableHead>
@@ -2887,7 +2984,14 @@ export const SalesInquiry = ({
                           return (
                             <TableRow key={item.id || index}>
                               <ListNumberCell index={index} total={fullInquiryData.items.length} />
-                              <TableCell className="font-medium">{item.part?.partNo || 'N/A'}</TableCell>
+                              <TableCell className="font-medium">
+                                {viewPart
+                                  ? formatPartIdentityFromUi({
+                                      partNo: viewPart.partNo,
+                                      masterPart: viewPart.masterPart,
+                                    })
+                                  : item.part?.partNo || "N/A"}
+                              </TableCell>
                               <TableCell className="max-w-xs">
                                 <div>{item.part?.description || 'N/A'}</div>
                                 {item.part?.brand?.name && (
@@ -3105,7 +3209,7 @@ export const SalesInquiry = ({
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Part No</TableHead>
+                        <TableHead>Part No | Master Part</TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead>Qty</TableHead>
                         <TableHead>Purchase Price</TableHead>
@@ -3122,7 +3226,14 @@ export const SalesInquiry = ({
                         const part = partsData.find(p => p.id === item.partId);
                         return (
                           <TableRow key={index}>
-                            <TableCell className="font-medium">{part?.partNo || 'N/A'}</TableCell>
+                            <TableCell className="font-medium">
+                              {part
+                                ? formatPartIdentityFromUi({
+                                    partNo: part.partNo,
+                                    masterPart: part.masterPart,
+                                  })
+                                : "N/A"}
+                            </TableCell>
                             <TableCell>{part?.description || 'N/A'}</TableCell>
                             <TableCell>
                               <Input
@@ -3421,11 +3532,7 @@ export const SalesInquiry = ({
                                   rememberedModel.toLowerCase(),
                               );
                               if (stillHasModel) {
-                                loadModelAssociations(
-                                  rememberedModel,
-                                  String(rowPart.application || ""),
-                                  false,
-                                );
+                                loadModelAssociations(rememberedModel);
                               }
                             });
                           }}
@@ -3599,13 +3706,11 @@ export const SalesInquiry = ({
                                           part.brand && part.brand !== "N/A"
                                             ? part.brand
                                             : "";
-                                        const showMasterAndPart =
-                                          part.masterPart &&
-                                          part.masterPart !== part.partNo;
                                         const partIdentifiers =
-                                          showMasterAndPart
-                                            ? `${part.masterPart} | ${part.partNo}`
-                                            : part.partNo;
+                                          formatPartIdentityFromUi({
+                                            partNo: part.partNo,
+                                            masterPart: part.masterPart,
+                                          });
                                         const description =
                                           part.description ||
                                           "No description available";
@@ -3975,12 +4080,13 @@ export const SalesInquiry = ({
                                             ...prev,
                                             [row.id]: m.name,
                                           }));
-                                          await handleSelectPart(rowPart);
-                                          await loadModelAssociations(
-                                            m.name,
-                                            String(rowPart.application || ""),
-                                            true,
-                                          );
+                                          const samePart =
+                                            Boolean(selectedPart?.id) &&
+                                            selectedPart?.id === rowPart.id;
+                                          if (!samePart) {
+                                            await handleSelectPart(rowPart);
+                                          }
+                                          await loadModelAssociations(m.name);
                                         }}
                                         className={cn(
                                           "inline-flex items-center justify-between gap-1 px-1.5 py-0.5 rounded border transition-colors text-left min-w-[58px]",
@@ -4077,9 +4183,15 @@ export const SalesInquiry = ({
                           <ListNumberCell index={index} total={alternateItems.length} className="text-xs px-2 py-1.5 whitespace-nowrap" />
                           <TableCell
                             className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
-                            title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                            title={formatPartIdentityFromUi({
+                              partNo: item.partNo,
+                              masterPart: item.masterPart,
+                            })}
                           >
-                            {`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                            {formatPartIdentityFromUi({
+                              partNo: item.partNo,
+                              masterPart: item.masterPart,
+                            })}
                           </TableCell>
                           <TableCell
                             className="text-xs px-2 py-1.5 max-w-0 truncate"
@@ -4328,6 +4440,32 @@ export const SalesInquiry = ({
                   Model: <span className="font-medium text-foreground">{selectedModelName || "Click a model in Quantity Used"}</span>
                 </div>
               </div>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <SearchableSelect
+                  options={associationDescriptionFilterOptions}
+                  value={associationDescriptionFilter || "__all__"}
+                  onValueChange={(value) =>
+                    setAssociationDescriptionFilter(
+                      value === "__all__" ? "" : value,
+                    )
+                  }
+                  placeholder="Description"
+                  className="w-[180px] [&_input]:h-8 [&_input]:text-xs"
+                  disabled={!selectedModelName || loadingModelAssociations}
+                />
+                <SearchableSelect
+                  options={associationApplicationFilterOptions}
+                  value={associationApplicationFilter || "__all__"}
+                  onValueChange={(value) =>
+                    setAssociationApplicationFilter(
+                      value === "__all__" ? "" : value,
+                    )
+                  }
+                  placeholder="Application"
+                  className="w-[180px] [&_input]:h-8 [&_input]:text-xs"
+                  disabled={!selectedModelName || loadingModelAssociations}
+                />
+              </div>
               <div className="rounded-md border bg-card overflow-y-auto flex-1 min-h-0 min-w-0 max-h-[520px]">
                 <Table className="table-fixed">
                   <TableHeader>
@@ -4351,16 +4489,24 @@ export const SalesInquiry = ({
                           </div>
                         </TableCell>
                       </TableRow>
-                    ) : modelAssociations.length === 0 ? (
+                    ) : !selectedModelName ? (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground italic">
-                          No associated items found for this model.
+                          Select a model to view associated parts
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredModelAssociations.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground italic">
+                          {modelAssociations.length === 0
+                            ? "No associated items found for this model."
+                            : "No associated parts match the selected filters."}
                         </TableCell>
                       </TableRow>
                     ) : (
-                      modelAssociations.map((item, index) => (
+                      filteredModelAssociations.map((item, index) => (
                         <TableRow key={`${item.partId}-${index}`} className="hover:bg-muted/20">
-                          <ListNumberCell index={index} total={modelAssociations.length} className="text-xs px-2 py-1.5 whitespace-nowrap" />
+                          <ListNumberCell index={index} total={filteredModelAssociations.length} className="text-xs px-2 py-1.5 whitespace-nowrap" />
                           <TableCell
                             className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
                             title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}

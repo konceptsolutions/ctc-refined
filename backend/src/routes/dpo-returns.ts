@@ -433,21 +433,17 @@ router.post('/', async (req: Request, res: Response) => {
 
           // B. Create RECEIPT VOUCHER (Supplier -> Cash/Bank) if cash refund
           if (isCashRefund) {
-            const lastRV = await tx.voucher.findFirst({
+            // Numeric max only — startsWith('RV') also matches RVC* and breaks lex desc.
+            const rvCandidates = await tx.voucher.findMany({
               where: { type: 'receipt', voucherNumber: { startsWith: 'RV' } },
-              orderBy: { voucherNumber: "desc" },
+              select: { voucherNumber: true },
             });
-
-            let rvNum = 1;
-            if (lastRV) {
-              const match = lastRV.voucherNumber.match(/^RV(\d+)$/);
-              if (match) rvNum = parseInt(match[1]) + 1;
-              else {
-                const countRV = await tx.voucher.count({ where: { type: 'receipt', voucherNumber: { startsWith: 'RV' } } });
-                rvNum = countRV + 1;
-              }
+            let rvMax = 0;
+            for (const v of rvCandidates) {
+              const match = String(v.voucherNumber).match(/^RV(\d+)$/);
+              if (match) rvMax = Math.max(rvMax, parseInt(match[1], 10));
             }
-            const rvVoucherNumber = `RV${String(rvNum).padStart(4, "0")}`;
+            const rvVoucherNumber = `RV${String(rvMax + 1).padStart(4, "0")}`;
 
             await tx.voucher.create({
               data: {

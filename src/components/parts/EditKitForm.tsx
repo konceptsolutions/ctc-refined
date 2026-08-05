@@ -7,6 +7,7 @@ import { Plus, Package, Trash, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Kit } from "./KitsList";
 import { apiClient } from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 
 interface KitItem {
   id: string;
@@ -27,6 +28,7 @@ interface KitFormData {
 interface Part {
   id: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   cost: number;
 }
@@ -66,6 +68,7 @@ export const EditKitForm = ({ kit, onSave, onDelete, onCancel }: EditKitFormProp
         const parts: Part[] = response.data.map((p: any) => ({
           id: p.id,
           partNo: p.part_no || p.partNo,
+          masterPartNo: p.master_part_no || p.masterPartNo || "",
           description: p.description,
           cost: p.cost || 0,
         }));
@@ -381,7 +384,7 @@ export const EditKitForm = ({ kit, onSave, onDelete, onCancel }: EditKitFormProp
                         <SelectContent className="bg-popover">
                           {availableParts.map((part) => (
                             <SelectItem key={part.id} value={part.id}>
-                              {part.partNo} - {part.description} (Rs {part.cost.toFixed(2)})
+                              {formatPartIdentityFromDb(part)} - {part.description} (Rs {part.cost.toFixed(2)})
                             </SelectItem>
                           ))}
                         </SelectContent>

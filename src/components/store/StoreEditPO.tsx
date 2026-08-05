@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, Trash } from "lucide-react";
 import { apiClient } from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { toast } from "sonner";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -66,7 +67,7 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
   
   // Dropdown data
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
-  const [parts, setParts] = useState<{ id: string; partNo: string; description: string; brand: string; cost: number }[]>([]);
+  const [parts, setParts] = useState<{ id: string; partNo: string; masterPartNo: string; description: string; brand: string; cost: number }[]>([]);
 
   useEffect(() => {
     if (open && order) {
@@ -131,6 +132,7 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
         setParts(partsData.map((p: any) => ({
           id: p.id,
           partNo: p.part_no || p.partNo,
+          masterPartNo: p.master_part_no || p.masterPartNo || "",
           description: p.description || "",
           brand: p.brand_name || p.brand?.name || "N/A",
           cost: p.cost || 0,
@@ -368,7 +370,7 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
                                   <SelectContent>
                                     {parts.map((part) => (
                                       <SelectItem key={part.id} value={part.id || "unknown"}>
-                                        {part.partNo} - {part.brand}
+                                        {formatPartIdentityFromDb(part)} - {part.brand}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>

@@ -532,7 +532,9 @@ export const StockInOut = () => {
 
             return {
               value: part.id,
-              label: `${part.master_part_no || ""} - ${cleanDescription} - ${applicationText}`,
+              label: [part.master_part_no, part.part_no && part.part_no !== part.master_part_no ? part.part_no : null, cleanDescription, applicationText]
+                .filter(Boolean)
+                .join(" | "),
             };
           }),
         );

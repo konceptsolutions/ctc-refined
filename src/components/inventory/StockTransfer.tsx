@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiClient } from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { toast } from "sonner";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import {
@@ -206,7 +207,7 @@ export const StockTransfer = () => {
 
         setParts(partsData.map((p: any) => ({
           value: p.id,
-          label: `${p.part_no || p.partNo || ''} - ${p.description || ''}`,
+          label: [formatPartIdentityFromDb(p), p.description].filter(Boolean).join(" - "),
           availableQty: balanceMap[p.id] || 0,
         })));
       }

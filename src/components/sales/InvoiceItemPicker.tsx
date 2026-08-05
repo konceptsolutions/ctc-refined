@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Search, Package, History, Tag, Settings, Plus, Check } from "lucide-react";
 import { PartItem, InvoiceItem, ItemGrade } from "@/types/invoice";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 
 interface InvoiceItemPickerProps {
   open: boolean;
@@ -41,6 +42,9 @@ export const InvoiceItemPicker = ({
   const filteredParts = availableParts.filter(
     (part) =>
       part.partNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(part.masterPartNo || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
       part.description.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -138,7 +142,9 @@ export const InvoiceItemPicker = ({
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-foreground">{part.partNo}</span>
+                          <span className="font-medium text-foreground">
+                            {formatPartIdentityFromUi(part)}
+                          </span>
                           <Badge variant="outline" className={getGradeColor(part.grade)}>
                             {part.grade}
                           </Badge>
@@ -201,7 +207,9 @@ export const InvoiceItemPicker = ({
               <>
                 <div className="p-4 bg-muted/30 rounded-lg border border-border">
                   <h4 className="font-medium text-foreground mb-2">Selected Item</h4>
-                  <p className="text-sm text-primary font-medium">{selectedPart.partNo}</p>
+                  <p className="text-sm text-primary font-medium">
+                    {formatPartIdentityFromUi(selectedPart)}
+                  </p>
                   <p className="text-sm text-muted-foreground">{selectedPart.description}</p>
                   <div className="flex items-center gap-2 mt-2">
                     <Badge variant="outline" className={getGradeColor(selectedPart.grade)}>

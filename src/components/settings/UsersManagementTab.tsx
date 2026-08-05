@@ -38,6 +38,7 @@ import {
   Edit,
   Trash,
   KeyRound,
+  Clock,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -54,6 +55,8 @@ interface User {
   role: string;
   status: "active" | "inactive";
   lastLogin: string;
+  loginStartTime?: string | null;
+  loginEndTime?: string | null;
   createdAt: string;
 }
 
@@ -96,6 +99,10 @@ export const UsersManagementTab = () => {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
+  const [hoursUser, setHoursUser] = useState<User | null>(null);
+  const [loginStartTime, setLoginStartTime] = useState("");
+  const [loginEndTime, setLoginEndTime] = useState("");
+  const [savingHours, setSavingHours] = useState(false);
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
   const [total, setTotal] = useState(0);
@@ -293,6 +300,49 @@ export const UsersManagementTab = () => {
     setPasswordUser(user);
     setNewPassword("");
     setConfirmPassword("");
+  };
+
+  const openLoginHours = (user: User) => {
+    setHoursUser(user);
+    setLoginStartTime(user.loginStartTime || "");
+    setLoginEndTime(user.loginEndTime || "");
+  };
+
+  const handleSaveLoginHours = async () => {
+    if (!hoursUser) return;
+    const start = loginStartTime.trim();
+    const end = loginEndTime.trim();
+    if ((start && !end) || (!start && end)) {
+      toast.error("Enter both start and end time, or clear both.");
+      return;
+    }
+    if (start && end && start === end) {
+      toast.error("Start and end time cannot be the same.");
+      return;
+    }
+
+    try {
+      setSavingHours(true);
+      const response = await apiClient.updateUser(hoursUser.id, {
+        loginStartTime: start || null,
+        loginEndTime: end || null,
+      });
+      if (response.error) {
+        toast.error(response.error);
+        return;
+      }
+      toast.success(
+        start && end
+          ? `Login hours set to ${start} – ${end}`
+          : "Login hours cleared",
+      );
+      setHoursUser(null);
+      fetchUsers();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update login hours");
+    } finally {
+      setSavingHours(false);
+    }
   };
 
   const handleChangePassword = async () => {
@@ -634,6 +684,81 @@ export const UsersManagementTab = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={!!hoursUser}
+        onOpenChange={(open) => {
+          if (!open) {
+            setHoursUser(null);
+            setLoginStartTime("");
+            setLoginEndTime("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set Login Hours</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <p className="text-sm text-muted-foreground">
+              Restrict{" "}
+              <span className="font-medium text-foreground">
+                {hoursUser?.name}
+              </span>{" "}
+              to sign in only during these hours (Pakistan time). Leave both
+              empty to allow login at any time. The user will be logged out
+              automatically when the end time is reached.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="login-start-time">Start Time</Label>
+                <Input
+                  id="login-start-time"
+                  type="time"
+                  value={loginStartTime}
+                  onChange={(e) => setLoginStartTime(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="login-end-time">End Time</Label>
+                <Input
+                  id="login-end-time"
+                  type="time"
+                  value={loginEndTime}
+                  onChange={(e) => setLoginEndTime(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setLoginStartTime("");
+                  setLoginEndTime("");
+                }}
+                disabled={savingHours}
+              >
+                Clear
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setHoursUser(null)}
+                disabled={savingHours}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleSaveLoginHours} disabled={savingHours}>
+                {savingHours ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Clock className="w-4 h-4 mr-2" />
+                )}
+                Save Hours
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -719,6 +844,24 @@ export const UsersManagementTab = () => {
                             <KeyRound className="w-4 h-4" />
                           </Button>
                         </ActionButtonTooltip>
+                        {!isAdminRole(user.role) && (
+                          <ActionButtonTooltip
+                            label={
+                              user.loginStartTime && user.loginEndTime
+                                ? `Login Hours (${user.loginStartTime} – ${user.loginEndTime})`
+                                : "Set Login Hours"
+                            }
+                            variant="edit"
+                          >
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openLoginHours(user)}
+                            >
+                              <Clock className="w-4 h-4" />
+                            </Button>
+                          </ActionButtonTooltip>
+                        )}
                         <ActionButtonTooltip label="Edit" variant="edit">
                           <Button
                             variant="ghost"

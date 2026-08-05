@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient, generateUUID } from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import {
   Table,
   TableBody,
@@ -87,7 +88,7 @@ export const DeliveryChallan = () => {
   const [viewMode, setViewMode] = useState<"list" | "card">("list");
   const [loadingChallans, setLoadingChallans] = useState(false);
   const [loadingParts, setLoadingParts] = useState(false);
-  const [availableParts, setAvailableParts] = useState<{ partNo: string; description: string; id: string }[]>([]);
+  const [availableParts, setAvailableParts] = useState<{ partNo: string; masterPartNo: string; description: string; id: string }[]>([]);
 
   // Dialog states
   const [isNewChallanOpen, setIsNewChallanOpen] = useState(false);
@@ -192,6 +193,7 @@ export const DeliveryChallan = () => {
           .map((p: any) => ({
             id: p.id,
             partNo: String(p.part_no || p.partNo || '').trim(),
+            masterPartNo: String(p.master_part_no || p.masterPartNo || '').trim(),
             description: String(p.description || p.part_no || '').trim() || 'No description',
           }))
           .filter((p: any) => p.partNo && p.partNo.trim() !== '');
@@ -824,7 +826,7 @@ export const DeliveryChallan = () => {
                                     availableParts.map((part) => (
                                       <SelectItem key={part.id} value={part.partNo} className="text-xs">
                                         <div className="flex flex-col">
-                                          <span className="font-medium">{part.partNo}</span>
+                                          <span className="font-medium">{formatPartIdentityFromDb(part)}</span>
                                           <span className="text-muted-foreground text-[10px] line-clamp-1">{part.description}</span>
                                         </div>
                                       </SelectItem>

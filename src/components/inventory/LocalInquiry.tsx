@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import apiClient from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -194,6 +195,12 @@ export const LocalInquiry = () => {
     return map;
   }, [parts]);
 
+  const formatLinePartLabel = (partId?: string, fallbackPartNo?: string) => {
+    const part = partId ? partMap.get(partId) : undefined;
+    if (part) return formatPartIdentityFromDb(part);
+    return fallbackPartNo || "-";
+  };
+
   const formTotal = useMemo(
     () =>
       items.reduce((sum, item) => {
@@ -237,10 +244,10 @@ export const LocalInquiry = () => {
           const masterPartNo = p.master_part_no || p.masterPartNo || "";
           const description = p.description || "";
           const brand = p.brand_name || p.Brand?.name || p.brand || "";
-          const partLabel = [partNo, masterPartNo]
+          const partLabel = [masterPartNo, partNo]
             .filter(Boolean)
             .filter((v, i, arr) => arr.indexOf(v) === i)
-            .join(" / ");
+            .join(" | ");
           return {
             id: p.id,
             value: p.id,
@@ -715,10 +722,10 @@ export const LocalInquiry = () => {
                         {part && (
                           <p className="text-xs text-muted-foreground">
                             {[
-                              [part.partNo, part.masterPartNo]
+                              [part.masterPartNo, part.partNo]
                                 .filter(Boolean)
                                 .filter((v, i, arr) => arr.indexOf(v) === i)
-                                .join(" / "),
+                                .join(" | "),
                               part.description,
                               part.brand,
                             ]
@@ -1121,7 +1128,9 @@ export const LocalInquiry = () => {
                   {viewRow.items.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>
-                        <div className="font-medium">{item.partNo}</div>
+                        <div className="font-medium">
+                          {formatLinePartLabel(item.partId, item.partNo)}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {[item.description, item.brand]
                             .filter(Boolean)
@@ -1230,7 +1239,7 @@ export const LocalInquiry = () => {
                         <TableRow key={row.partId}>
                           <TableCell>
                             <div className="font-medium">
-                              {row.partNo || "-"}
+                              {formatLinePartLabel(row.partId, row.partNo)}
                             </div>
                             <div className="text-xs text-muted-foreground">
                               {[row.description, row.brand]

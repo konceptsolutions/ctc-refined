@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/database';
 import { logActivity, getClientIp } from '../utils/activityLogger';
+import { formatLoginWindowLabel, isWithinLoginWindow } from '../utils/loginHours';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
@@ -24,8 +25,11 @@ router.post('/login', async (req, res) => {
             password: string | null;
             status: string;
             role: string;
+            loginStartTime: string | null;
+            loginEndTime: string | null;
         }>>`
-            SELECT u.id, u.name, u.email, u.password, u.status, r.name AS role
+            SELECT u.id, u.name, u.email, u.password, u.status, r.name AS role,
+                   u."loginStartTime", u."loginEndTime"
             FROM "User" u
             JOIN "Role" r ON r.id = u."roleId"
             WHERE u.email = ${email}
@@ -50,6 +54,17 @@ router.post('/login', async (req, res) => {
         const userStatus = user.status.toLowerCase();
         if (userStatus !== 'active') {
             return res.status(403).json({ error: 'User account is deactivated' });
+        }
+
+        const isAdmin = (user.role || '').trim().toLowerCase() === 'admin';
+        if (!isAdmin && !isWithinLoginWindow(user.loginStartTime, user.loginEndTime)) {
+            const windowLabel = formatLoginWindowLabel(user.loginStartTime, user.loginEndTime);
+            return res.status(403).json({
+                error: windowLabel
+                    ? `You can only log in between ${windowLabel} (Pakistan time).`
+                    : 'You can only log in during your allowed hours.',
+                code: 'LOGIN_WINDOW',
+            });
         }
 
         // Generate token
@@ -90,6 +105,8 @@ router.post('/login', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                loginStartTime: user.loginStartTime,
+                loginEndTime: user.loginEndTime,
             }
         });
     } catch (error: any) {

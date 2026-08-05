@@ -20,15 +20,6 @@ const MONTH_SHORT_UPPER = [
   "DEC",
 ] as const;
 
-const formatPrintDate = (value?: string | Date | null) => {
-  const dateObj = value instanceof Date ? value : new Date(value || Date.now());
-  if (Number.isNaN(dateObj.getTime())) return "-";
-  const day = String(dateObj.getDate()).padStart(2, "0");
-  const month = MONTH_SHORT_UPPER[dateObj.getMonth()];
-  const year = dateObj.getFullYear();
-  return `${day}-${month}-${year}`;
-};
-
 const toInputDate = (value?: string | Date | null) => {
   if (!value) return "";
   const dateObj = value instanceof Date ? value : new Date(value);
@@ -89,9 +80,6 @@ export const buildPurchaseImportInquiryExcelBlob = async ({
   addInfo("Title", "Purchase Import Inquiry");
   addInfo("Inquiry No", text(detail.requestNo || "-"));
   addInfo("Inquiry Date", toInputDate(detail.requestDate) || "-");
-  addInfo("Status", text(detail.status || "pending"));
-  addInfo("Part Reference", text(detail.partReference || "-"));
-  addInfo("Upto Date", formatPrintDate(new Date()));
   if (detail.notes) {
     addInfo("Notes", text(detail.notes));
   }

@@ -98,7 +98,6 @@ export const buildPurchaseImportInquiryPdfDoc = ({
   const marginX = 12;
   const contentWidth = pageWidth - marginX * 2;
   const printedOn = formatPrintDateTime(new Date());
-  const uptoDate = formatPrintDate(new Date());
   const inquiryNo = text(detail.requestNo || "-");
 
   // Header: title left, printed datetime top-right
@@ -116,9 +115,6 @@ export const buildPurchaseImportInquiryPdfDoc = ({
   const cards: Array<{ label: string; value: string }> = [
     { label: "Inquiry No", value: inquiryNo },
     { label: "Inquiry Date", value: toInputDate(detail.requestDate) || "-" },
-    { label: "Status", value: text(detail.status || "pending") },
-    { label: "Part Reference", value: text(detail.partReference || "-") },
-    { label: "Upto Date", value: uptoDate },
   ];
 
   const gap = 3;

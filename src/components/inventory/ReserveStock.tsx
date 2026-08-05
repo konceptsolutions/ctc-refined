@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +52,7 @@ export const ReserveStock = () => {
   const [selectedItem, setSelectedItem] = useState<ReservedStockItem | null>(null);
   const [reserveQuantity, setReserveQuantity] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [availableParts, setAvailableParts] = useState<Array<{ id: string; partNo: string; description: string }>>([]);
+  const [availableParts, setAvailableParts] = useState<Array<{ id: string; partNo: string; masterPartNo: string; description: string }>>([]);
   const [selectedPartId, setSelectedPartId] = useState<string>("");
 
   // Fetch reserved stock on mount and after operations
@@ -110,7 +111,7 @@ export const ReserveStock = () => {
           reservedMap.set(partId, {
             id: movement.id,
             partId: partId,
-            partNo: movement.part_no || movement.master_part_no || '',
+            partNo: [movement.master_part_no, movement.part_no].filter(Boolean).filter((v: string, i: number, arr: string[]) => arr.indexOf(v) === i).join(" | ") || movement.part_no || movement.master_part_no || '',
             description: movement.part_description || movement.description || '',
             brand: movement.brand || '',
             category: movement.category || '',
@@ -145,7 +146,8 @@ export const ReserveStock = () => {
 
       setAvailableParts(partsList.map((part: any) => ({
         id: part.id,
-        partNo: part.master_part_no || part.part_no || '',
+        partNo: part.part_no || part.partNo || '',
+        masterPartNo: part.master_part_no || part.masterPartNo || '',
         description: part.description || '',
       })));
     } catch (error) {
@@ -419,7 +421,7 @@ export const ReserveStock = () => {
                   <option value="">Select a part...</option>
                   {availableParts.map((part) => (
                     <option key={part.id} value={part.id}>
-                      {part.partNo} - {part.description}
+                      {formatPartIdentityFromDb(part)} - {part.description}
                     </option>
                   ))}
                 </select>

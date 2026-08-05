@@ -1,3 +1,5 @@
+import { dispatchLoginWindowEnded } from "@/utils/loginWindowEvents";
+
 // Prefer explicit env, otherwise use current origin. API is at /api (proxied) or host:3001.
 export function getApiBaseUrl(): string {
   if (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) {
@@ -168,6 +170,13 @@ class ApiClient {
           };
           (error as any).error = errorData.error;
           (error as any).details = errorData.details;
+          (error as any).code = errorData.code;
+          if (
+            errorData.code === "LOGIN_WINDOW" &&
+            !endpoint.includes("/auth/login")
+          ) {
+            dispatchLoginWindowEnded(errorData.error);
+          }
           throw error;
         } else {
           // If not JSON, it's probably an HTML error page
@@ -3439,6 +3448,8 @@ class ApiClient {
       role?: string;
       status?: "active" | "inactive";
       password?: string;
+      loginStartTime?: string | null;
+      loginEndTime?: string | null;
     },
   ) {
     return this.request(`/users/${id}`, {

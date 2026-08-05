@@ -57,7 +57,7 @@ export const NotificationBell: React.FC = () => {
     markAsRead(notification.id);
     const isStoreStockOutNotification =
       String(notification.module || "").toLowerCase() === "store" &&
-      /stock out items/i.test(
+      /(stock out items|sales stock out)/i.test(
         `${notification.title || ""} ${notification.message || ""} ${notification.action?.label || ""}`,
       );
 

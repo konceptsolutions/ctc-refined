@@ -126,6 +126,19 @@ function getSalesInvoicePaymentDebits(invoice: {
   return lines;
 }
 
+/** Primary cash/bank account id for voucher list payment-mode (largest receipt debit). */
+function pickCashBankAccountIdForReceipt(
+  paymentDebits: Array<{ accountId: string; amount: number }>,
+  fallbackAccountId?: string | null,
+): string | null {
+  if (paymentDebits.length > 0) {
+    return paymentDebits.reduce((best, line) =>
+      line.amount > best.amount ? line : best,
+    ).accountId;
+  }
+  return fallbackAccountId || null;
+}
+
 async function setQuotationFinancialFields(
   quotationId: string,
   data: {
@@ -159,23 +172,21 @@ async function getNextNumberForPrefix(args: {
   voucherType?: string;
 }): Promise<string> {
   const { prefix, voucherType } = args;
+  // Must match PREFIX + digits only (e.g. RV1294). Lexicographic "desc" on
+  // startsWith("RV") wrongly picks RVC* first, regex fails, and we reuse RV0001.
   const re = new RegExp(`^${prefix}(\\d+)$`);
 
-  const [lastVoucher] = await Promise.all([
-    prisma.voucher.findFirst({
-      where: {
-        ...(voucherType ? { type: voucherType } : {}),
-        voucherNumber: { startsWith: prefix },
-      },
-      orderBy: { voucherNumber: "desc" },
-      select: { voucherNumber: true },
-    }),
-  ]);
+  const candidates = await prisma.voucher.findMany({
+    where: {
+      ...(voucherType ? { type: voucherType } : {}),
+      voucherNumber: { startsWith: prefix },
+    },
+    select: { voucherNumber: true },
+  });
 
   let max = 0;
-  for (const v of [lastVoucher?.voucherNumber]) {
-    if (!v) continue;
-    const m = String(v).match(re);
+  for (const v of candidates) {
+    const m = String(v.voucherNumber).match(re);
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
 
@@ -3818,6 +3829,14 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { amount, accountId, paymentDate } = req.body;
+    const paymentAmount = Number(amount) || 0;
+
+    if (paymentAmount <= 0) {
+      return res.status(400).json({ error: "Valid payment amount is required" });
+    }
+    if (!accountId) {
+      return res.status(400).json({ error: "Payment account is required" });
+    }
 
     const invoice = await prisma.salesInvoice.findUnique({
       where: { id },
@@ -3828,7 +3847,7 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
-    const newPaidAmount = invoice.paidAmount + amount;
+    const newPaidAmount = invoice.paidAmount + paymentAmount;
     const newPaymentStatus =
       newPaidAmount >= invoice.grandTotal
         ? "paid"
@@ -3846,7 +3865,7 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
 
     // Update receivable if exists
     if (invoice.Receivable) {
-      const newReceivablePaid = invoice.Receivable.paidAmount + amount;
+      const newReceivablePaid = invoice.Receivable.paidAmount + paymentAmount;
       const newReceivableDue = invoice.Receivable.amount - newReceivablePaid;
       const newReceivableStatus =
         newReceivableDue === 0
@@ -3867,7 +3886,7 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
     }
 
     // Create RV voucher for payment: DR Cash/Bank, CR Customer account (amount entered) — always when accountId provided
-    if (accountId && amount > 0) {
+    if (accountId && paymentAmount > 0) {
       const paymentAccount = await prisma.account.findUnique({
         where: { id: accountId },
         include: { Subgroup: { include: { MainGroup: true } } },
@@ -3882,72 +3901,113 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
       }
       if (!customerAccount) {
         customerAccount = await prisma.account.findFirst({
-          where: { status: "Active", code: "105001" },
+          where: {
+            status: "Active",
+            OR: [
+              { code: "105001" },
+              { name: { contains: "Accounts Receivable" } },
+              { name: { contains: "Receivable" } },
+            ],
+          },
           include: { Subgroup: { include: { MainGroup: true } } },
+          orderBy: { code: "asc" },
+        });
+      }
+
+      if (!paymentAccount) {
+        return res
+          .status(400)
+          .json({ error: "Selected payment account was not found" });
+      }
+      if (!customerAccount) {
+        return res.status(400).json({
+          error:
+            "No receivable account found. Please create/activate Accounts Receivable (105001).",
         });
       }
 
       if (paymentAccount && customerAccount) {
-        const vNum = await getNextNumberForPrefix({
-          prefix: "RV",
-          voucherType: "receipt",
-        });
         const paymentAccountName = `${(paymentAccount as any).code || ""}-${paymentAccount.name}`.trim() || paymentAccount.name;
         const customerAccountName = `${(customerAccount as any).code || ""}-${customerAccount.name}`.trim() || customerAccount.name;
 
-        await prisma.voucher.create({
-          data: {
-            id: `v_${Date.now()}_pay`,
-            voucherNumber: vNum,
-            type: "receipt",
-            date: new Date(paymentDate || new Date()),
-            narration: `Payment received - Invoice ${invoice.invoiceNo} (${invoice.customerName || "Customer"})`,
-            totalDebit: amount,
-            totalCredit: amount,
-            status: "posted",
-            isSystemGenerated: true,
-            salesInvoiceId: id,
-            VoucherEntry: {
-              create: [
-                {
-                  accountId: paymentAccount.id,
-                  accountName: paymentAccountName,
-                  description: `Payment - Invoice ${invoice.invoiceNo}`,
-                  debit: amount,
-                  credit: 0,
-                  sortOrder: 0,
-                  salesInvoiceId: id,
+        let paymentRvCreated = false;
+        for (let attempt = 0; attempt < 5 && !paymentRvCreated; attempt++) {
+          const vNum = await getNextNumberForPrefix({
+            prefix: "RV",
+            voucherType: "receipt",
+          });
+          try {
+            await prisma.voucher.create({
+              data: {
+                id: `v_${Date.now()}_pay`,
+                voucherNumber: vNum,
+                type: "receipt",
+                date: new Date(paymentDate || new Date()),
+                narration: `Payment received - Invoice ${invoice.invoiceNo} (${invoice.customerName || "Customer"})`,
+                totalDebit: paymentAmount,
+                totalCredit: paymentAmount,
+                status: "posted",
+                isSystemGenerated: true,
+                salesInvoiceId: id,
+                cashBankAccount: paymentAccount.id,
+                VoucherEntry: {
+                  create: [
+                    {
+                      accountId: paymentAccount.id,
+                      accountName: paymentAccountName,
+                      description: `Payment - Invoice ${invoice.invoiceNo}`,
+                      debit: paymentAmount,
+                      credit: 0,
+                      sortOrder: 0,
+                      salesInvoiceId: id,
+                    },
+                    {
+                      accountId: customerAccount.id,
+                      accountName: customerAccountName,
+                      description: `Receivable payment - Invoice ${invoice.invoiceNo}`,
+                      debit: 0,
+                      credit: paymentAmount,
+                      sortOrder: 1,
+                      salesInvoiceId: id,
+                    },
+                  ],
                 },
-                {
-                  accountId: customerAccount.id,
-                  accountName: customerAccountName,
-                  description: `Receivable payment - Invoice ${invoice.invoiceNo}`,
-                  debit: 0,
-                  credit: amount,
-                  sortOrder: 1,
-                  salesInvoiceId: id,
-                },
-              ],
-            },
-          } as any,
-        });
+              } as any,
+            });
+            paymentRvCreated = true;
+          } catch (createErr: any) {
+            if (createErr?.code === "P2002" && attempt < 4) {
+              console.warn(
+                `[Voucher] Record Payment RV number ${vNum} collision; retrying (${attempt + 1}/5)`,
+              );
+              continue;
+            }
+            throw createErr;
+          }
+        }
 
-        const paymentNature = (paymentAccount as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
-        const isPaymentDR = ["asset", "expense", "cost"].includes(paymentNature);
-        await prisma.account.update({
-          where: { id: paymentAccount.id },
-          data: {
-            currentBalance: { increment: isPaymentDR ? amount : -amount },
-          },
-        });
-        const customerNature = (customerAccount as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
-        const isCustomerDR = ["asset", "expense", "cost"].includes(customerNature);
-        await prisma.account.update({
-          where: { id: customerAccount.id },
-          data: {
-            currentBalance: { increment: isCustomerDR ? -amount : amount },
-          },
-        });
+        if (paymentRvCreated) {
+          const paymentNature = (paymentAccount as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
+          const isPaymentDR = ["asset", "expense", "cost"].includes(paymentNature);
+          await prisma.account.update({
+            where: { id: paymentAccount.id },
+            data: {
+              currentBalance: {
+                increment: isPaymentDR ? paymentAmount : -paymentAmount,
+              },
+            },
+          });
+          const customerNature = (customerAccount as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
+          const isCustomerDR = ["asset", "expense", "cost"].includes(customerNature);
+          await prisma.account.update({
+            where: { id: customerAccount.id },
+            data: {
+              currentBalance: {
+                increment: isCustomerDR ? -paymentAmount : paymentAmount,
+              },
+            },
+          });
+        }
       }
     }
 
@@ -3957,7 +4017,7 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
         where: { id: invoice.customerId },
         data: {
           openingBalance: {
-            decrement: amount,
+            decrement: paymentAmount,
           },
         },
       });
@@ -4421,15 +4481,23 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
 
       // Create vouchers only when status becomes "approved" (not on partially_delivered or delivered)
       if (status === "approved") {
-      try {
+        try {
         // Skip if this invoice already has vouchers
         const existingVouchersForInvoice = await prisma.voucher.findMany({
           where: { salesInvoiceId: id },
-          select: { id: true },
+          select: { id: true, type: true },
         });
+        const hasJV = existingVouchersForInvoice.some(
+          (v) => String(v.type || "").toLowerCase() === "journal",
+        );
+        const hasRV = existingVouchersForInvoice.some(
+          (v) => String(v.type || "").toLowerCase() === "receipt",
+        );
         if (existingVouchersForInvoice.length > 0) {
-          console.log(`[VOUCHER] Skipping voucher creation for invoice ${invoice.invoiceNo} — already has ${existingVouchersForInvoice.length} voucher(s)`);
-        } else {
+          console.log(
+            `[VOUCHER] Invoice ${invoice.invoiceNo} already has ${existingVouchersForInvoice.length} voucher(s); creating only missing types.`,
+          );
+        }
         // ── Core accounts: use IDs from env (live backup) or fallback to code ──
         const accountByIdOrCode = async (id: string | undefined, code: string) => {
           if (id) {
@@ -4681,7 +4749,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
         // Post JV if balanced
         const jvDebit = jvEntries.reduce((s, e) => s + e.debit, 0);
         const jvCredit = jvEntries.reduce((s, e) => s + e.credit, 0);
-        if (jvEntries.length > 0 && Math.abs(jvDebit - jvCredit) < 0.01) {
+        if (!hasJV && jvEntries.length > 0 && Math.abs(jvDebit - jvCredit) < 0.01) {
           await prisma.voucher.create({
             data: {
               id: `v_${Date.now()}_jv`,
@@ -4722,12 +4790,12 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
         }
 
         // ── RV Voucher — walking: always (full amount); registered: only when an amount was actually received (paidAmount > 0)
+        const paymentDebitsForReceipt = getSalesInvoicePaymentDebits(invoice);
+        const hasAnyReceivedAmount =
+          paymentDebitsForReceipt.length > 0 || Number(paidAmount || 0) > 0;
         const createRV =
-          isWalking ||
-          (!isTransferOut &&
-            paidAmount > 0 &&
-            customerAccount &&
-            (getSalesInvoicePaymentDebits(invoice).length > 0 || !!paymentAccount));
+          !hasRV &&
+          (isWalking || (!isTransferOut && hasAnyReceivedAmount && !!customerAccount));
         if (createRV) {
           const rvNo = await getNextNumberForPrefix({
             prefix: "RV",
@@ -4802,7 +4870,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
                 sortOrder: rvSort++,
               });
             }
-            const paymentDebits = getSalesInvoicePaymentDebits(invoice);
+            const paymentDebits = paymentDebitsForReceipt;
             if (paymentDebits.length > 0) {
               for (const line of paymentDebits) {
                 const payAcc = await prisma.account.findUnique({
@@ -4835,7 +4903,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             }
           } else {
             // Registered customer RV: amount received — DR Cash/Bank (split or single), CR Customer
-            const paymentDebits = getSalesInvoicePaymentDebits(invoice);
+            const paymentDebits = paymentDebitsForReceipt;
             const receivedAmount =
               paymentDebits.reduce((sum, line) => sum + line.amount, 0) ||
               paidAmount;
@@ -4878,52 +4946,100 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
             }
           }
 
-          const rvDebit = rvEntries.reduce((s, e) => s + e.debit, 0);
-          const rvCredit = rvEntries.reduce((s, e) => s + e.credit, 0);
-          if (rvEntries.length > 0 && Math.abs(rvDebit - rvCredit) < 0.02) {
-            await prisma.voucher.create({
-              data: {
-                id: `v_${Date.now()}_rv`,
-                voucherNumber: rvNo,
-                type: "receipt",
-                date: new Date(invoice.invoiceDate),
-                narration: `Payment - Invoice ${invoice.invoiceNo} (${partyLabel})`,
-                totalDebit: rvDebit,
-                totalCredit: rvCredit,
-                status: "posted",
-                isSystemGenerated: true,
-                salesInvoiceId: id,
-                VoucherEntry: {
-                  create: rvEntries.map((e) => ({ ...e, salesInvoiceId: id })),
-                },
-              } as any,
+          let rvDebit = rvEntries.reduce((s, e) => s + e.debit, 0);
+          let rvCredit = rvEntries.reduce((s, e) => s + e.credit, 0);
+          const rvDelta = Math.round((rvCredit - rvDebit) * 100) / 100;
+          if (Math.abs(rvDelta) >= 0.02 && customerAccount) {
+            rvEntries.push({
+              accountId: customerAccount.id,
+              accountName: `${customerAccount.code || ""}-${customerAccount.name}`,
+              description: `INV: ${invoice.invoiceNo} - Balance adjustment (${partyLabel})`,
+              debit: rvDelta > 0 ? rvDelta : 0,
+              credit: rvDelta < 0 ? Math.abs(rvDelta) : 0,
+              sortOrder: rvEntries.length,
             });
-            // Update account balances for RV
-            for (const e of rvEntries) {
-              const acc = await prisma.account.findUnique({
-                where: { id: e.accountId },
-                include: { Subgroup: { include: { MainGroup: true } } },
-              });
-              if (acc) {
-                const nature =
-                  (acc as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
-                const isDR = ["asset", "expense", "cost"].includes(nature);
-                await prisma.account.update({
-                  where: { id: e.accountId },
+            rvDebit = rvEntries.reduce((s, e) => s + e.debit, 0);
+            rvCredit = rvEntries.reduce((s, e) => s + e.credit, 0);
+          }
+          if (rvEntries.length > 0 && Math.abs(rvDebit - rvCredit) < 0.02) {
+            const cashBankAccountId = pickCashBankAccountIdForReceipt(
+              paymentDebitsForReceipt,
+              paymentAccount?.id || null,
+            );
+            let createdRv = false;
+            for (let attempt = 0; attempt < 5 && !createdRv; attempt++) {
+              const attemptNo =
+                attempt === 0
+                  ? rvNo
+                  : await getNextNumberForPrefix({
+                      prefix: "RV",
+                      voucherType: "receipt",
+                    });
+              try {
+                await prisma.voucher.create({
                   data: {
-                    currentBalance: {
-                      increment: isDR ? e.debit - e.credit : e.credit - e.debit,
+                    id: `v_${Date.now()}_rv`,
+                    voucherNumber: attemptNo,
+                    type: "receipt",
+                    date: new Date(invoice.invoiceDate),
+                    narration: `Payment - Invoice ${invoice.invoiceNo} (${partyLabel})`,
+                    totalDebit: rvDebit,
+                    totalCredit: rvCredit,
+                    status: "posted",
+                    isSystemGenerated: true,
+                    salesInvoiceId: id,
+                    cashBankAccount: cashBankAccountId,
+                    VoucherEntry: {
+                      create: rvEntries.map((e) => ({
+                        ...e,
+                        salesInvoiceId: id,
+                      })),
                     },
-                  },
+                  } as any,
                 });
+                createdRv = true;
+              } catch (createErr: any) {
+                if (
+                  createErr?.code === "P2002" &&
+                  attempt < 4
+                ) {
+                  console.warn(
+                    `[Voucher] RV number ${attemptNo} collision; retrying (${attempt + 1}/5)`,
+                  );
+                  continue;
+                }
+                throw createErr;
+              }
+            }
+            if (createdRv) {
+              // Update account balances for RV
+              for (const e of rvEntries) {
+                const acc = await prisma.account.findUnique({
+                  where: { id: e.accountId },
+                  include: { Subgroup: { include: { MainGroup: true } } },
+                });
+                if (acc) {
+                  const nature =
+                    (acc as any).Subgroup?.MainGroup?.type?.toLowerCase() || "";
+                  const isDR = ["asset", "expense", "cost"].includes(nature);
+                  await prisma.account.update({
+                    where: { id: e.accountId },
+                    data: {
+                      currentBalance: {
+                        increment: isDR
+                          ? e.debit - e.credit
+                          : e.credit - e.debit,
+                      },
+                    },
+                  });
+                }
               }
             }
           }
         }
+        } catch (vErr: any) {
+          console.error("Voucher creation failed (non-fatal):", vErr.message);
         }
-      } catch (vErr: any) {
-        console.error("Voucher creation failed (non-fatal):", vErr.message);
-      }
       }
     }
 

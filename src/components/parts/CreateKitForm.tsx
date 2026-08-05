@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Package, Trash, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 
 interface KitItem {
   id: string;
@@ -26,6 +27,7 @@ interface KitFormData {
 interface Part {
   id: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   cost: number;
   application?: string;
@@ -64,6 +66,7 @@ export const CreateKitForm = ({ onSave }: CreateKitFormProps) => {
         const parts: Part[] = response.data.map((p: any) => ({
           id: p.id,
           partNo: p.part_no || p.partNo,
+          masterPartNo: p.master_part_no || p.masterPartNo || "",
           description: p.description,
           cost: p.cost || 0,
           application: p.application || p.application_name || "",
@@ -313,8 +316,8 @@ export const CreateKitForm = ({ onSave }: CreateKitFormProps) => {
                             const cleanDescription = part.description?.replace(/\(Grade:\s*[A-Z]\)\s*/gi, "").trim() || part.description || "";
                             const application = part.application_name || part.application || "";
                             const displayText = application 
-                              ? `${part.partNo} - ${cleanDescription} (${application}) (Rs ${part.cost.toFixed(2)})`
-                              : `${part.partNo} - ${cleanDescription} (Rs ${part.cost.toFixed(2)})`;
+                              ? `${formatPartIdentityFromDb(part)} - ${cleanDescription} (${application}) (Rs ${part.cost.toFixed(2)})`
+                              : `${formatPartIdentityFromDb(part)} - ${cleanDescription} (Rs ${part.cost.toFixed(2)})`;
                             return (
                               <SelectItem key={part.id} value={part.id}>
                                 {displayText}

@@ -104,7 +104,7 @@ export function InvoicePartDropdownList({
               <div className="flex items-center justify-between gap-2 min-w-0">
                 <div className="font-medium min-w-0 truncate">
                   {p.masterPartNo && p.masterPartNo !== p.partNo
-                    ? `${p.masterPartNo} | ${p.partNo}`
+                    ? `${p.partNo} | ${p.masterPartNo}`
                     : p.partNo}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">

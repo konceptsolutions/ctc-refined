@@ -490,7 +490,7 @@ export const ItemsListView = ({
         .map((item) => ({
           value: item.id,
           label: item.partNo || item.masterPartNo || item.id,
-          description: `${item.masterPartNo || "-"} | ${item.description || "-"} | ${item.brand || "-"}`,
+          description: `${item.partNo || "-"} | ${item.masterPartNo || "-"} | ${item.description || "-"} | ${item.brand || "-"}`,
         })),
     [items],
   );
@@ -502,7 +502,7 @@ export const ItemsListView = ({
         .map((item) => ({
           value: item.id,
           label: item.partNo || item.masterPartNo || item.id,
-          description: `${item.masterPartNo || "-"} | ${item.description || "-"} | ${item.brand || "-"}`,
+          description: `${item.partNo || "-"} | ${item.masterPartNo || "-"} | ${item.description || "-"} | ${item.brand || "-"}`,
         })),
     [items],
   );
