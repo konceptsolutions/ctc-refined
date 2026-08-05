@@ -7,6 +7,12 @@ import {
   isExactPartNoMatch,
   getCanonicalPartId,
 } from "../services/partCanonical";
+import {
+  fillMissingImagesFromFamily,
+  findSharedImagesByIdentity,
+  resolveSharedImagesForPart,
+  syncImagesToAlternateParts,
+} from "../utils/partAlternateImages";
 
 const router = express.Router();
 
@@ -1051,8 +1057,12 @@ router.get("/", async (req: Request, res: Response) => {
       };
     });
 
+    const partsWithSharedImages = skipImages
+      ? transformedParts
+      : await fillMissingImagesFromFamily(prisma, transformedParts);
+
     res.json({
-      data: transformedParts,
+      data: partsWithSharedImages,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -1646,6 +1656,7 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       if (m.type === "in") currentStock += qty;
       else if (m.type === "out") currentStock -= qty;
     });
+    const sharedImages = await resolveSharedImagesForPart(prisma, part);
 
     return res.json({
       id: part.id,
@@ -1678,8 +1689,8 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       smc: part.smc || null,
       size: part.size || null,
       origin: part.origin || null,
-      image_p1: part.imageP1 || null,
-      image_p2: part.imageP2 || null,
+      image_p1: sharedImages.imageP1,
+      image_p2: sharedImages.imageP2,
       status: part.status || "active",
       type: (part as any).type || "single",
       remarks: (part as any).remarks || null,
@@ -1836,6 +1847,7 @@ router.get("/:id", async (req: Request, res: Response) => {
     const kitItemsToReturn = await buildKitItemsResponse(
       (part as any).KitItem || [],
     );
+    const sharedImages = await resolveSharedImagesForPart(prisma, part);
 
     res.json({
       id: part.id,
@@ -1869,8 +1881,8 @@ router.get("/:id", async (req: Request, res: Response) => {
       smc: part.smc || null,
       size: part.size || null,
       origin: part.origin || null,
-      image_p1: part.imageP1 || null,
-      image_p2: part.imageP2 || null,
+      image_p1: sharedImages.imageP1,
+      image_p2: sharedImages.imageP2,
       status: part.status || "active",
       type: (part as any).type || "single",
       remarks: (part as any).remarks || null,
@@ -2239,6 +2251,29 @@ router.post("/", async (req: Request, res: Response) => {
       data: partData,
     });
 
+    if (image_p1 || image_p2) {
+      await syncImagesToAlternateParts(prisma, part.id, {
+        imageP1: partData.imageP1,
+        imageP2: partData.imageP2,
+      });
+    } else {
+      const sharedImages = await findSharedImagesByIdentity(prisma, {
+        partNo: partNoStr,
+        masterPartNo: master_part_no ? String(master_part_no).trim() : null,
+        masterPartId,
+        excludePartId: part.id,
+      });
+      if (sharedImages.imageP1 || sharedImages.imageP2) {
+        await prisma.part.update({
+          where: { id: part.id },
+          data: {
+            imageP1: sharedImages.imageP1,
+            imageP2: sharedImages.imageP2,
+          },
+        });
+      }
+    }
+
     if (normalizedPartType === "kit" && Array.isArray(kit_items)) {
       try {
         await syncKitItemsForParentPart(prisma, part.id, kit_items, "kit");
@@ -2289,8 +2324,8 @@ router.post("/", async (req: Request, res: Response) => {
       smc: partWithRelations?.smc,
       size: partWithRelations?.size,
       origin: partWithRelations?.origin || null,
-      image_p1: partWithRelations?.imageP1,
-      image_p2: partWithRelations?.imageP2,
+      image_p1: partWithRelations?.imageP1 || null,
+      image_p2: partWithRelations?.imageP2 || null,
       status: partWithRelations?.status,
       type: (partWithRelations as any)?.type || "single",
       models: (p.Model || []).map((m: any) => ({
@@ -3346,6 +3381,13 @@ router.put("/:id", async (req: Request, res: Response) => {
           await syncKitItemsForParentPart(tx, id, kit_items, "kit");
         }
 
+        if ("imageP1" in updateData || "imageP2" in updateData) {
+          const syncPayload: { imageP1?: string | null; imageP2?: string | null } = {};
+          if ("imageP1" in updateData) syncPayload.imageP1 = updateData.imageP1 ?? null;
+          if ("imageP2" in updateData) syncPayload.imageP2 = updateData.imageP2 ?? null;
+          await syncImagesToAlternateParts(tx, id, syncPayload);
+        }
+
         return tx.part.findUnique({
           where: { id },
           include: {
@@ -3386,6 +3428,7 @@ router.put("/:id", async (req: Request, res: Response) => {
 
     const p = part as any;
     const updatedKitItems = await buildKitItemsResponse((p.KitItem || []) as any[]);
+    const sharedImages = await resolveSharedImagesForPart(prisma, part);
 
     res.json({
       id: part.id,
@@ -3424,8 +3467,8 @@ router.put("/:id", async (req: Request, res: Response) => {
       smc: part.smc || null,
       size: part.size || null,
       origin: part.origin || null,
-      image_p1: part.imageP1 || null,
-      image_p2: part.imageP2 || null,
+      image_p1: sharedImages.imageP1,
+      image_p2: sharedImages.imageP2,
       status: part.status || "active",
       type: (part as any).type || "single",
       remarks: (part as any).remarks || null,

@@ -3,6 +3,7 @@ import { ItemsListView, Item, getItemDuplicateKey } from "@/components/parts/Ite
 import { apiClient } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import { ReservedQuantityManager } from "@/utils/reservedQuantityManager";
+import { shareImagesAcrossFamilyItems } from "@/lib/part-images";
 
 interface ItemsListPageProps {
   onPartsUpdate?: (parts: any[]) => void;
@@ -419,7 +420,9 @@ export const ItemsListPage = ({
       const mergedItems = Array.from(allItemsMap.values());
 
       // Transform to Item format
-      let transformedItems = mergedItems.map(transformApiDataToItem);
+      let transformedItems = shareImagesAcrossFamilyItems(
+        mergedItems.map(transformApiDataToItem),
+      );
 
       // Set items immediately for faster display
       setItems(transformedItems);
@@ -574,7 +577,9 @@ export const ItemsListPage = ({
           activeFilters.master_part_no || activeFilters.part_no || "none";
 
         // Transform API data to Item format for ItemsListView
-        let transformedItems = partsData.map(transformApiDataToItem);
+        let transformedItems = shareImagesAcrossFamilyItems(
+          partsData.map(transformApiDataToItem),
+        );
 
         if (activeFilters.duplicates_only === "yes") {
           transformedItems = [...transformedItems].sort((a, b) => {
@@ -971,6 +976,11 @@ export const ItemsListPage = ({
               prevItems.map((item) =>
                 item.id === editItemId ? updatedItem : item,
               ),
+            );
+          } else if (!isEdit && response.data) {
+            const createdItem = transformApiDataToItem(response.data);
+            setItems((prevItems) =>
+              shareImagesAcrossFamilyItems([createdItem, ...prevItems]),
             );
           }
 

@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
+import { shareImagesAcrossFamilyItems } from "@/lib/part-images";
 import { isAccountantRole, isSalesRole } from "@/utils/auth";
 import {
   branchAccountDisplayName,
@@ -1862,10 +1863,29 @@ export const SalesInvoice = ({
 
     const cachedPart = selectedPartsMap[partId] || parts.find((p) => p.id === partId);
     const cachedImages = getPartImageList(cachedPart);
-    if (cachedImages.length > 0) {
+    const siblingImages =
+      cachedImages.length > 0
+        ? cachedImages
+        : getPartImageList(
+            parts.find((p) => {
+              if (p.id === partId || !p.images?.length) return false;
+              const partNo = String(p.partNo || "").trim().toLowerCase();
+              const master = String(p.masterPartNo || "").trim().toLowerCase();
+              const targetNo = String(cachedPart?.partNo || "").trim().toLowerCase();
+              const targetMaster = String(cachedPart?.masterPartNo || "")
+                .trim()
+                .toLowerCase();
+              return (
+                (targetNo && (partNo === targetNo || master === targetNo)) ||
+                (targetMaster &&
+                  (partNo === targetMaster || master === targetMaster))
+              );
+            }),
+          );
+    if (siblingImages.length > 0) {
       loadedPartImagesRef.current.add(partId);
       setPartImagesByPartId((prev) =>
-        prev[partId]?.length ? prev : { ...prev, [partId]: cachedImages },
+        prev[partId]?.length ? prev : { ...prev, [partId]: siblingImages },
       );
       return;
     }
@@ -2247,8 +2267,9 @@ export const SalesInvoice = ({
           })
           .filter((p: PartItem | null): p is PartItem => p !== null);
 
-        setParts(transformedParts);
-        const withImages = transformedParts.filter((p) => p.images?.length);
+        const partsWithSharedImages = shareImagesAcrossFamilyItems(transformedParts);
+        setParts(partsWithSharedImages);
+        const withImages = partsWithSharedImages.filter((p) => p.images?.length);
         if (withImages.length > 0) {
           setPartImagesByPartId((prev) => {
             const next = { ...prev };

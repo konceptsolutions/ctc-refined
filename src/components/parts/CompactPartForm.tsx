@@ -15,6 +15,7 @@ import { toast } from "@/hooks/use-toast";
 import { Item } from "./ItemsListView";
 import { apiClient } from "@/lib/api";
 import { compressImage } from "@/utils/imageCompression";
+import { fetchFamilyPartImages } from "@/lib/part-images";
 
 interface PartFormData {
   masterPartNo: string;
@@ -205,6 +206,30 @@ export const CompactPartForm = ({
 
   const fileInputP1Ref = useRef<HTMLInputElement>(null);
   const fileInputP2Ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isNewMode || editItem) return;
+    const dbPartNo = String(formData.partNo || "").trim();
+    const dbMasterPartNo = String(masterPartSearch || formData.masterPartNo || "").trim();
+    if (!dbPartNo && !dbMasterPartNo) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const shared = await fetchFamilyPartImages(dbPartNo, dbMasterPartNo);
+        if (cancelled || !shared) return;
+        setImageP1((prev) => prev || shared.imageP1);
+        setImageP2((prev) => prev || shared.imageP2);
+      } catch {
+        // Family image is optional while creating a new item.
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isNewMode, editItem, formData.partNo, formData.masterPartNo, masterPartSearch]);
 
   // Fetch dropdown data
   useEffect(() => {

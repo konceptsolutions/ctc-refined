@@ -66,6 +66,7 @@ import {
 } from "@/lib/part-price-dates";
 import { getCustomerTypeLabel } from "@/types/invoice";
 import { formatPartIdentityFromUi } from "@/lib/part-identity";
+import { shareImagesAcrossFamilyItems } from "@/lib/part-images";
 
 interface Inquiry {
   id: string;
@@ -291,7 +292,7 @@ export const SalesInquiry = ({
     priceM?: number;
     selectedPriceType?: "A" | "B" | "M";
   };
-  const makeLookupRow = (): LookupRow => ({
+  const makeLookupRow = useCallback((): LookupRow => ({
     id:
       typeof crypto !== "undefined" && (crypto as any).randomUUID
         ? (crypto as any).randomUUID()
@@ -299,7 +300,7 @@ export const SalesInquiry = ({
     partId: "",
     search: "",
     qty: 0,
-  });
+  }), []);
   const [lookupRows, setLookupRows] = useState<LookupRow[]>([]);
   const [activeLookupRowId, setActiveLookupRowId] = useState<string | null>(
     null,
@@ -446,10 +447,29 @@ export const SalesInquiry = ({
         partsData.find((p) => p.id === partId) ||
         searchResults.find((p) => p.id === partId);
       const cachedImages = getPartImageList(cachedPart);
-      if (cachedImages.length > 0) {
+      const siblingImages =
+        cachedImages.length > 0
+          ? cachedImages
+          : getPartImageList(
+              [...partsData, ...searchResults, ...alternateItems].find((p) => {
+                if (!p || p.id === partId || !p.images?.length) return false;
+                const partNo = String(p.partNo || "").trim().toLowerCase();
+                const master = String(p.masterPart || "").trim().toLowerCase();
+                const targetNo = String(cachedPart?.partNo || "").trim().toLowerCase();
+                const targetMaster = String(cachedPart?.masterPart || "")
+                  .trim()
+                  .toLowerCase();
+                return (
+                  (targetNo && (partNo === targetNo || master === targetNo)) ||
+                  (targetMaster &&
+                    (partNo === targetMaster || master === targetMaster))
+                );
+              }),
+            );
+      if (siblingImages.length > 0) {
         loadedPartImagesRef.current.add(partId);
         setPartImagesByPartId((prev) =>
-          prev[partId]?.length ? prev : { ...prev, [partId]: cachedImages },
+          prev[partId]?.length ? prev : { ...prev, [partId]: siblingImages },
         );
         return;
       }
@@ -469,7 +489,7 @@ export const SalesInquiry = ({
         // Images are optional.
       }
     },
-    [partsData, searchResults],
+    [partsData, searchResults, alternateItems],
   );
 
   const fetchPartPriceLastUpdated = useCallback(async (partId: string) => {
@@ -652,9 +672,10 @@ export const SalesInquiry = ({
           .filter((p: PartDetail) => p.partNo && p.partNo !== 'N/A');
 
         setPartIdMap(idMap);
-        setPartsData(transformedParts);
+        const partsWithSharedImages = shareImagesAcrossFamilyItems(transformedParts);
+        setPartsData(partsWithSharedImages);
         setPartModelsByPartId((prev) => ({ ...prev, ...modelMapUpdates }));
-        const withImages = transformedParts.filter((p) => p.images?.length);
+        const withImages = partsWithSharedImages.filter((p) => p.images?.length);
         if (withImages.length > 0) {
           setPartImagesByPartId((prev) => {
             const next = { ...prev };
@@ -1389,7 +1410,11 @@ export const SalesInquiry = ({
           );
         });
 
-        setAlternateItems(matched);
+        setAlternateItems(
+          shareImagesAcrossFamilyItems([selectedPart, ...matched]).filter(
+            (item) => item.id !== selectedPart.id,
+          ),
+        );
       } catch {
         setAlternateItems([]);
       } finally {
@@ -1751,7 +1776,7 @@ export const SalesInquiry = ({
         setActiveLookupRowId(row.id);
       });
     });
-  }, [openLookupRowDropdown]);
+  }, [makeLookupRow, openLookupRowDropdown]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2379,7 +2404,7 @@ export const SalesInquiry = ({
 
       setPartIdMap(idMap);
 
-      setPartsData(transformedParts);
+      setPartsData(shareImagesAcrossFamilyItems(transformedParts));
       setPartModelsByPartId((prev) => ({ ...prev, ...modelMapUpdates }));
       toast({
         title: "Parts Refreshed",

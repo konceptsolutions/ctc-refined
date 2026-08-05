@@ -15,6 +15,7 @@ import { toast } from "@/hooks/use-toast";
 import { Part } from "./PartsList";
 import { compressImage } from "@/utils/imageCompression";
 import { apiClient } from "@/lib/api";
+import { fetchFamilyPartImages } from "@/lib/part-images";
 import { cn } from "@/lib/utils";
 
 interface ModelQuantity {
@@ -163,6 +164,36 @@ export const PartEntryForm = ({
   const prevSelectedPartId = useRef<string | null>(null);
   const fileInputP1Ref = useRef<HTMLInputElement>(null);
   const fileInputP2Ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingPartId || (selectedPart?.id && !isAddingNew)) return;
+    const dbPartNo = String(formData.masterPartNo || "").trim();
+    const dbMasterPartNo = String(formData.partNo || "").trim();
+    if (!dbPartNo && !dbMasterPartNo) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const shared = await fetchFamilyPartImages(dbPartNo, dbMasterPartNo);
+        if (cancelled || !shared) return;
+        setImageP1((prev) => prev || shared.imageP1);
+        setImageP2((prev) => prev || shared.imageP2);
+      } catch {
+        // Family image is optional while creating a new item.
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    editingPartId,
+    selectedPart?.id,
+    isAddingNew,
+    formData.partNo,
+    formData.masterPartNo,
+  ]);
 
   // Validation errors for prices
   const [priceAError, setPriceAError] = useState<string>("");
