@@ -76,6 +76,22 @@ interface InventoryDashboardResponse {
   };
 }
 
+type CategorySlice = { name: string; value: number; color: string };
+
+/** Collapse slices under 4% into "Other" so pie labels don't overlap. */
+function buildPieSlices(items: CategorySlice[], minShare = 0.04): CategorySlice[] {
+  if (!items.length) return [];
+  const total = items.reduce((s, i) => s + (i.value || 0), 0) || 1;
+  const major = items.filter((i) => (i.value || 0) / total >= minShare);
+  const minorSum = items
+    .filter((i) => (i.value || 0) / total < minShare)
+    .reduce((s, i) => s + (i.value || 0), 0);
+  if (minorSum > 0) {
+    return [...major, { name: "Other", value: minorSum, color: "hsl(0, 0%, 55%)" }];
+  }
+  return major.length ? major : items;
+}
+
 const StatCard = ({ title, value, subtitle, icon: Icon, colorClass, bgClass, onClick, clickable }: StatCardProps) => (
   <Card
     className={`${bgClass} border-l-4 ${colorClass.replace('text-', 'border-l-')} ${clickable ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
@@ -258,6 +274,12 @@ export const InventoryDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const pieSlices = buildPieSlices(categoryDistribution);
+  const categoryTotal = categoryDistribution.reduce((s, i) => s + (i.value || 0), 0) || 1;
+  const categoryLegend = [...categoryDistribution].sort(
+    (a, b) => (b.value || 0) - (a.value || 0)
+  );
+
   return (
     <div key={refreshKey} className={`space-y-6 ${isRefreshing ? '' : 'animate-fade-in'}`}>
       {/* Header */}
@@ -369,51 +391,75 @@ export const InventoryDashboard = () => {
         </Card>
 
         {/* Parts Distribution by Category */}
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle className="text-base font-semibold">Parts Distribution by Category</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] flex items-center">
-              <div className="w-1/2 h-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryDistribution}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={90}
-                      dataKey="value"
-                      label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
-                      labelLine={false}
-                    >
-                      {categoryDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+            {categoryDistribution.length > 0 ? (
+              <div className="flex flex-col sm:flex-row gap-4 h-[320px]">
+                <div className="w-full sm:w-[55%] h-[200px] sm:h-full min-h-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                      <Pie
+                        data={pieSlices}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={78}
+                        paddingAngle={1}
+                        dataKey="value"
+                        labelLine
+                        label={({ percent }) =>
+                          percent >= 0.05 ? `${(percent * 100).toFixed(0)}%` : ""
+                        }
+                      >
+                        {pieSlices.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--card))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                        }}
+                        formatter={(value: number, name: string) => {
+                          const pct = ((Number(value) / categoryTotal) * 100).toFixed(1);
+                          return [`${Number(value).toLocaleString()} (${pct}%)`, name];
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="w-full sm:w-[45%] h-[120px] sm:h-full overflow-y-auto pr-1 space-y-1.5 border-t sm:border-t-0 sm:border-l border-border pt-3 sm:pt-0 sm:pl-3">
+                  {categoryLegend.map((item, index) => {
+                    const pct = (((item.value || 0) / categoryTotal) * 100).toFixed(0);
+                    return (
+                      <div
+                        key={`${item.name}-${index}`}
+                        className="flex items-center gap-2 text-sm min-w-0"
+                      >
+                        <div
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="text-foreground truncate flex-1" title={item.name}>
+                          {item.name}
+                        </span>
+                        <span className="text-muted-foreground tabular-nums shrink-0 font-medium">
+                          {pct}%
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="w-1/2 space-y-2">
-                {categoryDistribution.map((item, index) => (
-                  <div key={index} className="flex items-center gap-2 text-sm">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="text-muted-foreground truncate">{item.name}</span>
-                  </div>
-                ))}
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                No category distribution data available
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>

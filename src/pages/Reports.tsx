@@ -6,7 +6,7 @@ const Reports = () => {
   return (
     <div className="min-h-screen bg-background flex">
       <Sidebar />
-      <div className="flex-1 ml-16">
+      <div className="flex-1 app-content-offset">
         <Header />
         <main className="p-4 lg:p-6">
           <ReportsAnalytics />

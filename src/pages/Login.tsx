@@ -402,6 +402,12 @@ const Login = () => {
                 </DialogContent>
             </Dialog>
 
+            <div className="absolute bottom-4 left-0 right-0 z-10 text-center text-xs text-white/70 px-4">
+                <span className="font-medium text-white/90">CTC Crystal Trading Platform</span>
+                <span className="mx-1.5">·</span>
+                Powered by <span className="font-medium text-white/90">Knocept Solutions</span>
+            </div>
+
             <style dangerouslySetInnerHTML={{
                 __html: `
         @keyframes pulse-slow {

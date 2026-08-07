@@ -12,6 +12,9 @@ import {
   Package,
   Undo2,
   Search,
+  LayoutDashboard,
+  Layers,
+  Activity,
 } from "lucide-react";
 
 // Inventory sub-modules
@@ -27,6 +30,7 @@ import { LocalInquiry } from "@/components/inventory/LocalInquiry";
 import { DPOReturn } from "@/components/inventory/DPOReturn";
 import { CurrentStock } from "@/components/inventory/CurrentStock";
 import { PurchaseInquiry } from "@/components/inventory/PurchaseInquiry";
+import { InventoryDashboard } from "@/components/inventory/InventoryDashboard";
 
 import { StoreManagementTab } from "@/components/settings/StoreManagementTab";
 import { usePermissions } from "@/permissions/PermissionsProvider";
@@ -56,11 +60,14 @@ interface TabConfig {
 }
 
 const tabs: TabConfig[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview & analytics", permission: "page.inventory.dashboard" },
   { id: "purchase-inquiry", label: "Purchase Inquiry", icon: Search, description: "Purchase inquiry with PO/CO/BO details", permission: "page.inventory.purchase-inquiry" },
   { id: "current-stock", label: "Current Stock", icon: Package, description: "View current stock with prices", permission: "page.inventory.current-stock" },
   { id: "store-management", label: "Store Management", icon: Store, description: "Manage stores & locations", permission: "page.inventory.store-management" },
   { id: "stock-in-out", label: "Stock Movement", icon: ArrowRightLeft, description: "Record stock movements", permission: "page.inventory.stock-in-out" },
   { id: "adjust-item", label: "Adjust Item", icon: Settings2, description: "Stock quantity adjustments", permission: "page.inventory.adjust-item" },
+  { id: "multi-dimensional", label: "Multi-Dimensional", icon: Layers, description: "Multi-dimensional analysis", permission: "page.inventory.multi-dimensional" },
+  { id: "stock-analysis", label: "Stock Analysis", icon: Activity, description: "Fast, slow & dead stock", permission: "page.inventory.stock-analysis" },
   { id: "local-inquiry", label: "Local Inquiry", icon: ClipboardCheck, description: "Local purchase inquiries", permission: "page.inventory.local-inquiry" },
   { id: "direct-purchase-order", label: "Local Purchase", icon: FileText, description: "Local purchase orders", permission: "page.inventory.direct-purchase-order" },
   { id: "dpo-return", label: "DPO Return", icon: Undo2, description: "Manage DPO returns", permission: "page.inventory.dpo-return" },
@@ -92,6 +99,8 @@ const Inventory = () => {
 
   const renderContent = () => {
     switch (activeTab) {
+      case "dashboard":
+        return <InventoryDashboard />;
       case "current-stock":
         return <CurrentStock />;
       case "store-management":
@@ -120,7 +129,7 @@ const Inventory = () => {
         return <DPOReturn />;
 
       default:
-        return <CurrentStock />;
+        return <InventoryDashboard />;
     }
   };
 
@@ -128,7 +137,7 @@ const Inventory = () => {
     <div className="h-screen flex bg-background overflow-hidden">
       <Sidebar />
 
-      <div className="flex-1 flex flex-col overflow-hidden ml-16">
+      <div className="flex-1 flex flex-col overflow-hidden app-content-offset">
         <Header />
 
         {/* Horizontal Scrollable Tab Navigation */}

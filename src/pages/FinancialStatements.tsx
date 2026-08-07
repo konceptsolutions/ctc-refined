@@ -6,7 +6,7 @@ const FinancialStatements = () => {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <div className="ml-16">
+      <div className="app-content-offset">
         <Header />
         <main className="p-6">
           <div className="max-w-[1600px] mx-auto">

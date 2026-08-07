@@ -50,7 +50,7 @@ const Employees = () => {
     <div className="h-screen flex bg-background overflow-hidden">
       <Sidebar />
 
-      <div className="flex-1 flex flex-col overflow-hidden ml-16">
+      <div className="flex-1 flex flex-col overflow-hidden app-content-offset">
         <Header />
 
         <div className="bg-card border-b border-border px-6 py-4">

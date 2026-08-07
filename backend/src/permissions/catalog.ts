@@ -82,6 +82,10 @@ export const PERMISSION_CATALOG: PermissionNode[] = [
     kind: "module",
     path: "/inventory",
     children: [
+      page("inventory.dashboard", "Dashboard", "/inventory/dashboard", "dashboard", [
+        { key: "section.inventory.dashboard.charts", label: "Charts", kind: "section" },
+        { key: "section.inventory.dashboard.stats", label: "Stats", kind: "section" },
+      ]),
       page("inventory.purchase-inquiry", "Purchase Inquiry", "/inventory/purchase-inquiry", "purchase-inquiry", [
         { key: "field.inventory.purchase-inquiry.cost", label: "Cost", kind: "field" },
         { key: "section.inventory.purchase-inquiry.supplier", label: "Supplier Details", kind: "section" },
@@ -94,6 +98,8 @@ export const PERMISSION_CATALOG: PermissionNode[] = [
       page("inventory.store-management", "Store Management", "/inventory/store-management", "store-management"),
       page("inventory.stock-in-out", "Stock Movement", "/inventory/stock-in-out", "stock-in-out"),
       page("inventory.adjust-item", "Adjust Item", "/inventory/adjust-item", "adjust-item"),
+      page("inventory.multi-dimensional", "Multi-Dimensional", "/inventory/multi-dimensional", "multi-dimensional"),
+      page("inventory.stock-analysis", "Stock Analysis", "/inventory/stock-analysis", "stock-analysis"),
       page("inventory.local-inquiry", "Local Inquiry", "/inventory/local-inquiry", "local-inquiry"),
       page("inventory.direct-purchase-order", "Local Purchase", "/inventory/direct-purchase-order", "direct-purchase-order", [
         { key: "field.inventory.direct-purchase-order.price", label: "Purchase Price", kind: "field" },

@@ -7,7 +7,7 @@ const PricingCostingPage = () => {
     <div className="h-screen flex bg-background overflow-hidden">
       <Sidebar />
 
-      <div className="flex-1 flex flex-col overflow-hidden ml-16">
+      <div className="flex-1 flex flex-col overflow-hidden app-content-offset">
         <Header />
 
         {/* Main Content Area */}
