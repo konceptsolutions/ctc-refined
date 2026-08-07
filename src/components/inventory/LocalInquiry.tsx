@@ -105,24 +105,21 @@ interface ComparisonRow {
   itemsByInquiryId: Record<string, InquiryLineItem>;
 }
 
+/** High-contrast palette for older readers: strong fills, dark text, thick borders. */
 const PRICE_COLOR_PALETTE = [
-  "bg-emerald-100 text-emerald-900 border-emerald-300",
-  "bg-sky-100 text-sky-900 border-sky-300",
-  "bg-amber-100 text-amber-900 border-amber-300",
-  "bg-violet-100 text-violet-900 border-violet-300",
-  "bg-cyan-100 text-cyan-900 border-cyan-300",
-  "bg-orange-100 text-orange-900 border-orange-300",
-  "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300",
-  "bg-rose-100 text-rose-900 border-rose-300",
+  "bg-green-500 text-black border-green-900 border-2 font-bold",
+  "bg-yellow-400 text-black border-yellow-900 border-2 font-bold",
+  "bg-orange-500 text-black border-orange-950 border-2 font-bold",
+  "bg-red-500 text-black border-red-950 border-2 font-bold",
 ];
 
-/** Unique color per distinct price in a row (lowest → green, highest → rose). */
+/** Unique color per distinct price in a row (lowest → green, highest → red). */
 const getPriceColorClass = (price: number, prices: number[]) => {
   const uniqueSorted = [...new Set(prices.map((p) => Number(p) || 0))].sort(
     (a, b) => a - b,
   );
   if (uniqueSorted.length <= 1) {
-    return "bg-emerald-100 text-emerald-900 border-emerald-300";
+    return PRICE_COLOR_PALETTE[0];
   }
   const index = uniqueSorted.indexOf(Number(price) || 0);
   if (index <= 0) return PRICE_COLOR_PALETTE[0];
@@ -1184,19 +1181,33 @@ export const LocalInquiry = () => {
                 ))}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>
+              <div className="flex flex-wrap items-center gap-3 text-sm font-semibold text-foreground">
+                <span className="text-muted-foreground font-medium text-xs">
                   Showing {compareRows.length} common item
                   {compareRows.length === 1 ? "" : "s"} across{" "}
                   {compareInquiries.length} inquiries.
                 </span>
-                <span className="inline-flex items-center gap-1 ml-2">
-                  <span className="px-1.5 py-0.5 rounded border bg-emerald-100 text-emerald-900 border-emerald-300">
-                    Lowest
+                <span className="inline-flex items-center gap-2 ml-1">
+                  <span className="px-2.5 py-1 rounded border-2 bg-green-500 text-black border-green-900 font-bold text-sm">
+                    LOWEST
                   </span>
-                  <span>→</span>
-                  <span className="px-1.5 py-0.5 rounded border bg-rose-100 text-rose-900 border-rose-300">
-                    Highest
+                  <span className="text-lg" aria-hidden>
+                    →
+                  </span>
+                  <span className="px-2.5 py-1 rounded border-2 bg-yellow-400 text-black border-yellow-900 font-bold text-sm">
+                    MID
+                  </span>
+                  <span className="text-lg" aria-hidden>
+                    →
+                  </span>
+                  <span className="px-2.5 py-1 rounded border-2 bg-orange-500 text-black border-orange-950 font-bold text-sm">
+                    HIGH
+                  </span>
+                  <span className="text-lg" aria-hidden>
+                    →
+                  </span>
+                  <span className="px-2.5 py-1 rounded border-2 bg-red-500 text-black border-red-950 font-bold text-sm">
+                    HIGHEST
                   </span>
                 </span>
               </div>
@@ -1258,7 +1269,7 @@ export const LocalInquiry = () => {
                                 <TableCell className="text-right">
                                   <span
                                     className={cn(
-                                      "inline-flex min-w-[4.5rem] justify-end px-2 py-0.5 rounded border font-medium",
+                                      "inline-flex min-w-[5rem] justify-end px-2.5 py-1 rounded text-base",
                                       getPriceColorClass(price, prices),
                                     )}
                                   >

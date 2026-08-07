@@ -214,12 +214,20 @@ export const printPurchaseImportQuotationComparison = ({
     return fcRate * (Number.isFinite(exchangeRate) && exchangeRate > 0 ? exchangeRate : 1);
   };
 
-  /** Rank colors: best (lowest LC) → green, then yellow → orange → red */
-  const PRICE_RANK_COLORS: Array<{ fill: [number, number, number]; border: [number, number, number] }> = [
-    { fill: [220, 252, 231], border: [22, 163, 74] }, // green - best
-    { fill: [254, 249, 195], border: [202, 138, 4] }, // yellow
-    { fill: [255, 237, 213], border: [234, 88, 12] }, // orange
-    { fill: [254, 226, 226], border: [220, 38, 38] }, // red - highest
+  /**
+   * High-contrast rank colors for older readers (80+):
+   * vivid fills + dark borders + black text (not pale pastels).
+   * Best (lowest LC) → green, then yellow → orange → red (highest).
+   */
+  const PRICE_RANK_COLORS: Array<{
+    fill: [number, number, number];
+    border: [number, number, number];
+    text: [number, number, number];
+  }> = [
+    { fill: [34, 197, 94], border: [20, 83, 45], text: [0, 0, 0] }, // vivid green - best
+    { fill: [250, 204, 21], border: [113, 63, 18], text: [0, 0, 0] }, // vivid yellow
+    { fill: [249, 115, 22], border: [124, 45, 18], text: [0, 0, 0] }, // vivid orange
+    { fill: [239, 68, 68], border: [127, 29, 29], text: [0, 0, 0] }, // vivid red - highest
   ];
 
   const itemPriceRanks = items.map((item) => {
@@ -406,8 +414,11 @@ export const printPurchaseImportQuotationComparison = ({
           : Math.round((rank / maxRank) * (PRICE_RANK_COLORS.length - 1));
       const color = PRICE_RANK_COLORS[colorIndex];
       data.cell.styles.fillColor = color.fill;
+      data.cell.styles.textColor = color.text;
+      data.cell.styles.fontStyle = "bold";
       data.cell.styles.lineColor = color.border;
-      data.cell.styles.lineWidth = rank === 0 ? 0.7 : 0.45;
+      // Thick borders so cells stay readable when printed / viewed from distance
+      data.cell.styles.lineWidth = rank === 0 ? 1.4 : 1.0;
     },
   });
 
@@ -415,17 +426,25 @@ export const printPurchaseImportQuotationComparison = ({
     ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable
       ?.finalY || cursorY) + 6;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(102, 102, 102);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(0, 0, 0);
   doc.text(
-    "Computer-generated comparison document. Lowest LC (FC Rate × Exchange Rate) is highlighted in green; higher prices use yellow → orange → red.",
+    "Price guide: GREEN = lowest LC (best)  |  YELLOW = mid  |  ORANGE = high  |  RED = highest LC",
     marginX,
     finalY,
   );
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(40, 40, 40);
+  doc.text(
+    "LC compared as FC Rate × Exchange Rate. Same LC price shares the same color.",
+    marginX,
+    finalY + 4.5,
+  );
 
-  let notesY = finalY + 5;
-  doc.setFontSize(7.5);
+  let notesY = finalY + 10;
+  doc.setFontSize(8);
   for (const supplier of suppliers) {
     const note = `${supplier.supplierName}: ${supplier.quotationNo || "No quotation"} | ${text(supplier.currency || "-")} | Rate ${num(supplier.conversionRate || 0, 4)} | LC Total ${num(supplier.lcTotal || 0)}`;
     doc.text(note, marginX, notesY);

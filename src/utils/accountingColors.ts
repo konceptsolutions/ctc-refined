@@ -20,43 +20,52 @@ type AccountingColor = {
 };
 
 export const ACCOUNTING_COLORS: Record<AccountingColorKey, AccountingColor> = {
+  /** Debit — dark teal, high contrast on white */
   dr: {
-    className: "text-teal-600",
-    headerClassName: "text-teal-700",
-    css: "#0d9488",
-    rgb: [13, 148, 136],
+    className: "text-teal-800 font-bold",
+    headerClassName: "text-teal-950 font-bold",
+    css: "#115e59",
+    rgb: [17, 94, 89],
   },
+  /** Credit — dark amber/brown (not pale yellow) */
   cr: {
-    className: "text-amber-600",
-    headerClassName: "text-amber-700",
-    css: "#d97706",
-    rgb: [217, 119, 6],
+    className: "text-amber-900 font-bold",
+    headerClassName: "text-amber-950 font-bold",
+    css: "#78350f",
+    rgb: [120, 53, 15],
   },
+  /** Amount — deep indigo */
   amount: {
-    className: "text-indigo-600",
-    headerClassName: "text-indigo-700",
-    css: "#4f46e5",
-    rgb: [79, 70, 229],
+    className: "text-indigo-900 font-bold",
+    headerClassName: "text-indigo-950 font-bold",
+    css: "#312e81",
+    rgb: [49, 46, 129],
   },
+  /** Balance — deep rose/red */
   balance: {
-    className: "text-rose-600",
-    headerClassName: "text-rose-700",
-    css: "#e11d48",
-    rgb: [225, 29, 72],
+    className: "text-rose-800 font-bold",
+    headerClassName: "text-rose-950 font-bold",
+    css: "#9f1239",
+    rgb: [159, 18, 57],
   },
-  /** Foreign currency */
+  /**
+   * Foreign currency (FC) — strong navy blue.
+   * Used across Purchase Import + Accounting UI and PDFs.
+   */
   fc: {
-    className: "text-sky-600",
-    headerClassName: "text-sky-700",
-    css: "#0284c7",
-    rgb: [2, 132, 199],
+    className: "text-blue-900 font-bold",
+    headerClassName: "text-blue-950 font-bold",
+    css: "#1e3a8a",
+    rgb: [30, 58, 138],
   },
-  /** Local currency */
+  /**
+   * Local currency (LC) — strong fuchsia/magenta (clearly different from FC blue).
+   */
   lc: {
-    className: "text-violet-600",
-    headerClassName: "text-violet-700",
-    css: "#7c3aed",
-    rgb: [124, 58, 237],
+    className: "text-fuchsia-900 font-bold",
+    headerClassName: "text-fuchsia-950 font-bold",
+    css: "#701a75",
+    rgb: [112, 26, 117],
   },
 };
 
