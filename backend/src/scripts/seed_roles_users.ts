@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
+import { getPresetPermissions } from "../permissions/catalog";
 
 const prisma = new PrismaClient();
 
@@ -8,40 +9,18 @@ const ROLE_DEFS = [
   {
     name: "Manager",
     description: "Operations and inventory oversight",
-    permissions: [
-      "users.view",
-      "inventory.view",
-      "inventory.create",
-      "inventory.edit",
-      "sales.view",
-      "sales.create",
-      "sales.edit",
-      "reports.view",
-      "reports.export",
-      "settings.view",
-    ],
   },
   {
     name: "Accountant",
     description: "Accounting and financial reports",
-    permissions: [
-      "reports.view",
-      "reports.export",
-      "settings.view",
-      "inventory.view",
-      "sales.view",
-    ],
   },
   {
     name: "Sales",
     description: "Sales and customer operations",
-    permissions: [
-      "sales.view",
-      "sales.create",
-      "sales.edit",
-      "inventory.view",
-      "reports.view",
-    ],
+  },
+  {
+    name: "Store User",
+    description: "Store operations access",
   },
 ] as const;
 
@@ -67,12 +46,20 @@ const USER_DEFS = [
 ] as const;
 
 async function ensureRole(def: (typeof ROLE_DEFS)[number]) {
+  const permissions = getPresetPermissions(def.name);
   const existing = await prisma.role.findFirst({
     where: { name: def.name },
   });
 
   if (existing) {
-    console.log(`Role already exists: ${def.name} (${existing.id})`);
+    await prisma.role.update({
+      where: { id: existing.id },
+      data: {
+        description: def.description,
+        permissions: JSON.stringify(permissions),
+      },
+    });
+    console.log(`Updated role: ${def.name} (${permissions.length} permissions)`);
     return existing;
   }
 
@@ -80,42 +67,27 @@ async function ensureRole(def: (typeof ROLE_DEFS)[number]) {
     data: {
       id: randomUUID(),
       name: def.name,
-      type: "Custom",
+      type: def.name === "Store User" ? "System" : "Custom",
       description: def.description,
-      permissions: JSON.stringify(def.permissions),
+      permissions: JSON.stringify(permissions),
       usersCount: 0,
       updatedAt: new Date(),
     },
   });
-
-  console.log(`Created role: ${role.name} (${role.id})`);
+  console.log(`Created role: ${def.name}`);
   return role;
 }
 
-async function ensureUser(
-  def: (typeof USER_DEFS)[number],
-  roleId: string,
-) {
+async function ensureUser(def: (typeof USER_DEFS)[number], roleId: string) {
   const existing = await prisma.user.findUnique({
     where: { email: def.email },
   });
-
   if (existing) {
-    // Keep role assignment in sync if user already exists
-    if (existing.roleId !== roleId) {
-      await prisma.user.update({
-        where: { id: existing.id },
-        data: { roleId, updatedAt: new Date() },
-      });
-      console.log(`Updated existing user role: ${def.email} -> ${def.roleName}`);
-    } else {
-      console.log(`User already exists: ${def.email}`);
-    }
-    return existing;
+    console.log(`User already exists: ${def.email}`);
+    return;
   }
-
   const hashedPassword = await bcrypt.hash(def.password, 10);
-  const user = await prisma.user.create({
+  await prisma.user.create({
     data: {
       id: randomUUID(),
       name: def.name,
@@ -127,47 +99,29 @@ async function ensureUser(
       updatedAt: new Date(),
     },
   });
-
-  console.log(`Created user: ${user.email} / ${def.password} (${def.roleName})`);
-  return user;
+  console.log(`Created user: ${def.email}`);
 }
 
 async function main() {
-  console.log("Seeding Manager, Accountant, and Sales roles/users...");
-
-  const rolesByName = new Map<string, { id: string; name: string }>();
-
-  for (const roleDef of ROLE_DEFS) {
-    const role = await ensureRole(roleDef);
-    rolesByName.set(role.name, role);
-  }
-
-  for (const userDef of USER_DEFS) {
-    const role = rolesByName.get(userDef.roleName);
-    if (!role) {
-      throw new Error(`Role not found for user ${userDef.email}: ${userDef.roleName}`);
-    }
-    await ensureUser(userDef, role.id);
-  }
-
-  // Refresh usersCount on roles
-  for (const role of rolesByName.values()) {
-    const usersCount = await prisma.user.count({ where: { roleId: role.id } });
+  // Ensure Admin stays wildcard
+  const admin = await prisma.role.findFirst({ where: { name: "Admin" } });
+  if (admin) {
     await prisma.role.update({
-      where: { id: role.id },
-      data: { usersCount, updatedAt: new Date() },
+      where: { id: admin.id },
+      data: { permissions: JSON.stringify(["*"]), type: "System" },
     });
   }
 
-  console.log("\nDone. Login credentials:");
-  for (const user of USER_DEFS) {
-    console.log(`- ${user.roleName}: ${user.email} / ${user.password}`);
+  for (const def of ROLE_DEFS) {
+    const role = await ensureRole(def);
+    const userDef = USER_DEFS.find((u) => u.roleName === def.name);
+    if (userDef) await ensureUser(userDef, role.id);
   }
 }
 
 main()
-  .catch((error) => {
-    console.error(error);
+  .catch((e) => {
+    console.error(e);
     process.exit(1);
   })
   .finally(async () => {

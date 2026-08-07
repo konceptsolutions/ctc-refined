@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
-import { saveAuth, isAuthenticated, getUserRole, isManagerRole, getManagerHomePath, isManagerAllowedPath, isAccountantRole, getAccountantHomePath, isAccountantAllowedPath, isSalesRole, getSalesHomePath, isSalesAllowedPath } from "@/utils/auth";
+import { saveAuth, isAuthenticated, getUserRole } from "@/utils/auth";
+import { getFirstAllowedPath } from "@/permissions/can";
 
 const Login = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -38,35 +39,14 @@ const Login = () => {
     useEffect(() => {
         if (isAuthenticated()) {
             const userRole = getUserRole();
-            const from = (location.state as any)?.from?.pathname || "/";
+            const from = (location.state as any)?.from?.pathname;
 
-            // If user is already logged in, redirect to appropriate page
             if (userRole === 'store') {
-                navigate("/store", { replace: true });
-            } else if (isManagerRole()) {
-                const target = from && from !== "/login" && isManagerAllowedPath(from)
-                    ? from
-                    : getManagerHomePath();
-                navigate(target, { replace: true });
-            } else if (isAccountantRole()) {
-                const target = from && from !== "/login" && isAccountantAllowedPath(from)
-                    ? from
-                    : getAccountantHomePath();
-                navigate(target, { replace: true });
-            } else if (isSalesRole()) {
-                const blocked =
-                    from === "/sales/inquiry" ||
-                    from.startsWith("/sales/inquiry/") ||
-                    from === "/sales/distributor-aging" ||
-                    from.startsWith("/sales/distributor-aging/") ||
-                    from === "/sales/receivable-reminders" ||
-                    from.startsWith("/sales/receivable-reminders/");
-                const target = from && from !== "/login" && isSalesAllowedPath(from) && !blocked
-                    ? from
-                    : getSalesHomePath();
-                navigate(target, { replace: true });
+                navigate("/inventory/current-stock", { replace: true });
+            } else if (from && from !== "/login") {
+                navigate(from, { replace: true });
             } else {
-                navigate(from === "/login" ? "/" : from, { replace: true });
+                navigate(getFirstAllowedPath(), { replace: true });
             }
         }
     }, [navigate, location]);
@@ -97,21 +77,19 @@ const Login = () => {
                 saveAuth(effectiveRole, response.token, {
                     loginStartTime: response.user?.loginStartTime ?? null,
                     loginEndTime: response.user?.loginEndTime ?? null,
-                });
+                }, response.user?.permissions || []);
                 toast.success(`Login Successful - ${effectiveRole === 'admin' ? 'Administrator' : 'Store'} Access Granted`);
 
-                // Redirect
+                // Redirect to first permitted path (permissions-driven)
                 if (effectiveRole === 'store') {
                     navigate("/inventory/current-stock", { replace: true });
-                } else if (backendRoleName === "manager") {
-                    navigate(getManagerHomePath(), { replace: true });
-                } else if (backendRoleName === "accountant") {
-                    navigate(getAccountantHomePath(), { replace: true });
-                } else if (backendRoleName === "sales") {
-                    navigate(getSalesHomePath(), { replace: true });
                 } else {
-                    const from = (location.state as any)?.from?.pathname || "/";
-                    navigate(from === "/login" ? "/" : from, { replace: true });
+                    const from = (location.state as any)?.from?.pathname;
+                    if (from && from !== "/login") {
+                        navigate(from, { replace: true });
+                    } else {
+                        navigate(getFirstAllowedPath(), { replace: true });
+                    }
                 }
             } else {
                 throw new Error("Login failed: No token received");

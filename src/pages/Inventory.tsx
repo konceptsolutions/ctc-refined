@@ -5,15 +5,9 @@ import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
 import {
   ArrowRightLeft,
-  Truck,
-  BarChart3,
   Settings2,
-  Layers,
-  Activity,
   ClipboardCheck,
-  ShoppingCart,
   FileText,
-  Archive,
   Store,
   Package,
   Undo2,
@@ -35,7 +29,7 @@ import { CurrentStock } from "@/components/inventory/CurrentStock";
 import { PurchaseInquiry } from "@/components/inventory/PurchaseInquiry";
 
 import { StoreManagementTab } from "@/components/settings/StoreManagementTab";
-import { getUserRole, isStoreUserRole } from "@/utils/auth";
+import { usePermissions } from "@/permissions/PermissionsProvider";
 
 type InventoryTab =
   | "dashboard"
@@ -58,52 +52,41 @@ interface TabConfig {
   label: string;
   icon: React.ElementType;
   description: string;
+  permission: string;
 }
 
-const defaultInventoryTab: InventoryTab = "purchase-inquiry";
-
 const tabs: TabConfig[] = [
-  // { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview & analytics" }, // Hidden temporarily
-  { id: "purchase-inquiry", label: "Purchase Inquiry", icon: Search, description: "Purchase inquiry with PO/CO/BO details" },
-  { id: "current-stock", label: "Current Stock", icon: Package, description: "View current stock with prices" },
-  { id: "store-management", label: "Store Management", icon: Store, description: "Manage stores & locations" },
-  { id: "stock-in-out", label: "Stock Movement", icon: ArrowRightLeft, description: "Record stock movements" },
-  // { id: "stock-transfer", label: "Stock Transfer", icon: Truck, description: "Transfer between locations" }, // Hidden temporarily
-  { id: "adjust-item", label: "Adjust Item", icon: Settings2, description: "Stock quantity adjustments" },
-  // { id: "stock-balance", label: "Balance & Valuation", icon: BarChart3, description: "Balance & valuation" }, // Hidden temporarily
-  // { id: "multi-dimensional", label: "Multi-Dimensional", icon: Layers, description: "Multi-dimensional analysis" }, // Hidden temporarily
-  // { id: "stock-analysis", label: "Stock Analysis", icon: Activity, description: "Fast, slow & dead stock" }, // Hidden temporarily
-  // { id: "stock-verification", label: "Verification", icon: ClipboardCheck, description: "Physical stock verification" }, // Hidden temporarily
-  // { id: "purchase-order", label: "Purchase Order", icon: ShoppingCart, description: "Manage purchase orders" }, // Hidden temporarily
-  { id: "local-inquiry", label: "Local Inquiry", icon: ClipboardCheck, description: "Local purchase inquiries" },
-  { id: "direct-purchase-order", label: "Local Purchase", icon: FileText, description: "Local purchase orders" },
-  { id: "dpo-return", label: "DPO Return", icon: Undo2, description: "Manage DPO returns" },
+  { id: "purchase-inquiry", label: "Purchase Inquiry", icon: Search, description: "Purchase inquiry with PO/CO/BO details", permission: "page.inventory.purchase-inquiry" },
+  { id: "current-stock", label: "Current Stock", icon: Package, description: "View current stock with prices", permission: "page.inventory.current-stock" },
+  { id: "store-management", label: "Store Management", icon: Store, description: "Manage stores & locations", permission: "page.inventory.store-management" },
+  { id: "stock-in-out", label: "Stock Movement", icon: ArrowRightLeft, description: "Record stock movements", permission: "page.inventory.stock-in-out" },
+  { id: "adjust-item", label: "Adjust Item", icon: Settings2, description: "Stock quantity adjustments", permission: "page.inventory.adjust-item" },
+  { id: "local-inquiry", label: "Local Inquiry", icon: ClipboardCheck, description: "Local purchase inquiries", permission: "page.inventory.local-inquiry" },
+  { id: "direct-purchase-order", label: "Local Purchase", icon: FileText, description: "Local purchase orders", permission: "page.inventory.direct-purchase-order" },
+  { id: "dpo-return", label: "DPO Return", icon: Undo2, description: "Manage DPO returns", permission: "page.inventory.dpo-return" },
 ];
 
 const Inventory = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
-  const isStoreUser = getUserRole() === "store" || isStoreUserRole();
-  const availableTabs = isStoreUser
-    ? tabs.filter((t) => t.id === "current-stock")
-    : tabs;
+  const { can } = usePermissions();
+  const availableTabs = tabs.filter((t) => can(t.permission));
+  const defaultInventoryTab: InventoryTab =
+    (availableTabs[0]?.id as InventoryTab) || "current-stock";
 
   const activeTab: InventoryTab = availableTabs.some((t) => t.id === tab)
     ? (tab as InventoryTab)
     : defaultInventoryTab;
 
-  // Ensure /inventory redirects to the default dedicated page.
   useEffect(() => {
-    if (isStoreUser) {
-      if (tab !== "current-stock") {
-        navigate("/inventory/current-stock", { replace: true });
-      }
+    if (!availableTabs.length) {
+      navigate("/", { replace: true });
       return;
     }
-    if (!tab || !tabs.some((t) => t.id === tab)) {
+    if (!tab || !availableTabs.some((t) => t.id === tab)) {
       navigate(`/inventory/${defaultInventoryTab}`, { replace: true });
     }
-  }, [tab, navigate, isStoreUser]);
+  }, [tab, navigate, availableTabs, defaultInventoryTab]);
 
   const handleTabChange = (tabId: InventoryTab) => navigate(`/inventory/${tabId}`);
 

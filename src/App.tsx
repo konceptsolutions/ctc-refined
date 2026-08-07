@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { NotificationProvider } from "@/contexts/NotificationContext";
+import { PermissionsProvider } from "@/permissions/PermissionsProvider";
 import Index from "./pages/Index";
 import Parts from "./pages/Parts";
 import ItemsList from "./pages/ItemsList";
@@ -40,6 +41,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter basename="/">
+          <PermissionsProvider>
           <LoginHoursGuard />
           <Routes>
             {/* Login route - accessible without authentication */}
@@ -81,6 +83,7 @@ const App = () => (
             <Route path="*" element={<ProtectedRoute><NotFound /></ProtectedRoute>} />
           </Routes>
           <AppAIAssistant />
+          </PermissionsProvider>
         </BrowserRouter>
       </TooltipProvider>
     </NotificationProvider>

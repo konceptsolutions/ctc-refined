@@ -78,7 +78,7 @@ import purchaseImportRoutes from "./routes/purchase-import";
 import partsDropdownRoutes from "./routes/parts-dropdown";
 import authRoutes from "./routes/auth";
 import emailRoutes from "./routes/email";
-import { authenticateJWT, authorizeRoles, enforceLoginWindow } from "./middleware/authMiddleware";
+import { authenticateJWT, authorizeRoles, enforceLoginWindow, requirePermission } from "./middleware/authMiddleware";
 import { activityAuditMiddleware } from "./middleware/activityAuditMiddleware";
 
 // Trigger restart for environment variable update + prisma client reload 2026-08-05b
@@ -581,67 +581,65 @@ app.get("/api/inventory/adjustment-parts", async (req, res) => {
   }
 });
 
-app.use("/api/parts", ...apiAuth, partsRoutes);
+app.use("/api/parts", ...apiAuth, requirePermission("module.partentry", "module.inventory", "module.pricing", "module.sales", "module.store", "module.purchase-import"), partsRoutes);
 app.use("/api/dropdowns", ...apiAuth, dropdownsRoutes);
-app.use("/api/inventory", ...apiAuth, inventoryRoutes);
-app.use("/api/expenses", ...apiAuth, expensesRoutes);
-app.use("/api/accounting", ...apiAuth, accountingRoutes);
-app.use("/api/financial", financialRoutes); // Temporarily disabled auth for testing
+app.use("/api/inventory", ...apiAuth, requirePermission("module.inventory", "module.store", "module.transfer", "module.purchase-import"), inventoryRoutes);
+app.use("/api/expenses", ...apiAuth, requirePermission("module.accounting", "module.financial"), expensesRoutes);
+app.use("/api/accounting", ...apiAuth, requirePermission("module.accounting"), accountingRoutes);
+app.use("/api/financial", ...apiAuth, requirePermission("module.financial"), financialRoutes);
 app.use("/api/public-financial", financialRoutes); // Public route for testing
-app.use("/api/customers", ...apiAuth, customersRoutes);
-app.use("/api/suppliers", ...apiAuth, suppliersRoutes);
-app.use("/api/employees", ...apiAuth, employeesRoutes);
+app.use("/api/customers", ...apiAuth, requirePermission("module.manage", "module.sales"), customersRoutes);
+app.use("/api/suppliers", ...apiAuth, requirePermission("module.manage", "module.inventory", "module.purchase-import"), suppliersRoutes);
+app.use("/api/employees", ...apiAuth, requirePermission("module.employees"), employeesRoutes);
 app.use("/api/reports", ...apiAuth, reportsRoutes);
-app.use("/api/users", ...apiAdminAuth, usersRoutes);
+app.use("/api/users", ...apiAdminAuth, requirePermission("page.settings.users", "module.settings"), usersRoutes);
 app.use("/api/roles", ...apiAuth, rolesRoutes);
-app.use("/api/activity-logs", ...apiAuth, activityLogsRoutes);
-app.use("/api/approval-flows", ...apiAuth, approvalFlowsRoutes);
-app.use("/api/backups", ...apiAuth, backupsRoutes);
-app.use("/api/company-profile", ...apiAuth, companyProfileRoutes);
-app.use("/api/whatsapp-settings", ...apiAuth, whatsappSettingsRoutes);
-app.use("/api/longcat-settings", ...apiAuth, longcatSettingsRoutes);
+app.use("/api/activity-logs", ...apiAuth, requirePermission("page.settings.activity", "module.settings"), activityLogsRoutes);
+app.use("/api/approval-flows", ...apiAuth, requirePermission("module.settings"), approvalFlowsRoutes);
+app.use("/api/backups", ...apiAuth, requirePermission("module.settings"), backupsRoutes);
+app.use("/api/company-profile", ...apiAuth, requirePermission("module.settings"), companyProfileRoutes);
+app.use("/api/whatsapp-settings", ...apiAuth, requirePermission("module.settings"), whatsappSettingsRoutes);
+app.use("/api/longcat-settings", ...apiAuth, requirePermission("module.settings"), longcatSettingsRoutes);
 app.use("/api/ai-assistant", ...apiAuth, aiAssistantRoutes);
-app.use("/api/vouchers", ...apiAuth, vouchersRoutes);
+app.use("/api/vouchers", ...apiAuth, requirePermission("module.vouchers"), vouchersRoutes);
 // Legacy/compat alias (some clients call this path directly)
-app.use("/api/getVouchers", ...apiAuth, vouchersRoutes);
-app.use("/api/sales", ...apiAuth, salesRoutes);
-app.use("/api/sales-returns", ...apiAuth, salesReturnsRoutes);
+app.use("/api/getVouchers", ...apiAuth, requirePermission("module.vouchers"), vouchersRoutes);
+app.use("/api/sales", ...apiAuth, requirePermission("module.sales"), salesRoutes);
+app.use("/api/sales-returns", ...apiAuth, requirePermission("module.sales", "page.sales.returns"), salesReturnsRoutes);
 app.use("/api/parts-dropdown", ...apiAuth, partsDropdownRoutes);
-app.use("/api/dpo-returns", ...apiAuth, dpoReturnsRoutes);
-app.use("/api/sales-returns", ...apiAuth, salesReturnsRoutes);
-app.use("/api/stock-details", ...apiAuth, stockDetailsRoutes);
+app.use("/api/dpo-returns", ...apiAuth, requirePermission("module.inventory", "page.inventory.dpo-return"), dpoReturnsRoutes);
+app.use("/api/stock-details", ...apiAuth, requirePermission("module.inventory", "module.store"), stockDetailsRoutes);
 app.use("/api/advanced-search", ...apiAuth, advancedSearchRoutes);
-app.use("/api/advanced-search", ...apiAuth, advancedSearchRoutes);
-app.use("/api/purchase-import", ...apiAuth, purchaseImportRoutes);
+app.use("/api/purchase-import", ...apiAuth, requirePermission("module.purchase-import"), purchaseImportRoutes);
 app.use("/api/email", ...apiAuth, emailRoutes);
 
 // Dev-Koncepts deployment: all API under /dev-koncepts/api when frontend is at /dev-koncepts/ (so requests hit this backend, not main app)
-app.use("/dev-koncepts/api/parts", ...apiAuth, partsRoutes);
+app.use("/dev-koncepts/api/parts", ...apiAuth, requirePermission("module.partentry", "module.inventory", "module.pricing", "module.sales", "module.store", "module.purchase-import"), partsRoutes);
 app.use("/dev-koncepts/api/dropdowns", ...apiAuth, dropdownsRoutes);
-app.use("/dev-koncepts/api/inventory", ...apiAuth, inventoryRoutes);
-app.use("/dev-koncepts/api/expenses", ...apiAuth, expensesRoutes);
-app.use("/dev-koncepts/api/accounting", ...apiAuth, accountingRoutes);
-app.use("/dev-koncepts/api/financial", ...apiAuth, financialRoutes);
-app.use("/dev-koncepts/api/customers", ...apiAuth, customersRoutes);
-app.use("/dev-koncepts/api/suppliers", ...apiAuth, suppliersRoutes);
-app.use("/dev-koncepts/api/employees", ...apiAuth, employeesRoutes);
+app.use("/dev-koncepts/api/inventory", ...apiAuth, requirePermission("module.inventory", "module.store", "module.transfer", "module.purchase-import"), inventoryRoutes);
+app.use("/dev-koncepts/api/expenses", ...apiAuth, requirePermission("module.accounting", "module.financial"), expensesRoutes);
+app.use("/dev-koncepts/api/accounting", ...apiAuth, requirePermission("module.accounting"), accountingRoutes);
+app.use("/dev-koncepts/api/financial", ...apiAuth, requirePermission("module.financial"), financialRoutes);
+app.use("/dev-koncepts/api/customers", ...apiAuth, requirePermission("module.manage", "module.sales"), customersRoutes);
+app.use("/dev-koncepts/api/suppliers", ...apiAuth, requirePermission("module.manage", "module.inventory", "module.purchase-import"), suppliersRoutes);
+app.use("/dev-koncepts/api/employees", ...apiAuth, requirePermission("module.employees"), employeesRoutes);
 app.use("/dev-koncepts/api/reports", ...apiAuth, reportsRoutes);
-app.use("/dev-koncepts/api/users", ...apiAdminAuth, usersRoutes);
+app.use("/dev-koncepts/api/users", ...apiAdminAuth, requirePermission("page.settings.users", "module.settings"), usersRoutes);
 app.use("/dev-koncepts/api/roles", ...apiAuth, rolesRoutes);
-app.use("/dev-koncepts/api/activity-logs", ...apiAuth, activityLogsRoutes);
-app.use("/dev-koncepts/api/approval-flows", ...apiAuth, approvalFlowsRoutes);
-app.use("/dev-koncepts/api/backups", ...apiAuth, backupsRoutes);
-app.use("/dev-koncepts/api/company-profile", ...apiAuth, companyProfileRoutes);
-app.use("/dev-koncepts/api/whatsapp-settings", ...apiAuth, whatsappSettingsRoutes);
-app.use("/dev-koncepts/api/longcat-settings", ...apiAuth, longcatSettingsRoutes);
+app.use("/dev-koncepts/api/activity-logs", ...apiAuth, requirePermission("page.settings.activity", "module.settings"), activityLogsRoutes);
+app.use("/dev-koncepts/api/approval-flows", ...apiAuth, requirePermission("module.settings"), approvalFlowsRoutes);
+app.use("/dev-koncepts/api/backups", ...apiAuth, requirePermission("module.settings"), backupsRoutes);
+app.use("/dev-koncepts/api/company-profile", ...apiAuth, requirePermission("module.settings"), companyProfileRoutes);
+app.use("/dev-koncepts/api/whatsapp-settings", ...apiAuth, requirePermission("module.settings"), whatsappSettingsRoutes);
+app.use("/dev-koncepts/api/longcat-settings", ...apiAuth, requirePermission("module.settings"), longcatSettingsRoutes);
 app.use("/dev-koncepts/api/ai-assistant", ...apiAuth, aiAssistantRoutes);
-app.use("/dev-koncepts/api/vouchers", ...apiAuth, vouchersRoutes);
-app.use("/dev-koncepts/api/getVouchers", ...apiAuth, vouchersRoutes);
-app.use("/dev-koncepts/api/sales", ...apiAuth, salesRoutes);
-app.use("/dev-koncepts/api/dpo-returns", ...apiAuth, dpoReturnsRoutes);
-app.use("/dev-koncepts/api/sales-returns", ...apiAuth, salesReturnsRoutes);
+app.use("/dev-koncepts/api/vouchers", ...apiAuth, requirePermission("module.vouchers"), vouchersRoutes);
+app.use("/dev-koncepts/api/getVouchers", ...apiAuth, requirePermission("module.vouchers"), vouchersRoutes);
+app.use("/dev-koncepts/api/sales", ...apiAuth, requirePermission("module.sales"), salesRoutes);
+app.use("/dev-koncepts/api/dpo-returns", ...apiAuth, requirePermission("module.inventory", "page.inventory.dpo-return"), dpoReturnsRoutes);
+app.use("/dev-koncepts/api/sales-returns", ...apiAuth, requirePermission("module.sales", "page.sales.returns"), salesReturnsRoutes);
 app.use("/dev-koncepts/api/advanced-search", ...apiAuth, advancedSearchRoutes);
-app.use("/dev-koncepts/api/purchase-import", ...apiAuth, purchaseImportRoutes);
+app.use("/dev-koncepts/api/purchase-import", ...apiAuth, requirePermission("module.purchase-import"), purchaseImportRoutes);
 app.use("/dev-koncepts/api/email", ...apiAuth, emailRoutes);
 
 // RESTART TRIGGER - EXPLICIT FORCE AT 2026-02-03 18:22

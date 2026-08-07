@@ -1,4 +1,5 @@
 import { Voucher } from "./VoucherManagement";
+import { ACCOUNTING_COLORS } from "@/utils/accountingColors";
 
 interface VoucherPrintViewProps {
   voucher: Voucher;
@@ -65,8 +66,8 @@ export const VoucherPrintView = ({ voucher }: VoucherPrintViewProps) => {
             <th className="border border-black p-2 text-left">S.No</th>
             <th className="border border-black p-2 text-left">Account</th>
             <th className="border border-black p-2 text-left">Description</th>
-            <th className="border border-black p-2 text-right">Debit (Rs)</th>
-            <th className="border border-black p-2 text-right">Credit (Rs)</th>
+            <th className="border border-black p-2 text-right" style={{ color: ACCOUNTING_COLORS.dr.css }}>Debit (Rs)</th>
+            <th className="border border-black p-2 text-right" style={{ color: ACCOUNTING_COLORS.cr.css }}>Credit (Rs)</th>
           </tr>
         </thead>
         <tbody>
@@ -75,10 +76,10 @@ export const VoucherPrintView = ({ voucher }: VoucherPrintViewProps) => {
               <td className="border border-black p-2">{index + 1}</td>
               <td className="border border-black p-2">{entry.account}</td>
               <td className="border border-black p-2">{entry.description || "-"}</td>
-              <td className="border border-black p-2 text-right">
+              <td className="border border-black p-2 text-right" style={{ color: ACCOUNTING_COLORS.dr.css }}>
                 {entry.debit > 0 ? entry.debit.toLocaleString("en-PK", { minimumFractionDigits: 2 }) : "-"}
               </td>
-              <td className="border border-black p-2 text-right">
+              <td className="border border-black p-2 text-right" style={{ color: ACCOUNTING_COLORS.cr.css }}>
                 {entry.credit > 0 ? entry.credit.toLocaleString("en-PK", { minimumFractionDigits: 2 }) : "-"}
               </td>
             </tr>
@@ -87,10 +88,10 @@ export const VoucherPrintView = ({ voucher }: VoucherPrintViewProps) => {
         <tfoot>
           <tr className="bg-gray-100 font-bold">
             <td colSpan={3} className="border border-black p-2 text-right">Total:</td>
-            <td className="border border-black p-2 text-right">
+            <td className="border border-black p-2 text-right" style={{ color: ACCOUNTING_COLORS.dr.css }}>
               {voucher.totalDebit.toLocaleString("en-PK", { minimumFractionDigits: 2 })}
             </td>
-            <td className="border border-black p-2 text-right">
+            <td className="border border-black p-2 text-right" style={{ color: ACCOUNTING_COLORS.cr.css }}>
               {voucher.totalCredit.toLocaleString("en-PK", { minimumFractionDigits: 2 })}
             </td>
           </tr>
@@ -99,7 +100,7 @@ export const VoucherPrintView = ({ voucher }: VoucherPrintViewProps) => {
 
       {/* Amount in Words */}
       <div className="mb-8 p-3 border border-black">
-        <p className="font-semibold">Amount in Words:</p>
+        <p className="font-semibold" style={{ color: ACCOUNTING_COLORS.amount.css }}>Amount in Words:</p>
         <p className="italic">{numberToWords(voucher.totalDebit)} Rupees Only</p>
       </div>
 

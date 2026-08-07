@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { applyPdfFcLcColors } from "@/utils/accountingColors";
 
 export type PurchaseImportQuotationPrintDetail = {
   requestNo?: string | null;
@@ -324,25 +325,25 @@ export const printPurchaseImportQuotation = ({
             if (isRevised) {
               return [
                 ...base,
-                num(item.fcRate, 4),
-                num(item.fcAmount),
-                num(item.lcRate, 4),
-                num(item.lcAmount),
-                num(item.revisedFcRate, 4),
-                num(item.revisedFcAmount),
-                num(item.revisedLcRate, 4),
-                num(item.revisedLcAmount),
+                num(item.fcRate, 2),
+                num(item.fcAmount, 2),
+                num(item.lcRate, 0),
+                num(item.lcAmount, 0),
+                num(item.revisedFcRate, 2),
+                num(item.revisedFcAmount, 2),
+                num(item.revisedLcRate, 0),
+                num(item.revisedLcAmount, 0),
                 num(item.totalWeight),
               ];
             }
 
             return [
               ...base,
-              num(item.lastFcRate, 4),
-              num(item.fcRate, 4),
-              num(item.fcAmount),
-              num(item.lcRate, 4),
-              num(item.lcAmount),
+              num(item.lastFcRate, 2),
+              num(item.fcRate, 2),
+              num(item.fcAmount, 2),
+              num(item.lcRate, 0),
+              num(item.lcAmount, 0),
               num(item.totalWeight),
             ];
           }),
@@ -357,11 +358,11 @@ export const printPurchaseImportQuotation = ({
             String(totals.quotationQty),
             "",
             "",
-            num(totals.fcAmount),
+            num(totals.fcAmount, 2),
             "",
-            num(totals.lcAmount),
+            num(totals.lcAmount, 0),
             "",
-            num(totals.revisedFcAmount || 0),
+            num(totals.revisedFcAmount || 0, 2),
             "",
             num(totals.revisedLcAmount || 0),
             num(totals.totalWeight),
@@ -376,9 +377,9 @@ export const printPurchaseImportQuotation = ({
             "",
             "",
             "Totals",
-            num(totals.fcAmount),
+            num(totals.fcAmount, 2),
             "",
-            num(totals.lcAmount),
+            num(totals.lcAmount, 0),
             num(totals.totalWeight),
           ],
     ],
@@ -454,10 +455,10 @@ export const printPurchaseImportQuotation = ({
       if (data.section === "body" && data.column.index === 5 && itemRows.length > 0) {
         data.cell.styles.fontStyle = "bold";
       }
-      // Highlight revised amount columns
-      if (isRevised && data.section === "body" && [11, 12, 13, 14].includes(data.column.index)) {
-        data.cell.styles.textColor = [22, 100, 218];
-        data.cell.styles.fontStyle = "bold";
+      if (isRevised) {
+        applyPdfFcLcColors(data, [7, 8, 11, 12], [9, 10, 13, 14]);
+      } else {
+        applyPdfFcLcColors(data, [7, 8, 9], [10, 11]);
       }
     },
   });

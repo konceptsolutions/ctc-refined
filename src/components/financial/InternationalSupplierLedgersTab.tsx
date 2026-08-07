@@ -33,6 +33,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  fcHeaderClass,
+  fcValueClass,
+  lcHeaderClass,
+  lcValueClass,
+} from "@/utils/accountingColors";
 import { VoucherViewDialog } from "@/components/vouchers/VoucherViewDialog";
 
 type CurrencyMode = "local" | "foreign";
@@ -417,9 +423,9 @@ export const InternationalSupplierLedgersTab = () => {
                     Exchange Rate
                   </TableHead>
                 ) : null}
-                <TableHead className="font-semibold underline text-right">Dr</TableHead>
-                <TableHead className="font-semibold underline text-right">Cr</TableHead>
-                <TableHead className="font-semibold underline text-right">Balance</TableHead>
+                <TableHead className={`font-semibold underline text-right ${currencyMode === "foreign" ? fcHeaderClass : lcHeaderClass}`}>Dr</TableHead>
+                <TableHead className={`font-semibold underline text-right ${currencyMode === "foreign" ? fcHeaderClass : lcHeaderClass}`}>Cr</TableHead>
+                <TableHead className={`font-semibold underline text-right ${currencyMode === "foreign" ? fcHeaderClass : lcHeaderClass}`}>Balance</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -494,13 +500,13 @@ export const InternationalSupplierLedgersTab = () => {
                           {formatExchangeRate(entry.conversionRate)}
                         </TableCell>
                       ) : null}
-                      <TableCell className="text-right">
+                      <TableCell className={`text-right ${currencyMode === "foreign" ? fcValueClass(getDebit(entry)) : lcValueClass(getDebit(entry))}`}>
                         {formatAmount(getDebit(entry))}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className={`text-right ${currencyMode === "foreign" ? fcValueClass(getCredit(entry)) : lcValueClass(getCredit(entry))}`}>
                         {formatAmount(getCredit(entry))}
                       </TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className={`text-right font-medium ${currencyMode === "foreign" ? fcValueClass(getBalance(entry)) : lcValueClass(getBalance(entry))}`}>
                         {formatAmount(getBalance(entry))}
                       </TableCell>
                     </TableRow>
@@ -512,12 +518,12 @@ export const InternationalSupplierLedgersTab = () => {
                     >
                       Total:
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className={`text-right ${currencyMode === "foreign" ? fcValueClass(1, true) : lcValueClass(1, true)}`}>
                       {formatAmount(
                         entries.reduce((sum, e) => sum + (getDebit(e) || 0), 0),
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className={`text-right ${currencyMode === "foreign" ? fcValueClass(1, true) : lcValueClass(1, true)}`}>
                       {formatAmount(
                         entries.reduce((sum, e) => sum + (getCredit(e) || 0), 0),
                       )}

@@ -5,6 +5,7 @@ import {
   formatPdfMoney,
   openPdfPrintDialog,
 } from "@/utils/pdfPrint";
+import { applyPdfDrCrColors } from "@/utils/accountingColors";
 
 export type TrialBalancePrintRow = {
   label: string;
@@ -84,6 +85,7 @@ export const printTrialBalance = (input: TrialBalancePrintInput): boolean => {
       2: { halign: "right", cellWidth: 35 },
     },
     didParseCell: (data) => {
+      applyPdfDrCrColors(data, 1, 2);
       if (data.section !== "body") return;
       const isTotal = data.row.index === input.rows.length;
       if (isTotal || subgroupIndexes.has(data.row.index)) {

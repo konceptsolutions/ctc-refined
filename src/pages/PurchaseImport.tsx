@@ -3,8 +3,21 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
+import {
+  fcHeaderClass,
+  fcValueClass,
+  lcHeaderClass,
+  lcValueClass,
+} from "@/utils/accountingColors";
+import {
+  formatFc,
+  formatPurchasePrice,
+  roundFc,
+  roundPurchasePrice,
+} from "@/utils/purchasePriceRound";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2, ChevronDown, ChevronUp, Mail } from "lucide-react";
+import { usePermissions } from "@/permissions/PermissionsProvider";
 import { BackOrderSummaryTab } from "@/components/purchase-import/BackOrderSummaryTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +81,7 @@ interface TabConfig {
   label: string;
   icon: React.ElementType;
   description: string;
+  permission: string;
 }
 
 const PURCHASE_IMPORT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
@@ -152,42 +166,49 @@ const tabs: TabConfig[] = [
     label: "Inquiry",
     icon: FileText,
     description: "Create and manage purchase import inquiries",
+    permission: "page.purchase-import.inquiry",
   },
   {
     id: "quotation",
     label: "Quotation",
     icon: Check,
     description: "Create quotations from confirmed inquiries",
+    permission: "page.purchase-import.quotation",
   },
   {
     id: "revise-quotation",
     label: "Revise Quotation",
     icon: Pencil,
     description: "Revise open purchase quotations",
+    permission: "page.purchase-import.revise-quotation",
   },
   {
     id: "confirm-quotation",
     label: "Confirmation",
     icon: PackageCheck,
     description: "View confirmed purchase quotations",
+    permission: "page.purchase-import.confirm-quotation",
   },
   {
     id: "purchase-order",
     label: "Shipments",
     icon: ShoppingCart,
     description: "Purchase orders created from confirmed quotations",
+    permission: "page.purchase-import.purchase-order",
   },
   {
     id: "purchase-invoice",
     label: "Invoices",
     icon: Receipt,
     description: "Enter invoice details and import expenses",
+    permission: "page.purchase-import.purchase-invoice",
   },
   {
     id: "back-order-summary",
     label: "Back Order Summary",
     icon: FileBarChart2,
     description: "Back order summary report by supplier and date range",
+    permission: "page.purchase-import.back-order-summary",
   },
 ];
 
@@ -490,6 +511,20 @@ function formatImportPoAmount(value: number) {
   });
 }
 
+/** Round to 2 decimal places (FC / expense style). */
+function roundImportMoney(value: unknown): number {
+  return roundFc(value);
+}
+
+/** Round purchase / LC unit prices to whole numbers (no decimals). */
+function roundImportWhole(value: unknown): number {
+  return roundPurchasePrice(value);
+}
+
+function formatImportPoWhole(value: number) {
+  return formatPurchasePrice(value);
+}
+
 function normalizeImportPoExpenseNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
@@ -618,8 +653,8 @@ function computeImportReceiveLineAmounts(
 ) {
   const qty = Math.max(0, Math.floor(Number(receiveQty) || 0));
   return {
-    fcAmount: line.fcRate * qty,
-    lcAmount: line.lcRate * qty,
+    fcAmount: roundImportMoney(line.fcRate * qty),
+    lcAmount: roundImportWhole(line.lcRate * qty),
     totalWeight: line.weight * qty,
   };
 }
@@ -659,15 +694,16 @@ function recalcReceiveLineRates(
   fcRate: number,
   conversionRate: number,
 ) {
-  const lcRate = fcRate * conversionRate;
+  const roundedFcRate = roundFc(fcRate);
+  const lcRate = roundImportWhole(roundedFcRate * conversionRate);
   const amounts = computeImportReceiveLineAmounts(
-    { ...line, fcRate, lcRate },
+    { ...line, fcRate: roundedFcRate, lcRate },
     line.receiveQty,
   );
   return {
     ...line,
-    fcRate,
-    fcRateText: formatRateInput(fcRate),
+    fcRate: roundedFcRate,
+    fcRateText: formatFcRateInput(roundedFcRate),
     lcRate,
     fcAmount: amounts.fcAmount,
     lcAmount: amounts.lcAmount,
@@ -975,17 +1011,42 @@ type PurchaseQuotationFormItem = PurchaseQuotationContextItem & {
 };
 
 const RATE_INPUT_PATTERN = /^\d*\.?\d{0,4}$/;
+/** FC rate: up to 2 decimal places while typing. */
+const FC_RATE_INPUT_PATTERN = /^\d*\.?\d{0,2}$/;
+const EXCHANGE_RATE_INPUT_PATTERN = /^\d*\.?\d{0,6}$/;
 
 const formatRateInput = (value: number): string => {
   if (!Number.isFinite(value) || value === 0) return "";
   return String(Math.round(value * 10000) / 10000);
 };
 
+const formatFcRateInput = (value: number): string => {
+  if (!Number.isFinite(value) || value === 0) return "";
+  return String(roundFc(value));
+};
+
+const formatExchangeRateInput = (value: number | string): string => {
+  const parsed = Number(String(value).replace(/,/g, "."));
+  if (!Number.isFinite(parsed) || parsed <= 0) return "1";
+  return String(Math.round(parsed * 1_000_000) / 1_000_000);
+};
+
 const parseRateInput = (raw: string): number => {
   if (!raw || raw === ".") return 0;
-  const parsed = Number(raw);
+  const parsed = Number(String(raw).replace(/,/g, "."));
   if (!Number.isFinite(parsed)) return 0;
   return Math.round(parsed * 10000) / 10000;
+};
+
+const parseFcRateInput = (raw: string): number => {
+  if (!raw || raw === ".") return 0;
+  return roundFc(String(raw).replace(/,/g, "."));
+};
+
+const parseExchangeRateInput = (raw: string | number): number => {
+  const parsed = Number(String(raw).replace(/,/g, "."));
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.round(parsed * 1_000_000) / 1_000_000;
 };
 
 type LinkedExpenseKind = "pkg" | "disc";
@@ -1047,7 +1108,7 @@ function formatLinkedExpenseText(values: {
 }): LinkedExpenseText {
   return {
     percent: formatRateInput(values.percent),
-    fc: formatRateInput(values.fc),
+    fc: formatFcRateInput(values.fc),
     lc: formatRateInput(values.lc),
   };
 }
@@ -1065,15 +1126,18 @@ function buildLinkedExpenseTextFromPercent(
 
 const QUOTATION_QTY_COL_CLASS = "text-right p-2 border-b w-24 whitespace-nowrap";
 const QUOTATION_SHIP_DAYS_COL_CLASS = "text-right p-2 border-b w-20 whitespace-nowrap";
-const QUOTATION_FC_RATE_COL_CLASS = "text-right p-2 border-b w-24 whitespace-nowrap";
+const QUOTATION_FC_RATE_COL_CLASS = `text-right p-2 border-b w-24 whitespace-nowrap ${fcHeaderClass}`;
 const QUOTATION_LAST_FC_RATE_COL_CLASS =
-  "text-right p-2 border-b w-28 whitespace-nowrap";
+  `text-right p-2 border-b w-28 whitespace-nowrap ${fcHeaderClass}`;
 const QUOTATION_QTY_INPUT_CLASS =
   "h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto";
 const QUOTATION_SHIP_DAYS_INPUT_CLASS =
   "h-8 w-20 min-w-0 text-right text-xs px-2 ml-auto";
 const QUOTATION_FC_RATE_INPUT_CLASS =
-  "h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto";
+  `h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto ${fcValueClass()}`;
+const QUOTATION_FC_AMOUNT_COL_CLASS = `text-right p-2 border-b ${fcHeaderClass}`;
+const QUOTATION_LC_RATE_COL_CLASS = `text-right p-2 border-b ${lcHeaderClass}`;
+const QUOTATION_LC_AMOUNT_COL_CLASS = `text-right p-2 border-b ${lcHeaderClass}`;
 
 const INQUIRY_KHI_QTY_INPUT_CLASS =
   "h-8 w-20 text-right ml-auto border-2 border-sky-500 focus-visible:ring-sky-500/30 dark:border-sky-400";
@@ -1096,7 +1160,7 @@ const INQUIRY_OTHER_QTY_DISPLAY_CLASS =
 const formatLastFcRateDisplay = (value?: number) => {
   const rate = Number(value || 0);
   if (!Number.isFinite(rate) || rate <= 0) return "-";
-  return rate.toFixed(4);
+  return formatFc(rate);
 };
 
 const loadLastFcRateForPart = async (
@@ -3592,7 +3656,7 @@ const PurchaseQuotationForm = ({
   const [quotationNo, setQuotationNo] = useState("");
   const [quotationDate, setQuotationDate] = useState(toInputDate(new Date()));
   const [currency, setCurrency] = useState("USD");
-  const [conversionRate, setConversionRate] = useState(1);
+  const [conversionRate, setConversionRate] = useState("1");
   const [rows, setRows] = useState<PurchaseQuotationFormItem[]>([]);
   const [partOptions, setPartOptions] = useState<PartOption[]>([]);
   const [replaceRowId, setReplaceRowId] = useState<string | null>(null);
@@ -3666,7 +3730,7 @@ const PurchaseQuotationForm = ({
         setQuotationNo(data.quotationNo || "");
         setQuotationDate(toInputDate(data.quotationDate || new Date()));
         setCurrency(data.currency || data.defaultCurrency || "USD");
-        setConversionRate(Number(data.conversionRate || 1));
+        setConversionRate(formatExchangeRateInput(data.conversionRate || 1));
         setRows(
           Array.isArray(data.items)
             ? data.items.map((item) => {
@@ -3685,9 +3749,9 @@ const PurchaseQuotationForm = ({
                 ),
                 shipDays: Number(item.shipDays || 0),
                 fcRate: Number(item.fcRate || 0),
-                fcRateText: formatRateInput(Number(item.fcRate || 0)),
+                fcRateText: formatFcRateInput(Number(item.fcRate || 0)),
                 revisedFcRate: Number(item.revisedFcRate || 0),
-                revisedFcRateText: formatRateInput(
+                revisedFcRateText: formatFcRateInput(
                   Number(item.revisedFcRate || 0),
                 ),
                 lastFcRate: Number(item.lastFcRate || 0),
@@ -3921,10 +3985,10 @@ const PurchaseQuotationForm = ({
     () =>
       rows.map((row) => {
         const quotationQuantity = Number(row.quotationQuantity || 0);
-        const fcRate = Number(row.fcRate || 0);
-        const lcRate = fcRate * Number(conversionRate || 0);
-        const fcAmount = quotationQuantity * fcRate;
-        const lcAmount = quotationQuantity * lcRate;
+        const fcRate = roundFc(row.fcRate || 0);
+        const lcRate = roundImportWhole(fcRate * (Number(conversionRate) || 0));
+        const fcAmount = roundFc(quotationQuantity * fcRate);
+        const lcAmount = roundImportWhole(quotationQuantity * lcRate);
         const totalWeight = quotationQuantity * Number(row.weight || 0);
         return {
           rowId: row.rowId,
@@ -3967,7 +4031,7 @@ const PurchaseQuotationForm = ({
         quotationDate,
         supplierName: context.supplier?.name,
         currency,
-        conversionRate,
+        conversionRate: Number(conversionRate) || 0,
         status: existingQuotationId ? "saved" : "draft",
         terms: context.terms,
       },
@@ -4079,13 +4143,23 @@ const PurchaseQuotationForm = ({
       return;
     }
 
+    const parsedConversionRate = parseExchangeRateInput(conversionRate);
+    if (parsedConversionRate <= 0) {
+      toast({
+        title: "Exchange rate required",
+        description: "Please enter a valid exchange rate (decimals allowed).",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
         quotationNo: trimmedQuotationNo,
         quotationDate,
         currency,
-        conversionRate: Number(conversionRate || 1),
+        conversionRate: parsedConversionRate,
         quotationType: "original" as const,
         status: "pending",
         items: validItems.map((row) => ({
@@ -4209,11 +4283,14 @@ const PurchaseQuotationForm = ({
               <div className="space-y-1 min-w-0">
                 <Label>Exchange Rate</Label>
                 <Input
-                  type="number"
-                  min={0}
-                  step="0.0001"
+                  type="text"
+                  inputMode="decimal"
                   value={conversionRate}
-                  onChange={(e) => setConversionRate(Number(e.target.value || 0))}
+                  onChange={(e) => {
+                    const raw = String(e.target.value).replace(/,/g, ".");
+                    if (raw !== "" && !EXCHANGE_RATE_INPUT_PATTERN.test(raw)) return;
+                    setConversionRate(raw);
+                  }}
                 />
               </div>
             </div>
@@ -4270,9 +4347,9 @@ const PurchaseQuotationForm = ({
                   <th className={QUOTATION_SHIP_DAYS_COL_CLASS}>Ship Days</th>
                   <th className={QUOTATION_LAST_FC_RATE_COL_CLASS}>Last FC Rate</th>
                   <th className={QUOTATION_FC_RATE_COL_CLASS}>FC Rate</th>
-                  <th className="text-right p-2 border-b">FC Amount</th>
-                  <th className="text-right p-2 border-b">LC Rate</th>
-                  <th className="text-right p-2 border-b">LC Amount</th>
+                  <th className={QUOTATION_FC_AMOUNT_COL_CLASS}>FC Amount</th>
+                  <th className={QUOTATION_LC_RATE_COL_CLASS}>LC Rate</th>
+                  <th className={QUOTATION_LC_AMOUNT_COL_CLASS}>LC Amount</th>
                   <th className="text-right p-2 border-b">Total Weight</th>
                   <th className="text-center p-2 border-b min-w-[90px]">Action</th>
                 </tr>
@@ -4417,7 +4494,7 @@ const PurchaseQuotationForm = ({
                           }
                         />
                       </td>
-                      <td className="p-2 text-right text-muted-foreground tabular-nums">
+                      <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                         {formatLastFcRateDisplay(row.lastFcRate)}
                       </td>
                       <td className="p-2 text-right">
@@ -4428,22 +4505,22 @@ const PurchaseQuotationForm = ({
                           value={row.fcRateText}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
+                            if (raw !== "" && !FC_RATE_INPUT_PATTERN.test(raw)) return;
                             updateRow(row.rowId, {
                               fcRateText: raw,
-                              fcRate: parseRateInput(raw),
+                              fcRate: parseFcRateInput(raw),
                             });
                           }}
                           onBlur={() => {
                             updateRow(row.rowId, {
-                              fcRateText: formatRateInput(row.fcRate),
+                              fcRateText: formatFcRateInput(row.fcRate),
                             });
                           }}
                         />
                       </td>
-                      <td className="p-2 text-right">{Number(calc?.fcAmount || 0).toFixed(2)}</td>
-                      <td className="p-2 text-right">{Number(calc?.lcRate || 0).toFixed(2)}</td>
-                      <td className="p-2 text-right">{Number(calc?.lcAmount || 0).toFixed(2)}</td>
+                      <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(Number(calc?.fcAmount || 0))}</td>
+                      <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(Number(calc?.lcRate || 0))}</td>
+                      <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(Number(calc?.lcAmount || 0))}</td>
                       <td className="p-2 text-right">{Number(calc?.totalWeight || 0).toFixed(2)}</td>
                       <td className="p-2 text-center">
                         <div className="flex items-center justify-center gap-1">
@@ -4532,9 +4609,9 @@ const PurchaseQuotationForm = ({
                   <td className="p-2" />
                   <td className="p-2" />
                   <td className="p-2" />
-                  <td className="p-2 text-right">{quotationTotals.fcAmount.toFixed(2)}</td>
+                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(quotationTotals.fcAmount)}</td>
                   <td className="p-2" />
-                  <td className="p-2 text-right">{quotationTotals.lcAmount.toFixed(2)}</td>
+                  <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.lcAmount)}</td>
                   <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
                   <td className="p-2" />
                 </tr>
@@ -4578,7 +4655,7 @@ const PurchaseQuotationRevisionForm = ({
   const [quotationDate, setQuotationDate] = useState(toInputDate(new Date()));
   const [revisedQuotationDate, setRevisedQuotationDate] = useState(toInputDate(new Date()));
   const [currency, setCurrency] = useState("USD");
-  const [conversionRate, setConversionRate] = useState(1);
+  const [conversionRate, setConversionRate] = useState("1");
   const [rows, setRows] = useState<PurchaseQuotationFormItem[]>([]);
   const [replaceRowId, setReplaceRowId] = useState<string | null>(null);
   const [alternateParts, setAlternateParts] = useState<PartOption[]>([]);
@@ -4635,7 +4712,7 @@ const PurchaseQuotationRevisionForm = ({
         setQuotationDate(toInputDate(data.quotationDate || new Date()));
         setRevisedQuotationDate(toInputDate(data.revisedQuotationDate || new Date()));
         setCurrency(data.currency || "USD");
-        setConversionRate(Number(data.conversionRate || 1));
+        setConversionRate(formatExchangeRateInput(data.conversionRate || 1));
         setRows(
           Array.isArray(data.items)
             ? data.items.map((item) => {
@@ -4657,9 +4734,9 @@ const PurchaseQuotationRevisionForm = ({
                 quotationQuantity: Number(item.quotationQuantity || 0),
                 shipDays: Number(item.shipDays || 0),
                 fcRate: Number(item.fcRate || 0),
-                fcRateText: formatRateInput(Number(item.fcRate || 0)),
+                fcRateText: formatFcRateInput(Number(item.fcRate || 0)),
                 revisedFcRate: Number(item.revisedFcRate || 0),
-                revisedFcRateText: formatRateInput(
+                revisedFcRateText: formatFcRateInput(
                   Number(item.revisedFcRate || 0),
                 ),
                 lastFcRate: Number((item as any).lastFcRate || 0),
@@ -4794,14 +4871,16 @@ const PurchaseQuotationRevisionForm = ({
     () =>
       rows.map((row) => {
         const quotationQuantity = Number(row.quotationQuantity || 0);
-        const fcRate = Number(row.fcRate || 0);
-        const revisedFcRate = Number(row.revisedFcRate || 0);
-        const lcRate = fcRate * Number(conversionRate || 0);
-        const revisedLcRate = revisedFcRate * Number(conversionRate || 0);
-        const fcAmount = quotationQuantity * fcRate;
-        const revisedFcAmount = quotationQuantity * revisedFcRate;
-        const lcAmount = quotationQuantity * lcRate;
-        const revisedLcAmount = quotationQuantity * revisedLcRate;
+        const fcRate = roundFc(row.fcRate || 0);
+        const revisedFcRate = roundFc(row.revisedFcRate || 0);
+        const lcRate = roundImportWhole(fcRate * (Number(conversionRate) || 0));
+        const revisedLcRate = roundImportWhole(
+          revisedFcRate * (Number(conversionRate) || 0),
+        );
+        const fcAmount = roundFc(quotationQuantity * fcRate);
+        const revisedFcAmount = roundFc(quotationQuantity * revisedFcRate);
+        const lcAmount = roundImportWhole(quotationQuantity * lcRate);
+        const revisedLcAmount = roundImportWhole(quotationQuantity * revisedLcRate);
         const totalWeight = quotationQuantity * Number(row.weight || 0);
         return {
           rowId: row.rowId,
@@ -4849,6 +4928,16 @@ const PurchaseQuotationRevisionForm = ({
   const handleSaveRevision = async () => {
     if (!detail) return;
 
+    const parsedConversionRate = parseExchangeRateInput(conversionRate);
+    if (parsedConversionRate <= 0) {
+      toast({
+        title: "Exchange rate required",
+        description: "Please enter a valid exchange rate (decimals allowed).",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       await apiClient.revisePurchaseQuotation(quotationId, {
@@ -4856,7 +4945,7 @@ const PurchaseQuotationRevisionForm = ({
         revisedQuotationDate,
         status: "revise",
         currency,
-        conversionRate: Number(conversionRate || 1),
+        conversionRate: parsedConversionRate,
         items: rows.map((row) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
@@ -4894,7 +4983,7 @@ const PurchaseQuotationRevisionForm = ({
         revisedQuotationDate,
         supplierName: detail.supplier?.name || detail.supplier?.code || null,
         currency,
-        conversionRate,
+        conversionRate: Number(conversionRate) || 0,
         status: "revise",
         terms: detail.terms,
       },
@@ -5010,11 +5099,14 @@ const PurchaseQuotationRevisionForm = ({
               <div className="space-y-1 min-w-0">
                 <Label>Exchange Rate</Label>
                 <Input
-                  type="number"
-                  min={0}
-                  step="0.0001"
+                  type="text"
+                  inputMode="decimal"
                   value={conversionRate}
-                  onChange={(e) => setConversionRate(Number(e.target.value || 0))}
+                  onChange={(e) => {
+                    const raw = String(e.target.value).replace(/,/g, ".");
+                    if (raw !== "" && !EXCHANGE_RATE_INPUT_PATTERN.test(raw)) return;
+                    setConversionRate(raw);
+                  }}
                 />
               </div>
             </div>
@@ -5060,13 +5152,13 @@ const PurchaseQuotationRevisionForm = ({
                   <th className={QUOTATION_SHIP_DAYS_COL_CLASS}>Ship Days</th>
                   <th className={QUOTATION_LAST_FC_RATE_COL_CLASS}>Last FC Rate</th>
                   <th className={QUOTATION_FC_RATE_COL_CLASS}>FC Rate</th>
-                  <th className="text-right p-2 border-b">FC Amount</th>
-                  <th className="text-right p-2 border-b">LC Rate</th>
-                  <th className="text-right p-2 border-b">LC Amount</th>
+                  <th className={QUOTATION_FC_AMOUNT_COL_CLASS}>FC Amount</th>
+                  <th className={QUOTATION_LC_RATE_COL_CLASS}>LC Rate</th>
+                  <th className={QUOTATION_LC_AMOUNT_COL_CLASS}>LC Amount</th>
                   <th className={QUOTATION_FC_RATE_COL_CLASS}>Revised FC Rate</th>
-                  <th className="text-right p-2 border-b">Revised FC Amount</th>
-                  <th className="text-right p-2 border-b">Revised LC Rate</th>
-                  <th className="text-right p-2 border-b">Revised LC Amount</th>
+                  <th className={QUOTATION_FC_AMOUNT_COL_CLASS}>Revised FC Amount</th>
+                  <th className={QUOTATION_LC_RATE_COL_CLASS}>Revised LC Rate</th>
+                  <th className={QUOTATION_LC_AMOUNT_COL_CLASS}>Revised LC Amount</th>
                   <th className="text-right p-2 border-b">Total Weight</th>
                   <th className="text-center p-2 border-b min-w-[90px]">Action</th>
                 </tr>
@@ -5120,7 +5212,7 @@ const PurchaseQuotationRevisionForm = ({
                           }
                         />
                       </td>
-                      <td className="p-2 text-right text-muted-foreground tabular-nums">
+                      <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                         {formatLastFcRateDisplay(row.lastFcRate)}
                       </td>
                       <td className="p-2 text-right">
@@ -5131,22 +5223,22 @@ const PurchaseQuotationRevisionForm = ({
                           value={row.fcRateText}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
+                            if (raw !== "" && !FC_RATE_INPUT_PATTERN.test(raw)) return;
                             updateRow(row.rowId, {
                               fcRateText: raw,
-                              fcRate: parseRateInput(raw),
+                              fcRate: parseFcRateInput(raw),
                             });
                           }}
                           onBlur={() => {
                             updateRow(row.rowId, {
-                              fcRateText: formatRateInput(row.fcRate),
+                              fcRateText: formatFcRateInput(row.fcRate),
                             });
                           }}
                         />
                       </td>
-                      <td className="p-2 text-right">{Number(calc?.fcAmount || 0).toFixed(2)}</td>
-                      <td className="p-2 text-right">{Number(calc?.lcRate || 0).toFixed(2)}</td>
-                      <td className="p-2 text-right">{Number(calc?.lcAmount || 0).toFixed(2)}</td>
+                      <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(Number(calc?.fcAmount || 0))}</td>
+                      <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(Number(calc?.lcRate || 0))}</td>
+                      <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(Number(calc?.lcAmount || 0))}</td>
                       <td className="p-2 text-right">
                         <Input
                           type="text"
@@ -5155,27 +5247,27 @@ const PurchaseQuotationRevisionForm = ({
                           value={row.revisedFcRateText}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
+                            if (raw !== "" && !FC_RATE_INPUT_PATTERN.test(raw)) return;
                             updateRow(row.rowId, {
                               revisedFcRateText: raw,
-                              revisedFcRate: parseRateInput(raw),
+                              revisedFcRate: parseFcRateInput(raw),
                             });
                           }}
                           onBlur={() => {
                             updateRow(row.rowId, {
-                              revisedFcRateText: formatRateInput(row.revisedFcRate),
+                              revisedFcRateText: formatFcRateInput(row.revisedFcRate),
                             });
                           }}
                         />
                       </td>
-                      <td className="p-2 text-right">
-                        {Number(calc?.revisedFcAmount || 0).toFixed(2)}
+                      <td className={`p-2 text-right ${fcValueClass()}`}>
+                        {formatFc(Number(calc?.revisedFcAmount || 0))}
                       </td>
-                      <td className="p-2 text-right">
-                        {Number(calc?.revisedLcRate || 0).toFixed(2)}
+                      <td className={`p-2 text-right ${lcValueClass()}`}>
+                        {formatImportPoWhole(Number(calc?.revisedLcRate || 0))}
                       </td>
-                      <td className="p-2 text-right">
-                        {Number(calc?.revisedLcAmount || 0).toFixed(2)}
+                      <td className={`p-2 text-right ${lcValueClass()}`}>
+                        {formatImportPoWhole(Number(calc?.revisedLcAmount || 0))}
                       </td>
                       <td className="p-2 text-right">{Number(calc?.totalWeight || 0).toFixed(2)}</td>
                       <td className="p-2 text-center">
@@ -5251,13 +5343,13 @@ const PurchaseQuotationRevisionForm = ({
                   <td className="p-2" />
                   <td className="p-2" />
                   <td className="p-2" />
-                  <td className="p-2 text-right">{quotationTotals.fcAmount.toFixed(2)}</td>
+                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(quotationTotals.fcAmount)}</td>
                   <td className="p-2" />
-                  <td className="p-2 text-right">{quotationTotals.lcAmount.toFixed(2)}</td>
+                  <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.lcAmount)}</td>
                   <td className="p-2" />
-                  <td className="p-2 text-right">{quotationTotals.revisedFcAmount.toFixed(2)}</td>
+                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(quotationTotals.revisedFcAmount)}</td>
                   <td className="p-2" />
-                  <td className="p-2 text-right">{quotationTotals.revisedLcAmount.toFixed(2)}</td>
+                  <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.revisedLcAmount)}</td>
                   <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
                   <td className="p-2" />
                 </tr>
@@ -5574,8 +5666,8 @@ const PurchaseInquiryListPanel = ({
         const quotationQty = Number(
           item.quotationQuantity ?? item.demandQuantity ?? 0,
         );
-        const fcRate = Number(item.fcRate || 0);
-        const lcRate = fcRate * conversionRate;
+        const fcRate = roundFc(item.fcRate || 0);
+        const lcRate = roundImportWhole(fcRate * conversionRate);
         return {
           masterPartNo: item.masterPartNo,
           partNo: item.partNo,
@@ -6315,18 +6407,18 @@ const PurchaseQuotationListPanel = ({
       const conversionRate = Number(data.conversionRate || 1);
       const itemRows = items.map((item) => {
         const quotationQty = Number(item.quotationQuantity || 0);
-        const fcRate = Number(item.fcRate || 0);
-        const lcRate = Number(item.lcRate || fcRate * conversionRate);
+        const fcRate = roundFc(item.fcRate || 0);
+        const lcRate = roundImportWhole(item.lcRate || fcRate * conversionRate);
         const fcAmount = Number(item.fcAmount || quotationQty * fcRate);
-        const lcAmount = Number(item.lcAmount || quotationQty * lcRate);
+        const lcAmount = roundImportWhole(item.lcAmount || quotationQty * lcRate);
         const revisedFcRate = Number(item.revisedFcRate || 0);
-        const revisedLcRate = Number(
+        const revisedLcRate = roundImportWhole(
           item.revisedLcRate || revisedFcRate * conversionRate,
         );
         const revisedFcAmount = Number(
           item.revisedFcAmount || quotationQty * revisedFcRate,
         );
-        const revisedLcAmount = Number(
+        const revisedLcAmount = roundImportWhole(
           item.revisedLcAmount || quotationQty * revisedLcRate,
         );
         return {
@@ -6558,8 +6650,8 @@ const PurchaseQuotationListPanel = ({
               <th className="text-left p-2 border-b">Part Reference</th>
               <th className="text-left p-2 border-b">Consignee</th>
               <th className="text-right p-2 border-b">Items</th>
-              <th className="text-right p-2 border-b">FC Total</th>
-              <th className="text-right p-2 border-b">LC Total</th>
+              <th className={QUOTATION_FC_AMOUNT_COL_CLASS}>FC Total</th>
+              <th className={QUOTATION_LC_AMOUNT_COL_CLASS}>LC Total</th>
               {!isConfirmedView && (
                 <>
                   <th className="text-left p-2 border-b">Type</th>
@@ -6666,10 +6758,10 @@ const PurchaseQuotationListPanel = ({
                     </td>
                     <td className="p-2 font-medium">{consigneeLabel}</td>
                     <td className="p-2 text-right">{itemRows.length}</td>
-                    <td className="p-2 text-right">
+                    <td className={`p-2 text-right ${fcValueClass()}`}>
                       {Number(row.fcTotal || 0).toFixed(2)} {row.currency || ""}
                     </td>
-                    <td className="p-2 text-right">{Number(row.lcTotal || 0).toFixed(2)}</td>
+                    <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(Number(row.lcTotal || 0))}</td>
                     {!isConfirmedView && (
                       <>
                         <td className="p-2 capitalize">{row.quotationType || "original"}</td>
@@ -6921,13 +7013,13 @@ const recalcConfirmRowAmounts = (
   row: Pick<PurchaseQuotationConfirmRow, "fcRate" | "lcRate" | "weight" | "confirmQuantity">,
 ) => {
   const confirmQuantity = Math.max(0, Number(row.confirmQuantity) || 0);
-  const fcRate = Number(row.fcRate) || 0;
+  const fcRate = roundFc(row.fcRate);
   const lcRate = Number(row.lcRate) || 0;
   const weight = Number(row.weight) || 0;
   return {
     confirmQuantity,
-    fcAmount: fcRate * confirmQuantity,
-    lcAmount: lcRate * confirmQuantity,
+    fcAmount: roundFc(fcRate * confirmQuantity),
+    lcAmount: roundImportWhole(lcRate * confirmQuantity),
     totalWeight: weight * confirmQuantity,
   };
 };
@@ -7434,13 +7526,13 @@ const PurchaseQuotationConfirmForm = ({
               <th className={QUOTATION_FC_RATE_COL_CLASS}>
                 {isRevised ? "Revised FC Rate" : "FC Rate"}
               </th>
-              <th className="text-right p-2 border-b">
+              <th className={QUOTATION_FC_AMOUNT_COL_CLASS}>
                 {isRevised ? "Revised FC Amount" : "FC Amount"}
               </th>
-              <th className="text-right p-2 border-b">
+              <th className={QUOTATION_LC_RATE_COL_CLASS}>
                 {isRevised ? "Revised LC Rate" : "LC Rate"}
               </th>
-              <th className="text-right p-2 border-b">
+              <th className={QUOTATION_LC_AMOUNT_COL_CLASS}>
                 {isRevised ? "Revised LC Amount" : "LC Amount"}
               </th>
               <th className="text-right p-2 border-b">Total Weight</th>
@@ -7544,13 +7636,13 @@ const PurchaseQuotationConfirmForm = ({
                       <p className="mt-1 text-left text-xs text-destructive">{splitMismatch}</p>
                     ) : null}
                   </td>
-                  <td className="p-2 text-right text-muted-foreground tabular-nums">
+                  <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                     {formatLastFcRateDisplay(row.lastFcRate)}
                   </td>
-                  <td className="p-2 text-right tabular-nums">{row.fcRate.toFixed(4)}</td>
-                  <td className="p-2 text-right tabular-nums">{row.fcAmount.toFixed(2)}</td>
-                  <td className="p-2 text-right tabular-nums">{row.lcRate.toFixed(2)}</td>
-                  <td className="p-2 text-right tabular-nums">{row.lcAmount.toFixed(2)}</td>
+                  <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>{formatFc(row.fcRate)}</td>
+                  <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>{formatFc(row.fcAmount)}</td>
+                  <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>{formatImportPoWhole(row.lcRate)}</td>
+                  <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>{formatImportPoWhole(row.lcAmount)}</td>
                   <td className="p-2 text-right tabular-nums">{row.totalWeight.toFixed(2)}</td>
                 </tr>
                 );
@@ -7576,9 +7668,9 @@ const PurchaseQuotationConfirmForm = ({
                 <td className="p-2 text-right">{quotationTotals.confirmQty}</td>
                 <td className="p-2" />
                 <td className="p-2" />
-                <td className="p-2 text-right">{quotationTotals.fcAmount.toFixed(2)}</td>
+                <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(quotationTotals.fcAmount)}</td>
                 <td className="p-2" />
-                <td className="p-2 text-right">{quotationTotals.lcAmount.toFixed(2)}</td>
+                <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.lcAmount)}</td>
                 <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
               </tr>
             </tfoot>
@@ -8419,8 +8511,10 @@ const PurchaseOrderTab = ({
             ? Number(item.receivedQty ?? item.received_qty)
             : orderQty;
         const variance = computeImportReceiveVariance(orderQty, existingReceive);
-        const fcRate = Number(item.fcRate || 0);
-        const lcRate = Number(item.lcRate || fcRate * initialConversionRate);
+        const fcRate = roundFc(item.fcRate || 0);
+        const lcRate = roundImportWhole(
+          item.lcRate || fcRate * initialConversionRate,
+        );
         const weight = Number(item.weight || 0);
         const amounts = computeImportReceiveLineAmounts(
           { fcRate, lcRate, weight },
@@ -8441,7 +8535,7 @@ const PurchaseOrderTab = ({
           quotationQuantity: Number(item.quotationQuantity || 0),
           shipDays: Number(item.shipDays || 0),
           fcRate,
-          fcRateText: formatRateInput(fcRate),
+          fcRateText: formatFcRateInput(fcRate),
           fcAmount: amounts.fcAmount,
           lcRate,
           lcAmount: amounts.lcAmount,
@@ -8677,15 +8771,17 @@ const PurchaseOrderTab = ({
   };
 
   const handleConversionRateChange = (value: string) => {
-    setReceiveConversionRate(value);
-    const rate = Number(value);
-    if (!Number.isFinite(rate) || rate <= 0) return;
+    const raw = String(value).replace(/,/g, ".");
+    if (raw !== "" && !EXCHANGE_RATE_INPUT_PATTERN.test(raw)) return;
+    setReceiveConversionRate(raw);
+    const rate = parseExchangeRateInput(raw);
+    if (rate <= 0) return;
     setReceiveLines((prev) => applyReceiveConversionRateToLines(prev, rate));
   };
 
   const handleReceiveFcRateChange = (lineId: string, raw: string) => {
-    if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
-    const fcRate = parseRateInput(raw);
+    if (raw !== "" && !FC_RATE_INPUT_PATTERN.test(raw)) return;
+    const fcRate = parseFcRateInput(raw);
     const conversionRate = Number(receiveConversionRate) || 0;
     setReceiveLines((prev) =>
       prev.map((line) => {
@@ -8700,7 +8796,7 @@ const PurchaseOrderTab = ({
     setReceiveLines((prev) =>
       prev.map((line) =>
         line.id === lineId
-          ? { ...line, fcRateText: formatRateInput(line.fcRate) }
+          ? { ...line, fcRateText: formatFcRateInput(line.fcRate) }
           : line,
       ),
     );
@@ -8851,7 +8947,7 @@ const PurchaseOrderTab = ({
           );
           return {
             ...updatedRates,
-            fcRateText: formatRateInput(updatedRates.fcRate),
+            fcRateText: formatFcRateInput(updatedRates.fcRate),
             priceA,
             priceB,
             priceAText: formatRateInput(priceA),
@@ -9199,7 +9295,7 @@ const PurchaseOrderTab = ({
               <th className="text-left p-2 border-b">Forwarder</th>
               <th className="text-left p-2 border-b">Est Time Date</th>
               <th className="text-right p-2 border-b">Items</th>
-              <th className="text-right p-2 border-b">Total (LC)</th>
+              <th className={QUOTATION_LC_AMOUNT_COL_CLASS}>Total (LC)</th>
               <th className="text-left p-2 border-b">Status</th>
               <th className="text-center p-2 border-b">Action</th>
             </tr>
@@ -9244,7 +9340,7 @@ const PurchaseOrderTab = ({
                       : "-"}
                   </td>
                   <td className="p-2 text-right">{row.itemsCount}</td>
-                  <td className="p-2 text-right">
+                  <td className={`p-2 text-right ${lcValueClass()}`}>
                     {Number(row.totalAmount || 0).toLocaleString("en-PK", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
@@ -9418,11 +9514,12 @@ const PurchaseOrderTab = ({
                     : "-"}
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Total (LC):</span>{" "}
-                  {Number(viewOrder.totalAmount || viewOrder.total_amount || 0).toLocaleString(
-                    "en-PK",
-                    { minimumFractionDigits: 2 },
-                  )}
+                  <span className={lcHeaderClass}>Total (LC):</span>{" "}
+                  <span className={lcValueClass()}>
+                    {formatImportPoWhole(
+                      viewOrder.totalAmount || viewOrder.total_amount || 0,
+                    )}
+                  </span>
                 </div>
                 {(viewOrder.invoiceNo || viewOrder.invoice_no) ? (
                   <div>
@@ -9478,10 +9575,10 @@ const PurchaseOrderTab = ({
                 ) : null}
                 {Number(viewOrder.fcTotal || viewOrder.fc_total || 0) > 0 ? (
                   <div>
-                    <span className="text-muted-foreground">FC Total:</span>{" "}
-                    {Number(viewOrder.fcTotal || viewOrder.fc_total).toLocaleString("en-PK", {
-                      minimumFractionDigits: 2,
-                    })}
+                    <span className={fcHeaderClass}>FC Total:</span>{" "}
+                    <span className={fcValueClass()}>
+                      {formatFc(viewOrder.fcTotal || viewOrder.fc_total)}
+                    </span>
                   </div>
                 ) : null}
               </div>
@@ -9558,10 +9655,10 @@ const PurchaseOrderTab = ({
                             <span className="w-[72px] shrink-0 text-[10px] text-muted-foreground text-center">
                               %
                             </span>
-                            <span className="w-[90px] shrink-0 text-[10px] text-muted-foreground text-center">
+                            <span className={`w-[90px] shrink-0 text-[10px] text-center ${fcHeaderClass}`}>
                               FC
                             </span>
-                            <span className="w-[90px] shrink-0 text-[10px] text-muted-foreground text-center">
+                            <span className={`w-[90px] shrink-0 text-[10px] text-center ${lcHeaderClass}`}>
                               LC
                             </span>
                           </div>
@@ -9570,10 +9667,10 @@ const PurchaseOrderTab = ({
                             <span className="h-8 w-[72px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
                               {formatRateInput(viewExpenses.pkgExpPercent) || "0"}
                             </span>
-                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                            <span className={`h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums ${fcValueClass()}`}>
                               {formatImportPoAmount(commercial.pkgExpFcAmt)}
                             </span>
-                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                            <span className={`h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums ${lcValueClass()}`}>
                               {formatImportPoAmount(commercial.pkgExpAmt)}
                             </span>
                           </div>
@@ -9582,19 +9679,19 @@ const PurchaseOrderTab = ({
                             <span className="h-8 w-[72px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
                               {formatRateInput(viewExpenses.invDiscPercent) || "0"}
                             </span>
-                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                            <span className={`h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums ${fcValueClass()}`}>
                               {formatImportPoAmount(commercial.invDiscFcAmt)}
                             </span>
-                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                            <span className={`h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums ${lcValueClass()}`}>
                               {formatImportPoAmount(commercial.invDiscAmt)}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs w-20 shrink-0">Frt.Exp (FC)</span>
-                            <span className="h-8 w-[72px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                            <span className={`text-xs w-20 shrink-0 ${fcHeaderClass}`}>Frt.Exp (FC)</span>
+                            <span className={`h-8 w-[72px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums ${fcValueClass()}`}>
                               {formatImportPoAmount(viewExpenses.frtExp)}
                             </span>
-                            <span className="h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                            <span className={`h-8 w-[90px] shrink-0 px-1 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums ${lcValueClass()}`}>
                               {formatImportPoAmount(commercial.frtExpLc)}
                             </span>
                           </div>
@@ -9687,10 +9784,10 @@ const PurchaseOrderTab = ({
                       <th className="text-right p-2">Received</th>
                       <th className="text-right p-2">From Back</th>
                       <th className="text-right p-2">Back</th>
-                      <th className="text-right p-2">FC Rate</th>
-                      <th className="text-right p-2">FC Amount</th>
-                      <th className="text-right p-2">LC Rate</th>
-                      <th className="text-right p-2">LC Amount</th>
+                      <th className={`text-right p-2 ${fcHeaderClass}`}>FC Rate</th>
+                      <th className={`text-right p-2 ${fcHeaderClass}`}>FC Amount</th>
+                      <th className={`text-right p-2 ${lcHeaderClass}`}>LC Rate</th>
+                      <th className={`text-right p-2 ${lcHeaderClass}`}>LC Amount</th>
                       {isInvoiceMode ? (
                         <>
                           <th className="text-right p-2">Unit Exp</th>
@@ -9714,25 +9811,29 @@ const PurchaseOrderTab = ({
                       );
                       const backQty = Number(item.backQty ?? item.back_qty ?? 0);
                       const fcRate = Number(item.fcRate ?? item.fc_rate ?? 0);
-                      const fcAmount = Number(
+                      const fcAmount = roundImportMoney(
                         item.fcAmount ??
                           item.fc_amount ??
                           fcRate * orderQty,
                       );
-                      const lcRate = Number(
+                      const lcRate = roundImportWhole(
                         item.lcRate ?? item.lc_rate ?? item.unit_cost ?? 0,
                       );
-                      const lcAmount = Number(
+                      const lcAmount = roundImportWhole(
                         item.lcAmount ??
                           item.lc_amount ??
                           item.total_cost ??
                           lcRate * orderQty,
                       );
                       const qtyForCost = receivedQty > 0 ? receivedQty : orderQty;
-                      const distributedExpense = viewDistributedExpenses[itemIndex] ?? 0;
-                      const unitExp = qtyForCost > 0 ? distributedExpense / qtyForCost : 0;
-                      const unitCost = lcRate + unitExp;
-                      const lineCost = lcAmount + distributedExpense;
+                      const distributedExpense = roundImportMoney(
+                        viewDistributedExpenses[itemIndex] ?? 0,
+                      );
+                      const unitExp = roundImportMoney(
+                        qtyForCost > 0 ? distributedExpense / qtyForCost : 0,
+                      );
+                      const unitCost = roundImportMoney(lcRate + unitExp);
+                      const lineCost = roundImportMoney(lcAmount + distributedExpense);
                       const itemKey = String(
                         item.id || item.partId || item.part_id || "",
                       );
@@ -9761,47 +9862,35 @@ const PurchaseOrderTab = ({
                         <td className="p-2 text-right tabular-nums">
                           {backQty > 0 ? backQty : "-"}
                         </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {fcRate.toFixed(4)}
+                        <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                          {formatFc(fcRate)}
                         </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {fcAmount.toFixed(2)}
+                        <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                          {formatFc(fcAmount)}
                         </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {lcRate.toFixed(2)}
+                        <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                          {formatImportPoWhole(lcRate)}
                         </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {lcAmount.toFixed(2)}
+                        <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                          {formatImportPoWhole(lcAmount)}
                         </td>
                         {isInvoiceMode ? (
                           <>
                             <td className="p-2 text-right tabular-nums">
                               {viewTotalExp > 0
-                                ? unitExp.toLocaleString("en-PK", {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })
+                                ? formatImportPoAmount(unitExp)
                                 : "-"}
                             </td>
                             <td className="p-2 text-right tabular-nums">
                               {viewTotalExp > 0
-                                ? distributedExpense.toLocaleString("en-PK", {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })
+                                ? formatImportPoAmount(distributedExpense)
                                 : "-"}
                             </td>
                             <td className="p-2 text-right tabular-nums font-medium">
-                              {unitCost.toLocaleString("en-PK", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
+                              {formatImportPoAmount(unitCost)}
                             </td>
                             <td className="p-2 text-right tabular-nums font-medium">
-                              {lineCost.toLocaleString("en-PK", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
+                              {formatImportPoAmount(lineCost)}
                             </td>
                             <td className="p-2">
                               <Input
@@ -9951,9 +10040,8 @@ const PurchaseOrderTab = ({
                   <Label htmlFor="receive-conversion-rate">Exchange Rate</Label>
                   <Input
                     id="receive-conversion-rate"
-                    type="number"
-                    min={0}
-                    step="0.0001"
+                    type="text"
+                    inputMode="decimal"
                     value={receiveConversionRate}
                     onChange={(e) => handleConversionRateChange(e.target.value)}
                   />
@@ -10013,10 +10101,10 @@ const PurchaseOrderTab = ({
                           <th className="text-right p-2">Back Qty</th>
                         </>
                       ) : null}
-                      <th className="text-right p-2">FC Rate</th>
-                      <th className="text-right p-2">FC Amount</th>
-                      <th className="text-right p-2">LC Rate</th>
-                      <th className="text-right p-2">LC Amount</th>
+                      <th className={`text-right p-2 ${fcHeaderClass}`}>FC Rate</th>
+                      <th className={`text-right p-2 ${fcHeaderClass}`}>FC Amount</th>
+                      <th className={`text-right p-2 ${lcHeaderClass}`}>LC Rate</th>
+                      <th className={`text-right p-2 ${lcHeaderClass}`}>LC Amount</th>
                       {isInvoiceMode ? (
                         <>
                           <th className="text-right p-2">Unit Exp</th>
@@ -10132,42 +10220,34 @@ const PurchaseOrderTab = ({
                             onBlur={() => handleReceiveFcRateBlur(line.id)}
                           />
                         </td>
-                        <td className="p-2 text-right tabular-nums">
-                          {lineAmounts.fcAmount.toFixed(2)}
+                        <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                          {formatFc(lineAmounts.fcAmount)}
                         </td>
-                        <td className="p-2 text-right tabular-nums">{line.lcRate.toFixed(2)}</td>
-                        <td className="p-2 text-right tabular-nums">
-                          {lineAmounts.lcAmount.toFixed(2)}
+                        <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                          {formatImportPoWhole(line.lcRate)}
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                          {formatImportPoWhole(lineAmounts.lcAmount)}
                         </td>
                         {isInvoiceMode ? (
                           <>
                             <td className="p-2 text-right tabular-nums">
                               {importPoTotalExp > 0
-                                ? unitExp.toLocaleString("en-PK", {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })
+                                ? formatImportPoAmount(roundImportMoney(unitExp))
                                 : "-"}
                             </td>
                             <td className="p-2 text-right tabular-nums">
                               {importPoTotalExp > 0
-                                ? distributedExpense.toLocaleString("en-PK", {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })
+                                ? formatImportPoAmount(
+                                    roundImportMoney(distributedExpense),
+                                  )
                                 : "-"}
                             </td>
                             <td className="p-2 text-right tabular-nums font-medium">
-                              {unitCost.toLocaleString("en-PK", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
+                              {formatImportPoAmount(roundImportMoney(unitCost))}
                             </td>
                             <td className="p-2 text-right tabular-nums font-medium">
-                              {lineCost.toLocaleString("en-PK", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
+                              {formatImportPoAmount(roundImportMoney(lineCost))}
                             </td>
                             <td className="p-2 text-right">
                               <Input
@@ -10243,12 +10323,12 @@ const PurchaseOrderTab = ({
                               {receiveTotals.receiveQty}
                             </td>
                             <td className="p-2" />
-                            <td className="p-2 text-right tabular-nums">
-                              {receiveTotals.fcAmount.toFixed(2)}
+                            <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                              {formatFc(receiveTotals.fcAmount)}
                             </td>
                             <td className="p-2" />
-                            <td className="p-2 text-right tabular-nums">
-                              {receiveTotals.lcAmount.toFixed(2)}
+                            <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                              {formatImportPoWhole(receiveTotals.lcAmount)}
                             </td>
                             <td className="p-2" />
                             <td className="p-2 text-right tabular-nums">
@@ -10288,12 +10368,12 @@ const PurchaseOrderTab = ({
                             </td>
                             <td className="p-2" colSpan={2} />
                             <td className="p-2" />
-                            <td className="p-2 text-right tabular-nums">
-                              {receiveTotals.fcAmount.toFixed(2)}
+                            <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                              {formatFc(receiveTotals.fcAmount)}
                             </td>
                             <td className="p-2" />
-                            <td className="p-2 text-right tabular-nums">
-                              {receiveTotals.lcAmount.toFixed(2)}
+                            <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                              {formatImportPoWhole(receiveTotals.lcAmount)}
                             </td>
                             <td className="p-2" />
                             <td className="p-2 text-right tabular-nums">
@@ -10340,10 +10420,10 @@ const PurchaseOrderTab = ({
                         <span className="w-[88px] shrink-0 text-[10px] text-muted-foreground text-center">
                           %
                         </span>
-                        <span className="w-[110px] shrink-0 text-[10px] text-muted-foreground text-center">
+                        <span className={`w-[110px] shrink-0 text-[10px] text-center ${fcHeaderClass}`}>
                           FC Amount
                         </span>
-                        <span className="w-[110px] shrink-0 text-[10px] text-muted-foreground text-center">
+                        <span className={`w-[110px] shrink-0 text-[10px] text-center ${lcHeaderClass}`}>
                           LC Amount
                         </span>
                       </div>
@@ -10364,7 +10444,7 @@ const PurchaseOrderTab = ({
                         <Input
                           type="text"
                           inputMode="decimal"
-                          className="h-8 w-[110px] shrink-0 text-right text-xs"
+                          className={`h-8 w-[110px] shrink-0 text-right text-xs ${fcValueClass()}`}
                           placeholder="FC"
                           title="Pkg.Exp. foreign currency amount"
                           value={importExpenseLinkedText.pkg.fc}
@@ -10376,7 +10456,7 @@ const PurchaseOrderTab = ({
                         <Input
                           type="text"
                           inputMode="decimal"
-                          className="h-8 w-[110px] shrink-0 text-right text-xs"
+                          className={`h-8 w-[110px] shrink-0 text-right text-xs ${lcValueClass()}`}
                           placeholder="LC"
                           title="Pkg.Exp. local currency amount"
                           value={importExpenseLinkedText.pkg.lc}
@@ -10403,7 +10483,7 @@ const PurchaseOrderTab = ({
                         <Input
                           type="text"
                           inputMode="decimal"
-                          className="h-8 w-[110px] shrink-0 text-right text-xs"
+                          className={`h-8 w-[110px] shrink-0 text-right text-xs ${fcValueClass()}`}
                           placeholder="FC"
                           title="Inv.Disc. foreign currency amount"
                           value={importExpenseLinkedText.disc.fc}
@@ -10415,7 +10495,7 @@ const PurchaseOrderTab = ({
                         <Input
                           type="text"
                           inputMode="decimal"
-                          className="h-8 w-[110px] shrink-0 text-right text-xs"
+                          className={`h-8 w-[110px] shrink-0 text-right text-xs ${lcValueClass()}`}
                           placeholder="LC"
                           title="Inv.Disc. local currency amount"
                           value={importExpenseLinkedText.disc.lc}
@@ -10427,7 +10507,7 @@ const PurchaseOrderTab = ({
                       </div>
                       {isInvoiceMode ? (
                         <div className="flex items-center gap-2">
-                          <Label className="text-xs font-normal w-24 shrink-0">Frt.Exp (FC)</Label>
+                          <Label className={`text-xs font-normal w-24 shrink-0 ${fcHeaderClass}`}>Frt.Exp (FC)</Label>
                           <Input
                             type="number"
                             min={0}
@@ -10517,15 +10597,23 @@ const PurchaseOrderTab = ({
 const PurchaseImport = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
+  const { can } = usePermissions();
+  const availableTabs = tabs.filter((t) => can(t.permission));
+  const defaultTab: PurchaseImportTab =
+    (availableTabs[0]?.id as PurchaseImportTab) || "inquiry";
 
   const normalizedTab = tab === "request" ? "inquiry" : tab;
-  const activeTab: PurchaseImportTab = tabs.some((t) => t.id === normalizedTab)
+  const activeTab: PurchaseImportTab = availableTabs.some((t) => t.id === normalizedTab)
     ? (normalizedTab as PurchaseImportTab)
-    : "inquiry";
+    : defaultTab;
 
   useEffect(() => {
+    if (!availableTabs.length) {
+      navigate("/", { replace: true });
+      return;
+    }
     if (!tab) {
-      navigate("/purchase-import/inquiry", { replace: true });
+      navigate(`/purchase-import/${defaultTab}`, { replace: true });
       return;
     }
     if (tab === "request") {
@@ -10533,9 +10621,13 @@ const PurchaseImport = () => {
       return;
     }
     if (tab === "costing" || tab === "history") {
-      navigate("/purchase-import/inquiry", { replace: true });
+      navigate(`/purchase-import/${defaultTab}`, { replace: true });
+      return;
     }
-  }, [tab, navigate]);
+    if (!availableTabs.some((t) => t.id === tab)) {
+      navigate(`/purchase-import/${defaultTab}`, { replace: true });
+    }
+  }, [tab, navigate, availableTabs, defaultTab]);
 
   const handleTabChange = (tabId: PurchaseImportTab) => {
     navigate(`/purchase-import/${tabId}`);
@@ -10572,21 +10664,21 @@ const PurchaseImport = () => {
         <div className="bg-card border-b border-border relative z-10">
           <div className="px-4 py-2 overflow-x-auto scrollbar-hide">
             <div className="flex items-center gap-2 min-w-max">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
+              {availableTabs.map((tabItem) => {
+                const Icon = tabItem.icon;
                 return (
                   <button
-                    key={tab.id}
-                    onClick={() => handleTabChange(tab.id)}
+                    key={tabItem.id}
+                    onClick={() => handleTabChange(tabItem.id)}
                     className={cn(
                       "flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-medium whitespace-nowrap group",
-                      activeTab === tab.id
+                      activeTab === tabItem.id
                         ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                     )}
                   >
                     <Icon className="w-4 h-4" />
-                    <span>{tab.label}</span>
+                    <span>{tabItem.label}</span>
                   </button>
                 );
               })}

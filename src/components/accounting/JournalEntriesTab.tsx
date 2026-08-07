@@ -7,6 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+} from "@/utils/accountingColors";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -495,8 +501,8 @@ export const JournalEntriesTab = () => {
                   <TableHead className="w-[100px]">Date</TableHead>
                   <TableHead>Reference</TableHead>
                   <TableHead>Description</TableHead>
-                  <TableHead className="text-right">Debit</TableHead>
-                  <TableHead className="text-right">Credit</TableHead>
+                  <TableHead className={`text-right ${drHeaderClass}`}>Debit</TableHead>
+                  <TableHead className={`text-right ${crHeaderClass}`}>Credit</TableHead>
                   <TableHead className="w-[100px]">Status</TableHead>
                   <TableHead className="w-[100px] text-center">Actions</TableHead>
                 </TableRow>
@@ -512,8 +518,8 @@ export const JournalEntriesTab = () => {
                     <TableCell>{entry.date}</TableCell>
                     <TableCell>{entry.reference}</TableCell>
                     <TableCell>{entry.description}</TableCell>
-                    <TableCell className="text-right font-mono">Rs {entry.totalDebit.toLocaleString()}</TableCell>
-                    <TableCell className="text-right font-mono">Rs {entry.totalCredit.toLocaleString()}</TableCell>
+                    <TableCell className={`text-right font-mono ${drValueClass(1, true)}`}>Rs {entry.totalDebit.toLocaleString()}</TableCell>
+                    <TableCell className={`text-right font-mono ${crValueClass(1, true)}`}>Rs {entry.totalCredit.toLocaleString()}</TableCell>
                     <TableCell>{getStatusBadge(entry.status)}</TableCell>
                     <TableCell>
                       <div className="flex justify-center gap-1">
@@ -560,8 +566,8 @@ export const JournalEntriesTab = () => {
                                   <TableRow className="bg-muted/50">
                                     <TableHead>Account</TableHead>
                                     <TableHead>Description</TableHead>
-                                    <TableHead className="text-right">Debit</TableHead>
-                                    <TableHead className="text-right">Credit</TableHead>
+                                    <TableHead className={`text-right ${drHeaderClass}`}>Debit</TableHead>
+                                    <TableHead className={`text-right ${crHeaderClass}`}>Credit</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -569,18 +575,18 @@ export const JournalEntriesTab = () => {
                                     <TableRow key={line.id}>
                                       <TableCell>{line.accountCode} - {line.accountName}</TableCell>
                                       <TableCell>{line.description}</TableCell>
-                                      <TableCell className="text-right font-mono">
+                                      <TableCell className={`text-right font-mono ${drValueClass(line.debit)}`}>
                                         {line.debit > 0 ? `Rs ${line.debit.toLocaleString()}` : "-"}
                                       </TableCell>
-                                      <TableCell className="text-right font-mono">
+                                      <TableCell className={`text-right font-mono ${crValueClass(line.credit)}`}>
                                         {line.credit > 0 ? `Rs ${line.credit.toLocaleString()}` : "-"}
                                       </TableCell>
                                     </TableRow>
                                   ))}
                                   <TableRow className="bg-muted/30 font-semibold">
                                     <TableCell colSpan={2} className="text-right">Totals:</TableCell>
-                                    <TableCell className="text-right font-mono">Rs {entry.totalDebit.toLocaleString()}</TableCell>
-                                    <TableCell className="text-right font-mono">Rs {entry.totalCredit.toLocaleString()}</TableCell>
+                                    <TableCell className={`text-right font-mono ${drValueClass(1, true)}`}>Rs {entry.totalDebit.toLocaleString()}</TableCell>
+                                    <TableCell className={`text-right font-mono ${crValueClass(1, true)}`}>Rs {entry.totalCredit.toLocaleString()}</TableCell>
                                   </TableRow>
                                 </TableBody>
                               </Table>

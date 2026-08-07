@@ -13,6 +13,7 @@ import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printBalanceSheet } from "@/utils/printBalanceSheetPdf";
 import { useToast } from "@/hooks/use-toast";
 import type { BalanceSheetPrintMainGroup } from "@/utils/printBalanceSheetPdf";
+import { amountValueClass } from "@/utils/accountingColors";
 
 interface BalanceSheetAccount {
   id: string;
@@ -360,7 +361,7 @@ export const BalanceSheetTab = () => {
                                 <span className="text-xs text-gray-600">
                                   {account.code}-{account.name}
                                 </span>
-                                <span className="text-xs text-right">
+                                <span className={`text-xs text-right ${amountValueClass()}`}>
                                   {formatBalance(accountBalance || 0)}
                                 </span>
                               </div>
@@ -371,7 +372,7 @@ export const BalanceSheetTab = () => {
                             <span className="text-sm font-medium">
                               Total {subgroup.code}-{subgroup.name}
                             </span>
-                            <span className="text-sm font-medium text-right">
+                            <span className={`text-sm font-medium text-right ${amountValueClass()}`}>
                               {formatBalance(subgroupTotal)}
                             </span>
                           </div>
@@ -383,7 +384,7 @@ export const BalanceSheetTab = () => {
                     <span className="text-base font-semibold">
                       Total {mainGroup.code}-{mainGroup.name}
                     </span>
-                    <span className="text-base font-semibold text-right">
+                    <span className={`text-base font-semibold text-right ${amountValueClass()}`}>
                       {formatBalance(mainGroupTotal)}
                     </span>
                   </div>
@@ -394,7 +395,7 @@ export const BalanceSheetTab = () => {
             <div className="border-t-4 border-double border-gray-800 pt-2 mt-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold">Total Assets</h2>
-                <h2 className="text-lg font-bold text-right">
+                <h2 className={`text-lg font-bold text-right ${amountValueClass()}`}>
                   {formatBalance(totalAssets)}
                 </h2>
               </div>
@@ -442,7 +443,7 @@ export const BalanceSheetTab = () => {
                               <span className="text-xs text-gray-600">
                                 {account.code}-{account.name}
                               </span>
-                              <span className="text-xs text-right">
+                              <span className={`text-xs text-right ${amountValueClass()}`}>
                                 {formatBalance(accountBalance ?? 0, true)}
                               </span>
                             </div>
@@ -453,7 +454,7 @@ export const BalanceSheetTab = () => {
                           <span className="text-sm font-medium">
                             Total {subgroup.code}-{subgroup.name}
                           </span>
-                          <span className="text-sm font-medium text-right">
+                          <span className={`text-sm font-medium text-right ${amountValueClass()}`}>
                             {formatBalance(subgroupTotal, true)}
                           </span>
                         </div>
@@ -465,7 +466,7 @@ export const BalanceSheetTab = () => {
                     <span className="text-base font-semibold">
                       Total {mainGroup.code}-{mainGroup.name}
                     </span>
-                    <span className="text-base font-semibold text-right">
+                    <span className={`text-base font-semibold text-right ${amountValueClass()}`}>
                       {formatBalance(mainGroupTotal, true)}
                     </span>
                   </div>
@@ -476,7 +477,7 @@ export const BalanceSheetTab = () => {
             <div className="border-t-2 border-gray-400 pt-2 mt-2">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold">Total Liabilities</h2>
-                <h2 className="text-lg font-bold text-right">
+                <h2 className={`text-lg font-bold text-right ${amountValueClass()}`}>
                   {formatBalance(totalLiabilities, true)}
                 </h2>
               </div>
@@ -511,7 +512,7 @@ export const BalanceSheetTab = () => {
                             <span className="text-gray-400 ml-1">({account.supplierName})</span>
                           )}
                         </span>
-                        <span className="text-xs text-right">
+                        <span className={`text-xs text-right ${amountValueClass()}`}>
                           {formatBalance(bal, true)}
                         </span>
                       </div>
@@ -519,7 +520,7 @@ export const BalanceSheetTab = () => {
                   })}
                   <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between items-center">
                     <span className="text-sm font-medium">Total Supplier Payables</span>
-                    <span className="text-sm font-medium text-right">
+                    <span className={`text-sm font-medium text-right ${amountValueClass()}`}>
                       {formatBalance(
                         visibleSupplierAccounts.reduce((sum, a) => {
                           const b = typeof a.balance === "number" ? a.balance : a.balance?.balance ?? 0;
@@ -571,7 +572,7 @@ export const BalanceSheetTab = () => {
                                 <span className="text-xs text-gray-600">
                                   {account.code}-{account.name}
                                 </span>
-                                <span className="text-xs text-right">
+                                <span className={`text-xs text-right ${amountValueClass()}`}>
                                   {formatBalance(accountBalance, true)}
                                 </span>
                               </div>
@@ -582,7 +583,7 @@ export const BalanceSheetTab = () => {
                             <span className="text-sm font-medium">
                               Total {subgroup.code}-{subgroup.name}
                             </span>
-                            <span className="text-sm font-medium text-right">
+                            <span className={`text-sm font-medium text-right ${amountValueClass()}`}>
                               {formatBalance(subgroupTotal, true)}
                             </span>
                           </div>
@@ -594,7 +595,7 @@ export const BalanceSheetTab = () => {
                       <span className="text-base font-semibold">
                         Total {mainGroup.code}-{mainGroup.name}
                       </span>
-                      <span className="text-base font-semibold text-right">
+                      <span className={`text-base font-semibold text-right ${amountValueClass()}`}>
                         {formatBalance(mainGroupTotal, true)}
                       </span>
                     </div>
@@ -605,7 +606,7 @@ export const BalanceSheetTab = () => {
               {/* Net Income */}
               <div className="border-b pb-1 ml-4 flex justify-between items-center mt-2">
                 <span className="text-sm">Net Income</span>
-                <span className="text-sm text-right">
+                <span className={`text-sm text-right ${amountValueClass()}`}>
                   {(() => {
                     const revenue = balanceSheetData?.revenue || 0;
                     const cost = balanceSheetData?.cost || 0;
@@ -619,7 +620,7 @@ export const BalanceSheetTab = () => {
               <div className="border-t-2 pt-2 mt-2">
                 <div className="flex justify-between items-center">
                   <h2 className="text-lg font-bold">Total Capital</h2>
-                  <h2 className="text-lg font-bold text-right">
+                  <h2 className={`text-lg font-bold text-right ${amountValueClass()}`}>
                     {formatBalance(totalCapital, true)}
                   </h2>
                 </div>
@@ -630,7 +631,7 @@ export const BalanceSheetTab = () => {
                   <h2 className="text-lg font-bold">
                     Total Liabilities and Capital
                   </h2>
-                  <h2 className="text-lg font-bold text-right text-green-600">
+                  <h2 className={`text-lg font-bold text-right ${amountValueClass()}`}>
                     {formatBalance(totalLiabilitiesAndCapital, true)}
                   </h2>
                 </div>

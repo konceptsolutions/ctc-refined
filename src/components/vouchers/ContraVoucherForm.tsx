@@ -5,6 +5,11 @@ import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Plus, Trash, Save, MoreVertical, ArrowRightLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  amountHeaderClass,
+  crHeaderClass,
+  drHeaderClass,
+} from "@/utils/accountingColors";
 
 interface ContraEntry {
   id: string;
@@ -231,10 +236,10 @@ export const ContraVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, o
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2">
-            <Label className="text-base font-medium">Dr</Label>
+            <Label className={`text-base font-medium ${drHeaderClass}`}>Dr</Label>
           </div>
           <div className="col-span-2">
-            <Label className="text-base font-medium">Cr</Label>
+            <Label className={`text-base font-medium ${crHeaderClass}`}>Cr</Label>
           </div>
           <div className="col-span-1"></div>
         </div>
@@ -366,7 +371,7 @@ export const ContraVoucherForm = ({ accounts, cashBankAccounts, onAddSubgroup, o
         {/* Total Amount */}
         <div className="grid grid-cols-12 gap-4 items-center">
           <div className="col-span-7 text-right">
-            <Label className="text-base font-medium">Total Amount</Label>
+            <Label className={`text-base font-medium ${amountHeaderClass}`}>Total Amount</Label>
           </div>
           <div className="col-span-2">
             <div className="relative">

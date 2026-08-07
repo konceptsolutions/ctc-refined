@@ -10,6 +10,7 @@ import {
   processPurchaseReceive,
   calculateAverageCostDPO,
 } from "../utils/inventoryFormulas";
+import { roundPurchasePrice } from "../utils/purchasePriceRound";
 import { getCanonicalPartId } from "../services/partCanonical";
 import {
   netStockFromMovements,
@@ -3702,7 +3703,7 @@ router.post("/adjustments", async (req: Request, res: Response) => {
             await tx.part.update({
               where: { id: partId },
               data: {
-                purchasePrice: rate,
+                purchasePrice: roundPurchasePrice(rate),
                 avgCost: newAvgCost,
                 // cost field is NOT updated - it's user-controlled
                 updatedAt: new Date(),
@@ -4966,7 +4967,7 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
             where: { id: item.partId },
             data: {
               // Only update purchasePrice if a valid cost was provided
-              ...(item.cost && item.cost > 0 ? { purchasePrice: rate } : {}),
+              ...(item.cost && item.cost > 0 ? { purchasePrice: roundPurchasePrice(rate) } : {}),
               avgCost: newAvgCost,
               // cost field is NOT updated - it's user-controlled
               updatedAt: new Date(),
@@ -5035,7 +5036,7 @@ router.put("/adjustments/:id/approve", async (req: Request, res: Response) => {
           await prisma.part.update({
             where: { id: item.partId },
             data: {
-              purchasePrice: rate, // Save the rate used for removal
+              purchasePrice: roundPurchasePrice(rate), // Save the rate used for removal
               avgCost: newAvgCost, // Save the calculated weighted average
               cost: newAvgCost, // Also update cost field to keep it in sync
               updatedAt: new Date(),
@@ -6016,7 +6017,7 @@ async function receiveImportPurchaseOrder(
       await tx.part.update({
         where: { id: partId },
         data: {
-          ...(baseRate > 0 ? { purchasePrice: round4(baseRate) } : {}),
+          ...(baseRate > 0 ? { purchasePrice: roundPurchasePrice(baseRate) } : {}),
           ...(Number.isFinite(newAvg) && newAvg > 0
             ? { avgCost: round4(newAvg), cost: round4(newAvg) }
             : {}),
@@ -6583,7 +6584,7 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
               if (partId && rate > 0 && qty > 0) {
                 await prisma.part.update({
                   where: { id: partId },
-                  data: { purchasePrice: rate },
+                  data: { purchasePrice: roundPurchasePrice(rate) },
                 });
 
                 const part = await prisma.part.findUnique({
@@ -8692,7 +8693,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
               id: crypto.randomUUID(),
               partId: item.part_id,
               quantity: Number(item.quantity) || 0,
-              purchasePrice: Number(
+              purchasePrice: roundPurchasePrice(
                 item.unit_cost ??
                   item.unitCost ??
                   item.purchase_price ??
@@ -8704,7 +8705,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
               amount:
                 Number(item.amount) ||
                 Number(item.quantity) *
-                  Number(
+                  roundPurchasePrice(
                     item.unit_cost ??
                       item.unitCost ??
                       item.purchase_price ??
@@ -9412,7 +9413,7 @@ router.put(
               directPurchaseOrderId: id,
               partId: item.part_id,
               quantity: Number(item.quantity) || 0,
-              purchasePrice: Number(
+              purchasePrice: roundPurchasePrice(
                 item.unit_cost ??
                   item.unitCost ??
                   item.purchase_price ??
@@ -9424,7 +9425,7 @@ router.put(
               amount:
                 Number(item.amount) ||
                 Number(item.quantity) *
-                  Number(
+                  roundPurchasePrice(
                     item.unit_cost ??
                       item.unitCost ??
                       item.purchase_price ??

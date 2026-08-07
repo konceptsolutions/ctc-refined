@@ -5,6 +5,7 @@ import {
   formatPdfMoney,
   openPdfPrintDialog,
 } from "@/utils/pdfPrint";
+import { applyPdfDrCrColors } from "@/utils/accountingColors";
 
 export type GeneralJournalPrintEntry = {
   tId: number | string;
@@ -105,6 +106,9 @@ export const printGeneralJournal = (
     columnStyles: {
       5: { halign: "right" },
       6: { halign: "right" },
+    },
+    didParseCell: (data) => {
+      applyPdfDrCrColors(data, 5, 6);
     },
   });
 

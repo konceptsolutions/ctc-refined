@@ -11,6 +11,12 @@ import { useToast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printTrialBalance } from "@/utils/printTrialBalancePdf";
 import { getCurrentDatePakistan, getStartOfCurrentMonthPakistan } from "@/utils/dateUtils";
+import {
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+} from "@/utils/accountingColors";
 
 interface TrialBalanceAccount {
   code: string;
@@ -185,8 +191,8 @@ export const TrialBalanceReport = () => {
               <TableRow className="bg-muted/50">
                 <ListNumberHeader />
                 <TableHead className="font-semibold underline w-1/2">Account</TableHead>
-                <TableHead className="font-semibold underline text-right">Dr</TableHead>
-                <TableHead className="font-semibold underline text-right">Cr</TableHead>
+                <TableHead className={`font-semibold underline text-right ${drHeaderClass}`}>Dr</TableHead>
+                <TableHead className={`font-semibold underline text-right ${crHeaderClass}`}>Cr</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -215,10 +221,10 @@ export const TrialBalanceReport = () => {
                   >
                     {account.code}-{account.name}
                   </TableCell>
-                  <TableCell className="text-right text-primary">
+                  <TableCell className={`text-right ${drValueClass(account.debit)}`}>
                     {formatNumber(account.debit)}
                   </TableCell>
-                  <TableCell className="text-right text-primary">
+                  <TableCell className={`text-right ${crValueClass(account.credit)}`}>
                     {formatNumber(account.credit)}
                   </TableCell>
                 </TableRow>
@@ -227,8 +233,8 @@ export const TrialBalanceReport = () => {
               <TableRow className="bg-muted/40 font-bold">
                 <TableCell />
                 <TableCell className="text-right">Total</TableCell>
-                <TableCell className="text-right">{formatNumber(totalDebit)}</TableCell>
-                <TableCell className="text-right">{formatNumber(totalCredit)}</TableCell>
+                <TableCell className={`text-right ${drValueClass(1, true)}`}>{formatNumber(totalDebit)}</TableCell>
+                <TableCell className={`text-right ${crValueClass(1, true)}`}>{formatNumber(totalCredit)}</TableCell>
               </TableRow>
             </TableBody>
           </Table>

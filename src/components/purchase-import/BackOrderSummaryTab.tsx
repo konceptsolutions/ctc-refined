@@ -7,6 +7,7 @@ import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { printBackOrderSummary } from "@/utils/printBackOrderSummaryPdf";
+import { fcHeaderClass, fcValueClass } from "@/utils/accountingColors";
 import { FileBarChart2, Search } from "lucide-react";
 
 type SummaryLine = {
@@ -122,7 +123,10 @@ const formatQty = (value: number) => {
 const formatRate = (value: number) => {
   const n = Number(value) || 0;
   if (!Number.isFinite(n) || n <= 0) return "-";
-  return n.toFixed(4);
+  return n.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 const formatDisplayDate = (value?: string | null) => {
@@ -164,7 +168,7 @@ const PoItemsTable = ({ group }: { group: PoGroup }) => {
               <th className="p-2 text-left font-medium">Item</th>
               <th className="p-2 text-left font-medium">Brand</th>
               <th className="p-2 text-left font-medium">Description</th>
-              <th className="p-2 text-right font-medium">FC Rate</th>
+              <th className={`p-2 text-right font-medium ${fcHeaderClass}`}>FC Rate</th>
               <th className="p-2 text-right font-medium">Order Qty</th>
               <th className="p-2 text-right font-medium">Received Qty</th>
               <th className="p-2 text-right font-medium">From Back Qty</th>
@@ -196,7 +200,7 @@ const PoItemsTable = ({ group }: { group: PoGroup }) => {
                   </td>
                   <td className="p-2">{row.brand || "-"}</td>
                   <td className="p-2">{row.description || "-"}</td>
-                  <td className="p-2 text-right tabular-nums">
+                  <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                     {formatRate(row.fcRate)}
                   </td>
                   <td className="p-2 text-right tabular-nums">{row.orderQty}</td>

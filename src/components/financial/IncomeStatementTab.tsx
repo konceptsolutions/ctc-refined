@@ -10,6 +10,10 @@ import { apiClient } from "@/lib/api";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printIncomeStatement } from "@/utils/printIncomeStatementPdf";
 import { useToast } from "@/hooks/use-toast";
+import {
+  amountHeaderClass,
+  amountValueClass,
+} from "@/utils/accountingColors";
 
 interface IncomeAccount {
   accountId: string;
@@ -282,7 +286,7 @@ export const IncomeStatementTab = () => {
                 <TableRow className="bg-muted/50">
                   <ListNumberHeader />
                   <TableHead className="font-semibold underline">Account</TableHead>
-                  <TableHead className="font-semibold underline text-right">Amount</TableHead>
+                  <TableHead className={`font-semibold underline text-right ${amountHeaderClass}`}>Amount</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -308,7 +312,7 @@ export const IncomeStatementTab = () => {
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>
-                          <TableCell className="text-right text-sm font-mono">
+                          <TableCell className={`text-right text-sm font-mono ${amountValueClass()}`}>
                             {formatNumber(account.amount)}
                           </TableCell>
                         </TableRow>
@@ -327,7 +331,7 @@ export const IncomeStatementTab = () => {
                       <TableCell className="font-semibold">
                         Total Revenue
                       </TableCell>
-                      <TableCell className="text-right font-semibold font-mono">
+                      <TableCell className={`text-right font-semibold font-mono ${amountValueClass()}`}>
                         {formatNumber(data.revenue.total)}
                       </TableCell>
                     </TableRow>
@@ -347,7 +351,7 @@ export const IncomeStatementTab = () => {
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>
-                          <TableCell className="text-right text-sm font-mono">
+                          <TableCell className={`text-right text-sm font-mono ${amountValueClass()}`}>
                             {formatNumber(account.amount)}
                           </TableCell>
                         </TableRow>
@@ -366,7 +370,7 @@ export const IncomeStatementTab = () => {
                       <TableCell className="font-semibold">
                         Total Cost
                       </TableCell>
-                      <TableCell className="text-right font-semibold font-mono">
+                      <TableCell className={`text-right font-semibold font-mono ${amountValueClass()}`}>
                         {formatNumber(data.cost.total)}
                       </TableCell>
                     </TableRow>
@@ -377,7 +381,7 @@ export const IncomeStatementTab = () => {
                       <TableCell className="font-bold">
                         {data.gross.label}
                       </TableCell>
-                      <TableCell className="text-right font-bold font-mono">
+                      <TableCell className={`text-right font-bold font-mono ${amountValueClass()}`}>
                         {formatNumber(Math.abs(data.gross.amount))}
                       </TableCell>
                     </TableRow>
@@ -397,7 +401,7 @@ export const IncomeStatementTab = () => {
                           <TableCell className="pl-4 text-sm">
                             {account.label}
                           </TableCell>
-                          <TableCell className="text-right text-sm font-mono">
+                          <TableCell className={`text-right text-sm font-mono ${amountValueClass()}`}>
                             {formatNumber(account.amount)}
                           </TableCell>
                         </TableRow>
@@ -416,7 +420,7 @@ export const IncomeStatementTab = () => {
                       <TableCell className="font-semibold">
                         Total Expenses
                       </TableCell>
-                      <TableCell className="text-right font-semibold font-mono">
+                      <TableCell className={`text-right font-semibold font-mono ${amountValueClass()}`}>
                         {formatNumber(data.expenses.total)}
                       </TableCell>
                     </TableRow>
@@ -427,7 +431,7 @@ export const IncomeStatementTab = () => {
                       <TableCell className="font-bold">
                         {data.net.label}
                       </TableCell>
-                      <TableCell className="text-right font-bold font-mono">
+                      <TableCell className={`text-right font-bold font-mono ${amountValueClass()}`}>
                         {formatNumber(Math.abs(data.net.amount))}
                       </TableCell>
                     </TableRow>

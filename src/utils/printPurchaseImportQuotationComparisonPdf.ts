@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { applyPdfFcLcColors } from "@/utils/accountingColors";
 
 export type PurchaseImportQuotationComparisonSupplier = {
   supplierId: string;
@@ -292,8 +293,8 @@ export const printPurchaseImportQuotationComparison = ({
             } else {
               const lcFromFc = comparableLcFor(quote, supplier);
               row.push(
-                num(quote.fcRate, 4),
-                num(lcFromFc ?? quote.lcRate, 4),
+                num(quote.fcRate, 2),
+                num(lcFromFc ?? quote.lcRate, 0),
               );
             }
           }
@@ -381,6 +382,16 @@ export const printPurchaseImportQuotationComparison = ({
       ),
     },
     didParseCell: (data) => {
+      if (data.section === "body" || data.section === "foot") {
+        const fcCols: number[] = [];
+        const lcCols: number[] = [];
+        for (let i = 0; i < suppliers.length; i++) {
+          const base = 4 + i * perSupplierCols;
+          fcCols.push(base);
+          lcCols.push(base + 1);
+        }
+        applyPdfFcLcColors(data as Parameters<typeof applyPdfFcLcColors>[0], fcCols, lcCols);
+      }
       if (data.section !== "body" || data.column.index < 4) return;
       const rowIndex = data.row.index;
       const supplierIndex = Math.floor((data.column.index - 4) / perSupplierCols);

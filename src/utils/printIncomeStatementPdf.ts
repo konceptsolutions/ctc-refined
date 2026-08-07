@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { applyPdfAmountColor } from "@/utils/accountingColors";
 
 export type IncomeStatementPrintAccount = {
   label: string;
@@ -162,6 +163,7 @@ export const printIncomeStatement = (
       1: { halign: "right", cellWidth: 40 },
     },
     didParseCell: (data) => {
+      applyPdfAmountColor(data, 1);
       if (data.section !== "body") return;
       if (totalRowIndexes.has(data.row.index)) {
         data.cell.styles.fontStyle = "bold";

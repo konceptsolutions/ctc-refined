@@ -26,6 +26,27 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
+  ACCOUNTING_COLORS,
+  amountHeaderClass,
+  amountValueClass,
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+  fcHeaderClass,
+  fcValueClass,
+  lcHeaderClass,
+  lcValueClass,
+} from "@/utils/accountingColors";
+import {
+  fcFromLc,
+  isAmountTypingValue,
+  isExchangeRateTypingValue,
+  lcFromFc,
+  normalizeDecimalTyping,
+  parseExchangeRate,
+} from "@/utils/fcLcAmount";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -407,6 +428,17 @@ export const ViewVouchersTab = ({
     .text-right {
       text-align: right;
     }
+    .col-dr {
+      text-align: right;
+      color: ${ACCOUNTING_COLORS.dr.css};
+    }
+    .col-cr {
+      text-align: right;
+      color: ${ACCOUNTING_COLORS.cr.css};
+    }
+    .col-amount {
+      color: ${ACCOUNTING_COLORS.amount.css};
+    }
     tfoot tr {
       background: #f0f0f0;
       font-weight: bold;
@@ -479,8 +511,8 @@ export const ViewVouchersTab = ({
         <th>S.No</th>
         <th>Account</th>
         <th>Description</th>
-        <th class="text-right">Debit (Rs)</th>
-        <th class="text-right">Credit (Rs)</th>
+        <th class="col-dr">Debit (Rs)</th>
+        <th class="col-cr">Credit (Rs)</th>
       </tr>
     </thead>
     <tbody>
@@ -489,22 +521,22 @@ export const ViewVouchersTab = ({
         <td>${index + 1}</td>
         <td>${getAccountLabel(entry.account, entry.Account) || entry.account}</td>
         <td>${entry.description || "-"}</td>
-        <td class="text-right">${entry.debit > 0 ? entry.debit.toLocaleString("en-PK", { minimumFractionDigits: 2 }) : "-"}</td>
-        <td class="text-right">${entry.credit > 0 ? entry.credit.toLocaleString("en-PK", { minimumFractionDigits: 2 }) : "-"}</td>
+        <td class="col-dr">${entry.debit > 0 ? entry.debit.toLocaleString("en-PK", { minimumFractionDigits: 2 }) : "-"}</td>
+        <td class="col-cr">${entry.credit > 0 ? entry.credit.toLocaleString("en-PK", { minimumFractionDigits: 2 }) : "-"}</td>
       </tr>
       `).join('')}
     </tbody>
     <tfoot>
       <tr>
         <td colspan="3" class="text-right"><strong>Total:</strong></td>
-        <td class="text-right"><strong>${voucher.totalDebit.toLocaleString("en-PK", { minimumFractionDigits: 2 })}</strong></td>
-        <td class="text-right"><strong>${voucher.totalCredit.toLocaleString("en-PK", { minimumFractionDigits: 2 })}</strong></td>
+        <td class="col-dr"><strong>${voucher.totalDebit.toLocaleString("en-PK", { minimumFractionDigits: 2 })}</strong></td>
+        <td class="col-cr"><strong>${voucher.totalCredit.toLocaleString("en-PK", { minimumFractionDigits: 2 })}</strong></td>
       </tr>
     </tfoot>
   </table>
 
   <div class="amount-words">
-    <p><strong>Amount in Words:</strong></p>
+    <p><strong class="col-amount">Amount in Words:</strong></p>
     <p style="font-style: italic;">${numberToWords(voucher.totalDebit)} Rupees Only</p>
   </div>
 
@@ -734,17 +766,21 @@ export const ViewVouchersTab = ({
     setEditExchangeRate(String(rate));
 
     // Ensure all entries have the expected fields for the edit form.
-    // International edit form works in FC; stored amounts are LC.
+    // International edit form works in FC + LC; stored amounts are LC.
     const mappedEntries = (voucher.entries || voucher.VoucherEntry || []).map(entry => {
       const lcDebit = Number(entry.debit || 0);
       const lcCredit = Number(entry.credit || 0);
+      const fcDebit = isIntl ? Number((lcDebit / rate).toFixed(6)) : lcDebit;
+      const fcCredit = isIntl ? Number((lcCredit / rate).toFixed(6)) : lcCredit;
       return {
         id: entry.id || `${Date.now()}-${Math.random()}`,
         account: entry.account || entry.accountId || "", // Consistent mapping for SearchableSelect
         accountName: entry.accountName || "",
         description: entry.description || "",
-        debit: isIntl ? lcDebit / rate : lcDebit,
-        credit: isIntl ? lcCredit / rate : lcCredit,
+        debit: fcDebit,
+        credit: fcCredit,
+        debitLc: isIntl ? lcDebit : undefined,
+        creditLc: isIntl ? lcCredit : undefined,
         sortOrder: entry.sortOrder || 0
       };
     });
@@ -752,7 +788,7 @@ export const ViewVouchersTab = ({
     // Fallback: if voucher has no entries, add an empty row to prevent empty UI
     const finalEntriesToEdit = mappedEntries.length > 0
       ? mappedEntries
-      : [{ id: Date.now().toString(), account: "", description: "", debit: 0, credit: 0 }];
+      : [{ id: Date.now().toString(), account: "", description: "", debit: 0, credit: 0, debitLc: "", creditLc: "" }];
 
     setEditEntries(finalEntriesToEdit as any);
   };
@@ -799,10 +835,22 @@ export const ViewVouchersTab = ({
     const totalDebitFc = editEntries.reduce((sum, e) => sum + (Number(e.debit) || 0), 0);
     const totalCreditFc = editEntries.reduce((sum, e) => sum + (Number(e.credit) || 0), 0);
     const totalDebit = editIsInternational
-      ? totalDebitFc * exchangeRateValue
+      ? editEntries.reduce(
+          (sum, e) =>
+            sum +
+            (Number((e as any).debitLc) ||
+              (Number(e.debit) || 0) * exchangeRateValue),
+          0,
+        )
       : totalDebitFc;
     const totalCredit = editIsInternational
-      ? totalCreditFc * exchangeRateValue
+      ? editEntries.reduce(
+          (sum, e) =>
+            sum +
+            (Number((e as any).creditLc) ||
+              (Number(e.credit) || 0) * exchangeRateValue),
+          0,
+        )
       : totalCreditFc;
 
     if (totalDebitFc === 0 && totalCreditFc === 0) {
@@ -838,15 +886,31 @@ export const ViewVouchersTab = ({
       }
     }
 
-    const savedEntries = editEntries.map((entry) => ({
-      ...entry,
-      debit: editIsInternational
-        ? (Number(entry.debit) || 0) * exchangeRateValue
-        : Number(entry.debit) || 0,
-      credit: editIsInternational
-        ? (Number(entry.credit) || 0) * exchangeRateValue
-        : Number(entry.credit) || 0,
-    }));
+    const savedEntries = editEntries.map((entry) => {
+      const debitFc = Number(entry.debit) || 0;
+      const creditFc = Number(entry.credit) || 0;
+      const debitLcRaw = (entry as any).debitLc;
+      const creditLcRaw = (entry as any).creditLc;
+      const debitLc = Number(debitLcRaw);
+      const creditLc = Number(creditLcRaw);
+      return {
+        ...entry,
+        debit: editIsInternational
+          ? debitLcRaw !== undefined && debitLcRaw !== ""
+            ? Number.isFinite(debitLc)
+              ? debitLc
+              : 0
+            : debitFc * exchangeRateValue
+          : debitFc,
+        credit: editIsInternational
+          ? creditLcRaw !== undefined && creditLcRaw !== ""
+            ? Number.isFinite(creditLc)
+              ? creditLc
+              : 0
+            : creditFc * exchangeRateValue
+          : creditFc,
+      };
+    });
 
     onUpdateVoucher({
       ...editingVoucher,
@@ -931,20 +995,99 @@ export const ViewVouchersTab = ({
   const addDebitEntry = () => {
     setEditEntries([
       ...editEntries,
-      { id: Date.now().toString(), account: "", description: "", debit: 0, credit: 0 },
+      { id: Date.now().toString(), account: "", description: "", debit: 0, credit: 0, debitLc: "", creditLc: "" } as any,
     ]);
   };
 
   const addCreditEntry = () => {
     setEditEntries([
       ...editEntries,
-      { id: Date.now().toString(), account: "", description: "", debit: 0, credit: 0 },
+      { id: Date.now().toString(), account: "", description: "", debit: 0, credit: 0, debitLc: "", creditLc: "" } as any,
     ]);
   };
 
   const updateEntry = (id: string, field: string, value: string | number) => {
     setEditEntries(
       editEntries.map((e) => (e.id === id ? { ...e, [field]: value } : e))
+    );
+  };
+
+  const handleEditExchangeRateChange = (raw: string) => {
+    const normalized = normalizeDecimalTyping(raw);
+    if (normalized !== "" && !isExchangeRateTypingValue(normalized)) return;
+    setEditExchangeRate(normalized);
+    const rate = parseExchangeRate(normalized);
+    if (!editIsInternational || rate <= 0) return;
+    setEditEntries((prev) =>
+      prev.map((e) => ({
+        ...e,
+        debitLc: lcFromFc(e.debit, rate),
+        creditLc: lcFromFc(e.credit, rate),
+      })) as any,
+    );
+  };
+
+  const handleEditFcDebitChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    const rate = editExchangeRateValue;
+    setEditEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              debit: raw === "" ? 0 : raw,
+              debitLc: editIsInternational ? lcFromFc(raw, rate) : (e as any).debitLc,
+            }
+          : e,
+      ) as any,
+    );
+  };
+
+  const handleEditLcDebitChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    const rate = editExchangeRateValue;
+    setEditEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              debitLc: raw,
+              debit: raw === "" ? 0 : Number(fcFromLc(raw, rate)) || 0,
+            }
+          : e,
+      ) as any,
+    );
+  };
+
+  const handleEditFcCreditChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    const rate = editExchangeRateValue;
+    setEditEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              credit: raw === "" ? 0 : raw,
+              creditLc: editIsInternational ? lcFromFc(raw, rate) : (e as any).creditLc,
+            }
+          : e,
+      ) as any,
+    );
+  };
+
+  const handleEditLcCreditChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    const rate = editExchangeRateValue;
+    setEditEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              creditLc: raw,
+              credit: raw === "" ? 0 : Number(fcFromLc(raw, rate)) || 0,
+            }
+          : e,
+      ) as any,
     );
   };
 
@@ -1002,8 +1145,20 @@ export const ViewVouchersTab = ({
     Number.isFinite(parsedEditExchangeRate) && parsedEditExchangeRate > 0
       ? parsedEditExchangeRate
       : 0;
-  const totalDebitLc = totalDebit * editExchangeRateValue;
-  const totalCreditLc = totalCredit * editExchangeRateValue;
+  const totalDebitLc = editEntries.reduce(
+    (sum, e) =>
+      sum +
+      (Number((e as any).debitLc) ||
+        (Number(e.debit) || 0) * editExchangeRateValue),
+    0,
+  );
+  const totalCreditLc = editEntries.reduce(
+    (sum, e) =>
+      sum +
+      (Number((e as any).creditLc) ||
+        (Number(e.credit) || 0) * editExchangeRateValue),
+    0,
+  );
 
   // Helper function to format date safely
   const formatDisplayDate = (dateString: string): string => {
@@ -1281,7 +1436,7 @@ export const ViewVouchersTab = ({
                 <TableHead className="font-semibold text-primary">Date</TableHead>
                 <TableHead className="font-semibold text-primary">Clear Date</TableHead>
                 <TableHead className="font-semibold text-primary">Is Cleared</TableHead>
-                <TableHead className="font-semibold text-primary">Amount</TableHead>
+                <TableHead className={`font-semibold ${amountHeaderClass}`}>Amount</TableHead>
                 <TableHead className="font-semibold text-primary">Status</TableHead>
                 <TableHead className="font-semibold text-primary">Actions</TableHead>
               </TableRow>
@@ -1330,7 +1485,7 @@ export const ViewVouchersTab = ({
                     <TableCell>
                       {voucher.isCleared === 1 ? "Cleared" : voucher.isCleared === 2 ? "Returned" : voucher.isCleared === 0 ? "Pending" : "-"}
                     </TableCell>
-                    <TableCell className="font-medium">{formatAmount(voucher.totalDebit)}</TableCell>
+                    <TableCell className={`font-medium ${amountValueClass()}`}>{formatAmount(voucher.totalDebit)}</TableCell>
                     <TableCell>{getStatusBadge(voucher.status)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -1529,11 +1684,10 @@ export const ViewVouchersTab = ({
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Exchange Rate</Label>
                   <Input
-                    type="number"
-                    min="0.0001"
-                    step="0.0001"
+                    type="text"
+                    inputMode="decimal"
                     value={editExchangeRate}
-                    onChange={(e) => setEditExchangeRate(e.target.value)}
+                    onChange={(e) => handleEditExchangeRateChange(e.target.value)}
                     placeholder="Exchange rate"
                   />
                 </div>
@@ -1594,10 +1748,10 @@ export const ViewVouchersTab = ({
               <div className="grid grid-cols-12 gap-2 text-sm font-medium">
                 <div className={editIsInternational ? "col-span-2" : "col-span-3"}>Account Dr/ Cr</div>
                 <div className={editIsInternational ? "col-span-2" : "col-span-4"}>Description</div>
-                <div className="col-span-2">{editIsInternational ? "FC Dr" : "Dr"}</div>
-                {editIsInternational ? <div className="col-span-2">LC Dr</div> : null}
-                <div className="col-span-2">{editIsInternational ? "FC Cr" : "Cr"}</div>
-                {editIsInternational ? <div className="col-span-1">LC Cr</div> : null}
+                <div className={`col-span-2 ${editIsInternational ? fcHeaderClass : drHeaderClass}`}>{editIsInternational ? "FC Dr" : "Dr"}</div>
+                {editIsInternational ? <div className={`col-span-2 ${lcHeaderClass}`}>LC Dr</div> : null}
+                <div className={`col-span-2 ${editIsInternational ? fcHeaderClass : crHeaderClass}`}>{editIsInternational ? "FC Cr" : "Cr"}</div>
+                {editIsInternational ? <div className={`col-span-1 ${lcHeaderClass}`}>LC Cr</div> : null}
                 <div className="col-span-1"></div>
               </div>
 
@@ -1623,54 +1777,68 @@ export const ViewVouchersTab = ({
                   </div>
                   <div className="col-span-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={`text-xs ${editIsInternational ? fcHeaderClass : "text-muted-foreground"}`}>
                         {editIsInternational ? "fc amount" : "amount"}
                       </Label>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={entry.debit || ""}
-                        onChange={(e) => updateEntry(entry.id, "debit", Number(e.target.value))}
+                        onChange={(e) =>
+                          editIsInternational
+                            ? handleEditFcDebitChange(entry.id, e.target.value)
+                            : updateEntry(entry.id, "debit", Number(e.target.value))
+                        }
                         placeholder="0"
-                        step="0.01"
-                        min="0"
+                        className={editIsInternational ? fcValueClass() : undefined}
                       />
                     </div>
                   </div>
                   {editIsInternational ? (
                     <div className="col-span-2">
                       <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">lc amount</Label>
+                        <Label className={`text-xs ${lcHeaderClass}`}>lc amount</Label>
                         <Input
-                          value={formatAmount((Number(entry.debit) || 0) * editExchangeRateValue)}
-                          readOnly
-                          className="bg-muted font-medium"
+                          type="text"
+                          inputMode="decimal"
+                          value={(entry as any).debitLc ?? ""}
+                          onChange={(e) => handleEditLcDebitChange(entry.id, e.target.value)}
+                          placeholder="0"
+                          className={lcValueClass()}
                         />
                       </div>
                     </div>
                   ) : null}
                   <div className="col-span-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={`text-xs ${editIsInternational ? fcHeaderClass : "text-muted-foreground"}`}>
                         {editIsInternational ? "fc amount" : "amount"}
                       </Label>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={entry.credit || ""}
-                        onChange={(e) => updateEntry(entry.id, "credit", Number(e.target.value))}
+                        onChange={(e) =>
+                          editIsInternational
+                            ? handleEditFcCreditChange(entry.id, e.target.value)
+                            : updateEntry(entry.id, "credit", Number(e.target.value))
+                        }
                         placeholder="0"
-                        step="0.01"
-                        min="0"
+                        className={editIsInternational ? fcValueClass() : undefined}
                       />
                     </div>
                   </div>
                   {editIsInternational ? (
                     <div className="col-span-1">
                       <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">lc</Label>
+                        <Label className={`text-xs ${lcHeaderClass}`}>lc</Label>
                         <Input
-                          value={formatAmount((Number(entry.credit) || 0) * editExchangeRateValue)}
-                          readOnly
-                          className="bg-muted font-medium"
+                          type="text"
+                          inputMode="decimal"
+                          value={(entry as any).creditLc ?? ""}
+                          onChange={(e) => handleEditLcCreditChange(entry.id, e.target.value)}
+                          placeholder="0"
+                          className={lcValueClass()}
                         />
                       </div>
                     </div>
@@ -1692,52 +1860,52 @@ export const ViewVouchersTab = ({
               {editIsInternational ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
                   <div className="rounded-md border border-border p-3 space-y-2">
-                    <Label className="text-sm font-medium">FC Totals</Label>
+                    <Label className={`text-sm font-medium ${fcHeaderClass}`}>FC Totals</Label>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">FC Dr</Label>
-                        <Input value={formatAmount(totalDebit)} readOnly className="bg-muted font-medium" />
+                        <Label className={`text-xs ${fcHeaderClass}`}>FC Dr</Label>
+                        <Input value={formatAmount(totalDebit)} readOnly className={`bg-muted font-medium ${fcValueClass()}`} />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">FC Cr</Label>
-                        <Input value={formatAmount(totalCredit)} readOnly className="bg-muted font-medium" />
+                        <Label className={`text-xs ${fcHeaderClass}`}>FC Cr</Label>
+                        <Input value={formatAmount(totalCredit)} readOnly className={`bg-muted font-medium ${fcValueClass()}`} />
                       </div>
                     </div>
                   </div>
                   <div className="rounded-md border border-border p-3 space-y-2">
-                    <Label className="text-sm font-medium">LC Totals</Label>
+                    <Label className={`text-sm font-medium ${lcHeaderClass}`}>LC Totals</Label>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">LC Dr</Label>
-                        <Input value={formatAmount(totalDebitLc)} readOnly className="bg-muted font-medium" />
+                        <Label className={`text-xs ${lcHeaderClass}`}>LC Dr</Label>
+                        <Input value={formatAmount(totalDebitLc)} readOnly className={`bg-muted font-medium ${lcValueClass()}`} />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">LC Cr</Label>
-                        <Input value={formatAmount(totalCreditLc)} readOnly className="bg-muted font-medium" />
+                        <Label className={`text-xs ${lcHeaderClass}`}>LC Cr</Label>
+                        <Input value={formatAmount(totalCreditLc)} readOnly className={`bg-muted font-medium ${lcValueClass()}`} />
                       </div>
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-12 gap-2 items-center pt-4">
-                  <div className="col-span-7 text-right font-semibold">Total Amount</div>
+                  <div className={`col-span-7 text-right font-semibold ${amountHeaderClass}`}>Total Amount</div>
                   <div className="col-span-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Total Debit</Label>
+                      <Label className={`text-xs ${drHeaderClass}`}>Total Debit</Label>
                       <Input
                         value={formatAmount(totalDebit)}
                         readOnly
-                        className="bg-muted font-medium"
+                        className={`bg-muted font-medium ${drValueClass(1, true)}`}
                       />
                     </div>
                   </div>
                   <div className="col-span-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Total Credit</Label>
+                      <Label className={`text-xs ${crHeaderClass}`}>Total Credit</Label>
                       <Input
                         value={formatAmount(totalCredit)}
                         readOnly
-                        className="bg-muted font-medium"
+                        className={`bg-muted font-medium ${crValueClass(1, true)}`}
                       />
                     </div>
                   </div>
@@ -1864,8 +2032,8 @@ export const ViewVouchersTab = ({
                       <ListNumberHeader />
                       <TableHead>Account</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Debit (Rs)</TableHead>
-                      <TableHead className="text-right">Credit (Rs)</TableHead>
+                      <TableHead className={`text-right ${drHeaderClass}`}>Debit (Rs)</TableHead>
+                      <TableHead className={`text-right ${crHeaderClass}`}>Credit (Rs)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1874,10 +2042,10 @@ export const ViewVouchersTab = ({
                         <ListNumberCell index={idx} total={(viewingVoucher.entries || viewingVoucher.VoucherEntry || []).length} />
                         <TableCell>{getAccountLabel(entry.account, entry.Account)}</TableCell>
                         <TableCell>{entry.description || "-"}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className={`text-right ${drValueClass(entry.debit)}`}>
                           {entry.debit > 0 ? formatAmount(entry.debit) : "-"}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className={`text-right ${crValueClass(entry.credit)}`}>
                           {entry.credit > 0 ? formatAmount(entry.credit) : "-"}
                         </TableCell>
                       </TableRow>
@@ -1886,8 +2054,8 @@ export const ViewVouchersTab = ({
                   <TableFooter>
                     <TableRow className="bg-muted/50 font-semibold">
                       <TableCell colSpan={3} className="text-right">Total</TableCell>
-                      <TableCell className="text-right">{formatAmount(viewingVoucher.totalDebit)}</TableCell>
-                      <TableCell className="text-right">{formatAmount(viewingVoucher.totalCredit)}</TableCell>
+                      <TableCell className={`text-right ${drValueClass(1, true)}`}>{formatAmount(viewingVoucher.totalDebit)}</TableCell>
+                      <TableCell className={`text-right ${crValueClass(1, true)}`}>{formatAmount(viewingVoucher.totalCredit)}</TableCell>
                     </TableRow>
                   </TableFooter>
                 </Table>

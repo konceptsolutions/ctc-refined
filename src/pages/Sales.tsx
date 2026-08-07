@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import {
   MessageSquare,
   Receipt,
 } from "lucide-react";
-import { getSalesHomePath, isAccountantRole, isSalesRole } from "@/utils/auth";
+import { usePermissions } from "@/permissions/PermissionsProvider";
 
 // Sales sub-modules
 import { SalesInquiry } from "@/components/sales/SalesInquiry";
@@ -27,98 +27,66 @@ type SalesTab =
   | "invoice"
   | "returns"
   | "distributor-aging"
-  | "receivable-reminders"
-  ;
+  | "receivable-reminders";
 
 interface TabConfig {
   id: SalesTab;
   label: string;
   icon: React.ElementType;
   description: string;
+  permission: string;
 }
 
 const allTabs: TabConfig[] = [
-  { id: "inquiry", label: "Inquiry", icon: MessageSquare, description: "Manage sales inquiries" },
-  { id: "quotation", label: "Quotation", icon: FileText, description: "Create & manage quotations" },
-  { id: "invoice", label: "Invoice", icon: Receipt, description: "Sales invoices with stock reserve" },
-  { id: "returns", label: "Returns", icon: RotateCcw, description: "Process returns" },
-  { id: "distributor-aging", label: "Aging Report", icon: Clock, description: "Aging report analysis" },
-  { id: "receivable-reminders", label: "Receivables", icon: Bell, description: "Reminders & rescheduling" },
+  { id: "inquiry", label: "Inquiry", icon: MessageSquare, description: "Manage sales inquiries", permission: "page.sales.inquiry" },
+  { id: "quotation", label: "Quotation", icon: FileText, description: "Create & manage quotations", permission: "page.sales.quotation" },
+  { id: "invoice", label: "Invoice", icon: Receipt, description: "Sales invoices with stock reserve", permission: "page.sales.invoice" },
+  { id: "returns", label: "Returns", icon: RotateCcw, description: "Process returns", permission: "page.sales.returns" },
+  { id: "distributor-aging", label: "Aging Report", icon: Clock, description: "Aging report analysis", permission: "page.sales.distributor-aging" },
+  { id: "receivable-reminders", label: "Receivables", icon: Bell, description: "Reminders & rescheduling", permission: "page.sales.receivable-reminders" },
 ];
 
 const Sales = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
-  const isSalesUser = isSalesRole();
-  const isAccountant = isAccountantRole();
 
-  const tabs = useMemo(() => {
-    if (isAccountant) {
-      return allTabs.filter((t) => t.id === "invoice" || t.id === "returns");
-    }
-    if (isSalesUser) {
-      return allTabs.filter(
-        (t) =>
-          t.id !== "inquiry" &&
-          t.id !== "distributor-aging" &&
-          t.id !== "receivable-reminders",
-      );
-    }
-    return allTabs;
-  }, [isAccountant, isSalesUser]);
+  const { can } = usePermissions();
+  const tabs = allTabs.filter((t) => can(t.permission));
 
-  const defaultTab: SalesTab =
-    isSalesUser || isAccountant ? "invoice" : "inquiry";
+  const defaultTab: SalesTab = (tabs[0]?.id as SalesTab) || "invoice";
 
   const activeTab: SalesTab = tabs.some((t) => t.id === tab)
     ? (tab as SalesTab)
     : defaultTab;
 
-  // Ensure /sales redirects to the default dedicated page.
   useEffect(() => {
-    if (!tab) {
-      navigate(
-        isSalesUser || isAccountant ? getSalesHomePath() : "/sales/inquiry",
-        { replace: true },
-      );
+    if (!tabs.length) {
+      navigate("/", { replace: true });
       return;
     }
-    if (
-      isSalesUser &&
-      (tab === "inquiry" ||
-        tab === "distributor-aging" ||
-        tab === "receivable-reminders")
-    ) {
-      navigate(getSalesHomePath(), { replace: true });
-      return;
+    if (!tab || !tabs.some((t) => t.id === tab)) {
+      navigate(`/sales/${defaultTab}`, { replace: true });
     }
-    if (
-      isAccountant &&
-      tab !== "invoice" &&
-      tab !== "returns"
-    ) {
-      navigate(getSalesHomePath(), { replace: true });
-    }
-  }, [tab, navigate, isSalesUser, isAccountant]);
+  }, [tab, navigate, tabs, defaultTab]);
 
   const handleTabChange = (tabId: SalesTab) => navigate(`/sales/${tabId}`);
 
   const renderContent = () => {
     switch (activeTab) {
       case "inquiry":
-        return isSalesUser || isAccountant ? <SalesInvoice /> : <SalesInquiry />;
+        return <SalesInquiry />;
       case "quotation":
-        return isAccountant ? <SalesInvoice /> : <SalesQuotation />;
+        return <SalesQuotation />;
       case "invoice":
         return <SalesInvoice />;
       case "returns":
         return <SalesReturns />;
       case "distributor-aging":
-        return isSalesUser || isAccountant ? <SalesInvoice /> : <DistributorAging />;
+        return <DistributorAging />;
       case "receivable-reminders":
-        return isSalesUser || isAccountant ? <SalesInvoice /> : <ReceivableReminders />;
+        return <ReceivableReminders />;
       default:
-        return isSalesUser || isAccountant ? <SalesInvoice /> : <SalesInquiry />;
+        return <SalesInvoice />;
     }
   };
 
@@ -129,7 +97,6 @@ const Sales = () => {
       <div className="flex-1 flex flex-col overflow-hidden ml-16">
         <Header />
 
-        {/* Horizontal Scrollable Tab Navigation */}
         <div className="bg-card border-b border-border relative z-10">
           <div className="px-4 py-2 overflow-x-auto scrollbar-hide">
             <div className="flex items-center gap-2 min-w-max">
@@ -155,11 +122,8 @@ const Sales = () => {
           </div>
         </div>
 
-        {/* Main Content Area */}
         <main className="flex-1 p-4 overflow-auto">
-          <div className="animate-fade-in">
-            {renderContent()}
-          </div>
+          <div className="animate-fade-in">{renderContent()}</div>
         </main>
       </div>
     </div>

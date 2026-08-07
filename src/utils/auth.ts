@@ -3,6 +3,9 @@
  * Handles login state with 24-hour expiration
  */
 
+import { clearPermissions, savePermissions, parsePermissions } from "@/permissions/can";
+import { getPresetPermissions } from "@/permissions/catalog";
+
 const AUTH_STORAGE_KEY = 'devKonceptsAuth';
 const EXPIRATION_HOURS = 24;
 
@@ -13,6 +16,7 @@ export interface AuthData {
   token: string;
   loginStartTime?: string | null;
   loginEndTime?: string | null;
+  permissions?: string[];
 }
 
 const decodeJwtPayload = (token: string): Record<string, any> | null => {
@@ -34,9 +38,11 @@ export const saveAuth = (
   userRole: 'admin' | 'store',
   token: string,
   loginHours?: { loginStartTime?: string | null; loginEndTime?: string | null },
+  permissions?: string[],
 ): void => {
   const loginTime = Date.now();
   const expirationTime = loginTime + (EXPIRATION_HOURS * 60 * 60 * 1000); // 24 hours in milliseconds
+  const perms = parsePermissions(permissions);
 
   const authData: AuthData = {
     userRole,
@@ -45,12 +51,14 @@ export const saveAuth = (
     token,
     loginStartTime: loginHours?.loginStartTime || null,
     loginEndTime: loginHours?.loginEndTime || null,
+    permissions: perms,
   };
 
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authData));
   // Also keep token for easy access
   localStorage.setItem('authToken', token);
   localStorage.setItem('userRole', userRole);
+  savePermissions(perms);
 };
 
 export const getStoredLoginHours = (): {
@@ -215,6 +223,23 @@ export const clearAuth = (): void => {
   localStorage.removeItem(AUTH_STORAGE_KEY);
   localStorage.removeItem('userRole');
   localStorage.removeItem('authToken');
+  clearPermissions();
+};
+
+/** Effective permission keys for the logged-in user */
+export const getUserPermissions = (): string[] => {
+  try {
+    const authDataStr = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (authDataStr) {
+      const authData: AuthData = JSON.parse(authDataStr);
+      if (authData.permissions?.length) return authData.permissions;
+    }
+  } catch {
+    /* ignore */
+  }
+  const roleName = getTokenRoleName();
+  if (roleName) return getPresetPermissions(roleName);
+  return [];
 };
 
 /**

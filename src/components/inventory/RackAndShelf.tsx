@@ -748,8 +748,8 @@ export const RackAndShelf = () => {
         <div className="space-y-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-sm">Code No *</Label>
-              <Input value={rackCodeNo} onChange={(e) => setRackCodeNo(e.target.value)} placeholder="Rack number" className="text-sm h-9" />
+              <Label className="text-sm">Rack Name *</Label>
+              <Input value={rackCodeNo} onChange={(e) => setRackCodeNo(e.target.value)} placeholder="Enter rack name" className="text-sm h-9" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm">Store *</Label>
@@ -805,8 +805,8 @@ export const RackAndShelf = () => {
         <div className="space-y-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-sm">Shelf No *</Label>
-              <Input value={shelfNo} onChange={(e) => setShelfNo(e.target.value)} placeholder="Shelf number" className="text-sm h-9" />
+              <Label className="text-sm">Shelf Name *</Label>
+              <Input value={shelfNo} onChange={(e) => setShelfNo(e.target.value)} placeholder="Enter shelf name" className="text-sm h-9" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm">Rack *</Label>
@@ -1101,8 +1101,31 @@ export const RackAndShelf = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => handleAddShelfToRack(rack)}><Plus className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDeleteRack(rack)} className="text-destructive"><Trash className="w-4 h-4" /></Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Add shelf"
+                        onClick={() => handleAddShelfToRack(rack)}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Edit rack name"
+                        onClick={() => handleEditRack(rack)}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Delete rack"
+                        onClick={() => handleDeleteRack(rack)}
+                        className="text-destructive"
+                      >
+                        <Trash className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                   {isExpanded && (
@@ -1123,7 +1146,23 @@ export const RackAndShelf = () => {
                                 <p className="text-xs text-muted-foreground">{shelf.description}</p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Button variant="ghost" size="sm" onClick={() => handleDeleteShelf(shelf)} className="text-destructive"><Trash className="w-4 h-4" /></Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  title="Edit shelf name"
+                                  onClick={() => handleEditShelf(shelf)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  title="Delete shelf"
+                                  onClick={() => handleDeleteShelf(shelf)}
+                                  className="text-destructive"
+                                >
+                                  <Trash className="w-4 h-4" />
+                                </Button>
                               </div>
                             </div>
 

@@ -5,12 +5,29 @@ import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Plus, Trash, Save, MoreVertical, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  amountHeaderClass,
+  drHeaderClass,
+  fcHeaderClass,
+  fcValueClass,
+  lcHeaderClass,
+  lcValueClass,
+} from "@/utils/accountingColors";
+import {
+  fcFromLc,
+  isAmountTypingValue,
+  isExchangeRateTypingValue,
+  lcFromFc,
+  normalizeDecimalTyping,
+  parseExchangeRate,
+} from "@/utils/fcLcAmount";
 
 interface VoucherEntry {
   id: string;
   accountDr: string;
   description: string;
   drAmount: number | string; // FC amount; string preserves decimal typing
+  drAmountLc?: number | string; // LC amount (intl only)
 }
 
 interface PaymentVoucherFormProps {
@@ -74,11 +91,11 @@ export const PaymentVoucherForm = ({
   const [exchangeRate, setExchangeRate] = useState("1");
   const [crAccount, setCrAccount] = useState("");
   const [entries, setEntries] = useState<VoucherEntry[]>([
-    { id: "1", accountDr: "", description: "", drAmount: "" }
+    { id: "1", accountDr: "", description: "", drAmount: "", drAmountLc: "" }
   ]);
 
   const addEntry = () => {
-    setEntries([...entries, { id: Date.now().toString(), accountDr: "", description: "", drAmount: "" }]);
+    setEntries([...entries, { id: Date.now().toString(), accountDr: "", description: "", drAmount: "", drAmountLc: "" }]);
   };
 
   const removeEntry = (id: string) => {
@@ -91,6 +108,54 @@ export const PaymentVoucherForm = ({
     setEntries(entries.map(e => e.id === id ? { ...e, [field]: value } : e));
   };
 
+  const exchangeRateValue = parseExchangeRate(exchangeRate);
+
+  const handleExchangeRateChange = (raw: string) => {
+    const normalized = normalizeDecimalTyping(raw);
+    if (normalized !== "" && !isExchangeRateTypingValue(normalized)) return;
+    setExchangeRate(normalized);
+    const rate = parseExchangeRate(normalized);
+    if (rate <= 0) return;
+    setEntries((prev) =>
+      prev.map((e) => ({
+        ...e,
+        drAmountLc: lcFromFc(e.drAmount, rate),
+      })),
+    );
+  };
+
+  const handleFcChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              drAmount: raw,
+              drAmountLc: isInternationalSupplier
+                ? lcFromFc(raw, exchangeRateValue)
+                : e.drAmountLc,
+            }
+          : e,
+      ),
+    );
+  };
+
+  const handleLcChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              drAmountLc: raw,
+              drAmount: fcFromLc(raw, exchangeRateValue),
+            }
+          : e,
+      ),
+    );
+  };
+
   // Format amount helper
   const formatAmount = (amount: number): string => {
     return amount.toLocaleString("en-PK", {
@@ -101,9 +166,13 @@ export const PaymentVoucherForm = ({
 
   const totalAmount = entries.reduce((sum, e) => sum + (Number(e.drAmount) || 0), 0);
   const parsedExchangeRate = Number(exchangeRate);
-  const exchangeRateValue =
-    Number.isFinite(parsedExchangeRate) && parsedExchangeRate > 0 ? parsedExchangeRate : 0;
-  const totalAmountLc = totalAmount * exchangeRateValue;
+  const totalAmountLc = entries.reduce(
+    (sum, e) =>
+      sum +
+      (Number(e.drAmountLc) ||
+        (Number(e.drAmount) || 0) * exchangeRateValue),
+    0,
+  );
 
   const [saving, setSaving] = useState(false);
 
@@ -143,6 +212,7 @@ export const PaymentVoucherForm = ({
           ...(isInternationalSupplier
             ? {
                 drAmountLc:
+                  Number(entry.drAmountLc) ||
                   (Number(entry.drAmount) || 0) * parsedExchangeRate,
               }
             : {}),
@@ -161,7 +231,7 @@ export const PaymentVoucherForm = ({
       setPaidTo("");
       setCrAccount("");
       setExchangeRate("1");
-      setEntries([{ id: "1", accountDr: "", description: "", drAmount: "" }]);
+      setEntries([{ id: "1", accountDr: "", description: "", drAmount: "", drAmountLc: "" }]);
     } finally {
       setSaving(false);
     }
@@ -205,11 +275,10 @@ export const PaymentVoucherForm = ({
             <div className="relative">
               <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Exchange Rate</Label>
               <Input
-                type="number"
-                min="0.0001"
-                step="0.0001"
+                type="text"
+                inputMode="decimal"
                 value={exchangeRate}
-                onChange={(e) => setExchangeRate(e.target.value)}
+                onChange={(e) => handleExchangeRateChange(e.target.value)}
                 className="h-11 bg-muted/30"
               />
             </div>
@@ -249,7 +318,7 @@ export const PaymentVoucherForm = ({
       <div className="space-y-4">
         <div className="grid grid-cols-12 gap-4 items-center">
           <div className="col-span-3">
-            <Label className="text-base font-medium">Account Dr</Label>
+            <Label className={`text-base font-medium ${drHeaderClass}`}>Account Dr</Label>
           </div>
           <div className="col-span-2">
             <Label className="text-base font-medium">Balance</Label>
@@ -258,11 +327,11 @@ export const PaymentVoucherForm = ({
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2">
-            <Label className="text-base font-medium">{isInternationalSupplier ? "FC Dr" : "Dr"}</Label>
+            <Label className={`text-base font-medium ${isInternationalSupplier ? fcHeaderClass : drHeaderClass}`}>{isInternationalSupplier ? "FC Dr" : "Dr"}</Label>
           </div>
           {isInternationalSupplier ? (
             <div className="col-span-2">
-              <Label className="text-base font-medium">LC Dr</Label>
+              <Label className={`text-base font-medium ${lcHeaderClass}`}>LC Dr</Label>
             </div>
           ) : null}
           <div className="col-span-1"></div>
@@ -297,23 +366,23 @@ export const PaymentVoucherForm = ({
             </div>
             <div className="col-span-2">
               <Input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 placeholder={isInternationalSupplier ? "fc amount" : "amount"}
                 value={entry.drAmount}
-                onChange={(e) =>
-                  updateEntry(entry.id, "drAmount", e.target.value)
-                }
-                step="0.01"
-                min="0"
-                className="h-10"
+                onChange={(e) => handleFcChange(entry.id, e.target.value)}
+                className={`h-10 ${isInternationalSupplier ? fcValueClass() : ""}`}
               />
             </div>
             {isInternationalSupplier ? (
               <div className="col-span-2">
                 <Input
-                  value={formatAmount((Number(entry.drAmount) || 0) * exchangeRateValue)}
-                  readOnly
-                  className="h-10 bg-muted/30"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="lc amount"
+                  value={entry.drAmountLc ?? ""}
+                  onChange={(e) => handleLcChange(entry.id, e.target.value)}
+                  className={`h-10 ${lcValueClass()}`}
                 />
               </div>
             ) : null}
@@ -345,25 +414,25 @@ export const PaymentVoucherForm = ({
       {isInternationalSupplier ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-md border border-border p-3 space-y-2">
-            <Label className="text-sm font-medium">FC Totals</Label>
+            <Label className={`text-sm font-medium ${fcHeaderClass}`}>FC Totals</Label>
             <div className="grid grid-cols-2 gap-3">
-              <Input value={formatAmount(totalAmount)} readOnly className="h-10 bg-muted/30 font-medium" />
-              <Input value={formatAmount(totalAmount)} readOnly className="h-10 bg-muted/30 font-medium" />
+              <Input value={formatAmount(totalAmount)} readOnly className={`h-10 bg-muted/30 font-medium ${fcValueClass()}`} />
+              <Input value={formatAmount(totalAmount)} readOnly className={`h-10 bg-muted/30 font-medium ${fcValueClass()}`} />
             </div>
-            <p className="text-xs text-muted-foreground">Dr / Cr (FC)</p>
+            <p className={`text-xs ${fcHeaderClass}`}>Dr / Cr (FC)</p>
           </div>
           <div className="rounded-md border border-border p-3 space-y-2">
-            <Label className="text-sm font-medium">LC Totals</Label>
+            <Label className={`text-sm font-medium ${lcHeaderClass}`}>LC Totals</Label>
             <div className="grid grid-cols-2 gap-3">
-              <Input value={formatAmount(totalAmountLc)} readOnly className="h-10 bg-muted/30 font-medium" />
-              <Input value={formatAmount(totalAmountLc)} readOnly className="h-10 bg-muted/30 font-medium" />
+              <Input value={formatAmount(totalAmountLc)} readOnly className={`h-10 bg-muted/30 font-medium ${lcValueClass()}`} />
+              <Input value={formatAmount(totalAmountLc)} readOnly className={`h-10 bg-muted/30 font-medium ${lcValueClass()}`} />
             </div>
-            <p className="text-xs text-muted-foreground">Dr / Cr (LC)</p>
+            <p className={`text-xs ${lcHeaderClass}`}>Dr / Cr (LC)</p>
           </div>
         </div>
       ) : (
         <div className="flex items-center justify-end gap-4">
-          <Label className="text-base font-medium">Total Amount</Label>
+          <Label className={`text-base font-medium ${amountHeaderClass}`}>Total Amount</Label>
           <div className="relative w-48">
             <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Total Amount</Label>
             <Input value={formatAmount(totalAmount)} readOnly className="h-11 bg-muted/30 font-medium" />

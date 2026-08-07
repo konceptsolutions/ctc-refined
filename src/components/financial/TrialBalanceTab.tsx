@@ -15,6 +15,12 @@ import { cn } from "@/lib/utils";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printTrialBalance } from "@/utils/printTrialBalancePdf";
 import { useToast } from "@/hooks/use-toast";
+import {
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+} from "@/utils/accountingColors";
 
 interface TrialBalanceAccount {
   accountId: string;
@@ -358,8 +364,8 @@ export const TrialBalanceTab = () => {
                 <TableRow className="bg-muted/50">
                   <ListNumberHeader />
                   <TableHead className="font-semibold underline">Account</TableHead>
-                  <TableHead className="font-semibold underline text-right">Dr</TableHead>
-                  <TableHead className="font-semibold underline text-right">Cr</TableHead>
+                  <TableHead className={`font-semibold underline text-right ${drHeaderClass}`}>Dr</TableHead>
+                  <TableHead className={`font-semibold underline text-right ${crHeaderClass}`}>Cr</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -396,10 +402,10 @@ export const TrialBalanceTab = () => {
                             <TableCell className="pl-8 text-sm">
                               {account.label}
                             </TableCell>
-                            <TableCell className="text-right text-sm font-mono">
+                            <TableCell className={`text-right text-sm font-mono ${drValueClass(account.debit)}`}>
                               {formatNumber(account.debit)}
                             </TableCell>
-                            <TableCell className="text-right text-sm font-mono">
+                            <TableCell className={`text-right text-sm font-mono ${crValueClass(account.credit)}`}>
                               {formatNumber(account.credit)}
                             </TableCell>
                           </TableRow>
@@ -411,10 +417,10 @@ export const TrialBalanceTab = () => {
                     <TableRow className="bg-muted/40 font-bold border-t-2 border-border">
                       <TableCell />
                       <TableCell className="font-bold">Total</TableCell>
-                      <TableCell className="text-right font-bold font-mono">
+                      <TableCell className={`text-right font-bold font-mono ${drValueClass(1, true)}`}>
                         {formatNumber(data.totalDebit)}
                       </TableCell>
-                      <TableCell className="text-right font-bold font-mono">
+                      <TableCell className={`text-right font-bold font-mono ${crValueClass(1, true)}`}>
                         {formatNumber(data.totalCredit)}
                       </TableCell>
                     </TableRow>

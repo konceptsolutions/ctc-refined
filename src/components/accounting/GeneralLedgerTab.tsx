@@ -6,6 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  balanceHeaderClass,
+  balanceValueClass,
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+} from "@/utils/accountingColors";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -281,7 +289,9 @@ export const GeneralLedgerTab = () => {
                         <div className="flex items-center gap-2">
                           <div>
                             <p className="text-xs text-muted-foreground">Current Balance</p>
-                            <p className="font-mono font-semibold text-lg">Rs {account.currentBalance.toLocaleString()}</p>
+                            <p className={`font-mono font-semibold text-lg ${balanceValueClass()}`}>
+                              Rs {account.currentBalance.toLocaleString()}
+                            </p>
                           </div>
                           {getBalanceIndicator(account)}
                         </div>
@@ -298,9 +308,9 @@ export const GeneralLedgerTab = () => {
                             <TableHead className="w-[120px]">Journal No.</TableHead>
                             <TableHead className="w-[100px]">Reference</TableHead>
                             <TableHead>Description</TableHead>
-                            <TableHead className="w-[100px] text-right">Debit</TableHead>
-                            <TableHead className="w-[100px] text-right">Credit</TableHead>
-                            <TableHead className="w-[120px] text-right">Balance</TableHead>
+                            <TableHead className={`w-[100px] text-right ${drHeaderClass}`}>Debit</TableHead>
+                            <TableHead className={`w-[100px] text-right ${crHeaderClass}`}>Credit</TableHead>
+                            <TableHead className={`w-[120px] text-right ${balanceHeaderClass}`}>Balance</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -315,13 +325,13 @@ export const GeneralLedgerTab = () => {
                               <TableCell className="text-primary">{txn.journalNo}</TableCell>
                               <TableCell>{txn.reference}</TableCell>
                               <TableCell>{txn.description}</TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className={`text-right font-mono ${drValueClass(txn.debit)}`}>
                                 {txn.debit > 0 ? `Rs ${txn.debit.toLocaleString()} ` : "-"}
                               </TableCell>
-                              <TableCell className="text-right font-mono">
+                              <TableCell className={`text-right font-mono ${crValueClass(txn.credit)}`}>
                                 {txn.credit > 0 ? `Rs ${txn.credit.toLocaleString()} ` : "-"}
                               </TableCell>
-                              <TableCell className="text-right font-mono font-medium">
+                              <TableCell className={`text-right font-mono font-medium ${balanceValueClass(txn.balance)}`}>
                                 Rs {txn.balance.toLocaleString()}
                               </TableCell>
                             </TableRow>

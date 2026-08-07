@@ -19,6 +19,12 @@ import { ListNumberCell, ListNumberHeader } from "@/components/ui/list-table-num
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/lib/api";
 import type { Voucher } from "@/components/vouchers/VoucherManagement";
+import {
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+} from "@/utils/accountingColors";
 
 interface VoucherViewDialogProps {
   open: boolean;
@@ -230,8 +236,8 @@ export function VoucherViewDialog({
                     <ListNumberHeader />
                     <TableHead>Account</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Debit (Rs)</TableHead>
-                    <TableHead className="text-right">Credit (Rs)</TableHead>
+                    <TableHead className={`text-right ${drHeaderClass}`}>Debit (Rs)</TableHead>
+                    <TableHead className={`text-right ${crHeaderClass}`}>Credit (Rs)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -240,10 +246,10 @@ export function VoucherViewDialog({
                       <ListNumberCell index={idx} total={entries.length} />
                       <TableCell>{getAccountLabel(entry)}</TableCell>
                       <TableCell>{entry.description || "-"}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className={`text-right ${drValueClass(entry.debit)}`}>
                         {entry.debit > 0 ? formatAmount(entry.debit) : "-"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className={`text-right ${crValueClass(entry.credit)}`}>
                         {entry.credit > 0 ? formatAmount(entry.credit) : "-"}
                       </TableCell>
                     </TableRow>
@@ -254,10 +260,10 @@ export function VoucherViewDialog({
                     <TableCell colSpan={3} className="text-right">
                       Total
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className={`text-right ${drValueClass(1, true)}`}>
                       {formatAmount(voucher.totalDebit)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className={`text-right ${crValueClass(1, true)}`}>
                       {formatAmount(voucher.totalCredit)}
                     </TableCell>
                   </TableRow>

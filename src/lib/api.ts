@@ -293,6 +293,10 @@ class ApiClient {
     });
   }
 
+  async getMe() {
+    return this.request("/auth/me");
+  }
+
   async forgotPassword(data: {
     identifier: string;
     newPassword: string;
@@ -2059,6 +2063,14 @@ class ApiClient {
     return this.request(
       `/financial/international-supplier-ledgers${queryString ? `?${queryString}` : ""}`,
     );
+  }
+
+  async getSupplierAccounts() {
+    return this.request("/financial/supplier-accounts");
+  }
+
+  async getCustomerAccounts() {
+    return this.request("/financial/customer-accounts");
   }
 
   async getAccountGroups() {

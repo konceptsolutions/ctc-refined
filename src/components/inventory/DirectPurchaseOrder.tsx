@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { apiClient, getApiBaseUrl } from "@/lib/api";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
+import {
+  formatPurchasePrice,
+  roundPurchasePrice,
+} from "@/utils/purchasePriceRound";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   AlertDialog,
@@ -1175,7 +1179,7 @@ export const DirectPurchaseOrder = ({
                 // this part. This is sorted by date desc, so the first match
                 // is the latest.
                 if (lastPurchasePrice === null && purchasePrice !== null && purchasePrice !== undefined) {
-                  lastPurchasePrice = Number(purchasePrice);
+                  lastPurchasePrice = roundPurchasePrice(purchasePrice);
                   lastPurchaseDate = orderDate;
                   lastPurchaseDpoNo = orderDpoNo;
                   foundDPO = true;
@@ -1241,8 +1245,10 @@ export const DirectPurchaseOrder = ({
 
       const suggestPurchase: number | null =
         lastPurchasePrice !== null && lastPurchasePrice !== undefined
-          ? Number(lastPurchasePrice)
-          : partCatalogPurchase;
+          ? roundPurchasePrice(lastPurchasePrice)
+          : partCatalogPurchase !== null && partCatalogPurchase !== undefined
+            ? roundPurchasePrice(partCatalogPurchase)
+            : null;
 
       if (
         shouldApplySuggestedPurchasePrice &&
@@ -1280,7 +1286,15 @@ export const DirectPurchaseOrder = ({
     setFormItems((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          const updated = { ...item, [field]: value };
+          let nextValue = value;
+          if (
+            field === "purchasePrice" &&
+            typeof value === "number" &&
+            Number.isFinite(value)
+          ) {
+            nextValue = roundPurchasePrice(value);
+          }
+          const updated = { ...item, [field]: nextValue };
 
           // When part is selected, also set its weight and clear purchase price so last price can apply
           if (field === "partId" && typeof value === "string") {
@@ -1663,7 +1677,9 @@ export const DirectPurchaseOrder = ({
         discount: discountVal,
         items: validItems.map((item) => {
           const qty = typeof item.quantity === "number" ? item.quantity : 0;
-          const price = typeof item.purchasePrice === "number" ? item.purchasePrice : 0;
+          const price = roundPurchasePrice(
+            typeof item.purchasePrice === "number" ? item.purchasePrice : 0,
+          );
 
           // Price A / Price B / Price M are persisted to the Part record by
           // the inline blur handler (`handleSaveRowPrice`), so they are
@@ -2221,7 +2237,7 @@ export const DirectPurchaseOrder = ({
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">
                     {partHistory.lastPurchasePrice !== null
-                      ? partHistory.lastPurchasePrice.toLocaleString("en-PK", { style: "currency", currency: "PKR" })
+                      ? `Rs ${formatPurchasePrice(partHistory.lastPurchasePrice)}`
                       : "N/A"}
                   </p>
                   {partHistory.lastPurchaseDpoNo && (
@@ -2522,13 +2538,15 @@ export const DirectPurchaseOrder = ({
                                 <Input
                                   type="number"
                                   min="0"
-                                  step="0.01"
+                                  step="1"
                                   value={item.purchasePrice === "" ? "" : item.purchasePrice}
                                   onChange={(e) =>
                                     handleUpdateItem(
                                       item.id,
                                       "purchasePrice",
-                                      e.target.value === "" ? "" : parseFloat(e.target.value) || "",
+                                      e.target.value === ""
+                                        ? ""
+                                        : roundPurchasePrice(parseFloat(e.target.value) || 0),
                                     )
                                   }
                                   onClick={(e) => e.stopPropagation()}
@@ -2719,13 +2737,15 @@ export const DirectPurchaseOrder = ({
                                     <Input
                                       type="number"
                                       min="0"
-                                      step="0.01"
+                                      step="1"
                                       value={item.purchasePrice === "" ? "" : item.purchasePrice}
                                       onChange={(e) =>
                                         handleUpdateItem(
                                           item.id,
                                           "purchasePrice",
-                                          e.target.value === "" ? "" : parseFloat(e.target.value) || "",
+                                          e.target.value === ""
+                                            ? ""
+                                            : roundPurchasePrice(parseFloat(e.target.value) || 0),
                                         )
                                       }
                                       placeholder=""
@@ -3246,7 +3266,7 @@ export const DirectPurchaseOrder = ({
                           <TableCell>{item.brand}</TableCell>
                           <TableCell>{item.uom}</TableCell>
                           <TableCell>{item.quantity}</TableCell>
-                          <TableCell>{item.purchasePrice.toLocaleString("en-PK")}</TableCell>
+                          <TableCell>{formatPurchasePrice(item.purchasePrice)}</TableCell>
                           <TableCell className="text-right font-medium">
                             {item.amount.toLocaleString("en-PK")}
                           </TableCell>
@@ -3424,7 +3444,7 @@ export const DirectPurchaseOrder = ({
                         <div className="text-xs text-muted-foreground truncate max-w-[300px]">{item.description}</div>
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
-                        {item.purchasePrice.toLocaleString()}
+                        {formatPurchasePrice(item.purchasePrice)}
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">

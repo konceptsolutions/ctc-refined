@@ -17,7 +17,7 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // Find user by email with role name via roleId foreign key.
+        // Find user by email with role name + permissions via roleId foreign key.
         const users = await prisma.$queryRaw<Array<{
             id: string;
             name: string;
@@ -25,10 +25,12 @@ router.post('/login', async (req, res) => {
             password: string | null;
             status: string;
             role: string;
+            rolePermissions: string | null;
             loginStartTime: string | null;
             loginEndTime: string | null;
         }>>`
             SELECT u.id, u.name, u.email, u.password, u.status, r.name AS role,
+                   r.permissions AS "rolePermissions",
                    u."loginStartTime", u."loginEndTime"
             FROM "User" u
             JOIN "Role" r ON r.id = u."roleId"
@@ -67,7 +69,23 @@ router.post('/login', async (req, res) => {
             });
         }
 
+        let permissions: string[] = [];
+        try {
+            permissions = JSON.parse(user.rolePermissions || '[]');
+            if (!Array.isArray(permissions)) permissions = [];
+        } catch {
+            permissions = [];
+        }
+        // Fallback for legacy coarse roles not yet migrated
+        if (permissions.length === 0) {
+            const { getPresetPermissions } = await import('../permissions/catalog');
+            permissions = getPresetPermissions(user.role);
+        }
+        const { expandPermissionAncestors } = await import('../permissions/catalog');
+        permissions = expandPermissionAncestors(permissions);
+
         // Generate token
+        // Keep JWT small: store role only; clients refresh full permissions via /auth/me
         const token = jwt.sign(
             { id: user.id, email: user.email, role: user.role, name: user.name },
             JWT_SECRET as jwt.Secret,
@@ -105,12 +123,86 @@ router.post('/login', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                permissions,
                 loginStartTime: user.loginStartTime,
                 loginEndTime: user.loginEndTime,
             }
         });
     } catch (error: any) {
         console.error('Login error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.get('/me', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({ error: 'Authentication token is required' });
+        }
+        const token = authHeader.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Authentication token is missing' });
+        }
+
+        let decoded: any;
+        try {
+            decoded = jwt.verify(token, JWT_SECRET as jwt.Secret);
+        } catch {
+            return res.status(403).json({ error: 'Token is invalid or expired' });
+        }
+
+        const users = await prisma.$queryRaw<Array<{
+            id: string;
+            name: string;
+            email: string;
+            status: string;
+            role: string;
+            rolePermissions: string | null;
+            loginStartTime: string | null;
+            loginEndTime: string | null;
+        }>>`
+            SELECT u.id, u.name, u.email, u.status, r.name AS role,
+                   r.permissions AS "rolePermissions",
+                   u."loginStartTime", u."loginEndTime"
+            FROM "User" u
+            JOIN "Role" r ON r.id = u."roleId"
+            WHERE u.id = ${decoded.id}
+            LIMIT 1
+        `;
+        const user = users[0];
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        let permissions: string[] = [];
+        try {
+            permissions = JSON.parse(user.rolePermissions || '[]');
+            if (!Array.isArray(permissions)) permissions = [];
+        } catch {
+            permissions = [];
+        }
+        if (permissions.length === 0) {
+            const { getPresetPermissions } = await import('../permissions/catalog');
+            permissions = getPresetPermissions(user.role);
+        }
+        const { expandPermissionAncestors } = await import('../permissions/catalog');
+        permissions = expandPermissionAncestors(permissions);
+
+        res.json({
+            data: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                status: user.status,
+                permissions,
+                loginStartTime: user.loginStartTime,
+                loginEndTime: user.loginEndTime,
+            },
+        });
+    } catch (error: any) {
+        console.error('Auth me error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

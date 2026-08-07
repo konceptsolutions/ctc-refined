@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { formatPurchasePrice } from "@/utils/purchasePriceRound";
 import {
   FileText,
   Tag,
@@ -2194,7 +2195,7 @@ export const PricingCosting = () => {
                               {formatCurrency(item.avgPrice)}
                             </TableCell>
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
-                              {formatCurrency(item.lastPurchasePrice)}
+                              {`Rs ${formatPurchasePrice(item.lastPurchasePrice)}`}
                             </TableCell>
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                               {formatCurrency(item.lastSalePrice)}
@@ -2733,7 +2734,7 @@ export const PricingCosting = () => {
                               {formatCurrency(item.avgPrice)}
                             </TableCell>
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
-                              {formatCurrency(item.lastPurchasePrice)}
+                              {`Rs ${formatPurchasePrice(item.lastPurchasePrice)}`}
                             </TableCell>
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                               {formatCurrency(item.lastSalePrice)}
@@ -3271,7 +3272,7 @@ export const PricingCosting = () => {
                       Last Purchase Price
                     </p>
                     <p className="font-medium">
-                      {formatCurrency(selectedItemForHistory.lastPurchasePrice)}
+                      {`Rs ${formatPurchasePrice(selectedItemForHistory.lastPurchasePrice)}`}
                     </p>
                   </div>
                   <div>

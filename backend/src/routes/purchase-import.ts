@@ -2,6 +2,8 @@ import express, { Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
+import { roundPurchasePrice } from "../utils/purchasePriceRound";
+import { roundFc } from "../utils/fcRound";
 
 const router = express.Router();
 
@@ -813,29 +815,33 @@ const getEffectiveQuotationItemValues = (
   isRevised: boolean,
 ) => {
   if (isRevised) {
-    const fcRate =
+    const fcRate = roundFc(
       Number(item.revisedFcRate || 0) > 0
         ? Number(item.revisedFcRate)
-        : Number(item.fcRate || 0);
-    const fcAmount =
+        : Number(item.fcRate || 0),
+    );
+    const fcAmount = roundFc(
       Number(item.revisedFcAmount || 0) > 0
         ? Number(item.revisedFcAmount)
-        : Number(item.fcAmount || 0);
-    const lcRate =
+        : Number(item.fcAmount || 0),
+    );
+    const lcRate = roundPurchasePrice(
       Number(item.revisedLcRate || 0) > 0
         ? Number(item.revisedLcRate)
-        : Number(item.lcRate || 0);
-    const lcAmount =
+        : Number(item.lcRate || 0),
+    );
+    const lcAmount = roundPurchasePrice(
       Number(item.revisedLcAmount || 0) > 0
         ? Number(item.revisedLcAmount)
-        : Number(item.lcAmount || 0);
+        : Number(item.lcAmount || 0),
+    );
     return { fcRate, fcAmount, lcRate, lcAmount };
   }
   return {
-    fcRate: Number(item.fcRate || 0),
-    fcAmount: Number(item.fcAmount || 0),
-    lcRate: Number(item.lcRate || 0),
-    lcAmount: Number(item.lcAmount || 0),
+    fcRate: roundFc(item.fcRate || 0),
+    fcAmount: roundFc(item.fcAmount || 0),
+    lcRate: roundPurchasePrice(item.lcRate || 0),
+    lcAmount: roundPurchasePrice(item.lcAmount || 0),
   };
 };
 
@@ -2435,8 +2441,8 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
     const items = itemsRaw
       .map((item: any) => {
         const quotationQuantity = Number(item?.quotationQuantity || 0);
-        const fcRate = Number(item?.fcRate || 0);
-        const lcRate = fcRate * conversionRate;
+        const fcRate = roundFc(item?.fcRate || 0);
+        const lcRate = roundPurchasePrice(fcRate * conversionRate);
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = Number(item?.shipDays || 0);
         const weight = Number(item?.weight || 0);
@@ -2446,13 +2452,13 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
           quotationQuantity,
           shipDays,
           fcRate,
-          fcAmount: fcRate * quotationQuantity,
+          fcAmount: roundFc(fcRate * quotationQuantity),
           lcRate,
-          lcAmount: lcRate * quotationQuantity,
-          revisedFcRate: Number(item?.revisedFcRate || 0),
-          revisedFcAmount: Number(item?.revisedFcAmount || 0),
-          revisedLcRate: Number(item?.revisedLcRate || 0),
-          revisedLcAmount: Number(item?.revisedLcAmount || 0),
+          lcAmount: roundPurchasePrice(lcRate * quotationQuantity),
+          revisedFcRate: roundFc(item?.revisedFcRate || 0),
+          revisedFcAmount: roundFc(Number(item?.revisedFcAmount || 0)),
+          revisedLcRate: roundPurchasePrice(item?.revisedLcRate || 0),
+          revisedLcAmount: roundPurchasePrice(item?.revisedLcAmount || 0),
           weight,
           totalWeight: weight * quotationQuantity,
         };
@@ -2866,8 +2872,8 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
     const items = itemsRaw
       .map((item: any) => {
         const quotationQuantity = Number(item?.quotationQuantity || 0);
-        const fcRate = Number(item?.fcRate || 0);
-        const lcRate = fcRate * normalizedConversionRate;
+        const fcRate = roundFc(item?.fcRate || 0);
+        const lcRate = roundPurchasePrice(fcRate * normalizedConversionRate);
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = Number(item?.shipDays || 0);
         const weight = Number(item?.weight || 0);
@@ -2877,14 +2883,21 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
           quotationQuantity,
           shipDays,
           fcRate,
-          fcAmount: fcRate * quotationQuantity,
+          fcAmount: roundFc(fcRate * quotationQuantity),
           lcRate,
-          lcAmount: lcRate * quotationQuantity,
-          revisedFcRate: Number(item?.revisedFcRate || 0),
-          revisedFcAmount: Number(item?.revisedFcRate || 0) * quotationQuantity,
-          revisedLcRate: Number(item?.revisedFcRate || 0) * normalizedConversionRate,
-          revisedLcAmount:
-            Number(item?.revisedFcRate || 0) * normalizedConversionRate * quotationQuantity,
+          lcAmount: roundPurchasePrice(lcRate * quotationQuantity),
+          revisedFcRate: roundFc(item?.revisedFcRate || 0),
+          revisedFcAmount: roundFc(
+            Number(item?.revisedFcRate || 0) * quotationQuantity,
+          ),
+          revisedLcRate: roundPurchasePrice(
+            Number(item?.revisedFcRate || 0) * normalizedConversionRate,
+          ),
+          revisedLcAmount: roundPurchasePrice(
+            Number(item?.revisedFcRate || 0) *
+              normalizedConversionRate *
+              quotationQuantity,
+          ),
           weight,
           totalWeight: weight * quotationQuantity,
         };
@@ -3016,13 +3029,15 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
     const items = itemsRaw
       .map((item: any) => {
         const quotationQuantity = Number(item?.quotationQuantity || 0);
-        const fcRate = Number(item?.fcRate || 0);
-        const revisedFcRate = Number(item?.revisedFcRate || 0);
+        const fcRate = roundFc(item?.fcRate || 0);
+        const revisedFcRate = roundFc(item?.revisedFcRate || 0);
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = Number(item?.shipDays || 0);
         const weight = Number(item?.weight || 0);
-        const lcRate = fcRate * normalizedConversionRate;
-        const revisedLcRate = revisedFcRate * normalizedConversionRate;
+        const lcRate = roundPurchasePrice(fcRate * normalizedConversionRate);
+        const revisedLcRate = roundPurchasePrice(
+          revisedFcRate * normalizedConversionRate,
+        );
 
         return {
           partId: String(item?.partId || "").trim(),
@@ -3030,13 +3045,13 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
           quotationQuantity,
           shipDays,
           fcRate,
-          fcAmount: fcRate * quotationQuantity,
+          fcAmount: roundFc(fcRate * quotationQuantity),
           lcRate,
-          lcAmount: lcRate * quotationQuantity,
+          lcAmount: roundPurchasePrice(lcRate * quotationQuantity),
           revisedFcRate,
-          revisedFcAmount: revisedFcRate * quotationQuantity,
+          revisedFcAmount: roundFc(revisedFcRate * quotationQuantity),
           revisedLcRate,
-          revisedLcAmount: revisedLcRate * quotationQuantity,
+          revisedLcAmount: roundPurchasePrice(revisedLcRate * quotationQuantity),
           weight,
           totalWeight: weight * quotationQuantity,
         };
@@ -3911,19 +3926,19 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       const quotationQty = Number(quotationItem?.quotationQuantity || 0);
       const poUnitCost = Number(poItem.unitCost) || 0;
       let fcRate = Number(effective.fcRate || 0);
-      let lcRate = Number(effective.lcRate || 0);
+      let lcRate = roundPurchasePrice(effective.lcRate || 0);
 
       if (fcRate <= 0 && quotationQty > 0 && Number(effective.fcAmount || 0) > 0) {
         fcRate = Number(effective.fcAmount) / quotationQty;
       }
       if (lcRate <= 0 && quotationQty > 0 && Number(effective.lcAmount || 0) > 0) {
-        lcRate = Number(effective.lcAmount) / quotationQty;
+        lcRate = roundPurchasePrice(Number(effective.lcAmount) / quotationQty);
       }
       if (fcRate <= 0 && poUnitCost > 0 && orderConversionRate > 0) {
-        lcRate = poUnitCost;
+        lcRate = roundPurchasePrice(poUnitCost);
         fcRate = poUnitCost / orderConversionRate;
       } else if (lcRate <= 0 && fcRate > 0) {
-        lcRate = fcRate * orderConversionRate;
+        lcRate = roundPurchasePrice(fcRate * orderConversionRate);
       } else if (fcRate <= 0 && lcRate > 0 && orderConversionRate > 0) {
         fcRate = lcRate / orderConversionRate;
       }
@@ -3943,13 +3958,13 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         fcRate,
         fcAmount: fcRate * orderQty,
         lcRate,
-        lcAmount: lcRate * orderQty,
+        lcAmount: roundPurchasePrice(lcRate * orderQty),
         weight,
         totalWeight: weight * orderQty,
         priceA: partPriceA,
         priceB: partPriceB,
         orderQty,
-        unitCost: Number(poItem.unitCost) || 0,
+        unitCost: roundPurchasePrice(poItem.unitCost),
         receivedQty: Number(poItem.receivedQty) || 0,
         additionalQty: Number((poItem as any).additionalQty) || 0,
         backQty: Number((poItem as any).backQty) || 0,
@@ -4241,15 +4256,15 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         const quotationFcRate = Number(effective.fcRate || 0);
         const fcRate =
           receiveRow?.fcRate !== undefined
-            ? Math.max(0, Number(receiveRow.fcRate) || 0)
-            : quotationFcRate;
+            ? roundFc(receiveRow.fcRate)
+            : roundFc(quotationFcRate);
         const weight = Number(
           quotationItem?.weight ?? (poItem as any).weight ?? 0,
         );
-        const lineUnitCost = fcRate * conversionRate;
+        const lineUnitCost = roundPurchasePrice(fcRate * conversionRate);
         const receiveQty = variance.receiveQty;
-        const fcAmount = fcRate * receiveQty;
-        const lineTotalCost = lineUnitCost * receiveQty;
+        const fcAmount = roundFc(fcRate * receiveQty);
+        const lineTotalCost = roundPurchasePrice(lineUnitCost * receiveQty);
         const totalWeight = weight * receiveQty;
 
         totalLc += lineTotalCost;
@@ -4281,11 +4296,11 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         }
 
         const receiveQty = Math.max(0, Math.floor(Number(newItem.receiveQty) || 0));
-        const fcRate = Math.max(0, Number(newItem.fcRate) || 0);
+        const fcRate = roundFc(newItem.fcRate);
         const weight = Number(part.weight || 0);
-        const lineUnitCost = fcRate * conversionRate;
-        const fcAmount = fcRate * receiveQty;
-        const lineTotalCost = lineUnitCost * receiveQty;
+        const lineUnitCost = roundPurchasePrice(fcRate * conversionRate);
+        const fcAmount = roundFc(fcRate * receiveQty);
+        const lineTotalCost = roundPurchasePrice(lineUnitCost * receiveQty);
         const totalWeight = weight * receiveQty;
 
         totalLc += lineTotalCost;

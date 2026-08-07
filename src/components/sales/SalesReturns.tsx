@@ -61,7 +61,8 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { Textarea } from "@/components/ui/textarea";
-import { getUserRole, isAccountantRole } from "@/utils/auth";
+import { getUserRole } from "@/utils/auth";
+import { can } from "@/permissions/can";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 
@@ -328,8 +329,10 @@ function mapApiSalesReturn(row: any): SalesReturn {
 const RETURN_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 export const SalesReturns = () => {
-  const isAccountant = isAccountantRole();
-  const canMutateReturns = !isAccountant;
+  const canMutateReturns =
+    can("action.sales.returns.create") ||
+    can("action.sales.returns.edit") ||
+    can("action.sales.returns.delete");
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [selectedReturns, setSelectedReturns] = useState<string[]>([]);
   const [loadingReturns, setLoadingReturns] = useState(false);

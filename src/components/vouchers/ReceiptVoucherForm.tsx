@@ -5,6 +5,10 @@ import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Plus, Trash, Save, MoreVertical, Receipt } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  amountHeaderClass,
+  crHeaderClass,
+} from "@/utils/accountingColors";
 
 interface VoucherEntry {
   id: string;
@@ -398,7 +402,7 @@ export const ReceiptVoucherForm = ({
       <div className="space-y-4">
         <div className="grid grid-cols-12 gap-4 items-center">
           <div className={receiptKind === "cash" ? "col-span-3" : "col-span-4"}>
-            <Label className="text-base font-medium">Account Cr</Label>
+            <Label className={`text-base font-medium ${crHeaderClass}`}>Account Cr</Label>
           </div>
           <div className="col-span-2">
             <Label className="text-base font-medium">Balance</Label>
@@ -407,7 +411,7 @@ export const ReceiptVoucherForm = ({
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2">
-            <Label className="text-base font-medium">Cr</Label>
+            <Label className={`text-base font-medium ${crHeaderClass}`}>Cr</Label>
           </div>
           {receiptKind === "cash" && (
             <div className="col-span-2">
@@ -501,7 +505,7 @@ export const ReceiptVoucherForm = ({
       </div>
 
       <div className="flex items-center justify-end gap-4">
-        <Label className="text-base font-medium">Total Amount</Label>
+        <Label className={`text-base font-medium ${amountHeaderClass}`}>Total Amount</Label>
         <div className="relative w-48">
           <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">
             Total Amount

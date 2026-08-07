@@ -3,6 +3,10 @@ import { format } from "date-fns";
 import apiClient from "@/lib/api";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import {
+  formatPurchasePrice,
+  roundPurchasePrice,
+} from "@/utils/purchasePriceRound";
+import {
   ShoppingCart,
   Plus,
   Search,
@@ -1432,12 +1436,20 @@ export const PurchaseOrder = () => {
           }
           // Calculate amount and cost when price or quantity changes
           if (typeof value === 'number' && (field === 'purchasePrice' || field === 'receivedQty')) {
-            updated.amount = updated.purchasePrice * updated.receivedQty;
-            updated.cost = updated.purchasePrice * updated.receivedQty;
+            const purchasePrice =
+              field === "purchasePrice"
+                ? roundPurchasePrice(value)
+                : updated.purchasePrice;
+            if (field === "purchasePrice") {
+              updated.purchasePrice = purchasePrice;
+            }
+            updated.amount = purchasePrice * updated.receivedQty;
+            updated.cost = purchasePrice * updated.receivedQty;
           }
           // Update price field when purchasePrice changes
           if (field === 'purchasePrice' && typeof value === 'number') {
-            updated.price = value;
+            updated.purchasePrice = roundPurchasePrice(value);
+            updated.price = roundPurchasePrice(value);
           }
           return updated;
         }
@@ -1633,8 +1645,9 @@ export const PurchaseOrder = () => {
         return {
           part_id: part?.id || "",
           quantity: item.quantity,
-          unit_cost: item.purchasePrice,
-          total_cost: item.purchasePrice * item.receivedQty,
+          unit_cost: roundPurchasePrice(item.purchasePrice),
+          total_cost:
+            roundPurchasePrice(item.purchasePrice) * item.receivedQty,
           received_qty: item.receivedQty,
           notes: item.remarks || null,
         };
@@ -1713,8 +1726,9 @@ export const PurchaseOrder = () => {
     }
   };
 
-  // Format currency
-  const formatCurrency = (value: number) => `Rs ${value.toLocaleString("en-PK")}`;
+  // Format currency (purchase prices: whole numbers)
+  const formatCurrency = (value: number) =>
+    `Rs ${formatPurchasePrice(value)}`;
 
   const statusColors = {
     Draft: "bg-gray-100 text-gray-600 border-gray-200",
@@ -2437,8 +2451,15 @@ export const PurchaseOrder = () => {
                         <TableCell className="text-center">
                           <Input
                             type="number"
+                            step="1"
                             value={item.purchasePrice || ""}
-                            onChange={(e) => handleUpdateReceiveItem(item.id, "purchasePrice", parseFloat(e.target.value) || 0)}
+                            onChange={(e) =>
+                              handleUpdateReceiveItem(
+                                item.id,
+                                "purchasePrice",
+                                roundPurchasePrice(parseFloat(e.target.value) || 0),
+                              )
+                            }
                             className="h-8 w-20 text-center mx-auto"
                             onClick={(e) => e.stopPropagation()}
                             placeholder=""

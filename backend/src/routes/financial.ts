@@ -1231,4 +1231,85 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
   }
 });
 
+// Supplier linked accounts (for Supplier–Customer Comparison)
+router.get("/supplier-accounts", async (_req: Request, res: Response) => {
+  try {
+    const accounts = await prisma.account.findMany({
+      where: {
+        supplierId: { not: null },
+        status: "Active",
+      },
+      include: {
+        Supplier: {
+          select: {
+            id: true,
+            companyName: true,
+            name: true,
+            code: true,
+            type: true,
+          },
+        },
+        Subgroup: { select: { code: true, name: true } },
+      },
+      orderBy: { code: "asc" },
+    });
+
+    res.json({
+      data: accounts.map((acc: any) => ({
+        id: acc.id,
+        name: `${acc.code}-${acc.name}`,
+        code: acc.code,
+        supplierId: acc.supplierId,
+        supplierName:
+          acc.Supplier?.companyName || acc.Supplier?.name || acc.name,
+        supplierType: acc.Supplier?.type || null,
+        subgroupCode: acc.Subgroup?.code || null,
+      })),
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error.message || "Failed to fetch supplier accounts",
+    });
+  }
+});
+
+// Customer linked accounts (for Supplier–Customer Comparison)
+router.get("/customer-accounts", async (_req: Request, res: Response) => {
+  try {
+    const accounts = await prisma.account.findMany({
+      where: {
+        customerId: { not: null },
+        supplierId: null,
+        status: "Active",
+      },
+      include: {
+        Customer: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        Subgroup: { select: { code: true, name: true } },
+      },
+      orderBy: { code: "asc" },
+    });
+
+    res.json({
+      data: accounts.map((acc: any) => ({
+        id: acc.id,
+        name: `${acc.code}-${acc.name}`,
+        code: acc.code,
+        customerId: acc.customerId,
+        customerName: acc.Customer?.name || acc.name,
+        subgroupCode: acc.Subgroup?.code || null,
+      })),
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error.message || "Failed to fetch customer accounts",
+    });
+  }
+});
+
 export default router;

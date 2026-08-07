@@ -10,6 +10,7 @@ export interface AuthRequest extends Request {
         email: string;
         role: string;
         name: string;
+        permissions?: string[];
     };
 }
 
@@ -51,6 +52,96 @@ export const authorizeRoles = (...roles: string[]) => {
         }
 
         next();
+    };
+};
+
+async function resolveUserPermissions(req: AuthRequest): Promise<string[]> {
+    if (Array.isArray(req.user?.permissions) && req.user!.permissions!.length > 0) {
+        return req.user!.permissions!;
+    }
+    if (!req.user?.id) return [];
+
+    try {
+        const prisma = (await import('../config/database')).default;
+        const rows = await prisma.$queryRaw<Array<{ permissions: string | null; role: string }>>`
+            SELECT r.permissions, r.name AS role
+            FROM "User" u
+            JOIN "Role" r ON r.id = u."roleId"
+            WHERE u.id = ${req.user.id}
+            LIMIT 1
+        `;
+        const row = rows[0];
+        if (!row) return [];
+        let permissions: string[] = [];
+        try {
+            permissions = JSON.parse(row.permissions || '[]');
+            if (!Array.isArray(permissions)) permissions = [];
+        } catch {
+            permissions = [];
+        }
+        if (permissions.length === 0) {
+            const { getPresetPermissions } = await import('../permissions/catalog');
+            permissions = getPresetPermissions(row.role);
+        }
+        const { expandPermissionAncestors } = await import('../permissions/catalog');
+        permissions = expandPermissionAncestors(permissions);
+        if (req.user) req.user.permissions = permissions;
+        return permissions;
+    } catch (err) {
+        console.error('Failed to resolve permissions', err);
+        return [];
+    }
+}
+
+/**
+ * Require any of the given permission keys (or wildcard *).
+ */
+export const requirePermission = (...keys: string[]) => {
+    return async (req: AuthRequest, res: Response, next: NextFunction) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'User is not authenticated' });
+        }
+        try {
+            const permissions = await resolveUserPermissions(req);
+            if (permissions.includes('*')) return next();
+            const ok = keys.length === 0 || keys.some((k) => permissions.includes(k));
+            if (!ok) {
+                return res.status(403).json({
+                    error: 'You do not have permission for this action',
+                    required: keys,
+                });
+            }
+            next();
+        } catch (error) {
+            console.error('requirePermission failed', error);
+            return res.status(500).json({ error: 'Permission check failed' });
+        }
+    };
+};
+
+/**
+ * Require all of the given permission keys (or wildcard *).
+ */
+export const requireAllPermissions = (...keys: string[]) => {
+    return async (req: AuthRequest, res: Response, next: NextFunction) => {
+        if (!req.user) {
+            return res.status(401).json({ error: 'User is not authenticated' });
+        }
+        try {
+            const permissions = await resolveUserPermissions(req);
+            if (permissions.includes('*')) return next();
+            const ok = keys.every((k) => permissions.includes(k));
+            if (!ok) {
+                return res.status(403).json({
+                    error: 'You do not have permission for this action',
+                    required: keys,
+                });
+            }
+            next();
+        } catch (error) {
+            console.error('requireAllPermissions failed', error);
+            return res.status(500).json({ error: 'Permission check failed' });
+        }
     };
 };
 

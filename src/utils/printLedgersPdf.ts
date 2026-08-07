@@ -5,6 +5,10 @@ import {
   formatPdfMoney,
   openPdfPrintDialog,
 } from "@/utils/pdfPrint";
+import {
+  applyPdfBalanceColor,
+  applyPdfDrCrColors,
+} from "@/utils/accountingColors";
 
 export type LedgerPrintEntry = {
   tId?: number | string | null;
@@ -131,6 +135,13 @@ export const printLedgers = (input: LedgerPrintInput): boolean => {
           5: { halign: "right", cellWidth: 30 },
           6: { halign: "right", cellWidth: 32 },
         },
+    didParseCell: (data) => {
+      const debitCol = input.showExchangeRate ? 5 : 4;
+      const creditCol = input.showExchangeRate ? 6 : 5;
+      const balanceCol = input.showExchangeRate ? 7 : 6;
+      applyPdfDrCrColors(data, debitCol, creditCol);
+      applyPdfBalanceColor(data, balanceCol);
+    },
   });
 
   return openPdfPrintDialog(doc);

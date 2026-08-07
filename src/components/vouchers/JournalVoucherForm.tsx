@@ -5,6 +5,23 @@ import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Plus, Trash, Save, MoreVertical, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  amountHeaderClass,
+  crHeaderClass,
+  drHeaderClass,
+  fcHeaderClass,
+  fcValueClass,
+  lcHeaderClass,
+  lcValueClass,
+} from "@/utils/accountingColors";
+import {
+  fcFromLc,
+  isAmountTypingValue,
+  isExchangeRateTypingValue,
+  lcFromFc,
+  normalizeDecimalTyping,
+  parseExchangeRate,
+} from "@/utils/fcLcAmount";
 
 interface JournalEntry {
   id: string;
@@ -12,6 +29,8 @@ interface JournalEntry {
   description: string;
   drAmount: number | string; // FC amount; string preserves decimal typing
   crAmount: number | string; // FC amount; string preserves decimal typing
+  drAmountLc?: number | string; // LC amount (intl only)
+  crAmountLc?: number | string; // LC amount (intl only)
   type: "dr" | "cr";
 }
 
@@ -70,18 +89,18 @@ export const JournalVoucherForm = ({
   const [date, setDate] = useState(getTodayDate());
   const [exchangeRate, setExchangeRate] = useState("1");
   const [drEntries, setDrEntries] = useState<JournalEntry[]>([
-    { id: "dr-1", account: "", description: "", drAmount: "", crAmount: "", type: "dr" }
+    { id: "dr-1", account: "", description: "", drAmount: "", crAmount: "", drAmountLc: "", crAmountLc: "", type: "dr" }
   ]);
   const [crEntries, setCrEntries] = useState<JournalEntry[]>([
-    { id: "cr-1", account: "", description: "", drAmount: "", crAmount: "", type: "cr" }
+    { id: "cr-1", account: "", description: "", drAmount: "", crAmount: "", drAmountLc: "", crAmountLc: "", type: "cr" }
   ]);
 
   const addDrEntry = () => {
-    setDrEntries([...drEntries, { id: `dr-${Date.now()}`, account: "", description: "", drAmount: "", crAmount: "", type: "dr" }]);
+    setDrEntries([...drEntries, { id: `dr-${Date.now()}`, account: "", description: "", drAmount: "", crAmount: "", drAmountLc: "", crAmountLc: "", type: "dr" }]);
   };
 
   const addCrEntry = () => {
-    setCrEntries([...crEntries, { id: `cr-${Date.now()}`, account: "", description: "", drAmount: "", crAmount: "", type: "cr" }]);
+    setCrEntries([...crEntries, { id: `cr-${Date.now()}`, account: "", description: "", drAmount: "", crAmount: "", drAmountLc: "", crAmountLc: "", type: "cr" }]);
   };
 
   const removeDrEntry = (id: string) => {
@@ -104,6 +123,92 @@ export const JournalVoucherForm = ({
     setCrEntries(crEntries.map(e => e.id === id ? { ...e, [field]: value } : e));
   };
 
+  const exchangeRateValue = parseExchangeRate(exchangeRate);
+
+  const handleExchangeRateChange = (raw: string) => {
+    const normalized = normalizeDecimalTyping(raw);
+    if (normalized !== "" && !isExchangeRateTypingValue(normalized)) return;
+    setExchangeRate(normalized);
+    const rate = parseExchangeRate(normalized);
+    if (rate <= 0) return;
+    setDrEntries((prev) =>
+      prev.map((e) => ({
+        ...e,
+        drAmountLc: lcFromFc(e.drAmount, rate),
+      })),
+    );
+    setCrEntries((prev) =>
+      prev.map((e) => ({
+        ...e,
+        crAmountLc: lcFromFc(e.crAmount, rate),
+      })),
+    );
+  };
+
+  const handleDrFcChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    setDrEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              drAmount: raw,
+              drAmountLc: isInternationalSupplier
+                ? lcFromFc(raw, exchangeRateValue)
+                : e.drAmountLc,
+            }
+          : e,
+      ),
+    );
+  };
+
+  const handleDrLcChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    setDrEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              drAmountLc: raw,
+              drAmount: fcFromLc(raw, exchangeRateValue),
+            }
+          : e,
+      ),
+    );
+  };
+
+  const handleCrFcChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    setCrEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              crAmount: raw,
+              crAmountLc: isInternationalSupplier
+                ? lcFromFc(raw, exchangeRateValue)
+                : e.crAmountLc,
+            }
+          : e,
+      ),
+    );
+  };
+
+  const handleCrLcChange = (id: string, raw: string) => {
+    if (raw !== "" && !isAmountTypingValue(raw)) return;
+    setCrEntries((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              crAmountLc: raw,
+              crAmount: fcFromLc(raw, exchangeRateValue),
+            }
+          : e,
+      ),
+    );
+  };
+
   // Format amount helper
   const formatAmount = (amount: number): string => {
     return amount.toLocaleString("en-PK", {
@@ -115,10 +220,20 @@ export const JournalVoucherForm = ({
   const totalDr = drEntries.reduce((sum, e) => sum + (Number(e.drAmount) || 0), 0);
   const totalCr = crEntries.reduce((sum, e) => sum + (Number(e.crAmount) || 0), 0);
   const parsedExchangeRate = Number(exchangeRate);
-  const exchangeRateValue =
-    Number.isFinite(parsedExchangeRate) && parsedExchangeRate > 0 ? parsedExchangeRate : 0;
-  const totalDrLc = totalDr * exchangeRateValue;
-  const totalCrLc = totalCr * exchangeRateValue;
+  const totalDrLc = drEntries.reduce(
+    (sum, e) =>
+      sum +
+      (Number(e.drAmountLc) ||
+        (Number(e.drAmount) || 0) * exchangeRateValue),
+    0,
+  );
+  const totalCrLc = crEntries.reduce(
+    (sum, e) =>
+      sum +
+      (Number(e.crAmountLc) ||
+        (Number(e.crAmount) || 0) * exchangeRateValue),
+    0,
+  );
 
   const [saving, setSaving] = useState(false);
 
@@ -160,7 +275,11 @@ export const JournalVoucherForm = ({
           drAmount: Number(entry.drAmount) || 0,
           crAmount: Number(entry.crAmount) || 0,
           ...(isInternationalSupplier
-            ? { drAmountLc: (Number(entry.drAmount) || 0) * parsedExchangeRate }
+            ? {
+                drAmountLc:
+                  Number(entry.drAmountLc) ||
+                  (Number(entry.drAmount) || 0) * parsedExchangeRate,
+              }
             : {}),
         })),
         crEntries: crEntries.map((entry) => ({
@@ -168,7 +287,11 @@ export const JournalVoucherForm = ({
           drAmount: Number(entry.drAmount) || 0,
           crAmount: Number(entry.crAmount) || 0,
           ...(isInternationalSupplier
-            ? { crAmountLc: (Number(entry.crAmount) || 0) * parsedExchangeRate }
+            ? {
+                crAmountLc:
+                  Number(entry.crAmountLc) ||
+                  (Number(entry.crAmount) || 0) * parsedExchangeRate,
+              }
             : {}),
         })),
         totalDr,
@@ -193,6 +316,8 @@ export const JournalVoucherForm = ({
           description: "",
           drAmount: "",
           crAmount: "",
+          drAmountLc: "",
+          crAmountLc: "",
           type: "dr",
         },
       ]);
@@ -203,6 +328,8 @@ export const JournalVoucherForm = ({
           description: "",
           drAmount: "",
           crAmount: "",
+          drAmountLc: "",
+          crAmountLc: "",
           type: "cr",
         },
       ]);
@@ -249,11 +376,10 @@ export const JournalVoucherForm = ({
             <div className="relative">
               <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">Exchange Rate</Label>
               <Input
-                type="number"
-                min="0.0001"
-                step="0.0001"
+                type="text"
+                inputMode="decimal"
                 value={exchangeRate}
-                onChange={(e) => setExchangeRate(e.target.value)}
+                onChange={(e) => handleExchangeRateChange(e.target.value)}
                 className="h-11 bg-muted/30"
               />
             </div>
@@ -285,23 +411,23 @@ export const JournalVoucherForm = ({
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2 text-center">
-            <Label className="text-base font-medium">{isInternationalSupplier ? "FC Dr" : "Dr"}</Label>
+            <Label className={`text-base font-medium ${isInternationalSupplier ? fcHeaderClass : drHeaderClass}`}>{isInternationalSupplier ? "FC Dr" : "Dr"}</Label>
           </div>
           {isInternationalSupplier ? (
             <>
               <div className="col-span-1 text-center">
-                <Label className="text-base font-medium">LC Dr</Label>
+                <Label className={`text-base font-medium ${lcHeaderClass}`}>LC Dr</Label>
               </div>
               <div className="col-span-2 text-center">
-                <Label className="text-base font-medium">FC Cr</Label>
+                <Label className={`text-base font-medium ${fcHeaderClass}`}>FC Cr</Label>
               </div>
               <div className="col-span-1 text-center">
-                <Label className="text-base font-medium">LC Cr</Label>
+                <Label className={`text-base font-medium ${lcHeaderClass}`}>LC Cr</Label>
               </div>
             </>
           ) : (
             <div className="col-span-2 text-center">
-              <Label className="text-base font-medium">Cr</Label>
+              <Label className={`text-base font-medium ${crHeaderClass}`}>Cr</Label>
             </div>
           )}
           <div className="col-span-1"></div>
@@ -334,24 +460,24 @@ export const JournalVoucherForm = ({
             </div>
             <div className="col-span-2">
               <Input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 placeholder={isInternationalSupplier ? "fc amount" : "amount"}
                 value={entry.drAmount}
-                onChange={(e) =>
-                  updateDrEntry(entry.id, "drAmount", e.target.value)
-                }
-                step="0.01"
-                min="0"
-                className="h-10"
+                onChange={(e) => handleDrFcChange(entry.id, e.target.value)}
+                className={`h-10 ${isInternationalSupplier ? fcValueClass() : ""}`}
               />
             </div>
             {isInternationalSupplier ? (
               <>
                 <div className="col-span-1">
                   <Input
-                    value={formatAmount((Number(entry.drAmount) || 0) * exchangeRateValue)}
-                    readOnly
-                    className="h-10 bg-muted/30"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="lc amount"
+                    value={entry.drAmountLc ?? ""}
+                    onChange={(e) => handleDrLcChange(entry.id, e.target.value)}
+                    className={`h-10 ${lcValueClass()}`}
                   />
                 </div>
                 <div className="col-span-1">
@@ -415,23 +541,23 @@ export const JournalVoucherForm = ({
             ) : null}
             <div className="col-span-2">
               <Input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 placeholder={isInternationalSupplier ? "fc amount" : "amount"}
                 value={entry.crAmount}
-                onChange={(e) =>
-                  updateCrEntry(entry.id, "crAmount", e.target.value)
-                }
-                step="0.01"
-                min="0"
-                className="h-10"
+                onChange={(e) => handleCrFcChange(entry.id, e.target.value)}
+                className={`h-10 ${isInternationalSupplier ? fcValueClass() : ""}`}
               />
             </div>
             {isInternationalSupplier ? (
               <div className="col-span-1">
                 <Input
-                  value={formatAmount((Number(entry.crAmount) || 0) * exchangeRateValue)}
-                  readOnly
-                  className="h-10 bg-muted/30"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="lc amount"
+                  value={entry.crAmountLc ?? ""}
+                  onChange={(e) => handleCrLcChange(entry.id, e.target.value)}
+                  className={`h-10 ${lcValueClass()}`}
                 />
               </div>
             ) : null}
@@ -457,41 +583,41 @@ export const JournalVoucherForm = ({
             </div>
             <div className="col-span-2">
               <div className="relative">
-                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">FC Dr</Label>
+                <Label className={`absolute -top-2 left-2 bg-background px-1 text-xs z-10 ${fcHeaderClass}`}>FC Dr</Label>
                 <Input
                   value={formatAmount(totalDr)}
                   readOnly
-                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                  className={`h-10 bg-muted/30 font-medium ${fcValueClass()} ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
                 />
               </div>
             </div>
             <div className="col-span-2">
               <div className="relative">
-                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">LC Dr</Label>
+                <Label className={`absolute -top-2 left-2 bg-background px-1 text-xs z-10 ${lcHeaderClass}`}>LC Dr</Label>
                 <Input
                   value={formatAmount(totalDrLc)}
                   readOnly
-                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                  className={`h-10 bg-muted/30 font-medium ${lcValueClass()} ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
                 />
               </div>
             </div>
             <div className="col-span-2">
               <div className="relative">
-                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">FC Cr</Label>
+                <Label className={`absolute -top-2 left-2 bg-background px-1 text-xs z-10 ${fcHeaderClass}`}>FC Cr</Label>
                 <Input
                   value={formatAmount(totalCr)}
                   readOnly
-                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                  className={`h-10 bg-muted/30 font-medium ${fcValueClass()} ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
                 />
               </div>
             </div>
             <div className="col-span-1">
               <div className="relative">
-                <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">LC Cr</Label>
+                <Label className={`absolute -top-2 left-2 bg-background px-1 text-xs z-10 ${lcHeaderClass}`}>LC Cr</Label>
                 <Input
                   value={formatAmount(totalCrLc)}
                   readOnly
-                  className={`h-10 bg-muted/30 font-medium ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
+                  className={`h-10 bg-muted/30 font-medium ${lcValueClass()} ${totalDr !== totalCr ? 'border-destructive' : 'border-green-500'}`}
                 />
               </div>
             </div>
@@ -500,7 +626,7 @@ export const JournalVoucherForm = ({
         ) : (
           <div className="grid grid-cols-12 gap-4 items-center">
             <div className="col-span-7 text-right">
-              <Label className="text-base font-medium">Total Amount</Label>
+              <Label className={`text-base font-medium ${amountHeaderClass}`}>Total Amount</Label>
             </div>
             <div className="col-span-2">
               <div className="relative">

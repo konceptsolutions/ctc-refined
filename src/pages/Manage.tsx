@@ -6,6 +6,7 @@ import { CustomerManagement } from "@/components/manage/CustomerManagement";
 import { Truck, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams } from "react-router-dom";
+import { usePermissions } from "@/permissions/PermissionsProvider";
 
 type ManageTab = "suppliers" | "customers";
 
@@ -13,12 +14,28 @@ const Manage = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
 
-  const activeTab: ManageTab = tab === "customers" ? "customers" : "suppliers";
+  const { can } = usePermissions();
+  const tabs = (
+    [
+      { id: "suppliers" as const, label: "Suppliers", icon: Truck, permission: "page.manage.suppliers" },
+      { id: "customers" as const, label: "Customers", icon: Users, permission: "page.manage.customers" },
+    ] as const
+  ).filter((t) => can(t.permission));
 
-  // Ensure /manage redirects to the default dedicated page.
+  const defaultTab: ManageTab = (tabs[0]?.id as ManageTab) || "suppliers";
+  const activeTab: ManageTab = tabs.some((t) => t.id === tab)
+    ? (tab as ManageTab)
+    : defaultTab;
+
   useEffect(() => {
-    if (!tab) navigate("/manage/suppliers", { replace: true });
-  }, [tab, navigate]);
+    if (!tabs.length) {
+      navigate("/", { replace: true });
+      return;
+    }
+    if (!tab || !tabs.some((t) => t.id === tab)) {
+      navigate(`/manage/${defaultTab}`, { replace: true });
+    }
+  }, [tab, navigate, tabs, defaultTab]);
 
   const handleTabChange = (nextTab: ManageTab) => navigate(`/manage/${nextTab}`);
 
@@ -29,37 +46,29 @@ const Manage = () => {
       <div className="flex-1 flex flex-col overflow-hidden ml-16">
         <Header />
 
-        {/* Tab Navigation - Same style as Parts page */}
         <div className="bg-card border-b border-border px-4 py-2">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleTabChange("suppliers")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded",
-                activeTab === "suppliers"
-                  ? "border border-primary text-primary bg-background"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Truck className="w-3.5 h-3.5" />
-              Suppliers
-            </button>
-            <button
-              onClick={() => handleTabChange("customers")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded",
-                activeTab === "customers"
-                  ? "border border-primary text-primary bg-background"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Users className="w-3.5 h-3.5" />
-              Customers
-            </button>
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => handleTabChange(t.id)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded",
+                    activeTab === t.id
+                      ? "border border-primary text-primary bg-background"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Main Content */}
         <main className="flex-1 p-4 overflow-auto">
           {activeTab === "suppliers" && <SupplierManagement />}
           {activeTab === "customers" && <CustomerManagement />}

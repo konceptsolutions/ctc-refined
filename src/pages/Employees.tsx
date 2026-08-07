@@ -7,6 +7,7 @@ import { PayrollManagement } from "@/components/employees/PayrollManagement";
 import { HandCoins, Receipt, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams } from "react-router-dom";
+import { usePermissions } from "@/permissions/PermissionsProvider";
 
 type EmployeeTab = "staff" | "payroll" | "loans-advances";
 
@@ -14,12 +15,34 @@ const Employees = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
 
-  const activeTab: EmployeeTab =
-    tab === "loans-advances" ? "loans-advances" : tab === "payroll" ? "payroll" : "staff";
+  const { can } = usePermissions();
+  const tabs = (
+    [
+      { id: "staff" as const, label: "Staff", icon: UserCircle, permission: "page.employees.staff" },
+      { id: "payroll" as const, label: "Payroll", icon: Receipt, permission: "page.employees.payroll" },
+      {
+        id: "loans-advances" as const,
+        label: "Loans & Advances",
+        icon: HandCoins,
+        permission: "page.employees.loans-advances",
+      },
+    ] as const
+  ).filter((t) => can(t.permission));
+
+  const defaultTab: EmployeeTab = (tabs[0]?.id as EmployeeTab) || "staff";
+  const activeTab: EmployeeTab = tabs.some((t) => t.id === tab)
+    ? (tab as EmployeeTab)
+    : defaultTab;
 
   useEffect(() => {
-    if (!tab) navigate("/employees/staff", { replace: true });
-  }, [tab, navigate]);
+    if (!tabs.length) {
+      navigate("/", { replace: true });
+      return;
+    }
+    if (!tab || !tabs.some((t) => t.id === tab)) {
+      navigate(`/employees/${defaultTab}`, { replace: true });
+    }
+  }, [tab, navigate, tabs, defaultTab]);
 
   const handleTabChange = (nextTab: EmployeeTab) => navigate(`/employees/${nextTab}`);
 
@@ -46,42 +69,24 @@ const Employees = () => {
 
         <div className="bg-card border-b border-border px-4 py-2">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleTabChange("staff")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded",
-                activeTab === "staff"
-                  ? "border border-primary text-primary bg-background"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <UserCircle className="w-3.5 h-3.5" />
-              Staff
-            </button>
-            <button
-              onClick={() => handleTabChange("payroll")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded",
-                activeTab === "payroll"
-                  ? "border border-primary text-primary bg-background"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Receipt className="w-3.5 h-3.5" />
-              Payroll
-            </button>
-            <button
-              onClick={() => handleTabChange("loans-advances")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded",
-                activeTab === "loans-advances"
-                  ? "border border-primary text-primary bg-background"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <HandCoins className="w-3.5 h-3.5" />
-              Loans & Advances
-            </button>
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => handleTabChange(t.id)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded",
+                    activeTab === t.id
+                      ? "border border-primary text-primary bg-background"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 

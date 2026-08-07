@@ -10,6 +10,13 @@ import { getCurrentDatePakistan, getStartOfCurrentMonthPakistan } from "@/utils/
 import { apiClient } from "@/lib/api";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { openPrintHtml } from "@/utils/printUtils";
+import {
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+  ACCOUNTING_COLORS,
+} from "@/utils/accountingColors";
 
 interface TrialBalanceRow {
   type?: 'mainGroup' | 'subgroup' | 'account';
@@ -73,6 +80,8 @@ export const TrialBalanceTab = () => {
             th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
             th { background-color: #f4f4f4; }
             .text-right { text-align: right; }
+            .col-dr { text-align: right; color: ${ACCOUNTING_COLORS.dr.css}; }
+            .col-cr { text-align: right; color: ${ACCOUNTING_COLORS.cr.css}; }
             @media print { button { display: none; } }
           </style>
         </head>
@@ -84,8 +93,8 @@ export const TrialBalanceTab = () => {
                 <th>Account Code</th>
                 <th>Account Name</th>
                 <th>Type</th>
-                <th class="text-right">Debit (Rs)</th>
-                <th class="text-right">Credit (Rs)</th>
+                <th class="col-dr">Debit (Rs)</th>
+                <th class="col-cr">Credit (Rs)</th>
               </tr>
             </thead>
             <tbody>
@@ -94,14 +103,14 @@ export const TrialBalanceTab = () => {
                   <td>${row.accountCode}</td>
                   <td>${row.accountName}</td>
                   <td>${row.accountType}</td>
-                  <td class="text-right">${row.debit > 0 ? row.debit.toLocaleString() : '-'}</td>
-                  <td class="text-right">${row.credit > 0 ? row.credit.toLocaleString() : '-'}</td>
+                  <td class="col-dr">${row.debit > 0 ? row.debit.toLocaleString() : '-'}</td>
+                  <td class="col-cr">${row.credit > 0 ? row.credit.toLocaleString() : '-'}</td>
                 </tr>
               `).join('')}
               <tr style="font-weight: bold; background-color: #f4f4f4;">
                 <td colspan="3" class="text-right">Total</td>
-                <td class="text-right">${totalDebit.toLocaleString()}</td>
-                <td class="text-right">${totalCredit.toLocaleString()}</td>
+                <td class="col-dr">${totalDebit.toLocaleString()}</td>
+                <td class="col-cr">${totalCredit.toLocaleString()}</td>
               </tr>
             </tbody>
           </table>
@@ -159,29 +168,29 @@ export const TrialBalanceTab = () => {
     <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20 transition-all duration-300 hover:shadow-lg">
+        <Card className="bg-gradient-to-br from-teal-500/10 to-teal-600/5 border-teal-500/20 transition-all duration-300 hover:shadow-lg">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Debits</p>
-                <p className="text-2xl font-bold text-blue-600">Rs {totalDebit.toLocaleString()}</p>
+                <p className={`text-2xl font-bold ${drValueClass(1, true)}`}>Rs {totalDebit.toLocaleString()}</p>
               </div>
-              <div className="h-12 w-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <Scale className="h-6 w-6 text-blue-600" />
+              <div className="h-12 w-12 rounded-full bg-teal-500/20 flex items-center justify-center">
+                <Scale className={`h-6 w-6 ${drValueClass(1, true)}`} />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20 transition-all duration-300 hover:shadow-lg">
+        <Card className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20 transition-all duration-300 hover:shadow-lg">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Credits</p>
-                <p className="text-2xl font-bold text-green-600">Rs {totalCredit.toLocaleString()}</p>
+                <p className={`text-2xl font-bold ${crValueClass(1, true)}`}>Rs {totalCredit.toLocaleString()}</p>
               </div>
-              <div className="h-12 w-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                <Scale className="h-6 w-6 text-green-600" />
+              <div className="h-12 w-12 rounded-full bg-amber-500/20 flex items-center justify-center">
+                <Scale className={`h-6 w-6 ${crValueClass(1, true)}`} />
               </div>
             </div>
           </CardContent>
@@ -272,8 +281,8 @@ export const TrialBalanceTab = () => {
                 <TableRow className="bg-muted/50">
                   <ListNumberHeader />
                   <TableHead className="font-semibold cursor-pointer hover:text-primary">Account</TableHead>
-                  <TableHead className="text-right font-semibold cursor-pointer hover:text-primary">Dr</TableHead>
-                  <TableHead className="text-right font-semibold cursor-pointer hover:text-primary">Cr</TableHead>
+                  <TableHead className={`text-right font-semibold cursor-pointer hover:text-primary ${drHeaderClass}`}>Dr</TableHead>
+                  <TableHead className={`text-right font-semibold cursor-pointer hover:text-primary ${crHeaderClass}`}>Cr</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -297,8 +306,8 @@ export const TrialBalanceTab = () => {
                           <TableRow key={`main-${row.code}-${index}`} className="bg-muted/30 font-semibold">
                             <TableCell />
                             <TableCell className="font-bold">{row.name}</TableCell>
-                            <TableCell className="text-right font-mono">0</TableCell>
-                            <TableCell className="text-right font-mono">0</TableCell>
+                            <TableCell className={`text-right font-mono ${drValueClass(0)}`}>0</TableCell>
+                            <TableCell className={`text-right font-mono ${crValueClass(0)}`}>0</TableCell>
                           </TableRow>
                         );
                       } else if (row.type === 'subgroup') {
@@ -306,8 +315,8 @@ export const TrialBalanceTab = () => {
                           <TableRow key={`sub-${row.code}-${index}`} className="bg-muted/20 font-medium">
                             <TableCell />
                             <TableCell className="pl-4">{row.name}</TableCell>
-                            <TableCell className="text-right font-mono">0</TableCell>
-                            <TableCell className="text-right font-mono">0</TableCell>
+                            <TableCell className={`text-right font-mono ${drValueClass(0)}`}>0</TableCell>
+                            <TableCell className={`text-right font-mono ${crValueClass(0)}`}>0</TableCell>
                           </TableRow>
                         );
                       } else {
@@ -318,10 +327,10 @@ export const TrialBalanceTab = () => {
                           >
                             <ListNumberCell index={index} total={filteredData.length} />
                             <TableCell className="pl-8 font-medium">{row.accountName}</TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className={`text-right font-mono ${drValueClass(row.debit)}`}>
                               {row.debit > 0 ? row.debit.toLocaleString() : '0'}
                             </TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className={`text-right font-mono ${crValueClass(row.credit)}`}>
                               {row.credit > 0 ? row.credit.toLocaleString() : '0'}
                             </TableCell>
                           </TableRow>
@@ -332,8 +341,8 @@ export const TrialBalanceTab = () => {
                     <TableRow className="bg-primary/5 font-bold border-t-2 border-primary/20">
                       <TableCell />
                       <TableCell className="text-right">Total</TableCell>
-                      <TableCell className="text-right font-mono text-primary">{totalDebit.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono text-primary">{totalCredit.toLocaleString()}</TableCell>
+                      <TableCell className={`text-right font-mono ${drValueClass(1, true)}`}>{totalDebit.toLocaleString()}</TableCell>
+                      <TableCell className={`text-right font-mono ${crValueClass(1, true)}`}>{totalCredit.toLocaleString()}</TableCell>
                     </TableRow>
                   </>
                 )}

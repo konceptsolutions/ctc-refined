@@ -6,6 +6,7 @@ import { StorePanel } from "@/components/store/StorePanel";
 import { RackAndShelf } from "@/components/inventory/RackAndShelf";
 import { cn } from "@/lib/utils";
 import { Package, Archive } from "lucide-react";
+import { usePermissions } from "@/permissions/PermissionsProvider";
 
 type StoreTab = "orders" | "rack-shelf";
 
@@ -14,32 +15,40 @@ interface TabConfig {
   label: string;
   icon: React.ElementType;
   description: string;
+  permission: string;
 }
 
-const tabs: TabConfig[] = [
-  { id: "orders", label: "Orders", icon: Package, description: "Manage store orders" },
-  { id: "rack-shelf", label: "Racks & Shelves", icon: Archive, description: "Manage racks and shelves" },
+const allTabs: TabConfig[] = [
+  { id: "orders", label: "Orders", icon: Package, description: "Manage store orders", permission: "page.store.orders" },
+  { id: "rack-shelf", label: "Racks & Shelves", icon: Archive, description: "Manage racks and shelves", permission: "page.store.rack-shelf" },
 ];
 
 const Store = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
   const [storeName, setStoreName] = useState<string>("");
+  const { can } = usePermissions();
+  const tabs = allTabs.filter((t) => can(t.permission));
+  const defaultTab: StoreTab = (tabs[0]?.id as StoreTab) || "orders";
 
   const activeTab: StoreTab = tabs.some((t) => t.id === tab)
     ? (tab as StoreTab)
-    : "orders";
+    : defaultTab;
 
-  // Ensure /store redirects to the default tab. Legacy receiving routes now
-  // live on the Orders page as type filters.
   useEffect(() => {
-    if (!tab) navigate("/store/orders", { replace: true });
+    if (!tabs.length) {
+      navigate("/", { replace: true });
+      return;
+    }
+    if (!tab) navigate(`/store/${defaultTab}`, { replace: true });
     else if (tab === "receiving" || tab === "receiving-po") {
       navigate("/store/orders?type=receiving-po", { replace: true });
     } else if (tab === "receiving-dpo") {
       navigate("/store/orders?type=receiving-dpo", { replace: true });
+    } else if (!tabs.some((t) => t.id === tab)) {
+      navigate(`/store/${defaultTab}`, { replace: true });
     }
-  }, [tab, navigate]);
+  }, [tab, navigate, tabs, defaultTab]);
 
   const handleTabChange = (tabId: StoreTab) => navigate(`/store/${tabId}`);
 

@@ -28,6 +28,14 @@ import {
   SearchableSelectOption,
 } from "@/components/ui/searchable-select";
 import { VoucherViewDialog } from "@/components/vouchers/VoucherViewDialog";
+import {
+  balanceHeaderClass,
+  balanceValueClass,
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+} from "@/utils/accountingColors";
 
 interface LedgerEntry {
   id: number;
@@ -399,13 +407,13 @@ export const LedgersTab = () => {
                 <TableHead className="font-semibold underline">
                   Description
                 </TableHead>
-                <TableHead className="font-semibold underline text-right">
+                <TableHead className={`font-semibold underline text-right ${drHeaderClass}`}>
                   Dr
                 </TableHead>
-                <TableHead className="font-semibold underline text-right">
+                <TableHead className={`font-semibold underline text-right ${crHeaderClass}`}>
                   Cr
                 </TableHead>
-                <TableHead className="font-semibold underline text-right">
+                <TableHead className={`font-semibold underline text-right ${balanceHeaderClass}`}>
                   Balance
                 </TableHead>
               </TableRow>
@@ -476,13 +484,13 @@ export const LedgersTab = () => {
                         {formatDisplayValue(entry.timeStamp)}
                       </TableCell>
                       <TableCell>{entry.description}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className={`text-right ${drValueClass(entry.debit)}`}>
                         {formatNumber(entry.debit)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className={`text-right ${crValueClass(entry.credit)}`}>
                         {formatNumber(entry.credit)}
                       </TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className={`text-right font-medium ${balanceValueClass(entry.balance)}`}>
                         {formatNumber(entry.balance)}
                       </TableCell>
                     </TableRow>
@@ -492,12 +500,12 @@ export const LedgersTab = () => {
                     <TableCell colSpan={6} className="text-right">
                       Total:
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className={`text-right ${drValueClass(1, true)}`}>
                       {formatNumber(
                         entries.reduce((sum, e) => sum + (e.debit || 0), 0),
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className={`text-right ${crValueClass(1, true)}`}>
                       {formatNumber(
                         entries.reduce((sum, e) => sum + (e.credit || 0), 0),
                       )}

@@ -1,5 +1,9 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  ACCOUNTING_COLORS,
+  applyPdfFcLcColors,
+} from "@/utils/accountingColors";
 
 export type PurchaseImportOrderPrintDetail = {
   poNumber?: string | null;
@@ -258,10 +262,10 @@ export const printPurchaseImportOrder = ({
             Number(item.backQty || 0) > 0
               ? String(Number(item.backQty || 0))
               : "-",
-            num(item.fcRate, 4),
-            num(item.fcAmount),
-            num(item.lcRate),
-            num(item.lcAmount),
+            num(item.fcRate, 2),
+            num(item.fcAmount, 2),
+            num(item.lcRate, 0),
+            num(item.lcAmount, 0),
             Number(item.weight || 0) > 0 ? num(item.weight, 4) : "-",
             Number(item.totalWeight || 0) > 0
               ? num(item.totalWeight, 4)
@@ -277,9 +281,9 @@ export const printPurchaseImportOrder = ({
         "",
         "",
         "",
-        num(totals.fcAmount),
+        num(totals.fcAmount, 2),
         "",
-        num(totals.lcAmount),
+        num(totals.lcAmount, 0),
         "",
         num(totals.totalWeight, 4),
       ],
@@ -334,6 +338,7 @@ export const printPurchaseImportOrder = ({
       if (data.section === "foot" && data.column.index >= 3) {
         data.cell.styles.halign = "right";
       }
+      applyPdfFcLcColors(data, [7, 8], [9, 10]);
     },
   });
 
@@ -350,8 +355,21 @@ export const printPurchaseImportOrder = ({
   if (summaryBits.length > 0) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
-    doc.setTextColor(17, 17, 17);
-    doc.text(summaryBits.join("   |   "), marginX, finalY);
+    let x = marginX;
+    if (Number(detail.fcTotal || 0) > 0) {
+      doc.setTextColor(...ACCOUNTING_COLORS.fc.rgb);
+      doc.text(`FC Total: ${num(detail.fcTotal)}`, x, finalY);
+      x += doc.getTextWidth(`FC Total: ${num(detail.fcTotal)}   |   `);
+    }
+    if (Number(detail.lcTotal || 0) > 0) {
+      doc.setTextColor(...ACCOUNTING_COLORS.lc.rgb);
+      doc.text(`LC Total: ${num(detail.lcTotal)}`, x, finalY);
+      x += doc.getTextWidth(`LC Total: ${num(detail.lcTotal)}   |   `);
+    }
+    if (Number(detail.totalExp || 0) > 0) {
+      doc.setTextColor(17, 17, 17);
+      doc.text(`Total Exp.: ${num(detail.totalExp)}`, x, finalY);
+    }
     finalY += 6;
   }
 

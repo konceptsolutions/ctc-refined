@@ -15,6 +15,12 @@ import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import {
+  crHeaderClass,
+  crValueClass,
+  drHeaderClass,
+  drValueClass,
+} from "@/utils/accountingColors";
 
 interface JournalEntry {
   id: number;
@@ -327,10 +333,10 @@ export const GeneralJournalTab = () => {
                   <SortableHeader field="description">Description</SortableHeader>
                 </TableHead>
                 <TableHead className="w-32 text-right">
-                  <SortableHeader field="debit">Debit</SortableHeader>
+                  <SortableHeader field="debit"><span className={drHeaderClass}>Debit</span></SortableHeader>
                 </TableHead>
                 <TableHead className="w-32 text-right">
-                  <SortableHeader field="credit">Credit</SortableHeader>
+                  <SortableHeader field="credit"><span className={crHeaderClass}>Credit</span></SortableHeader>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -369,12 +375,12 @@ export const GeneralJournalTab = () => {
                       <span className="line-clamp-2">{entry.description}</span>
                     </TableCell>
                     <TableCell className="text-right font-mono font-semibold">
-                      <span className={entry.debit > 0 ? "text-primary" : "text-muted-foreground/50"}>
+                      <span className={drValueClass(entry.debit)}>
                         {entry.debit > 0 ? formatNumber(entry.debit) : "0"}
                       </span>
                     </TableCell>
                     <TableCell className="text-right font-mono font-semibold">
-                      <span className={entry.credit > 0 ? "text-blue-500" : "text-muted-foreground/50"}>
+                      <span className={crValueClass(entry.credit)}>
                         {entry.credit > 0 ? formatNumber(entry.credit) : "0"}
                       </span>
                     </TableCell>
@@ -386,10 +392,10 @@ export const GeneralJournalTab = () => {
                   Total
                 </TableCell>
                 <TableCell className="text-right font-mono text-base py-4">
-                  <span className="text-primary">{formatNumber(totalDebit)}</span>
+                  <span className={drValueClass(1, true)}>{formatNumber(totalDebit)}</span>
                 </TableCell>
                 <TableCell className="text-right font-mono text-base py-4">
-                  <span className="text-blue-500">{formatNumber(totalCredit)}</span>
+                  <span className={crValueClass(1, true)}>{formatNumber(totalCredit)}</span>
                 </TableCell>
               </TableRow>
             </TableBody>

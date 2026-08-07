@@ -47,6 +47,8 @@ import {
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import { can } from "@/permissions/can";
+import { PermissionGate } from "@/permissions/PermissionGate";
 
 interface User {
   id: string;
@@ -490,10 +492,12 @@ export const UsersManagementTab = () => {
           </Select>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2" onClick={handleExportCSV}>
-            <Download className="w-4 h-4" />
-            Export CSV
-          </Button>
+          <PermissionGate permission="action.settings.users.export">
+            <Button variant="outline" className="gap-2" onClick={handleExportCSV}>
+              <Download className="w-4 h-4" />
+              Export CSV
+            </Button>
+          </PermissionGate>
           <Dialog
             open={isDialogOpen}
             onOpenChange={(open) => {
@@ -504,12 +508,14 @@ export const UsersManagementTab = () => {
               }
             }}
           >
-            <DialogTrigger asChild>
-              <Button className="gap-2" onClick={openAddDialog}>
-                <Plus className="w-4 h-4" />
-                Add User
-              </Button>
-            </DialogTrigger>
+            <PermissionGate permission="action.settings.users.create">
+              <DialogTrigger asChild>
+                <Button className="gap-2" onClick={openAddDialog}>
+                  <Plus className="w-4 h-4" />
+                  Add User
+                </Button>
+              </DialogTrigger>
+            </PermissionGate>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>
@@ -835,6 +841,7 @@ export const UsersManagementTab = () => {
                     <TableCell className="text-sm">{user.lastLogin}</TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">
+                        <PermissionGate permission="action.settings.users.edit">
                         <ActionButtonTooltip label="Change Password" variant="edit">
                           <Button
                             variant="ghost"
@@ -844,7 +851,8 @@ export const UsersManagementTab = () => {
                             <KeyRound className="w-4 h-4" />
                           </Button>
                         </ActionButtonTooltip>
-                        {!isAdminRole(user.role) && (
+                        </PermissionGate>
+                        {!isAdminRole(user.role) && can("field.settings.users.loginHours") && (
                           <ActionButtonTooltip
                             label={
                               user.loginStartTime && user.loginEndTime
@@ -862,6 +870,7 @@ export const UsersManagementTab = () => {
                             </Button>
                           </ActionButtonTooltip>
                         )}
+                        <PermissionGate permission="action.settings.users.edit">
                         <ActionButtonTooltip label="Edit" variant="edit">
                           <Button
                             variant="ghost"
@@ -871,7 +880,8 @@ export const UsersManagementTab = () => {
                             <Edit className="w-4 h-4" />
                           </Button>
                         </ActionButtonTooltip>
-                        {!isAdminRole(user.role) && (
+                        </PermissionGate>
+                        {!isAdminRole(user.role) && can("action.settings.users.delete") && (
                           <ActionButtonTooltip label="Delete" variant="delete">
                             <Button
                               variant="ghost"

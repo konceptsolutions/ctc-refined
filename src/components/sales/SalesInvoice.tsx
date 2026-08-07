@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
 import { shareImagesAcrossFamilyItems } from "@/lib/part-images";
-import { isAccountantRole, isSalesRole } from "@/utils/auth";
+import { can } from "@/permissions/can";
 import {
   branchAccountDisplayName,
   fetchBranchAccountOptions,
@@ -534,9 +534,16 @@ export const SalesInvoice = ({
   const navigate = useNavigate();
   const isQuotation = documentKind === "quotation";
   const isTransferOut = documentKind === "transfer-out";
-  const isAccountant = isAccountantRole();
-  const canChangeInvoiceStatus = !isSalesRole() && !isAccountant;
-  const canUseDocumentForm = !isAccountant;
+  const statusPermission = isQuotation
+    ? "action.sales.quotation.status"
+    : "action.sales.invoice.status";
+  const createPermission = isQuotation
+    ? "action.sales.quotation.create"
+    : "action.sales.invoice.create";
+  const canChangeInvoiceStatus = can(statusPermission);
+  const canUseDocumentForm = can(createPermission) || can(
+    isQuotation ? "action.sales.quotation.edit" : "action.sales.invoice.edit",
+  );
   const docFormLabel = isQuotation
     ? "Quotation Form"
     : isTransferOut

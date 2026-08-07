@@ -4,7 +4,6 @@ import {
   Boxes,
   DollarSign,
   Tag,
-  BarChart3,
   Settings,
   Settings2,
   Calculator,
@@ -12,7 +11,6 @@ import {
   ClipboardList,
   Store as StoreIcon,
   Truck,
-  BookMarked,
   ArrowLeftRight,
   UserCircle,
   LucideIcon
@@ -25,7 +23,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getUserRole, isAccountantRole, isAdminRole, isManagerRole, isSalesRole, isStoreUserRole, ACCOUNTANT_ALLOWED_PATHS, MANAGER_ALLOWED_PATHS, SALES_ALLOWED_PATHS } from "@/utils/auth";
+import { SIDEBAR_MODULE_KEYS } from "@/permissions/catalog";
+import { usePermissions } from "@/permissions/PermissionsProvider";
 
 interface SidebarItemProps {
   Icon: LucideIcon;
@@ -68,6 +67,7 @@ export const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
+  const { can, version } = usePermissions();
 
   const isActivePath = (basePath: string, alsoMatch?: string) => {
     if (basePath === "/") return currentPath === "/";
@@ -90,58 +90,29 @@ export const Sidebar = () => {
     { Icon: Tag, path: "/vouchers", label: "Vouchers" },
     { Icon: UserCircle, path: "/employees", label: "Employees" },
     { Icon: Settings2, path: "/manage", label: "Manage" },
-    // { Icon: BookMarked, path: "/docs", label: "Documentation" },
-    // { Icon: BarChart3, path: "/reports", label: "Reports" },
     { Icon: Settings, path: "/settings/users", label: "Settings" },
   ];
-  const isStoreUser = getUserRole() === "store" || isStoreUserRole();
-  const isManager = isManagerRole();
-  const isAccountant = isAccountantRole();
-  const isSales = isSalesRole();
-  const isAdmin = isAdminRole();
-  const visibleMenuItems = isStoreUser
-    ? menuItems.filter((item) => item.path === "/inventory" || item.path === "/store")
-    : isManager
-      ? menuItems.filter((item) =>
-          (MANAGER_ALLOWED_PATHS as readonly string[]).includes(item.path),
-        )
-      : isAccountant
-        ? menuItems.filter((item) =>
-            (ACCOUNTANT_ALLOWED_PATHS as readonly string[]).includes(item.path),
-          )
-        : isSales
-          ? menuItems.filter((item) =>
-              (SALES_ALLOWED_PATHS as readonly string[]).includes(item.path),
-            )
-          : isAdmin
-            ? menuItems
-            : menuItems.filter((item) => item.path !== "/settings");
+
+  const visibleMenuItems = menuItems.filter((item) => {
+    const moduleKey = SIDEBAR_MODULE_KEYS[item.path];
+    return moduleKey ? can(moduleKey) : true;
+  });
+  // Re-evaluate when permission version changes
+  void version;
 
   return (
-    <aside className="w-16 bg-card border-r border-border flex flex-col items-center py-4 h-screen fixed left-0 top-0 z-50">
-      {/* Logo */}
-      <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center mb-4 shadow-md shadow-primary/20">
-        <Package className="w-5 h-5 text-primary-foreground" />
-      </div>
-
-      {/* Navigation Items - Centered */}
-      <nav className="flex-1 flex flex-col items-center justify-center gap-0.5">
-        <TooltipProvider delayDuration={200}>
-          {visibleMenuItems.map((item, index) => (
-            <div
-              key={index}
-              className="h-11 w-16 flex items-center justify-center"
-            >
-              <SidebarItem
-                Icon={item.Icon}
-                label={item.label}
-                active={isActivePath(item.path, item.alsoMatch)}
-                onClick={() => navigate(item.path)}
-              />
-            </div>
-          ))}
-        </TooltipProvider>
-      </nav>
-    </aside>
+    <TooltipProvider delayDuration={0}>
+      <aside className="fixed left-0 top-0 h-screen w-16 bg-card border-r border-border flex flex-col items-center py-4 gap-2 z-40">
+        {visibleMenuItems.map((item) => (
+          <SidebarItem
+            key={item.path}
+            Icon={item.Icon}
+            label={item.label}
+            active={isActivePath(item.path, item.alsoMatch)}
+            onClick={() => navigate(item.path)}
+          />
+        ))}
+      </aside>
+    </TooltipProvider>
   );
 };

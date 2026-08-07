@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { applyPdfFcColor } from "@/utils/accountingColors";
 
 export type BackOrderSummaryPrintLine = {
   partNo?: string | null;
@@ -87,7 +88,7 @@ const qty = (value: unknown) => {
 const rate = (value: unknown) => {
   const n = Number(value || 0);
   if (!Number.isFinite(n) || n === 0) return "-";
-  return n.toFixed(4);
+  return n.toFixed(2);
 };
 
 const openPdfPrintDialog = (doc: jsPDF): boolean => {
@@ -263,6 +264,9 @@ export const printBackOrderSummary = (
       },
       alternateRowStyles: { fillColor: [249, 249, 249] },
       columnStyles: tableColumnStyles,
+      didParseCell: (data) => {
+        applyPdfFcColor(data, 4);
+      },
     });
 
     const lastY =

@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { applyPdfAmountColor } from "@/utils/accountingColors";
 
 export type DailyActivityPrintItem = {
   partNo?: string | null;
@@ -194,6 +195,9 @@ export const printDailyActivity = (input: DailyActivityPrintInput): boolean => {
         3: { cellWidth: 16, halign: "right" },
         4: { cellWidth: 24, halign: "right" },
         5: { cellWidth: 28, halign: "right" },
+      },
+      didParseCell: (data) => {
+        applyPdfAmountColor(data, 5);
       },
     });
 

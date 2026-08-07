@@ -14,6 +14,10 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
+  amountHeaderClass,
+  amountValueClass,
+} from "@/utils/accountingColors";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -146,7 +150,7 @@ const LineItemsTable = ({ items }: { items: ActivityLineItem[] }) => (
           <TableHead>Description</TableHead>
           <TableHead className="text-right">Qty</TableHead>
           <TableHead className="text-right">Rate</TableHead>
-          <TableHead className="text-right">Amount</TableHead>
+          <TableHead className={`text-right ${amountHeaderClass}`}>Amount</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -169,7 +173,7 @@ const LineItemsTable = ({ items }: { items: ActivityLineItem[] }) => (
               </TableCell>
               <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMoney(item.unitPrice)}</TableCell>
-              <TableCell className="text-right tabular-nums font-medium">
+              <TableCell className={`text-right tabular-nums font-medium ${amountValueClass()}`}>
                 {formatMoney(item.lineTotal)}
               </TableCell>
             </TableRow>

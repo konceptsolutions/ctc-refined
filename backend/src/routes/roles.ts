@@ -1,17 +1,34 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
 import prisma from '../config/database';
+import { getValidPermissionSet, expandPermissionAncestors } from '../permissions/catalog';
+import { AuthRequest, requirePermission } from '../middleware/authMiddleware';
 
 const router = express.Router();
 
+function normalizePermissions(input: unknown, roleName?: string): string[] {
+  if (roleName && roleName.trim().toLowerCase() === 'admin') {
+    return ['*'];
+  }
+  if (!Array.isArray(input)) return [];
+  const valid = getValidPermissionSet();
+  const out: string[] = [];
+  for (const raw of input) {
+    const key = String(raw || '').trim();
+    if (!key) continue;
+    if (key === '*') continue; // only Admin may use wildcard via name check
+    if (valid.has(key)) out.push(key);
+  }
+  return expandPermissionAncestors([...new Set(out)]);
+}
+
 // GET /api/roles - Get all roles
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('page.settings.roles', 'module.settings'), async (_req, res) => {
   try {
     const roles = await prisma.role.findMany({
       orderBy: { createdAt: 'desc' },
     });
 
-    // Parse permissions JSON and count users
     const formattedRoles = await Promise.all(
       roles.map(async (role) => {
         let permissions: string[] = [];
@@ -40,7 +57,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/roles/:id - Get single role
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('page.settings.roles', 'module.settings'), async (req, res) => {
   try {
     const role = await prisma.role.findUnique({
       where: { id: req.params.id },
@@ -68,7 +85,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/roles - Create new role
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('action.settings.roles.create', 'page.settings.roles'), async (req: AuthRequest, res) => {
   try {
     const {
       name,
@@ -80,26 +97,21 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Role name is required' });
     }
 
+    const normalized = normalizePermissions(permissions, name);
+
     const role = await prisma.role.create({
       data: {
         id: randomUUID(),
         name,
         description: description || '',
         type: 'Custom',
-        permissions: JSON.stringify(permissions || []),
+        permissions: JSON.stringify(normalized),
         usersCount: 0,
         updatedAt: new Date(),
       },
     });
 
-    let parsedPermissions: string[] = [];
-    try {
-      parsedPermissions = JSON.parse(role.permissions || '[]');
-    } catch {
-      parsedPermissions = [];
-    }
-
-    res.status(201).json({ data: { ...role, permissions: parsedPermissions, usersCount: 0 } });
+    res.status(201).json({ data: { ...role, permissions: normalized, usersCount: 0 } });
   } catch (error: any) {
     if (error.code === 'P2002') {
       return res.status(400).json({ error: 'Role with this name already exists' });
@@ -109,8 +121,13 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/roles/:id - Update role
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('action.settings.roles.edit', 'page.settings.roles'), async (req, res) => {
   try {
+    const existing = await prisma.role.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Role not found' });
+    }
+
     const {
       name,
       description,
@@ -118,10 +135,15 @@ router.put('/:id', async (req, res) => {
     } = req.body;
 
     const updateData: any = {};
+    const nextName = name !== undefined ? name : existing.name;
 
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
-    if (permissions !== undefined) updateData.permissions = JSON.stringify(permissions);
+    if (permissions !== undefined) {
+      updateData.permissions = JSON.stringify(normalizePermissions(permissions, nextName));
+    } else if (String(nextName).trim().toLowerCase() === 'admin') {
+      updateData.permissions = JSON.stringify(['*']);
+    }
 
     const role = await prisma.role.update({
       where: { id: req.params.id },
@@ -149,8 +171,16 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/roles/:id - Delete role
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('action.settings.roles.delete', 'page.settings.roles'), async (req, res) => {
   try {
+    const existing = await prisma.role.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Role not found' });
+    }
+    if (existing.type === 'System' || existing.name.trim().toLowerCase() === 'admin') {
+      return res.status(400).json({ error: 'System roles cannot be deleted' });
+    }
+
     await prisma.role.delete({
       where: { id: req.params.id },
     });
@@ -165,4 +195,3 @@ router.delete('/:id', async (req, res) => {
 });
 
 export default router;
-

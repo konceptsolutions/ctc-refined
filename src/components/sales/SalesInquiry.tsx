@@ -60,6 +60,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { PrintableDocument, printDocument } from "./PrintableDocument";
 import { apiClient } from "@/lib/api";
+import { formatPurchasePrice } from "@/utils/purchasePriceRound";
 import {
   extractLatestPriceDatesFromHistory,
   formatPriceLastUpdatedLabel,
@@ -3026,7 +3027,7 @@ export const SalesInquiry = ({
                                 )}
                               </TableCell>
                               <TableCell className="text-center font-medium">{item.quantity || 0}</TableCell>
-                              <TableCell className="text-right">Rs {item.purchasePrice?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</TableCell>
+                              <TableCell className="text-right">Rs {formatPurchasePrice(item.purchasePrice)}</TableCell>
                               <TableCell className="text-right text-green-600">Rs {item.priceA?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</TableCell>
                               <TableCell className="text-right text-green-600">Rs {item.priceB?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</TableCell>
                               <TableCell className="text-right text-green-600">Rs {item.priceM?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</TableCell>
@@ -3273,7 +3274,7 @@ export const SalesInquiry = ({
                                 className="w-20"
                               />
                             </TableCell>
-                            <TableCell>Rs {item.purchasePrice?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell>Rs {formatPurchasePrice(item.purchasePrice)}</TableCell>
                             <TableCell>Rs {item.priceA?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>Rs {item.priceB?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>Rs {item.priceM?.toFixed(2) || '0.00'}</TableCell>

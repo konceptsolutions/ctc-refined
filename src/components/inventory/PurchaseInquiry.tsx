@@ -4,6 +4,8 @@ import { RefreshCw, Search, Plus, Save, ArrowLeftRight, Trash2, ChevronDown, Che
 import { toast } from "@/hooks/use-toast";
 import apiClient from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { fcHeaderClass, fcValueClass, lcHeaderClass, lcValueClass } from "@/utils/accountingColors";
+import { formatPurchasePrice, formatFc } from "@/utils/purchasePriceRound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -1350,7 +1352,7 @@ export const PurchaseInquiry = ({
                           </TableCell>
                           <TableCell className="text-xs tabular-nums">{fmtQty(item.stock)}</TableCell>
                           <TableCell className="text-xs">{item.grade}</TableCell>
-                          <TableCell className="text-xs tabular-nums">{fmt(item.cost)}</TableCell>
+                          <TableCell className="text-xs tabular-nums">{formatPurchasePrice(item.cost)}</TableCell>
                           <TableCell className="text-xs tabular-nums text-center font-semibold bg-blue-50/50 dark:bg-blue-950/30 border-x">
                             {renderQtyCell(rowInquiry?.isb.po, rowLoading)}
                           </TableCell>
@@ -1639,7 +1641,7 @@ export const PurchaseInquiry = ({
                               {item.grade || "—"}
                             </TableCell>
                             <TableCell className="text-xs px-2 py-1.5 tabular-nums text-right">
-                              {fmt(item.cost)}
+                              {formatPurchasePrice(item.cost)}
                             </TableCell>
                             <TableCell className="text-xs tabular-nums text-center font-semibold bg-blue-50/50 dark:bg-blue-950/30 border-x">
                               {renderQtyCell(rowInquiry?.isb.po, rowLoading)}
@@ -1883,7 +1885,7 @@ export const PurchaseInquiry = ({
                           <TableHead className="text-xs whitespace-nowrap">Rcvd</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">BO</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Currency</TableHead>
-                          <TableHead className="text-xs whitespace-nowrap">FC Rate</TableHead>
+                          <TableHead className={`text-xs whitespace-nowrap ${fcHeaderClass}`}>FC Rate</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Unit Cost</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Supplier</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Status</TableHead>
@@ -1922,11 +1924,11 @@ export const PurchaseInquiry = ({
                               <TableCell className="text-xs tabular-nums">{fmtQty(row.receivedQty)}</TableCell>
                               <TableCell className="text-xs tabular-nums">{fmtQty(row.backQty)}</TableCell>
                               <TableCell className="text-xs">{row.currency || "—"}</TableCell>
-                              <TableCell className="text-xs tabular-nums">
-                                {row.fcRate ? fmt(row.fcRate) : "—"}
+                              <TableCell className={`text-xs tabular-nums ${fcValueClass()}`}>
+                                {row.fcRate ? formatFc(row.fcRate) : "—"}
                               </TableCell>
                               <TableCell className="text-xs tabular-nums">
-                                {row.unitCost ? fmt(row.unitCost) : "—"}
+                                {row.unitCost ? formatPurchasePrice(row.unitCost) : "—"}
                               </TableCell>
                               <TableCell className="text-xs max-w-[120px] truncate" title={row.supplier}>
                                 {row.supplier || "—"}
@@ -1960,8 +1962,8 @@ export const PurchaseInquiry = ({
                           <TableHead className="text-xs whitespace-nowrap">Cnf. Date</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Qty</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Currency</TableHead>
-                          <TableHead className="text-xs whitespace-nowrap">FC Rate</TableHead>
-                          <TableHead className="text-xs whitespace-nowrap">LC Rate</TableHead>
+                          <TableHead className={`text-xs whitespace-nowrap ${fcHeaderClass}`}>FC Rate</TableHead>
+                          <TableHead className={`text-xs whitespace-nowrap ${lcHeaderClass}`}>LC Rate</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Supplier</TableHead>
                           <TableHead className="text-xs whitespace-nowrap">Status</TableHead>
                         </TableRow>
@@ -1997,11 +1999,11 @@ export const PurchaseInquiry = ({
                               </TableCell>
                               <TableCell className="text-xs tabular-nums">{fmtQty(row.quotationQty)}</TableCell>
                               <TableCell className="text-xs">{row.currency || "—"}</TableCell>
-                              <TableCell className="text-xs tabular-nums">
-                                {row.fcRate ? fmt(row.fcRate) : "—"}
+                              <TableCell className={`text-xs tabular-nums ${fcValueClass()}`}>
+                                {row.fcRate ? formatFc(row.fcRate) : "—"}
                               </TableCell>
-                              <TableCell className="text-xs tabular-nums">
-                                {row.lcRate ? fmt(row.lcRate) : "—"}
+                              <TableCell className={`text-xs tabular-nums ${lcValueClass()}`}>
+                                {row.lcRate ? formatPurchasePrice(row.lcRate) : "—"}
                               </TableCell>
                               <TableCell className="text-xs max-w-[120px] truncate" title={row.supplier}>
                                 {row.supplier || "—"}

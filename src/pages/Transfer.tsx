@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { TransferIn } from "@/components/transfer/TransferIn";
 import { TransferOut } from "@/components/transfer/TransferOut";
+import { usePermissions } from "@/permissions/PermissionsProvider";
 
 type TransferTab = "transfer-in" | "transfer-out";
 
@@ -13,24 +14,34 @@ interface TabConfig {
   id: TransferTab;
   label: string;
   icon: React.ElementType;
+  permission: string;
 }
 
-const tabs: TabConfig[] = [
-  { id: "transfer-in", label: "Transfer In", icon: ArrowDownToLine },
-  { id: "transfer-out", label: "Transfer Out", icon: ArrowUpFromLine },
+const allTabs: TabConfig[] = [
+  { id: "transfer-in", label: "Transfer In", icon: ArrowDownToLine, permission: "page.transfer.transfer-in" },
+  { id: "transfer-out", label: "Transfer Out", icon: ArrowUpFromLine, permission: "page.transfer.transfer-out" },
 ];
 
 const Transfer = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
+  const { can } = usePermissions();
+  const tabs = allTabs.filter((t) => can(t.permission));
+  const defaultTab: TransferTab = (tabs[0]?.id as TransferTab) || "transfer-in";
 
   const activeTab: TransferTab = tabs.some((t) => t.id === tab)
     ? (tab as TransferTab)
-    : "transfer-in";
+    : defaultTab;
 
   useEffect(() => {
-    if (!tab) navigate("/transfer/transfer-in", { replace: true });
-  }, [tab, navigate]);
+    if (!tabs.length) {
+      navigate("/", { replace: true });
+      return;
+    }
+    if (!tab || !tabs.some((t) => t.id === tab)) {
+      navigate(`/transfer/${defaultTab}`, { replace: true });
+    }
+  }, [tab, navigate, tabs, defaultTab]);
 
   const handleTabChange = (tabId: TransferTab) => navigate(`/transfer/${tabId}`);
 

@@ -5,6 +5,7 @@ import {
   formatPdfMoney,
   openPdfPrintDialog,
 } from "@/utils/pdfPrint";
+import { applyPdfAmountColor } from "@/utils/accountingColors";
 
 export type BalanceSheetPrintAccount = {
   label: string;
@@ -151,12 +152,13 @@ export const printBalanceSheet = (input: BalanceSheetPrintInput): boolean => {
       1: { halign: "right", cellWidth: 40 },
     },
     didParseCell: (data) => {
+      applyPdfAmountColor(data, 1);
       if (data.section !== "body") return;
       const label = String(data.row.raw?.[0] ?? "");
       if (
         boldLabels.has(label) ||
         label.startsWith("Total ") ||
-        /^[A-Z]/.test(label.trim()) && !label.startsWith(" ")
+        (/^[A-Z]/.test(label.trim()) && !label.startsWith(" "))
       ) {
         if (
           boldLabels.has(label) ||
