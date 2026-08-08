@@ -343,6 +343,59 @@ export function expandPermissionAncestors(keys: string[]): string[] {
   return [...set];
 }
 
+function isDescendantOf(
+  key: string,
+  ancestor: string,
+  parents: Map<string, string>,
+): boolean {
+  let cur: string | undefined = key;
+  while (cur) {
+    const parent = parents.get(cur);
+    if (parent === ancestor) return true;
+    cur = parent;
+  }
+  return false;
+}
+
+/**
+ * Hierarchical permission check:
+ * - exact key or *
+ * - parent of required is granted (module covers its pages/actions)
+ * - any granted key is under required (page grant satisfies module check)
+ */
+export function hasPermissionKey(
+  granted: string[] | undefined | null,
+  required: string | undefined | null,
+): boolean {
+  if (!required) return true;
+  const expanded = expandPermissionAncestors(granted || []);
+  if (expanded.includes("*") || expanded.includes(required)) return true;
+  const parents = getParentMap();
+  let p = parents.get(required);
+  while (p) {
+    if (expanded.includes(p)) return true;
+    p = parents.get(p);
+  }
+  for (const g of expanded) {
+    if (isDescendantOf(g, required, parents)) return true;
+  }
+  return false;
+}
+
+/** True when the list looks like the hierarchical catalog (not legacy coarse keys). */
+export function looksLikeCatalogPermissions(keys: string[]): boolean {
+  if (!keys?.length) return false;
+  if (keys.includes("*")) return true;
+  return keys.some(
+    (k) =>
+      k.startsWith("module.") ||
+      k.startsWith("page.") ||
+      k.startsWith("action.") ||
+      k.startsWith("field.") ||
+      k.startsWith("section."),
+  );
+}
+
 /** All keys under matching module keys (e.g. module.sales). */
 export function keysForModules(moduleKeys: string[]): string[] {
   const set = new Set<string>();

@@ -3,6 +3,7 @@ import {
   findPageByPath,
   getPresetPermissions,
   expandPermissionAncestors,
+  hasPermissionKey,
 } from "./catalog";
 
 const PERMS_STORAGE_KEY = "userPermissions";
@@ -111,9 +112,7 @@ export function can(
   permissions: string[] = getStoredPermissions(),
 ): boolean {
   if (!key) return true;
-  const effective = expandPermissionAncestors(permissions);
-  if (effective.includes("*")) return true;
-  return effective.includes(key);
+  return hasPermissionKey(permissions, key);
 }
 
 export function canAny(
@@ -122,7 +121,7 @@ export function canAny(
 ): boolean {
   const effective = expandPermissionAncestors(permissions);
   if (effective.includes("*")) return true;
-  return keys.some((k) => k && effective.includes(k));
+  return keys.some((k) => k && hasPermissionKey(effective, k));
 }
 
 export function canAll(
@@ -131,7 +130,7 @@ export function canAll(
 ): boolean {
   const effective = expandPermissionAncestors(permissions);
   if (effective.includes("*")) return true;
-  return keys.every((k) => !k || effective.includes(k));
+  return keys.every((k) => !k || hasPermissionKey(effective, k));
 }
 
 export function hasModule(
@@ -156,9 +155,9 @@ export function canAccessPath(
   if (effective.includes("*")) return true;
   const mod = findModuleByPath(pathname);
   if (!mod) return true;
-  if (!can(mod.key, effective)) return false;
+  if (!hasPermissionKey(effective, mod.key)) return false;
   const page = findPageByPath(pathname);
-  if (page && !can(page.key, effective)) return false;
+  if (page && !hasPermissionKey(effective, page.key)) return false;
   return true;
 }
 

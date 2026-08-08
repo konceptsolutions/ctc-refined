@@ -55,9 +55,44 @@ export const authorizeRoles = (...roles: string[]) => {
     };
 };
 
+function parseRolePermissions(raw: unknown): string[] {
+    if (Array.isArray(raw)) {
+        return raw.map(String).filter(Boolean);
+    }
+    if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (!trimmed) return [];
+        try {
+            let parsed: unknown = JSON.parse(trimmed);
+            // Handle double-encoded JSON strings
+            if (typeof parsed === 'string') {
+                const nested = parsed;
+                try {
+                    parsed = JSON.parse(nested);
+                } catch {
+                    return nested.trim() ? [nested.trim()] : [];
+                }
+            }
+            return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+        } catch {
+            return trimmed ? [trimmed] : [];
+        }
+    }
+    return [];
+}
+
 async function resolveUserPermissions(req: AuthRequest): Promise<string[]> {
     if (Array.isArray(req.user?.permissions) && req.user!.permissions!.length > 0) {
-        return req.user!.permissions!;
+        const {
+            expandPermissionAncestors,
+            looksLikeCatalogPermissions,
+            getPresetPermissions,
+        } = await import('../permissions/catalog');
+        let permissions = expandPermissionAncestors(req.user!.permissions!);
+        if (!looksLikeCatalogPermissions(permissions) && req.user?.role) {
+            permissions = expandPermissionAncestors(getPresetPermissions(req.user.role));
+        }
+        return permissions;
     }
     if (!req.user?.id) return [];
 
@@ -72,29 +107,38 @@ async function resolveUserPermissions(req: AuthRequest): Promise<string[]> {
         `;
         const row = rows[0];
         if (!row) return [];
-        let permissions: string[] = [];
-        try {
-            permissions = JSON.parse(row.permissions || '[]');
-            if (!Array.isArray(permissions)) permissions = [];
-        } catch {
-            permissions = [];
+
+        const {
+            expandPermissionAncestors,
+            looksLikeCatalogPermissions,
+            getPresetPermissions,
+        } = await import('../permissions/catalog');
+
+        let permissions = parseRolePermissions(row.permissions);
+        if (!permissions.length || !looksLikeCatalogPermissions(permissions)) {
+            const presets = getPresetPermissions(row.role || req.user.role || '');
+            if (presets.length) {
+                permissions = presets;
+            }
         }
-        if (permissions.length === 0) {
-            const { getPresetPermissions } = await import('../permissions/catalog');
-            permissions = getPresetPermissions(row.role);
-        }
-        const { expandPermissionAncestors } = await import('../permissions/catalog');
         permissions = expandPermissionAncestors(permissions);
         if (req.user) req.user.permissions = permissions;
         return permissions;
     } catch (err) {
         console.error('Failed to resolve permissions', err);
-        return [];
+        try {
+            const { getPresetPermissions, expandPermissionAncestors } = await import('../permissions/catalog');
+            const role = req.user?.role || '';
+            return expandPermissionAncestors(getPresetPermissions(role));
+        } catch {
+            return [];
+        }
     }
 }
 
 /**
  * Require any of the given permission keys (or wildcard *).
+ * Uses hierarchical matching so page grants satisfy module API checks.
  */
 export const requirePermission = (...keys: string[]) => {
     return async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -103,8 +147,9 @@ export const requirePermission = (...keys: string[]) => {
         }
         try {
             const permissions = await resolveUserPermissions(req);
+            const { hasPermissionKey } = await import('../permissions/catalog');
             if (permissions.includes('*')) return next();
-            const ok = keys.length === 0 || keys.some((k) => permissions.includes(k));
+            const ok = keys.length === 0 || keys.some((k) => hasPermissionKey(permissions, k));
             if (!ok) {
                 return res.status(403).json({
                     error: 'You do not have permission for this action',
@@ -129,8 +174,9 @@ export const requireAllPermissions = (...keys: string[]) => {
         }
         try {
             const permissions = await resolveUserPermissions(req);
+            const { hasPermissionKey } = await import('../permissions/catalog');
             if (permissions.includes('*')) return next();
-            const ok = keys.every((k) => permissions.includes(k));
+            const ok = keys.every((k) => hasPermissionKey(permissions, k));
             if (!ok) {
                 return res.status(403).json({
                     error: 'You do not have permission for this action',

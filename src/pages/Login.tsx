@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { saveAuth, isAuthenticated, getUserRole } from "@/utils/auth";
 import { canAccessPath, getFirstAllowedPath, parsePermissions } from "@/permissions/can";
-import { getPresetPermissions } from "@/permissions/catalog";
+import { getPresetPermissions, looksLikeCatalogPermissions } from "@/permissions/catalog";
 
 const Login = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -84,8 +84,9 @@ const Login = () => {
                 const effectiveRole: 'admin' | 'store' = roleKey === "store user" ? "store" : "admin";
 
                 let permissions = parsePermissions(response.user?.permissions);
-                if (!permissions.length) {
-                    permissions = getPresetPermissions(backendRoleName);
+                if (!permissions.length || !looksLikeCatalogPermissions(permissions)) {
+                    const presets = getPresetPermissions(backendRoleName);
+                    if (presets.length) permissions = presets;
                 }
 
                 saveAuth(effectiveRole, response.token, {

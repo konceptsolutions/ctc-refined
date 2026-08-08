@@ -14,11 +14,21 @@ function parseRolePermissions(raw: unknown): string[] {
         return raw.map(String).filter(Boolean);
     }
     if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (!trimmed) return [];
         try {
-            const parsed = JSON.parse(raw || '[]');
+            let parsed: unknown = JSON.parse(trimmed);
+            if (typeof parsed === 'string') {
+                const nested = parsed;
+                try {
+                    parsed = JSON.parse(nested);
+                } catch {
+                    return nested.trim() ? [nested.trim()] : [];
+                }
+            }
             return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
         } catch {
-            return raw.trim() ? [raw.trim()] : [];
+            return trimmed ? [trimmed] : [];
         }
     }
     return [];
@@ -26,11 +36,12 @@ function parseRolePermissions(raw: unknown): string[] {
 
 async function resolveLoginPermissions(roleName: string, rolePermissions: unknown): Promise<string[]> {
     let permissions = parseRolePermissions(rolePermissions);
-    if (permissions.length === 0) {
-        const { getPresetPermissions } = await import('../permissions/catalog');
-        permissions = getPresetPermissions(roleName);
+    const { getPresetPermissions, expandPermissionAncestors, looksLikeCatalogPermissions } =
+        await import('../permissions/catalog');
+    if (!permissions.length || !looksLikeCatalogPermissions(permissions)) {
+        const presets = getPresetPermissions(roleName);
+        if (presets.length) permissions = presets;
     }
-    const { expandPermissionAncestors } = await import('../permissions/catalog');
     return expandPermissionAncestors(permissions);
 }
 
