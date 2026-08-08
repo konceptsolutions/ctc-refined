@@ -9,6 +9,31 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '24h';
 
+function parseRolePermissions(raw: unknown): string[] {
+    if (Array.isArray(raw)) {
+        return raw.map(String).filter(Boolean);
+    }
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw || '[]');
+            return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+        } catch {
+            return raw.trim() ? [raw.trim()] : [];
+        }
+    }
+    return [];
+}
+
+async function resolveLoginPermissions(roleName: string, rolePermissions: unknown): Promise<string[]> {
+    let permissions = parseRolePermissions(rolePermissions);
+    if (permissions.length === 0) {
+        const { getPresetPermissions } = await import('../permissions/catalog');
+        permissions = getPresetPermissions(roleName);
+    }
+    const { expandPermissionAncestors } = await import('../permissions/catalog');
+    return expandPermissionAncestors(permissions);
+}
+
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -69,20 +94,7 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        let permissions: string[] = [];
-        try {
-            permissions = JSON.parse(user.rolePermissions || '[]');
-            if (!Array.isArray(permissions)) permissions = [];
-        } catch {
-            permissions = [];
-        }
-        // Fallback for legacy coarse roles not yet migrated
-        if (permissions.length === 0) {
-            const { getPresetPermissions } = await import('../permissions/catalog');
-            permissions = getPresetPermissions(user.role);
-        }
-        const { expandPermissionAncestors } = await import('../permissions/catalog');
-        permissions = expandPermissionAncestors(permissions);
+        const permissions = await resolveLoginPermissions(user.role, user.rolePermissions);
 
         // Generate token
         // Keep JWT small: store role only; clients refresh full permissions via /auth/me
@@ -175,19 +187,7 @@ router.get('/me', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        let permissions: string[] = [];
-        try {
-            permissions = JSON.parse(user.rolePermissions || '[]');
-            if (!Array.isArray(permissions)) permissions = [];
-        } catch {
-            permissions = [];
-        }
-        if (permissions.length === 0) {
-            const { getPresetPermissions } = await import('../permissions/catalog');
-            permissions = getPresetPermissions(user.role);
-        }
-        const { expandPermissionAncestors } = await import('../permissions/catalog');
-        permissions = expandPermissionAncestors(permissions);
+        const permissions = await resolveLoginPermissions(user.role, user.rolePermissions);
 
         res.json({
             data: {

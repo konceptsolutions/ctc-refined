@@ -42,7 +42,11 @@ export const saveAuth = (
 ): void => {
   const loginTime = Date.now();
   const expirationTime = loginTime + (EXPIRATION_HOURS * 60 * 60 * 1000); // 24 hours in milliseconds
-  const perms = parsePermissions(permissions);
+  let perms = parsePermissions(permissions);
+  if (!perms.length) {
+    const roleName = getTokenRoleNameFromToken(token) || (userRole === 'store' ? 'Store User' : '');
+    if (roleName) perms = getPresetPermissions(roleName);
+  }
 
   const authData: AuthData = {
     userRole,
@@ -59,6 +63,12 @@ export const saveAuth = (
   localStorage.setItem('authToken', token);
   localStorage.setItem('userRole', userRole);
   savePermissions(perms);
+};
+
+const getTokenRoleNameFromToken = (token: string): string | null => {
+  const payload = decodeJwtPayload(token);
+  const role = payload?.role;
+  return typeof role === 'string' ? role : null;
 };
 
 export const getStoredLoginHours = (): {

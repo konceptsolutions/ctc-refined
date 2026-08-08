@@ -162,10 +162,56 @@ export function canAccessPath(
   return true;
 }
 
+function roleHomeFromJwt(): string | null {
+  try {
+    const token = localStorage.getItem("authToken");
+    if (!token) return null;
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded));
+    const role = String(payload?.role || "")
+      .trim()
+      .toLowerCase();
+    if (role === "store user") return "/inventory/current-stock";
+    if (role === "manager") return "/partentry";
+    if (role === "accountant") return "/accounting";
+    if (role === "sales") return "/sales/invoice";
+    if (role === "admin") return "/";
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export function getFirstAllowedPath(
   permissions: string[] = getStoredPermissions(),
 ): string {
-  const effective = expandPermissionAncestors(permissions);
+  let effective = expandPermissionAncestors(permissions);
+  // If stored/JWT perms are empty, fall back to role presets so login can proceed
+  if (!effective.length) {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (token) {
+        const parts = token.split(".");
+        if (parts.length >= 2) {
+          const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+          const payload = JSON.parse(atob(padded));
+          const role = typeof payload?.role === "string" ? payload.role : "";
+          if (role) {
+            effective = expandPermissionAncestors(getPresetPermissions(role));
+            if (effective.length) {
+              savePermissions(effective);
+            }
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   if (effective.includes("*")) return "/";
   const candidates = [
     "/",
@@ -188,5 +234,5 @@ export function getFirstAllowedPath(
   for (const path of candidates) {
     if (canAccessPath(path, effective)) return path;
   }
-  return "/login";
+  return roleHomeFromJwt() || "/login";
 }

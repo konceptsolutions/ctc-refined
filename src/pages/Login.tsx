@@ -17,7 +17,8 @@ import {
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { saveAuth, isAuthenticated, getUserRole } from "@/utils/auth";
-import { getFirstAllowedPath } from "@/permissions/can";
+import { canAccessPath, getFirstAllowedPath, parsePermissions } from "@/permissions/can";
+import { getPresetPermissions } from "@/permissions/catalog";
 
 const Login = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -39,14 +40,20 @@ const Login = () => {
     useEffect(() => {
         if (isAuthenticated()) {
             const userRole = getUserRole();
-            const from = (location.state as any)?.from?.pathname;
+            const from = (location.state as any)?.from?.pathname as string | undefined;
 
             if (userRole === 'store') {
                 navigate("/inventory/current-stock", { replace: true });
-            } else if (from && from !== "/login") {
-                navigate(from, { replace: true });
-            } else {
-                navigate(getFirstAllowedPath(), { replace: true });
+                return;
+            }
+
+            const target =
+                from && from !== "/login" && canAccessPath(from)
+                    ? from
+                    : getFirstAllowedPath();
+
+            if (target && target !== "/login") {
+                navigate(target, { replace: true });
             }
         }
     }, [navigate, location]);
@@ -72,25 +79,47 @@ const Login = () => {
 
             // Save authentication with the token from backend
             if (response.token) {
-                const backendRoleName = (response.user?.role || "").toString().trim().toLowerCase();
-                const effectiveRole: 'admin' | 'store' = backendRoleName === "store user" ? "store" : "admin";
+                const backendRoleName = (response.user?.role || "").toString().trim();
+                const roleKey = backendRoleName.toLowerCase();
+                const effectiveRole: 'admin' | 'store' = roleKey === "store user" ? "store" : "admin";
+
+                let permissions = parsePermissions(response.user?.permissions);
+                if (!permissions.length) {
+                    permissions = getPresetPermissions(backendRoleName);
+                }
+
                 saveAuth(effectiveRole, response.token, {
                     loginStartTime: response.user?.loginStartTime ?? null,
                     loginEndTime: response.user?.loginEndTime ?? null,
-                }, response.user?.permissions || []);
-                toast.success(`Login Successful - ${effectiveRole === 'admin' ? 'Administrator' : 'Store'} Access Granted`);
+                }, permissions);
 
-                // Redirect to first permitted path (permissions-driven)
-                if (effectiveRole === 'store') {
-                    navigate("/inventory/current-stock", { replace: true });
-                } else {
-                    const from = (location.state as any)?.from?.pathname;
-                    if (from && from !== "/login") {
-                        navigate(from, { replace: true });
-                    } else {
-                        navigate(getFirstAllowedPath(), { replace: true });
-                    }
+                const roleLabel =
+                    roleKey === "admin"
+                        ? "Administrator"
+                        : roleKey === "store user"
+                          ? "Store"
+                          : backendRoleName || "User";
+                toast.success(`Login Successful - ${roleLabel} Access Granted`);
+
+                // Prefer previous page only when this role can actually open it
+                const from = (location.state as any)?.from?.pathname as string | undefined;
+                let target =
+                    from && from !== "/login" && canAccessPath(from, permissions)
+                        ? from
+                        : getFirstAllowedPath(permissions);
+
+                if (effectiveRole === "store") {
+                    target = "/inventory/current-stock";
                 }
+
+                if (!target || target === "/login") {
+                    toast.error(
+                        "Your account has no page access configured. Ask an admin to set role permissions.",
+                    );
+                    return;
+                }
+
+                navigate(target, { replace: true });
             } else {
                 throw new Error("Login failed: No token received");
             }

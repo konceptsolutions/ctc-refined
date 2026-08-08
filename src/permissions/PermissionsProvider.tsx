@@ -51,7 +51,8 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       const next = expandPermissionAncestors(
         response?.data?.permissions || response?.permissions || [],
       );
-      if (next.length > 0 || response?.data) {
+      // Never wipe good local/login permissions with an empty /me payload
+      if (next.length > 0) {
         savePermissions(next);
         setPermissions(next);
         setVersion(getPermissionsVersion());
