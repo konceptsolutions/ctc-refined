@@ -66,6 +66,7 @@ import { Voucher } from "./VoucherManagement";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { apiClient } from "@/lib/api";
 import { getAccountCashBankMode } from "@/utils/cashBankMode";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface ViewVouchersTabProps {
   vouchers: Voucher[];
@@ -100,6 +101,13 @@ export const ViewVouchersTab = ({
   onSearch,
 }: ViewVouchersTabProps) => {
   const { toast } = useToast();
+  const {
+    canEdit,
+    canDelete,
+    canStatus,
+    canApprove,
+    canMenuMore,
+  } = usePageActions("vouchers.manage");
 
   const [filterMainGroups, setFilterMainGroups] = useState<FilterAccountGroup[]>([]);
   const [filterSubGroups, setFilterSubGroups] = useState<FilterAccountGroup[]>([]);
@@ -1500,60 +1508,66 @@ export const ViewVouchersTab = ({
                             View
                           </Button>
                         </ActionButtonTooltip>
-                        <ActionButtonTooltip label="Edit" variant="edit">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1 text-primary"
-                            onClick={() => handleEdit(voucher)}
-                            disabled={voucher.status !== "draft"}
-                          >
-                            <Edit className="h-4 w-4" />
-                            Edit
-                          </Button>
-                        </ActionButtonTooltip>
-                        <ActionButtonTooltip label="Delete Voucher" variant="delete">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 p-0"
-                            onClick={() => handleDelete(voucher)}
-                            disabled={voucher.status !== "draft"}
-                          >
-                            <Trash className="h-4 w-4" />
-                          </Button>
-                        </ActionButtonTooltip>
-                        <DropdownMenu>
-                          <ActionButtonTooltip label="More Actions" variant="more">
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
+                        {canEdit && (
+                          <ActionButtonTooltip label="Edit" variant="edit">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="gap-1 text-primary"
+                              onClick={() => handleEdit(voucher)}
+                              disabled={voucher.status !== "draft"}
+                            >
+                              <Edit className="h-4 w-4" />
+                              Edit
+                            </Button>
                           </ActionButtonTooltip>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => fetchVoucherDetails(voucher.id)}>
-                              <Eye className="h-4 w-4 mr-2" />
-                              View
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handlePrint(voucher)}>
-                              <Printer className="h-4 w-4 mr-2" />
-                              Print
-                            </DropdownMenuItem>
-                            {voucher.status === "draft" && (
-                              <DropdownMenuItem onClick={() => handleApprove(voucher)}>
-                                <CheckCircle className="h-4 w-4 mr-2" />
-                                Approve
+                        )}
+                        {canDelete && (
+                          <ActionButtonTooltip label="Delete Voucher" variant="delete">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 p-0"
+                              onClick={() => handleDelete(voucher)}
+                              disabled={voucher.status !== "draft"}
+                            >
+                              <Trash className="h-4 w-4" />
+                            </Button>
+                          </ActionButtonTooltip>
+                        )}
+                        {canMenuMore && (
+                          <DropdownMenu>
+                            <ActionButtonTooltip label="More Actions" variant="more">
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                            </ActionButtonTooltip>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => fetchVoucherDetails(voucher.id)}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                View
                               </DropdownMenuItem>
-                            )}
-                            {voucher.status === "posted" && (
-                              <DropdownMenuItem onClick={() => handleChangeToPending(voucher)}>
-                                <Clock className="h-4 w-4 mr-2" />
-                                Change to Pending
+                              <DropdownMenuItem onClick={() => handlePrint(voucher)}>
+                                <Printer className="h-4 w-4 mr-2" />
+                                Print
                               </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                              {canApprove && voucher.status === "draft" && (
+                                <DropdownMenuItem onClick={() => handleApprove(voucher)}>
+                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                  Approve
+                                </DropdownMenuItem>
+                              )}
+                              {canStatus && voucher.status === "posted" && (
+                                <DropdownMenuItem onClick={() => handleChangeToPending(voucher)}>
+                                  <Clock className="h-4 w-4 mr-2" />
+                                  Change to Pending
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1935,17 +1949,19 @@ export const ViewVouchersTab = ({
                 <Button variant="outline" onClick={handleSaveEdit}>
                   💾 Save
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem>Save & Print</DropdownMenuItem>
-                    <DropdownMenuItem>Save & New</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {canMenuMore && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem>Save & Print</DropdownMenuItem>
+                      <DropdownMenuItem>Save & New</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             </div>
 

@@ -83,16 +83,7 @@ function parseRolePermissions(raw: unknown): string[] {
 
 async function resolveUserPermissions(req: AuthRequest): Promise<string[]> {
     if (Array.isArray(req.user?.permissions) && req.user!.permissions!.length > 0) {
-        const {
-            expandPermissionAncestors,
-            looksLikeCatalogPermissions,
-            getPresetPermissions,
-        } = await import('../permissions/catalog');
-        let permissions = expandPermissionAncestors(req.user!.permissions!);
-        if (!looksLikeCatalogPermissions(permissions) && req.user?.role) {
-            permissions = expandPermissionAncestors(getPresetPermissions(req.user.role));
-        }
-        return permissions;
+        return req.user!.permissions!;
     }
     if (!req.user?.id) return [];
 
@@ -109,27 +100,36 @@ async function resolveUserPermissions(req: AuthRequest): Promise<string[]> {
         if (!row) return [];
 
         const {
-            expandPermissionAncestors,
             looksLikeCatalogPermissions,
             getPresetPermissions,
+            ensurePageKeysForGrants,
         } = await import('../permissions/catalog');
 
         let permissions = parseRolePermissions(row.permissions);
-        if (!permissions.length || !looksLikeCatalogPermissions(permissions)) {
+        // Prefer keys saved from Roles & Permissions matrix
+        const catalogKeys = permissions.filter(
+            (k) =>
+                k === '*' ||
+                k.startsWith('module.') ||
+                k.startsWith('page.') ||
+                k.startsWith('action.') ||
+                k.startsWith('field.') ||
+                k.startsWith('section.'),
+        );
+        if (catalogKeys.length > 0) {
+            permissions = ensurePageKeysForGrants(catalogKeys);
+        } else if (!permissions.length || !looksLikeCatalogPermissions(permissions)) {
+            // Empty or legacy-only → built-in preset for known roles
             const presets = getPresetPermissions(row.role || req.user.role || '');
-            if (presets.length) {
-                permissions = presets;
-            }
+            if (presets.length) permissions = presets;
         }
-        permissions = expandPermissionAncestors(permissions);
         if (req.user) req.user.permissions = permissions;
         return permissions;
     } catch (err) {
         console.error('Failed to resolve permissions', err);
         try {
-            const { getPresetPermissions, expandPermissionAncestors } = await import('../permissions/catalog');
-            const role = req.user?.role || '';
-            return expandPermissionAncestors(getPresetPermissions(role));
+            const { getPresetPermissions } = await import('../permissions/catalog');
+            return getPresetPermissions(req.user?.role || '');
         } catch {
             return [];
         }

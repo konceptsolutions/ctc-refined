@@ -48,6 +48,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { usePageActions } from "@/permissions/pageActions";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -86,6 +87,9 @@ interface DPOReturn {
 type ViewMode = "list" | "create";
 
 export const DPOReturn = () => {
+    const { canApprove, canStatus, canDelete } = usePageActions(
+        "inventory.dpo-return",
+    );
     // Returns state
     const [returns, setReturns] = useState<DPOReturn[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
@@ -326,47 +330,53 @@ export const DPOReturn = () => {
 
                                             {ret.status === "pending" && (
                                                 <>
-                                                    <ActionButtonTooltip label="Approve">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700"
-                                                            onClick={() => {
-                                                                setReturnToApprove(ret.id);
-                                                                setApproveDialogOpen(true);
-                                                            }}
-                                                        >
-                                                            <Check className="w-4 h-4" />
-                                                        </Button>
-                                                    </ActionButtonTooltip>
+                                                    {canApprove && (
+                                                        <ActionButtonTooltip label="Approve">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700"
+                                                                onClick={() => {
+                                                                    setReturnToApprove(ret.id);
+                                                                    setApproveDialogOpen(true);
+                                                                }}
+                                                            >
+                                                                <Check className="w-4 h-4" />
+                                                            </Button>
+                                                        </ActionButtonTooltip>
+                                                    )}
 
-                                                    <ActionButtonTooltip label="Reject">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700"
-                                                            onClick={() => {
-                                                                setReturnToReject(ret.id);
-                                                                setRejectDialogOpen(true);
-                                                            }}
-                                                        >
-                                                            <Ban className="w-4 h-4" />
-                                                        </Button>
-                                                    </ActionButtonTooltip>
+                                                    {canStatus && (
+                                                        <ActionButtonTooltip label="Reject">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700"
+                                                                onClick={() => {
+                                                                    setReturnToReject(ret.id);
+                                                                    setRejectDialogOpen(true);
+                                                                }}
+                                                            >
+                                                                <Ban className="w-4 h-4" />
+                                                            </Button>
+                                                        </ActionButtonTooltip>
+                                                    )}
 
-                                                    <ActionButtonTooltip label="Delete">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 bg-muted text-muted-foreground hover:bg-red-50 hover:text-red-600"
-                                                            onClick={() => {
-                                                                setReturnToDelete(ret.id);
-                                                                setDeleteDialogOpen(true);
-                                                            }}
-                                                        >
-                                                            <Trash className="w-4 h-4" />
-                                                        </Button>
-                                                    </ActionButtonTooltip>
+                                                    {canDelete && (
+                                                        <ActionButtonTooltip label="Delete">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 bg-muted text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                                                                onClick={() => {
+                                                                    setReturnToDelete(ret.id);
+                                                                    setDeleteDialogOpen(true);
+                                                                }}
+                                                            >
+                                                                <Trash className="w-4 h-4" />
+                                                            </Button>
+                                                        </ActionButtonTooltip>
+                                                    )}
                                                 </>
                                             )}
                                         </div>
@@ -453,20 +463,24 @@ export const DPOReturn = () => {
                                 </div>
                             </ScrollArea>
 
-                            {selectedReturn.status === "pending" && (
+                            {selectedReturn.status === "pending" && (canApprove || canStatus) && (
                                 <DialogFooter className="p-4 bg-muted/30 border-t border-border gap-2">
-                                    <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => {
-                                        setReturnToReject(selectedReturn.id);
-                                        setRejectDialogOpen(true);
-                                    }}>
-                                        Reject Return
-                                    </Button>
-                                    <Button className="bg-green-600 hover:bg-green-700" onClick={() => {
-                                        setReturnToApprove(selectedReturn.id);
-                                        setApproveDialogOpen(true);
-                                    }}>
-                                        Approve & Complete
-                                    </Button>
+                                    {canStatus && (
+                                        <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => {
+                                            setReturnToReject(selectedReturn.id);
+                                            setRejectDialogOpen(true);
+                                        }}>
+                                            Reject Return
+                                        </Button>
+                                    )}
+                                    {canApprove && (
+                                        <Button className="bg-green-600 hover:bg-green-700" onClick={() => {
+                                            setReturnToApprove(selectedReturn.id);
+                                            setApproveDialogOpen(true);
+                                        }}>
+                                            Approve & Complete
+                                        </Button>
+                                    )}
                                 </DialogFooter>
                             )}
                         </>

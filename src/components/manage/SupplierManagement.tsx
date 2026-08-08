@@ -46,6 +46,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { usePageActions } from "@/permissions/pageActions";
 
 export interface ContactPersonInfo {
   name: string;
@@ -122,6 +123,13 @@ const emptySupplier: Omit<Supplier, "id"> = {
 
 export const SupplierManagement = () => {
   const { toast } = useToast();
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    canStatus,
+    canMenuMore,
+  } = usePageActions("manage.suppliers");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(false);
@@ -574,18 +582,20 @@ export const SupplierManagement = () => {
             Manage your suppliers for purchase orders
           </p>
         </div>
-        <Button
-          onClick={() => {
-            console.log("New Supplier Button Clicked - Resetting form");
-            setFormData({ ...emptySupplier });
-            setEditingId(null);
-            setIsDialogOpen(true);
-          }}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs"
-        >
-          <Plus className="w-3 h-3 mr-1" />
-          New Supplier
-        </Button>
+        {canCreate && (
+          <Button
+            onClick={() => {
+              console.log("New Supplier Button Clicked - Resetting form");
+              setFormData({ ...emptySupplier });
+              setEditingId(null);
+              setIsDialogOpen(true);
+            }}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs"
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            New Supplier
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -785,20 +795,40 @@ export const SupplierManagement = () => {
                         {supplier.currencyName || "-"}
                       </TableCell>
                       <TableCell>
-                        <button
-                          onClick={() => handleToggleStatusClick(supplier)}
-                          title="Click to toggle status"
-                        >
+                        {canStatus ? (
+                          <button
+                            onClick={() => handleToggleStatusClick(supplier)}
+                            title="Click to toggle status"
+                          >
+                            <Badge
+                              variant={
+                                supplier.status === "active"
+                                  ? "default"
+                                  : "secondary"
+                              }
+                              className={`text-xs cursor-pointer transition-colors ${
+                                supplier.status === "active"
+                                  ? "bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700"
+                                  : "bg-muted text-muted-foreground hover:bg-green-100 hover:text-green-700"
+                              }`}
+                            >
+                              •{" "}
+                              {supplier.status === "active"
+                                ? "Active"
+                                : "Inactive"}
+                            </Badge>
+                          </button>
+                        ) : (
                           <Badge
                             variant={
                               supplier.status === "active"
                                 ? "default"
                                 : "secondary"
                             }
-                            className={`text-xs cursor-pointer transition-colors ${
+                            className={`text-xs ${
                               supplier.status === "active"
-                                ? "bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700"
-                                : "bg-muted text-muted-foreground hover:bg-green-100 hover:text-green-700"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-muted text-muted-foreground"
                             }`}
                           >
                             •{" "}
@@ -806,33 +836,37 @@ export const SupplierManagement = () => {
                               ? "Active"
                               : "Inactive"}
                           </Badge>
-                        </button>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          <ActionButtonTooltip label="Edit" variant="edit">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-primary hover:text-primary/80"
-                              onClick={() => handleEdit(supplier)}
+                          {canEdit && (
+                            <ActionButtonTooltip label="Edit" variant="edit">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-primary hover:text-primary/80"
+                                onClick={() => handleEdit(supplier)}
+                              >
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                            </ActionButtonTooltip>
+                          )}
+                          {canMenuMore && (
+                            <ActionButtonTooltip
+                              label="More Actions"
+                              variant="more"
                             >
-                              <Edit className="w-3 h-3" />
-                            </Button>
-                          </ActionButtonTooltip>
-                          <ActionButtonTooltip
-                            label="More Actions"
-                            variant="more"
-                          >
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                            >
-                              <MoreVertical className="w-3 h-3" />
-                            </Button>
-                          </ActionButtonTooltip>
-                          {supplier.canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                              >
+                                <MoreVertical className="w-3 h-3" />
+                              </Button>
+                            </ActionButtonTooltip>
+                          )}
+                          {canDelete && supplier.canDelete && (
                             <ActionButtonTooltip
                               label="Delete"
                               variant="delete"

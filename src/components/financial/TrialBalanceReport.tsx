@@ -17,6 +17,7 @@ import {
   drHeaderClass,
   drValueClass,
 } from "@/utils/accountingColors";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface TrialBalanceAccount {
   code: string;
@@ -28,6 +29,7 @@ interface TrialBalanceAccount {
 }
 
 export const TrialBalanceReport = () => {
+  const { canExport, canPrint } = usePageActions("financial.trial-balance");
   const { toast } = useToast();
   // Get current date in Pakistan timezone - set From to start of month, To to current date
   const [fromDate, setFromDate] = useState(() => getStartOfCurrentMonthPakistan());
@@ -147,11 +149,15 @@ export const TrialBalanceReport = () => {
             Trial Balance
           </CardTitle>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleExportCSV}>
-              <Download className="h-4 w-4 mr-1" />
-              Export CSV
-            </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
+            {canExport && (
+              <Button variant="outline" size="sm" onClick={handleExportCSV}>
+                <Download className="h-4 w-4 mr-1" />
+                Export CSV
+              </Button>
+            )}
+            {canPrint && (
+              <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
+            )}
           </div>
         </div>
       </CardHeader>

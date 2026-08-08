@@ -36,13 +36,26 @@ function parseRolePermissions(raw: unknown): string[] {
 
 async function resolveLoginPermissions(roleName: string, rolePermissions: unknown): Promise<string[]> {
     let permissions = parseRolePermissions(rolePermissions);
-    const { getPresetPermissions, expandPermissionAncestors, looksLikeCatalogPermissions } =
+    const { getPresetPermissions, looksLikeCatalogPermissions, ensurePageKeysForGrants } =
         await import('../permissions/catalog');
+
+    const catalogKeys = permissions.filter(
+        (k) =>
+            k === '*' ||
+            k.startsWith('module.') ||
+            k.startsWith('page.') ||
+            k.startsWith('action.') ||
+            k.startsWith('field.') ||
+            k.startsWith('section.'),
+    );
+    if (catalogKeys.length > 0) {
+        return ensurePageKeysForGrants(catalogKeys);
+    }
     if (!permissions.length || !looksLikeCatalogPermissions(permissions)) {
         const presets = getPresetPermissions(roleName);
-        if (presets.length) permissions = presets;
+        if (presets.length) return presets;
     }
-    return expandPermissionAncestors(permissions);
+    return permissions;
 }
 
 router.post('/login', async (req, res) => {

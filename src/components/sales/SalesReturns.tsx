@@ -62,7 +62,7 @@ import { toast } from "@/hooks/use-toast";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { getUserRole } from "@/utils/auth";
-import { can } from "@/permissions/can";
+import { usePageActions } from "@/permissions/pageActions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 
@@ -329,10 +329,14 @@ function mapApiSalesReturn(row: any): SalesReturn {
 const RETURN_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 export const SalesReturns = () => {
-  const canMutateReturns =
-    can("action.sales.returns.create") ||
-    can("action.sales.returns.edit") ||
-    can("action.sales.returns.delete");
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    canStatus,
+    canApprove,
+    canMenuMore,
+  } = usePageActions("sales.returns");
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [selectedReturns, setSelectedReturns] = useState<string[]>([]);
   const [loadingReturns, setLoadingReturns] = useState(false);
@@ -1346,7 +1350,7 @@ export const SalesReturns = () => {
                 Return Sale Orders
               </h2>
             </div>
-            {canMutateReturns && (
+            {canCreate && (
               <Button
                 size="sm"
                 className="gap-2"
@@ -1507,9 +1511,9 @@ export const SalesReturns = () => {
                               <Eye className="w-4 h-4" />
                             </Button>
                           </ActionButtonTooltip>
-                          {canMutateReturns && returnItem.status === "pending" && (
+                          {returnItem.status === "pending" && (
                             <>
-                              {returnItem.isDirectReturn ? (
+                              {canEdit && returnItem.isDirectReturn ? (
                                 <ActionButtonTooltip
                                   label="Edit direct return"
                                   variant="view"
@@ -1530,80 +1534,88 @@ export const SalesReturns = () => {
                                   </Button>
                                 </ActionButtonTooltip>
                               ) : null}
-                              <ActionButtonTooltip
-                                label="Approve return"
-                                variant="view"
-                              >
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 gap-1 text-xs border-emerald-600 text-emerald-700 hover:bg-emerald-50"
-                                  disabled={actionSubmittingId === returnItem.id}
-                                  onClick={() => handleApproveClick(returnItem)}
+                              {canApprove && (
+                                <ActionButtonTooltip
+                                  label="Approve return"
+                                  variant="view"
                                 >
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  Approve
-                                </Button>
-                              </ActionButtonTooltip>
-                              <ActionButtonTooltip
-                                label="Reject return"
-                                variant="more"
-                              >
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 gap-1 text-xs"
-                                  disabled={actionSubmittingId === returnItem.id}
-                                  onClick={() => handleRejectClick(returnItem)}
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 gap-1 text-xs border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+                                    disabled={actionSubmittingId === returnItem.id}
+                                    onClick={() => handleApproveClick(returnItem)}
+                                  >
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    Approve
+                                  </Button>
+                                </ActionButtonTooltip>
+                              )}
+                              {canStatus && (
+                                <ActionButtonTooltip
+                                  label="Reject return"
+                                  variant="more"
                                 >
-                                  <Ban className="w-3 h-3" />
-                                  Reject
-                                </Button>
-                              </ActionButtonTooltip>
-                              <ActionButtonTooltip label="Delete" variant="delete">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 gap-1 text-xs text-destructive"
-                                  disabled={actionSubmittingId === returnItem.id}
-                                  onClick={() => handleDeleteClick(returnItem)}
-                                >
-                                  <Trash className="w-3 h-3" />
-                                  Delete
-                                </Button>
-                              </ActionButtonTooltip>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 gap-1 text-xs"
+                                    disabled={actionSubmittingId === returnItem.id}
+                                    onClick={() => handleRejectClick(returnItem)}
+                                  >
+                                    <Ban className="w-3 h-3" />
+                                    Reject
+                                  </Button>
+                                </ActionButtonTooltip>
+                              )}
+                              {canDelete && (
+                                <ActionButtonTooltip label="Delete" variant="delete">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 gap-1 text-xs text-destructive"
+                                    disabled={actionSubmittingId === returnItem.id}
+                                    onClick={() => handleDeleteClick(returnItem)}
+                                  >
+                                    <Trash className="w-3 h-3" />
+                                    Delete
+                                  </Button>
+                                </ActionButtonTooltip>
+                              )}
                             </>
                           )}
-                          <DropdownMenu>
-                            <ActionButtonTooltip label="More Actions" variant="more">
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 bg-primary text-primary-foreground">
-                                  <MoreVertical className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                            </ActionButtonTooltip>
-                            <DropdownMenuContent align="end" className="bg-card border-border">
-                              {!returnItem.isDirectReturn ? (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    handleViewOriginalInvoice(returnItem)
-                                  }
-                                  className="text-xs cursor-pointer"
-                                >
-                                  <FileText className="w-4 h-4 mr-2" />
-                                  View Original Invoice
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem
-                                  disabled
-                                  className="text-xs opacity-60"
-                                >
-                                  <FileText className="w-4 h-4 mr-2" />
-                                  Legacy invoice (not in system)
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          {canMenuMore && (
+                            <DropdownMenu>
+                              <ActionButtonTooltip label="More Actions" variant="more">
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 bg-primary text-primary-foreground">
+                                    <MoreVertical className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                              </ActionButtonTooltip>
+                              <DropdownMenuContent align="end" className="bg-card border-border">
+                                {!returnItem.isDirectReturn ? (
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleViewOriginalInvoice(returnItem)
+                                    }
+                                    className="text-xs cursor-pointer"
+                                  >
+                                    <FileText className="w-4 h-4 mr-2" />
+                                    View Original Invoice
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    disabled
+                                    className="text-xs opacity-60"
+                                  >
+                                    <FileText className="w-4 h-4 mr-2" />
+                                    Legacy invoice (not in system)
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1779,31 +1791,35 @@ export const SalesReturns = () => {
             <div className="flex flex-wrap items-center gap-2">
               {selectedReturn?.status === "pending" && (
                 <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    disabled={actionSubmittingId === selectedReturn.id}
-                    onClick={() =>
-                      selectedReturn && handleRejectClick(selectedReturn)
-                    }
-                  >
-                    <Ban className="w-3 h-3 mr-1" />
-                    Reject
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                    disabled={actionSubmittingId === selectedReturn.id}
-                    onClick={() =>
-                      selectedReturn && handleApproveClick(selectedReturn)
-                    }
-                  >
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    Approve
-                  </Button>
+                  {canStatus && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      disabled={actionSubmittingId === selectedReturn.id}
+                      onClick={() =>
+                        selectedReturn && handleRejectClick(selectedReturn)
+                      }
+                    >
+                      <Ban className="w-3 h-3 mr-1" />
+                      Reject
+                    </Button>
+                  )}
+                  {canApprove && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                      disabled={actionSubmittingId === selectedReturn.id}
+                      onClick={() =>
+                        selectedReturn && handleApproveClick(selectedReturn)
+                      }
+                    >
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      Approve
+                    </Button>
+                  )}
                 </>
               )}
               <Button

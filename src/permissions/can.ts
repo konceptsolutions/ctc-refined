@@ -2,7 +2,6 @@ import {
   findModuleByPath,
   findPageByPath,
   getPresetPermissions,
-  expandPermissionAncestors,
   hasPermissionKey,
 } from "./catalog";
 
@@ -58,8 +57,9 @@ export function parsePermissions(raw: unknown): string[] {
 }
 
 export function savePermissions(permissions: string[]): void {
-  const expanded = expandPermissionAncestors(permissions || []);
-  localStorage.setItem(PERMS_STORAGE_KEY, JSON.stringify(expanded));
+  // Store exactly what was granted — never expand ancestors into storage
+  const cleaned = [...new Set((permissions || []).map(String).filter(Boolean))];
+  localStorage.setItem(PERMS_STORAGE_KEY, JSON.stringify(cleaned));
   bumpPermissionsVersion();
 }
 
@@ -98,9 +98,9 @@ function readRawStoredPermissions(): string[] {
   return [];
 }
 
-/** Effective permissions (always includes parent module/page keys). */
+/** Effective permissions as stored for the user (no ancestor pollution). */
 export function getStoredPermissions(): string[] {
-  return expandPermissionAncestors(readRawStoredPermissions());
+  return readRawStoredPermissions();
 }
 
 export function hasWildcard(permissions: string[] = getStoredPermissions()): boolean {
@@ -119,18 +119,16 @@ export function canAny(
   keys: Array<string | undefined | null>,
   permissions: string[] = getStoredPermissions(),
 ): boolean {
-  const effective = expandPermissionAncestors(permissions);
-  if (effective.includes("*")) return true;
-  return keys.some((k) => k && hasPermissionKey(effective, k));
+  if (permissions.includes("*") || hasPermissionKey(permissions, "*")) return true;
+  return keys.some((k) => k && hasPermissionKey(permissions, k));
 }
 
 export function canAll(
   keys: Array<string | undefined | null>,
   permissions: string[] = getStoredPermissions(),
 ): boolean {
-  const effective = expandPermissionAncestors(permissions);
-  if (effective.includes("*")) return true;
-  return keys.every((k) => !k || hasPermissionKey(effective, k));
+  if (permissions.includes("*") || hasPermissionKey(permissions, "*")) return true;
+  return keys.every((k) => !k || hasPermissionKey(permissions, k));
 }
 
 export function hasModule(
@@ -151,13 +149,12 @@ export function canAccessPath(
   pathname: string,
   permissions: string[] = getStoredPermissions(),
 ): boolean {
-  const effective = expandPermissionAncestors(permissions);
-  if (effective.includes("*")) return true;
+  if (permissions.includes("*") || hasPermissionKey(permissions, "*")) return true;
   const mod = findModuleByPath(pathname);
   if (!mod) return true;
-  if (!hasPermissionKey(effective, mod.key)) return false;
+  if (!hasPermissionKey(permissions, mod.key)) return false;
   const page = findPageByPath(pathname);
-  if (page && !hasPermissionKey(effective, page.key)) return false;
+  if (page && !hasPermissionKey(permissions, page.key)) return false;
   return true;
 }
 
@@ -187,8 +184,8 @@ function roleHomeFromJwt(): string | null {
 export function getFirstAllowedPath(
   permissions: string[] = getStoredPermissions(),
 ): string {
-  let effective = expandPermissionAncestors(permissions);
-  // If stored/JWT perms are empty, fall back to role presets so login can proceed
+  let effective = [...permissions];
+  // If stored perms are empty, fall back to role presets so login can proceed
   if (!effective.length) {
     try {
       const token = localStorage.getItem("authToken");
@@ -200,7 +197,7 @@ export function getFirstAllowedPath(
           const payload = JSON.parse(atob(padded));
           const role = typeof payload?.role === "string" ? payload.role : "";
           if (role) {
-            effective = expandPermissionAncestors(getPresetPermissions(role));
+            effective = getPresetPermissions(role);
             if (effective.length) {
               savePermissions(effective);
             }

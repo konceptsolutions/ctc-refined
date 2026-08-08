@@ -47,6 +47,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { usePageActions } from "@/permissions/pageActions";
 
 // Types
 interface Rack {
@@ -83,6 +84,7 @@ interface Store {
 type FormMode = "list" | "create-rack" | "edit-rack" | "create-shelf" | "edit-shelf";
 
 export const RackAndShelf = () => {
+  const { canCreate, canEdit, canDelete } = usePageActions("store.rack-shelf");
   // Data state
   const [racks, setRacks] = useState<Rack[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>([]);
@@ -1056,8 +1058,12 @@ export const RackAndShelf = () => {
             <p className="text-sm text-muted-foreground mt-1">Organize and track inventory locations</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={handleCreateRack}><Plus className="w-4 h-4 mr-2" />Create Rack</Button>
-            <Button onClick={handleBulkAddShelf} variant="outline"><Layers className="w-4 h-4 mr-2" />Bulk Add Shelves</Button>
+            {canCreate && (
+              <Button onClick={handleCreateRack}><Plus className="w-4 h-4 mr-2" />Create Rack</Button>
+            )}
+            {canCreate && (
+              <Button onClick={handleBulkAddShelf} variant="outline"><Layers className="w-4 h-4 mr-2" />Bulk Add Shelves</Button>
+            )}
             <Button onClick={loadStockData} variant="ghost"><RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />Refresh</Button>
           </div>
         </div>
@@ -1101,31 +1107,37 @@ export const RackAndShelf = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Add shelf"
-                        onClick={() => handleAddShelfToRack(rack)}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Edit rack name"
-                        onClick={() => handleEditRack(rack)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Delete rack"
-                        onClick={() => handleDeleteRack(rack)}
-                        className="text-destructive"
-                      >
-                        <Trash className="w-4 h-4" />
-                      </Button>
+                      {canCreate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Add shelf"
+                          onClick={() => handleAddShelfToRack(rack)}
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Edit rack name"
+                          onClick={() => handleEditRack(rack)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Delete rack"
+                          onClick={() => handleDeleteRack(rack)}
+                          className="text-destructive"
+                        >
+                          <Trash className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                   {isExpanded && (
@@ -1146,23 +1158,27 @@ export const RackAndShelf = () => {
                                 <p className="text-xs text-muted-foreground">{shelf.description}</p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title="Edit shelf name"
-                                  onClick={() => handleEditShelf(shelf)}
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title="Delete shelf"
-                                  onClick={() => handleDeleteShelf(shelf)}
-                                  className="text-destructive"
-                                >
-                                  <Trash className="w-4 h-4" />
-                                </Button>
+                                {canEdit && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Edit shelf name"
+                                    onClick={() => handleEditShelf(shelf)}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                {canDelete && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Delete shelf"
+                                    onClick={() => handleDeleteShelf(shelf)}
+                                    className="text-destructive"
+                                  >
+                                    <Trash className="w-4 h-4" />
+                                  </Button>
+                                )}
                               </div>
                             </div>
 

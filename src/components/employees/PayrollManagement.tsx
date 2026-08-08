@@ -31,6 +31,7 @@ import {
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { usePageActions } from "@/permissions/pageActions";
 import { calculateAccruedSalary } from "@/lib/employeePayroll";
 import { printPayslipPdf } from "@/utils/payslipPdf";
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
@@ -128,6 +129,7 @@ const getStatusBadge = (status: PayrollRow["paymentStatus"]) => {
 
 export const PayrollManagement = () => {
   const { toast } = useToast();
+  const { canCreate, canEdit, canPrint } = usePageActions("employees.payroll");
   const [rows, setRows] = useState<PayrollRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -590,10 +592,12 @@ export const PayrollManagement = () => {
                 </Select>
               </div>
             </div>
-            <Button onClick={openAccrueDialog}>
-              <Plus className="h-4 w-4 mr-2" />
-              Accrue Salary
-            </Button>
+            {canCreate && (
+              <Button onClick={openAccrueDialog}>
+                <Plus className="h-4 w-4 mr-2" />
+                Accrue Salary
+              </Button>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
             Use <strong>Accrue Salary</strong> to generate payroll first, then pay from this list. Paying alone does not create a full payroll record.
@@ -662,10 +666,12 @@ export const PayrollManagement = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-center gap-1">
-                          <Button size="sm" variant="outline" onClick={() => handlePrint(row)}>
-                            <Printer className="h-3.5 w-3.5" />
-                          </Button>
-                          {row.hasAccrual !== false && row.paymentStatus !== "paid" ? (
+                          {canPrint && (
+                            <Button size="sm" variant="outline" onClick={() => handlePrint(row)}>
+                              <Printer className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canEdit && row.hasAccrual !== false && row.paymentStatus !== "paid" ? (
                             <Button
                               size="sm"
                               variant="outline"
@@ -675,7 +681,7 @@ export const PayrollManagement = () => {
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           ) : null}
-                          {row.hasAccrual !== false && row.outstanding > 0.01 ? (
+                          {canCreate && row.hasAccrual !== false && row.outstanding > 0.01 ? (
                             <Button size="sm" variant="outline" onClick={() => openPayDialog(row)}>
                               <Banknote className="h-3.5 w-3.5 mr-1" />
                               Pay

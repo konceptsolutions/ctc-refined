@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
 import { shareImagesAcrossFamilyItems } from "@/lib/part-images";
-import { can } from "@/permissions/can";
+import { usePageActions } from "@/permissions/pageActions";
 import {
   branchAccountDisplayName,
   fetchBranchAccountOptions,
@@ -534,16 +534,19 @@ export const SalesInvoice = ({
   const navigate = useNavigate();
   const isQuotation = documentKind === "quotation";
   const isTransferOut = documentKind === "transfer-out";
-  const statusPermission = isQuotation
-    ? "action.sales.quotation.status"
-    : "action.sales.invoice.status";
-  const createPermission = isQuotation
-    ? "action.sales.quotation.create"
-    : "action.sales.invoice.create";
-  const canChangeInvoiceStatus = can(statusPermission);
-  const canUseDocumentForm = can(createPermission) || can(
-    isQuotation ? "action.sales.quotation.edit" : "action.sales.invoice.edit",
-  );
+  const pageId = isQuotation
+    ? "sales.quotation"
+    : isTransferOut
+      ? "transfer.transfer-out"
+      : "sales.invoice";
+  const {
+    canCreate,
+    canEdit,
+    canStatus: canChangeInvoiceStatus,
+    canApprove: canApproveDocument,
+    canMenuMore: canUseActionMenu,
+  } = usePageActions(pageId);
+  const canUseDocumentForm = canCreate || canEdit;
   const docFormLabel = isQuotation
     ? "Quotation Form"
     : isTransferOut
@@ -5767,7 +5770,9 @@ export const SalesInvoice = ({
     quotation: Invoice,
     status: "pending" | "approved",
   ) => {
-    if (!canChangeInvoiceStatus) {
+    const allowed =
+      status === "approved" ? canApproveDocument : canChangeInvoiceStatus;
+    if (!allowed) {
       toast({
         title: "Not allowed",
         description: "Your role cannot change quotation status.",
@@ -5866,7 +5871,9 @@ export const SalesInvoice = ({
     newStatus: InvoiceStatus,
     deliveredQtys?: Record<string, number>,
   ) => {
-    if (!canChangeInvoiceStatus) {
+    const allowed =
+      newStatus === "approved" ? canApproveDocument : canChangeInvoiceStatus;
+    if (!allowed) {
       toast({
         title: "Not allowed",
         description: "Your role cannot change invoice status.",
@@ -9604,7 +9611,7 @@ export const SalesInvoice = ({
                               <Eye className="w-4 h-4" />
                             </Button>
                             {/* Status actions — Sales role can create invoices but cannot change status */}
-                            {canChangeInvoiceStatus && (isQuotation ? (
+                            {canApproveDocument && (isQuotation ? (
                               <>
                                 {(inv.status as string) === "pending" && (
                                   <Button
@@ -9619,7 +9626,7 @@ export const SalesInvoice = ({
                                     Approve
                                   </Button>
                                 )}
-                                {(inv.status as string) === "approved" && (
+                                {(inv.status as string) === "approved" && canChangeInvoiceStatus && (
                                   <>
                                     <Button
                                       variant="outline"
@@ -9669,7 +9676,7 @@ export const SalesInvoice = ({
                                   </Button>
                                 )}
                                 {/* Un-approve — only for approved invoices, reverts to pending so it can be edited */}
-                                {inv.status === "approved" && (
+                                {canChangeInvoiceStatus && inv.status === "approved" && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -9686,8 +9693,8 @@ export const SalesInvoice = ({
                                 )}
                               </>
                             ))}
-                            {/* Print */}
-                            {!isQuotation && <DropdownMenu>
+                            {/* Print / extra menu — Action Menu permission */}
+                            {canUseActionMenu && !isQuotation && <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
                                   variant="ghost"

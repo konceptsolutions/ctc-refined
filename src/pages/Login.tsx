@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { saveAuth, isAuthenticated, getUserRole } from "@/utils/auth";
 import { canAccessPath, getFirstAllowedPath, parsePermissions } from "@/permissions/can";
-import { getPresetPermissions, looksLikeCatalogPermissions } from "@/permissions/catalog";
+import { getPresetPermissions, looksLikeCatalogPermissions, ensurePageKeysForGrants } from "@/permissions/catalog";
 
 const Login = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -84,7 +84,18 @@ const Login = () => {
                 const effectiveRole: 'admin' | 'store' = roleKey === "store user" ? "store" : "admin";
 
                 let permissions = parsePermissions(response.user?.permissions);
-                if (!permissions.length || !looksLikeCatalogPermissions(permissions)) {
+                const catalogKeys = permissions.filter(
+                    (k) =>
+                        k === "*" ||
+                        k.startsWith("module.") ||
+                        k.startsWith("page.") ||
+                        k.startsWith("action.") ||
+                        k.startsWith("field.") ||
+                        k.startsWith("section."),
+                );
+                if (catalogKeys.length > 0) {
+                    permissions = ensurePageKeysForGrants(catalogKeys);
+                } else if (!permissions.length || !looksLikeCatalogPermissions(permissions)) {
                     const presets = getPresetPermissions(backendRoleName);
                     if (presets.length) permissions = presets;
                 }

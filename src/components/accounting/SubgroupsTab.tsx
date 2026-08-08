@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import { usePageActions } from "@/permissions/pageActions";
 import { apiClient } from "@/lib/api";
 
 interface Subgroup {
@@ -66,6 +67,14 @@ interface Subgroup {
 
 
 export const SubgroupsTab = () => {
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    canExport,
+    canPrint,
+    canMenuMore,
+  } = usePageActions("accounting.chart");
   const [subgroups, setSubgroups] = useState<Subgroup[]>([]);
   const [mainGroups, setMainGroups] = useState<
     { id: string; name: string; code: string }[]
@@ -421,42 +430,50 @@ export const SubgroupsTab = () => {
             <CardTitle className="text-lg font-semibold">Subgroups</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              onClick={() => {
-                resetForm();
-                setIsAddDialogOpen(true);
-              }}
-              variant="outline"
-              size="sm"
-              className="transition-all duration-200 hover:scale-105"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Add New Subgroup
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="bg-card border-border z-50"
+            {canCreate && (
+              <Button
+                onClick={() => {
+                  resetForm();
+                  setIsAddDialogOpen(true);
+                }}
+                variant="outline"
+                size="sm"
+                className="transition-all duration-200 hover:scale-105"
               >
-                <DropdownMenuItem
-                  onClick={handleExportCSV}
-                  className="cursor-pointer"
+                <Plus className="h-4 w-4 mr-1" />
+                Add New Subgroup
+              </Button>
+            )}
+            {(canMenuMore || canExport || canPrint) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="bg-card border-border z-50"
                 >
-                  Export to CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handlePrintList}
-                  className="cursor-pointer"
-                >
-                  Print List
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {canExport && (
+                    <DropdownMenuItem
+                      onClick={handleExportCSV}
+                      className="cursor-pointer"
+                    >
+                      Export to CSV
+                    </DropdownMenuItem>
+                  )}
+                  {canPrint && (
+                    <DropdownMenuItem
+                      onClick={handlePrintList}
+                      className="cursor-pointer"
+                    >
+                      Print List
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -598,18 +615,20 @@ export const SubgroupsTab = () => {
                         </td>
                         <td className="p-3">
                           <div className="flex items-center gap-2">
-                            <ActionButtonTooltip label="Edit" variant="edit">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditSubgroup(subgroup)}
-                                className="text-primary hover:text-primary/80 transition-colors"
-                              >
-                                <Pencil className="h-4 w-4 mr-1" />
-                                Edit
-                              </Button>
-                            </ActionButtonTooltip>
-                            {subgroup.canDelete && !isFixedSubgroup && (
+                            {canEdit && (
+                              <ActionButtonTooltip label="Edit" variant="edit">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditSubgroup(subgroup)}
+                                  className="text-primary hover:text-primary/80 transition-colors"
+                                >
+                                  <Pencil className="h-4 w-4 mr-1" />
+                                  Edit
+                                </Button>
+                              </ActionButtonTooltip>
+                            )}
+                            {canDelete && subgroup.canDelete && !isFixedSubgroup && (
                               <ActionButtonTooltip
                                 label="Delete"
                                 variant="delete"

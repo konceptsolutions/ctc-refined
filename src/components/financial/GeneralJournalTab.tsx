@@ -21,6 +21,7 @@ import {
   drHeaderClass,
   drValueClass,
 } from "@/utils/accountingColors";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface JournalEntry {
   id: number;
@@ -34,6 +35,7 @@ interface JournalEntry {
 }
 
 export const GeneralJournalTab = () => {
+  const { canExport, canPrint } = usePageActions("financial.general-journal");
   const { toast } = useToast();
   const [searchType, setSearchType] = useState("voucher");
   const [searchValue, setSearchValue] = useState("");
@@ -201,11 +203,15 @@ export const GeneralJournalTab = () => {
             General Journal
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleExportCSV}>
-              <Download className="h-4 w-4 mr-1" />
-              Export CSV
-            </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
+            {canExport && (
+              <Button variant="outline" size="sm" onClick={handleExportCSV}>
+                <Download className="h-4 w-4 mr-1" />
+                Export CSV
+              </Button>
+            )}
+            {canPrint && (
+              <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
+            )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span className="px-3 py-1 bg-muted rounded-full">
                 {totalEntries} entries

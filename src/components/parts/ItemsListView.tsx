@@ -77,6 +77,7 @@ import { openPrintHtml } from "@/utils/printUtils";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { CompactPartForm } from "./CompactPartForm";
+import { usePageActions } from "@/permissions/pageActions";
 
 export interface Item {
   id: string;
@@ -230,6 +231,14 @@ export const ItemsListView = ({
   partNoOptions: partNoOptionsProp = [],
 }: ItemsListViewProps) => {
   const { toast } = useToast();
+  const {
+    canEdit,
+    canDelete,
+    canStatus,
+    canExport,
+    canMenuMore,
+  } = usePageActions("partentry.itemslist");
+  const canShowExport = canExport || canMenuMore;
   const [pageJumpValue, setPageJumpValue] = useState<string>("");
   const [reserveStockDialogOpen, setReserveStockDialogOpen] = useState(false);
   const [selectedItemForReserve, setSelectedItemForReserve] =
@@ -1613,60 +1622,62 @@ export const ItemsListView = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                <Download className="w-3.5 h-3.5" />
-                Export
-                <ChevronDown className="w-3 h-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem
-                onClick={handleExportPDF}
-                className="cursor-pointer"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Export as PDF
-              </DropdownMenuItem>
-              {/* <DropdownMenuItem
-                onClick={handleExportCSV}
-                className="cursor-pointer"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export as CSV
-              </DropdownMenuItem> */}
-              <DropdownMenuItem
-                onClick={handleExportExcel}
-                className="cursor-pointer"
-              >
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Export as Excel
-              </DropdownMenuItem>
-              {/* <DropdownMenuItem
-                onClick={handleExportTXT}
-                className="cursor-pointer"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Export as TXT
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleExportJSON}
-                className="cursor-pointer"
-              >
-                <FileJson className="w-4 h-4 mr-2" />
-                Export as JSON
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={handleImport}
-                className="cursor-pointer"
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Import Data
-              </DropdownMenuItem> */}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canShowExport && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                  <Download className="w-3.5 h-3.5" />
+                  Export
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onClick={handleExportPDF}
+                  className="cursor-pointer"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Export as PDF
+                </DropdownMenuItem>
+                {/* <DropdownMenuItem
+                  onClick={handleExportCSV}
+                  className="cursor-pointer"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export as CSV
+                </DropdownMenuItem> */}
+                <DropdownMenuItem
+                  onClick={handleExportExcel}
+                  className="cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Export as Excel
+                </DropdownMenuItem>
+                {/* <DropdownMenuItem
+                  onClick={handleExportTXT}
+                  className="cursor-pointer"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Export as TXT
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleExportJSON}
+                  className="cursor-pointer"
+                >
+                  <FileJson className="w-4 h-4 mr-2" />
+                  Export as JSON
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={handleImport}
+                  className="cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Import Data
+                </DropdownMenuItem> */}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -2193,58 +2204,72 @@ export const ItemsListView = ({
                             })()}
                           </TableCell>
                           <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button className="flex items-center gap-1 cursor-pointer focus:outline-none">
-                                  <Badge
-                                    variant="outline"
-                                    className={cn(
-                                      "text-[10px] px-1.5 py-0 cursor-pointer",
-                                      item.status === "Active"
-                                        ? "border-success text-success bg-success/10"
-                                        : "border-destructive text-destructive bg-destructive/10",
-                                    )}
-                                  >
-                                    {item.status}
-                                    <ChevronDown className="w-2.5 h-2.5 ml-0.5" />
-                                  </Badge>
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="start"
-                                className="bg-popover border border-border shadow-lg z-50"
-                              >
-                                {item.status === "Active" ? (
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      onStatusChange?.(item, "Inactive");
-                                      toast({
-                                        title: "Status Updated",
-                                        description: `${item.partNo} has been set to Inactive`,
-                                      });
-                                    }}
-                                    className="text-xs cursor-pointer"
-                                  >
-                                    <span className="w-2 h-2 rounded-full bg-destructive mr-2" />
-                                    Set Inactive
-                                  </DropdownMenuItem>
-                                ) : (
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      onStatusChange?.(item, "Active");
-                                      toast({
-                                        title: "Status Updated",
-                                        description: `${item.partNo} has been set to Active`,
-                                      });
-                                    }}
-                                    className="text-xs cursor-pointer"
-                                  >
-                                    <span className="w-2 h-2 rounded-full bg-success mr-2" />
-                                    Set Active
-                                  </DropdownMenuItem>
+                            {canStatus ? (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button className="flex items-center gap-1 cursor-pointer focus:outline-none">
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "text-[10px] px-1.5 py-0 cursor-pointer",
+                                        item.status === "Active"
+                                          ? "border-success text-success bg-success/10"
+                                          : "border-destructive text-destructive bg-destructive/10",
+                                      )}
+                                    >
+                                      {item.status}
+                                      <ChevronDown className="w-2.5 h-2.5 ml-0.5" />
+                                    </Badge>
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align="start"
+                                  className="bg-popover border border-border shadow-lg z-50"
+                                >
+                                  {item.status === "Active" ? (
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        onStatusChange?.(item, "Inactive");
+                                        toast({
+                                          title: "Status Updated",
+                                          description: `${item.partNo} has been set to Inactive`,
+                                        });
+                                      }}
+                                      className="text-xs cursor-pointer"
+                                    >
+                                      <span className="w-2 h-2 rounded-full bg-destructive mr-2" />
+                                      Set Inactive
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        onStatusChange?.(item, "Active");
+                                        toast({
+                                          title: "Status Updated",
+                                          description: `${item.partNo} has been set to Active`,
+                                        });
+                                      }}
+                                      className="text-xs cursor-pointer"
+                                    >
+                                      <span className="w-2 h-2 rounded-full bg-success mr-2" />
+                                      Set Active
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px] px-1.5 py-0",
+                                  item.status === "Active"
+                                    ? "border-success text-success bg-success/10"
+                                    : "border-destructive text-destructive bg-destructive/10",
                                 )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                              >
+                                {item.status}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="text-xs">
                             {item.weight || "-"}
@@ -2375,47 +2400,50 @@ export const ItemsListView = ({
                                   />
                                 </Button>
                               </ActionButtonTooltip>
-                              <ActionButtonTooltip label="Edit" variant="edit">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6"
-                                  onClick={() => onEdit?.(item)}
-                                >
-                                  <Edit className="w-3 h-3 text-primary" />
-                                </Button>
-                              </ActionButtonTooltip>
-                              {item.canDelete ? (
-                                <ActionButtonTooltip
-                                  label="Delete"
-                                  variant="delete"
-                                >
+                              {canEdit && (
+                                <ActionButtonTooltip label="Edit" variant="edit">
                                   <Button
                                     variant="ghost"
                                     size="icon"
                                     className="h-6 w-6"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setItemToDelete(item);
-                                      setDeleteConfirmOpen(true);
-                                    }}
+                                    onClick={() => onEdit?.(item)}
                                   >
-                                    <Trash className="w-3 h-3 text-destructive" />
+                                    <Edit className="w-3 h-3 text-primary" />
                                   </Button>
                                 </ActionButtonTooltip>
-                              ) : (
-                                <ActionButtonTooltip
-                                  label={
-                                    item.deleteBlockReason ||
-                                    "Cannot delete: stock must be zero with no adjustment, direct purchase, or sales history"
-                                  }
-                                  variant="default"
-                                >
-                                  <span className="inline-flex h-6 w-6 items-center justify-center opacity-35">
-                                    <Trash className="w-3 h-3 text-muted-foreground" />
-                                  </span>
-                                </ActionButtonTooltip>
                               )}
+                              {canDelete &&
+                                (item.canDelete ? (
+                                  <ActionButtonTooltip
+                                    label="Delete"
+                                    variant="delete"
+                                  >
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setItemToDelete(item);
+                                        setDeleteConfirmOpen(true);
+                                      }}
+                                    >
+                                      <Trash className="w-3 h-3 text-destructive" />
+                                    </Button>
+                                  </ActionButtonTooltip>
+                                ) : (
+                                  <ActionButtonTooltip
+                                    label={
+                                      item.deleteBlockReason ||
+                                      "Cannot delete: stock must be zero with no adjustment, direct purchase, or sales history"
+                                    }
+                                    variant="default"
+                                  >
+                                    <span className="inline-flex h-6 w-6 items-center justify-center opacity-35">
+                                      <Trash className="w-3 h-3 text-muted-foreground" />
+                                    </span>
+                                  </ActionButtonTooltip>
+                                ))}
                             </div>
                           </TableCell>
                         </TableRow>

@@ -71,6 +71,7 @@ import { StoreSalesInvoiceReceipt } from "./StoreSalesInvoiceReceipt";
 import { StoreEditDPO } from "./StoreEditDPO";
 import { StoreEditPO } from "./StoreEditPO";
 import { StoreEditSalesInvoice } from "./StoreEditSalesInvoice";
+import { usePageActions } from "@/permissions/pageActions";
 import { StoreLocationAssign } from "./StoreLocationAssign";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
@@ -391,6 +392,7 @@ const orderContainsSelectedPart = (
 export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const { addNotification } = useNotifications();
   const [searchParams] = useSearchParams();
+  const { canEdit, canApprove, canPrint } = usePageActions("store.orders");
   const isStoreOnlyUser = getUserRole() === "store" || isStoreUserRole();
   const [orders, setOrders] = useState<DirectPurchaseOrder[]>([]);
   const [transferInOrders, setTransferInOrders] = useState<DirectPurchaseOrder[]>([]);
@@ -2010,15 +2012,17 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       >
                                         <Eye className="w-4 h-4" />
                                       </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handlePrintPurchaseOrder(row.raw as PurchaseOrder)}
-                                        title="Print Order"
-                                      >
-                                        <Printer className="w-4 h-4" />
-                                      </Button>
-                                      {(row.raw as PurchaseOrder).status === "Received" && (
+                                      {canPrint && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handlePrintPurchaseOrder(row.raw as PurchaseOrder)}
+                                          title="Print Order"
+                                        >
+                                          <Printer className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      {canEdit && (row.raw as PurchaseOrder).status === "Received" && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
@@ -2030,7 +2034,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                           <MapPin className="w-4 h-4" />
                                         </Button>
                                       )}
-                                      {(row.raw as PurchaseOrder).status !== "Received" &&
+                                      {canApprove &&
+                                        (row.raw as PurchaseOrder).status !== "Received" &&
                                         String((row.raw as PurchaseOrder).status || "")
                                           .trim()
                                           .toLowerCase() === "stock receiving pending" && (
@@ -2043,7 +2048,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                           <CheckCircle className="w-4 h-4" />
                                         </Button>
                                       )}
-                                      {(row.raw as PurchaseOrder).status !== "Received" &&
+                                      {canApprove &&
+                                        (row.raw as PurchaseOrder).status !== "Received" &&
                                         String((row.raw as PurchaseOrder).status || "")
                                           .trim()
                                           .toLowerCase() !== "stock receiving pending" && (
@@ -2070,25 +2076,29 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       >
                                         <Eye className="w-4 h-4" />
                                       </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleAssignLocation(row.raw as DirectPurchaseOrder)}
-                                        title="Assign Location"
-                                        disabled={(row.raw as DirectPurchaseOrder).status !== "Received"}
-                                        className={(row.raw as DirectPurchaseOrder).status !== "Received" ? "opacity-50 cursor-not-allowed" : undefined}
-                                      >
-                                        <MapPin className="w-4 h-4" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handlePrintReceipt(row.raw as DirectPurchaseOrder)}
-                                        title="Print Receipt"
-                                      >
-                                        <Printer className="w-4 h-4" />
-                                      </Button>
-                                      {(row.raw as DirectPurchaseOrder).status !== "Received" && (
+                                      {canEdit && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleAssignLocation(row.raw as DirectPurchaseOrder)}
+                                          title="Assign Location"
+                                          disabled={(row.raw as DirectPurchaseOrder).status !== "Received"}
+                                          className={(row.raw as DirectPurchaseOrder).status !== "Received" ? "opacity-50 cursor-not-allowed" : undefined}
+                                        >
+                                          <MapPin className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      {canPrint && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handlePrintReceipt(row.raw as DirectPurchaseOrder)}
+                                          title="Print Receipt"
+                                        >
+                                          <Printer className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      {canApprove && (row.raw as DirectPurchaseOrder).status !== "Received" && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
@@ -2101,7 +2111,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     </>
                                   )}
 
-                                  {row.type === "stock-out" && !isStockOutBlocked(row.status) && (
+                                  {row.type === "stock-out" && !isStockOutBlocked(row.status) && canApprove && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -2178,15 +2188,17 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   >
                                     <Eye className="w-4 h-4" />
                                   </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handlePrintPurchaseOrder(order)}
-                                    title="Print Order"
-                                  >
-                                    <Printer className="w-4 h-4" />
-                                  </Button>
-                                  {order.status === "Received" && (
+                                  {canPrint && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handlePrintPurchaseOrder(order)}
+                                      title="Print Order"
+                                    >
+                                      <Printer className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  {canEdit && order.status === "Received" && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -2196,7 +2208,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       <MapPin className="w-4 h-4" />
                                     </Button>
                                   )}
-                                  {order.status !== "Received" &&
+                                  {canApprove &&
+                                    order.status !== "Received" &&
                                     String(order.status || "")
                                       .trim()
                                       .toLowerCase() === "stock receiving pending" && (
@@ -2209,7 +2222,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       <CheckCircle className="w-4 h-4" />
                                     </Button>
                                   )}
-                                  {order.status !== "Received" &&
+                                  {canApprove &&
+                                    order.status !== "Received" &&
                                     String(order.status || "")
                                       .trim()
                                       .toLowerCase() !== "stock receiving pending" && (
@@ -2293,7 +2307,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   >
                                     <Eye className="w-4 h-4" />
                                   </Button>
-                                  {order.status !== "Cancelled" && (
+                                  {canEdit && order.status !== "Cancelled" && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -2305,15 +2319,17 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       <MapPin className="w-4 h-4" />
                                     </Button>
                                   )}
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handlePrintReceipt(order)}
-                                    title="Print Receipt"
-                                  >
-                                    <Printer className="w-4 h-4" />
-                                  </Button>
-                                  {order.status !== "Received" && (
+                                  {canPrint && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handlePrintReceipt(order)}
+                                      title="Print Receipt"
+                                    >
+                                      <Printer className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  {canApprove && order.status !== "Received" && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -2384,27 +2400,31 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell>{invoice.deliveredTo || "-"}</TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() =>
-                                      handlePrintDeliveryChallan(invoice)
-                                    }
-                                    title="Print Delivery Challan"
-                                  >
-                                    <Printer className="w-4 h-4 mr-1" />
-                                    Challan
-                                  </Button>
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={() => handlePrintStockOutReceipt(invoice)}
-                                    title="Confirm Stock Out"
-                                    disabled={isStockOutBlocked(invoice.status)}
-                                  >
-                                    <ArrowDownCircle className="w-4 h-4 mr-1" />
-                                    {getStockOutButtonLabel(invoice.status)}
-                                  </Button>
+                                  {canPrint && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() =>
+                                        handlePrintDeliveryChallan(invoice)
+                                      }
+                                      title="Print Delivery Challan"
+                                    >
+                                      <Printer className="w-4 h-4 mr-1" />
+                                      Challan
+                                    </Button>
+                                  )}
+                                  {canApprove && (
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => handlePrintStockOutReceipt(invoice)}
+                                      title="Confirm Stock Out"
+                                      disabled={isStockOutBlocked(invoice.status)}
+                                    >
+                                      <ArrowDownCircle className="w-4 h-4 mr-1" />
+                                      {getStockOutButtonLabel(invoice.status)}
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -2478,45 +2498,51 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   </Button>
                                   {order.status !== "Cancelled" && (
                                     <>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleEditDPO(order)}
-                                        title="Edit Order"
-                                        disabled={order.status === "Received"}
-                                        className={
-                                          order.status === "Received"
-                                            ? "opacity-50 cursor-not-allowed"
-                                            : undefined
-                                        }
-                                      >
-                                        <Edit className="w-4 h-4" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleAssignLocation(order)}
-                                        title="Assign Location"
-                                        disabled={order.status !== "Received"}
-                                        className={
-                                          order.status !== "Received"
-                                            ? "opacity-50 cursor-not-allowed"
-                                            : undefined
-                                        }
-                                      >
-                                        <MapPin className="w-4 h-4" />
-                                      </Button>
+                                      {canEdit && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleEditDPO(order)}
+                                          title="Edit Order"
+                                          disabled={order.status === "Received"}
+                                          className={
+                                            order.status === "Received"
+                                              ? "opacity-50 cursor-not-allowed"
+                                              : undefined
+                                          }
+                                        >
+                                          <Edit className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      {canEdit && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleAssignLocation(order)}
+                                          title="Assign Location"
+                                          disabled={order.status !== "Received"}
+                                          className={
+                                            order.status !== "Received"
+                                              ? "opacity-50 cursor-not-allowed"
+                                              : undefined
+                                          }
+                                        >
+                                          <MapPin className="w-4 h-4" />
+                                        </Button>
+                                      )}
                                     </>
                                   )}
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handlePrintReceipt(order)}
-                                    title="Print Receipt"
-                                  >
-                                    <Printer className="w-4 h-4" />
-                                  </Button>
-                                  {order.status !== "Received" && (
+                                  {canPrint && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handlePrintReceipt(order)}
+                                      title="Print Receipt"
+                                    >
+                                      <Printer className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  {canApprove && order.status !== "Received" && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -2589,25 +2615,29 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell>{invoice.deliveredTo || "-"}</TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handlePrintDeliveryChallan(invoice)}
-                                    title="Print Delivery Challan"
-                                  >
-                                    <Printer className="w-4 h-4 mr-1" />
-                                    Challan
-                                  </Button>
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={() => handlePrintStockOutReceipt(invoice)}
-                                    title="Confirm Stock Out"
-                                    disabled={isStockOutBlocked(invoice.status)}
-                                  >
-                                    <ArrowDownCircle className="w-4 h-4 mr-1" />
-                                    {getStockOutButtonLabel(invoice.status)}
-                                  </Button>
+                                  {canPrint && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handlePrintDeliveryChallan(invoice)}
+                                      title="Print Delivery Challan"
+                                    >
+                                      <Printer className="w-4 h-4 mr-1" />
+                                      Challan
+                                    </Button>
+                                  )}
+                                  {canApprove && (
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => handlePrintStockOutReceipt(invoice)}
+                                      title="Confirm Stock Out"
+                                      disabled={isStockOutBlocked(invoice.status)}
+                                    >
+                                      <ArrowDownCircle className="w-4 h-4 mr-1" />
+                                      {getStockOutButtonLabel(invoice.status)}
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>

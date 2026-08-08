@@ -34,6 +34,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { formatPurchasePrice } from "@/utils/purchasePriceRound";
+import { usePageActions } from "@/permissions/pageActions";
 import {
   FileText,
   Tag,
@@ -155,6 +156,7 @@ interface PriceHistoryEntry {
 const samplePriceHistory: PriceHistoryEntry[] = [];
 
 export const PricingCosting = () => {
+  const { canEdit } = usePageActions("pricing.home");
   const [activeTab, setActiveTab] = useState("price-updating");
   const [items, setItems] = useState<PriceItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1881,15 +1883,17 @@ export const PricingCosting = () => {
                 <RefreshCw className="w-4 h-4" />
                 Refresh
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowBulkPercentage(true)}
-                className="gap-2"
-                disabled={selectedCount === 0}
-              >
-                <Percent className="w-4 h-4" />
-                Bulk % Adjust
-              </Button>
+              {canEdit && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowBulkPercentage(true)}
+                  className="gap-2"
+                  disabled={selectedCount === 0}
+                >
+                  <Percent className="w-4 h-4" />
+                  Bulk % Adjust
+                </Button>
+              )}
             </div>
           </div>
 
@@ -2204,43 +2208,51 @@ export const PricingCosting = () => {
                               {formatCurrency(item.priceA)}
                             </TableCell>
                             <TableCell className="bg-primary/5">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={
-                                  item.newPriceA === "" ? "" : item.newPriceA
-                                }
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  handlePriceChange(
-                                    item.id,
-                                    "newPriceA",
-                                    val === "" ? "" : parseFloat(val) || 0,
-                                  );
-                                }}
-                                className="w-24 h-8 text-center"
-                              />
+                              {canEdit ? (
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={
+                                    item.newPriceA === "" ? "" : item.newPriceA
+                                  }
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    handlePriceChange(
+                                      item.id,
+                                      "newPriceA",
+                                      val === "" ? "" : parseFloat(val) || 0,
+                                    );
+                                  }}
+                                  className="w-24 h-8 text-center"
+                                />
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
                               {formatCurrency(item.priceB)}
                             </TableCell>
                             <TableCell className="bg-primary/5">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={
-                                  item.newPriceB === "" ? "" : item.newPriceB
-                                }
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  handlePriceChange(
-                                    item.id,
-                                    "newPriceB",
-                                    val === "" ? "" : parseFloat(val) || 0,
-                                  );
-                                }}
-                                className="w-24 h-8 text-center"
-                              />
+                              {canEdit ? (
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={
+                                    item.newPriceB === "" ? "" : item.newPriceB
+                                  }
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    handlePriceChange(
+                                      item.id,
+                                      "newPriceB",
+                                      val === "" ? "" : parseFloat(val) || 0,
+                                    );
+                                  }}
+                                  className="w-24 h-8 text-center"
+                                />
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
                               {item.priceM > 0
@@ -2248,37 +2260,45 @@ export const PricingCosting = () => {
                                 : "Rs 0.00"}
                             </TableCell>
                             <TableCell className="bg-primary/5">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={
-                                  item.newPriceM === "" ? "" : item.newPriceM
-                                }
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  handlePriceChange(
-                                    item.id,
-                                    "newPriceM",
-                                    val === "" ? "" : parseFloat(val) || 0,
-                                  );
-                                }}
-                                placeholder=""
-                                className="w-24 h-8 text-center"
-                              />
+                              {canEdit ? (
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={
+                                    item.newPriceM === "" ? "" : item.newPriceM
+                                  }
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    handlePriceChange(
+                                      item.id,
+                                      "newPriceM",
+                                      val === "" ? "" : parseFloat(val) || 0,
+                                    );
+                                  }}
+                                  placeholder=""
+                                  className="w-24 h-8 text-center"
+                                />
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
                             </TableCell>
                             <TableCell className="text-center">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleUpdateSingleItem(item)}
-                                disabled={
-                                  !hasChanges || loading || updatingItemId === item.id
-                                }
-                                className="gap-1"
-                              >
-                                {updatingItemId === item.id ? "Updating..." : "Update"}
-                              </Button>
+                              {canEdit ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleUpdateSingleItem(item)}
+                                  disabled={
+                                    !hasChanges || loading || updatingItemId === item.id
+                                  }
+                                  className="gap-1"
+                                >
+                                  {updatingItemId === item.id ? "Updating..." : "Update"}
+                                </Button>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
                             </TableCell>
                             <TableCell className="text-center">
                               {(() => {
@@ -2416,21 +2436,25 @@ export const PricingCosting = () => {
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="Reason for update..."
-                    value={updateReason}
-                    onChange={(e) => setUpdateReason(e.target.value)}
-                    className="w-48"
-                  />
-                  <Button variant="outline" onClick={handleReset}>
-                    Reset
-                  </Button>
-                  <Button
-                    onClick={handleApplyChanges}
-                    disabled={modifiedCount === 0}
-                  >
-                    Apply {modifiedCount} Changes
-                  </Button>
+                  {canEdit && (
+                    <>
+                      <Input
+                        placeholder="Reason for update..."
+                        value={updateReason}
+                        onChange={(e) => setUpdateReason(e.target.value)}
+                        className="w-48"
+                      />
+                      <Button variant="outline" onClick={handleReset}>
+                        Reset
+                      </Button>
+                      <Button
+                        onClick={handleApplyChanges}
+                        disabled={modifiedCount === 0}
+                      >
+                        Apply {modifiedCount} Changes
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -3010,7 +3034,9 @@ export const PricingCosting = () => {
             >
               Cancel
             </Button>
-            <Button onClick={handleSaveLandedCost}>Calculate & Save</Button>
+            <Button onClick={handleSaveLandedCost} disabled={!canEdit}>
+              Calculate & Save
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3063,7 +3089,9 @@ export const PricingCosting = () => {
             <Button variant="outline" onClick={() => setShowSetMargins(false)}>
               Cancel
             </Button>
-            <Button onClick={handleApplyMargins}>Apply Margins</Button>
+            <Button onClick={handleApplyMargins} disabled={!canEdit}>
+              Apply Margins
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3234,7 +3262,7 @@ export const PricingCosting = () => {
             </Button>
             <Button
               onClick={handleApplyBulkPercentage}
-              disabled={selectedCount === 0}
+              disabled={!canEdit || selectedCount === 0}
             >
               Apply Adjustment
             </Button>

@@ -59,6 +59,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { PrintableDocument, printDocument } from "./PrintableDocument";
+import { usePageActions } from "@/permissions/pageActions";
 import { apiClient } from "@/lib/api";
 import { formatPurchasePrice } from "@/utils/purchasePriceRound";
 import {
@@ -252,6 +253,7 @@ export const SalesInquiry = ({
   hideShortcuts = false,
 }: SalesInquiryProps = {}) => {
   const navigate = useNavigate();
+  const { canCreate } = usePageActions("sales.inquiry");
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -3326,9 +3328,11 @@ export const SalesInquiry = ({
               }}>
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} disabled={inquiryItems.length === 0}>
-                Create Inquiry
-              </Button>
+              {canCreate && (
+                <Button onClick={handleSubmit} disabled={inquiryItems.length === 0}>
+                  Create Inquiry
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -3346,7 +3350,7 @@ export const SalesInquiry = ({
               {/* <p className="text-sm text-muted-foreground mt-1">Search for part details using Item filter</p> */}
             </div>
             <div className="flex items-center gap-2">
-              {!hideShortcuts && (
+              {!hideShortcuts && canCreate && (
                 <>
                   <Button
                     variant="default"

@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
+import { usePageActions } from "@/permissions/pageActions";
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
 import { Label } from "@/components/ui/label";
 
@@ -113,6 +114,7 @@ const roleColors: Record<string, string> = {
 };
 
 export const ActivityLogsTab = () => {
+  const { canExport } = usePageActions("settings.activity");
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -344,10 +346,12 @@ export const ActivityLogsTab = () => {
             </SelectContent>
           </Select>
         </div>
-        <Button variant="outline" className="gap-2" onClick={handleExport}>
-          <Download className="w-4 h-4" />
-          Export CSV
-        </Button>
+        {canExport && (
+          <Button variant="outline" className="gap-2" onClick={handleExport}>
+            <Download className="w-4 h-4" />
+            Export CSV
+          </Button>
+        )}
       </div>
 
       {/* Logs Table */}

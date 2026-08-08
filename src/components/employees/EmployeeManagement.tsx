@@ -37,6 +37,7 @@ import {
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { usePageActions } from "@/permissions/pageActions";
 import { calculateAccruedSalary } from "@/lib/employeePayroll";
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
 
@@ -152,6 +153,7 @@ const getCurrentPayrollMonth = () => currentMonthMax();
 
 export const EmployeeManagement = () => {
   const { toast } = useToast();
+  const { canCreate, canEdit } = usePageActions("employees.staff");
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -628,10 +630,12 @@ export const EmployeeManagement = () => {
                 </Select>
               </div>
             </div>
-            <Button onClick={openCreateDialog}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Employee
-            </Button>
+            {canCreate && (
+              <Button onClick={openCreateDialog}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Employee
+              </Button>
+            )}
           </div>
 
           <div className="rounded-md border overflow-x-auto">
@@ -691,17 +695,21 @@ export const EmployeeManagement = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-center gap-1 flex-wrap">
-                          <Button size="sm" variant="outline" onClick={() => openEditDialog(employee)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openTransactionDialog(employee, "salary_accrual")}
-                          >
-                            <Receipt className="h-3.5 w-3.5 mr-1" />
-                            Accrue
-                          </Button>
+                          {canEdit && (
+                            <Button size="sm" variant="outline" onClick={() => openEditDialog(employee)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canCreate && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openTransactionDialog(employee, "salary_accrual")}
+                            >
+                              <Receipt className="h-3.5 w-3.5 mr-1" />
+                              Accrue
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"

@@ -326,7 +326,8 @@ function getParentMap(): Map<string, string> {
 
 /**
  * When a page/field/action is granted, also grant parent page + module keys.
- * Without this, sidebar/route checks for `module.*` fail even if pages were granted.
+ * Use for navigation helpers only — do NOT persist expanded keys into Role.permissions
+ * or localStorage, or page-level matrix grants become full-module access.
  */
 export function expandPermissionAncestors(keys: string[]): string[] {
   if (!keys?.length) return [];
@@ -358,28 +359,77 @@ function isDescendantOf(
 }
 
 /**
- * Hierarchical permission check:
- * - exact key or *
- * - parent of required is granted (module covers its pages/actions)
- * - any granted key is under required (page grant satisfies module check)
+ * Hierarchical permission check (respects Roles & Permissions matrix):
+ * - exact key or `*`
+ * - a child grant implies its parents (action ⇒ page ⇒ module) so page tabs work
+ * - a clean page grant (no action/field/section keys under it) implies all its actions
+ * - if specific action/field/section keys exist under a page, ONLY those leaves apply
+ * - a clean module grant implies all pages; if specific pages exist, only those pages
  */
 export function hasPermissionKey(
   granted: string[] | undefined | null,
   required: string | undefined | null,
 ): boolean {
   if (!required) return true;
-  const expanded = expandPermissionAncestors(granted || []);
-  if (expanded.includes("*") || expanded.includes(required)) return true;
+  const raw = [...new Set((granted || []).map(String).filter(Boolean))];
+  if (raw.includes("*") || raw.includes(required)) return true;
+
   const parents = getParentMap();
+
+  // Child ⇒ parent: having an action grants its page; having a page grants its module
+  if (raw.some((g) => isDescendantOf(g, required, parents))) return true;
+
+  const pagesUnderModule = (modKey: string) =>
+    raw.filter((g) => g.startsWith("page.") && isDescendantOf(g, modKey, parents));
+
+  const leavesUnderPage = (pageKey: string) =>
+    raw.filter(
+      (g) =>
+        (g.startsWith("action.") ||
+          g.startsWith("field.") ||
+          g.startsWith("section.")) &&
+        isDescendantOf(g, pageKey, parents),
+    );
+
+  // Parent ⇒ child, with guards so unchecked actions stay denied
   let p = parents.get(required);
   while (p) {
-    if (expanded.includes(p)) return true;
+    if (raw.includes(p)) {
+      if (p.startsWith("module.") && pagesUnderModule(p).length > 0) {
+        p = parents.get(p);
+        continue;
+      }
+      if (p.startsWith("page.") && leavesUnderPage(p).length > 0) {
+        // Page has an explicit action/field list — do not imply unchecked actions
+        p = parents.get(p);
+        continue;
+      }
+      return true;
+    }
     p = parents.get(p);
   }
-  for (const g of expanded) {
-    if (isDescendantOf(g, required, parents)) return true;
-  }
+
   return false;
+}
+
+/** Parent key for a permission, if any. */
+export function getPermissionParent(key: string): string | undefined {
+  return getParentMap().get(key);
+}
+
+/** Ensure page keys are present when any of their actions/fields are granted. */
+export function ensurePageKeysForGrants(keys: string[]): string[] {
+  const parents = getParentMap();
+  const set = new Set(keys.filter(Boolean));
+  for (const key of [...set]) {
+    let p = parents.get(key);
+    while (p) {
+      if (p.startsWith("page.")) set.add(p);
+      if (p.startsWith("module.")) break;
+      p = parents.get(p);
+    }
+  }
+  return [...set];
 }
 
 /** True when the list looks like the hierarchical catalog (not legacy coarse keys). */
@@ -553,12 +603,18 @@ export function getPresetPermissions(roleName: string): string[] {
   }
 
   if (name === "sales") {
-    // Can create/edit quotations & invoices, but cannot change status
+    // Can create/edit quotations & invoices, but cannot approve / change status / action menu
     return keysForPages(["sales.quotation", "sales.invoice", "sales.returns"]).filter(
       (k) =>
         k !== "action.sales.invoice.status" &&
         k !== "action.sales.quotation.status" &&
-        k !== "action.sales.returns.status",
+        k !== "action.sales.returns.status" &&
+        k !== "action.sales.invoice.approve" &&
+        k !== "action.sales.quotation.approve" &&
+        k !== "action.sales.returns.approve" &&
+        k !== "action.sales.invoice.menu.more" &&
+        k !== "action.sales.quotation.menu.more" &&
+        k !== "action.sales.returns.menu.more",
     );
   }
 

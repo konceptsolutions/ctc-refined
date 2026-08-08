@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Users, MoreVertical, Eye, Download, Plus } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { usePageActions } from "@/permissions/pageActions";
 import { Badge } from "@/components/ui/badge";
 import {
   getListRowNumber,
@@ -42,6 +43,12 @@ interface MainGroup {
 }
 
 export const MainGroupsTab = () => {
+  const {
+    canCreate,
+    canExport,
+    canPrint,
+    canMenuMore,
+  } = usePageActions("accounting.chart");
   const [mainGroups, setMainGroups] = useState<MainGroup[]>([]);
   const [pageSize, setPageSize] = useState("10");
   const [currentPage, setCurrentPage] = useState(1);
@@ -232,32 +239,38 @@ export const MainGroupsTab = () => {
           <CardTitle className="text-lg font-semibold">Main Groups</CardTitle>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => setIsAddDialogOpen(true)}
-            className="gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Add Main Group
-          </Button>
-          <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="bg-primary text-primary-foreground hover:bg-primary/90">
-              <MoreVertical className="h-4 w-4" />
+          {canCreate && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setIsAddDialogOpen(true)}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add Main Group
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="bg-card border-border z-50">
-            <DropdownMenuItem onClick={handleViewChartOfAccounts} className="cursor-pointer">
-              <Eye className="h-4 w-4 mr-2" />
-              View Chart of Accounts
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleSavePdf} className="cursor-pointer">
-              <Download className="h-4 w-4 mr-2" />
-              Save pdf Chart of Accounts
-            </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          )}
+          {(canMenuMore || canExport || canPrint) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-card border-border z-50">
+                <DropdownMenuItem onClick={handleViewChartOfAccounts} className="cursor-pointer">
+                  <Eye className="h-4 w-4 mr-2" />
+                  View Chart of Accounts
+                </DropdownMenuItem>
+                {(canExport || canPrint) && (
+                  <DropdownMenuItem onClick={handleSavePdf} className="cursor-pointer">
+                    <Download className="h-4 w-4 mr-2" />
+                    Save pdf Chart of Accounts
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -292,7 +305,7 @@ export const MainGroupsTab = () => {
                       variant="default"
                       size="sm"
                       onClick={handleRestoreDefaults}
-                      disabled={loading}
+                      disabled={loading || !canCreate}
                       className="gap-2"
                     >
                       <Plus className="h-4 w-4" />

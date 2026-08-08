@@ -14,6 +14,7 @@ import { printBalanceSheet } from "@/utils/printBalanceSheetPdf";
 import { useToast } from "@/hooks/use-toast";
 import type { BalanceSheetPrintMainGroup } from "@/utils/printBalanceSheetPdf";
 import { amountValueClass } from "@/utils/accountingColors";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface BalanceSheetAccount {
   id: string;
@@ -59,6 +60,7 @@ interface SupplierAccount {
 }
 
 export const BalanceSheetTab = () => {
+  const { canPrint } = usePageActions("financial.balance-sheet");
   const { toast } = useToast();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [loading, setLoading] = useState(true);
@@ -310,11 +312,13 @@ export const BalanceSheetTab = () => {
                 </PopoverContent>
               </Popover>
             </div>
-            <PrintPdfButton
-              onPrint={handlePrint}
-              disabled={loading || !balanceSheetData}
-              label="Print PDF"
-            />
+            {canPrint && (
+              <PrintPdfButton
+                onPrint={handlePrint}
+                disabled={loading || !balanceSheetData}
+                label="Print PDF"
+              />
+            )}
           </div>
         </CardContent>
       </Card>

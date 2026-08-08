@@ -34,6 +34,7 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/ui/searchable-select";
+import { usePageActions } from "@/permissions/pageActions";
 
 const priceInputValue = (n: number | undefined | null) =>
   Number.isFinite(Number(n)) ? String(Number(n)) : "";
@@ -176,6 +177,9 @@ export const PurchaseInquiry = ({
 }: {
   initialPartId?: string;
 } = {}) => {
+  const { canCreate, canEdit, canDelete } = usePageActions(
+    "inventory.purchase-inquiry",
+  );
   // Multi-item list + active row
   const [items, setItems] = useState<PartResult[]>([]);
   const [activePartId, setActivePartId] = useState<string | null>(null);
@@ -1151,10 +1155,12 @@ export const PurchaseInquiry = ({
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-lg">Purchase Inquiry</CardTitle>
-            <Button type="button" size="sm" className="h-8 gap-1.5" onClick={handleAddItem}>
-              <Plus className="w-4 h-4" />
-              Add Item
-            </Button>
+            {canCreate && (
+              <Button type="button" size="sm" className="h-8 gap-1.5" onClick={handleAddItem}>
+                <Plus className="w-4 h-4" />
+                Add Item
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1209,20 +1215,22 @@ export const PurchaseInquiry = ({
                     Click a row to view Purchase / Quotation / Association
                   </span>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 text-xs gap-1.5"
-                  disabled={!pricesDirty || savingPrices || !selectedPart}
-                  onClick={() => void handleSavePrices()}
-                >
-                  {savingPrices ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Save className="w-3.5 h-3.5" />
-                  )}
-                  Update
-                </Button>
+                {canEdit && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={!pricesDirty || savingPrices || !selectedPart}
+                    onClick={() => void handleSavePrices()}
+                  >
+                    {savingPrices ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    Update
+                  </Button>
+                )}
               </div>
               <div className="rounded-md border overflow-x-auto">
                 <Table className="text-xs">
@@ -1301,7 +1309,7 @@ export const PurchaseInquiry = ({
                               if (!isActive) handleActivateRow(item);
                             }}
                           >
-                            {isActive ? (
+                            {isActive && canEdit ? (
                               <Input
                                 type="number"
                                 min="0"
@@ -1329,7 +1337,7 @@ export const PurchaseInquiry = ({
                               if (!isActive) handleActivateRow(item);
                             }}
                           >
-                            {isActive ? (
+                            {isActive && canEdit ? (
                               <Input
                                 type="number"
                                 min="0"
@@ -1378,7 +1386,7 @@ export const PurchaseInquiry = ({
                               if (!isActive) handleActivateRow(item);
                             }}
                           >
-                            {isActive ? (
+                            {isActive && canEdit ? (
                               <Input
                                 type="number"
                                 min="0"
@@ -1401,16 +1409,18 @@ export const PurchaseInquiry = ({
                             )}
                           </TableCell>
                           <TableCell className="text-xs text-center px-1" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                              title="Remove item"
-                              onClick={() => handleRemoveItem(item.id)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                title="Remove item"
+                                onClick={() => handleRemoveItem(item.id)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -1440,20 +1450,22 @@ export const PurchaseInquiry = ({
                     Edit Price A / B / O.Lvl, then Update — same as the selected item
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 text-xs gap-1.5"
-                  disabled={!altPricesDirty || savingAltPrices || alternateItems.length === 0}
-                  onClick={() => void handleSaveAlternatePrices()}
-                >
-                  {savingAltPrices ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Save className="w-3.5 h-3.5" />
-                  )}
-                  Update
-                </Button>
+                {canEdit && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={!altPricesDirty || savingAltPrices || alternateItems.length === 0}
+                    onClick={() => void handleSaveAlternatePrices()}
+                  >
+                    {savingAltPrices ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    Update
+                  </Button>
+                )}
               </div>
               <div className="rounded-md border overflow-x-auto flex-1 min-h-0 max-h-[360px]">
                 <Table className="text-xs">
@@ -1587,7 +1599,7 @@ export const PurchaseInquiry = ({
                               {item.brand || "N/A"}
                             </TableCell>
                             <TableCell className="text-xs p-1">
-                              {item.id ? (
+                              {item.id && canEdit ? (
                                 <Input
                                   type="number"
                                   min="0"
@@ -1611,7 +1623,7 @@ export const PurchaseInquiry = ({
                               )}
                             </TableCell>
                             <TableCell className="text-xs p-1">
-                              {item.id ? (
+                              {item.id && canEdit ? (
                                 <Input
                                   type="number"
                                   min="0"
@@ -1662,7 +1674,7 @@ export const PurchaseInquiry = ({
                               {renderQtyCell(rowInquiry?.khi.bo, rowLoading)}
                             </TableCell>
                             <TableCell className="text-xs p-1">
-                              {item.id ? (
+                              {item.id && canEdit ? (
                                 <Input
                                   type="number"
                                   min="0"
@@ -1841,16 +1853,18 @@ export const PurchaseInquiry = ({
                               {item.quantity}
                             </TableCell>
                             <TableCell className="text-xs text-center px-2 py-1.5">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-primary hover:bg-primary/10"
-                                onClick={() => void handleAddAssociationToList(item)}
-                                title="Add this part to inquiry"
-                                disabled={!item.partId}
-                              >
-                                <Plus className="w-4 h-4" />
-                              </Button>
+                              {canCreate && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-primary hover:bg-primary/10"
+                                  onClick={() => void handleAddAssociationToList(item)}
+                                  title="Add this part to inquiry"
+                                  disabled={!item.partId}
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </Button>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))

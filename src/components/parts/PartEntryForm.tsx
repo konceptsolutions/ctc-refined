@@ -17,6 +17,7 @@ import { compressImage } from "@/utils/imageCompression";
 import { apiClient } from "@/lib/api";
 import { fetchFamilyPartImages } from "@/lib/part-images";
 import { cn } from "@/lib/utils";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface ModelQuantity {
   id: string;
@@ -141,6 +142,7 @@ export const PartEntryForm = ({
   onPartSelected,
   onPartNoSelected,
 }: PartEntryFormProps) => {
+  const { canCreate, canEdit } = usePageActions("partentry.entry");
   const [formData, setFormData] = useState<PartFormData>(initialFormData);
   const [modelQuantities, setModelQuantities] = useState<ModelQuantity[]>([
     { id: "1", model: "", qty: 0 },
@@ -1846,16 +1848,18 @@ export const PartEntryForm = ({
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  onClick={handleNew}
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs px-3"
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  New
-                </Button>
+                {canCreate && (
+                  <Button
+                    type="button"
+                    onClick={handleNew}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs px-3"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    New
+                  </Button>
+                )}
                 <Button
                   type="button"
                   onClick={handleReset}
@@ -4607,21 +4611,25 @@ export const PartEntryForm = ({
             <div className="flex items-center justify-between gap-3 w-full">
               <div className="flex flex-wrap gap-3">
                 {isEditing ? (
-                  <Button
-                    className="gap-1.5 h-7 text-xs px-4 min-w-[140px]"
-                    onClick={() => handleSaveWithMode("update")}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Update Part
-                  </Button>
+                  canEdit && (
+                    <Button
+                      className="gap-1.5 h-7 text-xs px-4 min-w-[140px]"
+                      onClick={() => handleSaveWithMode("update")}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Update Part
+                    </Button>
+                  )
                 ) : (
-                  <Button
-                    className="gap-1.5 h-7 text-xs px-4 min-w-[140px]"
-                    onClick={() => handleSaveWithMode("create")}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Save Part
-                  </Button>
+                  canCreate && (
+                    <Button
+                      className="gap-1.5 h-7 text-xs px-4 min-w-[140px]"
+                      onClick={() => handleSaveWithMode("create")}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Save Part
+                    </Button>
+                  )
                 )}
                 <Button
                   variant="outline"
@@ -4631,7 +4639,7 @@ export const PartEntryForm = ({
                   Reset
                 </Button>
               </div>
-              {isEditing && (
+              {isEditing && canCreate && (
                 <Button
                   variant="secondary"
                   className="gap-1.5 h-7 text-xs px-4 min-w-[140px] shrink-0"

@@ -12,9 +12,6 @@ interface ProtectedRouteProps {
  * ProtectedRoute component
  * Redirects unauthenticated users to login page
  * Enforces module/page permissions from the role matrix
- *
- * Uses sync localStorage permissions (not only React context) so a fresh
- * login is not bounced back to /login while context state is still stale.
  */
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const location = useLocation();
@@ -34,7 +31,6 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   }
 
   void version;
-  // Prefer freshly written localStorage over possibly-stale context after login
   const perms = getStoredPermissions();
 
   if (loading && perms.length === 0) {
@@ -43,11 +39,12 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
   if (!canAccessPath(location.pathname, perms)) {
     const fallback = getFirstAllowedPath(perms);
-    // Never trap an authenticated user on /login due to empty perms
-    if (fallback === '/login' || fallback === location.pathname) {
-      return <>{children}</>;
+    if (fallback && fallback !== location.pathname && fallback !== '/login') {
+      return <Navigate to={fallback} replace />;
     }
-    return <Navigate to={fallback} replace />;
+    if (fallback === '/login') {
+      return <Navigate to="/login" replace />;
+    }
   }
 
   return <>{children}</>;

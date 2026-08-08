@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { usePageActions } from "@/permissions/pageActions";
 import {
   Dialog,
   DialogContent,
@@ -421,6 +422,7 @@ function ApplicationDialogForm({
 }
 
 export const AttributesPage = () => {
+  const { canCreate, canEdit, canDelete } = usePageActions("partentry.attributes");
   // State
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
@@ -1416,14 +1418,16 @@ export const AttributesPage = () => {
                   Categories List
                 </h3>
               </div>
-              <Button
-                size="sm"
-                className="gap-1 h-8 text-xs shrink-0"
-                onClick={() => setCategoryDialogOpen(true)}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add New
-              </Button>
+              {canCreate && (
+                <Button
+                  size="sm"
+                  className="gap-1 h-8 text-xs shrink-0"
+                  onClick={() => setCategoryDialogOpen(true)}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add New
+                </Button>
+              )}
             </div>
             <div className="flex gap-2">
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -1466,22 +1470,26 @@ export const AttributesPage = () => {
                     </p>
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2"
-                      onClick={() => openEditCategory(category)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      onClick={() => openDeleteDialog("category", category.id)}
-                    >
-                      Delete
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        onClick={() => openEditCategory(category)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        onClick={() => openDeleteDialog("category", category.id)}
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1498,14 +1506,16 @@ export const AttributesPage = () => {
                   Sub Category List
                 </h3>
               </div>
-              <Button
-                size="sm"
-                className="gap-1 h-8 text-xs shrink-0"
-                onClick={() => setSubcategoryDialogOpen(true)}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add New
-              </Button>
+              {canCreate && (
+                <Button
+                  size="sm"
+                  className="gap-1 h-8 text-xs shrink-0"
+                  onClick={() => setSubcategoryDialogOpen(true)}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add New
+                </Button>
+              )}
             </div>
             <div className="flex gap-2">
               <Select
@@ -1554,24 +1564,28 @@ export const AttributesPage = () => {
                     </p>
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2"
-                      onClick={() => openEditSubcategory(subcategory)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      onClick={() =>
-                        openDeleteDialog("subcategory", subcategory.id)
-                      }
-                    >
-                      Delete
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        onClick={() => openEditSubcategory(subcategory)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        onClick={() =>
+                          openDeleteDialog("subcategory", subcategory.id)
+                        }
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1588,14 +1602,16 @@ export const AttributesPage = () => {
                   Brands List
                 </h3>
               </div>
-              <Button
-                size="sm"
-                className="gap-1 h-8 text-xs shrink-0"
-                onClick={() => setBrandDialogOpen(true)}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add New
-              </Button>
+              {canCreate && (
+                <Button
+                  size="sm"
+                  className="gap-1 h-8 text-xs shrink-0"
+                  onClick={() => setBrandDialogOpen(true)}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add New
+                </Button>
+              )}
             </div>
             <div className="flex gap-2">
               <Select value={brandFilter} onValueChange={setBrandFilter}>
@@ -1643,22 +1659,26 @@ export const AttributesPage = () => {
                     )}
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2"
-                      onClick={() => openEditBrand(brand)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      onClick={() => openDeleteDialog("brand", brand.id)}
-                    >
-                      Delete
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        onClick={() => openEditBrand(brand)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        onClick={() => openDeleteDialog("brand", brand.id)}
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1686,14 +1706,16 @@ export const AttributesPage = () => {
                   <CopyMinus className="w-3.5 h-3.5" />
                   Remove duplicates
                 </Button>
-                <Button
-                  size="sm"
-                  className="gap-1 h-8 text-xs"
-                  onClick={() => setApplicationDialogOpen(true)}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add New
-                </Button>
+                {canCreate && (
+                  <Button
+                    size="sm"
+                    className="gap-1 h-8 text-xs"
+                    onClick={() => setApplicationDialogOpen(true)}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add New
+                  </Button>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
@@ -1724,24 +1746,28 @@ export const AttributesPage = () => {
                     </p>
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2"
-                      onClick={() => openEditApplication(application)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      onClick={() =>
-                        openDeleteDialog("application", application.id)
-                      }
-                    >
-                      Delete
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        onClick={() => openEditApplication(application)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        onClick={() =>
+                          openDeleteDialog("application", application.id)
+                        }
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { usePageActions } from "@/permissions/pageActions";
 import {
   Filter,
   X,
@@ -75,6 +76,7 @@ interface StockItem {
 type StockStatusFilter = "all" | "in_stock" | "out_of_stock" | "low_stock";
 
 export const CurrentStock = () => {
+  const { canEdit, canExport } = usePageActions("inventory.current-stock");
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(
     () => searchParams.get("search")?.trim() || "",
@@ -1111,13 +1113,15 @@ export const CurrentStock = () => {
             <FileUp className="w-4 h-4" />
             Compare PDF Stock
           </Button>
-          <Button
-            onClick={handleExport}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </Button>
+          {canExport && (
+            <Button
+              onClick={handleExport}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1387,15 +1391,17 @@ export const CurrentStock = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-primary transition-colors"
-                          onClick={() => handleEditClick(item)}
-                          title="Quick Edit Location"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-primary transition-colors"
+                            onClick={() => handleEditClick(item)}
+                            title="Quick Edit Location"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1550,15 +1556,17 @@ export const CurrentStock = () => {
                             {loc.quantity} {loc.isUnlocated && "(Un)"}
                           </TableCell>
                           <TableCell className="py-1 text-xs text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0"
-                              onClick={() => handleTransferClick(loc)}
-                              title="Transfer Stock"
-                            >
-                              <Edit className="w-3 h-3" />
-                            </Button>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => handleTransferClick(loc)}
+                                title="Transfer Stock"
+                              >
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))

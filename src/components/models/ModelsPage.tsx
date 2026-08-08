@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { usePageActions } from "@/permissions/pageActions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +54,7 @@ interface Model {
 }
 
 export const ModelsPage = () => {
+  const { canCreate, canEdit, canDelete } = usePageActions("partentry.models");
   // Unified search state - single field for all search types
   const [unifiedSearch, setUnifiedSearch] = useState("");
   const [selectedPart, setSelectedPart] = useState<Item | null>(null);
@@ -983,15 +985,17 @@ export const ModelsPage = () => {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                className="gap-1.5"
-                onClick={handleStartAddModel}
-                disabled={isAddingNew}
-              >
-                <Plus className="w-4 h-4" />
-                Add Model
-              </Button>
+              {canCreate && (
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleStartAddModel}
+                  disabled={isAddingNew}
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Model
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -1088,7 +1092,7 @@ export const ModelsPage = () => {
                         ) : (
                           <span
                             className="font-medium cursor-pointer hover:text-primary transition-colors"
-                            onClick={() => handleStartEdit(model)}
+                            onClick={() => canEdit && handleStartEdit(model)}
                           >
                             {model.name}
                           </span>
@@ -1129,12 +1133,14 @@ export const ModelsPage = () => {
                               </Button>
                             </>
                           ) : (
-                            <button
-                              onClick={() => openDeleteModel(model)}
-                              className="p-1.5 text-destructive hover:bg-destructive/10 rounded transition-colors"
-                            >
-                              <Trash className="w-4 h-4" />
-                            </button>
+                            canDelete && (
+                              <button
+                                onClick={() => openDeleteModel(model)}
+                                className="p-1.5 text-destructive hover:bg-destructive/10 rounded transition-colors"
+                              >
+                                <Trash className="w-4 h-4" />
+                              </button>
+                            )
                           )}
                         </div>
                       </TableCell>

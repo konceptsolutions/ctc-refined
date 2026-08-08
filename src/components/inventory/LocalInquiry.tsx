@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
+import { usePageActions } from "@/permissions/pageActions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -151,6 +152,9 @@ const formatMoney = (value: number) =>
   });
 
 export const LocalInquiry = () => {
+  const { canCreate, canEdit, canDelete } = usePageActions(
+    "inventory.local-inquiry",
+  );
   const [documentView, setDocumentView] = useState<DocumentView>("form");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -928,16 +932,18 @@ export const LocalInquiry = () => {
                   ? ` (${selectedCompareIds.length})`
                   : ""}
               </Button>
-              <Button
-                className="ml-auto gap-1"
-                onClick={() => {
-                  resetForm();
-                  setDocumentView("form");
-                }}
-              >
-                <Plus className="w-4 h-4" />
-                New Inquiry
-              </Button>
+              {canCreate && (
+                <Button
+                  className="ml-auto gap-1"
+                  onClick={() => {
+                    resetForm();
+                    setDocumentView("form");
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                  New Inquiry
+                </Button>
+              )}
             </div>
 
             <div className="rounded-md border">
@@ -1023,28 +1029,32 @@ export const LocalInquiry = () => {
                                   <Eye className="w-4 h-4" />
                                 </Button>
                               </ActionButtonTooltip>
-                              <ActionButtonTooltip label="Edit" variant="edit">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => loadInquiryIntoForm(row.id)}
+                              {canEdit && (
+                                <ActionButtonTooltip label="Edit" variant="edit">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => loadInquiryIntoForm(row.id)}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                </ActionButtonTooltip>
+                              )}
+                              {canDelete && (
+                                <ActionButtonTooltip
+                                  label="Delete"
+                                  variant="delete"
                                 >
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                              </ActionButtonTooltip>
-                              <ActionButtonTooltip
-                                label="Delete"
-                                variant="delete"
-                              >
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-destructive"
-                                  onClick={() => handleDelete(row.id)}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </ActionButtonTooltip>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-destructive"
+                                    onClick={() => handleDelete(row.id)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </ActionButtonTooltip>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>

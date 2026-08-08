@@ -23,6 +23,7 @@ import { ChevronsUpDown, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { usePageActions } from "@/permissions/pageActions";
 
 type DailyClosingColumn = {
   id: string;
@@ -149,6 +150,7 @@ export const DailyClosingTab = ({
   date?: string;
   hideDatePicker?: boolean;
 } = {}) => {
+  const { canPrint } = usePageActions("financial.daily-closing");
   const [internalDate, setInternalDate] = useState(getCurrentDatePakistan());
   const closingDate = controlledDate ?? internalDate;
   const setClosingDate = (value: string) => {
@@ -336,7 +338,9 @@ export const DailyClosingTab = ({
               )}
               Refresh
             </Button>
-            <PrintPdfButton onPrint={handlePrint} disabled={!data || loading} />
+            {canPrint && (
+              <PrintPdfButton onPrint={handlePrint} disabled={!data || loading} />
+            )}
           </div>
 
           {data && (

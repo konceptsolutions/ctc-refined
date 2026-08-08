@@ -34,6 +34,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import { usePageActions } from "@/permissions/pageActions";
 import {
   Table,
   TableBody,
@@ -221,12 +222,21 @@ const createDefaultDpoExpense = (): ExpenseForm => ({
 
 export const DirectPurchaseOrder = ({
   variant = "local-purchase",
+  permissionPageId = "inventory.direct-purchase-order",
 }: {
   variant?: DirectPurchaseOrderVariant;
+  permissionPageId?: string;
 }) => {
   const labels = DPO_VARIANT_LABELS[variant];
   const isTransferIn = variant === "transfer-in";
   const navigate = useNavigate();
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    canPrint,
+    canStatus,
+  } = usePageActions(permissionPageId);
 
   // Orders state
   const [orders, setOrders] = useState<DirectPurchaseOrder[]>([]);
@@ -957,6 +967,7 @@ export const DirectPurchaseOrder = ({
 
   const handlePageViewChange = (value: string) => {
     if (value === "form") {
+      if (!canCreate) return;
       handleNewOrder();
       return;
     }
@@ -2006,10 +2017,12 @@ export const DirectPurchaseOrder = ({
             <CardTitle className="text-lg font-semibold">
               {labels.allOrdersTitle} ({filteredOrders.length})
             </CardTitle>
-            <Button type="button" size="sm" onClick={handleNewOrder}>
-              <Plus className="w-4 h-4 mr-1" />
-              {labels.newButton}
-            </Button>
+            {canCreate && (
+              <Button type="button" size="sm" onClick={handleNewOrder}>
+                <Plus className="w-4 h-4 mr-1" />
+                {labels.newButton}
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -2105,7 +2118,7 @@ export const DirectPurchaseOrder = ({
                                 </Button>
                               </ActionButtonTooltip>
                             )}
-                            {order.status !== "Completed" && order.status !== "Received" && (
+                            {canEdit && order.status !== "Completed" && order.status !== "Received" && (
                               <ActionButtonTooltip label="Edit" variant="edit">
                                 <Button
                                   variant="ghost"
@@ -2117,7 +2130,7 @@ export const DirectPurchaseOrder = ({
                                 </Button>
                               </ActionButtonTooltip>
                             )}
-                            {order.status !== "Completed" && order.status !== "Received" && (
+                            {canDelete && order.status !== "Completed" && order.status !== "Received" && (
                               <ActionButtonTooltip label="Delete" variant="delete">
                                 <Button
                                   variant="ghost"
@@ -3163,10 +3176,12 @@ export const DirectPurchaseOrder = ({
                 Reset
               </Button>
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                <Button onClick={handleSave} className="bg-primary hover:bg-primary/90 text-white flex-1 sm:flex-initial">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save
-                </Button>
+                {((viewMode === "edit" && canEdit) || (viewMode !== "edit" && canCreate)) && (
+                  <Button onClick={handleSave} className="bg-primary hover:bg-primary/90 text-white flex-1 sm:flex-initial">
+                    <Save className="w-4 h-4 mr-2" />
+                    Save
+                  </Button>
+                )}
                 <Button variant="link" onClick={handleBackToList} className="text-muted-foreground">
                   Close
                 </Button>
@@ -3342,7 +3357,8 @@ export const DirectPurchaseOrder = ({
                     Pay Supplier
                   </Button>
                 )}
-                {selectedOrder.status === "Order Receivable Pending" && (
+                {selectedOrder.status === "Order Receivable Pending" &&
+                  (canPrint || canStatus) && (
                   <Button onClick={() => handlePrint(selectedOrder)} className="bg-primary hover:bg-primary/90">
                     <Printer className="w-4 h-4 mr-2" />
                     Print & Complete

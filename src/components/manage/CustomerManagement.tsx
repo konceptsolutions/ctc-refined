@@ -45,6 +45,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface Customer {
   id: string;
@@ -107,6 +108,12 @@ const emptyCustomer: Omit<Customer, "id"> = {
 
 export const CustomerManagement = () => {
   const { toast } = useToast();
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    canStatus,
+  } = usePageActions("manage.customers");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -504,13 +511,15 @@ export const CustomerManagement = () => {
           </div>
           <h1 className="text-xl font-semibold text-foreground">Customers</h1>
         </div>
-        <Button
-          onClick={() => handleOpenDialog()}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs"
-        >
-          <Plus className="w-3 h-3 mr-1" />
-          Add New
-        </Button>
+        {canCreate && (
+          <Button
+            onClick={() => handleOpenDialog()}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs"
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add New
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -684,40 +693,61 @@ export const CustomerManagement = () => {
                         })}
                       </TableCell>
                       <TableCell>
-                        <Select
-                          value={customer.status}
-                          onValueChange={(v) =>
-                            handleStatusChange(
-                              customer.id,
-                              v as "active" | "inactive",
-                            )
-                          }
-                        >
-                          <SelectTrigger
-                            className={`h-6 w-20 text-xs ${
+                        {canStatus ? (
+                          <Select
+                            value={customer.status}
+                            onValueChange={(v) =>
+                              handleStatusChange(
+                                customer.id,
+                                v as "active" | "inactive",
+                              )
+                            }
+                          >
+                            <SelectTrigger
+                              className={`h-6 w-20 text-xs ${
+                                customer.status === "active"
+                                  ? "bg-green-100 text-green-700 border-green-200"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="inactive">Inactive</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge
+                            variant={
                               customer.status === "active"
-                                ? "bg-green-100 text-green-700 border-green-200"
+                                ? "default"
+                                : "secondary"
+                            }
+                            className={`text-xs ${
+                              customer.status === "active"
+                                ? "bg-green-100 text-green-700"
                                 : "bg-muted text-muted-foreground"
                             }`}
                           >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                          </SelectContent>
-                        </Select>
+                            {customer.status === "active"
+                              ? "Active"
+                              : "Inactive"}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="link"
-                            className="h-auto p-0 text-xs text-primary"
-                            onClick={() => handleOpenDialog(customer)}
-                          >
-                            Edit
-                          </Button>
-                          {customer.canDelete && (
+                          {canEdit && (
+                            <Button
+                              variant="link"
+                              className="h-auto p-0 text-xs text-primary"
+                              onClick={() => handleOpenDialog(customer)}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          {canDelete && customer.canDelete && (
                             <Button
                               variant="ghost"
                               size="icon"

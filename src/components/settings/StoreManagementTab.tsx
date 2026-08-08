@@ -57,6 +57,7 @@ import {
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface RackData {
   id: string;
@@ -92,6 +93,9 @@ const initialRacks: RackData[] = [];
 const initialShelves: ShelfData[] = [];
 
 export const StoreManagementTab = () => {
+  const { canCreate, canEdit, canDelete, canStatus } = usePageActions(
+    "inventory.store-management",
+  );
   const [stores, setStores] = useState<StoreData[]>(initialStores);
   const [racks, setRacks] = useState<RackData[]>(initialRacks);
   const [shelves, setShelves] = useState<ShelfData[]>(initialShelves);
@@ -494,10 +498,12 @@ export const StoreManagementTab = () => {
           <h2 className="text-xl font-semibold">Store Management</h2>
           <p className="text-sm text-muted-foreground">Create stores and manage racks & shelves for each store</p>
         </div>
-        <Button className="gap-2" onClick={openNewStoreDialog}>
-          <Plus className="w-4 h-4" />
-          Add New Store
-        </Button>
+        {canCreate && (
+          <Button className="gap-2" onClick={openNewStoreDialog}>
+            <Plus className="w-4 h-4" />
+            Add New Store
+          </Button>
+        )}
       </div>
 
       {/* Store Dialog */}
@@ -565,18 +571,20 @@ export const StoreManagementTab = () => {
                 rows={2}
               />
             </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={rackFormData.status} onValueChange={(v) => setRackFormData({ ...rackFormData, status: v as "active" | "inactive" })}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {canStatus && (
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={rackFormData.status} onValueChange={(v) => setRackFormData({ ...rackFormData, status: v as "active" | "inactive" })}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setIsRackDialogOpen(false)}>Cancel</Button>
               <Button onClick={handleRackSubmit}>Save</Button>
@@ -611,18 +619,20 @@ export const StoreManagementTab = () => {
                 rows={2}
               />
             </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={shelfFormData.status} onValueChange={(v) => setShelfFormData({ ...shelfFormData, status: v as "active" | "inactive" })}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {canStatus && (
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={shelfFormData.status} onValueChange={(v) => setShelfFormData({ ...shelfFormData, status: v as "active" | "inactive" })}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setIsShelfDialogOpen(false)}>Cancel</Button>
               <Button onClick={handleShelfSubmit}>Save</Button>
@@ -690,22 +700,26 @@ export const StoreManagementTab = () => {
                         <Badge variant={store.status === 'active' ? 'default' : 'secondary'} className="capitalize">
                           {store.status}
                         </Badge>
-                        <ActionButtonTooltip label="Edit" variant="edit">
-                          <Button variant="outline" size="sm" onClick={() => handleEditStore(store)}>
-                            <Edit className="w-3 h-3 mr-1" />
-                            Edit
-                          </Button>
-                        </ActionButtonTooltip>
-                        <ActionButtonTooltip label="Delete" variant="delete">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-destructive border-destructive/50 hover:bg-destructive/10"
-                            onClick={() => handleDeleteStore(store.id)}
-                          >
-                            <Trash className="w-3 h-3" />
-                          </Button>
-                        </ActionButtonTooltip>
+                        {canEdit && (
+                          <ActionButtonTooltip label="Edit" variant="edit">
+                            <Button variant="outline" size="sm" onClick={() => handleEditStore(store)}>
+                              <Edit className="w-3 h-3 mr-1" />
+                              Edit
+                            </Button>
+                          </ActionButtonTooltip>
+                        )}
+                        {canDelete && (
+                          <ActionButtonTooltip label="Delete" variant="delete">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive border-destructive/50 hover:bg-destructive/10"
+                              onClick={() => handleDeleteStore(store.id)}
+                            >
+                              <Trash className="w-3 h-3" />
+                            </Button>
+                          </ActionButtonTooltip>
+                        )}
                       </div>
                     </div>
 
@@ -717,10 +731,12 @@ export const StoreManagementTab = () => {
                             <Archive className="w-4 h-4" />
                             Racks in {store.name}
                           </h4>
-                          <Button size="sm" variant="outline" onClick={() => openNewRackDialog(store.id)}>
-                            <Plus className="w-3 h-3 mr-1" />
-                            Add Rack
-                          </Button>
+                          {canCreate && (
+                            <Button size="sm" variant="outline" onClick={() => openNewRackDialog(store.id)}>
+                              <Plus className="w-3 h-3 mr-1" />
+                              Add Rack
+                            </Button>
+                          )}
                         </div>
 
                         {storeRacks.length === 0 ? (
@@ -758,21 +774,25 @@ export const StoreManagementTab = () => {
                                         <Badge variant={rack.status === 'active' ? 'outline' : 'secondary'} className="capitalize text-xs">
                                           {rack.status}
                                         </Badge>
-                                        <ActionButtonTooltip label="Edit" variant="edit">
-                                          <Button variant="ghost" size="sm" onClick={() => handleEditRack(rack)}>
-                                            <Edit className="w-3 h-3" />
-                                          </Button>
-                                        </ActionButtonTooltip>
-                                        <ActionButtonTooltip label="Delete" variant="delete">
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="text-destructive hover:bg-destructive/10"
-                                            onClick={() => handleDeleteRack(rack.id)}
-                                          >
-                                            <Trash className="w-3 h-3" />
-                                          </Button>
-                                        </ActionButtonTooltip>
+                                        {canEdit && (
+                                          <ActionButtonTooltip label="Edit" variant="edit">
+                                            <Button variant="ghost" size="sm" onClick={() => handleEditRack(rack)}>
+                                              <Edit className="w-3 h-3" />
+                                            </Button>
+                                          </ActionButtonTooltip>
+                                        )}
+                                        {canDelete && (
+                                          <ActionButtonTooltip label="Delete" variant="delete">
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="text-destructive hover:bg-destructive/10"
+                                              onClick={() => handleDeleteRack(rack.id)}
+                                            >
+                                              <Trash className="w-3 h-3" />
+                                            </Button>
+                                          </ActionButtonTooltip>
+                                        )}
                                       </div>
                                     </div>
 
@@ -784,10 +804,12 @@ export const StoreManagementTab = () => {
                                             <Layers className="w-3 h-3" />
                                             Shelves in {rack.codeNo}
                                           </h5>
-                                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => openNewShelfDialog(rack.id)}>
-                                            <Plus className="w-3 h-3 mr-1" />
-                                            Add Shelf
-                                          </Button>
+                                          {canCreate && (
+                                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => openNewShelfDialog(rack.id)}>
+                                              <Plus className="w-3 h-3 mr-1" />
+                                              Add Shelf
+                                            </Button>
+                                          )}
                                         </div>
 
                                         {rackShelves.length === 0 ? (
@@ -808,21 +830,25 @@ export const StoreManagementTab = () => {
                                                   </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-1">
-                                                  <ActionButtonTooltip label="Edit" variant="edit">
-                                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleEditShelf(shelf)}>
-                                                      <Edit className="w-3 h-3" />
-                                                    </Button>
-                                                  </ActionButtonTooltip>
-                                                  <ActionButtonTooltip label="Delete" variant="delete">
-                                                    <Button
-                                                      variant="ghost"
-                                                      size="sm"
-                                                      className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10"
-                                                      onClick={() => handleDeleteShelf(shelf.id)}
-                                                    >
-                                                      <Trash className="w-3 h-3" />
-                                                    </Button>
-                                                  </ActionButtonTooltip>
+                                                  {canEdit && (
+                                                    <ActionButtonTooltip label="Edit" variant="edit">
+                                                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleEditShelf(shelf)}>
+                                                        <Edit className="w-3 h-3" />
+                                                      </Button>
+                                                    </ActionButtonTooltip>
+                                                  )}
+                                                  {canDelete && (
+                                                    <ActionButtonTooltip label="Delete" variant="delete">
+                                                      <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10"
+                                                        onClick={() => handleDeleteShelf(shelf.id)}
+                                                      >
+                                                        <Trash className="w-3 h-3" />
+                                                      </Button>
+                                                    </ActionButtonTooltip>
+                                                  )}
                                                 </div>
                                               </div>
                                             ))}

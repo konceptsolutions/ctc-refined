@@ -24,6 +24,7 @@ import { openPrintHtml } from "@/utils/printUtils";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface OverdueInvoiceRow {
   id: string;
@@ -43,6 +44,7 @@ const formatTermDisplay = (term: string) => {
 };
 
 export const DistributorAging = () => {
+  const { canExport, canPrint } = usePageActions("sales.distributor-aging");
   const [agingData, setAgingData] = useState<OverdueInvoiceRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -260,11 +262,13 @@ export const DistributorAging = () => {
             <Search className="w-4 h-4" />
             Apply
           </Button>
-          <Button onClick={handleExport} variant="outline" className="gap-2 border-green-500 text-green-600 hover:bg-green-50">
-            <Download className="w-4 h-4" />
-            Export Excel
-          </Button>
-          <PrintPdfButton onPrint={handlePrint} label="Print" />
+          {canExport && (
+            <Button onClick={handleExport} variant="outline" className="gap-2 border-green-500 text-green-600 hover:bg-green-50">
+              <Download className="w-4 h-4" />
+              Export Excel
+            </Button>
+          )}
+          {canPrint && <PrintPdfButton onPrint={handlePrint} label="Print" />}
         </div>
       </div>
 

@@ -14,6 +14,7 @@ import {
   amountHeaderClass,
   amountValueClass,
 } from "@/utils/accountingColors";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface IncomeAccount {
   accountId: string;
@@ -67,6 +68,7 @@ interface IncomeStatementData {
 }
 
 export const IncomeStatementTab = () => {
+  const { canPrint } = usePageActions("financial.income-statement");
   const { toast } = useToast();
   const [fromDate, setFromDate] = useState(() => getStartOfCurrentMonthPakistan());
   const [toDate, setToDate] = useState(() => getCurrentDatePakistan());
@@ -269,11 +271,13 @@ export const IncomeStatementTab = () => {
             />
             <span className="text-sm text-muted-foreground">{formatDateDisplay(toDate)}</span>
           </div>
-          <PrintPdfButton
-            onPrint={handlePrint}
-            disabled={loading || !data}
-            label="Print PDF"
-          />
+          {canPrint && (
+            <PrintPdfButton
+              onPrint={handlePrint}
+              disabled={loading || !data}
+              label="Print PDF"
+            />
+          )}
         </div>
       </div>
 

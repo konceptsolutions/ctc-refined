@@ -21,6 +21,7 @@ import {
   drHeaderClass,
   drValueClass,
 } from "@/utils/accountingColors";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface TrialBalanceAccount {
   accountId: string;
@@ -46,6 +47,7 @@ interface TrialBalanceData {
 }
 
 export const TrialBalanceTab = () => {
+  const { canPrint } = usePageActions("financial.trial-balance");
   const { toast } = useToast();
   const [fromDateObj, setFromDateObj] = useState<Date | undefined>(() => {
     const d = new Date();
@@ -340,11 +342,13 @@ export const TrialBalanceTab = () => {
               </PopoverContent>
             </Popover>
           </div>
-          <PrintPdfButton
-            onPrint={handlePrint}
-            disabled={loading || !data}
-            label="Print PDF"
-          />
+          {canPrint && (
+            <PrintPdfButton
+              onPrint={handlePrint}
+              disabled={loading || !data}
+              label="Print PDF"
+            />
+          )}
         </div>
       </div>
 

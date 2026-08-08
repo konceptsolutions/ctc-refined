@@ -40,6 +40,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { getCustomerTypeLabel } from "@/types/invoice";
+import { usePageActions } from "@/permissions/pageActions";
 
 type ActivityLineItem = {
   partNo: string;
@@ -349,6 +350,7 @@ export const DailyActivityTab = ({
   date?: string;
   hideDatePicker?: boolean;
 } = {}) => {
+  const { canPrint } = usePageActions("financial.daily-closing");
   const [internalDate, setInternalDate] = useState(getCurrentDatePakistan());
   const activityDate = controlledDate ?? internalDate;
   const [data, setData] = useState<DailyActivityData | null>(null);
@@ -414,7 +416,9 @@ export const DailyActivityTab = ({
               )}
               Refresh
             </Button>
-            <PrintPdfButton onPrint={handlePrint} disabled={!data || loading} />
+            {canPrint && (
+              <PrintPdfButton onPrint={handlePrint} disabled={!data || loading} />
+            )}
           </div>
         </CardContent>
       </Card>

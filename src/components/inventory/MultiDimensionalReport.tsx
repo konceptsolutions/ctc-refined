@@ -35,6 +35,7 @@ import { toast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { openPrintHtml } from "@/utils/printUtils";
 import { apiClient } from "@/lib/api";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface ReportRow {
   id: string;
@@ -50,6 +51,7 @@ const dimensions = ["Category", "Brand", "Store", "Location", "UOM"];
 const sortOptions = ["Value", "Quantity", "Items", "Avg Cost", "Name"];
 
 export const MultiDimensionalReport = () => {
+  const { canExport, canPrint } = usePageActions("inventory.multi-dimensional");
   const [primaryDimension, setPrimaryDimension] = useState("Category");
   const [secondaryDimension, setSecondaryDimension] = useState("none");
   const [tertiaryDimension, setTertiaryDimension] = useState("none");
@@ -321,22 +323,26 @@ export const MultiDimensionalReport = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="gap-1.5 text-xs h-8 border-primary text-primary hover:bg-primary/10 hover:text-primary" 
-            onClick={handleExportCSV}
-            disabled={loading || sortedData.length === 0}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            Export CSV
-          </Button>
-          <PrintPdfButton
-            onPrint={handlePrint}
-            disabled={loading || sortedData.length === 0}
-            size="sm"
-            className="gap-1.5 text-xs h-8 border-primary text-primary hover:bg-primary/10 hover:text-primary"
-          />
+          {canExport && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="gap-1.5 text-xs h-8 border-primary text-primary hover:bg-primary/10 hover:text-primary" 
+              onClick={handleExportCSV}
+              disabled={loading || sortedData.length === 0}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Export CSV
+            </Button>
+          )}
+          {canPrint && (
+            <PrintPdfButton
+              onPrint={handlePrint}
+              disabled={loading || sortedData.length === 0}
+              size="sm"
+              className="gap-1.5 text-xs h-8 border-primary text-primary hover:bg-primary/10 hover:text-primary"
+            />
+          )}
         </div>
       </div>
 

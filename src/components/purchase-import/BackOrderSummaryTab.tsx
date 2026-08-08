@@ -9,6 +9,7 @@ import { apiClient } from "@/lib/api";
 import { printBackOrderSummary } from "@/utils/printBackOrderSummaryPdf";
 import { fcHeaderClass, fcValueClass } from "@/utils/accountingColors";
 import { FileBarChart2, Search } from "lucide-react";
+import { usePageActions } from "@/permissions/pageActions";
 
 type SummaryLine = {
   partId: string;
@@ -262,6 +263,7 @@ const ConsigneeSection = ({
 );
 
 export const BackOrderSummaryTab = () => {
+  const { canPrint } = usePageActions("purchase-import.back-order-summary");
   const { toast } = useToast();
   const [supplierId, setSupplierId] = useState("");
   const [fromDate, setFromDate] = useState("");
@@ -436,11 +438,13 @@ export const BackOrderSummaryTab = () => {
               </p>
             </div>
           </div>
-          <PrintPdfButton
-            onPrint={handlePrintPdf}
-            disabled={!report || loading}
-            label="PDF"
-          />
+          {canPrint && (
+            <PrintPdfButton
+              onPrint={handlePrintPdf}
+              disabled={!report || loading}
+              label="PDF"
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">

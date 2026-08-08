@@ -30,6 +30,7 @@ import apiClient from "@/lib/api";
 import { toast } from "sonner";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { openPrintHtml } from "@/utils/printUtils";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface StockItem {
   id: string;
@@ -46,6 +47,7 @@ interface StockItem {
 type Classification = "Fast" | "Normal" | "Slow" | "Dead";
 
 export const StockAnalysis = () => {
+  const { canExport, canPrint } = usePageActions("inventory.stock-analysis");
   // Configuration state
   const [fastMovingDays, setFastMovingDays] = useState(30);
   const [slowMovingDays, setSlowMovingDays] = useState(90);
@@ -331,15 +333,19 @@ export const StockAnalysis = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportCSV} disabled={loading || filteredItems.length === 0}>
-            <Download className="w-4 h-4" />
-            Export CSV
-          </Button>
-          <PrintPdfButton
-            onPrint={handlePrintPDF}
-            disabled={loading || filteredItems.length === 0}
-            className="gap-1.5 text-primary border-primary hover:bg-primary/10"
-          />
+          {canExport && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportCSV} disabled={loading || filteredItems.length === 0}>
+              <Download className="w-4 h-4" />
+              Export CSV
+            </Button>
+          )}
+          {canPrint && (
+            <PrintPdfButton
+              onPrint={handlePrintPDF}
+              disabled={loading || filteredItems.length === 0}
+              className="gap-1.5 text-primary border-primary hover:bg-primary/10"
+            />
+          )}
         </div>
       </div>
 

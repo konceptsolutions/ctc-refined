@@ -57,6 +57,7 @@ import {
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface AdjustmentItem {
   id: string;
@@ -94,6 +95,9 @@ interface AdjustmentRecord {
 const ADJUST_ITEM_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 export const AdjustItem = () => {
+  const { canCreate, canEdit, canDelete, canApprove } = usePageActions(
+    "inventory.adjust-item",
+  );
   const [view, setView] = useState<"list" | "create" | "edit">("list");
   const [selectedRecord, setSelectedRecord] = useState<AdjustmentRecord | null>(
     null,
@@ -1193,17 +1197,19 @@ export const AdjustItem = () => {
               <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
               Refresh
             </Button>
-            <Button
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => {
-                handleReset();
-                setView("create");
-              }}
-            >
-              <Plus className="w-3.5 h-3.5 mr-1.5" />
-              Adjust
-            </Button>
+            {canCreate && (
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => {
+                  handleReset();
+                  setView("create");
+                }}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                Adjust
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1317,7 +1323,7 @@ export const AdjustItem = () => {
                             </Button>
                           </ActionButtonTooltip>
 
-                          {record.status === "pending" && (
+                          {canApprove && record.status === "pending" && (
                             <ActionButtonTooltip label="Approve" variant="edit">
                               <Button
                                 variant="ghost"
@@ -1331,7 +1337,7 @@ export const AdjustItem = () => {
                             </ActionButtonTooltip>
                           )}
 
-                          {record.status !== "deleted" && (
+                          {canEdit && record.status !== "deleted" && (
                             <ActionButtonTooltip label="Edit" variant="edit">
                               <Button
                                 variant="ghost"
@@ -1344,16 +1350,18 @@ export const AdjustItem = () => {
                             </ActionButtonTooltip>
                           )}
 
-                          <ActionButtonTooltip label="Delete" variant="delete">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteClick(record.id)}
-                              className="text-destructive hover:text-destructive/80 flex items-center gap-1 text-xs font-medium"
-                            >
-                              <Trash className="w-3.5 h-3.5" />
-                            </Button>
-                          </ActionButtonTooltip>
+                          {canDelete && (
+                            <ActionButtonTooltip label="Delete" variant="delete">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteClick(record.id)}
+                                className="text-destructive hover:text-destructive/80 flex items-center gap-1 text-xs font-medium"
+                              >
+                                <Trash className="w-3.5 h-3.5" />
+                              </Button>
+                            </ActionButtonTooltip>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

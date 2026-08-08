@@ -14,10 +14,10 @@ import {
   canAccessPath,
   getPermissionsVersion,
   getStoredPermissions,
+  parsePermissions,
   savePermissions,
   subscribePermissions,
 } from "@/permissions/can";
-import { expandPermissionAncestors } from "@/permissions/catalog";
 
 interface PermissionsContextValue {
   permissions: string[];
@@ -48,7 +48,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const response: any = await apiClient.getMe();
-      const next = expandPermissionAncestors(
+      const next = parsePermissions(
         response?.data?.permissions || response?.permissions || [],
       );
       // Never wipe good local/login permissions with an empty /me payload
@@ -95,8 +95,9 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       version,
       loading,
       refresh,
-      can: (key) => canKey(key, permissions),
-      canAccessPath: (pathname) => canAccessPath(pathname, permissions),
+      // Always read latest localStorage so page tabs update right after login/role save
+      can: (key) => canKey(key),
+      canAccessPath: (pathname) => canAccessPath(pathname),
     }),
     [permissions, version, loading, refresh],
   );

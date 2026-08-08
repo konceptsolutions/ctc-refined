@@ -46,6 +46,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { unlockBrowserPrintLayout } from "@/utils/printUtils";
 import apiClient from "@/lib/api";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface Receivable {
   id: string;
@@ -68,6 +69,7 @@ interface Receivable {
 const mockReceivables: Receivable[] = [];
 
 export const ReceivableReminders = () => {
+  const { canExport, canEdit } = usePageActions("sales.receivable-reminders");
   const [receivables, setReceivables] = useState<Receivable[]>(mockReceivables);
   const [loadingReceivables, setLoadingReceivables] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -579,25 +581,27 @@ export const ReceivableReminders = () => {
         </Select>
 
         <div className="ml-auto">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                className="gap-2 border-green-500 text-green-600 hover:bg-green-50"
-              >
-                <Download className="w-4 h-4" />
-                Export
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={handleExportExcel}>
-                Export as Excel
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleExportPdf}>
-                Export as PDF
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canExport && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="gap-2 border-green-500 text-green-600 hover:bg-green-50"
+                >
+                  <Download className="w-4 h-4" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onClick={handleExportExcel}>
+                  Export as Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPdf}>
+                  Export as PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -701,33 +705,37 @@ export const ReceivableReminders = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
-                          onClick={() => openReminderDialog(item)}
-                          title="Send Reminder"
-                        >
-                          <Bell className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-blue-500 hover:text-blue-600 hover:bg-blue-50"
-                          onClick={() => openRescheduleDialog(item)}
-                          title="Reschedule"
-                        >
-                          <CalendarIcon className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-green-500 hover:text-green-600 hover:bg-green-50"
-                          onClick={() => openPaymentDialog(item)}
-                          title="Record Payment"
-                        >
-                          <CreditCard className="w-4 h-4" />
-                        </Button>
+                        {canEdit && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
+                              onClick={() => openReminderDialog(item)}
+                              title="Send Reminder"
+                            >
+                              <Bell className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-blue-500 hover:text-blue-600 hover:bg-blue-50"
+                              onClick={() => openRescheduleDialog(item)}
+                              title="Reschedule"
+                            >
+                              <CalendarIcon className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-green-500 hover:text-green-600 hover:bg-green-50"
+                              onClick={() => openPaymentDialog(item)}
+                              title="Record Payment"
+                            >
+                              <CreditCard className="w-4 h-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

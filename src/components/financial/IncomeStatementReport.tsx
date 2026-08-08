@@ -14,6 +14,7 @@ import {
   amountHeaderClass,
   amountValueClass,
 } from "@/utils/accountingColors";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface IncomeAccount {
   code: string;
@@ -25,6 +26,7 @@ interface IncomeAccount {
 }
 
 export const IncomeStatementReport = () => {
+  const { canExport, canPrint } = usePageActions("financial.income-statement");
   const { toast } = useToast();
   const [fromDate, setFromDate] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -201,11 +203,15 @@ export const IncomeStatementReport = () => {
             Income Statement
           </CardTitle>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleExportCSV}>
-              <Download className="h-4 w-4 mr-1" />
-              Export CSV
-            </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
+            {canExport && (
+              <Button variant="outline" size="sm" onClick={handleExportCSV}>
+                <Download className="h-4 w-4 mr-1" />
+                Export CSV
+              </Button>
+            )}
+            {canPrint && (
+              <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
+            )}
           </div>
         </div>
       </CardHeader>

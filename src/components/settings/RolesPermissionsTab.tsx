@@ -27,12 +27,13 @@ import {
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import { usePageActions } from "@/permissions/pageActions";
 import {
   PERMISSION_CATALOG,
   PermissionNode,
   collectKeys,
   getValidPermissionSet,
-  expandPermissionAncestors,
+  ensurePageKeysForGrants,
 } from "@/permissions/catalog";
 import { cn } from "@/lib/utils";
 
@@ -129,6 +130,7 @@ function PermissionTreeNode({
 }
 
 export const RolesPermissionsTab = () => {
+  const { canCreate, canEdit, canDelete, canExport } = usePageActions("settings.roles");
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -192,7 +194,8 @@ export const RolesPermissionsTab = () => {
       }
       const next = new Set(prev.permissions.filter((k) => k !== "*"));
       if (checked) {
-        expandPermissionAncestors(keys).forEach((k) => next.add(k));
+        // Toggled node + descendants; also keep parent page keys so page tabs apply
+        ensurePageKeysForGrants(keys).forEach((k) => next.add(k));
       } else {
         keys.forEach((k) => next.delete(k));
       }
@@ -222,7 +225,9 @@ export const RolesPermissionsTab = () => {
     const permissions =
       formData.name.trim().toLowerCase() === "admin"
         ? ["*"]
-        : expandPermissionAncestors(formData.permissions.filter((k) => k !== "*"));
+        : ensurePageKeysForGrants(
+            [...new Set(formData.permissions.filter((k) => k !== "*"))],
+          );
 
     try {
       if (editingRole) {
@@ -309,17 +314,21 @@ export const RolesPermissionsTab = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={exportCsv}>
-            <Download className="w-4 h-4 mr-1" />
-            Export
-          </Button>
+          {canExport && (
+            <Button variant="outline" size="sm" onClick={exportCsv}>
+              <Download className="w-4 h-4 mr-1" />
+              Export
+            </Button>
+          )}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" onClick={openCreate}>
-                <Plus className="w-4 h-4 mr-1" />
-                New Role
-              </Button>
-            </DialogTrigger>
+            {canCreate && (
+              <DialogTrigger asChild>
+                <Button size="sm" onClick={openCreate}>
+                  <Plus className="w-4 h-4 mr-1" />
+                  New Role
+                </Button>
+              </DialogTrigger>
+            )}
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
               <DialogHeader>
                 <DialogTitle>{editingRole ? "Edit Role" : "Create Role"}</DialogTitle>
@@ -436,22 +445,26 @@ export const RolesPermissionsTab = () => {
                     <span>{permCount} permissions</span>
                   </div>
                   <div className="flex gap-1 justify-end">
-                    <ActionButtonTooltip label="Edit">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(role)}>
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                    </ActionButtonTooltip>
-                    <ActionButtonTooltip label="Delete">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive"
-                        onClick={() => handleDelete(role)}
-                        disabled={role.type === "System" || role.name.toLowerCase() === "admin"}
-                      >
-                        <Trash className="w-4 h-4" />
-                      </Button>
-                    </ActionButtonTooltip>
+                    {canEdit && (
+                      <ActionButtonTooltip label="Edit">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(role)}>
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                      </ActionButtonTooltip>
+                    )}
+                    {canDelete && (
+                      <ActionButtonTooltip label="Delete">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => handleDelete(role)}
+                          disabled={role.type === "System" || role.name.toLowerCase() === "admin"}
+                        >
+                          <Trash className="w-4 h-4" />
+                        </Button>
+                      </ActionButtonTooltip>
+                    )}
                   </div>
                 </CardContent>
               </Card>

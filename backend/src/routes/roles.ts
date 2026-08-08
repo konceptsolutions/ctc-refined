@@ -1,7 +1,7 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
 import prisma from '../config/database';
-import { getValidPermissionSet, expandPermissionAncestors } from '../permissions/catalog';
+import { getValidPermissionSet } from '../permissions/catalog';
 import { AuthRequest, requirePermission } from '../middleware/authMiddleware';
 
 const router = express.Router();
@@ -19,7 +19,9 @@ function normalizePermissions(input: unknown, roleName?: string): string[] {
     if (key === '*') continue; // only Admin may use wildcard via name check
     if (valid.has(key)) out.push(key);
   }
-  return expandPermissionAncestors([...new Set(out)]);
+  // Do NOT expand ancestors here — that polluted Role.permissions with module.*
+  // keys and made page-level matrix grants behave like full-module access.
+  return [...new Set(out)];
 }
 
 // GET /api/roles - Get all roles

@@ -34,6 +34,7 @@ import {
     Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface PartPriceItem {
     id: string;
@@ -63,6 +64,7 @@ interface PriceHistoryEntry {
 }
 
 export const DetailsPartSearch = () => {
+    const { canEdit } = usePageActions("partentry.details-search");
     const [items, setItems] = useState<PartPriceItem[]>([]);
     const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
     const [loading, setLoading] = useState(false);
@@ -360,6 +362,7 @@ export const DetailsPartSearch = () => {
                                                 onChange={(e) => setPercentage(e.target.value)}
                                                 className="h-8 text-xs font-bold"
                                                 placeholder="0.00"
+                                                disabled={!canEdit}
                                             />
                                         </div>
                                         <div className="space-y-1">
@@ -370,6 +373,7 @@ export const DetailsPartSearch = () => {
                                                     value={password}
                                                     onChange={(e) => setPassword(e.target.value)}
                                                     className="h-8 text-xs pr-8"
+                                                    disabled={!canEdit}
                                                 />
                                                 <Lock className="w-3 h-3 absolute right-2 top-2.5 text-muted-foreground" />
                                             </div>
@@ -489,9 +493,11 @@ export const DetailsPartSearch = () => {
                                                     {item.priceM.toLocaleString()}
                                                 </TableCell>
                                                 <TableCell className="px-2 py-1 text-center">
-                                                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                                                        <Save className="w-3.5 h-3.5 text-blue-600" />
-                                                    </Button>
+                                                    {canEdit && (
+                                                        <Button variant="ghost" size="icon" className="h-6 w-6">
+                                                            <Save className="w-3.5 h-3.5 text-blue-600" />
+                                                        </Button>
+                                                    )}
                                                 </TableCell>
                                             </TableRow>
                                         ))

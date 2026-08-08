@@ -36,6 +36,7 @@ import {
   drHeaderClass,
   drValueClass,
 } from "@/utils/accountingColors";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface LedgerEntry {
   id: number;
@@ -66,6 +67,7 @@ const getCurrentDate = () => {
 };
 
 export const LedgersTab = () => {
+  const { canExport, canPrint } = usePageActions("financial.ledgers");
   const { toast } = useToast();
   const [selectedMainGroup, setSelectedMainGroup] = useState("");
   const [selectedSubGroup, setSelectedSubGroup] = useState("");
@@ -273,11 +275,15 @@ export const LedgersTab = () => {
             Ledgers
           </CardTitle>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleExportCSV}>
-              <Download className="h-4 w-4 mr-1" />
-              Export CSV
-            </Button>
-            <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
+            {canExport && (
+              <Button variant="outline" size="sm" onClick={handleExportCSV}>
+                <Download className="h-4 w-4 mr-1" />
+                Export CSV
+              </Button>
+            )}
+            {canPrint && (
+              <PrintPdfButton onPrint={handlePrint} label="Print PDF" disabled={loading} />
+            )}
           </div>
         </div>
       </CardHeader>

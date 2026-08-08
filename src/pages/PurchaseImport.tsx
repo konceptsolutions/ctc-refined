@@ -18,6 +18,7 @@ import {
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2, ChevronDown, ChevronUp, Mail } from "lucide-react";
 import { usePermissions } from "@/permissions/PermissionsProvider";
+import { usePageActions } from "@/permissions/pageActions";
 import { BackOrderSummaryTab } from "@/components/purchase-import/BackOrderSummaryTab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1668,6 +1669,8 @@ const PurchaseImportRequestForm = ({
   onCancel?: () => void;
 }) => {
   const { toast } = useToast();
+  const { canCreate, canEdit } = usePageActions("purchase-import.inquiry");
+  const canSave = Boolean(requestId) ? canEdit : canCreate;
   const [loadingForm, setLoadingForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([]);
@@ -2938,14 +2941,16 @@ const PurchaseImportRequestForm = ({
         </div>
       ) : (
         <div className="flex justify-end pt-2">
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || loadingForm || loadingEditRequest}
-            className="w-full sm:w-auto"
-          >
-            {saving ? "Saving..." : isEditMode ? "Update Inquiry" : "Save Inquiry"}
-          </Button>
+          {canSave && (
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || loadingForm || loadingEditRequest}
+              className="w-full sm:w-auto"
+            >
+              {saving ? "Saving..." : isEditMode ? "Update Inquiry" : "Save Inquiry"}
+            </Button>
+          )}
         </div>
       )}
 
@@ -2997,6 +3002,7 @@ const PurchaseImportRequestView = ({
   onBack: () => void;
 }) => {
   const { toast } = useToast();
+  const { canPrint, canExport } = usePageActions("purchase-import.inquiry");
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<PurchaseImportRequestEditPayload | null>(null);
   const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([]);
@@ -3336,41 +3342,47 @@ const PurchaseImportRequestView = ({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <PrintPdfButton onPrint={handlePrintPdf} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="gap-1"
-                disabled={!inquiryConfirmed}
-                title={
-                  inquiryConfirmed
-                    ? "Email inquiry to supplier"
-                    : "Confirm the inquiry before sending email"
-                }
-              >
-                <Mail className="h-4 w-4" />
-                Email
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                disabled={!inquiryConfirmed}
-                onClick={() => openEmailDialog("pdf")}
-              >
-                Email in PDF format
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!inquiryConfirmed}
-                onClick={() => openEmailDialog("excel")}
-              >
-                Email in Excel format
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canPrint && <PrintPdfButton onPrint={handlePrintPdf} />}
+          {(canExport || canPrint) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="gap-1"
+                  disabled={!inquiryConfirmed}
+                  title={
+                    inquiryConfirmed
+                      ? "Email inquiry to supplier"
+                      : "Confirm the inquiry before sending email"
+                  }
+                >
+                  <Mail className="h-4 w-4" />
+                  Email
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canPrint && (
+                  <DropdownMenuItem
+                    disabled={!inquiryConfirmed}
+                    onClick={() => openEmailDialog("pdf")}
+                  >
+                    Email in PDF format
+                  </DropdownMenuItem>
+                )}
+                {canExport && (
+                  <DropdownMenuItem
+                    disabled={!inquiryConfirmed}
+                    onClick={() => openEmailDialog("excel")}
+                  >
+                    Email in Excel format
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <Button type="button" variant="outline" onClick={onBack}>
             Back to List
           </Button>
@@ -3647,6 +3659,9 @@ const PurchaseQuotationForm = ({
   onCancel?: () => void;
 }) => {
   const { toast } = useToast();
+  const { canCreate, canEdit, canPrint } = usePageActions(
+    "purchase-import.quotation",
+  );
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
   const [loading, setLoading] = useState(false);
@@ -3666,6 +3681,7 @@ const PurchaseQuotationForm = ({
   const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
   const [printingComparison, setPrintingComparison] = useState(false);
+  const canSaveQuotation = existingQuotationId ? canEdit : canCreate;
 
   const showQuotationComparison =
     Number(context?.supplierCount || 0) >= 2;
@@ -4211,7 +4227,7 @@ const PurchaseQuotationForm = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {showQuotationComparison ? (
+          {canPrint && showQuotationComparison ? (
             <PrintPdfButton
               onPrint={() => {
                 void handlePrintComparisonPdf();
@@ -4220,10 +4236,12 @@ const PurchaseQuotationForm = ({
               label={printingComparison ? "Comparing..." : "Compare PDF"}
             />
           ) : null}
-          <PrintPdfButton
-            onPrint={handlePrintPdf}
-            disabled={loading || !context || sortedRows.length === 0}
-          />
+          {canPrint && (
+            <PrintPdfButton
+              onPrint={handlePrintPdf}
+              disabled={loading || !context || sortedRows.length === 0}
+            />
+          )}
         </div>
       </div>
 
@@ -4625,13 +4643,15 @@ const PurchaseQuotationForm = ({
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button
-          type="button"
-          onClick={handleSaveQuotation}
-          disabled={loading || saving || !context}
-        >
-          {saving ? "Saving..." : existingQuotationId ? "Update Quotation" : "Save Quotation"}
-        </Button>
+        {canSaveQuotation && (
+          <Button
+            type="button"
+            onClick={handleSaveQuotation}
+            disabled={loading || saving || !context}
+          >
+            {saving ? "Saving..." : existingQuotationId ? "Update Quotation" : "Save Quotation"}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -4647,6 +4667,7 @@ const PurchaseQuotationRevisionForm = ({
   onCancel?: () => void;
 }) => {
   const { toast } = useToast();
+  const { canEdit, canPrint } = usePageActions("purchase-import.revise-quotation");
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
   const [loading, setLoading] = useState(false);
@@ -5044,10 +5065,12 @@ const PurchaseQuotationRevisionForm = ({
             Update quotation with revised FC/LC rates and revised quotation date.
           </p>
         </div>
-        <PrintPdfButton
-          onPrint={handlePrintPdf}
-          disabled={loading || !detail || sortedRows.length === 0}
-        />
+        {canPrint && (
+          <PrintPdfButton
+            onPrint={handlePrintPdf}
+            disabled={loading || !detail || sortedRows.length === 0}
+          />
+        )}
       </div>
 
       {loading || !detail ? (
@@ -5363,13 +5386,15 @@ const PurchaseQuotationRevisionForm = ({
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button
-          type="button"
-          onClick={handleSaveRevision}
-          disabled={loading || saving || !detail}
-        >
-          {saving ? "Saving..." : "Save Revision"}
-        </Button>
+        {canEdit && (
+          <Button
+            type="button"
+            onClick={handleSaveRevision}
+            disabled={loading || saving || !detail}
+          >
+            {saving ? "Saving..." : "Save Revision"}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -5396,6 +5421,17 @@ const PurchaseInquiryListPanel = ({
 }: PurchaseInquiryListPanelProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const pageId =
+    mode === "quotation"
+      ? "purchase-import.quotation"
+      : "purchase-import.inquiry";
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    canApprove,
+    canPrint,
+  } = usePageActions(pageId);
   const [confirmingRequestId, setConfirmingRequestId] = useState<string | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<string | null>(null);
   const [loadingRequests, setLoadingRequests] = useState(false);
@@ -5836,7 +5872,7 @@ const PurchaseInquiryListPanel = ({
             </Button>
           )}
         </div>
-        {showNewInquiryButton && onNewInquiry ? (
+        {showNewInquiryButton && onNewInquiry && canCreate ? (
           <Button type="button" onClick={onNewInquiry}>
             <Plus className="w-4 h-4 mr-1" />
             New Inquiry
@@ -5945,6 +5981,7 @@ const PurchaseInquiryListPanel = ({
                         {mode === "manage" ? (
                           <>
                             {!isConfirmed ? (
+                              canApprove ? (
                               <Button
                                 type="button"
                                 size="sm"
@@ -5962,7 +5999,8 @@ const PurchaseInquiryListPanel = ({
                                 <Check className="w-3.5 h-3.5 mr-1" />
                                 Confirm
                               </Button>
-                            ) : canUnconfirmInquiry ? (
+                              ) : null
+                            ) : canUnconfirmInquiry && canApprove ? (
                               <Button
                                 type="button"
                                 size="sm"
@@ -5983,6 +6021,7 @@ const PurchaseInquiryListPanel = ({
                               <Eye className="w-3.5 h-3.5 mr-1" />
                               View
                             </Button>
+                            {canEdit && (
                             <Button
                               type="button"
                               size="sm"
@@ -5996,7 +6035,8 @@ const PurchaseInquiryListPanel = ({
                               <Pencil className="w-3.5 h-3.5 mr-1" />
                               Edit
                             </Button>
-                            {!hasQuotation ? (
+                            )}
+                            {!hasQuotation && canDelete ? (
                               <Button
                                 type="button"
                                 size="sm"
@@ -6015,6 +6055,7 @@ const PurchaseInquiryListPanel = ({
                           </>
                         ) : (
                           <>
+                            {canCreate && (
                             <Button
                               type="button"
                               size="sm"
@@ -6034,6 +6075,7 @@ const PurchaseInquiryListPanel = ({
                             >
                               Quotation
                             </Button>
+                            )}
                             <Button
                               type="button"
                               size="sm"
@@ -6045,6 +6087,7 @@ const PurchaseInquiryListPanel = ({
                               <Eye className="w-3.5 h-3.5 mr-1" />
                               Inquiry
                             </Button>
+                            {canPrint && (
                             <PrintPdfButton
                               size="sm"
                               disabled={
@@ -6060,7 +6103,8 @@ const PurchaseInquiryListPanel = ({
                                 void handlePrintQuotationPdf(row.id);
                               }}
                             />
-                            {showComparisonPdf ? (
+                            )}
+                            {canPrint && showComparisonPdf ? (
                               <PrintPdfButton
                                 size="sm"
                                 disabled={comparingRequestId === row.id}
@@ -6130,6 +6174,7 @@ type PurchaseQuotationListPanelProps = {
   action: QuotationListAction;
   title: string;
   description: string;
+  pageId: string;
   onRevise?: (quotationId: string) => void;
   onConfirm?: (quotationId: string) => void;
 };
@@ -6139,10 +6184,17 @@ const PurchaseQuotationListPanel = ({
   action,
   title,
   description,
+  pageId,
   onRevise,
   onConfirm,
 }: PurchaseQuotationListPanelProps) => {
   const { toast } = useToast();
+  const {
+    canEdit,
+    canDelete,
+    canApprove,
+    canPrint,
+  } = usePageActions(pageId);
   const [loadingQuotations, setLoadingQuotations] = useState(false);
   const [quotations, setQuotations] = useState<PurchaseQuotationRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -6772,7 +6824,8 @@ const PurchaseQuotationListPanel = ({
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-2">
                         {!isConfirmedView &&
-                        (action === "confirm" || action === "revise-confirm") ? (
+                        (action === "confirm" || action === "revise-confirm") &&
+                        canApprove ? (
                           <Button
                             type="button"
                             size="sm"
@@ -6785,7 +6838,8 @@ const PurchaseQuotationListPanel = ({
                           </Button>
                         ) : null}
                         {!isConfirmedView &&
-                        (action === "revise" || action === "revise-confirm") ? (
+                        (action === "revise" || action === "revise-confirm") &&
+                        canEdit ? (
                           <Button
                             type="button"
                             size="sm"
@@ -6798,7 +6852,8 @@ const PurchaseQuotationListPanel = ({
                         ) : null}
                         {showUnconfirmAction &&
                         isFirstRowForQuotation &&
-                        canUnconfirmQuotation ? (
+                        canUnconfirmQuotation &&
+                        canApprove ? (
                           <Button
                             type="button"
                             size="sm"
@@ -6815,7 +6870,8 @@ const PurchaseQuotationListPanel = ({
                         {showUnconfirmAction &&
                         isFirstRowForQuotation &&
                         isConfirmed &&
-                        !canUnconfirmQuotation ? (
+                        !canUnconfirmQuotation &&
+                        canApprove ? (
                           <Button
                             type="button"
                             size="sm"
@@ -6827,6 +6883,7 @@ const PurchaseQuotationListPanel = ({
                             Unconfirm
                           </Button>
                         ) : null}
+                        {canPrint && (
                         <PrintPdfButton
                           size="sm"
                           disabled={printingQuotationId === row.id}
@@ -6848,7 +6905,8 @@ const PurchaseQuotationListPanel = ({
                             });
                           }}
                         />
-                        {!isConfirmed ? (
+                        )}
+                        {!isConfirmed && canDelete ? (
                           <Button
                             type="button"
                             size="sm"
@@ -6892,6 +6950,7 @@ const PurchaseQuotationListPanel = ({
 
 const PurchaseImportRequestTab = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { canCreate } = usePageActions("purchase-import.inquiry");
   const [requestView, setRequestView] = useState<"form" | "list">("list");
   const showRequestForm = requestView === "form";
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
@@ -6936,12 +6995,13 @@ const PurchaseImportRequestTab = () => {
             goToRequestList();
             return;
           }
+          if (!canCreate) return;
           goToNewRequestForm();
         }}
       >
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className={`grid w-full max-w-md ${canCreate ? "grid-cols-2" : "grid-cols-1"}`}>
           <TabsTrigger value="list">Inquiry List</TabsTrigger>
-          <TabsTrigger value="form">Inquiry Form</TabsTrigger>
+          {canCreate && <TabsTrigger value="form">Inquiry Form</TabsTrigger>}
         </TabsList>
       </Tabs>
 
@@ -7085,6 +7145,7 @@ const PurchaseQuotationConfirmForm = ({
   onCancel?: () => void;
 }) => {
   const { toast } = useToast();
+  const { canApprove } = usePageActions("purchase-import.confirm-quotation");
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
   const [loading, setLoading] = useState(false);
@@ -7697,17 +7758,19 @@ const PurchaseQuotationConfirmForm = ({
         <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
-        <Button
-          type="button"
-          onClick={handleConfirm}
-          disabled={saving || !detail || hasSplitMismatch}
-        >
-          {saving
-            ? "Confirming..."
-            : isCombinedView
-              ? "Confirm Combined & Create PO"
-              : "Confirm & Create PO"}
-        </Button>
+        {canApprove && (
+          <Button
+            type="button"
+            onClick={handleConfirm}
+            disabled={saving || !detail || hasSplitMismatch}
+          >
+            {saving
+              ? "Confirming..."
+              : isCombinedView
+                ? "Confirm Combined & Create PO"
+                : "Confirm & Create PO"}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -7793,6 +7856,7 @@ const PurchaseReviseQuotationTab = () => {
         action="revise"
         title="Revise Quotation"
         description="Review open supplier quotations and revise rates."
+        pageId="purchase-import.revise-quotation"
         onRevise={(quotationId) => {
           setRevisionQuotationId(quotationId);
           setShowRevisionForm(true);
@@ -7832,6 +7896,7 @@ const PurchaseConfirmQuotationTab = () => {
         action="confirm"
         title="Confirmation"
         description="Review open supplier quotations and confirm to create shipment record(s)."
+        pageId="purchase-import.confirm-quotation"
         onConfirm={(quotationId) => {
           setConfirmQuotationId(quotationId);
           setShowConfirmForm(true);
@@ -7842,6 +7907,7 @@ const PurchaseConfirmQuotationTab = () => {
         action="none"
         title="Confirmed List"
         description="Confirmed quotations split by consignee."
+        pageId="purchase-import.confirm-quotation"
       />
     </div>
   );
@@ -7925,6 +7991,17 @@ const PurchaseOrderTab = ({
   const isInvoiceMode = mode === "purchase-invoice";
   const formTitle = isInvoiceMode ? "Invoice" : "Purchase Import";
   const formActionLabel = isInvoiceMode ? "Invoice" : "PO";
+  const pageId = isInvoiceMode
+    ? "purchase-import.purchase-invoice"
+    : "purchase-import.purchase-order";
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    canPrint,
+    canStatus,
+  } = usePageActions(pageId);
+  const canSaveOrder = canCreate || canEdit;
   const { toast } = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -9360,6 +9437,7 @@ const PurchaseOrderTab = ({
                         <Eye className="w-3.5 h-3.5 mr-1" />
                         View
                       </Button>
+                      {canPrint && (
                       <PrintPdfButton
                         size="sm"
                         disabled={printingOrderId === row.id}
@@ -9371,7 +9449,8 @@ const PurchaseOrderTab = ({
                           void handlePrintOrderPdf(row.id);
                         }}
                       />
-                      {!isReceivedPurchaseOrder(row.status) ? (
+                      )}
+                      {!isReceivedPurchaseOrder(row.status) && canDelete ? (
                         <Button
                           type="button"
                           size="sm"
@@ -9392,6 +9471,7 @@ const PurchaseOrderTab = ({
                           !isInvoiceMode &&
                           isPurchaseInvoiceCreatedStatus(row.status);
                         const actionDisabled =
+                          !canSaveOrder ||
                           isReceivedPurchaseOrder(row.status) ||
                           invoiceLocked ||
                           importLocked;
@@ -9402,7 +9482,7 @@ const PurchaseOrderTab = ({
                           : importSaved
                             ? "Update PO"
                             : formActionLabel;
-                        return (
+                        return canSaveOrder ? (
                       <Button
                         type="button"
                         size="sm"
@@ -9424,13 +9504,14 @@ const PurchaseOrderTab = ({
                         )}
                         {listActionLabel}
                       </Button>
-                        );
+                        ) : null;
                       })()}
                       {isInvoiceMode &&
                       isReceivedPurchaseOrder(row.status) &&
                       isKhiConsignee(row.consignee) &&
                       !row.stockedOut &&
-                      !row.transferOutInvoiceId ? (
+                      !row.transferOutInvoiceId &&
+                      canStatus ? (
                         <Button
                           type="button"
                           size="sm"
@@ -10574,19 +10655,21 @@ const PurchaseOrderTab = ({
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              disabled={
-                loadingReceiveForm ||
-                savingReceive ||
-                receiveLines.length === 0 ||
-                (!isInvoiceMode &&
-                  isPurchaseInvoiceCreatedStatus(receiveOrderStatus))
-              }
-              onClick={() => void handleSaveReceive()}
-            >
-              {savingReceive ? "Saving..." : saveLabel}
-            </Button>
+            {canSaveOrder && (
+              <Button
+                type="button"
+                disabled={
+                  loadingReceiveForm ||
+                  savingReceive ||
+                  receiveLines.length === 0 ||
+                  (!isInvoiceMode &&
+                    isPurchaseInvoiceCreatedStatus(receiveOrderStatus))
+                }
+                onClick={() => void handleSaveReceive()}
+              >
+                {savingReceive ? "Saving..." : saveLabel}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

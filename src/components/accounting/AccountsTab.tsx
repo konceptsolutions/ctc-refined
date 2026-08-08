@@ -28,6 +28,7 @@ import {
 import { Users, Plus, Pencil, Trash, MoreVertical, Save, RotateCcw, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
+import { usePageActions } from "@/permissions/pageActions";
 import {
   getListRowNumber,
   LIST_NUMBER_HEAD_CLASS,
@@ -81,6 +82,14 @@ const subGroupMapping: Record<string, string[]> = {
 
 
 export const AccountsTab = () => {
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    canExport,
+    canPrint,
+    canMenuMore,
+  } = usePageActions("accounting.chart");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
@@ -703,45 +712,55 @@ export const AccountsTab = () => {
             <CardTitle className="text-lg font-semibold">Accounts</CardTitle>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              onClick={() => {
-                resetForm();
-                setIsAddAccountDialogOpen(true);
-              }}
-              variant="outline"
-              size="sm"
-              className="transition-all duration-200 hover:scale-105"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Add New Account
-            </Button>
-            <Button
-              onClick={() => {
-                resetForm();
-                setIsAddPersonDialogOpen(true);
-              }}
-              variant="outline"
-              size="sm"
-              className="transition-all duration-200 hover:scale-105"
-            >
-              <UserPlus className="h-4 w-4 mr-1" />
-              Add New Person's Account
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-card border-border z-50">
-                <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
-                  Export to CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handlePrintList} className="cursor-pointer">
-                  Print List
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {canCreate && (
+              <Button
+                onClick={() => {
+                  resetForm();
+                  setIsAddAccountDialogOpen(true);
+                }}
+                variant="outline"
+                size="sm"
+                className="transition-all duration-200 hover:scale-105"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add New Account
+              </Button>
+            )}
+            {canCreate && (
+              <Button
+                onClick={() => {
+                  resetForm();
+                  setIsAddPersonDialogOpen(true);
+                }}
+                variant="outline"
+                size="sm"
+                className="transition-all duration-200 hover:scale-105"
+              >
+                <UserPlus className="h-4 w-4 mr-1" />
+                Add New Person's Account
+              </Button>
+            )}
+            {(canMenuMore || canExport || canPrint) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-card border-border z-50">
+                  {canExport && (
+                    <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
+                      Export to CSV
+                    </DropdownMenuItem>
+                  )}
+                  {canPrint && (
+                    <DropdownMenuItem onClick={handlePrintList} className="cursor-pointer">
+                      Print List
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -887,18 +906,20 @@ export const AccountsTab = () => {
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1">
-                          <ActionButtonTooltip label="Edit" variant="edit">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditAccount(account)}
-                              className="text-primary hover:text-primary/80 transition-colors"
-                            >
-                              <Pencil className="h-4 w-4 mr-1" />
-                              Edit
-                            </Button>
-                          </ActionButtonTooltip>
-                          {account.canDelete && (
+                          {canEdit && (
+                            <ActionButtonTooltip label="Edit" variant="edit">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditAccount(account)}
+                                className="text-primary hover:text-primary/80 transition-colors"
+                              >
+                                <Pencil className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                            </ActionButtonTooltip>
+                          )}
+                          {canDelete && account.canDelete && (
                             <ActionButtonTooltip label="Delete" variant="delete">
                               <Button
                                 variant="ghost"
@@ -911,23 +932,25 @@ export const AccountsTab = () => {
                               </Button>
                             </ActionButtonTooltip>
                           )}
-                          <DropdownMenu>
-                            <ActionButtonTooltip label="More Actions" variant="more">
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                            </ActionButtonTooltip>
-                            <DropdownMenuContent align="end" className="bg-card border-border z-50">
-                              <DropdownMenuItem onClick={() => handleViewDetails(account)} className="cursor-pointer">
-                                View Details
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleViewTransactions(account)} className="cursor-pointer">
-                                View Transactions
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          {canMenuMore && (
+                            <DropdownMenu>
+                              <ActionButtonTooltip label="More Actions" variant="more">
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                              </ActionButtonTooltip>
+                              <DropdownMenuContent align="end" className="bg-card border-border z-50">
+                                <DropdownMenuItem onClick={() => handleViewDetails(account)} className="cursor-pointer">
+                                  View Details
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleViewTransactions(account)} className="cursor-pointer">
+                                  View Transactions
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
                       </td>
                     </tr>

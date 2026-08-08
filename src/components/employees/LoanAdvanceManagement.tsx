@@ -31,6 +31,7 @@ import {
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { usePageActions } from "@/permissions/pageActions";
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
 
 type EmployeeOption = {
@@ -125,6 +126,7 @@ const toDateInputValue = (value?: string | null) => {
 
 export const LoanAdvanceManagement = () => {
   const { toast } = useToast();
+  const { canCreate, canEdit } = usePageActions("employees.loans-advances");
   const [transactions, setTransactions] = useState<LoanAdvanceTransaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -382,10 +384,12 @@ export const LoanAdvanceManagement = () => {
                 </Select>
               </div>
             </div>
-            <Button onClick={openCreateDialog}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Loan / Advance
-            </Button>
+            {canCreate && (
+              <Button onClick={openCreateDialog}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Loan / Advance
+              </Button>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
             Loan and advance recoveries are deducted during salary accrual (payroll), not posted separately here.
@@ -442,15 +446,17 @@ export const LoanAdvanceManagement = () => {
                         {row.description || "—"}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          title="Edit entry"
-                          onClick={() => openEditDialog(row)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Edit entry"
+                            onClick={() => openEditDialog(row)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
