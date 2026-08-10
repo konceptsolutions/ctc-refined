@@ -611,12 +611,21 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'At least one entry is required' });
     }
 
-    // Validate debit equals credit
-    const calculatedDebit = entries.reduce((sum: number, e: any) => sum + (e.debit || 0), 0);
-    const calculatedCredit = entries.reduce((sum: number, e: any) => sum + (e.credit || 0), 0);
+    // Validate debit equals credit (coerce so "" / null don't break totals)
+    const calculatedDebit = entries.reduce(
+      (sum: number, e: any) => sum + (Number(e.debit) || 0),
+      0,
+    );
+    const calculatedCredit = entries.reduce(
+      (sum: number, e: any) => sum + (Number(e.credit) || 0),
+      0,
+    );
 
     if (Math.abs(calculatedDebit - calculatedCredit) > 0.01) {
-      return res.status(400).json({ error: 'Total debit must equal total credit' });
+      return res.status(400).json({
+        error: 'Total debit must equal total credit',
+        details: { debit: calculatedDebit, credit: calculatedCredit },
+      });
     }
 
     const voucher = await prisma.voucher.create({
@@ -653,8 +662,8 @@ router.post('/', async (req: Request, res: Response) => {
             accountId: entry.accountId || null,
             accountName: entry.account || entry.accountName || 'Account',
             description: entry.description || null,
-            debit: entry.debit || 0,
-            credit: entry.credit || 0,
+            debit: Number(entry.debit) || 0,
+            credit: Number(entry.credit) || 0,
             sortOrder: entry.sortOrder !== undefined ? entry.sortOrder : index,
           })),
         },
@@ -884,11 +893,20 @@ router.put('/:id', async (req: Request, res: Response) => {
     let updatedVoucher;
     // If entries are provided, validate and update
     if (entries && Array.isArray(entries)) {
-      const calculatedDebit = entries.reduce((sum: number, e: any) => sum + (e.debit || 0), 0);
-      const calculatedCredit = entries.reduce((sum: number, e: any) => sum + (e.credit || 0), 0);
+      const calculatedDebit = entries.reduce(
+        (sum: number, e: any) => sum + (Number(e.debit) || 0),
+        0,
+      );
+      const calculatedCredit = entries.reduce(
+        (sum: number, e: any) => sum + (Number(e.credit) || 0),
+        0,
+      );
 
       if (Math.abs(calculatedDebit - calculatedCredit) > 0.01) {
-        return res.status(400).json({ error: "Total debit must equal total credit" });
+        return res.status(400).json({
+          error: "Total debit must equal total credit",
+          details: { debit: calculatedDebit, credit: calculatedCredit },
+        });
       }
 
       // Delete existing entries and create new ones
@@ -942,8 +960,8 @@ router.put('/:id', async (req: Request, res: Response) => {
           accountId: entry.accountId || null,
           accountName: entry.account || entry.accountName || "Account",
           description: entry.description || null,
-          debit: entry.debit || 0,
-          credit: entry.credit || 0,
+          debit: Number(entry.debit) || 0,
+          credit: Number(entry.credit) || 0,
           sortOrder: entry.sortOrder !== undefined ? entry.sortOrder : index,
         })),
       });

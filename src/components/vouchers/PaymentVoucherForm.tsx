@@ -206,17 +206,26 @@ export const PaymentVoucherForm = ({
         paidTo,
         date,
         crAccount,
-        entries: entries.map((entry) => ({
-          ...entry,
-          drAmount: Number(entry.drAmount) || 0,
-          ...(isInternationalSupplier
-            ? {
-                drAmountLc:
-                  Number(entry.drAmountLc) ||
-                  (Number(entry.drAmount) || 0) * parsedExchangeRate,
-              }
-            : {}),
-        })),
+        entries: entries.map((entry) => {
+          const drAmount = Number(entry.drAmount) || 0;
+          if (!isInternationalSupplier) {
+            return {
+              id: entry.id,
+              accountDr: entry.accountDr,
+              description: entry.description,
+              drAmount,
+            };
+          }
+          return {
+            id: entry.id,
+            accountDr: entry.accountDr,
+            description: entry.description,
+            drAmount,
+            drAmountLc:
+              Number(entry.drAmountLc) ||
+              drAmount * parsedExchangeRate,
+          };
+        }),
         totalAmount,
         ...(isInternationalSupplier
           ? {

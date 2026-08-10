@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { isCashBankAccount, isCashLedgerAccount, isBankLedgerAccount } from "@/utils/cashBankMode";
 import { buildVoucherAccountOptions, buildBalanceMap, findCashDiscountAccount } from "@/utils/voucherAccounts";
+import { resolvePostedAmount } from "@/utils/fcLcAmount";
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 
 export interface Voucher {
@@ -608,20 +609,25 @@ export const VoucherManagement = () => {
 
     if (data.type === "payment") {
       // Convert Payment Voucher data
+      // Prefer LC when set; empty-string LC must not override FC (?? treats "" as valid).
       const entries: VoucherEntry[] = paymentReceiptEntries.map((entry: any) => ({
         id: entry.id,
         account: entry.accountDr ?? entry.account,
         description: entry.description || "",
-        debit: entry.drAmountLc ?? entry.drAmount ?? entry.debit ?? 0,
+        debit: resolvePostedAmount(entry.drAmountLc, entry.drAmount ?? entry.debit),
         credit: 0,
       }));
-      // Add the Cr account entry
+      const paymentTotal = entries.reduce(
+        (sum, entry) => sum + (Number(entry.debit) || 0),
+        0,
+      );
+      // Add the Cr account entry (must match sum of Dr lines)
       entries.push({
         id: `cr-${Date.now()}`,
         account: data.crAccount,
         description: `Payment to ${data.paidTo}`,
         debit: 0,
-        credit: data.totalAmountLc || data.totalAmount || 0,
+        credit: paymentTotal,
       });
 
       newVoucher = {
@@ -635,8 +641,8 @@ export const VoucherManagement = () => {
           ? { conversionRate: Number(data.conversionRate || 1) }
           : {}),
         entries,
-        totalDebit: data.totalAmountLc || data.totalAmount || 0,
-        totalCredit: data.totalAmountLc || data.totalAmount || 0,
+        totalDebit: paymentTotal,
+        totalCredit: paymentTotal,
         status: "posted",
         createdAt: new Date().toISOString(),
       };
@@ -720,7 +726,7 @@ export const VoucherManagement = () => {
         id: entry.id,
         account: entry.account,
         description: entry.description || "",
-        debit: entry.drAmountLc ?? entry.drAmount ?? 0,
+        debit: resolvePostedAmount(entry.drAmountLc, entry.drAmount),
         credit: 0,
       }));
       const crEntries: VoucherEntry[] = data.crEntries.map((entry: any) => ({
@@ -728,8 +734,17 @@ export const VoucherManagement = () => {
         account: entry.account,
         description: entry.description || "",
         debit: 0,
-        credit: entry.crAmountLc ?? entry.crAmount ?? 0,
+        credit: resolvePostedAmount(entry.crAmountLc, entry.crAmount),
       }));
+      const journalEntries = [...drEntries, ...crEntries];
+      const journalDebit = journalEntries.reduce(
+        (sum, entry) => sum + (Number(entry.debit) || 0),
+        0,
+      );
+      const journalCredit = journalEntries.reduce(
+        (sum, entry) => sum + (Number(entry.credit) || 0),
+        0,
+      );
 
       newVoucher = {
         id: Date.now().toString(),
@@ -741,9 +756,9 @@ export const VoucherManagement = () => {
         ...(voucherCategory === "international_supplier"
           ? { conversionRate: Number(data.conversionRate || 1) }
           : {}),
-        entries: [...drEntries, ...crEntries],
-        totalDebit: data.totalDrLc || data.totalDr || 0,
-        totalCredit: data.totalCrLc || data.totalCr || 0,
+        entries: journalEntries,
+        totalDebit: journalDebit,
+        totalCredit: journalCredit,
         status: "posted",
         createdAt: new Date().toISOString(),
       };
@@ -801,8 +816,8 @@ export const VoucherManagement = () => {
         accountId: entry.account, // The ID of the account
         accountName: accountInfo ? accountInfo.label : entry.account, // The display name
         description: entry.description,
-        debit: entry.debit,
-        credit: entry.credit,
+        debit: Number(entry.debit) || 0,
+        credit: Number(entry.credit) || 0,
         sortOrder: index,
       };
     });

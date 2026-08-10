@@ -32,3 +32,19 @@ export const fcFromLc = (lc: number | string, rate: number): string => {
   if (!Number.isFinite(n) || rate <= 0) return "";
   return String(Number((n / rate).toFixed(6)));
 };
+
+/**
+ * Prefer LC when present; otherwise use FC.
+ * Empty string must not win over a real FC amount (`??` treats "" as valid).
+ */
+export const resolvePostedAmount = (
+  preferred: unknown,
+  fallback: unknown = 0,
+): number => {
+  if (preferred !== undefined && preferred !== null && String(preferred).trim() !== "") {
+    const n = Number(preferred);
+    if (Number.isFinite(n)) return n;
+  }
+  const f = Number(fallback);
+  return Number.isFinite(f) ? f : 0;
+};
