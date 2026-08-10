@@ -208,145 +208,140 @@ router.get("/dashboard", async (req: Request, res: Response) => {
     const [
       totalParts,
       activeParts,
-      totalValue,
       categoriesCount,
       suppliersCount,
+      parts,
+      allMovements,
+      inventoryAccount,
     ] = await Promise.all([
       prisma.part.count(),
       prisma.part.count({ where: { status: "active" } }),
-      prisma.part.aggregate({
-        _sum: {
-          cost: true,
-        },
-        where: {
-          status: "active",
-        },
-      }),
       prisma.category.count({ where: { status: "active" } }),
       prisma.supplier.count({ where: { status: "active" } }),
+      prisma.part.findMany({
+        where: { status: "active" },
+        select: {
+          id: true,
+          cost: true,
+          avgCost: true,
+          purchasePrice: true,
+          reorderLevel: true,
+          Category: { select: { name: true } },
+          Brand: { select: { name: true } },
+        },
+      }),
+      prisma.stockMovement.findMany({
+        select: {
+          partId: true,
+          quantity: true,
+          type: true,
+          referenceType: true,
+          createdAt: true,
+        },
+      }),
+      // Inventory account used for book worth (ledger, not stale currentBalance)
+      prisma.account.findFirst({
+        where: process.env.ACCOUNT_ID_INVENTORY
+          ? { id: process.env.ACCOUNT_ID_INVENTORY }
+          : { code: "101001" },
+        select: {
+          id: true,
+          code: true,
+          openingBalance: true,
+          currentBalance: true,
+        },
+      }),
     ]);
     const activeKits = 0;
 
-    // Get total quantity from stock movements
-    const totalQtyResult = await prisma.stockMovement.aggregate({
-      _sum: {
-        quantity: true,
-      },
-    });
-
-    // Calculate stock levels from movements
-    const allMovements = await prisma.stockMovement.findMany({
-      select: {
-        partId: true,
-        quantity: true,
-        type: true,
-      },
-    });
-
-    // Group movements by part
-    const stockByPart: Record<string, { in: number; out: number }> = {};
-    for (const movement of allMovements) {
-      if (!stockByPart[movement.partId]) {
-        stockByPart[movement.partId] = { in: 0, out: 0 };
-      }
-      if (movement.type === "in") {
-        stockByPart[movement.partId].in += movement.quantity;
-      } else {
-        stockByPart[movement.partId].out += movement.quantity;
-      }
+    // Inventory worth = same as Ledgers: opening + posted Dr − posted Cr
+    // (excludes uncleared cheque vouchers, matching /financial/ledgers)
+    let totalValue = Number(inventoryAccount?.openingBalance) || 0;
+    if (inventoryAccount?.id) {
+      const invAgg = await prisma.voucherEntry.aggregate({
+        where: {
+          accountId: inventoryAccount.id,
+          Voucher: {
+            status: "posted",
+            OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+          },
+        },
+        _sum: { debit: true, credit: true },
+      });
+      totalValue +=
+        (Number(invAgg._sum.debit) || 0) - (Number(invAgg._sum.credit) || 0);
     }
 
-    // Calculate low stock and out of stock
-    const parts = await prisma.part.findMany({
-      where: { status: "active" },
-      select: {
-        id: true,
-        reorderLevel: true,
-      },
-    });
+    // Group movements by part once
+    const movementsByPart: Record<
+      string,
+      Array<{
+        type: string;
+        quantity: number;
+        referenceType?: string | null;
+        createdAt: Date;
+      }>
+    > = {};
+    for (const movement of allMovements) {
+      if (!movementsByPart[movement.partId]) {
+        movementsByPart[movement.partId] = [];
+      }
+      movementsByPart[movement.partId].push(movement);
+    }
 
+    let stockValuation = 0;
+    let totalQty = 0;
     let lowStockCount = 0;
     let outOfStockCount = 0;
+    const categoryValueMap: Record<string, number> = {};
+    const categoryCountMap: Record<string, number> = {};
+    const brandValueMap: Record<string, number> = {};
 
     for (const part of parts) {
-      const stock = stockByPart[part.id] || { in: 0, out: 0 };
-      const currentStock = stock.in - stock.out;
+      const currentStock = Math.max(
+        0,
+        netStockFromMovements(movementsByPart[part.id] || []),
+      );
+      // Prefer avg cost (valuation), then cost / purchase price — same as cost-lookup
+      const unitCost =
+        Number(part.avgCost) ||
+        Number(part.cost) ||
+        Number(part.purchasePrice) ||
+        0;
+      const value = currentStock * unitCost;
+
+      stockValuation += value;
+      totalQty += currentStock;
 
       if (currentStock <= 0) {
         outOfStockCount++;
       } else if (part.reorderLevel > 0 && currentStock <= part.reorderLevel) {
         lowStockCount++;
       }
-    }
 
-    // Get chart data: Category Value Distribution
-    const partsWithCategories = await prisma.part.findMany({
-      where: { status: "active" },
-      include: {
-        Category: true,
-      },
-    });
-
-    // Get all stock movements for these parts
-    const partIds = partsWithCategories.map((p) => p.id);
-    const allPartMovements =
-      partIds.length > 0
-        ? await prisma.stockMovement.findMany({
-            where: {
-              partId: { in: partIds },
-            },
-            select: {
-              partId: true,
-              quantity: true,
-              type: true,
-            },
-          })
-        : [];
-
-    // Group movements by part
-    const movementsByPart: Record<string, { in: number; out: number }> = {};
-    for (const movement of allPartMovements) {
-      if (!movementsByPart[movement.partId]) {
-        movementsByPart[movement.partId] = { in: 0, out: 0 };
-      }
-      if (movement.type === "in") {
-        movementsByPart[movement.partId].in += movement.quantity;
-      } else {
-        movementsByPart[movement.partId].out += movement.quantity;
-      }
-    }
-
-    // Calculate category values
-    const categoryValueMap: Record<string, number> = {};
-    const categoryCountMap: Record<string, number> = {};
-
-    for (const part of partsWithCategories) {
-      const stock = movementsByPart[part.id] || { in: 0, out: 0 };
-      const currentStock = stock.in - stock.out;
-      // Use cost if available, otherwise use 0 (will show value as 0)
-      const value = (part.cost || 0) * Math.max(0, currentStock);
-
-      const catName = (part as any).Category
-        ? (part as any).Category.name
-        : "Uncategorized";
+      const catName = part.Category?.name || "Uncategorized";
       categoryValueMap[catName] = (categoryValueMap[catName] || 0) + value;
       categoryCountMap[catName] = (categoryCountMap[catName] || 0) + 1;
+
+      const brandName = part.Brand?.name || "No Brand";
+      brandValueMap[brandName] = (brandValueMap[brandName] || 0) + value;
     }
+
+
 
     const categoryValueData = Object.entries(categoryValueMap)
       .map(([name, value]) => ({ name, value: Math.round(value) }))
       .sort((a, b) => b.value - a.value);
 
-    // Generate consistent colors for categories
     const categoryColors = [
-      "hsl(0, 70%, 50%)", // Red
-      "hsl(30, 70%, 50%)", // Orange
-      "hsl(60, 70%, 50%)", // Yellow
-      "hsl(120, 70%, 50%)", // Green
-      "hsl(180, 70%, 50%)", // Cyan
-      "hsl(240, 70%, 50%)", // Blue
-      "hsl(270, 70%, 50%)", // Purple
-      "hsl(300, 70%, 50%)", // Magenta
+      "hsl(0, 70%, 50%)",
+      "hsl(30, 70%, 50%)",
+      "hsl(60, 70%, 50%)",
+      "hsl(120, 70%, 50%)",
+      "hsl(180, 70%, 50%)",
+      "hsl(240, 70%, 50%)",
+      "hsl(270, 70%, 50%)",
+      "hsl(300, 70%, 50%)",
     ];
 
     const categoryDistribution = Object.entries(categoryCountMap)
@@ -357,59 +352,23 @@ router.get("/dashboard", async (req: Request, res: Response) => {
       }))
       .sort((a, b) => b.value - a.value);
 
-    // Get brand values
-    const partsWithBrands = await prisma.part.findMany({
-      where: { status: "active" },
-      include: {
-        Brand: true,
-      },
-    });
-
-    const brandValueMap: Record<string, number> = {};
-    for (const part of partsWithBrands) {
-      const stock = movementsByPart[part.id] || { in: 0, out: 0 };
-      const currentStock = stock.in - stock.out;
-      const value = (part.cost || 0) * currentStock;
-
-      if (part.Brand) {
-        brandValueMap[part.Brand.name] =
-          (brandValueMap[part.Brand.name] || 0) + value;
-      } else {
-        // Handle parts without brand
-        const brandName = "No Brand";
-        brandValueMap[brandName] = (brandValueMap[brandName] || 0) + value;
-      }
-    }
-
     const topBrandsByValue = Object.entries(brandValueMap)
       .map(([name, value]) => ({ name, value: Math.round(value) }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 10);
 
-    // Get stock movement trends (last 6 months)
+    // Stock movement trends (last 6 months), excluding reservations
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    const movementsLast6Months = await prisma.stockMovement.findMany({
-      where: {
-        createdAt: {
-          gte: sixMonthsAgo,
-        },
-      },
-      select: {
-        quantity: true,
-        type: true,
-        createdAt: true,
-      },
-    });
-
-    // Group by month
     const monthlyData: Record<string, { in: number; out: number }> = {};
-    for (const movement of movementsLast6Months) {
-      const monthKey = new Date(movement.createdAt).toLocaleDateString(
-        "en-US",
-        { year: "numeric", month: "short" },
-      );
+    for (const movement of allMovements) {
+      if (movement.createdAt < sixMonthsAgo) continue;
+      if (movement.referenceType === "stock_reservation") continue;
+      const monthKey = new Date(movement.createdAt).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+      });
       if (!monthlyData[monthKey]) {
         monthlyData[monthKey] = { in: 0, out: 0 };
       }
@@ -420,7 +379,6 @@ router.get("/dashboard", async (req: Request, res: Response) => {
       }
     }
 
-    // Generate last 6 months
     const stockMovementData = [];
     let balance = 0;
     for (let i = 5; i >= 0; i--) {
@@ -443,8 +401,10 @@ router.get("/dashboard", async (req: Request, res: Response) => {
     res.json({
       totalParts,
       activeParts,
-      totalValue: totalValue._sum.cost || 0,
-      totalQty: totalQtyResult._sum.quantity || 0,
+      totalValue: Math.round(totalValue * 100) / 100,
+      stockValuation: Math.round(stockValuation * 100) / 100,
+      inventoryAccountCode: inventoryAccount?.code || null,
+      totalQty: Math.round(totalQty),
       categoriesCount,
       activeKits,
       suppliersCount,
@@ -2302,22 +2262,34 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
 
     const parts = await prisma.part.findMany({
       where,
-      include: {
-        Brand: true,
-        Category: true,
+      select: {
+        id: true,
+        partNo: true,
+        description: true,
+        cost: true,
+        avgCost: true,
+        purchasePrice: true,
+        Brand: { select: { name: true } },
+        Category: { select: { name: true } },
       },
     });
 
     // Get all stock movements for these parts
     const partIds = parts.map((p) => p.id);
-    const allMovements = await prisma.stockMovement.findMany({
-      where: {
-        partId: { in: partIds },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    const allMovements =
+      partIds.length > 0
+        ? await prisma.stockMovement.findMany({
+            where: { partId: { in: partIds } },
+            select: {
+              partId: true,
+              type: true,
+              quantity: true,
+              referenceType: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: "desc" },
+          })
+        : [];
 
     // Group movements by part
     const movementsByPart: Record<string, typeof allMovements> = {};
@@ -2328,67 +2300,44 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
       movementsByPart[movement.partId].push(movement);
     }
 
-    // Calculate stock levels and analysis metrics
-    const stockByPart: Record<
-      string,
-      { in: number; out: number; lastMovementDate: Date | null }
-    > = {};
-    for (const part of parts) {
-      const movements = movementsByPart[part.id] || [];
-      stockByPart[part.id] = {
-        in: 0,
-        out: 0,
-        lastMovementDate: movements.length > 0 ? movements[0].createdAt : null,
-      };
-      for (const movement of movements) {
-        if (movement.type === "in") {
-          stockByPart[part.id].in += movement.quantity;
-        } else {
-          stockByPart[part.id].out += movement.quantity;
-        }
-      }
-    }
-
-    // Calculate turnover (movements in analysis period)
-    const turnoverByPart: Record<string, number> = {};
-    for (const part of parts) {
-      const movements = movementsByPart[part.id] || [];
-      const periodMovements = movements.filter(
-        (m) => m.createdAt >= analysisStartDate,
-      );
-      // Calculate total quantity moved (both in and out)
-      const totalMoved = periodMovements.reduce(
-        (sum, m) => sum + m.quantity,
-        0,
-      );
-      // Turnover = total moved / analysis period in months
-      turnoverByPart[part.id] = totalMoved / analysisPeriodMonths;
-    }
-
     // Build analysis results
     const results = [];
     const now = new Date();
 
     for (const part of parts) {
-      const stock = stockByPart[part.id] || {
-        in: 0,
-        out: 0,
-        lastMovementDate: null,
-      };
-      const currentStock = stock.in - stock.out;
-      const value = (part.cost || 0) * currentStock;
+      const movements = movementsByPart[part.id] || [];
+      const currentStock = Math.max(0, netStockFromMovements(movements));
+      const unitCost =
+        Number(part.avgCost) ||
+        Number(part.cost) ||
+        Number(part.purchasePrice) ||
+        0;
+      const value = unitCost * currentStock;
 
-      // Calculate days idle
+      // Days idle / turnover ignore stock reservations (not real movement)
+      const realMovements = movements.filter(
+        (m) => m.referenceType !== "stock_reservation",
+      );
+      const lastMovementDate =
+        realMovements.length > 0 ? realMovements[0].createdAt : null;
+
       let daysIdle = 0;
-      if (stock.lastMovementDate) {
-        const diffTime = now.getTime() - stock.lastMovementDate.getTime();
+      if (lastMovementDate) {
+        const diffTime = now.getTime() - lastMovementDate.getTime();
         daysIdle = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       } else {
-        // If no movement, consider it very old (e.g., 365 days)
         daysIdle = 365;
       }
 
-      const turnover = turnoverByPart[part.id] || 0;
+      const periodMovements = realMovements.filter(
+        (m) => m.createdAt >= analysisStartDate,
+      );
+      const totalMoved = periodMovements.reduce(
+        (sum, m) => sum + m.quantity,
+        0,
+      );
+      const turnover =
+        analysisPeriodMonths > 0 ? totalMoved / analysisPeriodMonths : 0;
 
       // Classify item
       let itemClassification: "Fast" | "Normal" | "Slow" | "Dead" = "Normal";
@@ -2417,9 +2366,7 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
         const matchesSearch =
           part.partNo.toLowerCase().includes(searchLower) ||
           (part.description || "").toLowerCase().includes(searchLower) ||
-          ((part as any).Category?.name || "")
-            .toLowerCase()
-            .includes(searchLower);
+          (part.Category?.name || "").toLowerCase().includes(searchLower);
         if (!matchesSearch) {
           continue;
         }
@@ -2429,11 +2376,11 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
         id: part.id,
         partNo: part.partNo,
         description: part.description || "",
-        category: (part as any).Category?.name || "Uncategorized",
+        category: part.Category?.name || "Uncategorized",
         quantity: currentStock,
-        value: value,
+        value: Math.round(value * 100) / 100,
         daysIdle: daysIdle,
-        turnover: Math.round(turnover * 10) / 10, // Round to 1 decimal
+        turnover: Math.round(turnover * 10) / 10,
         classification: itemClassification,
       });
     }
@@ -7618,18 +7565,26 @@ router.get("/multi-dimensional-report", async (req: Request, res: Response) => {
     // Get all parts with related data
     const parts = await prisma.part.findMany({
       where,
-      include: {
-        Brand: true,
-        Category: true,
+      select: {
+        id: true,
+        cost: true,
+        avgCost: true,
+        purchasePrice: true,
+        uom: true,
+        Brand: { select: { name: true } },
+        Category: { select: { name: true } },
         StockMovement: {
-          include: {
-            Store: true,
+          select: {
+            type: true,
+            quantity: true,
+            referenceType: true,
+            Store: { select: { name: true } },
           },
         },
       },
     });
 
-    // Calculate stock for each part
+    // Calculate stock for each part (exclude reservations; value = qty × avgCost)
     const partStockMap: Record<
       string,
       {
@@ -7644,74 +7599,59 @@ router.get("/multi-dimensional-report", async (req: Request, res: Response) => {
       }
     > = {};
 
+    const groupByStore =
+      primary_dimension === "Store" ||
+      secondary_dimension === "Store" ||
+      tertiary_dimension === "Store";
+
     for (const part of parts) {
-      const stockIn = part.StockMovement.filter((m) => m.type === "in").reduce(
-        (sum, m) => sum + m.quantity,
-        0,
-      );
-      const stockOut = part.StockMovement.filter(
-        (m) => m.type === "out",
-      ).reduce((sum, m) => sum + m.quantity, 0);
-      const quantity = stockIn - stockOut;
+      const quantity = Math.max(0, netStockFromMovements(part.StockMovement));
+      if (quantity <= 0) continue;
 
-      if (quantity > 0) {
-        const cost = part.cost || 0;
-        const value = cost * quantity;
-        const category = part.Category?.name || "Uncategorized";
-        const brand = part.Brand?.name || "No Brand";
+      const cost =
+        Number(part.avgCost) ||
+        Number(part.cost) ||
+        Number(part.purchasePrice) ||
+        0;
+      const category = part.Category?.name || "Uncategorized";
+      const brand = part.Brand?.name || "No Brand";
 
-        // Group by store if needed
-        const movementsByStore: Record<string, { in: number; out: number }> =
-          {};
+      if (groupByStore) {
+        const movementsByStore: Record<string, typeof part.StockMovement> = {};
         for (const movement of part.StockMovement) {
           const storeKey = movement.Store?.name || "No Store";
-          if (!movementsByStore[storeKey]) {
-            movementsByStore[storeKey] = { in: 0, out: 0 };
-          }
-          if (movement.type === "in") {
-            movementsByStore[storeKey].in += movement.quantity;
-          } else {
-            movementsByStore[storeKey].out += movement.quantity;
-          }
+          if (!movementsByStore[storeKey]) movementsByStore[storeKey] = [];
+          movementsByStore[storeKey].push(movement);
         }
 
-        // If grouping by store, create separate entries
-        if (
-          primary_dimension === "Store" ||
-          secondary_dimension === "Store" ||
-          tertiary_dimension === "Store"
-        ) {
-          for (const [storeName, storeStock] of Object.entries(
-            movementsByStore,
-          )) {
-            const storeQty = storeStock.in - storeStock.out;
-            if (storeQty > 0) {
-              const key = `${part.id}_${storeName}`;
-              partStockMap[key] = {
-                quantity: storeQty,
-                cost,
-                value: cost * storeQty,
-                category,
-                brand,
-                store: storeName,
-                location: "-",
-                uom: part.uom || "pcs",
-              };
-            }
-          }
-        } else {
-          // Single entry per part
-          partStockMap[part.id] = {
-            quantity,
+        for (const [storeName, storeMovements] of Object.entries(
+          movementsByStore,
+        )) {
+          const storeQty = Math.max(0, netStockFromMovements(storeMovements));
+          if (storeQty <= 0) continue;
+          const key = `${part.id}_${storeName}`;
+          partStockMap[key] = {
+            quantity: storeQty,
             cost,
-            value,
+            value: cost * storeQty,
             category,
             brand,
-            store: "All Stores",
+            store: storeName,
             location: "-",
             uom: part.uom || "pcs",
           };
         }
+      } else {
+        partStockMap[part.id] = {
+          quantity,
+          cost,
+          value: cost * quantity,
+          category,
+          brand,
+          store: "All Stores",
+          location: "-",
+          uom: part.uom || "pcs",
+        };
       }
     }
 
@@ -7794,18 +7734,15 @@ router.get("/multi-dimensional-report", async (req: Request, res: Response) => {
       const dimension = dimensionParts.join(" - ") || "All";
       const items = group.items.size;
       const avgCost =
-        group.costs.length > 0
-          ? group.costs.reduce((sum, cost) => sum + cost, 0) /
-            group.costs.length
-          : 0;
+        group.quantity > 0 ? group.value / group.quantity : 0;
 
       return {
         id: key,
         dimension,
         items,
         quantity: group.quantity,
-        value: group.value,
-        avgCost,
+        value: Math.round(group.value * 100) / 100,
+        avgCost: Math.round(avgCost * 100) / 100,
       };
     });
 
@@ -7856,7 +7793,7 @@ router.get("/multi-dimensional-report", async (req: Request, res: Response) => {
       totals: {
         items: totalItems,
         quantity: totalQuantity,
-        value: totalValue,
+        value: Math.round(totalValue * 100) / 100,
       },
     });
   } catch (error: any) {

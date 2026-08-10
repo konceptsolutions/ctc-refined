@@ -519,7 +519,7 @@ export const MultiDimensionalReport = () => {
               <div>
                 <p className="text-xs font-medium text-chart-green">Total Value</p>
                 <p className="text-2xl font-bold text-foreground">{formatCurrency(totals.value)}</p>
-                <p className="text-xs text-chart-green">inventory value</p>
+                <p className="text-xs text-chart-green">stock valuation</p>
               </div>
               <div className="w-10 h-10 rounded-lg bg-chart-green/10 flex items-center justify-center">
                 <DollarSign className="w-5 h-5 text-chart-green" />

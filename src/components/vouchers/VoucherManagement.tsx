@@ -967,8 +967,9 @@ export const VoucherManagement = () => {
 
       // ONLY include entries if they exist and are not empty
       // This prevents "simple" status updates from accidentally wiping entries if they weren't loaded
+      // Backend PUT /vouchers/:id expects `entries` (not VoucherEntry)
       if (apiEntries.length > 0) {
-        updateData.VoucherEntry = apiEntries;
+        updateData.entries = apiEntries;
       }
 
       const response = await apiClient.updateVoucher(updatedVoucher.id, updateData) as any;

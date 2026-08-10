@@ -45,6 +45,7 @@ import {
   lcFromFc,
   normalizeDecimalTyping,
   parseExchangeRate,
+  resolvePostedAmount,
 } from "@/utils/fcLcAmount";
 import {
   Dialog,
@@ -70,7 +71,7 @@ import { usePageActions } from "@/permissions/pageActions";
 
 interface ViewVouchersTabProps {
   vouchers: Voucher[];
-  onUpdateVoucher: (voucher: Voucher) => void;
+  onUpdateVoucher: (voucher: Voucher) => void | Promise<void>;
   onDeleteVoucher: (id: string) => Promise<void>;
   accounts: { value: string; label: string }[];
   rawAccounts?: any[];
@@ -801,7 +802,7 @@ export const ViewVouchersTab = ({
     setEditEntries(finalEntriesToEdit as any);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingVoucher) return;
 
     // Validate entries
@@ -846,8 +847,10 @@ export const ViewVouchersTab = ({
       ? editEntries.reduce(
           (sum, e) =>
             sum +
-            (Number((e as any).debitLc) ||
-              (Number(e.debit) || 0) * exchangeRateValue),
+            resolvePostedAmount(
+              (e as any).debitLc,
+              (Number(e.debit) || 0) * exchangeRateValue,
+            ),
           0,
         )
       : totalDebitFc;
@@ -855,8 +858,10 @@ export const ViewVouchersTab = ({
       ? editEntries.reduce(
           (sum, e) =>
             sum +
-            (Number((e as any).creditLc) ||
-              (Number(e.credit) || 0) * exchangeRateValue),
+            resolvePostedAmount(
+              (e as any).creditLc,
+              (Number(e.credit) || 0) * exchangeRateValue,
+            ),
           0,
         )
       : totalCreditFc;
@@ -897,45 +902,41 @@ export const ViewVouchersTab = ({
     const savedEntries = editEntries.map((entry) => {
       const debitFc = Number(entry.debit) || 0;
       const creditFc = Number(entry.credit) || 0;
-      const debitLcRaw = (entry as any).debitLc;
-      const creditLcRaw = (entry as any).creditLc;
-      const debitLc = Number(debitLcRaw);
-      const creditLc = Number(creditLcRaw);
       return {
         ...entry,
         debit: editIsInternational
-          ? debitLcRaw !== undefined && debitLcRaw !== ""
-            ? Number.isFinite(debitLc)
-              ? debitLc
-              : 0
-            : debitFc * exchangeRateValue
+          ? resolvePostedAmount(
+              (entry as any).debitLc,
+              debitFc * exchangeRateValue,
+            )
           : debitFc,
         credit: editIsInternational
-          ? creditLcRaw !== undefined && creditLcRaw !== ""
-            ? Number.isFinite(creditLc)
-              ? creditLc
-              : 0
-            : creditFc * exchangeRateValue
+          ? resolvePostedAmount(
+              (entry as any).creditLc,
+              creditFc * exchangeRateValue,
+            )
           : creditFc,
       };
     });
 
-    onUpdateVoucher({
-      ...editingVoucher,
-      narration: editNarration,
-      date: finalDate,
-      checkClearDate: editCheckClearDate || undefined,
-      chequeNumber: editChequeNumber || undefined,
-      chequeDate: editChequeDate || undefined,
-      isCleared: editIsCleared !== null ? editIsCleared : undefined,
-      conversionRate: editIsInternational ? exchangeRateValue : editingVoucher.conversionRate,
-      entries: savedEntries,
-      totalDebit,
-      totalCredit,
-    });
-
-    setEditingVoucher(null);
-    toast({ title: "Success", description: "Voucher updated successfully" });
+    try {
+      await onUpdateVoucher({
+        ...editingVoucher,
+        narration: editNarration,
+        date: finalDate,
+        checkClearDate: editCheckClearDate || undefined,
+        chequeNumber: editChequeNumber || undefined,
+        chequeDate: editChequeDate || undefined,
+        isCleared: editIsCleared !== null ? editIsCleared : undefined,
+        conversionRate: editIsInternational ? exchangeRateValue : editingVoucher.conversionRate,
+        entries: savedEntries,
+        totalDebit,
+        totalCredit,
+      });
+      setEditingVoucher(null);
+    } catch {
+      // Error toast is shown by onUpdateVoucher
+    }
   };
 
   const handleOpenClearDialog = (voucher: Voucher) => {

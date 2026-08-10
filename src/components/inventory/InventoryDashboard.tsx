@@ -94,18 +94,25 @@ function buildPieSlices(items: CategorySlice[], minShare = 0.04): CategorySlice[
 
 const StatCard = ({ title, value, subtitle, icon: Icon, colorClass, bgClass, onClick, clickable }: StatCardProps) => (
   <Card
-    className={`${bgClass} border-l-4 ${colorClass.replace('text-', 'border-l-')} ${clickable ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+    className={`${bgClass} border-l-4 ${colorClass.replace('text-', 'border-l-')} overflow-hidden ${clickable ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
     onClick={onClick}
   >
     <CardContent className="p-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <div className="min-w-0 flex-1">
           <p className={`text-xs font-semibold uppercase tracking-wide ${colorClass}`}>{title}</p>
-          <p className={`text-2xl font-bold mt-1 ${colorClass}`}>{value}</p>
-          <p className={`text-xs mt-1 ${colorClass} opacity-80`}>{subtitle}</p>
+          <p
+            className={`font-bold mt-1 ${colorClass} break-words leading-tight ${
+              String(value).length > 14 ? "text-lg sm:text-xl" : "text-2xl"
+            }`}
+            title={String(value)}
+          >
+            {value}
+          </p>
+          <p className={`text-xs mt-1 ${colorClass} opacity-80 truncate`}>{subtitle}</p>
         </div>
-        <div className={`p-3 rounded-full ${bgClass}`}>
-          <Icon className={`w-6 h-6 ${colorClass}`} />
+        <div className={`p-2 sm:p-3 rounded-full ${bgClass} shrink-0`}>
+          <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${colorClass}`} />
         </div>
       </div>
     </CardContent>
@@ -311,8 +318,11 @@ export const InventoryDashboard = () => {
         />
         <StatCard
           title="TOTAL VALUE"
-          value={`Rs ${statsData.totalValue.toLocaleString()}`}
-          subtitle="inventory worth"
+          value={`Rs ${Number(statsData.totalValue || 0).toLocaleString("en-PK", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`}
+          subtitle="inventory ledger"
           icon={DollarSign}
           colorClass="text-green-600"
           bgClass="bg-green-50 dark:bg-green-950/30"
