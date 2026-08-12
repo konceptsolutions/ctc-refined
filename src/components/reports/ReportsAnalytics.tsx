@@ -15,7 +15,9 @@ import {
   Truck,
   Target,
   BarChart3,
-  Filter
+  Filter,
+  Wallet,
+  ReceiptText,
 } from "lucide-react";
 import RealTimeDashboard from "./RealTimeDashboard";
 import SalesReportTab from "./SalesReportTab";
@@ -32,6 +34,8 @@ import CustomerAnalysisTab from "./CustomerAnalysisTab";
 import CustomerAgingTab from "./CustomerAgingTab";
 import SupplierPerformanceTab from "./SupplierPerformanceTab";
 import TopSellingItemsTab from "./TopSellingItemsTab";
+import SupplierPayableTab from "./SupplierPayableTab";
+import CustomerReceivableTab from "./CustomerReceivableTab";
 
 type CategoryType = "overview" | "sales" | "inventory" | "financial" | "analytics";
 
@@ -69,6 +73,8 @@ const subTabs: Record<CategoryType, SubTab[]> = {
     { id: "purchase-comparison", label: "Purchase Comparison", icon: BarChart3 },
     { id: "import-cost", label: "Import Cost Summary", icon: Truck },
     { id: "expenses", label: "Expenses", icon: DollarSign },
+    { id: "supplier-payable", label: "Supplier Payable", icon: Wallet },
+    { id: "customer-receivable", label: "Customer Receivable", icon: ReceiptText },
   ],
   analytics: [
     { id: "customer-analysis", label: "Customer Analysis", icon: Users },
@@ -119,6 +125,10 @@ const ReportsAnalytics = () => {
         return <CustomerAgingTab />;
       case "supplier-performance":
         return <SupplierPerformanceTab />;
+      case "supplier-payable":
+        return <SupplierPayableTab />;
+      case "customer-receivable":
+        return <CustomerReceivableTab />;
       default:
         return <RealTimeDashboard />;
     }

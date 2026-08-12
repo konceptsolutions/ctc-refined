@@ -604,7 +604,7 @@ app.use("/api/ai-assistant", ...apiAuth, aiAssistantRoutes);
 app.use("/api/vouchers", ...apiAuth, requirePermission("module.vouchers"), vouchersRoutes);
 // Legacy/compat alias (some clients call this path directly)
 app.use("/api/getVouchers", ...apiAuth, requirePermission("module.vouchers"), vouchersRoutes);
-app.use("/api/sales", ...apiAuth, requirePermission("module.sales"), salesRoutes);
+app.use("/api/sales", ...apiAuth, requirePermission("module.sales", "module.store"), salesRoutes);
 app.use("/api/sales-returns", ...apiAuth, requirePermission("module.sales", "page.sales.returns"), salesReturnsRoutes);
 app.use("/api/parts-dropdown", ...apiAuth, partsDropdownRoutes);
 app.use("/api/dpo-returns", ...apiAuth, requirePermission("module.inventory", "page.inventory.dpo-return"), dpoReturnsRoutes);
@@ -635,7 +635,7 @@ app.use("/dev-koncepts/api/longcat-settings", ...apiAuth, requirePermission("mod
 app.use("/dev-koncepts/api/ai-assistant", ...apiAuth, aiAssistantRoutes);
 app.use("/dev-koncepts/api/vouchers", ...apiAuth, requirePermission("module.vouchers"), vouchersRoutes);
 app.use("/dev-koncepts/api/getVouchers", ...apiAuth, requirePermission("module.vouchers"), vouchersRoutes);
-app.use("/dev-koncepts/api/sales", ...apiAuth, requirePermission("module.sales"), salesRoutes);
+app.use("/dev-koncepts/api/sales", ...apiAuth, requirePermission("module.sales", "module.store"), salesRoutes);
 app.use("/dev-koncepts/api/dpo-returns", ...apiAuth, requirePermission("module.inventory", "page.inventory.dpo-return"), dpoReturnsRoutes);
 app.use("/dev-koncepts/api/sales-returns", ...apiAuth, requirePermission("module.sales", "page.sales.returns"), salesReturnsRoutes);
 app.use("/dev-koncepts/api/advanced-search", ...apiAuth, advancedSearchRoutes);

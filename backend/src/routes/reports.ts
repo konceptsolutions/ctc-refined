@@ -1923,5 +1923,164 @@ router.get('/income-statement', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Supplier Payable Report ────────────────────────────────────────────────
+/**
+ * GET /reports/financial/supplier-payable
+ * Returns every supplier + its payable account balance as of the given date.
+ * Query params: to_date (optional, defaults to today)
+ */
+router.get('/financial/supplier-payable', async (req: Request, res: Response) => {
+  try {
+    const { to_date } = req.query;
+
+    const toDate = to_date ? new Date(to_date as string) : new Date();
+    toDate.setHours(23, 59, 59, 999);
+
+    // Fetch all supplier-linked accounts with their voucher entries up to to_date
+    const accounts = await prisma.account.findMany({
+      where: {
+        supplierId: { not: null },
+        status: 'Active',
+      },
+      include: {
+        Supplier: {
+          select: {
+            id: true,
+            name: true,
+            companyName: true,
+            code: true,
+            type: true,
+          },
+        },
+        Subgroup: { include: { MainGroup: true } },
+        VoucherEntry: {
+          where: {
+            Voucher: {
+              status: 'posted',
+              OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+              date: { lte: toDate },
+            },
+          },
+          select: { debit: true, credit: true },
+        },
+      },
+      orderBy: { code: 'asc' },
+    });
+
+    const rows = accounts
+      .map((acc: any) => {
+        const accountType = acc.Subgroup?.MainGroup?.type || 'liability';
+        const totalDebit = acc.VoucherEntry.reduce((s: number, e: any) => s + (Number(e.debit) || 0), 0);
+        const totalCredit = acc.VoucherEntry.reduce((s: number, e: any) => s + (Number(e.credit) || 0), 0);
+
+        // Liabilities: balance increases with credit, decreases with debit
+        const isDebitNorm = ['asset', 'expense', 'cost'].includes(accountType.toLowerCase());
+        const balance = isDebitNorm
+          ? (Number(acc.openingBalance) || 0) + totalDebit - totalCredit
+          : (Number(acc.openingBalance) || 0) + totalCredit - totalDebit;
+
+        return {
+          accountId: acc.id,
+          accountCode: acc.code,
+          accountName: acc.name,
+          supplierId: acc.supplierId,
+          supplierName: acc.Supplier?.companyName || acc.Supplier?.name || acc.name,
+          supplierCode: acc.Supplier?.code || null,
+          supplierType: acc.Supplier?.type || null,
+          balance,
+        };
+      })
+      .filter((r: any) => r.balance !== 0);
+
+    const totalBalance = rows.reduce((s: number, r: any) => s + r.balance, 0);
+
+    res.json({ data: rows, totalBalance, asOf: toDate.toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch supplier payable report' });
+  }
+});
+
+// ─── Customer Receivable Report ───────────────────────────────────────────────
+/**
+ * GET /reports/financial/customer-receivable
+ * Returns every customer + its receivable account balance as of the given date,
+ * plus credit limit and contact number.
+ * Query params: to_date (optional)
+ */
+router.get('/financial/customer-receivable', async (req: Request, res: Response) => {
+  try {
+    const { to_date } = req.query;
+
+    const toDate = to_date ? new Date(to_date as string) : new Date();
+    toDate.setHours(23, 59, 59, 999);
+
+    const accounts = await prisma.account.findMany({
+      where: {
+        customerId: { not: null },
+        supplierId: null,
+        status: 'Active',
+      },
+      include: {
+        Customer: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            contactNo: true,
+            cellNumber: true,
+            creditLimit: true,
+          },
+        },
+        Subgroup: { include: { MainGroup: true } },
+        VoucherEntry: {
+          where: {
+            Voucher: {
+              status: 'posted',
+              OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+              date: { lte: toDate },
+            },
+          },
+          select: { debit: true, credit: true },
+        },
+      },
+      orderBy: { code: 'asc' },
+    });
+
+    const rows = accounts
+      .map((acc: any) => {
+        const accountType = acc.Subgroup?.MainGroup?.type || 'asset';
+        const totalDebit = acc.VoucherEntry.reduce((s: number, e: any) => s + (Number(e.debit) || 0), 0);
+        const totalCredit = acc.VoucherEntry.reduce((s: number, e: any) => s + (Number(e.credit) || 0), 0);
+
+        const isDebitNorm = ['asset', 'expense', 'cost'].includes(accountType.toLowerCase());
+        const balance = isDebitNorm
+          ? (Number(acc.openingBalance) || 0) + totalDebit - totalCredit
+          : (Number(acc.openingBalance) || 0) + totalCredit - totalDebit;
+
+        const phone = acc.Customer?.cellNumber || acc.Customer?.contactNo || null;
+        const creditLimit = Number(acc.Customer?.creditLimit) || 0;
+
+        return {
+          accountId: acc.id,
+          accountCode: acc.code,
+          accountName: acc.name,
+          customerId: acc.customerId,
+          customerName: acc.Customer?.name || acc.name,
+          customerCode: acc.Customer?.code || null,
+          phone,
+          creditLimit,
+          balance,
+        };
+      })
+      .filter((r: any) => r.balance !== 0);
+
+    const totalBalance = rows.reduce((s: number, r: any) => s + r.balance, 0);
+
+    res.json({ data: rows, totalBalance, asOf: toDate.toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch customer receivable report' });
+  }
+});
+
 export default router;
 

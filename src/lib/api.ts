@@ -4684,6 +4684,20 @@ class ApiClient {
   async getReservedQuantity(partId: string) {
     return this.request(`/sales/stock/reserved/${partId}`);
   }
+
+  async getSupplierPayableReport(params: { to_date?: string } = {}) {
+    const qs = new URLSearchParams();
+    if (params.to_date) qs.set("to_date", params.to_date);
+    const q = qs.toString();
+    return this.request(`/reports/financial/supplier-payable${q ? `?${q}` : ""}`);
+  }
+
+  async getCustomerReceivableReport(params: { to_date?: string } = {}) {
+    const qs = new URLSearchParams();
+    if (params.to_date) qs.set("to_date", params.to_date);
+    const q = qs.toString();
+    return this.request(`/reports/financial/customer-receivable${q ? `?${q}` : ""}`);
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);
