@@ -7,7 +7,7 @@ import {
   isAdminRole,
   isAuthenticated,
 } from "@/utils/auth";
-import { isWithinLoginWindow, msUntilLoginWindowEnd } from "@/utils/loginHours";
+import { isWithinLoginSchedule, msUntilLoginWindowEnd } from "@/utils/loginHours";
 import { LOGIN_WINDOW_EVENT } from "@/utils/loginWindowEvents";
 
 const LoginHoursGuard = () => {
@@ -35,8 +35,8 @@ const LoginHoursGuard = () => {
 
     const checkWindow = () => {
       if (!isAuthenticated() || isAdminRole()) return;
-      const { loginStartTime, loginEndTime } = getStoredLoginHours();
-      if (!isWithinLoginWindow(loginStartTime, loginEndTime)) {
+      const { loginStartTime, loginEndTime, loginAllowedDays } = getStoredLoginHours();
+      if (!isWithinLoginSchedule(loginStartTime, loginEndTime, loginAllowedDays)) {
         logout();
       }
     };

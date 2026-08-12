@@ -26,7 +26,7 @@ export type PurchaseImportQuotationPrintItem = {
   currentStock?: number | null;
   requestQty?: number | null;
   quotationQty?: number | null;
-  shipDays?: number | null;
+  shipDays?: string | null;
   lastFcRate?: number | null;
   fcRate?: number | null;
   fcAmount?: number | null;
@@ -319,7 +319,7 @@ export const printPurchaseImportQuotation = ({
               String(Number(item.currentStock || 0)),
               String(Number(item.requestQty || 0)),
               String(Number(item.quotationQty || 0)),
-              String(Number(item.shipDays || 0)),
+              text(item.shipDays || "-"),
             ];
 
             if (isRevised) {

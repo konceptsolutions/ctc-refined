@@ -103,6 +103,7 @@ const Login = () => {
                 saveAuth(effectiveRole, response.token, {
                     loginStartTime: response.user?.loginStartTime ?? null,
                     loginEndTime: response.user?.loginEndTime ?? null,
+                    loginAllowedDays: response.user?.loginAllowedDays ?? null,
                 }, permissions);
 
                 const roleLabel =

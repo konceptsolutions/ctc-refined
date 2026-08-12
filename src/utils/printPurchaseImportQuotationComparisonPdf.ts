@@ -24,6 +24,7 @@ export type PurchaseImportQuotationComparisonItem = {
     string,
     {
       quotationQty: number;
+      shipDays: string;
       fcRate: number;
       lcRate: number;
       fcAmount: number;
@@ -194,7 +195,7 @@ export const printPurchaseImportQuotationComparison = ({
   doc.text("Supplier Quotations", marginX, cursorY + 3);
   cursorY += 5;
 
-  const perSupplierCols = 2;
+  const perSupplierCols = 3; // FC Rate | LC Rate | Ship Days
   const columnCount = 4 + suppliers.length * perSupplierCols;
 
   const comparableLcFor = (
@@ -277,6 +278,7 @@ export const printPurchaseImportQuotationComparison = ({
   const headRow2 = suppliers.flatMap(() => [
     { content: "FC Rate", styles: { halign: "right" as const } },
     { content: "LC Rate", styles: { halign: "right" as const } },
+    { content: "Ship Days", styles: { halign: "center" as const } },
   ]);
 
   const body =
@@ -297,12 +299,13 @@ export const printPurchaseImportQuotationComparison = ({
           for (const supplier of suppliers) {
             const quote = item.quotes[supplier.supplierId];
             if (!quote) {
-              row.push("-", "-");
+              row.push("-", "-", "-");
             } else {
               const lcFromFc = comparableLcFor(quote, supplier);
               row.push(
                 num(quote.fcRate, 2),
                 num(lcFromFc ?? quote.lcRate, 0),
+                text(quote.shipDays || "-"),
               );
             }
           }
@@ -326,20 +329,23 @@ export const printPurchaseImportQuotationComparison = ({
         content: num(supplier.lcTotal || 0),
         styles: { halign: "right" as const },
       },
+      { content: "" },
     );
   }
 
-  const fontSize = suppliers.length > 3 ? 6.5 : suppliers.length > 2 ? 7 : 7.5;
-  const headingFontSize = suppliers.length > 3 ? 7.5 : suppliers.length > 2 ? 8 : 8.5;
-  const itemColumnWidth = suppliers.length > 3 ? 70 : suppliers.length > 2 ? 78 : 88;
-  const brandWidth = 14;
-  const reqQtyWidth = 14;
-  const indexWidth = 8;
+  const fontSize = suppliers.length > 3 ? 6 : suppliers.length > 2 ? 6.5 : 7;
+  const headingFontSize = suppliers.length > 3 ? 7 : suppliers.length > 2 ? 7.5 : 8;
+  const itemColumnWidth = suppliers.length > 3 ? 60 : suppliers.length > 2 ? 68 : 78;
+  const brandWidth = 13;
+  const reqQtyWidth = 12;
+  const indexWidth = 7;
   const remainingWidth =
     contentWidth - indexWidth - itemColumnWidth - brandWidth - reqQtyWidth;
-  const supplierColWidth = Math.max(
-    18,
-    remainingWidth / (suppliers.length * perSupplierCols),
+  // 3 cols per supplier: FC Rate | LC Rate | Ship Days; ship days is narrower
+  const shipDaysWidth = 13;
+  const rateColWidth = Math.max(
+    14,
+    (remainingWidth - suppliers.length * shipDaysWidth) / (suppliers.length * 2),
   );
 
   autoTable(doc, {
@@ -383,8 +389,9 @@ export const printPurchaseImportQuotationComparison = ({
         suppliers.flatMap((_, supplierIndex) => {
           const base = 4 + supplierIndex * perSupplierCols;
           return [
-            [base, { halign: "right" as const, cellWidth: supplierColWidth }],
-            [base + 1, { halign: "right" as const, cellWidth: supplierColWidth }],
+            [base, { halign: "right" as const, cellWidth: rateColWidth }],
+            [base + 1, { halign: "right" as const, cellWidth: rateColWidth }],
+            [base + 2, { halign: "center" as const, cellWidth: shipDaysWidth }],
           ];
         }),
       ),
@@ -401,8 +408,11 @@ export const printPurchaseImportQuotationComparison = ({
         applyPdfFcLcColors(data as Parameters<typeof applyPdfFcLcColors>[0], fcCols, lcCols);
       }
       if (data.section !== "body" || data.column.index < 4) return;
+      const colOffset = data.column.index - 4;
+      // Ship days column (index 2 within each supplier block) — skip price coloring
+      if (colOffset % perSupplierCols === 2) return;
       const rowIndex = data.row.index;
-      const supplierIndex = Math.floor((data.column.index - 4) / perSupplierCols);
+      const supplierIndex = Math.floor(colOffset / perSupplierCols);
       const ranks = itemPriceRanks[rowIndex];
       const rank = ranks?.get(supplierIndex);
       if (rank == null || !ranks || ranks.size === 0) return;
@@ -417,7 +427,6 @@ export const printPurchaseImportQuotationComparison = ({
       data.cell.styles.textColor = color.text;
       data.cell.styles.fontStyle = "bold";
       data.cell.styles.lineColor = color.border;
-      // Thick borders so cells stay readable when printed / viewed from distance
       data.cell.styles.lineWidth = rank === 0 ? 1.4 : 1.0;
     },
   });
@@ -449,6 +458,103 @@ export const printPurchaseImportQuotationComparison = ({
     const note = `${supplier.supplierName}: ${supplier.quotationNo || "No quotation"} | ${text(supplier.currency || "-")} | Rate ${num(supplier.conversionRate || 0, 4)} | LC Total ${num(supplier.lcTotal || 0)}`;
     doc.text(note, marginX, notesY);
     notesY += 4;
+  }
+
+  // ── Supplier Summary (cheapest items per supplier) ────────────────────────
+  // Count how many items each supplier wins (lowest LC rate)
+  const cheapestCount = new Map<number, number>(); // supplierIndex → count
+  const tiedItems: number[] = []; // item indices where 2+ suppliers tie for best
+  let itemsWithAnyQuote = 0;
+
+  items.forEach((_item, itemIdx) => {
+    const ranks = itemPriceRanks[itemIdx];
+    if (!ranks || ranks.size === 0) return;
+    itemsWithAnyQuote++;
+    // Collect all supplierIndexes that share rank 0 (best price)
+    const bestIndexes = Array.from(ranks.entries())
+      .filter(([, rank]) => rank === 0)
+      .map(([sIdx]) => sIdx);
+    if (bestIndexes.length > 1) {
+      tiedItems.push(itemIdx);
+    }
+    bestIndexes.forEach((sIdx) => {
+      cheapestCount.set(sIdx, (cheapestCount.get(sIdx) || 0) + 1);
+    });
+  });
+
+  const summaryStartY = notesY + 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(17, 17, 17);
+  doc.text("Price Summary — Cheapest Supplier per Item", marginX, summaryStartY);
+
+  const summaryTableHead = [["Supplier", "Quotation No", "Currency", "Exchange Rate", "Cheapest Items", "% of Total", "LC Total"]];
+  const summaryTableBody = suppliers.map((supplier, sIdx) => {
+    const count = cheapestCount.get(sIdx) || 0;
+    const pct = itemsWithAnyQuote > 0 ? ((count / itemsWithAnyQuote) * 100).toFixed(1) : "0.0";
+    return [
+      supplier.supplierName,
+      supplier.quotationNo || "-",
+      text(supplier.currency || "-"),
+      num(supplier.conversionRate || 0, 4),
+      String(count),
+      `${pct}%`,
+      num(supplier.lcTotal || 0),
+    ];
+  });
+
+  // Sort summary rows by cheapest items descending for readability
+  summaryTableBody.sort((a, b) => Number(b[4]) - Number(a[4]));
+
+  autoTable(doc, {
+    startY: summaryStartY + 3,
+    margin: { left: marginX, right: marginX },
+    head: summaryTableHead,
+    body: summaryTableBody,
+    styles: {
+      font: "helvetica",
+      fontSize: 8,
+      cellPadding: 1.5,
+      textColor: [17, 17, 17],
+      lineColor: [221, 221, 221],
+      lineWidth: 0.2,
+    },
+    headStyles: {
+      fillColor: [22, 100, 218],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      fontSize: 8.5,
+    },
+    alternateRowStyles: { fillColor: [249, 249, 249] },
+    columnStyles: {
+      4: { halign: "center", fontStyle: "bold" },
+      5: { halign: "center" },
+      6: { halign: "right" },
+    },
+    didParseCell: (data) => {
+      if (data.section !== "body") return;
+      // Highlight the row with the most cheapest items in green
+      const maxCount = Math.max(...Array.from(cheapestCount.values()), 0);
+      if (data.column.index === 4 && Number(data.cell.raw) === maxCount && maxCount > 0) {
+        data.cell.styles.fillColor = [34, 197, 94];
+        data.cell.styles.textColor = [0, 0, 0];
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
+  });
+
+  const summaryFinalY =
+    ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || summaryStartY) + 5;
+
+  if (tiedItems.length > 0) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 100, 100);
+    doc.text(
+      `Note: ${tiedItems.length} item(s) tied for best price — counted for each tied supplier.`,
+      marginX,
+      summaryFinalY,
+    );
   }
 
   return openPdfPrintDialog(doc);

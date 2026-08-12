@@ -1623,12 +1623,18 @@ router.get("/invoices", async (req: Request, res: Response) => {
 
     const andExtra: any[] = [];
     if (search) {
-      andExtra.push({
-        OR: [
-          { invoiceNo: { contains: search as string } },
-          { customerName: { contains: search as string } },
-        ],
-      });
+      const q = String(search).trim();
+      if (q) {
+        andExtra.push({
+          OR: [
+            { invoiceNo: { contains: q, mode: "insensitive" } },
+            { customerName: { contains: q, mode: "insensitive" } },
+            { Customer: { name: { contains: q, mode: "insensitive" } } },
+            { Customer: { shortTitle: { contains: q, mode: "insensitive" } } },
+            { Customer: { code: { contains: q, mode: "insensitive" } } },
+          ],
+        });
+      }
     }
     const pid = partId && String(partId).trim() ? String(partId).trim() : "";
     const bid =
@@ -1655,6 +1661,9 @@ router.get("/invoices", async (req: Request, res: Response) => {
       where,
       orderBy: [{ invoiceDate: "desc" }, { invoiceNo: "desc" }],
       include: {
+        Customer: {
+          select: { id: true, name: true, shortTitle: true, code: true },
+        },
         SalesInvoiceItem: {
           select: {
             id: true,

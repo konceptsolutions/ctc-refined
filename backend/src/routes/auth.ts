@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/database';
 import { logActivity, getClientIp } from '../utils/activityLogger';
-import { formatLoginWindowLabel, isWithinLoginWindow } from '../utils/loginHours';
+import { formatLoginWindowLabel, isWithinLoginSchedule, normalizeLoginDays } from '../utils/loginHours';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
@@ -77,10 +77,11 @@ router.post('/login', async (req, res) => {
             rolePermissions: string | null;
             loginStartTime: string | null;
             loginEndTime: string | null;
+            loginAllowedDays: string | null;
         }>>`
             SELECT u.id, u.name, u.email, u.password, u.status, r.name AS role,
                    r.permissions AS "rolePermissions",
-                   u."loginStartTime", u."loginEndTime"
+                   u."loginStartTime", u."loginEndTime", u."loginAllowedDays"
             FROM "User" u
             JOIN "Role" r ON r.id = u."roleId"
             WHERE u.email = ${email}
@@ -108,12 +109,13 @@ router.post('/login', async (req, res) => {
         }
 
         const isAdmin = (user.role || '').trim().toLowerCase() === 'admin';
-        if (!isAdmin && !isWithinLoginWindow(user.loginStartTime, user.loginEndTime)) {
+        const allowedDays = normalizeLoginDays(user.loginAllowedDays ?? null) ?? null;
+        if (!isAdmin && !isWithinLoginSchedule(user.loginStartTime, user.loginEndTime, allowedDays)) {
             const windowLabel = formatLoginWindowLabel(user.loginStartTime, user.loginEndTime);
             return res.status(403).json({
                 error: windowLabel
                     ? `You can only log in between ${windowLabel} (Pakistan time).`
-                    : 'You can only log in during your allowed hours.',
+                    : 'You can only log in during your allowed schedule.',
                 code: 'LOGIN_WINDOW',
             });
         }
@@ -162,6 +164,7 @@ router.post('/login', async (req, res) => {
                 permissions,
                 loginStartTime: user.loginStartTime,
                 loginEndTime: user.loginEndTime,
+                loginAllowedDays: allowedDays,
             }
         });
     } catch (error: any) {
@@ -197,10 +200,11 @@ router.get('/me', async (req, res) => {
             rolePermissions: string | null;
             loginStartTime: string | null;
             loginEndTime: string | null;
+            loginAllowedDays: string | null;
         }>>`
             SELECT u.id, u.name, u.email, u.status, r.name AS role,
                    r.permissions AS "rolePermissions",
-                   u."loginStartTime", u."loginEndTime"
+                   u."loginStartTime", u."loginEndTime", u."loginAllowedDays"
             FROM "User" u
             JOIN "Role" r ON r.id = u."roleId"
             WHERE u.id = ${decoded.id}
@@ -212,6 +216,7 @@ router.get('/me', async (req, res) => {
         }
 
         const permissions = await resolveLoginPermissions(user.role, user.rolePermissions);
+        const allowedDays = normalizeLoginDays(user.loginAllowedDays ?? null) ?? null;
 
         res.json({
             data: {
@@ -223,6 +228,7 @@ router.get('/me', async (req, res) => {
                 permissions,
                 loginStartTime: user.loginStartTime,
                 loginEndTime: user.loginEndTime,
+                loginAllowedDays: allowedDays,
             },
         });
     } catch (error: any) {

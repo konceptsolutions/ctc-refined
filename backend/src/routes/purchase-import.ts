@@ -2072,7 +2072,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         currentStock: stockByPartId.get(String(item.partId)) ?? 0,
         demandQuantity: Number(item.demandQuantity || 0),
         quotationQuantity: Number(item.quotationQuantity || 0),
-        shipDays: Number(item.shipDays || 0),
+        shipDays: String(item.shipDays ?? ""),
         fcRate: Number(item.fcRate || 0),
         revisedFcRate: Number(item.revisedFcRate || 0),
         weight: Number(item.weight || 0),
@@ -2092,7 +2092,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         weight: Number(item.weight || 0),
         totalWeight: Number(item.totalWeight || 0),
         quotationQuantity: Number(item.demandQuantity || 0),
-        shipDays: 0,
+        shipDays: "STK",
         fcRate: 0,
         revisedFcRate: 0,
       }));
@@ -2251,6 +2251,7 @@ router.get("/requests/:requestId/quotation-comparison", async (req: Request, res
         string,
         {
           quotationQty: number;
+          shipDays: string;
           fcRate: number;
           lcRate: number;
           fcAmount: number;
@@ -2275,7 +2276,15 @@ router.get("/requests/:requestId/quotation-comparison", async (req: Request, res
         include: {
           PurchaseQuotationItem: {
             orderBy: { createdAt: "asc" },
-            include: {
+            select: {
+              partId: true,
+              demandQuantity: true,
+              quotationQuantity: true,
+              shipDays: true,
+              fcRate: true,
+              lcRate: true,
+              fcAmount: true,
+              lcAmount: true,
               Part: {
                 select: {
                   id: true,
@@ -2316,6 +2325,7 @@ router.get("/requests/:requestId/quotation-comparison", async (req: Request, res
         };
         existing.quotes[supplierId] = {
           quotationQty: Number(item.quotationQuantity || 0),
+          shipDays: String(item.shipDays ?? ""),
           fcRate: Number(item.fcRate || 0),
           lcRate: Number(item.lcRate || 0),
           fcAmount: Number(item.fcAmount || 0),
@@ -2444,7 +2454,7 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
         const fcRate = roundFc(item?.fcRate || 0);
         const lcRate = roundPurchasePrice(fcRate * conversionRate);
         const demandQuantity = Number(item?.demandQuantity || 0);
-        const shipDays = Number(item?.shipDays || 0);
+        const shipDays = String(item?.shipDays ?? "").trim();
         const weight = Number(item?.weight || 0);
         return {
           partId: String(item?.partId || "").trim(),
@@ -2795,7 +2805,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
             khiQuantity: Number(split?.khiQuantity || 0),
             isbQuantity: Number(split?.isbQuantity || 0),
             otherQuantity: Number(split?.otherQuantity || 0),
-            shipDays: Number(item.shipDays || 0),
+            shipDays: String(item.shipDays ?? ""),
             fcRate: Number(item.fcRate || 0),
             fcAmount: Number(item.fcAmount || 0),
             lcRate: Number(item.lcRate || 0),
@@ -2875,7 +2885,7 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
         const fcRate = roundFc(item?.fcRate || 0);
         const lcRate = roundPurchasePrice(fcRate * normalizedConversionRate);
         const demandQuantity = Number(item?.demandQuantity || 0);
-        const shipDays = Number(item?.shipDays || 0);
+        const shipDays = String(item?.shipDays ?? "").trim();
         const weight = Number(item?.weight || 0);
         return {
           partId: String(item?.partId || "").trim(),
@@ -3032,7 +3042,7 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
         const fcRate = roundFc(item?.fcRate || 0);
         const revisedFcRate = roundFc(item?.revisedFcRate || 0);
         const demandQuantity = Number(item?.demandQuantity || 0);
-        const shipDays = Number(item?.shipDays || 0);
+        const shipDays = String(item?.shipDays ?? "").trim();
         const weight = Number(item?.weight || 0);
         const lcRate = roundPurchasePrice(fcRate * normalizedConversionRate);
         const revisedLcRate = roundPurchasePrice(
@@ -3898,7 +3908,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           currentStock: Number(requestItem?.currentStock || 0),
           demandQuantity: Number(quotationItem?.demandQuantity || 0),
           quotationQuantity: Number(quotationItem?.quotationQuantity || 0),
-          shipDays: Number(quotationItem?.shipDays || 0),
+          shipDays: String(quotationItem?.shipDays ?? ""),
           fcRate: savedFcRate,
           fcAmount: Number((poItem as any).fcAmount || 0),
           lcRate: Number(poItem.unitCost) || 0,
@@ -3954,7 +3964,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         currentStock: Number(requestItem?.currentStock || 0),
         demandQuantity: Number(quotationItem?.demandQuantity || 0),
         quotationQuantity: Number(quotationItem?.quotationQuantity || 0),
-        shipDays: Number(quotationItem?.shipDays || 0),
+        shipDays: String(quotationItem?.shipDays ?? ""),
         fcRate,
         fcAmount: fcRate * orderQty,
         lcRate,

@@ -212,7 +212,7 @@ function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] 
       discountType: "percent" as const,
       lineTotal: Number(item.lineTotal || 0),
       grade: (item.grade || "A") as ItemGrade,
-      brand: item.brand,
+      brand: item.brand || item?.Part?.Brand?.name || "",
       rackCode: selectedRackCodes.join(", "),
       shelfNo: selectedShelfNos.join(", "),
     };
@@ -1406,7 +1406,7 @@ export const SalesInvoice = ({
     const fyStartYear = parseInt(filterFinancialYear, 10);
     return invoices
       .filter((inv) => {
-        if (inv.customerName.toLowerCase().includes("demo")) {
+        if ((inv.customerName || "").toLowerCase().includes("demo")) {
           return false;
         }
 
@@ -1418,12 +1418,11 @@ export const SalesInvoice = ({
           return false;
         }
 
-        if (searchTerm) {
+        if (isQuotation && searchTerm) {
           const q = searchTerm.toLowerCase();
-          if (
-            !inv.invoiceNo.toLowerCase().includes(q) &&
-            !inv.customerName.toLowerCase().includes(q)
-          ) {
+          const invoiceNo = String(inv.invoiceNo || "").toLowerCase();
+          const customerName = String(inv.customerName || "").toLowerCase();
+          if (!invoiceNo.includes(q) && !customerName.includes(q)) {
             return false;
           }
         }
@@ -3085,7 +3084,11 @@ export const SalesInvoice = ({
             term: inv.term ?? null,
             customerType: inv.customerType as CustomerType,
             customerId: inv.customerId,
-            customerName: inv.customerName,
+            customerName:
+              inv.customerName ||
+              inv.Customer?.name ||
+              inv.customer_name ||
+              "",
             salesPerson: inv.salesPerson || "Admin",
             items:
               inv.SalesInvoiceItem?.map((item: any) => ({
@@ -3108,7 +3111,7 @@ export const SalesInvoice = ({
                 discountType: "percent" as const,
                 lineTotal: item.lineTotal,
                 grade: (item.grade || "A") as ItemGrade,
-                brand: item.brand,
+                brand: item.brand || item?.Part?.Brand?.name || "",
               })) || [],
             subtotal: inv.subtotal,
             overallDiscount: inv.overallDiscount || 0,
@@ -4028,7 +4031,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -4660,7 +4663,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -4770,7 +4773,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -4920,7 +4923,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5226,7 +5229,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
           storeName: item.Store?.name,
           rackCode: item.Rack?.codeNo,
           shelfNo: item.Shelf?.shelfNo,
@@ -5321,7 +5324,7 @@ export const SalesInvoice = ({
             discountType: "percent" as const,
             lineTotal: item.lineTotal,
             grade: (item.grade || "A") as ItemGrade,
-            brand: item.brand,
+            brand: item.brand || item?.Part?.Brand?.name || "",
             storeName: item.Store?.name,
             rackCode: item.Rack?.codeNo,
             shelfNo: item.Shelf?.shelfNo,
@@ -5421,7 +5424,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
           storeName: item.Store?.name,
           rackCode: item.Rack?.codeNo,
           shelfNo: item.Shelf?.shelfNo,
@@ -5528,7 +5531,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5630,7 +5633,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5724,7 +5727,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5944,7 +5947,7 @@ export const SalesInvoice = ({
           discountType: "percent" as const,
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
-          brand: item.brand,
+          brand: item.brand || item?.Part?.Brand?.name || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -9585,7 +9588,7 @@ export const SalesInvoice = ({
                                         discountType: "percent",
                                         lineTotal: Number(item.lineTotal || 0),
                                         grade: (item.grade || "A") as ItemGrade,
-                                        brand: item.brand,
+                                        brand: item.brand || item?.Part?.Brand?.name || "",
                                         rackCode: selectedRackCodes.join(", "),
                                         shelfNo: selectedShelfNos.join(", "),
                                       };
@@ -9964,6 +9967,7 @@ export const SalesInvoice = ({
                     <TableRow>
                       <TableHead>Part No</TableHead>
                       <TableHead>Description</TableHead>
+                      <TableHead>Brand</TableHead>
                       <TableHead>Rack/Shelf</TableHead>
                       <TableHead className="text-center">Ordered</TableHead>
                       <TableHead className="text-center">Delivered</TableHead>
@@ -9983,6 +9987,9 @@ export const SalesInvoice = ({
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {item.description}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {item.brand || "-"}
                           </TableCell>
                           <TableCell className="text-xs">
                             {item.rackCode || item.shelfNo
@@ -10037,7 +10044,7 @@ export const SalesInvoice = ({
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center py-4">
+                        <TableCell colSpan={11} className="text-center py-4">
                           <p className="text-muted-foreground">
                             No items found for this invoice
                           </p>

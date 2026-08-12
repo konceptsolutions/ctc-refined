@@ -16,6 +16,7 @@ export interface AuthData {
   token: string;
   loginStartTime?: string | null;
   loginEndTime?: string | null;
+  loginAllowedDays?: number[] | null;
   permissions?: string[];
 }
 
@@ -37,7 +38,7 @@ const decodeJwtPayload = (token: string): Record<string, any> | null => {
 export const saveAuth = (
   userRole: 'admin' | 'store',
   token: string,
-  loginHours?: { loginStartTime?: string | null; loginEndTime?: string | null },
+  loginHours?: { loginStartTime?: string | null; loginEndTime?: string | null; loginAllowedDays?: number[] | null },
   permissions?: string[],
 ): void => {
   const loginTime = Date.now();
@@ -55,6 +56,7 @@ export const saveAuth = (
     token,
     loginStartTime: loginHours?.loginStartTime || null,
     loginEndTime: loginHours?.loginEndTime || null,
+    loginAllowedDays: loginHours?.loginAllowedDays || null,
     permissions: perms,
   };
 
@@ -74,19 +76,21 @@ const getTokenRoleNameFromToken = (token: string): string | null => {
 export const getStoredLoginHours = (): {
   loginStartTime: string | null;
   loginEndTime: string | null;
+  loginAllowedDays: number[] | null;
 } => {
   try {
     const authDataStr = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!authDataStr) {
-      return { loginStartTime: null, loginEndTime: null };
+      return { loginStartTime: null, loginEndTime: null, loginAllowedDays: null };
     }
     const authData: AuthData = JSON.parse(authDataStr);
     return {
       loginStartTime: authData.loginStartTime || null,
       loginEndTime: authData.loginEndTime || null,
+      loginAllowedDays: Array.isArray(authData.loginAllowedDays) ? authData.loginAllowedDays : null,
     };
   } catch {
-    return { loginStartTime: null, loginEndTime: null };
+    return { loginStartTime: null, loginEndTime: null, loginAllowedDays: null };
   }
 };
 

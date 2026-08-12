@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { getLoginHours, isWithinLoginWindow } from '../utils/loginHours';
+import { getLoginHours, isWithinLoginSchedule } from '../utils/loginHours';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 
@@ -205,9 +205,9 @@ export const enforceLoginWindow = async (
         if (!dbUser) {
             return res.status(401).json({ error: 'User not found', code: 'LOGIN_WINDOW' });
         }
-        if (!isWithinLoginWindow(dbUser.loginStartTime, dbUser.loginEndTime)) {
+        if (!isWithinLoginSchedule(dbUser.loginStartTime, dbUser.loginEndTime, dbUser.loginAllowedDays)) {
             return res.status(403).json({
-                error: 'Your allowed login time has ended. Please sign in again during your scheduled hours.',
+                error: 'Your allowed login schedule has ended. Please sign in again during your scheduled hours.',
                 code: 'LOGIN_WINDOW',
             });
         }

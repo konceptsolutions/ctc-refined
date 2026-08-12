@@ -622,7 +622,7 @@ model PurchaseQuotationItem {
   partId              String
   demandQuantity      Int
   quotationQuantity   Int
-  shipDays            Int               @default(0)
+  shipDays            String            @default("STK") @db.VarChar(50)
   fcRate              Float             @default(0)
   fcAmount            Float             @default(0)
   lcRate              Float             @default(0)
@@ -1259,6 +1259,7 @@ model User {
   lastLogin      String?  @default("-")
   loginStartTime String?
   loginEndTime   String?
+  loginAllowedDays String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }

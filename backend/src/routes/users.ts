@@ -3,7 +3,13 @@ import bcrypt from 'bcryptjs';
 import prisma from '../config/database';
 import { logActivity, getClientIp } from '../utils/activityLogger';
 import { randomUUID } from 'crypto';
-import { getLoginHours, getLoginHoursMap, normalizeLoginTime, setLoginHours } from '../utils/loginHours';
+import {
+  getLoginHours,
+  getLoginHoursMap,
+  normalizeLoginDays,
+  normalizeLoginTime,
+  setLoginHours,
+} from '../utils/loginHours';
 
 const router = express.Router();
 
@@ -109,7 +115,11 @@ router.get('/', async (req, res) => {
     // Format dates
     const formattedUsers = users.map((user) => {
       const { roleId, ...rest } = user;
-      const hours = loginHours[user.id] || { loginStartTime: null, loginEndTime: null };
+      const hours = loginHours[user.id] || {
+        loginStartTime: null,
+        loginEndTime: null,
+        loginAllowedDays: null,
+      };
       return {
         ...rest,
         ...hours,
@@ -153,7 +163,11 @@ router.get('/:id', async (req, res) => {
     }
 
     const rn = await roleNamesForUserRows([user.roleId]);
-    const hours = (await getLoginHours(user.id)) || { loginStartTime: null, loginEndTime: null };
+    const hours = (await getLoginHours(user.id)) || {
+      loginStartTime: null,
+      loginEndTime: null,
+      loginAllowedDays: null,
+    };
     const { roleId, ...rest } = user;
     res.json({
       data: {
@@ -258,6 +272,7 @@ router.post('/', async (req, res) => {
         ...rest,
         loginStartTime: null,
         loginEndTime: null,
+        loginAllowedDays: null,
         role: rn[rid] ?? rid,
         createdAt: user.createdAt.toISOString().split('T')[0],
       },
@@ -278,6 +293,7 @@ router.put('/:id', async (req, res) => {
       password,
       loginStartTime,
       loginEndTime,
+      loginAllowedDays,
     } = req.body;
 
     const currentUser = (req as any).user || { name: 'System', role: 'Admin' };
@@ -325,18 +341,23 @@ router.put('/:id', async (req, res) => {
       updateData.password = await bcrypt.hash(String(password), 10);
     }
 
-    let nextHours: { loginStartTime: string | null; loginEndTime: string | null } | null = null;
-    if (loginStartTime !== undefined || loginEndTime !== undefined) {
+    let nextHours: {
+      loginStartTime: string | null;
+      loginEndTime: string | null;
+      loginAllowedDays?: number[] | null;
+    } | null = null;
+    if (loginStartTime !== undefined || loginEndTime !== undefined || loginAllowedDays !== undefined) {
       const existingRoleNames = await roleNamesForUserRows([existing.roleId]);
       if (isAdminRoleName(existingRoleNames[existing.roleId])) {
         return res.status(400).json({
-          error: 'Login hours cannot be set for admin users.',
+          error: 'Login schedule cannot be set for admin users.',
         });
       }
 
       const existingHours = (await getLoginHours(existing.id)) || {
         loginStartTime: null,
         loginEndTime: null,
+        loginAllowedDays: null,
       };
       const nextStart = loginStartTime !== undefined
         ? normalizeLoginTime(loginStartTime)
@@ -363,7 +384,22 @@ router.put('/:id', async (req, res) => {
         return res.status(400).json({ error: 'Login start and end time cannot be the same.' });
       }
 
-      nextHours = { loginStartTime: startValue, loginEndTime: endValue };
+      let nextDays: number[] | null | undefined = undefined;
+      if (loginAllowedDays !== undefined) {
+        const normalized = normalizeLoginDays(loginAllowedDays);
+        if (normalized === undefined) {
+          return res.status(400).json({
+            error: 'Invalid login days. Use values between 0-6 or weekday names.',
+          });
+        }
+        nextDays = normalized;
+      }
+
+      nextHours = {
+        loginStartTime: startValue,
+        loginEndTime: endValue,
+        ...(nextDays !== undefined ? { loginAllowedDays: nextDays } : {}),
+      };
     }
 
     const userSelect = {
@@ -392,11 +428,17 @@ router.put('/:id', async (req, res) => {
     }
 
     if (nextHours) {
-      await setLoginHours(user.id, nextHours.loginStartTime, nextHours.loginEndTime);
+      await setLoginHours(
+        user.id,
+        nextHours.loginStartTime,
+        nextHours.loginEndTime,
+        nextHours.loginAllowedDays,
+      );
     }
     const hours = nextHours || (await getLoginHours(user.id)) || {
       loginStartTime: null,
       loginEndTime: null,
+      loginAllowedDays: null,
     };
 
     if (updateData.password) {
@@ -421,6 +463,9 @@ router.put('/:id', async (req, res) => {
       const hoursLabel = hours.loginStartTime && hours.loginEndTime
         ? `${hours.loginStartTime} – ${hours.loginEndTime}`
         : 'cleared';
+      const daysLabel = Array.isArray(hours.loginAllowedDays) && hours.loginAllowedDays.length
+        ? hours.loginAllowedDays.join(',')
+        : 'all days';
       await logActivity({
         user: currentUser.name,
         userId: currentUser.id,
@@ -428,7 +473,7 @@ router.put('/:id', async (req, res) => {
         action: 'Updated User Login Hours',
         actionType: 'update',
         module: 'Users',
-        description: `Set login hours for ${user.name} (${user.email}): ${hoursLabel}`,
+        description: `Set login schedule for ${user.name} (${user.email}): ${hoursLabel}; days ${daysLabel}`,
         entityType: 'user',
         entityId: user.id,
         entityLabel: user.email,
@@ -438,6 +483,7 @@ router.put('/:id', async (req, res) => {
           email: user.email,
           loginStartTime: hours.loginStartTime,
           loginEndTime: hours.loginEndTime,
+          loginAllowedDays: hours.loginAllowedDays ?? null,
         },
       }, req);
     }

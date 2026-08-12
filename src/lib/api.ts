@@ -2761,7 +2761,7 @@ class ApiClient {
         partId: string;
         demandQuantity: number;
         quotationQuantity: number;
-        shipDays: number;
+        shipDays: string;
         fcRate: number;
         weight: number;
       }>;
@@ -2811,7 +2811,7 @@ class ApiClient {
         partId: string;
         demandQuantity: number;
         quotationQuantity: number;
-        shipDays: number;
+        shipDays: string;
         fcRate: number;
         revisedFcRate?: number;
         weight: number;
@@ -2874,7 +2874,7 @@ class ApiClient {
         partId: string;
         demandQuantity: number;
         quotationQuantity: number;
-        shipDays: number;
+        shipDays: string;
         fcRate: number;
         revisedFcRate: number;
         weight: number;
@@ -3462,6 +3462,7 @@ class ApiClient {
       password?: string;
       loginStartTime?: string | null;
       loginEndTime?: string | null;
+      loginAllowedDays?: number[] | null;
     },
   ) {
     return this.request(`/users/${id}`, {

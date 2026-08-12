@@ -388,7 +388,7 @@ type ImportPurchaseOrderReceiveLine = {
   currentStock: number;
   demandQuantity: number;
   quotationQuantity: number;
-  shipDays: number;
+  shipDays: string;
   fcRate: number;
   fcRateText: string;
   fcAmount: number;
@@ -732,7 +732,7 @@ type PurchaseQuotationDetailItem = {
   khiQuantity?: number;
   isbQuantity?: number;
   otherQuantity?: number;
-  shipDays: number;
+  shipDays: string;
   fcRate: number;
   fcAmount: number;
   lcRate: number;
@@ -892,7 +892,7 @@ type PurchaseQuotationContextPayload = {
   items: Array<
     PurchaseQuotationContextItem & {
       quotationQuantity?: number;
-      shipDays?: number;
+      shipDays?: string;
       fcRate?: number;
       revisedFcRate?: number;
       lastFcRate?: number;
@@ -929,6 +929,7 @@ type PurchaseQuotationComparisonPayload = {
       string,
       {
         quotationQty: number;
+        shipDays: string;
         fcRate: number;
         lcRate: number;
         fcAmount: number;
@@ -1003,7 +1004,7 @@ type PurchaseQuotationFormItem = PurchaseQuotationContextItem & {
   isNewRow?: boolean;
   loadingPartDetails?: boolean;
   quotationQuantity: number;
-  shipDays: number;
+  shipDays: string;
   fcRate: number;
   fcRateText: string;
   revisedFcRate: number;
@@ -1198,7 +1199,7 @@ const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
   otherQuantity: 0,
   weight: 0,
   quotationQuantity: 0,
-  shipDays: 0,
+  shipDays: "STK",
   fcRate: 0,
   fcRateText: "",
   revisedFcRate: 0,
@@ -1241,7 +1242,7 @@ const createEmptyReceiveLine = (): ImportPurchaseOrderReceiveLine => ({
   currentStock: 0,
   demandQuantity: 0,
   quotationQuantity: 0,
-  shipDays: 0,
+  shipDays: "",
   fcRate: 0,
   fcRateText: "",
   fcAmount: 0,
@@ -3763,7 +3764,7 @@ const PurchaseQuotationForm = ({
                 quotationQuantity: Number(
                   item.quotationQuantity ?? item.demandQuantity ?? 0,
                 ),
-                shipDays: Number(item.shipDays || 0),
+                shipDays: String(item.shipDays ?? ""),
                 fcRate: Number(item.fcRate || 0),
                 fcRateText: formatFcRateInput(Number(item.fcRate || 0)),
                 revisedFcRate: Number(item.revisedFcRate || 0),
@@ -4185,7 +4186,7 @@ const PurchaseQuotationForm = ({
           isbQuantity: Number(row.isbQuantity || 0),
           otherQuantity: SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0,
           quotationQuantity: Number(row.quotationQuantity || 0),
-          shipDays: Number(row.shipDays || 0),
+          shipDays: String(row.shipDays ?? ""),
           fcRate: Number(row.fcRate || 0),
           revisedFcRate: Number(row.revisedFcRate || 0),
           weight: Number(row.weight || 0),
@@ -4501,13 +4502,12 @@ const PurchaseQuotationForm = ({
                       </td>
                       <td className="p-2 text-right">
                         <Input
-                          type="number"
-                          min={0}
+                          type="text"
                           className={QUOTATION_SHIP_DAYS_INPUT_CLASS}
-                          value={row.shipDays === 0 ? "" : row.shipDays}
+                          value={row.shipDays}
                           onChange={(e) =>
                             updateRow(row.rowId, {
-                              shipDays: Number(e.target.value || 0),
+                              shipDays: e.target.value,
                             })
                           }
                         />
@@ -4753,7 +4753,7 @@ const PurchaseQuotationRevisionForm = ({
                 isbQuantity: SHOW_OTHER_QTY ? rawIsb : rawIsb + rawOther,
                 otherQuantity: SHOW_OTHER_QTY ? rawOther : 0,
                 quotationQuantity: Number(item.quotationQuantity || 0),
-                shipDays: Number(item.shipDays || 0),
+                shipDays: String(item.shipDays ?? ""),
                 fcRate: Number(item.fcRate || 0),
                 fcRateText: formatFcRateInput(Number(item.fcRate || 0)),
                 revisedFcRate: Number(item.revisedFcRate || 0),
@@ -4971,7 +4971,7 @@ const PurchaseQuotationRevisionForm = ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
           quotationQuantity: Number(row.quotationQuantity || 0),
-          shipDays: Number(row.shipDays || 0),
+          shipDays: String(row.shipDays ?? ""),
           fcRate: Number(row.fcRate || 0),
           revisedFcRate: Number(row.revisedFcRate || 0),
           weight: Number(row.weight || 0),
@@ -5224,13 +5224,12 @@ const PurchaseQuotationRevisionForm = ({
                       </td>
                       <td className="p-2 text-right">
                         <Input
-                          type="number"
-                          min={0}
+                          type="text"
                           className={QUOTATION_SHIP_DAYS_INPUT_CLASS}
-                          value={row.shipDays === 0 ? "" : row.shipDays}
+                          value={row.shipDays}
                           onChange={(e) =>
                             updateRow(row.rowId, {
-                              shipDays: Number(e.target.value || 0),
+                              shipDays: e.target.value,
                             })
                           }
                         />
@@ -5712,7 +5711,7 @@ const PurchaseInquiryListPanel = ({
           currentStock: item.currentStock,
           requestQty: Number(item.demandQuantity || 0),
           quotationQty,
-          shipDays: Number(item.shipDays || 0),
+          shipDays: String(item.shipDays ?? ""),
           lastFcRate: Number(item.lastFcRate || 0),
           fcRate,
           fcAmount: quotationQty * fcRate,
@@ -6481,7 +6480,7 @@ const PurchaseQuotationListPanel = ({
           currentStock: item.currentStock,
           requestQty: Number(item.demandQuantity || 0),
           quotationQty,
-          shipDays: Number(item.shipDays || 0),
+          shipDays: String(item.shipDays ?? ""),
           lastFcRate: Number(item.lastFcRate || 0),
           fcRate,
           fcAmount,
@@ -7055,7 +7054,7 @@ type PurchaseQuotationConfirmRow = {
   currentStock: number;
   demandQuantity: number;
   quotationQuantity: number;
-  shipDays: number;
+  shipDays: string;
   lastFcRate: number;
   fcRate: number;
   fcAmount: number;
@@ -7124,7 +7123,7 @@ const buildConfirmRowsFromQuotationDetail = (
       currentStock: Number(item.currentStock || 0),
       demandQuantity: Number(item.demandQuantity || 0),
       quotationQuantity,
-      shipDays: Number(item.shipDays || 0),
+      shipDays: String(item.shipDays ?? ""),
       lastFcRate: Number(item.lastFcRate || 0),
       fcRate: effective.fcRate,
       lcRate: effective.lcRate,
@@ -8610,7 +8609,7 @@ const PurchaseOrderTab = ({
           currentStock: Number(item.currentStock || 0),
           demandQuantity: Number(item.demandQuantity || 0),
           quotationQuantity: Number(item.quotationQuantity || 0),
-          shipDays: Number(item.shipDays || 0),
+          shipDays: String(item.shipDays ?? ""),
           fcRate,
           fcRateText: formatFcRateInput(fcRate),
           fcAmount: amounts.fcAmount,
@@ -9861,6 +9860,7 @@ const PurchaseOrderTab = ({
                     <tr>
                       <th className="text-left p-2">Part No | Master Part</th>
                       <th className="text-left p-2">Description</th>
+                      <th className="text-left p-2">Brand</th>
                       <th className="text-right p-2">Order Qty</th>
                       <th className="text-right p-2">Received</th>
                       <th className="text-right p-2">From Back</th>
@@ -9934,6 +9934,9 @@ const PurchaseOrderTab = ({
                         </td>
                         <td className="p-2">
                           {item.description || item.part_description || "-"}
+                        </td>
+                        <td className="p-2">
+                          {item.brand || "-"}
                         </td>
                         <td className="p-2 text-right tabular-nums">{orderQty}</td>
                         <td className="p-2 text-right tabular-nums">{receivedQty}</td>

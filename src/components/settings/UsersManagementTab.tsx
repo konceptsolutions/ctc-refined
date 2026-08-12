@@ -59,6 +59,7 @@ interface User {
   lastLogin: string;
   loginStartTime?: string | null;
   loginEndTime?: string | null;
+  loginAllowedDays?: number[] | null;
   createdAt: string;
 }
 
@@ -78,6 +79,24 @@ const roleColors: Record<string, string> = {
 };
 
 const isAdminRole = (role: string) => role.trim().toLowerCase() === "admin";
+const WEEKDAY_OPTIONS: Array<{ value: number; label: string; short: string }> = [
+  { value: 0, label: "Sunday", short: "Sun" },
+  { value: 1, label: "Monday", short: "Mon" },
+  { value: 2, label: "Tuesday", short: "Tue" },
+  { value: 3, label: "Wednesday", short: "Wed" },
+  { value: 4, label: "Thursday", short: "Thu" },
+  { value: 5, label: "Friday", short: "Fri" },
+  { value: 6, label: "Saturday", short: "Sat" },
+];
+
+const formatLoginDays = (days: number[] | null | undefined): string => {
+  if (!Array.isArray(days) || days.length === 0) return "All days";
+  return days
+    .map(
+      (d) => WEEKDAY_OPTIONS.find((x) => x.value === d)?.short ?? String(d),
+    )
+    .join(", ");
+};
 
 const emptyForm = (defaultRole = "Manager") => ({
   name: "",
@@ -104,6 +123,7 @@ export const UsersManagementTab = () => {
   const [hoursUser, setHoursUser] = useState<User | null>(null);
   const [loginStartTime, setLoginStartTime] = useState("");
   const [loginEndTime, setLoginEndTime] = useState("");
+  const [loginAllowedDays, setLoginAllowedDays] = useState<number[]>([]);
   const [savingHours, setSavingHours] = useState(false);
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
@@ -308,6 +328,7 @@ export const UsersManagementTab = () => {
     setHoursUser(user);
     setLoginStartTime(user.loginStartTime || "");
     setLoginEndTime(user.loginEndTime || "");
+    setLoginAllowedDays(Array.isArray(user.loginAllowedDays) ? user.loginAllowedDays : []);
   };
 
   const handleSaveLoginHours = async () => {
@@ -325,9 +346,11 @@ export const UsersManagementTab = () => {
 
     try {
       setSavingHours(true);
+      const selectedDays = loginAllowedDays.length ? loginAllowedDays : null;
       const response = await apiClient.updateUser(hoursUser.id, {
         loginStartTime: start || null,
         loginEndTime: end || null,
+        loginAllowedDays: selectedDays,
       });
       if (response.error) {
         toast.error(response.error);
@@ -335,10 +358,11 @@ export const UsersManagementTab = () => {
       }
       toast.success(
         start && end
-          ? `Login hours set to ${start} – ${end}`
-          : "Login hours cleared",
+          ? `Login schedule saved (${start} – ${end}) · ${formatLoginDays(selectedDays)}`
+          : `Login schedule saved · ${formatLoginDays(selectedDays)}`,
       );
       setHoursUser(null);
+      setLoginAllowedDays([]);
       fetchUsers();
     } catch (error: any) {
       toast.error(error.message || "Failed to update login hours");
@@ -697,12 +721,13 @@ export const UsersManagementTab = () => {
             setHoursUser(null);
             setLoginStartTime("");
             setLoginEndTime("");
+            setLoginAllowedDays([]);
           }
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Set Login Hours</DialogTitle>
+            <DialogTitle>Set Login Schedule</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <p className="text-sm text-muted-foreground">
@@ -710,9 +735,9 @@ export const UsersManagementTab = () => {
               <span className="font-medium text-foreground">
                 {hoursUser?.name}
               </span>{" "}
-              to sign in only during these hours (Pakistan time). Leave both
-              empty to allow login at any time. The user will be logged out
-              automatically when the end time is reached.
+              to sign in only during the selected hours and days (Pakistan
+              time). Leave both start/end empty to allow any time on the
+              selected days. Leave days unselected to allow all days.
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -734,12 +759,49 @@ export const UsersManagementTab = () => {
                 />
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label>Allowed Days of Week</Label>
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAY_OPTIONS.map((d) => {
+                  const active = loginAllowedDays.includes(d.value);
+                  return (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => {
+                        setLoginAllowedDays((prev) => {
+                          if (prev.includes(d.value)) {
+                            return prev.filter((x) => x !== d.value);
+                          }
+                          return [...prev, d.value].sort((a, b) => a - b);
+                        });
+                      }}
+                      className={[
+                        "px-3 py-1 rounded-lg text-xs font-semibold border transition-colors",
+                        active
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted/40 text-muted-foreground border-border hover:bg-muted/60",
+                      ].join(" ")}
+                    >
+                      {d.short}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Select at least one day to restrict. Leave all unselected for
+                all days.
+              </p>
+            </div>
+
             <div className="flex justify-end gap-2 pt-2">
               <Button
                 variant="outline"
                 onClick={() => {
                   setLoginStartTime("");
                   setLoginEndTime("");
+                  setLoginAllowedDays([]);
                 }}
                 disabled={savingHours}
               >
@@ -758,7 +820,7 @@ export const UsersManagementTab = () => {
                 ) : (
                   <Clock className="w-4 h-4 mr-2" />
                 )}
-                Save Hours
+                Save Schedule
               </Button>
             </div>
           </div>
@@ -856,8 +918,10 @@ export const UsersManagementTab = () => {
                           <ActionButtonTooltip
                             label={
                               user.loginStartTime && user.loginEndTime
-                                ? `Login Hours (${user.loginStartTime} – ${user.loginEndTime})`
-                                : "Set Login Hours"
+                                ? `Login Hours (${user.loginStartTime} – ${user.loginEndTime}) · ${formatLoginDays(
+                                    user.loginAllowedDays,
+                                  )}`
+                                : "Set Login Schedule"
                             }
                             variant="edit"
                           >
