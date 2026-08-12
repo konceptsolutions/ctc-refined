@@ -4,6 +4,11 @@ import prisma from "../config/database";
 import { getCanonicalPartId } from "../services/partCanonical";
 import { netStockFromMovements } from "../utils/stockMovementBalance";
 import { getPakistanFinancialYearBounds } from "../utils/pakistanFinancialYear";
+import {
+  displayPartNoFromPart,
+  hydrateSalesInvoiceItems,
+  resolveInvoiceItemPartFields,
+} from "../utils/salesInvoiceItemPart";
 
 const router = express.Router();
 
@@ -1678,6 +1683,14 @@ router.get("/invoices", async (req: Request, res: Response) => {
             lineTotal: true,
             grade: true,
             brand: true,
+            Part: {
+              select: {
+                partNo: true,
+                description: true,
+                Brand: { select: { name: true } },
+                MasterPart: { select: { masterPartNo: true } },
+              },
+            },
           },
         },
       },
@@ -1688,7 +1701,12 @@ router.get("/invoices", async (req: Request, res: Response) => {
       (invoice) => !invoice.customerName.toLowerCase().includes("demo"),
     );
 
-    res.json(filteredInvoices);
+    res.json(
+      filteredInvoices.map((invoice) => ({
+        ...invoice,
+        SalesInvoiceItem: hydrateSalesInvoiceItems(invoice.SalesInvoiceItem),
+      })),
+    );
   } catch (error: any) {
     console.error("Error in GET /invoices:", error);
     res.status(500).json({ error: error.message });
@@ -1797,6 +1815,9 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
               include: {
                 Brand: true,
                 Category: true,
+                MasterPart: {
+                  select: { masterPartNo: true },
+                },
                 PartRackShelf: {
                   include: {
                     Rack: true,
@@ -1924,7 +1945,13 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
       orderBy: { createdAt: "asc" },
     });
 
-    res.json({ ...invoice, stockMovements, previousBalance, customerBalance });
+    res.json({
+      ...invoice,
+      SalesInvoiceItem: hydrateSalesInvoiceItems(invoice.SalesInvoiceItem),
+      stockMovements,
+      previousBalance,
+      customerBalance,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -2230,10 +2257,11 @@ router.post("/invoices", async (req: Request, res: Response) => {
               let rackId = null;
               let shelfId = null;
 
+              const resolvedPart = await resolveInvoiceItemPartFields(prisma, item);
               const itemData: any = {
                 partId: item.partId,
-                partNo: item.partNo,
-                description: item.description || "",
+                partNo: resolvedPart.partNo,
+                description: resolvedPart.description,
                 orderedQty: item.orderedQty,
                 deliveredQty: 0,
                 pendingQty: item.orderedQty,
@@ -2242,7 +2270,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
                 discount: item.discount || 0,
                 lineTotal: item.lineTotal,
                 grade: item.grade || "A",
-                brand: item.brand || "",
+                brand: resolvedPart.brand,
                 useUnlocatedStock: !!item.useUnlocatedStock,
               };
 
@@ -3265,14 +3293,23 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
 
         const part = await prisma.part.findUnique({
           where: { id: item.partId },
-          select: { avgCost: true, cost: true },
+          select: {
+            avgCost: true,
+            cost: true,
+            partNo: true,
+            description: true,
+            Brand: { select: { name: true } },
+            MasterPart: { select: { masterPartNo: true } },
+          },
         });
 
         const itemData: any = {
           invoiceId: id,
           partId: item.partId,
-          partNo: item.partNo || "",
-          description: item.description || "",
+          partNo: String(item.partNo || "").trim() || displayPartNoFromPart(part),
+          description:
+            String(item.description || "").trim() ||
+            String(part?.description || "").trim(),
           orderedQty: item.orderedQty,
           deliveredQty: 0,
           pendingQty: item.orderedQty,
@@ -3281,7 +3318,9 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
           discount: item.discount || 0,
           lineTotal: lineTotal,
           grade: item.grade || "A",
-          brand: item.brand || "",
+          brand:
+            String(item.brand || "").trim() ||
+            String(part?.Brand?.name || "").trim(),
           useUnlocatedStock: !!item.useUnlocatedStock,
         };
 

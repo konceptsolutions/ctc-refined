@@ -867,8 +867,10 @@ router.get("/", async (req: Request, res: Response) => {
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // Skip images for large result sets to reduce payload size (29MB -> <1MB)
+    // Skip images and per-row history/count subqueries for large catalog loads
+    // (Sales Inquiry / Invoice dropdowns use limit=all).
     const skipImages = limitNum > 1000;
+    const skipHeavyMeta = skipImages;
     const showLocations = include_locations === "true";
     const showDuplicateMeta = duplicates_only === "true";
     const orderByClause = showDuplicateMeta
@@ -887,7 +889,18 @@ router.get("/", async (req: Request, res: Response) => {
         app."name" as application_name,
         COALESCE(st.stock, 0) as current_stock,
         (COALESCE(st.reserved, 0) + COALESCE(sr.reserved, 0)) as reserved_stock,
-        (SELECT COUNT(*)::int FROM "AdjustmentItem" ai WHERE ai."partId" = p.id) as adjustment_count,
+        ${
+          skipHeavyMeta
+            ? `0 as adjustment_count,
+        0 as direct_purchase_count,
+        0 as sales_invoice_count,
+        0 as kit_component_count,
+        NULL as latest_adj_cost,
+        NULL as last_sale_qty,
+        NULL as last_sale_price,
+        NULL as last_sale_customer,
+        NULL as last_sale_date,`
+            : `(SELECT COUNT(*)::int FROM "AdjustmentItem" ai WHERE ai."partId" = p.id) as adjustment_count,
         (SELECT COUNT(*)::int FROM "DirectPurchaseOrderItem" dpoi WHERE dpoi."partId" = p.id) as direct_purchase_count,
         (SELECT COUNT(*)::int FROM "SalesInvoiceItem" sii_cnt WHERE sii_cnt."partId" = p.id) as sales_invoice_count,
         (SELECT COUNT(*)::int FROM "KitItem" ki_cmp WHERE ki_cmp."componentPartId" = p.id) as kit_component_count,
@@ -895,7 +908,8 @@ router.get("/", async (req: Request, res: Response) => {
         ls.last_sale_qty,
         ls.last_sale_price,
         ls.last_sale_customer,
-        ls.last_sale_date,
+        ls.last_sale_date,`
+        }
         COALESCE(
           (
             SELECT json_agg(
@@ -932,7 +946,10 @@ router.get("/", async (req: Request, res: Response) => {
           WHERE status = 'reserved'
           GROUP BY "partId"
       ) sr ON p.id = sr."partId"
-      LEFT JOIN (
+      ${
+        skipHeavyMeta
+          ? ""
+          : `LEFT JOIN (
           SELECT DISTINCT ON (ai."partId") ai."partId", ai.cost
           FROM "AdjustmentItem" ai
           JOIN "Adjustment" a ON ai."adjustmentId" = a.id
@@ -950,7 +967,8 @@ router.get("/", async (req: Request, res: Response) => {
           WHERE sii."partId" = p.id
           ORDER BY si."invoiceDate" DESC, sii."createdAt" DESC
           LIMIT 1
-      ) ls ON true
+      ) ls ON true`
+      }
       ${showLocations ? `
       LEFT JOIN (
           SELECT prs."partId",

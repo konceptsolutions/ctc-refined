@@ -112,6 +112,7 @@ import {
   getPakistanFinancialYearStartYear,
   isDateInPakistanFinancialYear,
 } from "@/utils/dateUtils";
+import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
 import {
   Invoice,
   InvoiceItem,
@@ -193,11 +194,12 @@ function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] 
     const selectedShelfNos = (item.InvoiceRackShelf || [])
       .map((irs: any) => irs?.Shelf?.shelfNo || irs?.Shelf?.name || "")
       .filter(Boolean);
+    const linePart = resolveInvoiceLinePartFields(item);
     return {
       id: item.id,
       partId: item.partId,
-      partNo: item.partNo,
-      description: item.description || "",
+      partNo: linePart.partNo,
+      description: linePart.description,
       orderedQty: Number(item.orderedQty || 0),
       deliveredQty: Number(item.deliveredQty || 0),
       pendingQty: Number(item.pendingQty || 0),
@@ -212,7 +214,7 @@ function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] 
       discountType: "percent" as const,
       lineTotal: Number(item.lineTotal || 0),
       grade: (item.grade || "A") as ItemGrade,
-      brand: item.brand || item?.Part?.Brand?.name || "",
+      brand: linePart.brand,
       rackCode: selectedRackCodes.join(", "),
       shelfNo: selectedShelfNos.join(", "),
     };
@@ -1793,7 +1795,8 @@ export const SalesInvoice = ({
 
           // If part changed, set prices from part data and fetch stock balance
           if (field === "selectedPartId" && value) {
-            const part = parts.find((p) => p.id === value);
+            const part =
+              parts.find((p) => p.id === value) || selectedPartsMap[value];
             if (part) {
               // Store full part details to persist across search filters
               setSelectedPartsMap((prev) => ({
@@ -2177,6 +2180,17 @@ export const SalesInvoice = ({
     forceRefresh: boolean = false,
     silent: boolean = false,
   ) => {
+    // Catalog is already fully loaded — filter client-side instead of replacing
+    // the in-memory list (which dropped previously selected parts on save).
+    if (
+      !forceRefresh &&
+      hasFetchedInitialPartsRef.current &&
+      searchTerm &&
+      searchTerm.trim().length > 0
+    ) {
+      return;
+    }
+
     // If parts already loaded and no search term, don't refetch (use client-side filtering)
     if (
       !forceRefresh &&
@@ -2293,7 +2307,9 @@ export const SalesInvoice = ({
         }
       }
     } catch (error) {
-      setParts([]);
+      if (parts.length === 0) {
+        setParts([]);
+      }
     } finally {
       if (!silent) setPartsLoading(false);
     }
@@ -3091,11 +3107,13 @@ export const SalesInvoice = ({
               "",
             salesPerson: inv.salesPerson || "Admin",
             items:
-              inv.SalesInvoiceItem?.map((item: any) => ({
+              inv.SalesInvoiceItem?.map((item: any) => {
+                const linePart = resolveInvoiceLinePartFields(item);
+                return {
                 id: item.id,
                 partId: item.partId,
-                partNo: item.partNo,
-                description: item.description || "",
+                partNo: linePart.partNo,
+                description: linePart.description,
                 orderedQty: item.orderedQty,
                 deliveredQty: item.deliveredQty,
                 pendingQty: item.pendingQty,
@@ -3111,8 +3129,9 @@ export const SalesInvoice = ({
                 discountType: "percent" as const,
                 lineTotal: item.lineTotal,
                 grade: (item.grade || "A") as ItemGrade,
-                brand: item.brand || item?.Part?.Brand?.name || "",
-              })) || [],
+                brand: linePart.brand,
+              };
+              }) || [],
             subtotal: inv.subtotal,
             overallDiscount: inv.overallDiscount || 0,
             overallDiscountType: "fixed" as const,
@@ -3800,8 +3819,8 @@ export const SalesInvoice = ({
 
         return {
           partId: item.selectedPartId,
-          partNo: part?.partNo || "",
-          description: part?.description || "",
+          partNo: part?.partNo || item.partNoFallback || "",
+          description: part?.description || item.descriptionFallback || "",
           orderedQty: item.qty,
           unitPrice,
           discount: 0,
@@ -6524,12 +6543,13 @@ export const SalesInvoice = ({
           { ...item, rackCode: listItem?.rackCode, shelfNo: listItem?.shelfNo },
           fullInvoice,
         );
+        const linePart = resolveInvoiceLinePartFields(item);
 
         return {
-          partNo: item.partNo || "-",
-          ssPartNo: item?.Part?.masterPartNo || item.partNo || "-",
-          description: item.description || "",
-          brand: item.brand || item?.Part?.Brand?.name || "",
+          partNo: linePart.partNo || "-",
+          ssPartNo: item?.Part?.MasterPart?.masterPartNo || item?.Part?.masterPartNo || linePart.partNo || "-",
+          description: linePart.description,
+          brand: linePart.brand,
           uom: "NOS",
           qty: Number(item.orderedQty || 0),
           deliveredQty: Number(item.deliveredQty || 0),
@@ -7594,6 +7614,10 @@ export const SalesInvoice = ({
                                               ] = true;
                                             }}
                                             onPickPart={(p) => {
+                                              setSelectedPartsMap((prev) => ({
+                                                ...prev,
+                                                [p.id]: p,
+                                              }));
                                               setPartsSearchTerm((prev) => {
                                                 const updated = { ...prev };
                                                 delete updated[item.id];
@@ -9544,56 +9568,10 @@ export const SalesInvoice = ({
                                     ? fullInv.SalesInvoiceItem
                                     : inv.items || [];
 
-                                  const mappedItems: InvoiceItem[] = fullItems.map(
-                                    (item: any) => {
-                                      const selectedRackCodes = (
-                                        item.InvoiceRackShelf || []
-                                      )
-                                        .map(
-                                          (irs: any) =>
-                                            irs?.Rack?.code ||
-                                            irs?.Rack?.codeNo ||
-                                            "",
-                                        )
-                                        .filter(Boolean);
-                                      const selectedShelfNos = (
-                                        item.InvoiceRackShelf || []
-                                      )
-                                        .map(
-                                          (irs: any) =>
-                                            irs?.Shelf?.shelfNo ||
-                                            irs?.Shelf?.name ||
-                                            "",
-                                        )
-                                        .filter(Boolean);
-
-                                      return {
-                                        id: item.id,
-                                        partId: item.partId,
-                                        partNo: item.partNo,
-                                        description: item.description || "",
-                                        orderedQty: Number(item.orderedQty || 0),
-                                        deliveredQty: Number(
-                                          item.deliveredQty || 0,
-                                        ),
-                                        pendingQty: Number(item.pendingQty || 0),
-                                        reversedQty: Math.max(
-                                          0,
-                                          Number(item.orderedQty || 0) -
-                                            Number(item.deliveredQty || 0) -
-                                            Number(item.pendingQty || 0),
-                                        ),
-                                        unitPrice: Number(item.unitPrice || 0),
-                                        discount: Number(item.discount || 0),
-                                        discountType: "percent",
-                                        lineTotal: Number(item.lineTotal || 0),
-                                        grade: (item.grade || "A") as ItemGrade,
-                                        brand: item.brand || item?.Part?.Brand?.name || "",
-                                        rackCode: selectedRackCodes.join(", "),
-                                        shelfNo: selectedShelfNos.join(", "),
-                                      };
-                                    },
-                                  );
+                                  const mappedItems: InvoiceItem[] =
+                                    mapApiSalesInvoiceItemsToInvoiceItems(
+                                      fullItems,
+                                    );
 
                                   setSelectedInvoice({
                                     ...inv,

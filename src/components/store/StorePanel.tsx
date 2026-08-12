@@ -76,6 +76,7 @@ import { StoreLocationAssign } from "./StoreLocationAssign";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { getUserRole, isStoreUserRole } from "@/utils/auth";
+import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
 import { SalesInquiry } from "@/components/sales/SalesInquiry";
 
 interface DirectPurchaseOrderItem {
@@ -359,12 +360,14 @@ const mapInvoiceLineItems = (invoice: any) => {
     invoice.items ||
     [];
   if (!Array.isArray(rawItems)) return [];
-  return rawItems.map((item: any) => ({
+  return rawItems.map((item: any) => {
+    const linePart = resolveInvoiceLinePartFields(item);
+    return {
     id: String(item.id || ""),
     partId: String(item.partId || item.part_id || ""),
     part_id: String(item.partId || item.part_id || ""),
-    partNo: item.partNo || item.part_no || "",
-    description: item.description || "",
+    partNo: linePart.partNo,
+    description: linePart.description,
     orderedQty: Number(item.orderedQty ?? item.ordered_qty) || 0,
     deliveredQty: Number(item.deliveredQty ?? item.delivered_qty) || 0,
     pendingQty: Number(item.pendingQty ?? item.pending_qty) || 0,
@@ -375,7 +378,8 @@ const mapInvoiceLineItems = (invoice: any) => {
       | "fixed",
     lineTotal: Number(item.lineTotal ?? item.line_total) || 0,
     grade: item.grade || "A",
-  }));
+  };
+  });
 };
 
 const orderContainsSelectedPart = (
@@ -1021,11 +1025,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         const rawItems = invoiceData.SalesInvoiceItem || invoiceData.items || [];
         const orderWithItems = {
           ...order,
-          items: rawItems.map((item: any) => ({
+          items: rawItems.map((item: any) => {
+            const linePart = resolveInvoiceLinePartFields(item);
+            return {
             id: item.id,
             partId: item.partId || item.part_id || "",
-            partNo: item.partNo || item.part_no,
-            description: item.description || "",
+            partNo: linePart.partNo,
+            description: linePart.description,
             orderedQty: item.orderedQty || item.ordered_qty || 0,
             deliveredQty: item.deliveredQty || item.delivered_qty || 0,
             unitPrice: item.unitPrice || item.unit_price || 0,
@@ -1038,7 +1044,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   quantity: Number(irs.quantity || 0),
                 }))
               : [],
-          })),
+          };
+          }),
         };
         setSelectedStockOutOrder(orderWithItems as StockOutOrder);
         setStockOutReceiptOpen(true);
@@ -1083,12 +1090,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       const rawItems = invoiceData.SalesInvoiceItem || invoiceData.items || [];
       const challanItems = rawItems.map((item: any) => {
         const location = getChallanItemLocation(item, invoiceData);
+        const linePart = resolveInvoiceLinePartFields(item);
 
         return {
-          partNo: item.partNo || "-",
-          ssPartNo: item?.Part?.masterPartNo || item.partNo || "-",
-          description: item.description || "",
-          brand: item.brand || item?.Part?.Brand?.name || "",
+          partNo: linePart.partNo || "-",
+          ssPartNo: item?.Part?.MasterPart?.masterPartNo || item?.Part?.masterPartNo || linePart.partNo || "-",
+          description: linePart.description,
+          brand: linePart.brand,
           uom: "NOS",
           qty: Number(item.orderedQty || item.ordered_qty || 0),
           deliveredQty: Number(item.deliveredQty || item.delivered_qty || 0),

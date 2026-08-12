@@ -69,6 +69,7 @@ import {
 import { getCustomerTypeLabel } from "@/types/invoice";
 import { formatPartIdentityFromUi } from "@/lib/part-identity";
 import { shareImagesAcrossFamilyItems } from "@/lib/part-images";
+import { InquiryPartDropdownList } from "./InquiryPartDropdownList";
 
 interface Inquiry {
   id: string;
@@ -614,48 +615,25 @@ export const SalesInquiry = ({
     const fetchParts = async () => {
       setLoadingParts(true);
       try {
-        const [partsResponse, balancesResponse] = await Promise.all([
-          apiClient.getParts({
-            status: 'active',
-            limit: 'all',
-            page: 1
-          }).catch((err: any) => {
-            return { error: err.message || 'Failed to fetch parts', data: [] };
-          }),
-          apiClient.getStockBalances({ limit: 5000 }).catch(() => ({ data: [], error: null }))
-        ]);
+        const partsResponse = await apiClient
+          .getParts({
+            status: "active",
+            limit: "all",
+            page: 1,
+          })
+          .catch((err: any) => {
+            return { error: err.message || "Failed to fetch parts", data: [] };
+          });
 
         let partsDataArray: any[] = [];
         if (Array.isArray(partsResponse)) {
           partsDataArray = partsResponse;
-        } else if ((partsResponse as any).data && Array.isArray((partsResponse as any).data)) {
+        } else if (
+          (partsResponse as any).data &&
+          Array.isArray((partsResponse as any).data)
+        ) {
           partsDataArray = (partsResponse as any).data;
         }
-
-        let balancesData: any[] = [];
-        if (Array.isArray(balancesResponse)) {
-          balancesData = balancesResponse;
-        } else if ((balancesResponse as any).data && Array.isArray((balancesResponse as any).data)) {
-          balancesData = (balancesResponse as any).data;
-        }
-
-        const rackMapData: Record<string, string> = {};
-        const stockMapData: Record<string, number> = {};
-        if (Array.isArray(balancesData)) {
-          balancesData.forEach((b: any) => {
-            if (b.part_id) {
-              const loc =
-                b.location ||
-                (b.rack && b.shelf
-                  ? `${b.rack}/${b.shelf}`
-                  : b.rack || b.shelf || b.rack_no || "");
-              if (loc) rackMapData[b.part_id] = loc;
-              if (b.current_stock !== undefined) stockMapData[b.part_id] = b.current_stock;
-            }
-          });
-        }
-        setRackMap(rackMapData);
-        setStockMap(stockMapData);
 
         const idMap: Record<string, string> = {};
         const modelMapUpdates: Record<
@@ -663,19 +641,20 @@ export const SalesInquiry = ({
           { id: string; name: string; qtyUsed: number }[]
         > = {};
         const transformedParts = partsDataArray
-          .filter((p: any) => p.status === 'active' || !p.status)
+          .filter((p: any) => p.status === "active" || !p.status)
           .map((p: any) => {
-            const part = transformPart(p, rackMapData);
+            const part = transformPart(p, {});
             if (part.partNo && part.id) idMap[part.partNo] = part.id;
             if (part.id) {
               modelMapUpdates[part.id] = extractPartModels(p);
             }
             return part;
           })
-          .filter((p: PartDetail) => p.partNo && p.partNo !== 'N/A');
+          .filter((p: PartDetail) => p.partNo && p.partNo !== "N/A");
 
         setPartIdMap(idMap);
-        const partsWithSharedImages = shareImagesAcrossFamilyItems(transformedParts);
+        const partsWithSharedImages =
+          shareImagesAcrossFamilyItems(transformedParts);
         setPartsData(partsWithSharedImages);
         setPartModelsByPartId((prev) => ({ ...prev, ...modelMapUpdates }));
         const withImages = partsWithSharedImages.filter((p) => p.images?.length);
@@ -691,9 +670,48 @@ export const SalesInquiry = ({
             return next;
           });
         }
+        setLoadingParts(false);
+
+        // Locations / live stock are not required to open the item dropdown.
+        void apiClient
+          .getStockBalances({ limit: 5000 })
+          .catch(() => ({ data: [], error: null }))
+          .then((balancesResponse: any) => {
+            let balancesData: any[] = [];
+            if (Array.isArray(balancesResponse)) {
+              balancesData = balancesResponse;
+            } else if (
+              balancesResponse?.data &&
+              Array.isArray(balancesResponse.data)
+            ) {
+              balancesData = balancesResponse.data;
+            }
+            const rackMapData: Record<string, string> = {};
+            const stockMapData: Record<string, number> = {};
+            if (Array.isArray(balancesData)) {
+              balancesData.forEach((b: any) => {
+                if (b.part_id) {
+                  const loc =
+                    b.location ||
+                    (b.rack && b.shelf
+                      ? `${b.rack}/${b.shelf}`
+                      : b.rack || b.shelf || b.rack_no || "");
+                  if (loc) rackMapData[b.part_id] = loc;
+                  if (b.current_stock !== undefined) {
+                    stockMapData[b.part_id] = b.current_stock;
+                  }
+                }
+              });
+            }
+            setRackMap(rackMapData);
+            setStockMap(stockMapData);
+          });
       } catch (error: any) {
-        toast({ title: "Error", description: "Failed to load parts", variant: "destructive" });
-      } finally {
+        toast({
+          title: "Error",
+          description: "Failed to load parts",
+          variant: "destructive",
+        });
         setLoadingParts(false);
       }
     };
@@ -707,14 +725,17 @@ export const SalesInquiry = ({
       setSearchResults([]);
       return;
     }
+    if (partsData.length > 0) {
+      setSearchResults([]);
+      return;
+    }
 
     const timer = setTimeout(async () => {
-      setLoadingParts(true);
       try {
         const response: any = await apiClient.getParts({
           search: itemSearch,
-          limit: 'all',
-          status: 'active'
+          limit: "all",
+          status: "active",
         });
 
         const data = Array.isArray(response) ? response : response?.data || [];
@@ -722,13 +743,11 @@ export const SalesInquiry = ({
         setSearchResults(transformed);
       } catch (err) {
         console.error("Search failed", err);
-      } finally {
-        setLoadingParts(false);
       }
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [itemSearch, rackMap, stockMap]);
+  }, [itemSearch, rackMap, partsData.length]);
 
   // Fetch inquiries from backend
   useEffect(() => {
@@ -1087,7 +1106,7 @@ export const SalesInquiry = ({
 
   // Server search for lookup-row dropdown (parts beyond the in-memory catalog).
   useEffect(() => {
-    if (activeLookupSearch.length < 2) {
+    if (partsData.length > 0 || activeLookupSearch.length < 2) {
       setLookupRowSearchResults([]);
       setLookupRowSearchLoading(false);
       return;
@@ -1114,7 +1133,7 @@ export const SalesInquiry = ({
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [activeLookupSearch, rackMap]);
+  }, [activeLookupSearch, rackMap, partsData.length]);
 
   // Top-level filter option memos (each filter is computed against the others
   // so the dropdowns stay coherent).
@@ -2308,14 +2327,11 @@ export const SalesInquiry = ({
   const handleRefreshParts = async () => {
     setLoadingParts(true);
     try {
-      const [partsResponse, balancesResponse] = await Promise.all([
-        apiClient.getParts({
-          status: 'active',
-          limit: 'all',
-          page: 1
-        }),
-        apiClient.getStockBalances({ limit: 10000 }).catch(() => ({ data: [], error: null }))
-      ]);
+      const partsResponse = await apiClient.getParts({
+        status: "active",
+        limit: "all",
+        page: 1,
+      });
 
       let partsDataArray: any[] = [];
       if (Array.isArray(partsResponse)) {
@@ -2325,33 +2341,6 @@ export const SalesInquiry = ({
       } else if ((partsResponse as any).pagination && (partsResponse as any).data) {
         partsDataArray = (partsResponse as any).data;
       }
-
-      let balancesData: any[] = [];
-      if (Array.isArray(balancesResponse)) {
-        balancesData = balancesResponse;
-      } else if ((balancesResponse as any).data && Array.isArray((balancesResponse as any).data)) {
-        balancesData = (balancesResponse as any).data;
-      }
-
-      const rackMapData: Record<string, string> = {};
-      const stockMapData: Record<string, number> = {};
-      if (Array.isArray(balancesData)) {
-        balancesData.forEach((b: any) => {
-          if (b.part_id) {
-            const loc =
-              b.location ||
-              (b.rack && b.shelf
-                ? `${b.rack}/${b.shelf}`
-                : b.rack || b.shelf || b.rack_no || "");
-            if (loc) rackMapData[b.part_id] = loc;
-            if (b.current_stock !== undefined && b.current_stock !== null) {
-              stockMapData[b.part_id] = b.current_stock;
-            }
-          }
-        });
-      }
-      setRackMap(rackMapData);
-      setStockMap(stockMapData);
 
       // Create part ID map
       const idMap: Record<string, string> = {};
@@ -2398,7 +2387,7 @@ export const SalesInquiry = ({
             origin: String(p.origin || '').trim() || 'N/A',
             grade: String(p.grade || 'A').trim(),
             status: (p.status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
-            rackNo: rackMapData[p.id] || 'N/A',
+            rackNo: rackMap[p.id] || "N/A",
             reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
             quantity: resolvePartStockQty(p),
           };
@@ -3496,10 +3485,12 @@ export const SalesInquiry = ({
                   {lookupRows.map((row, index) => {
                     const rowPart =
                       lookupPartsPool.find((p) => p.id === row.partId) || null;
-                    const rowFiltered = getFilteredPartsForLookupRow(row.id);
+                    const rowDropdownOpen = !!showLookupRowDropdown[row.id];
+                    const rowFiltered = rowDropdownOpen
+                      ? getFilteredPartsForLookupRow(row.id)
+                      : [];
                     const rowHighlightIdx =
                       lookupRowHighlightIndex[row.id] ?? 0;
-                    const rowDropdownOpen = !!showLookupRowDropdown[row.id];
                     const rowModels = lookupModelChips(row.partId || "");
                     const stockBalance = row.partId
                       ? partStockBalances[row.partId]
@@ -3627,7 +3618,6 @@ export const SalesInquiry = ({
                                     if (arrowDown) {
                                       e.preventDefault();
                                       e.stopPropagation();
-                                      if (len === 0) return;
                                       if (!rowDropdownOpen) {
                                         setShowLookupRowDropdown((prev) => ({
                                           ...prev,
@@ -3640,6 +3630,7 @@ export const SalesInquiry = ({
                                         }));
                                         return;
                                       }
+                                      if (len === 0) return;
                                       setLookupRowHighlightIndex((prev) => {
                                         const cur = prev[row.id] ?? -1;
                                         const next = Math.min(cur + 1, len - 1);
@@ -3652,20 +3643,19 @@ export const SalesInquiry = ({
                                     if (arrowUp) {
                                       e.preventDefault();
                                       e.stopPropagation();
-                                      if (len === 0) return;
                                       if (!rowDropdownOpen) {
                                         setShowLookupRowDropdown((prev) => ({
                                           ...prev,
                                           [row.id]: true,
                                         }));
-                                        const last = Math.max(len - 1, 0);
-                                        syncHi(row.id, last);
+                                        syncHi(row.id, 0);
                                         setLookupRowHighlightIndex((prev) => ({
                                           ...prev,
-                                          [row.id]: last,
+                                          [row.id]: 0,
                                         }));
                                         return;
                                       }
+                                      if (len === 0) return;
                                       setLookupRowHighlightIndex((prev) => {
                                         const cur = prev[row.id] ?? 0;
                                         const next = Math.max(cur - 1, 0);
@@ -3713,7 +3703,7 @@ export const SalesInquiry = ({
                                     ref={(el) => {
                                       lookupRowPortalRefs.current[row.id] = el;
                                     }}
-                                    className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg max-h-[420px] overflow-auto"
+                                    className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg overflow-hidden"
                                     style={{
                                       top: `${lookupDropdownRects[row.id].top}px`,
                                       left: `${lookupDropdownRects[row.id].left}px`,
@@ -3721,92 +3711,40 @@ export const SalesInquiry = ({
                                     }}
                                     onMouseDown={(e) => e.preventDefault()}
                                   >
-                                    {loadingParts || lookupRowSearchLoading ? (
+                                    {loadingParts && partsData.length === 0 ? (
                                       <div className="px-4 py-3 text-sm text-muted-foreground text-center">
                                         Loading items...
                                       </div>
-                                    ) : rowFiltered.length > 0 ? (
-                                      rowFiltered.map((part, idx) => {
-                                        const stockDisplay = getPartStockDisplay(
-                                          part,
-                                          partStockBalances,
-                                        );
-                                        const availablePcs = stockDisplay.available;
-                                        const brandLabel =
-                                          part.brand && part.brand !== "N/A"
-                                            ? part.brand
-                                            : "";
-                                        const partIdentifiers =
-                                          formatPartIdentityFromUi({
-                                            partNo: part.partNo,
-                                            masterPart: part.masterPart,
-                                          });
-                                        const description =
-                                          part.description ||
-                                          "No description available";
-                                        return (
-                                          <button
-                                            key={part.id}
-                                            type="button"
-                                            data-lookup-item-key={row.id}
-                                            data-lookup-item-idx={idx}
-                                            onMouseEnter={() =>
-                                              setLookupRowHighlightIndex(
-                                                (prev) => ({
-                                                  ...prev,
-                                                  [row.id]: idx,
-                                                }),
-                                              )
-                                            }
-                                            onClick={() =>
-                                              handleSelectPartForLookupRow(
-                                                row.id,
-                                                part,
-                                              )
-                                            }
-                                            className={cn(
-                                              "w-full text-left px-3 py-2.5 hover:bg-accent hover:text-accent-foreground transition-colors border-b border-border last:border-b-0",
-                                              idx === rowHighlightIdx &&
-                                                "bg-accent text-accent-foreground",
-                                              rowPart?.id === part.id &&
-                                                idx !== rowHighlightIdx &&
-                                                "bg-muted",
-                                            )}
-                                          >
-                                            <div className="flex items-center justify-between gap-2 min-w-0">
-                                              <div className="font-semibold text-sm">
-                                                {partIdentifiers}
-                                              </div>
-                                              <div className="flex items-center gap-1 shrink-0">
-                                                <span
-                                                  className={cn(
-                                                    "text-[11px] font-semibold px-2 py-0.5 rounded-full tabular-nums",
-                                                    availablePcs > 0
-                                                      ? "bg-green-100 text-green-700"
-                                                      : "bg-red-100 text-red-600",
-                                                  )}
-                                                >
-                                                  {availablePcs} pcs
-                                                </span>
-                                              </div>
-                                            </div>
-                                            <div className="text-xs text-muted-foreground line-clamp-2 mt-1">
-                                              {description}
-                                            </div>
-                                            {brandLabel ? (
-                                              <div className="text-[11px] text-muted-foreground/80 mt-1">
-                                                {brandLabel}
-                                              </div>
-                                            ) : null}
-                                          </button>
-                                        );
-                                      })
                                     ) : (
-                                      <div className="px-4 py-3 text-sm text-muted-foreground">
-                                        {row.search
-                                          ? "No items found matching your search"
-                                          : "No items available"}
-                                      </div>
+                                      <InquiryPartDropdownList
+                                        rowId={row.id}
+                                        filteredParts={rowFiltered}
+                                        highlightIndex={rowHighlightIdx}
+                                        selectedPartId={rowPart?.id}
+                                        emptyHint={
+                                          row.search
+                                            ? "No items found matching your search"
+                                            : "No items available"
+                                        }
+                                        getAvailableQty={(part) =>
+                                          getPartStockDisplay(
+                                            part as PartDetail,
+                                            partStockBalances,
+                                          ).available
+                                        }
+                                        onHighlightIndex={(idx) =>
+                                          setLookupRowHighlightIndex((prev) => ({
+                                            ...prev,
+                                            [row.id]: idx,
+                                          }))
+                                        }
+                                        onPickPart={(part) =>
+                                          handleSelectPartForLookupRow(
+                                            row.id,
+                                            part as PartDetail,
+                                          )
+                                        }
+                                      />
                                     )}
                                   </div>,
                                   document.body,

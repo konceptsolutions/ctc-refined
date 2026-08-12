@@ -14,6 +14,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
 
 interface SalesInvoiceItem {
   id: string;
@@ -153,29 +154,35 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
 
         // Load items
         if (invoiceData.items && invoiceData.items.length > 0) {
-          setFormItems(invoiceData.items.map((item: any, idx: number) => ({
+          setFormItems(invoiceData.items.map((item: any, idx: number) => {
+            const linePart = resolveInvoiceLinePartFields(item);
+            return {
             id: String(idx + 1),
             partId: item.partId || "",
-            partNo: item.partNo || "",
-            description: item.description || "",
-            brand: item.brand || item.part?.brand?.name || "N/A",
+            partNo: linePart.partNo,
+            description: linePart.description,
+            brand: linePart.brand || "N/A",
             orderedQty: String(item.orderedQty || 0),
             unitPrice: String(item.unitPrice || 0),
             discount: String(item.discount || 0),
             grade: item.grade || "A",
-          })));
+          };
+          }));
         } else if (invoice.items && invoice.items.length > 0) {
-          setFormItems(invoice.items.map((item, idx) => ({
+          setFormItems(invoice.items.map((item, idx) => {
+            const linePart = resolveInvoiceLinePartFields(item);
+            return {
             id: String(idx + 1),
             partId: item.partId || "",
-            partNo: item.partNo || "",
-            description: item.description || "",
-            brand: item.brand || "N/A",
+            partNo: linePart.partNo,
+            description: linePart.description,
+            brand: linePart.brand || "N/A",
             orderedQty: String(item.orderedQty || 0),
             unitPrice: String(item.unitPrice || 0),
             discount: String(item.discount || 0),
             grade: item.grade || "A",
-          })));
+          };
+          }));
         } else {
           setFormItems([{
             id: "1",
