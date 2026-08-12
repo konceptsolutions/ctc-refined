@@ -100,6 +100,7 @@ interface DirectPurchaseOrderItem {
 interface DirectPurchaseOrder {
   id: string;
   dpo_no: string;
+  po_number?: string;
   date: string;
   store_id: string;
   store_name: string;
@@ -1200,6 +1201,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     status: poData.status || "Received",
     total_amount: poData.total_amount || poData.totalAmount || 0,
     items_count: Array.isArray(poData.items) ? poData.items.length : 0,
+    expenses_count: Number(poData.expenses_count || poData.expensesCount || 0),
     created_at: poData.created_at || poData.createdAt || new Date().toISOString(),
     items: Array.isArray(poData.items)
       ? poData.items.map((item: any) => ({
