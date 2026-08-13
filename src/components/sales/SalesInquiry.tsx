@@ -3436,7 +3436,7 @@ export const SalesInquiry = ({
                 <TableHeader className="bg-muted/50">
                   <TableRow className="border-b">
                     <ListNumberHeader className="font-bold text-foreground" />
-                    <TableHead className="w-[300px] font-bold text-foreground">
+                    <TableHead className="min-w-[360px] w-[360px] font-bold text-foreground">
                       Part Details
                     </TableHead>
                     <TableHead className="w-[90px] text-center font-bold text-foreground">

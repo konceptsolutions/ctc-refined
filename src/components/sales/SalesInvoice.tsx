@@ -410,6 +410,32 @@ interface RecentSaleInvoiceLine {
   unitPrice: number | null;
 }
 
+function mapRecentSaleInvoiceLines(
+  invoiceData: unknown[],
+  excludeInvoiceId?: string | null,
+): RecentSaleInvoiceLine[] {
+  const filtered = (invoiceData as { id?: string }[]).filter(
+    (inv) => !excludeInvoiceId || inv.id !== excludeInvoiceId,
+  );
+  return filtered.slice(0, 3).map((inv: Record<string, unknown>) => {
+    const item = inv.item as
+      | {
+          ordered_qty?: number;
+          unit_price?: number;
+        }
+      | null
+      | undefined;
+    return {
+      invoiceNo: String(inv.invoice_no ?? ""),
+      invoiceDate:
+        inv.invoice_date != null ? String(inv.invoice_date) : undefined,
+      customerName: String(inv.customer_name ?? ""),
+      qty: item?.ordered_qty != null ? Number(item.ordered_qty) : null,
+      unitPrice: item?.unit_price != null ? Number(item.unit_price) : null,
+    };
+  });
+}
+
 interface ModelAssociationRow {
   partId: string;
   masterPart: string;
@@ -687,6 +713,10 @@ export const SalesInvoice = ({
   const [loadingRecentSalesByPartId, setLoadingRecentSalesByPartId] = useState<
     Record<string, boolean>
   >({});
+  const [recentCustomerSalesByPartId, setRecentCustomerSalesByPartId] =
+    useState<Record<string, RecentSaleInvoiceLine[]>>({});
+  const [loadingRecentCustomerSalesByPartId, setLoadingRecentCustomerSalesByPartId] =
+    useState<Record<string, boolean>>({});
   const [partImagesByPartId, setPartImagesByPartId] = useState<
     Record<string, string[]>
   >({});
@@ -969,6 +999,8 @@ export const SalesInvoice = ({
   >({});
   const [reversing, setReversing] = useState(false);
   const [showBackToInquiry, setShowBackToInquiry] = useState(false);
+  const [savingInvoice, setSavingInvoice] = useState(false);
+  const savingInvoiceRef = useRef(false);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("salesInquiryConversionDraft");
@@ -2826,37 +2858,13 @@ export const SalesInvoice = ({
             const invoiceData = Array.isArray(response)
               ? response
               : ((response as { data?: unknown[] }).data || []);
-            const filtered = (invoiceData as { id: string }[]).filter(
-              (inv) => inv.id !== editingInvoiceId,
-            );
-            const top3: RecentSaleInvoiceLine[] = filtered
-              .slice(0, 3)
-              .map((inv: Record<string, unknown>) => {
-                const item = inv.item as
-                  | {
-                    ordered_qty?: number;
-                    unit_price?: number;
-                  }
-                  | null
-                  | undefined;
-                return {
-                  invoiceNo: String(inv.invoice_no ?? ""),
-                  invoiceDate:
-                    inv.invoice_date != null
-                      ? String(inv.invoice_date)
-                      : undefined,
-                  customerName: String(inv.customer_name ?? ""),
-                  qty:
-                    item?.ordered_qty != null
-                      ? Number(item.ordered_qty)
-                      : null,
-                  unitPrice:
-                    item?.unit_price != null
-                      ? Number(item.unit_price)
-                      : null,
-                };
-              });
-            setRecentSalesByPartId((p) => ({ ...p, [partId]: top3 }));
+            setRecentSalesByPartId((p) => ({
+              ...p,
+              [partId]: mapRecentSaleInvoiceLines(
+                invoiceData as unknown[],
+                editingInvoiceId,
+              ),
+            }));
           } catch {
             if (!cancelled) {
               setRecentSalesByPartId((p) => ({ ...p, [partId]: [] }));
@@ -2881,6 +2889,98 @@ export const SalesInvoice = ({
     showLastSaleInfo,
     lastSalePartIdsFingerprint,
     editingInvoiceId,
+  ]);
+
+  useEffect(() => {
+    if (!showDocumentForm || !showLastSaleInfo || isTransferOut) {
+      return;
+    }
+
+    const partIds = lastSalePartIdsFingerprint
+      ? Array.from(
+          new Set(lastSalePartIdsFingerprint.split("|").filter(Boolean)),
+        )
+      : [];
+    const customerId = selectedCustomerId.trim();
+    const customerName =
+      newInvoice.customerType === "walking"
+        ? String(newInvoice.customerName || "").trim()
+        : selectedCustomerName.trim();
+
+    setRecentCustomerSalesByPartId((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        if (!partIds.includes(k)) {
+          delete next[k];
+        }
+      }
+      return next;
+    });
+
+    if (partIds.length === 0 || (!customerId && !customerName)) {
+      setRecentCustomerSalesByPartId({});
+      return;
+    }
+
+    let cancelled = false;
+    partIds.forEach((partId) => {
+      setLoadingRecentCustomerSalesByPartId((p) => ({ ...p, [partId]: true }));
+    });
+
+    void (async () => {
+      await Promise.all(
+        partIds.map(async (partId) => {
+          try {
+            const response = await apiClient.getSalesInvoicesByPart(partId, {
+              page: 1,
+              limit: 8,
+              customer_id: customerId || undefined,
+              customer_name: customerName || undefined,
+            });
+            if (cancelled) return;
+            if ((response as { error?: string }).error) {
+              setRecentCustomerSalesByPartId((p) => ({ ...p, [partId]: [] }));
+              return;
+            }
+            const invoiceData = Array.isArray(response)
+              ? response
+              : ((response as { data?: unknown[] }).data || []);
+            setRecentCustomerSalesByPartId((p) => ({
+              ...p,
+              [partId]: mapRecentSaleInvoiceLines(
+                invoiceData as unknown[],
+                editingInvoiceId,
+              ),
+            }));
+          } catch {
+            if (!cancelled) {
+              setRecentCustomerSalesByPartId((p) => ({ ...p, [partId]: [] }));
+            }
+          } finally {
+            if (!cancelled) {
+              setLoadingRecentCustomerSalesByPartId((p) => ({
+                ...p,
+                [partId]: false,
+              }));
+            }
+          }
+        }),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showDocumentForm,
+    showLastSaleInfo,
+    isTransferOut,
+    lastSalePartIdsFingerprint,
+    editingInvoiceId,
+    selectedCustomerId,
+    selectedCustomerName,
+    newInvoice.customerType,
+    newInvoice.customerName,
   ]);
 
   // Update dropdown position on scroll
@@ -3831,6 +3931,10 @@ export const SalesInvoice = ({
         };
       });
 
+    if (savingInvoiceRef.current) return;
+    savingInvoiceRef.current = true;
+    setSavingInvoice(true);
+
     try {
       // Determine customer name based on selection
       // registered = Party Sale (picks from customer dropdown)
@@ -4091,6 +4195,9 @@ export const SalesInvoice = ({
           `Failed to ${editingInvoiceId ? "update" : "create"} invoice`,
         variant: "destructive",
       });
+    } finally {
+      savingInvoiceRef.current = false;
+      setSavingInvoice(false);
     }
   };
 
@@ -4130,6 +4237,7 @@ export const SalesInvoice = ({
       new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
     );
     setQuotationStatus("pending");
+    setShowBackToInquiry(false);
   };
 
   // Handle Edit Invoice
@@ -7487,10 +7595,10 @@ export const SalesInvoice = ({
                                   />
                                   {showLastSaleInfo &&
                                     item.selectedPartId && (
-                                      <div className="mt-1 text-xs text-muted-foreground flex flex-col gap-1.5">
+                                      <div className="mt-1 text-xs text-muted-foreground flex flex-col gap-2">
                                         <div className="flex flex-col gap-1">
                                           <span className="font-semibold">
-                                            Last 3 sales (invoices)
+                                            Last 3 sales (all customers)
                                           </span>
                                           {loadingRecentSalesByPartId[
                                             item.selectedPartId
@@ -7552,6 +7660,59 @@ export const SalesInvoice = ({
                                             </span>
                                           )}
                                         </div>
+                                        {!isTransferOut ? (
+                                          <div className="flex flex-col gap-1">
+                                            <span className="font-semibold">
+                                              Last 3 sales (this customer)
+                                            </span>
+                                            {!(
+                                              selectedCustomerId.trim() ||
+                                              (newInvoice.customerType ===
+                                                "walking" &&
+                                                String(
+                                                  newInvoice.customerName || "",
+                                                ).trim()) ||
+                                              selectedCustomerName.trim()
+                                            ) ? (
+                                              <span>
+                                                Select a customer to see their
+                                                last 3 sales of this item
+                                              </span>
+                                            ) : loadingRecentCustomerSalesByPartId[
+                                                item.selectedPartId
+                                              ] ? (
+                                              <span>Loading…</span>
+                                            ) : (recentCustomerSalesByPartId[
+                                                item.selectedPartId
+                                              ]?.length ?? 0) > 0 ? (
+                                              <ul className="list-none space-y-0.5 m-0 p-0">
+                                                {recentCustomerSalesByPartId[
+                                                  item.selectedPartId
+                                                ]!.map((row, idx) => (
+                                                  <li
+                                                    key={`cust-${row.invoiceNo}-${idx}`}
+                                                  >
+                                                    #{row.invoiceNo} ·{" "}
+                                                    {formatInvoiceDateDisplay(
+                                                      row.invoiceDate,
+                                                    )}
+                                                    {row.qty != null
+                                                      ? ` · ${row.qty} pcs`
+                                                      : ""}
+                                                    {row.unitPrice != null
+                                                      ? ` @ Rs ${row.unitPrice.toFixed(2)}`
+                                                      : ""}
+                                                  </li>
+                                                ))}
+                                              </ul>
+                                            ) : (
+                                              <span>
+                                                No previous sales of this item
+                                                to this customer
+                                              </span>
+                                            )}
+                                          </div>
+                                        ) : null}
 
                                         {/* model chips removed; Quantity Used section below is the source of truth */}
                                       </div>
@@ -7652,23 +7813,12 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
-                            {/* Brand (Desktop ONLY) — header toggles cost & last sales */}
+                            {/* Brand (Desktop ONLY) — header toggles last sales */}
                             <TableCell className="hidden md:table-cell text-center align-top">
                               <div className="flex flex-col items-center justify-center gap-0.5">
                                 <span className="text-xs font-medium text-foreground">
                                   {part?.brands?.[0]?.name || "-"}
                                 </span>
-                                {showLastSaleInfo &&
-                                  item.selectedPartId &&
-                                  !loadingStock[item.selectedPartId] && (
-                                    <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded whitespace-nowrap">
-                                      Cost:{" "}
-                                      {(
-                                        partStockBalances[item.selectedPartId]
-                                          ?.avg_cost ?? (part?.price || 0)
-                                      ).toFixed(2)}
-                                    </span>
-                                  )}
                               </div>
                             </TableCell>
 
@@ -9327,14 +9477,17 @@ export const SalesInvoice = ({
               </Button>
               <Button
                 onClick={handleSaveInvoice}
+                disabled={savingInvoice}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
                 <FileText className="w-4 h-4 mr-2" />
-                {editingInvoiceId
-                  ? "Save Changes"
-                  : isQuotation
-                    ? "Create Quotation"
-                    : "Create Invoice"}
+                {savingInvoice
+                  ? "Saving..."
+                  : editingInvoiceId
+                    ? "Save Changes"
+                    : isQuotation
+                      ? "Create Quotation"
+                      : "Create Invoice"}
               </Button>
             </div>
           </CardContent>

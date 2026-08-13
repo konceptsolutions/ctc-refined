@@ -65,13 +65,14 @@ const readPurchaseOrderForwarder = async (
 
 const normalizeItems = (itemsRaw: any) =>
   (Array.isArray(itemsRaw) ? itemsRaw : [])
-    .map((item: any) => {
+    .map((item: any, index: number) => {
       const khiQuantity = Number(item?.khiQuantity || 0);
       const isbQuantity = Number(item?.isbQuantity || 0);
       const otherQuantity = Number(item?.otherQuantity || 0);
       const splitQuantity = khiQuantity + isbQuantity + otherQuantity;
       const fallbackDemand = Number(item?.demandQuantity || 0);
       const demandQuantity = splitQuantity > 0 ? splitQuantity : fallbackDemand;
+      const sortOrderRaw = Number(item?.sortOrder);
       return {
         partId: String(item?.partId || "").trim(),
         demandQuantity,
@@ -79,6 +80,7 @@ const normalizeItems = (itemsRaw: any) =>
         isbQuantity: Number.isFinite(isbQuantity) ? isbQuantity : 0,
         otherQuantity: Number.isFinite(otherQuantity) ? otherQuantity : 0,
         weight: Number(item?.weight || 0),
+        sortOrder: Number.isFinite(sortOrderRaw) ? sortOrderRaw : index,
       };
     })
     .filter(
@@ -86,7 +88,12 @@ const normalizeItems = (itemsRaw: any) =>
         item.partId &&
         Number.isFinite(item.demandQuantity) &&
         item.demandQuantity > 0,
-    );
+    )
+    .map((item: any, index: number) => ({
+      ...item,
+      // Re-index after filtering invalid rows so sequence stays contiguous.
+      sortOrder: index,
+    }));
 
 const getBaseRequestNo = (requestNo: string | null | undefined) => {
   if (!requestNo) return "";
@@ -420,11 +427,14 @@ async function confirmPurchaseQuotation(
   const quotations: any[] = await purchaseQuotationModel.findMany({
     where: { id: { in: allQuotationIds } },
     include: {
-      PurchaseQuotationItem: true,
+      PurchaseQuotationItem: {
+        orderBy: { sortOrder: "asc" },
+      },
       PurchaseImportRequest: {
         select: {
           requestNo: true,
           PurchaseImportRequestItem: {
+            orderBy: { sortOrder: "asc" },
             select: {
               partId: true,
               khiQuantity: true,
@@ -545,7 +555,13 @@ async function confirmPurchaseQuotation(
 
   const laneItems: Record<
     PoLaneKey,
-    Array<{ partId: string; quantity: number; unitCost: number; totalCost: number }>
+    Array<{
+      partId: string;
+      quantity: number;
+      unitCost: number;
+      totalCost: number;
+      sortOrder: number;
+    }>
   > = {
     khi: [],
     isb: [],
@@ -627,6 +643,10 @@ async function confirmPurchaseQuotation(
       const unitCost =
         useRevisedRates && revisedLcRate > 0 ? revisedLcRate : lcRate;
 
+      const itemSortOrder = Number.isFinite(Number(item?.sortOrder))
+        ? Number(item.sortOrder)
+        : 0;
+
       (Object.keys(laneQty) as PoLaneKey[]).forEach((lane) => {
         const quantity = laneQty[lane];
         if (quantity <= 0) return;
@@ -635,6 +655,7 @@ async function confirmPurchaseQuotation(
           quantity,
           unitCost,
           totalCost: unitCost * quantity,
+          sortOrder: itemSortOrder,
         });
       });
     }
@@ -710,7 +731,7 @@ async function confirmPurchaseQuotation(
       });
 
       await tx.purchaseOrderItem.createMany({
-        data: poItems.map((row) => ({
+        data: poItems.map((row, index) => ({
           id: randomUUID(),
           purchaseOrderId: created.id,
           partId: row.partId,
@@ -718,6 +739,10 @@ async function confirmPurchaseQuotation(
           unitCost: row.unitCost,
           totalCost: row.totalCost,
           receivedQty: 0,
+          sortOrder:
+            Number.isFinite(Number(row.sortOrder))
+              ? Number(row.sortOrder)
+              : index,
         })),
       });
 
@@ -1374,7 +1399,7 @@ router.post("/requests", async (req: Request, res: Response) => {
         });
         requestCount += 1;
 
-        const itemRecords = items.map((item: any) => {
+        const itemRecords = items.map((item: any, index: number) => {
           const weight = Number.isFinite(item.weight) ? item.weight : 0;
           const totalWeight = item.demandQuantity * weight;
           return {
@@ -1388,6 +1413,10 @@ router.post("/requests", async (req: Request, res: Response) => {
             otherQuantity: item.otherQuantity,
             weight,
             totalWeight,
+            sortOrder:
+              Number.isFinite(Number(item?.sortOrder))
+                ? Number(item.sortOrder)
+                : index,
             createdAt: requestDate,
             updatedAt: new Date(),
           };
@@ -1454,7 +1483,7 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
       orderBy: { createdAt: "asc" },
       include: {
         PurchaseImportRequestItem: {
-          orderBy: { createdAt: "asc" },
+          orderBy: { sortOrder: "asc" },
         },
         Supplier: {
           select: {
@@ -1489,6 +1518,7 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
         weight: item.weight,
         currentStock: item.currentStock,
         totalWeight: item.totalWeight,
+        sortOrder: Number(item.sortOrder || 0),
       }),
     );
 
@@ -1758,7 +1788,7 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
       });
 
       for (const activeRequestId of itemTargetRequestIds) {
-        const itemRecords = items.map((item: any) => {
+        const itemRecords = items.map((item: any, index: number) => {
           const weight = Number.isFinite(item.weight) ? item.weight : 0;
           const totalWeight = item.demandQuantity * weight;
           return {
@@ -1772,6 +1802,10 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
             otherQuantity: item.otherQuantity,
             weight,
             totalWeight,
+            sortOrder:
+              Number.isFinite(Number(item?.sortOrder))
+                ? Number(item.sortOrder)
+                : index,
             createdAt: requestDate || new Date(),
             updatedAt: new Date(),
           };
@@ -1981,7 +2015,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
           },
         },
         PurchaseImportRequestItem: {
-          orderBy: { createdAt: "asc" },
+          orderBy: { sortOrder: "asc" },
           include: {
             Part: {
               select: {
@@ -2031,7 +2065,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
           orderBy: { createdAt: "desc" },
           include: {
             PurchaseQuotationItem: {
-              orderBy: { createdAt: "asc" },
+              orderBy: { sortOrder: "asc" },
               include: {
                 Part: {
                   select: {
@@ -2275,7 +2309,7 @@ router.get("/requests/:requestId/quotation-comparison", async (req: Request, res
         orderBy: { createdAt: "desc" },
         include: {
           PurchaseQuotationItem: {
-            orderBy: { createdAt: "asc" },
+            orderBy: { sortOrder: "asc" },
             select: {
               partId: true,
               demandQuantity: true,
@@ -2523,7 +2557,7 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
       });
 
       await (tx as any).purchaseQuotationItem.createMany({
-        data: items.map((item: any) => ({
+        data: items.map((item: any, index: number) => ({
           id: randomUUID(),
           purchaseQuotationId: quotationId,
           partId: item.partId,
@@ -2540,6 +2574,10 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
           revisedLcAmount: item.revisedLcAmount,
           weight: item.weight,
           totalWeight: item.totalWeight,
+          sortOrder:
+            Number.isFinite(Number(item?.sortOrder))
+              ? Number(item.sortOrder)
+              : index,
           createdAt: new Date(),
           updatedAt: new Date(),
         })),
@@ -2641,6 +2679,7 @@ router.get("/quotations", async (req: Request, res: Response) => {
             },
           },
           PurchaseQuotationItem: {
+            orderBy: { sortOrder: "asc" },
             select: {
               id: true,
               demandQuantity: true,
@@ -2655,6 +2694,7 @@ router.get("/quotations", async (req: Request, res: Response) => {
               status: true,
               consignee: true,
               PurchaseOrderItem: {
+                orderBy: { sortOrder: "asc" },
                 select: { fcRate: true, receivedQty: true },
               },
             },
@@ -2736,7 +2776,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
           },
         },
         PurchaseQuotationItem: {
-          orderBy: { createdAt: "asc" },
+          orderBy: { sortOrder: "asc" },
           include: {
             Part: {
               select: {
@@ -2959,7 +2999,7 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
       });
 
       await (tx as any).purchaseQuotationItem.createMany({
-        data: items.map((item: any) => ({
+        data: items.map((item: any, index: number) => ({
           id: randomUUID(),
           purchaseQuotationId: quotationId,
           partId: item.partId,
@@ -2976,6 +3016,7 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
           revisedLcAmount: item.revisedLcAmount,
           weight: item.weight,
           totalWeight: item.totalWeight,
+          sortOrder: index,
           createdAt: new Date(),
           updatedAt: new Date(),
         })),
@@ -3115,7 +3156,7 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
       });
 
       await (tx as any).purchaseQuotationItem.createMany({
-        data: items.map((item: any) => ({
+        data: items.map((item: any, index: number) => ({
           id: randomUUID(),
           purchaseQuotationId: quotationId,
           partId: item.partId,
@@ -3132,6 +3173,7 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
           revisedLcAmount: item.revisedLcAmount,
           weight: item.weight,
           totalWeight: item.totalWeight,
+          sortOrder: index,
           createdAt: new Date(),
           updatedAt: new Date(),
         })),
@@ -3811,7 +3853,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           },
         },
         PurchaseOrderItem: {
-          orderBy: { createdAt: "asc" },
+          orderBy: { sortOrder: "asc" },
           include: {
             Part: {
               select: {
@@ -3841,7 +3883,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
               },
             },
             PurchaseQuotationItem: {
-              orderBy: { createdAt: "asc" },
+              orderBy: { sortOrder: "asc" },
             },
           },
         },
@@ -4950,6 +4992,7 @@ router.get("/requests", async (req: Request, res: Response) => {
             select: { id: true, code: true, name: true, companyName: true },
           },
           PurchaseImportRequestItem: {
+            orderBy: { sortOrder: "asc" },
             include: {
               Part: {
                 select: {

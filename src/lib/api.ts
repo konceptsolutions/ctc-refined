@@ -2626,6 +2626,7 @@ class ApiClient {
       isbQuantity?: number;
       otherQuantity?: number;
       weight: number;
+      sortOrder?: number;
     }>;
   }) {
     return this.request("/purchase-import/requests", {
@@ -2693,6 +2694,7 @@ class ApiClient {
         isbQuantity?: number;
         otherQuantity?: number;
         weight: number;
+        sortOrder?: number;
       }>;
     },
   ) {
@@ -4275,6 +4277,8 @@ class ApiClient {
       page?: number;
       limit?: number;
       months?: 3 | 6 | 9 | 12 | number;
+      customer_id?: string;
+      customer_name?: string;
     },
   ) {
     const queryParams = new URLSearchParams();

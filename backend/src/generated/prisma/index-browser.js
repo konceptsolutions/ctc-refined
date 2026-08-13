@@ -565,6 +565,7 @@ exports.Prisma.PurchaseImportRequestItemScalarFieldEnum = {
   otherQuantity: 'otherQuantity',
   weight: 'weight',
   totalWeight: 'totalWeight',
+  sortOrder: 'sortOrder',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -607,6 +608,7 @@ exports.Prisma.PurchaseQuotationItemScalarFieldEnum = {
   revisedLcAmount: 'revisedLcAmount',
   weight: 'weight',
   totalWeight: 'totalWeight',
+  sortOrder: 'sortOrder',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -696,6 +698,7 @@ exports.Prisma.PurchaseOrderItemScalarFieldEnum = {
   additionalQty: 'additionalQty',
   backQty: 'backQty',
   notes: 'notes',
+  sortOrder: 'sortOrder',
   createdAt: 'createdAt'
 };
 
@@ -1087,6 +1090,9 @@ exports.Prisma.UserScalarFieldEnum = {
   roleId: 'roleId',
   status: 'status',
   lastLogin: 'lastLogin',
+  loginStartTime: 'loginStartTime',
+  loginEndTime: 'loginEndTime',
+  loginAllowedDays: 'loginAllowedDays',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };

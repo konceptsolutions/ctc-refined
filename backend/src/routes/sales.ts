@@ -1,4 +1,5 @@
 import express, { Request, Response } from "express";
+import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
 import { getCanonicalPartId } from "../services/partCanonical";
@@ -1961,7 +1962,8 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
 router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
   try {
     const { partId } = req.params;
-    const { page = "1", limit = "50", months } = req.query;
+    const { page = "1", limit = "50", months, customer_id, customer_name } =
+      req.query;
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
@@ -1990,6 +1992,23 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
         ? { status: { in: [...INQUIRY_SALES_INVOICE_STATUSES] } }
         : {};
 
+    const customerId = String(customer_id || "").trim();
+    const customerName = String(customer_name || "").trim();
+    const customerFilter: Record<string, unknown> = {};
+    if (customerId && customerName) {
+      customerFilter.OR = [
+        { customerId },
+        { customerName: { contains: customerName, mode: "insensitive" } },
+      ];
+    } else if (customerId) {
+      customerFilter.customerId = customerId;
+    } else if (customerName) {
+      customerFilter.customerName = {
+        contains: customerName,
+        mode: "insensitive",
+      };
+    }
+
     // Find all sales invoice items for this part
     const invoiceItems = await prisma.salesInvoiceItem.findMany({
       where: {
@@ -1997,6 +2016,7 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
         SalesInvoice: {
           ...(invoiceDateFilter ? { invoiceDate: invoiceDateFilter } : {}),
           ...inquiryStatusFilter,
+          ...customerFilter,
         },
       },
       include: {
@@ -2033,6 +2053,7 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
         id: { in: uniqueInvoiceIds },
         ...(invoiceDateFilter ? { invoiceDate: invoiceDateFilter } : {}),
         ...inquiryStatusFilter,
+        ...customerFilter,
       },
       include: {
         Customer: {
@@ -2073,6 +2094,7 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
           id: inv.id,
           invoice_no: inv.invoiceNo,
           invoice_date: inv.invoiceDate,
+          customer_id: inv.customerId,
           customer_name: inv.customerName,
           customer_type: inv.customerType,
           customer_category: inv.Customer?.category || null,
@@ -2203,7 +2225,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
     // Nested item create requires relation connect (not scalar customerId/accountId).
     const invoice = await prisma.salesInvoice.create({
       data: {
-        id: `inv_${Date.now()}`,
+        id: randomUUID(),
         invoiceNo,
         invoiceDate: new Date(invoiceDate),
         customerName,

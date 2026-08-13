@@ -41545,6 +41545,7 @@ export namespace Prisma {
     otherQuantity: number | null
     weight: number | null
     totalWeight: number | null
+    sortOrder: number | null
   }
 
   export type PurchaseImportRequestItemSumAggregateOutputType = {
@@ -41555,6 +41556,7 @@ export namespace Prisma {
     otherQuantity: number | null
     weight: number | null
     totalWeight: number | null
+    sortOrder: number | null
   }
 
   export type PurchaseImportRequestItemMinAggregateOutputType = {
@@ -41568,6 +41570,7 @@ export namespace Prisma {
     otherQuantity: number | null
     weight: number | null
     totalWeight: number | null
+    sortOrder: number | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -41583,6 +41586,7 @@ export namespace Prisma {
     otherQuantity: number | null
     weight: number | null
     totalWeight: number | null
+    sortOrder: number | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -41598,6 +41602,7 @@ export namespace Prisma {
     otherQuantity: number
     weight: number
     totalWeight: number
+    sortOrder: number
     createdAt: number
     updatedAt: number
     _all: number
@@ -41612,6 +41617,7 @@ export namespace Prisma {
     otherQuantity?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
   }
 
   export type PurchaseImportRequestItemSumAggregateInputType = {
@@ -41622,6 +41628,7 @@ export namespace Prisma {
     otherQuantity?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
   }
 
   export type PurchaseImportRequestItemMinAggregateInputType = {
@@ -41635,6 +41642,7 @@ export namespace Prisma {
     otherQuantity?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -41650,6 +41658,7 @@ export namespace Prisma {
     otherQuantity?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -41665,6 +41674,7 @@ export namespace Prisma {
     otherQuantity?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
     createdAt?: true
     updatedAt?: true
     _all?: true
@@ -41767,6 +41777,7 @@ export namespace Prisma {
     otherQuantity: number
     weight: number
     totalWeight: number
+    sortOrder: number
     createdAt: Date
     updatedAt: Date
     _count: PurchaseImportRequestItemCountAggregateOutputType | null
@@ -41801,6 +41812,7 @@ export namespace Prisma {
     otherQuantity?: boolean
     weight?: boolean
     totalWeight?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     Part?: boolean | PartDefaultArgs<ExtArgs>
@@ -41818,6 +41830,7 @@ export namespace Prisma {
     otherQuantity?: boolean
     weight?: boolean
     totalWeight?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     Part?: boolean | PartDefaultArgs<ExtArgs>
@@ -41835,6 +41848,7 @@ export namespace Prisma {
     otherQuantity?: boolean
     weight?: boolean
     totalWeight?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }
@@ -41865,6 +41879,7 @@ export namespace Prisma {
       otherQuantity: number
       weight: number
       totalWeight: number
+      sortOrder: number
       createdAt: Date
       updatedAt: Date
     }, ExtArgs["result"]["purchaseImportRequestItem"]>
@@ -42272,6 +42287,7 @@ export namespace Prisma {
     readonly otherQuantity: FieldRef<"PurchaseImportRequestItem", 'Int'>
     readonly weight: FieldRef<"PurchaseImportRequestItem", 'Float'>
     readonly totalWeight: FieldRef<"PurchaseImportRequestItem", 'Float'>
+    readonly sortOrder: FieldRef<"PurchaseImportRequestItem", 'Int'>
     readonly createdAt: FieldRef<"PurchaseImportRequestItem", 'DateTime'>
     readonly updatedAt: FieldRef<"PurchaseImportRequestItem", 'DateTime'>
   }
@@ -43816,7 +43832,6 @@ export namespace Prisma {
   export type PurchaseQuotationItemAvgAggregateOutputType = {
     demandQuantity: number | null
     quotationQuantity: number | null
-    shipDays: number | null
     fcRate: number | null
     fcAmount: number | null
     lcRate: number | null
@@ -43827,12 +43842,12 @@ export namespace Prisma {
     revisedLcAmount: number | null
     weight: number | null
     totalWeight: number | null
+    sortOrder: number | null
   }
 
   export type PurchaseQuotationItemSumAggregateOutputType = {
     demandQuantity: number | null
     quotationQuantity: number | null
-    shipDays: number | null
     fcRate: number | null
     fcAmount: number | null
     lcRate: number | null
@@ -43843,6 +43858,7 @@ export namespace Prisma {
     revisedLcAmount: number | null
     weight: number | null
     totalWeight: number | null
+    sortOrder: number | null
   }
 
   export type PurchaseQuotationItemMinAggregateOutputType = {
@@ -43851,7 +43867,7 @@ export namespace Prisma {
     partId: string | null
     demandQuantity: number | null
     quotationQuantity: number | null
-    shipDays: number | null
+    shipDays: string | null
     fcRate: number | null
     fcAmount: number | null
     lcRate: number | null
@@ -43862,6 +43878,7 @@ export namespace Prisma {
     revisedLcAmount: number | null
     weight: number | null
     totalWeight: number | null
+    sortOrder: number | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -43872,7 +43889,7 @@ export namespace Prisma {
     partId: string | null
     demandQuantity: number | null
     quotationQuantity: number | null
-    shipDays: number | null
+    shipDays: string | null
     fcRate: number | null
     fcAmount: number | null
     lcRate: number | null
@@ -43883,6 +43900,7 @@ export namespace Prisma {
     revisedLcAmount: number | null
     weight: number | null
     totalWeight: number | null
+    sortOrder: number | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -43904,6 +43922,7 @@ export namespace Prisma {
     revisedLcAmount: number
     weight: number
     totalWeight: number
+    sortOrder: number
     createdAt: number
     updatedAt: number
     _all: number
@@ -43913,7 +43932,6 @@ export namespace Prisma {
   export type PurchaseQuotationItemAvgAggregateInputType = {
     demandQuantity?: true
     quotationQuantity?: true
-    shipDays?: true
     fcRate?: true
     fcAmount?: true
     lcRate?: true
@@ -43924,12 +43942,12 @@ export namespace Prisma {
     revisedLcAmount?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
   }
 
   export type PurchaseQuotationItemSumAggregateInputType = {
     demandQuantity?: true
     quotationQuantity?: true
-    shipDays?: true
     fcRate?: true
     fcAmount?: true
     lcRate?: true
@@ -43940,6 +43958,7 @@ export namespace Prisma {
     revisedLcAmount?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
   }
 
   export type PurchaseQuotationItemMinAggregateInputType = {
@@ -43959,6 +43978,7 @@ export namespace Prisma {
     revisedLcAmount?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -43980,6 +44000,7 @@ export namespace Prisma {
     revisedLcAmount?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -44001,6 +44022,7 @@ export namespace Prisma {
     revisedLcAmount?: true
     weight?: true
     totalWeight?: true
+    sortOrder?: true
     createdAt?: true
     updatedAt?: true
     _all?: true
@@ -44098,7 +44120,7 @@ export namespace Prisma {
     partId: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays: number
+    shipDays: string
     fcRate: number
     fcAmount: number
     lcRate: number
@@ -44109,6 +44131,7 @@ export namespace Prisma {
     revisedLcAmount: number
     weight: number
     totalWeight: number
+    sortOrder: number
     createdAt: Date
     updatedAt: Date
     _count: PurchaseQuotationItemCountAggregateOutputType | null
@@ -44149,6 +44172,7 @@ export namespace Prisma {
     revisedLcAmount?: boolean
     weight?: boolean
     totalWeight?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     PurchaseQuotation?: boolean | PurchaseQuotationDefaultArgs<ExtArgs>
@@ -44172,6 +44196,7 @@ export namespace Prisma {
     revisedLcAmount?: boolean
     weight?: boolean
     totalWeight?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     PurchaseQuotation?: boolean | PurchaseQuotationDefaultArgs<ExtArgs>
@@ -44195,6 +44220,7 @@ export namespace Prisma {
     revisedLcAmount?: boolean
     weight?: boolean
     totalWeight?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }
@@ -44220,7 +44246,7 @@ export namespace Prisma {
       partId: string
       demandQuantity: number
       quotationQuantity: number
-      shipDays: number
+      shipDays: string
       fcRate: number
       fcAmount: number
       lcRate: number
@@ -44231,6 +44257,7 @@ export namespace Prisma {
       revisedLcAmount: number
       weight: number
       totalWeight: number
+      sortOrder: number
       createdAt: Date
       updatedAt: Date
     }, ExtArgs["result"]["purchaseQuotationItem"]>
@@ -44633,7 +44660,7 @@ export namespace Prisma {
     readonly partId: FieldRef<"PurchaseQuotationItem", 'String'>
     readonly demandQuantity: FieldRef<"PurchaseQuotationItem", 'Int'>
     readonly quotationQuantity: FieldRef<"PurchaseQuotationItem", 'Int'>
-    readonly shipDays: FieldRef<"PurchaseQuotationItem", 'Int'>
+    readonly shipDays: FieldRef<"PurchaseQuotationItem", 'String'>
     readonly fcRate: FieldRef<"PurchaseQuotationItem", 'Float'>
     readonly fcAmount: FieldRef<"PurchaseQuotationItem", 'Float'>
     readonly lcRate: FieldRef<"PurchaseQuotationItem", 'Float'>
@@ -44644,6 +44671,7 @@ export namespace Prisma {
     readonly revisedLcAmount: FieldRef<"PurchaseQuotationItem", 'Float'>
     readonly weight: FieldRef<"PurchaseQuotationItem", 'Float'>
     readonly totalWeight: FieldRef<"PurchaseQuotationItem", 'Float'>
+    readonly sortOrder: FieldRef<"PurchaseQuotationItem", 'Int'>
     readonly createdAt: FieldRef<"PurchaseQuotationItem", 'DateTime'>
     readonly updatedAt: FieldRef<"PurchaseQuotationItem", 'DateTime'>
   }
@@ -48623,6 +48651,7 @@ export namespace Prisma {
     receivedQty: number | null
     additionalQty: number | null
     backQty: number | null
+    sortOrder: number | null
   }
 
   export type PurchaseOrderItemSumAggregateOutputType = {
@@ -48636,6 +48665,7 @@ export namespace Prisma {
     receivedQty: number | null
     additionalQty: number | null
     backQty: number | null
+    sortOrder: number | null
   }
 
   export type PurchaseOrderItemMinAggregateOutputType = {
@@ -48653,6 +48683,7 @@ export namespace Prisma {
     additionalQty: number | null
     backQty: number | null
     notes: string | null
+    sortOrder: number | null
     createdAt: Date | null
   }
 
@@ -48671,6 +48702,7 @@ export namespace Prisma {
     additionalQty: number | null
     backQty: number | null
     notes: string | null
+    sortOrder: number | null
     createdAt: Date | null
   }
 
@@ -48689,6 +48721,7 @@ export namespace Prisma {
     additionalQty: number
     backQty: number
     notes: number
+    sortOrder: number
     createdAt: number
     _all: number
   }
@@ -48705,6 +48738,7 @@ export namespace Prisma {
     receivedQty?: true
     additionalQty?: true
     backQty?: true
+    sortOrder?: true
   }
 
   export type PurchaseOrderItemSumAggregateInputType = {
@@ -48718,6 +48752,7 @@ export namespace Prisma {
     receivedQty?: true
     additionalQty?: true
     backQty?: true
+    sortOrder?: true
   }
 
   export type PurchaseOrderItemMinAggregateInputType = {
@@ -48735,6 +48770,7 @@ export namespace Prisma {
     additionalQty?: true
     backQty?: true
     notes?: true
+    sortOrder?: true
     createdAt?: true
   }
 
@@ -48753,6 +48789,7 @@ export namespace Prisma {
     additionalQty?: true
     backQty?: true
     notes?: true
+    sortOrder?: true
     createdAt?: true
   }
 
@@ -48771,6 +48808,7 @@ export namespace Prisma {
     additionalQty?: true
     backQty?: true
     notes?: true
+    sortOrder?: true
     createdAt?: true
     _all?: true
   }
@@ -48876,6 +48914,7 @@ export namespace Prisma {
     additionalQty: number
     backQty: number
     notes: string | null
+    sortOrder: number
     createdAt: Date
     _count: PurchaseOrderItemCountAggregateOutputType | null
     _avg: PurchaseOrderItemAvgAggregateOutputType | null
@@ -48913,6 +48952,7 @@ export namespace Prisma {
     additionalQty?: boolean
     backQty?: boolean
     notes?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
     Part?: boolean | PartDefaultArgs<ExtArgs>
     PurchaseOrder?: boolean | PurchaseOrderDefaultArgs<ExtArgs>
@@ -48933,6 +48973,7 @@ export namespace Prisma {
     additionalQty?: boolean
     backQty?: boolean
     notes?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
     Part?: boolean | PartDefaultArgs<ExtArgs>
     PurchaseOrder?: boolean | PurchaseOrderDefaultArgs<ExtArgs>
@@ -48953,6 +48994,7 @@ export namespace Prisma {
     additionalQty?: boolean
     backQty?: boolean
     notes?: boolean
+    sortOrder?: boolean
     createdAt?: boolean
   }
 
@@ -48986,6 +49028,7 @@ export namespace Prisma {
       additionalQty: number
       backQty: number
       notes: string | null
+      sortOrder: number
       createdAt: Date
     }, ExtArgs["result"]["purchaseOrderItem"]>
     composites: {}
@@ -49396,6 +49439,7 @@ export namespace Prisma {
     readonly additionalQty: FieldRef<"PurchaseOrderItem", 'Int'>
     readonly backQty: FieldRef<"PurchaseOrderItem", 'Int'>
     readonly notes: FieldRef<"PurchaseOrderItem", 'String'>
+    readonly sortOrder: FieldRef<"PurchaseOrderItem", 'Int'>
     readonly createdAt: FieldRef<"PurchaseOrderItem", 'DateTime'>
   }
     
@@ -78073,6 +78117,9 @@ export namespace Prisma {
     roleId: string | null
     status: string | null
     lastLogin: string | null
+    loginStartTime: string | null
+    loginEndTime: string | null
+    loginAllowedDays: string | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -78085,6 +78132,9 @@ export namespace Prisma {
     roleId: string | null
     status: string | null
     lastLogin: string | null
+    loginStartTime: string | null
+    loginEndTime: string | null
+    loginAllowedDays: string | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -78097,6 +78147,9 @@ export namespace Prisma {
     roleId: number
     status: number
     lastLogin: number
+    loginStartTime: number
+    loginEndTime: number
+    loginAllowedDays: number
     createdAt: number
     updatedAt: number
     _all: number
@@ -78111,6 +78164,9 @@ export namespace Prisma {
     roleId?: true
     status?: true
     lastLogin?: true
+    loginStartTime?: true
+    loginEndTime?: true
+    loginAllowedDays?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -78123,6 +78179,9 @@ export namespace Prisma {
     roleId?: true
     status?: true
     lastLogin?: true
+    loginStartTime?: true
+    loginEndTime?: true
+    loginAllowedDays?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -78135,6 +78194,9 @@ export namespace Prisma {
     roleId?: true
     status?: true
     lastLogin?: true
+    loginStartTime?: true
+    loginEndTime?: true
+    loginAllowedDays?: true
     createdAt?: true
     updatedAt?: true
     _all?: true
@@ -78220,6 +78282,9 @@ export namespace Prisma {
     roleId: string
     status: string
     lastLogin: string | null
+    loginStartTime: string | null
+    loginEndTime: string | null
+    loginAllowedDays: string | null
     createdAt: Date
     updatedAt: Date
     _count: UserCountAggregateOutputType | null
@@ -78249,6 +78314,9 @@ export namespace Prisma {
     roleId?: boolean
     status?: boolean
     lastLogin?: boolean
+    loginStartTime?: boolean
+    loginEndTime?: boolean
+    loginAllowedDays?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }, ExtArgs["result"]["user"]>
@@ -78261,6 +78329,9 @@ export namespace Prisma {
     roleId?: boolean
     status?: boolean
     lastLogin?: boolean
+    loginStartTime?: boolean
+    loginEndTime?: boolean
+    loginAllowedDays?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }, ExtArgs["result"]["user"]>
@@ -78273,6 +78344,9 @@ export namespace Prisma {
     roleId?: boolean
     status?: boolean
     lastLogin?: boolean
+    loginStartTime?: boolean
+    loginEndTime?: boolean
+    loginAllowedDays?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }
@@ -78289,6 +78363,9 @@ export namespace Prisma {
       roleId: string
       status: string
       lastLogin: string | null
+      loginStartTime: string | null
+      loginEndTime: string | null
+      loginAllowedDays: string | null
       createdAt: Date
       updatedAt: Date
     }, ExtArgs["result"]["user"]>
@@ -78691,6 +78768,9 @@ export namespace Prisma {
     readonly roleId: FieldRef<"User", 'String'>
     readonly status: FieldRef<"User", 'String'>
     readonly lastLogin: FieldRef<"User", 'String'>
+    readonly loginStartTime: FieldRef<"User", 'String'>
+    readonly loginEndTime: FieldRef<"User", 'String'>
+    readonly loginAllowedDays: FieldRef<"User", 'String'>
     readonly createdAt: FieldRef<"User", 'DateTime'>
     readonly updatedAt: FieldRef<"User", 'DateTime'>
   }
@@ -84079,6 +84159,7 @@ export namespace Prisma {
     otherQuantity: 'otherQuantity',
     weight: 'weight',
     totalWeight: 'totalWeight',
+    sortOrder: 'sortOrder',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
   };
@@ -84127,6 +84208,7 @@ export namespace Prisma {
     revisedLcAmount: 'revisedLcAmount',
     weight: 'weight',
     totalWeight: 'totalWeight',
+    sortOrder: 'sortOrder',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
   };
@@ -84228,6 +84310,7 @@ export namespace Prisma {
     additionalQty: 'additionalQty',
     backQty: 'backQty',
     notes: 'notes',
+    sortOrder: 'sortOrder',
     createdAt: 'createdAt'
   };
 
@@ -84697,6 +84780,9 @@ export namespace Prisma {
     roleId: 'roleId',
     status: 'status',
     lastLogin: 'lastLogin',
+    loginStartTime: 'loginStartTime',
+    loginEndTime: 'loginEndTime',
+    loginAllowedDays: 'loginAllowedDays',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
   };
@@ -87758,6 +87844,7 @@ export namespace Prisma {
     otherQuantity?: IntFilter<"PurchaseImportRequestItem"> | number
     weight?: FloatFilter<"PurchaseImportRequestItem"> | number
     totalWeight?: FloatFilter<"PurchaseImportRequestItem"> | number
+    sortOrder?: IntFilter<"PurchaseImportRequestItem"> | number
     createdAt?: DateTimeFilter<"PurchaseImportRequestItem"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseImportRequestItem"> | Date | string
     Part?: XOR<PartRelationFilter, PartWhereInput>
@@ -87775,6 +87862,7 @@ export namespace Prisma {
     otherQuantity?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     Part?: PartOrderByWithRelationInput
@@ -87795,6 +87883,7 @@ export namespace Prisma {
     otherQuantity?: IntFilter<"PurchaseImportRequestItem"> | number
     weight?: FloatFilter<"PurchaseImportRequestItem"> | number
     totalWeight?: FloatFilter<"PurchaseImportRequestItem"> | number
+    sortOrder?: IntFilter<"PurchaseImportRequestItem"> | number
     createdAt?: DateTimeFilter<"PurchaseImportRequestItem"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseImportRequestItem"> | Date | string
     Part?: XOR<PartRelationFilter, PartWhereInput>
@@ -87812,6 +87901,7 @@ export namespace Prisma {
     otherQuantity?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     _count?: PurchaseImportRequestItemCountOrderByAggregateInput
@@ -87835,6 +87925,7 @@ export namespace Prisma {
     otherQuantity?: IntWithAggregatesFilter<"PurchaseImportRequestItem"> | number
     weight?: FloatWithAggregatesFilter<"PurchaseImportRequestItem"> | number
     totalWeight?: FloatWithAggregatesFilter<"PurchaseImportRequestItem"> | number
+    sortOrder?: IntWithAggregatesFilter<"PurchaseImportRequestItem"> | number
     createdAt?: DateTimeWithAggregatesFilter<"PurchaseImportRequestItem"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"PurchaseImportRequestItem"> | Date | string
   }
@@ -87979,7 +88070,7 @@ export namespace Prisma {
     partId?: StringFilter<"PurchaseQuotationItem"> | string
     demandQuantity?: IntFilter<"PurchaseQuotationItem"> | number
     quotationQuantity?: IntFilter<"PurchaseQuotationItem"> | number
-    shipDays?: IntFilter<"PurchaseQuotationItem"> | number
+    shipDays?: StringFilter<"PurchaseQuotationItem"> | string
     fcRate?: FloatFilter<"PurchaseQuotationItem"> | number
     fcAmount?: FloatFilter<"PurchaseQuotationItem"> | number
     lcRate?: FloatFilter<"PurchaseQuotationItem"> | number
@@ -87990,6 +88081,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFilter<"PurchaseQuotationItem"> | number
     weight?: FloatFilter<"PurchaseQuotationItem"> | number
     totalWeight?: FloatFilter<"PurchaseQuotationItem"> | number
+    sortOrder?: IntFilter<"PurchaseQuotationItem"> | number
     createdAt?: DateTimeFilter<"PurchaseQuotationItem"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseQuotationItem"> | Date | string
     PurchaseQuotation?: XOR<PurchaseQuotationRelationFilter, PurchaseQuotationWhereInput>
@@ -88013,6 +88105,7 @@ export namespace Prisma {
     revisedLcAmount?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     PurchaseQuotation?: PurchaseQuotationOrderByWithRelationInput
@@ -88028,7 +88121,7 @@ export namespace Prisma {
     partId?: StringFilter<"PurchaseQuotationItem"> | string
     demandQuantity?: IntFilter<"PurchaseQuotationItem"> | number
     quotationQuantity?: IntFilter<"PurchaseQuotationItem"> | number
-    shipDays?: IntFilter<"PurchaseQuotationItem"> | number
+    shipDays?: StringFilter<"PurchaseQuotationItem"> | string
     fcRate?: FloatFilter<"PurchaseQuotationItem"> | number
     fcAmount?: FloatFilter<"PurchaseQuotationItem"> | number
     lcRate?: FloatFilter<"PurchaseQuotationItem"> | number
@@ -88039,6 +88132,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFilter<"PurchaseQuotationItem"> | number
     weight?: FloatFilter<"PurchaseQuotationItem"> | number
     totalWeight?: FloatFilter<"PurchaseQuotationItem"> | number
+    sortOrder?: IntFilter<"PurchaseQuotationItem"> | number
     createdAt?: DateTimeFilter<"PurchaseQuotationItem"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseQuotationItem"> | Date | string
     PurchaseQuotation?: XOR<PurchaseQuotationRelationFilter, PurchaseQuotationWhereInput>
@@ -88062,6 +88156,7 @@ export namespace Prisma {
     revisedLcAmount?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     _count?: PurchaseQuotationItemCountOrderByAggregateInput
@@ -88080,7 +88175,7 @@ export namespace Prisma {
     partId?: StringWithAggregatesFilter<"PurchaseQuotationItem"> | string
     demandQuantity?: IntWithAggregatesFilter<"PurchaseQuotationItem"> | number
     quotationQuantity?: IntWithAggregatesFilter<"PurchaseQuotationItem"> | number
-    shipDays?: IntWithAggregatesFilter<"PurchaseQuotationItem"> | number
+    shipDays?: StringWithAggregatesFilter<"PurchaseQuotationItem"> | string
     fcRate?: FloatWithAggregatesFilter<"PurchaseQuotationItem"> | number
     fcAmount?: FloatWithAggregatesFilter<"PurchaseQuotationItem"> | number
     lcRate?: FloatWithAggregatesFilter<"PurchaseQuotationItem"> | number
@@ -88091,6 +88186,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatWithAggregatesFilter<"PurchaseQuotationItem"> | number
     weight?: FloatWithAggregatesFilter<"PurchaseQuotationItem"> | number
     totalWeight?: FloatWithAggregatesFilter<"PurchaseQuotationItem"> | number
+    sortOrder?: IntWithAggregatesFilter<"PurchaseQuotationItem"> | number
     createdAt?: DateTimeWithAggregatesFilter<"PurchaseQuotationItem"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"PurchaseQuotationItem"> | Date | string
   }
@@ -88520,6 +88616,7 @@ export namespace Prisma {
     additionalQty?: IntFilter<"PurchaseOrderItem"> | number
     backQty?: IntFilter<"PurchaseOrderItem"> | number
     notes?: StringNullableFilter<"PurchaseOrderItem"> | string | null
+    sortOrder?: IntFilter<"PurchaseOrderItem"> | number
     createdAt?: DateTimeFilter<"PurchaseOrderItem"> | Date | string
     Part?: XOR<PartRelationFilter, PartWhereInput>
     PurchaseOrder?: XOR<PurchaseOrderRelationFilter, PurchaseOrderWhereInput>
@@ -88540,6 +88637,7 @@ export namespace Prisma {
     additionalQty?: SortOrder
     backQty?: SortOrder
     notes?: SortOrderInput | SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     Part?: PartOrderByWithRelationInput
     PurchaseOrder?: PurchaseOrderOrderByWithRelationInput
@@ -88563,6 +88661,7 @@ export namespace Prisma {
     additionalQty?: IntFilter<"PurchaseOrderItem"> | number
     backQty?: IntFilter<"PurchaseOrderItem"> | number
     notes?: StringNullableFilter<"PurchaseOrderItem"> | string | null
+    sortOrder?: IntFilter<"PurchaseOrderItem"> | number
     createdAt?: DateTimeFilter<"PurchaseOrderItem"> | Date | string
     Part?: XOR<PartRelationFilter, PartWhereInput>
     PurchaseOrder?: XOR<PurchaseOrderRelationFilter, PurchaseOrderWhereInput>
@@ -88583,6 +88682,7 @@ export namespace Prisma {
     additionalQty?: SortOrder
     backQty?: SortOrder
     notes?: SortOrderInput | SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     _count?: PurchaseOrderItemCountOrderByAggregateInput
     _avg?: PurchaseOrderItemAvgOrderByAggregateInput
@@ -88609,6 +88709,7 @@ export namespace Prisma {
     additionalQty?: IntWithAggregatesFilter<"PurchaseOrderItem"> | number
     backQty?: IntWithAggregatesFilter<"PurchaseOrderItem"> | number
     notes?: StringNullableWithAggregatesFilter<"PurchaseOrderItem"> | string | null
+    sortOrder?: IntWithAggregatesFilter<"PurchaseOrderItem"> | number
     createdAt?: DateTimeWithAggregatesFilter<"PurchaseOrderItem"> | Date | string
   }
 
@@ -91207,6 +91308,9 @@ export namespace Prisma {
     roleId?: StringFilter<"User"> | string
     status?: StringFilter<"User"> | string
     lastLogin?: StringNullableFilter<"User"> | string | null
+    loginStartTime?: StringNullableFilter<"User"> | string | null
+    loginEndTime?: StringNullableFilter<"User"> | string | null
+    loginAllowedDays?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     updatedAt?: DateTimeFilter<"User"> | Date | string
   }
@@ -91219,6 +91323,9 @@ export namespace Prisma {
     roleId?: SortOrder
     status?: SortOrder
     lastLogin?: SortOrderInput | SortOrder
+    loginStartTime?: SortOrderInput | SortOrder
+    loginEndTime?: SortOrderInput | SortOrder
+    loginAllowedDays?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -91234,6 +91341,9 @@ export namespace Prisma {
     roleId?: StringFilter<"User"> | string
     status?: StringFilter<"User"> | string
     lastLogin?: StringNullableFilter<"User"> | string | null
+    loginStartTime?: StringNullableFilter<"User"> | string | null
+    loginEndTime?: StringNullableFilter<"User"> | string | null
+    loginAllowedDays?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     updatedAt?: DateTimeFilter<"User"> | Date | string
   }, "id" | "email">
@@ -91246,6 +91356,9 @@ export namespace Prisma {
     roleId?: SortOrder
     status?: SortOrder
     lastLogin?: SortOrderInput | SortOrder
+    loginStartTime?: SortOrderInput | SortOrder
+    loginEndTime?: SortOrderInput | SortOrder
+    loginAllowedDays?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     _count?: UserCountOrderByAggregateInput
@@ -91264,6 +91377,9 @@ export namespace Prisma {
     roleId?: StringWithAggregatesFilter<"User"> | string
     status?: StringWithAggregatesFilter<"User"> | string
     lastLogin?: StringNullableWithAggregatesFilter<"User"> | string | null
+    loginStartTime?: StringNullableWithAggregatesFilter<"User"> | string | null
+    loginEndTime?: StringNullableWithAggregatesFilter<"User"> | string | null
+    loginAllowedDays?: StringNullableWithAggregatesFilter<"User"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
   }
@@ -94912,6 +95028,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
     Part: PartCreateNestedOneWithoutPurchaseImportRequestItemInput
@@ -94929,6 +95046,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -94942,6 +95060,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Part?: PartUpdateOneRequiredWithoutPurchaseImportRequestItemNestedInput
@@ -94959,6 +95078,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -94974,6 +95094,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -94987,6 +95108,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -95002,6 +95124,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -95163,7 +95286,7 @@ export namespace Prisma {
     id?: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -95174,6 +95297,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
     PurchaseQuotation: PurchaseQuotationCreateNestedOneWithoutPurchaseQuotationItemInput
@@ -95186,7 +95310,7 @@ export namespace Prisma {
     partId: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -95197,6 +95321,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -95205,7 +95330,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -95216,6 +95341,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     PurchaseQuotation?: PurchaseQuotationUpdateOneRequiredWithoutPurchaseQuotationItemNestedInput
@@ -95228,7 +95354,7 @@ export namespace Prisma {
     partId?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -95239,6 +95365,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -95249,7 +95376,7 @@ export namespace Prisma {
     partId: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -95260,6 +95387,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -95268,7 +95396,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -95279,6 +95407,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -95289,7 +95418,7 @@ export namespace Prisma {
     partId?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -95300,6 +95429,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -95807,6 +95937,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
     Part: PartCreateNestedOneWithoutPurchaseOrderItemInput
     PurchaseOrder: PurchaseOrderCreateNestedOneWithoutPurchaseOrderItemInput
@@ -95827,6 +95958,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
   }
 
@@ -95843,6 +95975,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Part?: PartUpdateOneRequiredWithoutPurchaseOrderItemNestedInput
     PurchaseOrder?: PurchaseOrderUpdateOneRequiredWithoutPurchaseOrderItemNestedInput
@@ -95863,6 +95996,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -95881,6 +96015,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
   }
 
@@ -95897,6 +96032,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -95915,6 +96051,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -98775,6 +98912,9 @@ export namespace Prisma {
     roleId?: string
     status?: string
     lastLogin?: string | null
+    loginStartTime?: string | null
+    loginEndTime?: string | null
+    loginAllowedDays?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -98787,6 +98927,9 @@ export namespace Prisma {
     roleId?: string
     status?: string
     lastLogin?: string | null
+    loginStartTime?: string | null
+    loginEndTime?: string | null
+    loginAllowedDays?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -98799,6 +98942,9 @@ export namespace Prisma {
     roleId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     lastLogin?: NullableStringFieldUpdateOperationsInput | string | null
+    loginStartTime?: NullableStringFieldUpdateOperationsInput | string | null
+    loginEndTime?: NullableStringFieldUpdateOperationsInput | string | null
+    loginAllowedDays?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -98811,6 +98957,9 @@ export namespace Prisma {
     roleId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     lastLogin?: NullableStringFieldUpdateOperationsInput | string | null
+    loginStartTime?: NullableStringFieldUpdateOperationsInput | string | null
+    loginEndTime?: NullableStringFieldUpdateOperationsInput | string | null
+    loginAllowedDays?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -98823,6 +98972,9 @@ export namespace Prisma {
     roleId?: string
     status?: string
     lastLogin?: string | null
+    loginStartTime?: string | null
+    loginEndTime?: string | null
+    loginAllowedDays?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -98835,6 +98987,9 @@ export namespace Prisma {
     roleId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     lastLogin?: NullableStringFieldUpdateOperationsInput | string | null
+    loginStartTime?: NullableStringFieldUpdateOperationsInput | string | null
+    loginEndTime?: NullableStringFieldUpdateOperationsInput | string | null
+    loginAllowedDays?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -98847,6 +99002,9 @@ export namespace Prisma {
     roleId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     lastLogin?: NullableStringFieldUpdateOperationsInput | string | null
+    loginStartTime?: NullableStringFieldUpdateOperationsInput | string | null
+    loginEndTime?: NullableStringFieldUpdateOperationsInput | string | null
+    loginAllowedDays?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -101622,6 +101780,7 @@ export namespace Prisma {
     otherQuantity?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -101634,6 +101793,7 @@ export namespace Prisma {
     otherQuantity?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
   }
 
   export type PurchaseImportRequestItemMaxOrderByAggregateInput = {
@@ -101647,6 +101807,7 @@ export namespace Prisma {
     otherQuantity?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -101662,6 +101823,7 @@ export namespace Prisma {
     otherQuantity?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -101674,6 +101836,7 @@ export namespace Prisma {
     otherQuantity?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
   }
 
   export type SupplierRelationFilter = {
@@ -101792,6 +101955,7 @@ export namespace Prisma {
     revisedLcAmount?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -101799,7 +101963,6 @@ export namespace Prisma {
   export type PurchaseQuotationItemAvgOrderByAggregateInput = {
     demandQuantity?: SortOrder
     quotationQuantity?: SortOrder
-    shipDays?: SortOrder
     fcRate?: SortOrder
     fcAmount?: SortOrder
     lcRate?: SortOrder
@@ -101810,6 +101973,7 @@ export namespace Prisma {
     revisedLcAmount?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
   }
 
   export type PurchaseQuotationItemMaxOrderByAggregateInput = {
@@ -101829,6 +101993,7 @@ export namespace Prisma {
     revisedLcAmount?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -101850,6 +102015,7 @@ export namespace Prisma {
     revisedLcAmount?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -101857,7 +102023,6 @@ export namespace Prisma {
   export type PurchaseQuotationItemSumOrderByAggregateInput = {
     demandQuantity?: SortOrder
     quotationQuantity?: SortOrder
-    shipDays?: SortOrder
     fcRate?: SortOrder
     fcAmount?: SortOrder
     lcRate?: SortOrder
@@ -101868,6 +102033,7 @@ export namespace Prisma {
     revisedLcAmount?: SortOrder
     weight?: SortOrder
     totalWeight?: SortOrder
+    sortOrder?: SortOrder
   }
 
   export type ExpenseTypeRelationFilter = {
@@ -102180,6 +102346,7 @@ export namespace Prisma {
     additionalQty?: SortOrder
     backQty?: SortOrder
     notes?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -102194,6 +102361,7 @@ export namespace Prisma {
     receivedQty?: SortOrder
     additionalQty?: SortOrder
     backQty?: SortOrder
+    sortOrder?: SortOrder
   }
 
   export type PurchaseOrderItemMaxOrderByAggregateInput = {
@@ -102211,6 +102379,7 @@ export namespace Prisma {
     additionalQty?: SortOrder
     backQty?: SortOrder
     notes?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -102229,6 +102398,7 @@ export namespace Prisma {
     additionalQty?: SortOrder
     backQty?: SortOrder
     notes?: SortOrder
+    sortOrder?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -102243,6 +102413,7 @@ export namespace Prisma {
     receivedQty?: SortOrder
     additionalQty?: SortOrder
     backQty?: SortOrder
+    sortOrder?: SortOrder
   }
 
   export type InvoiceRackShelfListRelationFilter = {
@@ -103759,6 +103930,9 @@ export namespace Prisma {
     roleId?: SortOrder
     status?: SortOrder
     lastLogin?: SortOrder
+    loginStartTime?: SortOrder
+    loginEndTime?: SortOrder
+    loginAllowedDays?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -103771,6 +103945,9 @@ export namespace Prisma {
     roleId?: SortOrder
     status?: SortOrder
     lastLogin?: SortOrder
+    loginStartTime?: SortOrder
+    loginEndTime?: SortOrder
+    loginAllowedDays?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -103783,6 +103960,9 @@ export namespace Prisma {
     roleId?: SortOrder
     status?: SortOrder
     lastLogin?: SortOrder
+    loginStartTime?: SortOrder
+    loginEndTime?: SortOrder
+    loginAllowedDays?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -118080,6 +118260,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
     PurchaseOrder: PurchaseOrderCreateNestedOneWithoutPurchaseOrderItemInput
   }
@@ -118098,6 +118279,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
   }
 
@@ -118120,6 +118302,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
     PurchaseImportRequest: PurchaseImportRequestCreateNestedOneWithoutPurchaseImportRequestItemInput
@@ -118135,6 +118318,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -118153,7 +118337,7 @@ export namespace Prisma {
     id?: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -118164,6 +118348,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
     PurchaseQuotation: PurchaseQuotationCreateNestedOneWithoutPurchaseQuotationItemInput
@@ -118174,7 +118359,7 @@ export namespace Prisma {
     purchaseQuotationId: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -118185,6 +118370,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -118900,6 +119086,7 @@ export namespace Prisma {
     additionalQty?: IntFilter<"PurchaseOrderItem"> | number
     backQty?: IntFilter<"PurchaseOrderItem"> | number
     notes?: StringNullableFilter<"PurchaseOrderItem"> | string | null
+    sortOrder?: IntFilter<"PurchaseOrderItem"> | number
     createdAt?: DateTimeFilter<"PurchaseOrderItem"> | Date | string
   }
 
@@ -118933,6 +119120,7 @@ export namespace Prisma {
     otherQuantity?: IntFilter<"PurchaseImportRequestItem"> | number
     weight?: FloatFilter<"PurchaseImportRequestItem"> | number
     totalWeight?: FloatFilter<"PurchaseImportRequestItem"> | number
+    sortOrder?: IntFilter<"PurchaseImportRequestItem"> | number
     createdAt?: DateTimeFilter<"PurchaseImportRequestItem"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseImportRequestItem"> | Date | string
   }
@@ -118962,7 +119150,7 @@ export namespace Prisma {
     partId?: StringFilter<"PurchaseQuotationItem"> | string
     demandQuantity?: IntFilter<"PurchaseQuotationItem"> | number
     quotationQuantity?: IntFilter<"PurchaseQuotationItem"> | number
-    shipDays?: IntFilter<"PurchaseQuotationItem"> | number
+    shipDays?: StringFilter<"PurchaseQuotationItem"> | string
     fcRate?: FloatFilter<"PurchaseQuotationItem"> | number
     fcAmount?: FloatFilter<"PurchaseQuotationItem"> | number
     lcRate?: FloatFilter<"PurchaseQuotationItem"> | number
@@ -118973,6 +119161,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFilter<"PurchaseQuotationItem"> | number
     weight?: FloatFilter<"PurchaseQuotationItem"> | number
     totalWeight?: FloatFilter<"PurchaseQuotationItem"> | number
+    sortOrder?: IntFilter<"PurchaseQuotationItem"> | number
     createdAt?: DateTimeFilter<"PurchaseQuotationItem"> | Date | string
     updatedAt?: DateTimeFilter<"PurchaseQuotationItem"> | Date | string
   }
@@ -119824,6 +120013,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
     Part: PartCreateNestedOneWithoutPurchaseImportRequestItemInput
@@ -119839,6 +120029,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -120484,7 +120675,7 @@ export namespace Prisma {
     id?: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -120495,6 +120686,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
     Part: PartCreateNestedOneWithoutPurchaseQuotationItemInput
@@ -120505,7 +120697,7 @@ export namespace Prisma {
     partId: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -120516,6 +120708,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -121610,6 +121803,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
     Part: PartCreateNestedOneWithoutPurchaseOrderItemInput
   }
@@ -121628,6 +121822,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
   }
 
@@ -138186,6 +138381,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
   }
 
@@ -138199,6 +138395,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -138208,7 +138405,7 @@ export namespace Prisma {
     purchaseQuotationId: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -138219,6 +138416,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -138640,6 +138838,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     PurchaseOrder?: PurchaseOrderUpdateOneRequiredWithoutPurchaseOrderItemNestedInput
   }
@@ -138658,6 +138857,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -138675,6 +138875,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -138687,6 +138888,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     PurchaseImportRequest?: PurchaseImportRequestUpdateOneRequiredWithoutPurchaseImportRequestItemNestedInput
@@ -138702,6 +138904,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -138716,6 +138919,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -138724,7 +138928,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -138735,6 +138939,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     PurchaseQuotation?: PurchaseQuotationUpdateOneRequiredWithoutPurchaseQuotationItemNestedInput
@@ -138745,7 +138950,7 @@ export namespace Prisma {
     purchaseQuotationId?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -138756,6 +138961,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -138765,7 +138971,7 @@ export namespace Prisma {
     purchaseQuotationId?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -138776,6 +138982,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -139151,6 +139358,7 @@ export namespace Prisma {
     otherQuantity?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -139184,6 +139392,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Part?: PartUpdateOneRequiredWithoutPurchaseImportRequestItemNestedInput
@@ -139199,6 +139408,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -139213,6 +139423,7 @@ export namespace Prisma {
     otherQuantity?: IntFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -139286,7 +139497,7 @@ export namespace Prisma {
     partId: string
     demandQuantity: number
     quotationQuantity: number
-    shipDays?: number
+    shipDays?: string
     fcRate?: number
     fcAmount?: number
     lcRate?: number
@@ -139297,6 +139508,7 @@ export namespace Prisma {
     revisedLcAmount?: number
     weight?: number
     totalWeight?: number
+    sortOrder?: number
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -139346,7 +139558,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -139357,6 +139569,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Part?: PartUpdateOneRequiredWithoutPurchaseQuotationItemNestedInput
@@ -139367,7 +139580,7 @@ export namespace Prisma {
     partId?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -139378,6 +139591,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -139387,7 +139601,7 @@ export namespace Prisma {
     partId?: StringFieldUpdateOperationsInput | string
     demandQuantity?: IntFieldUpdateOperationsInput | number
     quotationQuantity?: IntFieldUpdateOperationsInput | number
-    shipDays?: IntFieldUpdateOperationsInput | number
+    shipDays?: StringFieldUpdateOperationsInput | string
     fcRate?: FloatFieldUpdateOperationsInput | number
     fcAmount?: FloatFieldUpdateOperationsInput | number
     lcRate?: FloatFieldUpdateOperationsInput | number
@@ -139398,6 +139612,7 @@ export namespace Prisma {
     revisedLcAmount?: FloatFieldUpdateOperationsInput | number
     weight?: FloatFieldUpdateOperationsInput | number
     totalWeight?: FloatFieldUpdateOperationsInput | number
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -139541,6 +139756,7 @@ export namespace Prisma {
     additionalQty?: number
     backQty?: number
     notes?: string | null
+    sortOrder?: number
     createdAt?: Date | string
   }
 
@@ -139557,6 +139773,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Part?: PartUpdateOneRequiredWithoutPurchaseOrderItemNestedInput
   }
@@ -139575,6 +139792,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -139592,6 +139810,7 @@ export namespace Prisma {
     additionalQty?: IntFieldUpdateOperationsInput | number
     backQty?: IntFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
+    sortOrder?: IntFieldUpdateOperationsInput | number
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 

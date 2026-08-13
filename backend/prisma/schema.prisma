@@ -1,6 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
-    binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -576,12 +577,14 @@ model PurchaseImportRequestItem {
   otherQuantity           Int                   @default(0)
   weight                  Float                 @default(0)
   totalWeight             Float                 @default(0)
+  sortOrder               Int                   @default(0)
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
   Part                    Part                  @relation(fields: [partId], references: [id], onDelete: Cascade)
   PurchaseImportRequest   PurchaseImportRequest @relation(fields: [purchaseImportRequestId], references: [id], onDelete: Cascade)
 
   @@index([purchaseImportRequestId])
+  @@index([purchaseImportRequestId, sortOrder])
   @@index([partId])
   @@index([createdAt])
 }
@@ -633,12 +636,14 @@ model PurchaseQuotationItem {
   revisedLcAmount     Float             @default(0)
   weight              Float             @default(0)
   totalWeight         Float             @default(0)
+  sortOrder           Int               @default(0)
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   PurchaseQuotation   PurchaseQuotation @relation(fields: [purchaseQuotationId], references: [id], onDelete: Cascade)
   Part                Part              @relation(fields: [partId], references: [id], onDelete: Cascade)
 
   @@index([purchaseQuotationId])
+  @@index([purchaseQuotationId, sortOrder])
   @@index([partId])
   @@index([createdAt])
 }
@@ -736,9 +741,12 @@ model PurchaseOrderItem {
   additionalQty   Int           @default(0)
   backQty         Int           @default(0)
   notes           String?
+  sortOrder       Int           @default(0)
   createdAt       DateTime      @default(now())
   Part            Part          @relation(fields: [partId], references: [id], onDelete: Cascade)
   PurchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId, sortOrder])
 }
 
 model Rack {

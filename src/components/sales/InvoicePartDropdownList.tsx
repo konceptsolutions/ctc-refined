@@ -88,9 +88,9 @@ export function InvoicePartDropdownList({
                 transform: `translateY(${vi.start}px)`,
               }}
               className={cn(
-                "px-3 py-2 text-sm cursor-pointer border-b border-border transition-colors",
+                "group px-3 py-2 text-sm cursor-pointer border-b border-border transition-colors",
                 idx === safeHighlight
-                  ? "bg-accent text-accent-foreground"
+                  ? "bg-primary text-primary-foreground"
                   : "hover:bg-accent hover:text-accent-foreground",
               )}
               onMouseEnter={() => onHighlightIndex(idx)}
@@ -112,42 +112,95 @@ export function InvoicePartDropdownList({
                     className={cn(
                       "text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums",
                       (p.availableQty ?? p.stockQty ?? 0) > 0
-                        ? "bg-green-100 text-green-700"
-                        : "bg-red-100 text-red-600",
+                        ? idx === safeHighlight
+                          ? "bg-green-500/25 text-primary-foreground"
+                          : "bg-green-100 text-green-700"
+                        : idx === safeHighlight
+                          ? "bg-red-500/25 text-primary-foreground"
+                          : "bg-red-100 text-red-600",
                     )}
                   >
                     {p.availableQty ?? p.stockQty ?? 0} pcs
                   </span>
                 </div>
               </div>
-              <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+              <div
+                className={cn(
+                  "text-xs line-clamp-2 mt-0.5",
+                  idx === safeHighlight
+                    ? "text-primary-foreground/90"
+                    : "text-muted-foreground",
+                )}
+              >
                 {p.description || "No description available"}
               </div>
               {p.category ? (
-                <div className="text-[11px] text-muted-foreground/80 mt-0.5">
+                <div
+                  className={cn(
+                    "text-[11px] mt-0.5",
+                    idx === safeHighlight
+                      ? "text-primary-foreground/85"
+                      : "text-muted-foreground/80",
+                  )}
+                >
                   {p.category}
                 </div>
               ) : null}
               {p.application ? (
-                <div className="text-[11px] text-muted-foreground/80 mt-0.5">
+                <div
+                  className={cn(
+                    "text-[11px] mt-0.5",
+                    idx === safeHighlight
+                      ? "text-primary-foreground/85"
+                      : "text-muted-foreground/80",
+                  )}
+                >
                   App: {p.application}
                 </div>
               ) : null}
               <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                 {p.brands && p.brands.length > 0 ? (
-                  <div className="text-[10px] uppercase font-semibold text-black tracking-wider">
+                  <div
+                    className={cn(
+                      "text-[10px] uppercase font-semibold tracking-wider",
+                      idx === safeHighlight
+                        ? "text-primary-foreground"
+                        : "text-foreground",
+                    )}
+                  >
                     {p.brands.map((b) => b.name).join(", ")}
                   </div>
                 ) : null}
                 {(p.priceA !== null || p.priceB !== null) && (
-                  <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600">
+                  <div
+                    className={cn(
+                      "flex items-center gap-2 text-[10px] font-bold",
+                      idx === safeHighlight
+                        ? "text-primary-foreground"
+                        : "text-blue-600",
+                    )}
+                  >
                     {p.priceA !== null && (
-                      <span className="bg-blue-50 px-1 rounded border border-blue-100 italic">
+                      <span
+                        className={cn(
+                          "px-1 rounded border italic",
+                          idx === safeHighlight
+                            ? "bg-primary-foreground/15 border-primary-foreground/30"
+                            : "bg-blue-50 border-blue-100",
+                        )}
+                      >
                         A: {Number(p.priceA).toLocaleString()}
                       </span>
                     )}
                     {p.priceB !== null && (
-                      <span className="bg-indigo-50 px-1 rounded border border-indigo-100 italic">
+                      <span
+                        className={cn(
+                          "px-1 rounded border italic",
+                          idx === safeHighlight
+                            ? "bg-primary-foreground/15 border-primary-foreground/30"
+                            : "bg-indigo-50 border-indigo-100",
+                        )}
+                      >
                         B: {Number(p.priceB).toLocaleString()}
                       </span>
                     )}

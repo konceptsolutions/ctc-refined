@@ -1831,7 +1831,12 @@ const PurchaseImportRequestForm = ({
             setJumpToItemRowId("");
 
             const nextItems = Array.isArray(editData.items)
-              ? editData.items.map((item, index) => {
+              ? [...editData.items]
+                  .sort(
+                    (a: any, b: any) =>
+                      (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0),
+                  )
+                  .map((item, index) => {
                   const demandQty = Number(item.demandQuantity || 0);
                   const rawKhi = Number(item.khiQuantity || 0);
                   const rawIsb = Number(item.isbQuantity || 0);
@@ -2296,13 +2301,14 @@ const PurchaseImportRequestForm = ({
         partReference,
         notes,
         requestDate: inquiryDate,
-        items: validItems.map((row) => ({
+        items: validItems.map((row, index) => ({
           partId: row.partId,
           demandQuantity: getInquiryRowDemandQuantity(row),
           khiQuantity: Number(row.khiQuantity || 0),
           isbQuantity: Number(row.isbQuantity || 0),
           otherQuantity: SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0,
           weight: Number(row.weight || 0),
+          sortOrder: index,
         })),
       };
 
@@ -4179,7 +4185,7 @@ const PurchaseQuotationForm = ({
         conversionRate: parsedConversionRate,
         quotationType: "original" as const,
         status: "pending",
-        items: validItems.map((row) => ({
+        items: validItems.map((row, index) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
           khiQuantity: Number(row.khiQuantity || 0),
@@ -4190,6 +4196,7 @@ const PurchaseQuotationForm = ({
           fcRate: Number(row.fcRate || 0),
           revisedFcRate: Number(row.revisedFcRate || 0),
           weight: Number(row.weight || 0),
+          sortOrder: index,
         })),
       };
 
@@ -4967,7 +4974,7 @@ const PurchaseQuotationRevisionForm = ({
         status: "revise",
         currency,
         conversionRate: parsedConversionRate,
-        items: rows.map((row) => ({
+        items: rows.map((row, index) => ({
           partId: row.partId,
           demandQuantity: Number(row.demandQuantity || 0),
           quotationQuantity: Number(row.quotationQuantity || 0),
@@ -4975,6 +4982,7 @@ const PurchaseQuotationRevisionForm = ({
           fcRate: Number(row.fcRate || 0),
           revisedFcRate: Number(row.revisedFcRate || 0),
           weight: Number(row.weight || 0),
+          sortOrder: index,
         })),
       });
       toast({
