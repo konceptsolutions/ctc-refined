@@ -37,6 +37,10 @@ import {
   drValueClass,
 } from "@/utils/accountingColors";
 import { usePageActions } from "@/permissions/pageActions";
+import {
+  PartyLedgerHeader,
+  type LedgerPartyDetails,
+} from "@/components/financial/PartyLedgerHeader";
 
 interface LedgerEntry {
   id: number;
@@ -88,6 +92,8 @@ export const LedgersTab = () => {
     id?: string | null;
     number?: string | null;
   } | null>(null);
+  const [partyDetails, setPartyDetails] = useState<LedgerPartyDetails | null>(null);
+  const [currentBalance, setCurrentBalance] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchAccountGroups = async () => {
@@ -178,8 +184,17 @@ export const LedgersTab = () => {
 
       if (response.data) {
         setEntries(response.data);
+        const meta = (response as any).meta || {};
+        setPartyDetails(meta.party || null);
+        const lastBalance =
+          response.data.length > 0
+            ? Number(response.data[response.data.length - 1]?.balance ?? 0)
+            : Number(meta.currentBalance ?? 0);
+        setCurrentBalance(Number.isFinite(lastBalance) ? lastBalance : null);
       } else {
         setEntries([]);
+        setPartyDetails(null);
+        setCurrentBalance(null);
       }
     } catch (error: any) {
       toast({
@@ -247,6 +262,8 @@ export const LedgersTab = () => {
       fromDate,
       toDate,
       accountLabel: selectedAccountLabel || undefined,
+      party: partyDetails,
+      currentBalance,
       entries: entries.map((entry) => ({
         tId: entry.tId,
         voucherNo: entry.voucherNo,
@@ -326,7 +343,12 @@ export const LedgersTab = () => {
             <SearchableSelect
               options={accountOptions}
               value={selectedAccount}
-              onValueChange={setSelectedAccount}
+              onValueChange={(val) => {
+                setSelectedAccount(val);
+                setPartyDetails(null);
+                setCurrentBalance(null);
+                setEntries([]);
+              }}
               placeholder="Select..."
             />
           </div>
@@ -387,6 +409,8 @@ export const LedgersTab = () => {
             Search
           </Button>
         </div>
+
+        <PartyLedgerHeader party={partyDetails} balance={currentBalance} />
 
         {/* Ledger Table */}
         <div className="border rounded-lg overflow-hidden">

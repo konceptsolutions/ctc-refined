@@ -21,6 +21,14 @@ export type LedgerPrintEntry = {
   exchangeRate?: number | null;
 };
 
+export type LedgerPrintParty = {
+  name?: string | null;
+  contactPerson?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  type?: string | null;
+};
+
 export type LedgerPrintInput = {
   title?: string;
   fromDate?: string | Date | null;
@@ -28,6 +36,9 @@ export type LedgerPrintInput = {
   accountLabel?: string;
   subtitle?: string;
   showExchangeRate?: boolean;
+  party?: LedgerPrintParty | null;
+  currentBalance?: number | null;
+  balanceLabel?: string;
   entries: LedgerPrintEntry[];
 };
 
@@ -57,6 +68,78 @@ export const printLedgers = (input: LedgerPrintInput): boolean => {
   doc.setFontSize(10);
   doc.setTextColor(17, 17, 17);
   let y = 21;
+  const party = input.party;
+  if (party) {
+    const partyLabel = party.type === "supplier" ? "Supplier" : "Customer";
+    const detailWidth = pageWidth - marginX * 2 - 8;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    const phoneWrapped = doc.splitTextToSize(
+      `Phone / Mobile: ${party.phone || "-"}`,
+      detailWidth,
+    );
+    const addressWrapped = doc.splitTextToSize(
+      `Address: ${party.address || "-"}`,
+      detailWidth,
+    );
+    const contactWrapped = doc.splitTextToSize(
+      `Contact persons: ${party.contactPerson || "-"}`,
+      detailWidth,
+    );
+    const cardTop = y - 2;
+    const cardHeight =
+      16 +
+      phoneWrapped.length * 3.6 +
+      addressWrapped.length * 3.6 +
+      contactWrapped.length * 3.6 +
+      6;
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(marginX, cardTop, pageWidth - marginX * 2, cardHeight, 2, 2, "FD");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(partyLabel.toUpperCase(), marginX + 4, y + 2);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text(party.name || "-", marginX + 4, y + 8);
+
+    if (input.currentBalance != null && Number.isFinite(Number(input.currentBalance))) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text((input.balanceLabel || "Balance").toUpperCase(), pageWidth - marginX - 4, y + 2, {
+        align: "right",
+      });
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.setTextColor(15, 23, 42);
+      doc.text(
+        formatAmount(Number(input.currentBalance)),
+        pageWidth - marginX - 4,
+        y + 9,
+        { align: "right" },
+      );
+    }
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    let detailY = y + 14;
+    doc.text(phoneWrapped, marginX + 4, detailY);
+    detailY += phoneWrapped.length * 3.6 + 1;
+    doc.text(addressWrapped, marginX + 4, detailY);
+    detailY += addressWrapped.length * 3.6 + 1;
+    doc.text(contactWrapped, marginX + 4, detailY);
+    y = cardTop + cardHeight + 6;
+  }
+  doc.setTextColor(17, 17, 17);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
   doc.text(
     `Period: ${formatPdfDate(input.fromDate)} to ${formatPdfDate(input.toDate)}`,
     marginX,

@@ -1001,6 +1001,7 @@ export const SalesInvoice = ({
   const [showBackToInquiry, setShowBackToInquiry] = useState(false);
   const [savingInvoice, setSavingInvoice] = useState(false);
   const savingInvoiceRef = useRef(false);
+  const openedInquiryQuotationRef = useRef(false);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("salesInquiryConversionDraft");
@@ -2318,6 +2319,7 @@ export const SalesInvoice = ({
                 image_p1: p.image_p1,
                 image_p2: p.image_p2,
               }),
+              remarks: String(p.remarks || "").trim(),
             };
           })
           .filter((p: PartItem | null): p is PartItem => p !== null);
@@ -4407,6 +4409,7 @@ export const SalesInvoice = ({
                 imageP1: item.Part.imageP1,
                 imageP2: item.Part.imageP2,
               }),
+              remarks: String(item.Part.remarks || "").trim(),
             });
             const partImages = getPartImageList({
               imageP1: item.Part.imageP1,
@@ -4629,6 +4632,19 @@ export const SalesInvoice = ({
       });
     }
   };
+
+  useEffect(() => {
+    if (!isQuotation || openedInquiryQuotationRef.current || loadingInvoices) {
+      return;
+    }
+    const openId = sessionStorage.getItem("openSalesQuotationId");
+    if (!openId) return;
+    const found = invoices.find((q) => q.id === openId);
+    if (!found) return;
+    openedInquiryQuotationRef.current = true;
+    sessionStorage.removeItem("openSalesQuotationId");
+    void handleEditInvoice(found);
+  }, [isQuotation, loadingInvoices, invoices]);
 
   const refreshCustomersList = async () => {
     try {
@@ -7614,6 +7630,18 @@ export const SalesInvoice = ({
                                   {showLastSaleInfo &&
                                     item.selectedPartId && (
                                       <div className="mt-1 text-xs text-muted-foreground flex flex-col gap-2">
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="font-semibold">
+                                            Remarks
+                                          </span>
+                                          {part?.remarks?.trim() ? (
+                                            <span className="whitespace-pre-wrap text-foreground">
+                                              {part.remarks.trim()}
+                                            </span>
+                                          ) : (
+                                            <span>No remarks for this item</span>
+                                          )}
+                                        </div>
                                         <div className="flex flex-col gap-1">
                                           <span className="font-semibold">
                                             Last 3 sales (all customers)

@@ -103,6 +103,18 @@ interface InquiryItem {
   };
 }
 
+interface OpenQuotationRow {
+  id: string;
+  quotationNo: string;
+  quotationDate: string;
+  validUntil?: string;
+  customerName: string;
+  customerType?: string;
+  status: string;
+  totalAmount: number;
+  itemCount: number;
+}
+
 interface PartDetail {
   id?: string; // Part ID for fetching full details
   partNo: string;
@@ -269,6 +281,9 @@ export const SalesInquiry = ({
   });
   const [inquiryItems, setInquiryItems] = useState<InquiryItem[]>([]);
   const [loadingInquiries, setLoadingInquiries] = useState(false);
+  const [openQuotations, setOpenQuotations] = useState<OpenQuotationRow[]>([]);
+  const [loadingOpenQuotations, setLoadingOpenQuotations] = useState(false);
+  const [openQuotationSearch, setOpenQuotationSearch] = useState("");
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
   const [fullInquiryData, setFullInquiryData] = useState<Inquiry | null>(null);
@@ -777,6 +792,45 @@ export const SalesInquiry = ({
     };
 
     fetchInquiries();
+  }, []);
+
+  useEffect(() => {
+    const fetchOpenQuotations = async () => {
+      setLoadingOpenQuotations(true);
+      try {
+        const response = (await apiClient.getSalesQuotations({
+          status: "open",
+        })) as any;
+        if (response?.error) {
+          setOpenQuotations([]);
+          return;
+        }
+        const rows: any[] = Array.isArray(response)
+          ? response
+          : response?.data || [];
+        setOpenQuotations(
+          rows.map((q: any) => ({
+            id: q.id,
+            quotationNo: q.quotationNo || "",
+            quotationDate: q.quotationDate,
+            validUntil: q.validUntil,
+            customerName: q.customerName || "",
+            customerType: q.customerType || "registered",
+            status: q.status || "pending",
+            totalAmount: Number(q.totalAmount || 0),
+            itemCount: Array.isArray(q.SalesQuotationItem)
+              ? q.SalesQuotationItem.length
+              : 0,
+          })),
+        );
+      } catch {
+        setOpenQuotations([]);
+      } finally {
+        setLoadingOpenQuotations(false);
+      }
+    };
+
+    fetchOpenQuotations();
   }, []);
 
   // Fetch purchase order history when a part is selected
@@ -2598,6 +2652,46 @@ export const SalesInquiry = ({
       inquiry.inquiryNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       inquiry.subject.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const filteredOpenQuotations = openQuotations.filter((q) => {
+    const term = openQuotationSearch.trim().toLowerCase();
+    if (!term) return true;
+    return (
+      q.quotationNo.toLowerCase().includes(term) ||
+      q.customerName.toLowerCase().includes(term)
+    );
+  });
+
+  const getQuotationStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      pending: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+      approved: "bg-green-500/10 text-green-600 border-green-500/20",
+      unapproved: "bg-red-500/10 text-red-600 border-red-500/20",
+      converted: "bg-purple-500/10 text-purple-700 border-purple-500/20",
+    };
+    const labels: Record<string, string> = {
+      pending: "Pending",
+      approved: "Approved",
+      unapproved: "Unapproved",
+      converted: "Converted",
+    };
+    return (
+      <Badge
+        variant="outline"
+        className={
+          styles[status] || "bg-gray-500/10 text-gray-600 border-gray-500/20"
+        }
+      >
+        {labels[status] ||
+          status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ")}
+      </Badge>
+    );
+  };
+
+  const handleOpenQuotation = (quotationId: string) => {
+    sessionStorage.setItem("openSalesQuotationId", quotationId);
+    navigate("/sales/quotation");
+  };
 
   const generateInquiryNo = () => {
     const nextNum = inquiries.length + 1;
@@ -4512,6 +4606,118 @@ export const SalesInquiry = ({
               </div>
             </div>
 
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-lg font-semibold">
+                Open Quotations
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Quotations that have not been converted to a sales invoice
+              </p>
+            </div>
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search quotation no or customer..."
+                value={openQuotationSearch}
+                onChange={(e) => setOpenQuotationSearch(e.target.value)}
+                className="h-9 pl-9 text-sm"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <ListNumberHeader className="font-semibold" />
+                  <TableHead className="font-semibold">Quotation #</TableHead>
+                  <TableHead className="font-semibold">Date</TableHead>
+                  <TableHead className="font-semibold">Valid Until</TableHead>
+                  <TableHead className="font-semibold">Customer</TableHead>
+                  <TableHead className="font-semibold">Type</TableHead>
+                  <TableHead className="font-semibold text-center">Items</TableHead>
+                  <TableHead className="font-semibold text-right">Total</TableHead>
+                  <TableHead className="font-semibold">Status</TableHead>
+                  <TableHead className="font-semibold text-center">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loadingOpenQuotations ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={10}
+                      className="text-center py-8 text-sm text-muted-foreground"
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                        Loading open quotations...
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredOpenQuotations.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={10}
+                      className="text-center py-8 text-sm text-muted-foreground italic"
+                    >
+                      {openQuotations.length === 0
+                        ? "No open quotations. Converted quotations are hidden from this list."
+                        : "No quotations match the search."}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredOpenQuotations.map((q, index) => (
+                    <TableRow key={q.id}>
+                      <ListNumberCell
+                        index={index}
+                        total={filteredOpenQuotations.length}
+                      />
+                      <TableCell className="font-medium">{q.quotationNo}</TableCell>
+                      <TableCell>
+                        {q.quotationDate
+                          ? format(new Date(q.quotationDate), "dd MMM yyyy")
+                          : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {q.validUntil
+                          ? format(new Date(q.validUntil), "dd MMM yyyy")
+                          : "-"}
+                      </TableCell>
+                      <TableCell>{q.customerName || "-"}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {getCustomerTypeLabel(q.customerType)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">{q.itemCount}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        Rs {q.totalAmount.toLocaleString()}
+                      </TableCell>
+                      <TableCell>{getQuotationStatusBadge(q.status)}</TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => handleOpenQuotation(q.id)}
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          Open
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>

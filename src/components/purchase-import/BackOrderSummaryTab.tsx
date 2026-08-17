@@ -126,7 +126,7 @@ const formatRate = (value: number) => {
   if (!Number.isFinite(n) || n <= 0) return "-";
   return n.toLocaleString("en-PK", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 4,
   });
 };
 

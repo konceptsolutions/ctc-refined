@@ -216,8 +216,7 @@ export const printPurchaseImportQuotationComparison = ({
   };
 
   /**
-   * High-contrast rank colors for older readers (80+):
-   * vivid fills + dark borders + black text (not pale pastels).
+   * Light pastels so black text stays readable on color and B&W printers.
    * Best (lowest LC) → green, then yellow → orange → red (highest).
    */
   const PRICE_RANK_COLORS: Array<{
@@ -225,10 +224,10 @@ export const printPurchaseImportQuotationComparison = ({
     border: [number, number, number];
     text: [number, number, number];
   }> = [
-    { fill: [34, 197, 94], border: [20, 83, 45], text: [0, 0, 0] }, // vivid green - best
-    { fill: [250, 204, 21], border: [113, 63, 18], text: [0, 0, 0] }, // vivid yellow
-    { fill: [249, 115, 22], border: [124, 45, 18], text: [0, 0, 0] }, // vivid orange
-    { fill: [239, 68, 68], border: [127, 29, 29], text: [0, 0, 0] }, // vivid red - highest
+    { fill: [209, 250, 223], border: [22, 163, 74], text: [0, 0, 0] }, // light green - best
+    { fill: [254, 243, 199], border: [202, 138, 4], text: [0, 0, 0] }, // light yellow
+    { fill: [255, 237, 213], border: [234, 88, 12], text: [0, 0, 0] }, // light orange
+    { fill: [254, 226, 226], border: [220, 38, 38], text: [0, 0, 0] }, // light red - highest
   ];
 
   const itemPriceRanks = items.map((item) => {
@@ -303,7 +302,7 @@ export const printPurchaseImportQuotationComparison = ({
             } else {
               const lcFromFc = comparableLcFor(quote, supplier);
               row.push(
-                num(quote.fcRate, 2),
+                num(quote.fcRate, 4),
                 num(lcFromFc ?? quote.lcRate, 0),
                 text(quote.shipDays || "-"),
               );
@@ -536,7 +535,7 @@ export const printPurchaseImportQuotationComparison = ({
       // Highlight the row with the most cheapest items in green
       const maxCount = Math.max(...Array.from(cheapestCount.values()), 0);
       if (data.column.index === 4 && Number(data.cell.raw) === maxCount && maxCount > 0) {
-        data.cell.styles.fillColor = [34, 197, 94];
+        data.cell.styles.fillColor = [209, 250, 223];
         data.cell.styles.textColor = [0, 0, 0];
         data.cell.styles.fontStyle = "bold";
       }

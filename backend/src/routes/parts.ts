@@ -32,6 +32,58 @@ type KitItemRecord = {
 const kitComponentPartId = (row: Pick<KitItemRecord, "componentPartId">) =>
   row.componentPartId ? String(row.componentPartId).trim() : "";
 
+const normalizePartRemarks = (value: unknown): string | null => {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed ? trimmed : null;
+};
+
+const persistPartRemarks = async (partId: string, remarks: unknown) => {
+  await query(`UPDATE "Part" SET remarks = $1 WHERE id = $2`, [
+    normalizePartRemarks(remarks),
+    partId,
+  ]);
+};
+
+const fetchPartRemarks = async (partId: string): Promise<string | null> => {
+  const result = await query(`SELECT remarks FROM "Part" WHERE id = $1`, [
+    partId,
+  ]);
+  return result.rows[0]?.remarks || null;
+};
+
+const ITEM_ALREADY_EXISTS_ERROR = "This item already exists";
+
+const findExistingPartByIdentity = async (opts: {
+  partNo: string;
+  masterPartNo?: string | null;
+  brandName?: string | null;
+  excludeId?: string | null;
+}) => {
+  const partNo = String(opts.partNo || "").trim();
+  if (!partNo) return null;
+  const masterPartNo = String(opts.masterPartNo || "").trim();
+  const brandName = String(opts.brandName || "").trim();
+
+  return prisma.part.findFirst({
+    where: {
+      partNo: { equals: partNo, mode: "insensitive" },
+      ...(opts.excludeId ? { id: { not: opts.excludeId } } : {}),
+      ...(masterPartNo
+        ? {
+            MasterPart: {
+              masterPartNo: { equals: masterPartNo, mode: "insensitive" },
+            },
+          }
+        : { masterPartId: null }),
+      ...(brandName
+        ? { Brand: { name: { equals: brandName, mode: "insensitive" } } }
+        : { brandId: null }),
+    },
+    select: { id: true },
+  });
+};
+
 type PartDeletabilityInput = {
   currentStock: number;
   reservedStock: number;
@@ -880,7 +932,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     const sql = `
       SELECT 
-        p.id, p."partNo", p."type", p.description, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p."createdAt", p."updatedAt",
+        p.id, p."partNo", p."type", p.description, p.remarks, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p."createdAt", p."updatedAt",
         p."masterPartId", p."brandId", p."categoryId", p."subcategoryId", p."applicationId",
         p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceM",
         mp."masterPartNo" as master_part_no,
@@ -1051,6 +1103,7 @@ router.get("/", async (req: Request, res: Response) => {
         subcategory_name: part.subcategory_name || part.subcategoryname,
         application_name: part.application_name || part.applicationname,
         description: part.description,
+        remarks: part.remarks || null,
         hs_code: part.hsCode || part.hscode,
         weight: part.weight,
         reorder_level: part.reorderLevel || part.reorderlevel,
@@ -1724,7 +1777,7 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       image_p2: sharedImages.imageP2,
       status: part.status || "active",
       type: (part as any).type || "single",
-      remarks: (part as any).remarks || null,
+      remarks: (part as any).remarks ?? (await fetchPartRemarks(part.id)),
       models: modelsToReturn.map((m: any) => ({
         id: m.id,
         name: m.name,
@@ -1916,7 +1969,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       image_p2: sharedImages.imageP2,
       status: part.status || "active",
       type: (part as any).type || "single",
-      remarks: (part as any).remarks || null,
+      remarks: (part as any).remarks ?? (await fetchPartRemarks(part.id)),
       models: modelsToReturn.map((m: any) => ({
         id: m.id,
         name: m.name,
@@ -1956,6 +2009,7 @@ router.post("/", async (req: Request, res: Response) => {
       type,
       image_p1,
       image_p2,
+      remarks,
       status,
       models,
       kit_items,
@@ -2002,6 +2056,15 @@ router.post("/", async (req: Request, res: Response) => {
         } as any,
       });
       brandId = brand.id;
+    }
+
+    const duplicatePart = await findExistingPartByIdentity({
+      partNo: partNoStr,
+      masterPartNo: master_part_no,
+      brandName: brand_name,
+    });
+    if (duplicatePart) {
+      return res.status(409).json({ error: ITEM_ALREADY_EXISTS_ERROR });
     }
 
     // Helper function to check if string looks like a UUID
@@ -2281,6 +2344,9 @@ router.post("/", async (req: Request, res: Response) => {
     const part = await prisma.part.create({
       data: partData,
     });
+    if ("remarks" in req.body) {
+      await persistPartRemarks(part.id, remarks);
+    }
 
     if (image_p1 || image_p2) {
       await syncImagesToAlternateParts(prisma, part.id, {
@@ -2359,6 +2425,9 @@ router.post("/", async (req: Request, res: Response) => {
       image_p2: partWithRelations?.imageP2 || null,
       status: partWithRelations?.status,
       type: (partWithRelations as any)?.type || "single",
+      remarks:
+        (partWithRelations as any)?.remarks ??
+        (await fetchPartRemarks(part.id)),
       models: (p.Model || []).map((m: any) => ({
         id: m.id,
         name: m.name,
@@ -3019,6 +3088,7 @@ router.put("/:id", async (req: Request, res: Response) => {
       type,
       image_p1,
       image_p2,
+      remarks,
       status,
       models,
       kit_items,
@@ -3311,6 +3381,16 @@ router.put("/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Part not found" });
     }
 
+    const duplicatePart = await findExistingPartByIdentity({
+      partNo: part_no,
+      masterPartNo: master_part_no,
+      brandName: brand_name,
+      excludeId: id,
+    });
+    if (duplicatePart) {
+      return res.status(409).json({ error: ITEM_ALREADY_EXISTS_ERROR });
+    }
+
     const normalizedKitItems = normalizeKitItemsPayload(kit_items);
     if (Array.isArray(kit_items) && normalizedKitItems.length > 0) {
       try {
@@ -3455,6 +3535,10 @@ router.put("/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Part not found" });
     }
 
+    if ("remarks" in req.body) {
+      await persistPartRemarks(id, remarks);
+    }
+
     // Debug log to verify application is included
 
     const p = part as any;
@@ -3502,7 +3586,7 @@ router.put("/:id", async (req: Request, res: Response) => {
       image_p2: sharedImages.imageP2,
       status: part.status || "active",
       type: (part as any).type || "single",
-      remarks: (part as any).remarks || null,
+      remarks: (part as any).remarks ?? (await fetchPartRemarks(part.id)),
       models: (p.Model || []).map((m: any) => ({
         id: m.id,
         name: m.name,

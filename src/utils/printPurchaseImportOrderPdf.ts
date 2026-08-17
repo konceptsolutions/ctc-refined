@@ -262,8 +262,8 @@ export const printPurchaseImportOrder = ({
             Number(item.backQty || 0) > 0
               ? String(Number(item.backQty || 0))
               : "-",
-            num(item.fcRate, 2),
-            num(item.fcAmount, 2),
+            num(item.fcRate, 4),
+            num(item.fcAmount, 4),
             num(item.lcRate, 0),
             num(item.lcAmount, 0),
             Number(item.weight || 0) > 0 ? num(item.weight, 4) : "-",

@@ -19,10 +19,10 @@ import {
 } from "@/components/ui/dialog";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Printer, Search, Download, Phone, CreditCard, BookOpen, Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { exportToCSV } from "@/utils/exportUtils";
+import { PartyLedgerHeader } from "@/components/financial/PartyLedgerHeader";
 
 interface CustomerRow {
   accountId: string;
@@ -32,6 +32,8 @@ interface CustomerRow {
   customerName: string;
   customerCode: string | null;
   phone: string | null;
+  address?: string | null;
+  contactPerson?: string | null;
   creditLimit: number;
   balance: number;
 }
@@ -153,15 +155,25 @@ const CustomerReceivableTab = () => {
     const html = `<!DOCTYPE html><html><head><title>Ledger – ${ledger.customer.customerName}</title>
 <style>
   body{font-family:Arial,sans-serif;padding:24px;font-size:12px;}
-  h2{margin:0 0 2px 0;}p{margin:0 0 14px 0;color:#555;font-size:11px;}
+  h2{margin:0 0 2px 0;}p{margin:0 0 6px 0;color:#555;font-size:11px;}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px;}
+  .balance{font-size:16px;font-weight:700;color:#111;}
   table{width:100%;border-collapse:collapse;}
   th,td{border:1px solid #ccc;padding:5px 8px;text-align:left;}
   th{background:#f0f0f0;font-weight:600;}td.num{text-align:right;}
   tfoot td{font-weight:700;background:#f9f9f9;}
 </style></head><body>
-<h2>Customer Ledger – ${ledger.customer.customerName}</h2>
-<p>Account: ${ledger.customer.accountCode} – ${ledger.customer.accountName}
-&nbsp;|&nbsp; From: ${fromDate} &nbsp;To: ${toDate}</p>
+<div class="header">
+  <div>
+    <h2>Customer Ledger – ${ledger.customer.customerName}</h2>
+    <p>Account: ${ledger.customer.accountCode} – ${ledger.customer.accountName}
+    &nbsp;|&nbsp; From: ${fromDate} &nbsp;To: ${toDate}</p>
+    <p>Contact person: ${ledger.customer.contactPerson || "—"}</p>
+    <p>Address: ${ledger.customer.address || "—"}</p>
+    <p>Phone / Mobile: ${ledger.customer.phone || "—"}</p>
+  </div>
+  <div class="balance">Balance: ${fmt(ledger.customer.balance)}</div>
+</div>
 <table><thead><tr><th>#</th><th>Voucher No</th><th>Date</th><th>Description</th>
 <th style="text-align:right">Debit</th><th style="text-align:right">Credit</th>
 <th style="text-align:right">Balance</th></tr></thead>
@@ -392,40 +404,31 @@ const CustomerReceivableTab = () => {
       <Dialog open={ledger.open} onOpenChange={(o) => !o && closeLedger()}>
         <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
           <DialogHeader>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <DialogTitle className="text-base">
-                  Ledger — {ledger.customer?.customerName}
-                </DialogTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {ledger.customer?.accountCode} – {ledger.customer?.accountName}
-                  &nbsp;·&nbsp; {fromDate} to {toDate}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {ledger.customer && (
-                  <>
-                    {ledger.customer.phone && (
-                      <Badge variant="secondary" className="gap-1">
-                        <Phone className="w-3 h-3" />
-                        {ledger.customer.phone}
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="gap-1">
-                      <CreditCard className="w-3 h-3" />
-                      Limit: {fmt(ledger.customer.creditLimit)}
-                    </Badge>
-                    <Badge className="gap-1">
-                      Balance: {fmt(ledger.customer.balance)}
-                    </Badge>
-                  </>
-                )}
-                <Button size="sm" variant="outline" onClick={handlePrintLedger} disabled={ledger.loading}>
-                  <Printer className="w-3.5 h-3.5 mr-1" /> Print
-                </Button>
-              </div>
-            </div>
+            <DialogTitle className="text-base">
+              Ledger — {ledger.customer?.customerName}
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              {ledger.customer?.accountCode} – {ledger.customer?.accountName}
+              &nbsp;·&nbsp; {fromDate} to {toDate}
+            </p>
           </DialogHeader>
+          {ledger.customer ? (
+            <PartyLedgerHeader
+              party={{
+                type: "customer",
+                name: ledger.customer.customerName,
+                contactPerson: ledger.customer.contactPerson,
+                address: ledger.customer.address,
+                phone: ledger.customer.phone,
+              }}
+              balance={ledger.customer.balance}
+            />
+          ) : null}
+          <div className="flex justify-end">
+            <Button size="sm" variant="outline" onClick={handlePrintLedger} disabled={ledger.loading}>
+              <Printer className="w-3.5 h-3.5 mr-1" /> Print
+            </Button>
+          </div>
 
           <div className="flex-1 overflow-auto mt-2">
             {ledger.loading ? (

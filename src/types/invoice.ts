@@ -94,6 +94,7 @@ export interface PartItem {
   locations?: StockLocation[];
   unlocatedStock?: number;
   images?: string[];
+  remarks?: string;
 }
 
 export interface StockLocation {

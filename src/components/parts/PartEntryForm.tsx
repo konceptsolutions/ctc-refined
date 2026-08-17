@@ -128,7 +128,7 @@ interface PartEntryFormProps {
       editingPartId?: string | null;
       saveMode: "create" | "update";
     },
-  ) => void;
+  ) => void | boolean | Promise<void | boolean>;
   selectedPart?: Part | null;
   onClearSelection?: () => void;
   onPartSelected?: (masterPartNo: string | null) => void;
@@ -709,7 +709,7 @@ export const PartEntryForm = ({
               id: p.id || "",
               value: (p.master_part_no || "").trim(),
               description: p.description || "",
-              brand: p.brand || "",
+              brand: p.brand_name || p.brand || "",
             }))
             .filter((p) => p.value); // Only include parts with a value
 
@@ -1517,7 +1517,7 @@ export const PartEntryForm = ({
     );
   };
 
-  const handleSaveWithMode = (saveMode: "create" | "update") => {
+  const handleSaveWithMode = async (saveMode: "create" | "update") => {
     if (!formData.partNo.trim()) {
       toast({
         title: "Validation Error",
@@ -1594,18 +1594,87 @@ export const PartEntryForm = ({
           }))
         : [];
 
-    onSave({
-      ...formData,
-      modelQuantities,
-      kitItems: preparedKitItems,
-      imageP1,
-      imageP2,
-      saveMode,
-      editingPartId:
-        saveMode === "update"
-          ? editingPartId || selectedPart?.id || null
-          : null,
-    });
+    if (saveMode === "create") {
+      const uiPartNo = formData.partNo.trim().toLowerCase();
+      const uiMasterPartNo = String(
+        masterPartSearch || formData.masterPartNo || "",
+      )
+        .trim()
+        .toLowerCase();
+      const uiBrand = String(brandSearch || formData.brand || "")
+        .trim()
+        .toLowerCase();
+      const familyDuplicate = familyPartNoOptions.some(
+        (p) =>
+          String(p.value || "").trim().toLowerCase() === uiPartNo &&
+          String(p.brand || "").trim().toLowerCase() === uiBrand,
+      );
+      if (familyDuplicate && uiMasterPartNo) {
+        toast({
+          title: "Error",
+          description: "This item already exists",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const response: any = await apiClient.getPartEntryList({
+          part_no: uiMasterPartNo || undefined,
+          search: uiPartNo || undefined,
+          limit: 200,
+        });
+        const partsData = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response)
+            ? response
+            : [];
+        const exists = partsData.some((p: any) => {
+          const existingPartNo = String(p.master_part_no || "")
+            .trim()
+            .toLowerCase();
+          const existingMasterPartNo = String(p.part_no || "")
+            .trim()
+            .toLowerCase();
+          const existingBrand = String(p.brand_name || p.brand || "")
+            .trim()
+            .toLowerCase();
+          return (
+            existingPartNo === uiPartNo &&
+            existingMasterPartNo === uiMasterPartNo &&
+            existingBrand === uiBrand
+          );
+        });
+        if (exists) {
+          toast({
+            title: "Error",
+            description: "This item already exists",
+            variant: "destructive",
+          });
+          return;
+        }
+      } catch {
+        // Backend create will still reject a duplicate if this lookup fails.
+      }
+    }
+
+    const saved = await Promise.resolve(
+      onSave({
+        ...formData,
+        modelQuantities,
+        kitItems: preparedKitItems,
+        imageP1,
+        imageP2,
+        saveMode,
+        editingPartId:
+          saveMode === "update"
+            ? editingPartId || selectedPart?.id || null
+            : null,
+      }),
+    );
+    if (saved === false) {
+      return;
+    }
 
     // Notify parent component about selected part number
     const partNo = formData.partNo.trim();
@@ -1620,10 +1689,35 @@ export const PartEntryForm = ({
     setImageP1(null);
     setImageP2(null);
     setIsEditing(false);
-    setIsAddingNew(false); // Clear adding new mode after save
-    setMasterPartAutoFilled(false); // Reset auto-fill flag
+    setIsAddingNew(true);
+    setMasterPartAutoFilled(false);
+    prevSelectedPartId.current = null;
     setMasterPartSearch("");
     setPartSearch("");
+    setPartNoOptions([]);
+    setShowPartDropdown(false);
+    setKeepPartDropdownOpen(false);
+    setMasterPartNoOptions([]);
+    setShowMasterPartDropdown(false);
+    setCategorySearch("");
+    setSubcategorySearch("");
+    setCategoryId("");
+    setSubCategoryId("");
+    setShowCategoryDropdown(false);
+    setShowSubcategoryDropdown(false);
+    setShowApplicationDropdown(false);
+    setShowBrandDropdown(false);
+    setFamilyPartNoOptions([]);
+    setMasterPartHighlightedIndex(-1);
+    setPartHighlightedIndex(-1);
+    setCategoryHighlightedIndex(-1);
+    setSubcategoryHighlightedIndex(-1);
+    setApplicationHighlightedIndex(-1);
+    setBrandHighlightedIndex(-1);
+    setBrandSearch("");
+    setBrandId("");
+    if (fileInputP1Ref.current) fileInputP1Ref.current.value = "";
+    if (fileInputP2Ref.current) fileInputP2Ref.current.value = "";
 
     // Clear validation errors
     setPriceAError("");

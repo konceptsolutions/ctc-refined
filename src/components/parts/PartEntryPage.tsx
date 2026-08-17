@@ -112,7 +112,7 @@ export const PartEntryPage = ({
           variant: "destructive",
         });
         setLoading(false);
-        return;
+        return false;
       }
 
       // SWAPPED mapping to match ItemsListView display convention:
@@ -143,6 +143,7 @@ export const PartEntryPage = ({
           partData.origin && partData.origin.trim()
             ? partData.origin.trim()
             : null,
+        remarks: partData.remarks?.trim() ? partData.remarks.trim() : null,
         status: partData.status === "A" ? "active" : "inactive",
         models:
           partData.modelQuantities
@@ -236,10 +237,10 @@ export const PartEntryPage = ({
         setParts((prev) =>
           prev.map((p) => (p.id === updatePartId ? newPart : p)),
         );
-        setSelectedPart(null);
       } else {
         setParts((prev) => [newPart, ...prev]);
       }
+      setSelectedPart(null);
 
       await fetchItems(itemsPage, itemsPerPage, searchFilters);
 
@@ -249,12 +250,14 @@ export const PartEntryPage = ({
           ? "Part updated successfully"
           : "Part created successfully",
       });
+      return true;
     } catch (error: any) {
       toast({
         title: "Error",
         description: error.message || "Failed to save part",
         variant: "destructive",
       });
+      return false;
     } finally {
       setLoading(false);
     }

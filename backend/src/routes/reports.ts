@@ -2029,6 +2029,8 @@ router.get('/financial/customer-receivable', async (req: Request, res: Response)
             contactNo: true,
             cellNumber: true,
             creditLimit: true,
+            address: true,
+            contactPersons: true,
           },
         },
         Subgroup: { include: { MainGroup: true } },
@@ -2059,6 +2061,17 @@ router.get('/financial/customer-receivable', async (req: Request, res: Response)
 
         const phone = acc.Customer?.cellNumber || acc.Customer?.contactNo || null;
         const creditLimit = Number(acc.Customer?.creditLimit) || 0;
+        const contactPersons = Array.isArray(acc.Customer?.contactPersons)
+          ? acc.Customer.contactPersons
+              .map((person: any) =>
+                [person?.name, person?.designation, person?.contactNumber]
+                  .map((part: unknown) => String(part || "").trim())
+                  .filter(Boolean)
+                  .join(" — "),
+              )
+              .filter(Boolean)
+              .join("; ")
+          : "";
 
         return {
           accountId: acc.id,
@@ -2068,6 +2081,8 @@ router.get('/financial/customer-receivable', async (req: Request, res: Response)
           customerName: acc.Customer?.name || acc.name,
           customerCode: acc.Customer?.code || null,
           phone,
+          address: acc.Customer?.address || null,
+          contactPerson: contactPersons || null,
           creditLimit,
           balance,
         };

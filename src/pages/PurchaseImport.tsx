@@ -11,6 +11,7 @@ import {
 } from "@/utils/accountingColors";
 import {
   formatFc,
+  formatFcTotal,
   formatPurchasePrice,
   roundFc,
   roundPurchasePrice,
@@ -57,7 +58,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { printPurchaseImportQuotation } from "@/utils/printPurchaseImportQuotationPdf";
+import { printPurchaseImportQuotation, printPurchaseImportUnquotedItems } from "@/utils/printPurchaseImportQuotationPdf";
 import { printPurchaseImportQuotationComparison } from "@/utils/printPurchaseImportQuotationComparisonPdf";
 import { printPurchaseImportOrder } from "@/utils/printPurchaseImportOrderPdf";
 import { apiClient } from "@/lib/api";
@@ -486,21 +487,21 @@ const IMPORT_PO_CLEARING_EXPENSE_SECTIONS = [
       { key: "customsDuty" as const, label: "C.D." },
       { key: "additionalCustomsDuty" as const, label: "A.C.D." },
       { key: "regulatoryDuty" as const, label: "R.D." },
+      { key: "ed" as const, label: "E.D." },
       { key: "salesTax" as const, label: "S.T." },
       { key: "additionalSalesTax" as const, label: "A.S.T." },
       { key: "incomeTax" as const, label: "I.T." },
+      { key: "doAmount" as const, label: "D.O." },
     ],
   },
   {
     title: "Local Expenses",
     fields: [
-      { key: "ed" as const, label: "E.D." },
-      { key: "doAmount" as const, label: "D.O." },
       { key: "crnExp" as const, label: "Dmg.Exp." },
-      { key: "cmExp" as const, label: "CRN.Exp." },
-      { key: "agencyExp" as const, label: "Agency.Exp." },
       { key: "miscExp" as const, label: "Misc.Exp." },
+      { key: "agencyExp" as const, label: "Agency.Exp." },
       { key: "locFrt" as const, label: "Loc.Frt." },
+      { key: "cmExp" as const, label: "CRN.Exp." },
     ],
   },
 ];
@@ -512,9 +513,11 @@ function formatImportPoAmount(value: number) {
   });
 }
 
-/** Round to 2 decimal places (FC / expense style). */
+/** Round packaging / expense amounts to 2 decimal places. */
 function roundImportMoney(value: unknown): number {
-  return roundFc(value);
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
 }
 
 /** Round purchase / LC unit prices to whole numbers (no decimals). */
@@ -654,7 +657,7 @@ function computeImportReceiveLineAmounts(
 ) {
   const qty = Math.max(0, Math.floor(Number(receiveQty) || 0));
   return {
-    fcAmount: roundImportMoney(line.fcRate * qty),
+    fcAmount: roundFc(line.fcRate * qty),
     lcAmount: roundImportWhole(line.lcRate * qty),
     totalWeight: line.weight * qty,
   };
@@ -1013,8 +1016,8 @@ type PurchaseQuotationFormItem = PurchaseQuotationContextItem & {
 };
 
 const RATE_INPUT_PATTERN = /^\d*\.?\d{0,4}$/;
-/** FC rate: up to 2 decimal places while typing. */
-const FC_RATE_INPUT_PATTERN = /^\d*\.?\d{0,2}$/;
+/** FC rate: up to 4 decimal places while typing. */
+const FC_RATE_INPUT_PATTERN = /^\d*\.?\d{0,4}$/;
 const EXCHANGE_RATE_INPUT_PATTERN = /^\d*\.?\d{0,6}$/;
 
 const formatRateInput = (value: number): string => {
@@ -1025,6 +1028,11 @@ const formatRateInput = (value: number): string => {
 const formatFcRateInput = (value: number): string => {
   if (!Number.isFinite(value) || value === 0) return "";
   return String(roundFc(value));
+};
+
+const formatFcTotalInput = (value: number): string => {
+  if (!Number.isFinite(value) || value === 0) return "";
+  return String(Math.round(value * 100) / 100);
 };
 
 const formatExchangeRateInput = (value: number | string): string => {
@@ -1110,7 +1118,7 @@ function formatLinkedExpenseText(values: {
 }): LinkedExpenseText {
   return {
     percent: formatRateInput(values.percent),
-    fc: formatFcRateInput(values.fc),
+    fc: formatFcTotalInput(values.fc),
     lc: formatRateInput(values.lc),
   };
 }
@@ -1136,7 +1144,7 @@ const QUOTATION_QTY_INPUT_CLASS =
 const QUOTATION_SHIP_DAYS_INPUT_CLASS =
   "h-8 w-20 min-w-0 text-right text-xs px-2 ml-auto";
 const QUOTATION_FC_RATE_INPUT_CLASS =
-  `h-8 w-24 min-w-0 text-right text-xs px-2 ml-auto ${fcValueClass()}`;
+  `h-8 w-28 min-w-0 text-right text-xs px-2 ml-auto ${fcValueClass()}`;
 const QUOTATION_FC_AMOUNT_COL_CLASS = `text-right p-2 border-b ${fcHeaderClass}`;
 const QUOTATION_LC_RATE_COL_CLASS = `text-right p-2 border-b ${lcHeaderClass}`;
 const QUOTATION_LC_AMOUNT_COL_CLASS = `text-right p-2 border-b ${lcHeaderClass}`;
@@ -1210,6 +1218,196 @@ const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
 
 const createRowId = () =>
   `row-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const isUnquotedQuotationItem = (row: {
+  partId?: string | null;
+  fcRate?: number | null;
+}) => Boolean(String(row.partId || "").trim()) && Number(row.fcRate || 0) <= 0;
+
+type UnquotedItemView = {
+  key: string;
+  masterPartNo?: string | null;
+  partNo?: string | null;
+  description?: string | null;
+  brand?: string | null;
+  demandQuantity?: number | null;
+  quotationQuantity?: number | null;
+  lastFcRate?: number | null;
+};
+
+const UnquotedItemsDialog = ({
+  open,
+  onOpenChange,
+  items,
+  loading = false,
+  canPrint = false,
+  onPrint,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  items: UnquotedItemView[];
+  loading?: boolean;
+  canPrint?: boolean;
+  onPrint?: () => void;
+}) => (
+  <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="max-w-4xl">
+      <DialogHeader>
+        <DialogTitle>
+          Unquoted Items
+          {!loading && items.length > 0 ? ` (${items.length})` : ""}
+        </DialogTitle>
+      </DialogHeader>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading unquoted items...</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">All items have an FC rate.</p>
+      ) : (
+        <div className="max-h-[60vh] overflow-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+              <tr>
+                <th className="text-center p-2 border-b w-12">#</th>
+                <th className="text-left p-2 border-b">Item</th>
+                <th className="text-left p-2 border-b">Brand</th>
+                <th className="text-right p-2 border-b">Req Qty</th>
+                <th className="text-right p-2 border-b">Quot Qty</th>
+                <th className={`text-right p-2 border-b ${fcHeaderClass}`}>
+                  Last FC Rate
+                </th>
+                <th className={`text-right p-2 border-b ${fcHeaderClass}`}>
+                  FC Rate
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((row, index) => (
+                <tr key={row.key} className="border-b hover:bg-muted/20">
+                  <td className="p-2 text-center text-muted-foreground tabular-nums">
+                    {index + 1}
+                  </td>
+                  <td className="p-2">
+                    <div className="font-medium">
+                      {row.masterPartNo || "-"} | {row.partNo || "-"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.description || "-"}
+                    </div>
+                  </td>
+                  <td className="p-2">{row.brand || "-"}</td>
+                  <td className="p-2 text-right tabular-nums">
+                    {Number(row.demandQuantity || 0)}
+                  </td>
+                  <td className="p-2 text-right tabular-nums">
+                    {Number(row.quotationQuantity || 0)}
+                  </td>
+                  <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                    {formatLastFcRateDisplay(row.lastFcRate)}
+                  </td>
+                  <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                    -
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          Close
+        </Button>
+        {canPrint ? (
+          <PrintPdfButton
+            onPrint={() => onPrint?.()}
+            disabled={loading || items.length === 0}
+            label="Print"
+          />
+        ) : null}
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+);
+
+const ITEM_JUMP_HIGHLIGHT_CLASS =
+  "bg-primary/10 ring-2 ring-primary/30 ring-inset";
+
+const buildItemJumpOptions = (
+  rows: Array<{
+    id: string;
+    partId?: string | null;
+    masterPartNo?: string | null;
+    partNo?: string | null;
+    description?: string | null;
+  }>,
+) =>
+  rows
+    .filter((row) => Boolean(String(row.partId || "").trim()))
+    .map((row) => ({
+      value: row.id,
+      label: `${row.masterPartNo || "-"} | ${row.partNo || "-"}`,
+      description: row.description || "-",
+    }));
+
+const ItemJumpSelect = ({
+  options,
+  value,
+  onValueChange,
+  disabled,
+}: {
+  options: Array<{ value: string; label: string; description?: string }>;
+  value: string;
+  onValueChange: (value: string) => void;
+  disabled?: boolean;
+}) => {
+  if (options.length === 0) return null;
+  return (
+    <SearchableSelect
+      options={options}
+      value={value}
+      onValueChange={onValueChange}
+      placeholder="Go to item..."
+      aria-label="Jump to item"
+      selectedDisplayLabelOnly
+      className="w-[260px] [&_input]:h-9 [&_input]:text-sm"
+      disabled={disabled}
+    />
+  );
+};
+
+const useItemRowJump = () => {
+  const [jumpToId, setJumpToId] = useState("");
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
+
+  const scrollToRow = useCallback((rowId: string) => {
+    if (!rowId) return;
+    requestAnimationFrame(() => {
+      rowRefs.current[rowId]?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      });
+      setHighlightedId(rowId);
+      window.setTimeout(() => {
+        setHighlightedId((current) => (current === rowId ? null : current));
+      }, 2000);
+    });
+  }, []);
+
+  const handleJump = useCallback(
+    (rowId: string) => {
+      setJumpToId(rowId);
+      scrollToRow(rowId);
+    },
+    [scrollToRow],
+  );
+
+  const setRowRef = useCallback((rowId: string, el: HTMLTableRowElement | null) => {
+    rowRefs.current[rowId] = el;
+  }, []);
+
+  return { jumpToId, highlightedId, handleJump, setRowRef };
+};
 
 const createEmptySupplierRow = (): SupplierRow => ({
   id: createRowId(),
@@ -2405,7 +2603,8 @@ const PurchaseImportRequestForm = ({
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Items</h3>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            {isEditMode && !isViewMode && inquirySelectedItemOptions.length > 0 && (
+            {inquirySelectedItemOptions.length > 0 && (
+              <div className={cn(isViewMode && "pointer-events-auto")}>
               <SearchableSelect
                 options={inquirySelectedItemOptions}
                 value={jumpToItemRowId}
@@ -2415,6 +2614,7 @@ const PurchaseImportRequestForm = ({
                 className="w-[260px] [&_input]:h-9 [&_input]:text-sm"
                 disabled={loadingForm}
               />
+              </div>
             )}
             <SearchableSelect
               options={brandSelectOptions}
@@ -3023,6 +3223,7 @@ const PurchaseImportRequestView = ({
   const [emailSubject, setEmailSubject] = useState("");
   const [emailMessage, setEmailMessage] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
+  const { jumpToId, highlightedId, handleJump, setRowRef } = useItemRowJump();
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;
 
@@ -3139,6 +3340,7 @@ const PurchaseImportRequestView = ({
         const weight = Number(item.weight || part?.weight || 0);
         return {
           ...item,
+          id: item.id || `${item.partId}-${khiQuantity}-${isbQuantity}`,
           masterPartNo: part?.masterPartNo || "-",
           partNo: part?.partNo || "-",
           description: part?.description || "-",
@@ -3163,6 +3365,20 @@ const PurchaseImportRequestView = ({
         hsCode: partOptions.find((part) => part.id === item.partId)?.hsCode,
       })),
     [itemRows, partOptions, itemSort, itemSortDirection],
+  );
+
+  const viewItemJumpOptions = useMemo(
+    () =>
+      buildItemJumpOptions(
+        sortedItemRows.map((item) => ({
+          id: String(item.id || item.partId),
+          partId: item.partId,
+          masterPartNo: item.masterPartNo,
+          partNo: item.partNo,
+          description: item.description,
+        })),
+      ),
+    [sortedItemRows],
   );
 
   const totals = useMemo(
@@ -3550,6 +3766,12 @@ const PurchaseImportRequestView = ({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Items</h3>
           <div className="flex flex-wrap items-center gap-2">
+            <ItemJumpSelect
+              options={viewItemJumpOptions}
+              value={jumpToId}
+              onValueChange={handleJump}
+              disabled={loading}
+            />
             <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
               <SelectTrigger className="w-[220px]">
                 <SelectValue />
@@ -3604,7 +3826,12 @@ const PurchaseImportRequestView = ({
                 sortedItemRows.map((item, index) => (
                   <tr
                     key={item.id || `${item.partId}-${index}`}
-                    className="border-b"
+                    ref={(el) => setRowRef(String(item.id || item.partId), el)}
+                    className={cn(
+                      "border-b",
+                      highlightedId === String(item.id || item.partId) &&
+                        ITEM_JUMP_HIGHLIGHT_CLASS,
+                    )}
                   >
                     <td className={`${LIST_NUMBER_CELL_CLASS} p-2`}>
                       {getListRowNumber(index, 1, undefined, sortedItemRows.length)}
@@ -3688,6 +3915,8 @@ const PurchaseQuotationForm = ({
   const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
   const [printingComparison, setPrintingComparison] = useState(false);
+  const [unquotedOpen, setUnquotedOpen] = useState(false);
+  const { jumpToId, highlightedId, handleJump, setRowRef } = useItemRowJump();
   const canSaveQuotation = existingQuotationId ? canEdit : canCreate;
 
   const showQuotationComparison =
@@ -3707,6 +3936,25 @@ const PurchaseQuotationForm = ({
         hsCode: part?.hsCode,
       })),
     [rows, partOptions, itemSort, itemSortDirection],
+  );
+
+  const unquotedItems = useMemo(
+    () => sortedRows.filter(isUnquotedQuotationItem),
+    [sortedRows],
+  );
+
+  const quotationItemJumpOptions = useMemo(
+    () =>
+      buildItemJumpOptions(
+        sortedRows.map((row) => ({
+          id: row.rowId,
+          partId: row.partId,
+          masterPartNo: row.masterPartNo,
+          partNo: row.partNo,
+          description: row.description,
+        })),
+      ),
+    [sortedRows],
   );
 
   useEffect(() => {
@@ -4093,6 +4341,41 @@ const PurchaseQuotationForm = ({
     });
   };
 
+  const handlePrintUnquotedItems = () => {
+    if (!context) return;
+    const started = printPurchaseImportUnquotedItems({
+      detail: {
+        requestNo: context.requestNo,
+        requestDate: context.requestDate,
+        quotationNo: quotationNo || context.quotationNo,
+        quotationDate,
+        supplierName: context.supplier?.name,
+        currency,
+      },
+      itemRows: unquotedItems.map((row) => ({
+        masterPartNo: row.masterPartNo,
+        partNo: row.partNo,
+        description: row.description,
+        brand: row.brand,
+        requestQty: row.demandQuantity,
+        quotationQty: row.quotationQuantity,
+        lastFcRate: row.lastFcRate,
+      })),
+    });
+    if (!started) {
+      toast({
+        title: "Print blocked",
+        description: "Allow pop-ups for this site and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "Print Started",
+      description: "Unquoted items PDF is being generated...",
+    });
+  };
+
   const handlePrintComparisonPdf = async () => {
     if (!context || !showQuotationComparison) return;
     setPrintingComparison(true);
@@ -4203,8 +4486,15 @@ const PurchaseQuotationForm = ({
       const res = existingQuotationId
         ? await apiClient.updatePurchaseQuotation(existingQuotationId, payload)
         : await apiClient.createPurchaseQuotation(requestId, payload);
+      const savedId = String((res as any)?.data?.id || existingQuotationId || "").trim();
       const quotationNoSaved =
         (res as any)?.data?.quotationNo || trimmedQuotationNo || context?.quotationNo;
+      if (savedId) {
+        setExistingQuotationId(savedId);
+      }
+      if (quotationNoSaved) {
+        setQuotationNo(quotationNoSaved);
+      }
       toast({
         title: existingQuotationId ? "Quotation updated" : "Quotation saved",
         description: quotationNoSaved
@@ -4235,6 +4525,18 @@ const PurchaseQuotationForm = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {existingQuotationId ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setUnquotedOpen(true)}
+              disabled={loading || !context}
+            >
+              Unquoted Items
+              {unquotedItems.length > 0 ? ` (${unquotedItems.length})` : ""}
+            </Button>
+          ) : null}
           {canPrint && showQuotationComparison ? (
             <PrintPdfButton
               onPrint={() => {
@@ -4324,6 +4626,12 @@ const PurchaseQuotationForm = ({
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">Items</h3>
             <div className="flex items-center gap-2">
+              <ItemJumpSelect
+                options={quotationItemJumpOptions}
+                value={jumpToId}
+                onValueChange={handleJump}
+                disabled={loading || saving}
+              />
               <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
                 <SelectTrigger className="w-[220px]">
                   <SelectValue />
@@ -4385,7 +4693,13 @@ const PurchaseQuotationForm = ({
                   const calc = calculations.find((item) => item.rowId === row.rowId);
                   return (
                     <Fragment key={`${row.rowId}-${row.partId}`}>
-                    <tr className="border-b hover:bg-muted/20">
+                    <tr
+                      ref={(el) => setRowRef(row.rowId, el)}
+                      className={cn(
+                        "border-b hover:bg-muted/20",
+                        highlightedId === row.rowId && ITEM_JUMP_HIGHLIGHT_CLASS,
+                      )}
+                    >
                       <td className="p-2 text-center text-muted-foreground tabular-nums">
                         {index + 1}
                       </td>
@@ -4634,7 +4948,7 @@ const PurchaseQuotationForm = ({
                   <td className="p-2" />
                   <td className="p-2" />
                   <td className="p-2" />
-                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(quotationTotals.fcAmount)}</td>
+                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFcTotal(quotationTotals.fcAmount)}</td>
                   <td className="p-2" />
                   <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.lcAmount)}</td>
                   <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
@@ -4660,6 +4974,23 @@ const PurchaseQuotationForm = ({
           </Button>
         )}
       </div>
+
+      <UnquotedItemsDialog
+        open={unquotedOpen}
+        onOpenChange={setUnquotedOpen}
+        items={unquotedItems.map((row) => ({
+          key: row.rowId,
+          masterPartNo: row.masterPartNo,
+          partNo: row.partNo,
+          description: row.description,
+          brand: row.brand,
+          demandQuantity: row.demandQuantity,
+          quotationQuantity: row.quotationQuantity,
+          lastFcRate: row.lastFcRate,
+        }))}
+        canPrint={canPrint}
+        onPrint={handlePrintUnquotedItems}
+      />
     </div>
   );
 };
@@ -4692,6 +5023,7 @@ const PurchaseQuotationRevisionForm = ({
   const [partOptions, setPartOptions] = useState<PartOption[]>([]);
   const [itemSort, setItemSort] = useState<InquiryItemSort>("alphabetical");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
+  const { jumpToId, highlightedId, handleJump, setRowRef } = useItemRowJump();
 
   const sortedRows = useMemo(
     () =>
@@ -4702,6 +5034,20 @@ const PurchaseQuotationRevisionForm = ({
         hsCode: part?.hsCode,
       })),
     [rows, partOptions, itemSort, itemSortDirection],
+  );
+
+  const revisionItemJumpOptions = useMemo(
+    () =>
+      buildItemJumpOptions(
+        sortedRows.map((row) => ({
+          id: row.rowId,
+          partId: row.partId,
+          masterPartNo: row.masterPartNo,
+          partNo: row.partNo,
+          description: row.description,
+        })),
+      ),
+    [sortedRows],
   );
 
   useEffect(() => {
@@ -5145,6 +5491,12 @@ const PurchaseQuotationRevisionForm = ({
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">Items</h3>
             <div className="flex items-center gap-2">
+              <ItemJumpSelect
+                options={revisionItemJumpOptions}
+                value={jumpToId}
+                onValueChange={handleJump}
+                disabled={loading || saving}
+              />
               <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
                 <SelectTrigger className="w-[220px]">
                   <SelectValue />
@@ -5199,7 +5551,13 @@ const PurchaseQuotationRevisionForm = ({
                   const calc = calculations.find((item) => item.rowId === row.rowId);
                   return (
                     <Fragment key={`${row.rowId}-${row.partId}`}>
-                    <tr className="border-b hover:bg-muted/20">
+                    <tr
+                      ref={(el) => setRowRef(row.rowId, el)}
+                      className={cn(
+                        "border-b hover:bg-muted/20",
+                        highlightedId === row.rowId && ITEM_JUMP_HIGHLIGHT_CLASS,
+                      )}
+                    >
                       <td className="p-2 text-center text-muted-foreground tabular-nums">
                         {index + 1}
                       </td>
@@ -5373,11 +5731,11 @@ const PurchaseQuotationRevisionForm = ({
                   <td className="p-2" />
                   <td className="p-2" />
                   <td className="p-2" />
-                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(quotationTotals.fcAmount)}</td>
+                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFcTotal(quotationTotals.fcAmount)}</td>
                   <td className="p-2" />
                   <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.lcAmount)}</td>
                   <td className="p-2" />
-                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(quotationTotals.revisedFcAmount)}</td>
+                  <td className={`p-2 text-right ${fcValueClass()}`}>{formatFcTotal(quotationTotals.revisedFcAmount)}</td>
                   <td className="p-2" />
                   <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.revisedLcAmount)}</td>
                   <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
@@ -5451,6 +5809,19 @@ const PurchaseInquiryListPanel = ({
   const [filterPartReference, setFilterPartReference] = useState("");
   const [printingRequestId, setPrintingRequestId] = useState<string | null>(null);
   const [comparingRequestId, setComparingRequestId] = useState<string | null>(null);
+  const [unquotedOpen, setUnquotedOpen] = useState(false);
+  const [loadingUnquotedRequestId, setLoadingUnquotedRequestId] = useState<string | null>(
+    null,
+  );
+  const [unquotedItems, setUnquotedItems] = useState<UnquotedItemView[]>([]);
+  const [unquotedPrintDetail, setUnquotedPrintDetail] = useState<{
+    requestNo?: string | null;
+    requestDate?: string | Date | null;
+    quotationNo?: string | null;
+    quotationDate?: string | Date | null;
+    supplierName?: string | null;
+    currency?: string | null;
+  } | null>(null);
   const [supplierFilterOptions, setSupplierFilterOptions] = useState<
     Array<{ value: string; label: string }>
   >([]);
@@ -5819,6 +6190,85 @@ const PurchaseInquiryListPanel = ({
     }
   };
 
+  const handleOpenUnquotedItems = async (requestId: string) => {
+    setLoadingUnquotedRequestId(requestId);
+    try {
+      const res = await apiClient.getPurchaseQuotationContext(requestId);
+      const data = (res as any)?.data as PurchaseQuotationContextPayload | undefined;
+      if (!data?.existingQuotationId) {
+        toast({
+          title: "No quotation saved",
+          description: "Save a quotation first to view unquoted items.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const items = (Array.isArray(data.items) ? data.items : [])
+        .filter(isUnquotedQuotationItem)
+        .map((item, index) => ({
+          key: `${item.partId || "item"}-${index}`,
+          masterPartNo: item.masterPartNo,
+          partNo: item.partNo,
+          description: item.description,
+          brand: item.brand,
+          demandQuantity: Number(item.demandQuantity || 0),
+          quotationQuantity: Number(item.quotationQuantity ?? item.demandQuantity ?? 0),
+          lastFcRate: Number(item.lastFcRate || 0),
+        }));
+
+      setUnquotedItems(items);
+      setUnquotedPrintDetail({
+        requestNo: data.requestNo,
+        requestDate: data.requestDate,
+        quotationNo: data.quotationNo,
+        quotationDate: data.quotationDate,
+        supplierName: data.supplier?.name,
+        currency: data.currency || data.defaultCurrency || data.supplier?.currency,
+      });
+      setUnquotedOpen(true);
+    } catch (error: any) {
+      toast({
+        title: "Failed to load unquoted items",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not load items without an FC rate.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingUnquotedRequestId(null);
+    }
+  };
+
+  const handlePrintUnquotedItems = () => {
+    if (!unquotedPrintDetail) return;
+    const started = printPurchaseImportUnquotedItems({
+      detail: unquotedPrintDetail,
+      itemRows: unquotedItems.map((row) => ({
+        masterPartNo: row.masterPartNo,
+        partNo: row.partNo,
+        description: row.description,
+        brand: row.brand,
+        requestQty: row.demandQuantity,
+        quotationQty: row.quotationQuantity,
+        lastFcRate: row.lastFcRate,
+      })),
+    });
+    if (!started) {
+      toast({
+        title: "Print blocked",
+        description: "Allow pop-ups for this site and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "Print Started",
+      description: "Unquoted items PDF is being generated...",
+    });
+  };
+
   return (
     <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4">
       {mode === "quotation" && (
@@ -6083,6 +6533,20 @@ const PurchaseInquiryListPanel = ({
                               Quotation
                             </Button>
                             )}
+                            {hasQuotation ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={loadingUnquotedRequestId === row.id}
+                                title="Items with no FC rate"
+                                onClick={() => void handleOpenUnquotedItems(row.id)}
+                              >
+                                {loadingUnquotedRequestId === row.id
+                                  ? "Loading..."
+                                  : "Unquoted Items"}
+                              </Button>
+                            ) : null}
                             <Button
                               type="button"
                               size="sm"
@@ -6150,6 +6614,15 @@ const PurchaseInquiryListPanel = ({
           }}
         />
       )}
+
+      <UnquotedItemsDialog
+        open={unquotedOpen}
+        onOpenChange={setUnquotedOpen}
+        items={unquotedItems}
+        loading={Boolean(loadingUnquotedRequestId)}
+        canPrint={canPrint}
+        onPrint={handlePrintUnquotedItems}
+      />
     </div>
   );
 };
@@ -6818,7 +7291,7 @@ const PurchaseQuotationListPanel = ({
                     <td className="p-2 font-medium">{consigneeLabel}</td>
                     <td className="p-2 text-right">{itemRows.length}</td>
                     <td className={`p-2 text-right ${fcValueClass()}`}>
-                      {Number(row.fcTotal || 0).toFixed(2)} {row.currency || ""}
+                      {formatFcTotal(row.fcTotal || 0)} {row.currency || ""}
                     </td>
                     <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(Number(row.lcTotal || 0))}</td>
                     {!isConfirmedView && (
@@ -7172,9 +7645,23 @@ const PurchaseQuotationConfirmForm = ({
   >([]);
   const [selectedCombineIds, setSelectedCombineIds] = useState<string[]>([]);
   const [loadingCombineId, setLoadingCombineId] = useState<string | null>(null);
+  const { jumpToId, highlightedId, handleJump, setRowRef } = useItemRowJump();
 
   const isRevised = isQuotationRevised(detail);
   const isCombinedView = selectedCombineIds.length > 0;
+  const confirmItemJumpOptions = useMemo(
+    () =>
+      buildItemJumpOptions(
+        rows.map((row) => ({
+          id: row.rowId,
+          partId: row.partId,
+          masterPartNo: row.masterPartNo,
+          partNo: row.partNo,
+          description: row.description,
+        })),
+      ),
+    [rows],
+  );
 
   useEffect(() => {
     const loadQuotation = async () => {
@@ -7563,11 +8050,19 @@ const PurchaseQuotationConfirmForm = ({
 
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Items</h3>
-        {isRevised ? (
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Revised rates
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <ItemJumpSelect
+            options={confirmItemJumpOptions}
+            value={jumpToId}
+            onValueChange={handleJump}
+            disabled={loading || saving}
+          />
+          {isRevised ? (
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Revised rates
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-md border border-border">
@@ -7619,7 +8114,14 @@ const PurchaseQuotationConfirmForm = ({
                 const splitInputClass = splitMismatch ? "border-destructive focus-visible:ring-destructive" : "";
 
                 return (
-                <tr key={row.rowId} className="border-b hover:bg-muted/20">
+                <tr
+                  key={row.rowId}
+                  ref={(el) => setRowRef(row.rowId, el)}
+                  className={cn(
+                    "border-b hover:bg-muted/20",
+                    highlightedId === row.rowId && ITEM_JUMP_HIGHLIGHT_CLASS,
+                  )}
+                >
                   <td className="p-2 text-center text-muted-foreground tabular-nums">
                     {index + 1}
                   </td>
@@ -7736,7 +8238,7 @@ const PurchaseQuotationConfirmForm = ({
                 <td className="p-2 text-right">{quotationTotals.confirmQty}</td>
                 <td className="p-2" />
                 <td className="p-2" />
-                <td className={`p-2 text-right ${fcValueClass()}`}>{formatFc(quotationTotals.fcAmount)}</td>
+                <td className={`p-2 text-right ${fcValueClass()}`}>{formatFcTotal(quotationTotals.fcAmount)}</td>
                 <td className="p-2" />
                 <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.lcAmount)}</td>
                 <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
@@ -9665,7 +10167,7 @@ const PurchaseOrderTab = ({
                   <div>
                     <span className={fcHeaderClass}>FC Total:</span>{" "}
                     <span className={fcValueClass()}>
-                      {formatFc(viewOrder.fcTotal || viewOrder.fc_total)}
+                      {formatFcTotal(viewOrder.fcTotal || viewOrder.fc_total)}
                     </span>
                   </div>
                 ) : null}
@@ -9790,17 +10292,19 @@ const PurchaseOrderTab = ({
                           <p className="text-xs font-medium text-muted-foreground">
                             {section.title}
                           </p>
-                          {section.fields.map((field) => (
-                            <div
-                              key={field.key}
-                              className="flex items-center justify-between gap-2"
-                            >
-                              <span className="text-xs w-20 shrink-0">{field.label}</span>
-                              <span className="h-8 min-w-[100px] px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
-                                {formatImportPoAmount(Number(viewExpenses[field.key] || 0))}
-                              </span>
-                            </div>
-                          ))}
+                          <div className="inline-flex flex-col gap-2">
+                            {section.fields.map((field) => (
+                              <div
+                                key={field.key}
+                                className="flex items-center gap-2"
+                              >
+                                <span className="text-xs w-20 shrink-0">{field.label}</span>
+                                <span className="h-8 w-[110px] shrink-0 px-2 flex items-center justify-end rounded-md border bg-muted/40 text-xs tabular-nums">
+                                  {formatImportPoAmount(Number(viewExpenses[field.key] || 0))}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -9900,7 +10404,7 @@ const PurchaseOrderTab = ({
                       );
                       const backQty = Number(item.backQty ?? item.back_qty ?? 0);
                       const fcRate = Number(item.fcRate ?? item.fc_rate ?? 0);
-                      const fcAmount = roundImportMoney(
+                      const fcAmount = roundFc(
                         item.fcAmount ??
                           item.fc_amount ??
                           fcRate * orderQty,
@@ -10416,7 +10920,7 @@ const PurchaseOrderTab = ({
                             </td>
                             <td className="p-2" />
                             <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
-                              {formatFc(receiveTotals.fcAmount)}
+                              {formatFcTotal(receiveTotals.fcAmount)}
                             </td>
                             <td className="p-2" />
                             <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
@@ -10461,7 +10965,7 @@ const PurchaseOrderTab = ({
                             <td className="p-2" colSpan={2} />
                             <td className="p-2" />
                             <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
-                              {formatFc(receiveTotals.fcAmount)}
+                              {formatFcTotal(receiveTotals.fcAmount)}
                             </td>
                             <td className="p-2" />
                             <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
@@ -10625,30 +11129,32 @@ const PurchaseOrderTab = ({
                           <p className="text-xs font-medium text-muted-foreground">
                             {section.title}
                           </p>
-                          {section.fields.map((field) => (
-                            <div
-                              key={field.key}
-                              className="flex items-center gap-2"
-                            >
-                              <Label className="text-xs font-normal w-20 shrink-0">
-                                {field.label}
-                              </Label>
-                              <Input
-                                type="number"
-                                min={0}
-                                step={field.step || "1"}
-                                className="h-8 w-full max-w-[140px] text-right text-xs"
-                                value={
-                                  importExpenses[field.key] === 0
-                                    ? ""
-                                    : importExpenses[field.key]
-                                }
-                                onChange={(event) =>
-                                  updateImportExpense(field.key, event.target.value)
-                                }
-                              />
-                            </div>
-                          ))}
+                          <div className="inline-flex flex-col gap-2">
+                            {section.fields.map((field) => (
+                              <div
+                                key={field.key}
+                                className="flex items-center gap-2"
+                              >
+                                <Label className="text-xs font-normal w-20 shrink-0">
+                                  {field.label}
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step={field.step || "1"}
+                                  className="h-8 w-[110px] shrink-0 text-right text-xs"
+                                  value={
+                                    importExpenses[field.key] === 0
+                                      ? ""
+                                      : importExpenses[field.key]
+                                  }
+                                  onChange={(event) =>
+                                    updateImportExpense(field.key, event.target.value)
+                                  }
+                                />
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))
                     : null}

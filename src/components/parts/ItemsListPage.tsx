@@ -904,6 +904,7 @@ export const ItemsListPage = ({
               partData.origin && partData.origin.trim()
                 ? partData.origin.trim()
                 : null,
+            remarks: partData.remarks?.trim() ? partData.remarks.trim() : null,
             status: partData.status === "A" ? "active" : "inactive",
             models:
               partData.modelQuantities

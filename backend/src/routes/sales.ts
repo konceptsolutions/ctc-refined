@@ -998,7 +998,10 @@ router.get("/quotations", async (req: Request, res: Response) => {
     const { status, search } = req.query;
     const where: any = {};
 
-    if (status && status !== "all") {
+    if (status === "open") {
+      where.invoiceId = null;
+      where.status = { not: "converted" };
+    } else if (status && status !== "all") {
       where.status = status;
     }
 

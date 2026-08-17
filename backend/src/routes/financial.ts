@@ -8,6 +8,133 @@ function voucherNumberSortKey(voucherNo: string): number {
   return match ? parseInt(match[1], 10) : 0;
 }
 
+type LedgerContactPerson = {
+  name?: string | null;
+  designation?: string | null;
+  contactNumber?: string | null;
+};
+
+export type LedgerPartyDetails = {
+  type: "customer" | "supplier";
+  name: string;
+  contactPerson: string;
+  contactPersons: LedgerContactPerson[];
+  address: string;
+  phone: string;
+};
+
+const PARTY_CUSTOMER_SELECT = {
+  id: true,
+  name: true,
+  address: true,
+  contactNo: true,
+  cellNumber: true,
+  contactPersons: true,
+} as const;
+
+const PARTY_SUPPLIER_SELECT = {
+  id: true,
+  name: true,
+  companyName: true,
+  address: true,
+  city: true,
+  state: true,
+  country: true,
+  zipCode: true,
+  phone: true,
+  cellNumber: true,
+  contactPerson: true,
+  contactPersons: true,
+} as const;
+
+function joinNonEmpty(parts: Array<string | null | undefined>, separator = ", ") {
+  return parts.map((part) => String(part || "").trim()).filter(Boolean).join(separator);
+}
+
+function normalizeContactPersons(
+  persons: unknown,
+  fallbackName?: string | null,
+): LedgerContactPerson[] {
+  const list = Array.isArray(persons) ? (persons as LedgerContactPerson[]) : [];
+  const normalized = list
+    .map((person) => ({
+      name: String(person?.name || "").trim(),
+      designation: String(person?.designation || "").trim(),
+      contactNumber: String(person?.contactNumber || "").trim(),
+    }))
+    .filter((person) => person.name || person.designation || person.contactNumber);
+  if (normalized.length > 0) return normalized;
+  const fallback = String(fallbackName || "").trim();
+  return fallback ? [{ name: fallback, designation: "", contactNumber: "" }] : [];
+}
+
+function formatContactPersons(
+  persons: unknown,
+  fallbackName?: string | null,
+): string {
+  return normalizeContactPersons(persons, fallbackName)
+    .map((person) =>
+      joinNonEmpty([person.name, person.designation, person.contactNumber], " — "),
+    )
+    .filter(Boolean)
+    .join("; ");
+}
+
+function formatPhoneMobile(
+  phone?: string | null,
+  mobile?: string | null,
+): string {
+  const phoneValue = String(phone || "").trim();
+  const mobileValue = String(mobile || "").trim();
+  if (phoneValue && mobileValue && phoneValue !== mobileValue) {
+    return `${phoneValue} / ${mobileValue}`;
+  }
+  return phoneValue || mobileValue;
+}
+
+function buildPartyFromCustomer(customer: any): LedgerPartyDetails | null {
+  if (!customer) return null;
+  return {
+    type: "customer",
+    name: String(customer.name || "").trim(),
+    contactPerson: formatContactPersons(customer.contactPersons),
+    contactPersons: normalizeContactPersons(customer.contactPersons),
+    address: String(customer.address || "").trim(),
+    phone: formatPhoneMobile(customer.contactNo, customer.cellNumber),
+  };
+}
+
+function buildPartyFromSupplier(supplier: any): LedgerPartyDetails | null {
+  if (!supplier) return null;
+  return {
+    type: "supplier",
+    name: String(supplier.companyName || supplier.name || "").trim(),
+    contactPerson: formatContactPersons(
+      supplier.contactPersons,
+      supplier.contactPerson,
+    ),
+    contactPersons: normalizeContactPersons(
+      supplier.contactPersons,
+      supplier.contactPerson,
+    ),
+    address: joinNonEmpty([
+      supplier.address,
+      supplier.city,
+      supplier.state,
+      supplier.country,
+      supplier.zipCode,
+    ]),
+    phone: formatPhoneMobile(supplier.phone, supplier.cellNumber),
+  };
+}
+
+function buildPartyFromAccount(account: any): LedgerPartyDetails | null {
+  return (
+    buildPartyFromCustomer(account?.Customer) ||
+    buildPartyFromSupplier(account?.Supplier)
+  );
+}
+
 /** Keep all lines of one voucher together: date → voucher no → line order. */
 function compareLedgerVoucherEntries(
   a: { entryDate: Date | string; entryNo: string; sortOrder: number },
@@ -740,6 +867,8 @@ router.get("/ledgers", async (req: Request, res: Response) => {
             MainGroup: true,
           },
         },
+        Customer: { select: PARTY_CUSTOMER_SELECT },
+        Supplier: { select: PARTY_SUPPLIER_SELECT },
       },
       orderBy: { code: "asc" },
     });
@@ -892,8 +1021,24 @@ router.get("/ledgers", async (req: Request, res: Response) => {
     const endIndex = startIndex + limitNum;
     const paginatedLedger = ledgerEntries.slice(startIndex, endIndex);
 
+    const selectedAccount = account
+      ? accounts.find((acc: any) => acc.id === String(account)) || accounts[0]
+      : null;
+    const closingBalance =
+      ledgerEntries.length > 0
+        ? Number(ledgerEntries[ledgerEntries.length - 1]?.balance || 0)
+        : Number(selectedAccount?.currentBalance || selectedAccount?.openingBalance || 0);
+
     res.json({
       data: paginatedLedger,
+      meta: {
+        party: selectedAccount ? buildPartyFromAccount(selectedAccount) : null,
+        currentBalance: closingBalance,
+        accountId: selectedAccount?.id || null,
+        accountName: selectedAccount
+          ? `${selectedAccount.code}-${selectedAccount.name}`
+          : null,
+      },
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -1049,9 +1194,7 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
         Subgroup: { include: { MainGroup: true } },
         Supplier: {
           select: {
-            id: true,
-            companyName: true,
-            name: true,
+            ...PARTY_SUPPLIER_SELECT,
             currencyName: true,
             type: true,
           },
@@ -1216,6 +1359,9 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
           (acc as any).Supplier?.name ||
           acc.name,
         currencyName,
+        party: buildPartyFromAccount(acc),
+        currentBalance: runningBalanceLc,
+        currentBalanceFc: runningBalanceFc,
       },
       pagination: {
         page: pageNum,

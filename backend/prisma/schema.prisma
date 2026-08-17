@@ -495,6 +495,7 @@ model Part {
   type                          String                          @default("single")
   imageP1                       String?
   imageP2                       String?
+  remarks                       String?
   status                        String                          @default("active")
   createdAt                     DateTime                        @default(now())
   updatedAt                     DateTime                        @updatedAt

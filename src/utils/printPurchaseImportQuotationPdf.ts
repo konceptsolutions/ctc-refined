@@ -325,12 +325,12 @@ export const printPurchaseImportQuotation = ({
             if (isRevised) {
               return [
                 ...base,
-                num(item.fcRate, 2),
-                num(item.fcAmount, 2),
+                num(item.fcRate, 4),
+                num(item.fcAmount, 4),
                 num(item.lcRate, 0),
                 num(item.lcAmount, 0),
-                num(item.revisedFcRate, 2),
-                num(item.revisedFcAmount, 2),
+                num(item.revisedFcRate, 4),
+                num(item.revisedFcAmount, 4),
                 num(item.revisedLcRate, 0),
                 num(item.revisedLcAmount, 0),
                 num(item.totalWeight),
@@ -339,9 +339,9 @@ export const printPurchaseImportQuotation = ({
 
             return [
               ...base,
-              num(item.lastFcRate, 2),
-              num(item.fcRate, 2),
-              num(item.fcAmount, 2),
+              num(item.lastFcRate, 4),
+              num(item.fcRate, 4),
+              num(item.fcAmount, 4),
               num(item.lcRate, 0),
               num(item.lcAmount, 0),
               num(item.totalWeight),
@@ -471,6 +471,138 @@ export const printPurchaseImportQuotation = ({
   doc.setFontSize(8);
   doc.setTextColor(102, 102, 102);
   doc.text("Computer-generated document.", marginX, finalY);
+
+  return openPdfPrintDialog(doc);
+};
+
+export type PurchaseImportUnquotedPrintItem = {
+  masterPartNo?: string | null;
+  partNo?: string | null;
+  description?: string | null;
+  brand?: string | null;
+  requestQty?: number | null;
+  quotationQty?: number | null;
+  lastFcRate?: number | null;
+};
+
+export const printPurchaseImportUnquotedItems = ({
+  detail,
+  itemRows,
+}: {
+  detail: PurchaseImportQuotationPrintDetail;
+  itemRows: PurchaseImportUnquotedPrintItem[];
+}): boolean => {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 8;
+  const contentWidth = pageWidth - marginX * 2;
+  const printedOn = formatPrintDateTime(new Date());
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(17, 17, 17);
+  doc.text("Unquoted Items", marginX, 14);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(102, 102, 102);
+  doc.text(printedOn, pageWidth - marginX, 14, { align: "right" });
+
+  const cards: Array<{ label: string; value: string }> = [
+    { label: "Inquiry No", value: text(detail.requestNo || "-") },
+    { label: "Inquiry Date", value: toInputDate(detail.requestDate) || "-" },
+    { label: "Quotation No", value: text(detail.quotationNo || "-") },
+    { label: "Quotation Date", value: toInputDate(detail.quotationDate) || "-" },
+    { label: "Supplier", value: text(detail.supplierName || "-") },
+    { label: "Currency", value: text(detail.currency || "-") },
+    { label: "Items without FC Rate", value: String(itemRows.length) },
+    { label: "Upto Date", value: formatPrintDate(new Date()) },
+  ];
+
+  const gap = 2.5;
+  const cols = 4;
+  const cardW = (contentWidth - gap * (cols - 1)) / cols;
+  const cardH = 12;
+  const cardY = 18;
+
+  cards.forEach((card, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const x = marginX + col * (cardW + gap);
+    const y = cardY + row * (cardH + gap);
+    doc.setDrawColor(220, 220, 220);
+    doc.setFillColor(250, 250, 250);
+    doc.roundedRect(x, y, cardW, cardH, 1, 1, "FD");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(102, 102, 102);
+    doc.text(card.label, x + 2.5, y + 4);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(17, 17, 17);
+    doc.text(card.value, x + 2.5, y + 9);
+  });
+
+  const cursorY = cardY + Math.ceil(cards.length / cols) * (cardH + gap) + 2;
+
+  autoTable(doc, {
+    startY: cursorY,
+    margin: { left: marginX, right: marginX },
+    head: [["#", "Item", "Brand", "Req Qty", "Quot Qty", "Last FC Rate", "FC Rate"]],
+    body:
+      itemRows.length === 0
+        ? [["", "No unquoted items", "", "", "", "", ""]]
+        : itemRows.map((item, index) => [
+            String(index + 1),
+            `${text(item.masterPartNo || "-")} | ${text(item.partNo || "-")}\n${text(item.description || "-")}`,
+            text(item.brand || "-"),
+            String(Number(item.requestQty || 0)),
+            String(Number(item.quotationQty || 0)),
+            Number(item.lastFcRate || 0) > 0 ? num(item.lastFcRate, 4) : "-",
+            "-",
+          ]),
+    styles: {
+      font: "helvetica",
+      fontSize: 8,
+      cellPadding: 1.6,
+      overflow: "linebreak",
+    },
+    headStyles: {
+      fillColor: [17, 17, 17],
+      textColor: 255,
+      fontStyle: "bold",
+    },
+    columnStyles: {
+      0: { cellWidth: 10 },
+      1: { cellWidth: "auto" },
+      2: { cellWidth: 28 },
+      3: { halign: "right", cellWidth: 22 },
+      4: { halign: "right", cellWidth: 22 },
+      5: { halign: "right", cellWidth: 28 },
+      6: { halign: "right", cellWidth: 24 },
+    },
+    didParseCell: (data) => {
+      if (itemRows.length === 0 && data.section === "body" && data.column.index === 1) {
+        data.cell.styles.halign = "center";
+        data.cell.styles.textColor = [102, 102, 102];
+      }
+      if (data.section === "head" && data.column.index >= 3) {
+        data.cell.styles.halign = "right";
+      }
+      if (data.section === "body" && data.column.index >= 5) {
+        applyPdfFcLcColors(data, [5, 6], []);
+      }
+    },
+  });
+
+  const finalY =
+    ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable
+      ?.finalY || cursorY) + 8;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(102, 102, 102);
+  doc.text("Items listed have no FC rate entered.", marginX, finalY);
 
   return openPdfPrintDialog(doc);
 };

@@ -40,6 +40,10 @@ import {
   lcValueClass,
 } from "@/utils/accountingColors";
 import { VoucherViewDialog } from "@/components/vouchers/VoucherViewDialog";
+import {
+  PartyLedgerHeader,
+  type LedgerPartyDetails,
+} from "@/components/financial/PartyLedgerHeader";
 
 type CurrencyMode = "local" | "foreign";
 
@@ -87,6 +91,9 @@ export const InternationalSupplierLedgersTab = () => {
     id?: string | null;
     number?: string | null;
   } | null>(null);
+  const [partyDetails, setPartyDetails] = useState<LedgerPartyDetails | null>(null);
+  const [currentBalanceLc, setCurrentBalanceLc] = useState<number | null>(null);
+  const [currentBalanceFc, setCurrentBalanceFc] = useState<number | null>(null);
 
   useEffect(() => {
     const loadAccounts = async () => {
@@ -204,6 +211,18 @@ export const InternationalSupplierLedgersTab = () => {
 
       setEntries(response.data || []);
       setCurrencyName(response.meta?.currencyName || "USD");
+      setPartyDetails(response.meta?.party || null);
+      const rows = response.data || [];
+      setCurrentBalanceLc(
+        rows.length > 0
+          ? Number(rows[rows.length - 1]?.balance ?? response.meta?.currentBalance ?? 0)
+          : Number(response.meta?.currentBalance ?? 0),
+      );
+      setCurrentBalanceFc(
+        rows.length > 0
+          ? Number(rows[rows.length - 1]?.balanceFc ?? response.meta?.currentBalanceFc ?? 0)
+          : Number(response.meta?.currentBalanceFc ?? 0),
+      );
       setSelectedEntries([]);
     } catch (error: any) {
       toast({
@@ -274,6 +293,11 @@ export const InternationalSupplierLedgersTab = () => {
       accountLabel: selectedAccountLabel || undefined,
       subtitle: `Currency mode: ${modeLabel}`,
       showExchangeRate: currencyMode === "foreign",
+      party: partyDetails,
+      currentBalance:
+        currencyMode === "foreign" ? currentBalanceFc : currentBalanceLc,
+      balanceLabel:
+        currencyMode === "foreign" ? `Balance (${currencyName})` : "Balance (LC)",
       entries: entries.map((entry) => ({
         tId: entry.tId,
         voucherNo: entry.voucherNo,
@@ -318,7 +342,13 @@ export const InternationalSupplierLedgersTab = () => {
             <SearchableSelect
               options={accountOptions}
               value={selectedAccount}
-              onValueChange={setSelectedAccount}
+              onValueChange={(val) => {
+                setSelectedAccount(val);
+                setPartyDetails(null);
+                setCurrentBalanceLc(null);
+                setCurrentBalanceFc(null);
+                setEntries([]);
+              }}
               placeholder="Select international supplier account..."
             />
           </div>
@@ -394,6 +424,15 @@ export const InternationalSupplierLedgersTab = () => {
             Search
           </Button>
         </div>
+
+        <PartyLedgerHeader
+          party={partyDetails}
+          balance={currencyMode === "foreign" ? currentBalanceFc : currentBalanceLc}
+          balanceLabel={
+            currencyMode === "foreign" ? `Balance (${currencyName})` : "Balance (LC)"
+          }
+          formatBalance={formatAmount}
+        />
 
         {currencyMode === "foreign" ? (
           <p className="text-xs text-muted-foreground">

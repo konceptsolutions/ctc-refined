@@ -31,6 +31,10 @@ import {
   drHeaderClass,
   drValueClass,
 } from "@/utils/accountingColors";
+import {
+  PartyLedgerHeader,
+  type LedgerPartyDetails,
+} from "@/components/financial/PartyLedgerHeader";
 
 interface LedgerEntry {
   id: number | string;
@@ -81,6 +85,8 @@ export const SupplierCustomerComparisonTab = () => {
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [supplierEntries, setSupplierEntries] = useState<LedgerEntry[]>([]);
   const [customerEntries, setCustomerEntries] = useState<LedgerEntry[]>([]);
+  const [supplierParty, setSupplierParty] = useState<LedgerPartyDetails | null>(null);
+  const [customerParty, setCustomerParty] = useState<LedgerPartyDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [viewingVoucher, setViewingVoucher] = useState<{
     id?: string | null;
@@ -147,7 +153,10 @@ export const SupplierCustomerComparisonTab = () => {
     if ((response as any)?.error) {
       throw new Error((response as any).error);
     }
-    return ((response as any)?.data || []) as LedgerEntry[];
+    return {
+      entries: ((response as any)?.data || []) as LedgerEntry[],
+      party: ((response as any)?.meta?.party || null) as LedgerPartyDetails | null,
+    };
   };
 
   const handleSearch = async () => {
@@ -166,8 +175,10 @@ export const SupplierCustomerComparisonTab = () => {
         fetchLedger(supplierAccountId),
         fetchLedger(customerAccountId),
       ]);
-      setSupplierEntries(supplierData);
-      setCustomerEntries(customerData);
+      setSupplierEntries(supplierData.entries);
+      setCustomerEntries(customerData.entries);
+      setSupplierParty(supplierData.party);
+      setCustomerParty(customerData.party);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -183,13 +194,18 @@ export const SupplierCustomerComparisonTab = () => {
     title: string,
     accountLabel: string,
     entries: LedgerEntry[],
+    party: LedgerPartyDetails | null,
+    balance: number,
   ) => (
     <Card className="min-w-0">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">{title}</CardTitle>
-        <p className="text-sm text-muted-foreground truncate">
-          {accountLabel || "No account selected"}
-        </p>
+      <CardHeader className="pb-3 space-y-3">
+        <div>
+          <CardTitle className="text-base">{title}</CardTitle>
+          <p className="text-sm text-muted-foreground truncate">
+            {accountLabel || "No account selected"}
+          </p>
+        </div>
+        <PartyLedgerHeader party={party} balance={balance} />
       </CardHeader>
       <CardContent className="p-0">
         <div className="border-t max-h-[560px] overflow-auto">
@@ -348,8 +364,20 @@ export const SupplierCustomerComparisonTab = () => {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {renderLedgerTable("Supplier Ledger", supplierLabel, supplierEntries)}
-          {renderLedgerTable("Customer Ledger", customerLabel, customerEntries)}
+          {renderLedgerTable(
+            "Supplier Ledger",
+            supplierLabel,
+            supplierEntries,
+            supplierParty,
+            supplierBalance,
+          )}
+          {renderLedgerTable(
+            "Customer Ledger",
+            customerLabel,
+            customerEntries,
+            customerParty,
+            customerBalance,
+          )}
         </div>
 
         <div className="rounded-lg border bg-muted/30 p-4">

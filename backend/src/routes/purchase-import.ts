@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
 import { roundPurchasePrice } from "../utils/purchasePriceRound";
-import { roundFc } from "../utils/fcRound";
+import { roundFc, roundFcTotal } from "../utils/fcRound";
 
 const router = express.Router();
 
@@ -2521,11 +2521,15 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
       return res.status(400).json({ error: "One or more items are invalid." });
     }
 
-    const fcTotal = items.reduce((sum: number, item: any) => sum + Number(item.fcAmount || 0), 0);
+    const fcTotal = roundFcTotal(
+      items.reduce((sum: number, item: any) => sum + Number(item.fcAmount || 0), 0),
+    );
     const lcTotal = items.reduce((sum: number, item: any) => sum + Number(item.lcAmount || 0), 0);
-    const fcRevisedTotal = items.reduce(
-      (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
-      0,
+    const fcRevisedTotal = roundFcTotal(
+      items.reduce(
+        (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
+        0,
+      ),
     );
     const lcRevisedTotal = items.reduce(
       (sum: number, item: any) => sum + Number(item.revisedLcAmount || 0),
@@ -2966,11 +2970,15 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "One or more items are invalid." });
     }
 
-    const fcTotal = items.reduce((sum: number, item: any) => sum + Number(item.fcAmount || 0), 0);
+    const fcTotal = roundFcTotal(
+      items.reduce((sum: number, item: any) => sum + Number(item.fcAmount || 0), 0),
+    );
     const lcTotal = items.reduce((sum: number, item: any) => sum + Number(item.lcAmount || 0), 0);
-    const fcRevisedTotal = items.reduce(
-      (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
-      0,
+    const fcRevisedTotal = roundFcTotal(
+      items.reduce(
+        (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
+        0,
+      ),
     );
     const lcRevisedTotal = items.reduce(
       (sum: number, item: any) => sum + Number(item.revisedLcAmount || 0),
@@ -3121,11 +3129,15 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
       return res.status(400).json({ error: "One or more items are invalid." });
     }
 
-    const fcTotal = items.reduce((sum: number, item: any) => sum + Number(item.fcAmount || 0), 0);
+    const fcTotal = roundFcTotal(
+      items.reduce((sum: number, item: any) => sum + Number(item.fcAmount || 0), 0),
+    );
     const lcTotal = items.reduce((sum: number, item: any) => sum + Number(item.lcAmount || 0), 0);
-    const fcRevisedTotal = items.reduce(
-      (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
-      0,
+    const fcRevisedTotal = roundFcTotal(
+      items.reduce(
+        (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
+        0,
+      ),
     );
     const lcRevisedTotal = items.reduce(
       (sum: number, item: any) => sum + Number(item.revisedLcAmount || 0),
@@ -4029,9 +4041,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       quotation.id,
     );
 
-    const computedFcTotal = items.reduce(
-      (sum, item) => sum + Number(item.fcAmount || 0),
-      0,
+    const computedFcTotal = roundFcTotal(
+      items.reduce((sum, item) => sum + Number(item.fcAmount || 0), 0),
     );
     const statusLower = String(order.status || "").trim().toLowerCase();
     const importSaved =
@@ -4393,7 +4404,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         UPDATE "PurchaseOrder"
         SET
           "conversionRate" = ${conversionRate},
-          "fcTotal" = ${totalFc},
+          "fcTotal" = ${roundFcTotal(totalFc)},
           "totalAmount" = ${totalLc},
           "currency" = ${quotation.currency || (order as any).currency || null},
           "invoiceNo" = ${invoiceNo},

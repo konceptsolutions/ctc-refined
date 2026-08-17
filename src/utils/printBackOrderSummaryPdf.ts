@@ -88,7 +88,10 @@ const qty = (value: unknown) => {
 const rate = (value: unknown) => {
   const n = Number(value || 0);
   if (!Number.isFinite(n) || n === 0) return "-";
-  return n.toFixed(2);
+  return n.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
 };
 
 const openPdfPrintDialog = (doc: jsPDF): boolean => {
