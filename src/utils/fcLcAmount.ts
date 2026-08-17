@@ -21,30 +21,43 @@ export const isExchangeRateTypingValue = (raw: string): boolean => {
   return normalized === "" || /^\d*\.?\d{0,6}$/.test(normalized);
 };
 
+export const parseAmount = (value: unknown): number => {
+  if (value === undefined || value === null) return NaN;
+  const raw = String(value).replace(/,/g, "").trim();
+  if (raw === "") return NaN;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : NaN;
+};
+
 export const lcFromFc = (fc: number | string, rate: number): string => {
-  const n = Number(fc);
+  const raw = String(fc ?? "").replace(/,/g, "").trim();
+  if (raw === "") return "";
+  const n = Number(raw);
   if (!Number.isFinite(n) || rate <= 0) return "";
   return String(Number((n * rate).toFixed(4)));
 };
 
 export const fcFromLc = (lc: number | string, rate: number): string => {
-  const n = Number(lc);
+  const raw = String(lc ?? "").replace(/,/g, "").trim();
+  if (raw === "") return "";
+  const n = Number(raw);
   if (!Number.isFinite(n) || rate <= 0) return "";
   return String(Number((n / rate).toFixed(6)));
 };
 
 /**
  * Prefer LC when present; otherwise use FC.
- * Empty string must not win over a real FC amount (`??` treats "" as valid).
+ * Empty string / 0 must not win over a real FC amount (`??` treats "" as valid).
  */
 export const resolvePostedAmount = (
   preferred: unknown,
   fallback: unknown = 0,
 ): number => {
-  if (preferred !== undefined && preferred !== null && String(preferred).trim() !== "") {
-    const n = Number(preferred);
-    if (Number.isFinite(n)) return n;
+  const preferredNum = parseAmount(preferred);
+  const fallbackNum = parseAmount(fallback);
+  const fallbackSafe = Number.isFinite(fallbackNum) ? fallbackNum : 0;
+  if (Number.isFinite(preferredNum) && !(preferredNum === 0 && fallbackSafe !== 0)) {
+    return preferredNum;
   }
-  const f = Number(fallback);
-  return Number.isFinite(f) ? f : 0;
+  return fallbackSafe;
 };

@@ -7,6 +7,7 @@ import { ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { TransferIn } from "@/components/transfer/TransferIn";
 import { TransferOut } from "@/components/transfer/TransferOut";
 import { usePermissions } from "@/permissions/PermissionsProvider";
+import { getFirstAllowedPath } from "@/permissions/can";
 
 type TransferTab = "transfer-in" | "transfer-out";
 
@@ -35,7 +36,7 @@ const Transfer = () => {
 
   useEffect(() => {
     if (!tabs.length) {
-      navigate("/", { replace: true });
+      navigate(getFirstAllowedPath(), { replace: true });
       return;
     }
     if (!tab || !tabs.some((t) => t.id === tab)) {

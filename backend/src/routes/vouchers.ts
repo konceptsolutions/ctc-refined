@@ -31,6 +31,24 @@ const RECEIPT_KIND_FLOORS: Record<string, number> = {
   cheque: 1000,
 };
 
+function parseVoucherLineAmount(value: unknown): number {
+  if (value === undefined || value === null) return 0;
+  const n = Number(String(value).replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+function voucherEntryDebit(entry: any): number {
+  return parseVoucherLineAmount(
+    entry?.debit ?? entry?.drAmount ?? entry?.drAmountLc,
+  );
+}
+
+function voucherEntryCredit(entry: any): number {
+  return parseVoucherLineAmount(
+    entry?.credit ?? entry?.crAmount ?? entry?.crAmountLc,
+  );
+}
+
 function parseVoucherSequence(
   voucherNumber: string,
   prefix: string,
@@ -611,17 +629,17 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'At least one entry is required' });
     }
 
-    // Validate debit equals credit (coerce so "" / null don't break totals)
+    // Validate debit equals credit (coerce so "" / null / commas don't break totals)
     const calculatedDebit = entries.reduce(
-      (sum: number, e: any) => sum + (Number(e.debit) || 0),
+      (sum: number, e: any) => sum + voucherEntryDebit(e),
       0,
     );
     const calculatedCredit = entries.reduce(
-      (sum: number, e: any) => sum + (Number(e.credit) || 0),
+      (sum: number, e: any) => sum + voucherEntryCredit(e),
       0,
     );
 
-    if (Math.abs(calculatedDebit - calculatedCredit) > 0.01) {
+    if (Math.abs(calculatedDebit - calculatedCredit) > 0.05) {
       return res.status(400).json({
         error: 'Total debit must equal total credit',
         details: { debit: calculatedDebit, credit: calculatedCredit },
@@ -662,8 +680,8 @@ router.post('/', async (req: Request, res: Response) => {
             accountId: entry.accountId || null,
             accountName: entry.account || entry.accountName || 'Account',
             description: entry.description || null,
-            debit: Number(entry.debit) || 0,
-            credit: Number(entry.credit) || 0,
+            debit: voucherEntryDebit(entry),
+            credit: voucherEntryCredit(entry),
             sortOrder: entry.sortOrder !== undefined ? entry.sortOrder : index,
           })),
         },
@@ -894,15 +912,15 @@ router.put('/:id', async (req: Request, res: Response) => {
     // If entries are provided, validate and update
     if (entries && Array.isArray(entries)) {
       const calculatedDebit = entries.reduce(
-        (sum: number, e: any) => sum + (Number(e.debit) || 0),
+        (sum: number, e: any) => sum + voucherEntryDebit(e),
         0,
       );
       const calculatedCredit = entries.reduce(
-        (sum: number, e: any) => sum + (Number(e.credit) || 0),
+        (sum: number, e: any) => sum + voucherEntryCredit(e),
         0,
       );
 
-      if (Math.abs(calculatedDebit - calculatedCredit) > 0.01) {
+      if (Math.abs(calculatedDebit - calculatedCredit) > 0.05) {
         return res.status(400).json({
           error: "Total debit must equal total credit",
           details: { debit: calculatedDebit, credit: calculatedCredit },
@@ -960,8 +978,8 @@ router.put('/:id', async (req: Request, res: Response) => {
           accountId: entry.accountId || null,
           accountName: entry.account || entry.accountName || "Account",
           description: entry.description || null,
-          debit: Number(entry.debit) || 0,
-          credit: Number(entry.credit) || 0,
+          debit: voucherEntryDebit(entry),
+          credit: voucherEntryCredit(entry),
           sortOrder: entry.sortOrder !== undefined ? entry.sortOrder : index,
         })),
       });

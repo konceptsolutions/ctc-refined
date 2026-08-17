@@ -9854,14 +9854,15 @@ export const SalesInvoice = ({
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>}
-                            {/* Sale return once approved or in any delivery-complete state; reverse undelivered stock is the orange icon */}
+                            {/* Sale return once approved or in any delivery-complete state; keep available after partial returns */}
                             {canUseDocumentForm &&
                               !isQuotation &&
                               !isTransferOut &&
                               (inv.status === "approved" ||
                                 inv.status === "partially_delivered" ||
                                 inv.status === "delivered" ||
-                                inv.status === "fully_delivered") && (
+                                inv.status === "fully_delivered" ||
+                                inv.status === "partially_return") && (
                               <Button
                                 variant="ghost"
                                 size="icon"

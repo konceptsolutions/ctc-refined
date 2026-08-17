@@ -577,12 +577,14 @@ model PurchaseImportRequestItem {
   otherQuantity           Int                   @default(0)
   weight                  Float                 @default(0)
   totalWeight             Float                 @default(0)
+  sortOrder               Int                   @default(0)
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
   Part                    Part                  @relation(fields: [partId], references: [id], onDelete: Cascade)
   PurchaseImportRequest   PurchaseImportRequest @relation(fields: [purchaseImportRequestId], references: [id], onDelete: Cascade)
 
   @@index([purchaseImportRequestId])
+  @@index([purchaseImportRequestId, sortOrder])
   @@index([partId])
   @@index([createdAt])
 }
@@ -623,7 +625,7 @@ model PurchaseQuotationItem {
   partId              String
   demandQuantity      Int
   quotationQuantity   Int
-  shipDays            Int               @default(0)
+  shipDays            String            @default("STK") @db.VarChar(50)
   fcRate              Float             @default(0)
   fcAmount            Float             @default(0)
   lcRate              Float             @default(0)
@@ -634,12 +636,14 @@ model PurchaseQuotationItem {
   revisedLcAmount     Float             @default(0)
   weight              Float             @default(0)
   totalWeight         Float             @default(0)
+  sortOrder           Int               @default(0)
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   PurchaseQuotation   PurchaseQuotation @relation(fields: [purchaseQuotationId], references: [id], onDelete: Cascade)
   Part                Part              @relation(fields: [partId], references: [id], onDelete: Cascade)
 
   @@index([purchaseQuotationId])
+  @@index([purchaseQuotationId, sortOrder])
   @@index([partId])
   @@index([createdAt])
 }
@@ -737,9 +741,12 @@ model PurchaseOrderItem {
   additionalQty   Int           @default(0)
   backQty         Int           @default(0)
   notes           String?
+  sortOrder       Int           @default(0)
   createdAt       DateTime      @default(now())
   Part            Part          @relation(fields: [partId], references: [id], onDelete: Cascade)
   PurchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId, sortOrder])
 }
 
 model Rack {
@@ -1251,15 +1258,18 @@ model TransferItem {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String?
-  roleId    String   @default("Staff")
-  status    String   @default("active")
-  lastLogin String?  @default("-")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(uuid())
+  name             String
+  email            String   @unique
+  password         String?
+  roleId           String   @default("Staff")
+  status           String   @default("active")
+  lastLogin        String?  @default("-")
+  loginStartTime   String?
+  loginEndTime     String?
+  loginAllowedDays String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model Voucher {

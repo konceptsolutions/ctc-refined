@@ -20,6 +20,7 @@ import {
   isExchangeRateTypingValue,
   lcFromFc,
   normalizeDecimalTyping,
+  parseAmount,
   parseExchangeRate,
 } from "@/utils/fcLcAmount";
 
@@ -217,23 +218,25 @@ export const JournalVoucherForm = ({
     });
   };
 
-  const totalDr = drEntries.reduce((sum, e) => sum + (Number(e.drAmount) || 0), 0);
-  const totalCr = crEntries.reduce((sum, e) => sum + (Number(e.crAmount) || 0), 0);
+  const totalDr = drEntries.reduce(
+    (sum, e) => sum + (parseAmount(e.drAmount) || 0),
+    0,
+  );
+  const totalCr = crEntries.reduce(
+    (sum, e) => sum + (parseAmount(e.crAmount) || 0),
+    0,
+  );
   const parsedExchangeRate = Number(exchangeRate);
-  const totalDrLc = drEntries.reduce(
-    (sum, e) =>
-      sum +
-      (Number(e.drAmountLc) ||
-        (Number(e.drAmount) || 0) * exchangeRateValue),
-    0,
-  );
-  const totalCrLc = crEntries.reduce(
-    (sum, e) =>
-      sum +
-      (Number(e.crAmountLc) ||
-        (Number(e.crAmount) || 0) * exchangeRateValue),
-    0,
-  );
+  const totalDrLc = drEntries.reduce((sum, e) => {
+    const fc = parseAmount(e.drAmount) || 0;
+    const lc = parseAmount(e.drAmountLc);
+    return sum + (Number.isFinite(lc) && lc !== 0 ? lc : fc * exchangeRateValue);
+  }, 0);
+  const totalCrLc = crEntries.reduce((sum, e) => {
+    const fc = parseAmount(e.crAmount) || 0;
+    const lc = parseAmount(e.crAmountLc);
+    return sum + (Number.isFinite(lc) && lc !== 0 ? lc : fc * exchangeRateValue);
+  }, 0);
 
   const [saving, setSaving] = useState(false);
 
@@ -270,30 +273,42 @@ export const JournalVoucherForm = ({
         type: "journal",
         name,
         date,
-        drEntries: drEntries.map((entry) => ({
-          ...entry,
-          drAmount: Number(entry.drAmount) || 0,
-          crAmount: Number(entry.crAmount) || 0,
-          ...(isInternationalSupplier
-            ? {
-                drAmountLc:
-                  Number(entry.drAmountLc) ||
-                  (Number(entry.drAmount) || 0) * parsedExchangeRate,
-              }
-            : {}),
-        })),
-        crEntries: crEntries.map((entry) => ({
-          ...entry,
-          drAmount: Number(entry.drAmount) || 0,
-          crAmount: Number(entry.crAmount) || 0,
-          ...(isInternationalSupplier
-            ? {
-                crAmountLc:
-                  Number(entry.crAmountLc) ||
-                  (Number(entry.crAmount) || 0) * parsedExchangeRate,
-              }
-            : {}),
-        })),
+        drEntries: drEntries.map((entry) => {
+          const drAmount = parseAmount(entry.drAmount) || 0;
+          return {
+            id: entry.id,
+            account: entry.account,
+            description: entry.description || "",
+            type: "dr",
+            drAmount,
+            crAmount: 0,
+            ...(isInternationalSupplier
+              ? {
+                  drAmountLc:
+                    parseAmount(entry.drAmountLc) ||
+                    drAmount * parsedExchangeRate,
+                }
+              : {}),
+          };
+        }),
+        crEntries: crEntries.map((entry) => {
+          const crAmount = parseAmount(entry.crAmount) || 0;
+          return {
+            id: entry.id,
+            account: entry.account,
+            description: entry.description || "",
+            type: "cr",
+            drAmount: 0,
+            crAmount,
+            ...(isInternationalSupplier
+              ? {
+                  crAmountLc:
+                    parseAmount(entry.crAmountLc) ||
+                    crAmount * parsedExchangeRate,
+                }
+              : {}),
+          };
+        }),
         totalDr,
         totalCr,
         ...(isInternationalSupplier

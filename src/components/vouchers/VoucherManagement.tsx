@@ -721,30 +721,55 @@ export const VoucherManagement = () => {
         createdAt: new Date().toISOString(),
       };
     } else if (data.type === "journal") {
-      // Convert Journal Voucher data
-      const drEntries: VoucherEntry[] = data.drEntries.map((entry: any) => ({
+      // Convert Journal Voucher data.
+      // Local JV: post the Dr/Cr amounts the user typed (ignore empty LC).
+      // International: prefer LC, but never let a 0 LC wipe a real FC line.
+      const useLc = voucherCategory === "international_supplier";
+      const drEntries: VoucherEntry[] = (data.drEntries || []).map((entry: any) => ({
         id: entry.id,
         account: entry.account,
         description: entry.description || "",
-        debit: resolvePostedAmount(entry.drAmountLc, entry.drAmount),
+        debit: useLc
+          ? resolvePostedAmount(entry.drAmountLc, entry.drAmount)
+          : resolvePostedAmount(entry.drAmount, 0),
         credit: 0,
       }));
-      const crEntries: VoucherEntry[] = data.crEntries.map((entry: any) => ({
+      const crEntries: VoucherEntry[] = (data.crEntries || []).map((entry: any) => ({
         id: entry.id,
         account: entry.account,
         description: entry.description || "",
         debit: 0,
-        credit: resolvePostedAmount(entry.crAmountLc, entry.crAmount),
+        credit: useLc
+          ? resolvePostedAmount(entry.crAmountLc, entry.crAmount)
+          : resolvePostedAmount(entry.crAmount, 0),
       }));
       const journalEntries = [...drEntries, ...crEntries];
-      const journalDebit = journalEntries.reduce(
+      let journalDebit = journalEntries.reduce(
         (sum, entry) => sum + (Number(entry.debit) || 0),
         0,
       );
-      const journalCredit = journalEntries.reduce(
+      let journalCredit = journalEntries.reduce(
         (sum, entry) => sum + (Number(entry.credit) || 0),
         0,
       );
+      // Multiple Dr lines vs one Cr can drift by rounding; if the form was
+      // balanced, plug the difference into the last credit (or debit) line.
+      if (Math.abs(journalDebit - journalCredit) > 0.01) {
+        const formDr = Number(data.totalDr) || 0;
+        const formCr = Number(data.totalCr) || 0;
+        if (Math.abs(formDr - formCr) <= 0.01 && (formDr > 0 || formCr > 0)) {
+          const diff = Number((journalDebit - journalCredit).toFixed(4));
+          if (crEntries.length > 0 && journalDebit > 0) {
+            const last = crEntries[crEntries.length - 1];
+            last.credit = Number(((Number(last.credit) || 0) + diff).toFixed(4));
+            journalCredit = journalDebit;
+          } else if (drEntries.length > 0 && journalCredit > 0) {
+            const last = drEntries[drEntries.length - 1];
+            last.debit = Number(((Number(last.debit) || 0) - diff).toFixed(4));
+            journalDebit = journalCredit;
+          }
+        }
+      }
 
       newVoucher = {
         id: Date.now().toString(),

@@ -153,9 +153,35 @@ export function canAccessPath(
   const mod = findModuleByPath(pathname);
   if (!mod) return true;
   if (!hasPermissionKey(permissions, mod.key)) return false;
+
+  const pages = (mod.children || []).filter((c) => c.kind === "page");
+  const isModuleRoot =
+    !!mod.path && (pathname === mod.path || pathname === `${mod.path}/`);
+
+  // Module sidebar paths like /sales must succeed if ANY page in that module
+  // is granted. findPageByPath() otherwise maps the root to the first catalog
+  // page (e.g. Inquiry), which a Sales role may not have.
+  if (isModuleRoot) {
+    if (pages.length === 0) return true;
+    return pages.some((p) => hasPermissionKey(permissions, p.key));
+  }
+
   const page = findPageByPath(pathname);
   if (page && !hasPermissionKey(permissions, page.key)) return false;
   return true;
+}
+
+/** First granted page under a sidebar module path (e.g. /sales → /sales/invoice). */
+export function getModuleLandingPath(
+  modulePath: string,
+  permissions: string[] = getStoredPermissions(),
+): string {
+  if (!modulePath) return "/";
+  const mod = findModuleByPath(modulePath);
+  if (!mod) return modulePath;
+  const pages = (mod.children || []).filter((c) => c.kind === "page" && c.path);
+  const allowed = pages.find((p) => hasPermissionKey(permissions, p.key));
+  return allowed?.path || modulePath;
 }
 
 function roleHomeFromJwt(): string | null {
@@ -209,16 +235,23 @@ export function getFirstAllowedPath(
     }
   }
   if (effective.includes("*")) return "/";
+  const roleHome = roleHomeFromJwt();
+  if (roleHome && roleHome !== "/login" && canAccessPath(roleHome, effective)) {
+    return roleHome;
+  }
   const candidates = [
     "/",
     "/partentry",
     "/inventory/purchase-inquiry",
     "/inventory/current-stock",
     "/transfer/transfer-in",
+    "/transfer/transfer-out",
     "/store/orders",
     "/pricing-costing",
     "/sales/inquiry",
+    "/sales/quotation",
     "/sales/invoice",
+    "/sales/returns",
     "/purchase-import/inquiry",
     "/accounting",
     "/financial-statements",

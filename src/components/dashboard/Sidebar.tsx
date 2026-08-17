@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/tooltip";
 import { SIDEBAR_MODULE_KEYS } from "@/permissions/catalog";
 import { usePermissions } from "@/permissions/PermissionsProvider";
+import { getModuleLandingPath } from "@/permissions/can";
 import { AppFooter } from "@/components/dashboard/AppFooter";
 
 const SIDEBAR_EXPANDED_KEY = "sidebar-expanded";
@@ -170,7 +171,7 @@ export const Sidebar = () => {
                 label={item.label}
                 expanded={expanded}
                 active={isActivePath(item.path, item.alsoMatch)}
-                onClick={() => navigate(item.path)}
+                onClick={() => navigate(getModuleLandingPath(item.path))}
               />
             </div>
           ))}

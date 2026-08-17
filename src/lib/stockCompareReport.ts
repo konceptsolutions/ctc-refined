@@ -56,14 +56,15 @@ const buildSystemLookup = (items: SystemStockItem[]) => {
   const byMasterPartAndBrand = new Map<string, SystemStockItem>();
 
   for (const item of items) {
-    if (item.part_no) {
-      byPartAndBrand.set(partBrandKey(item.part_no, item.brand), item);
-    }
+    // Display convention: DB master_part_no = Part No, DB part_no = Master Part No.
     if (item.master_part_no) {
       const key = partBrandKey(item.master_part_no, item.brand);
       if (!byMasterPartAndBrand.has(key)) {
         byMasterPartAndBrand.set(key, item);
       }
+    }
+    if (item.part_no) {
+      byPartAndBrand.set(partBrandKey(item.part_no, item.brand), item);
     }
   }
 
@@ -93,7 +94,7 @@ export const comparePdfStockWithSystem = (
   for (const pdfRow of pdfRows) {
     const key = partBrandKey(pdfRow.partNo, pdfRow.brand);
     const systemItem =
-      byPartAndBrand.get(key) || byMasterPartAndBrand.get(key) || null;
+      byMasterPartAndBrand.get(key) || byPartAndBrand.get(key) || null;
     const systemQty = systemItem?.current_stock ?? -1;
     const status = resolveStatus(pdfRow.qty, systemQty);
 
@@ -104,8 +105,8 @@ export const comparePdfStockWithSystem = (
     rows.push({
       pdfPartNo: pdfRow.partNo,
       pdfBrand: pdfRow.brand,
-      systemPartNo: systemItem?.part_no ?? null,
-      masterPartNo: systemItem?.master_part_no ?? null,
+      systemPartNo: systemItem?.master_part_no ?? null,
+      masterPartNo: systemItem?.part_no ?? null,
       systemBrand: systemItem?.brand ?? null,
       description: systemItem?.description ?? null,
       pdfQty: pdfRow.qty,
@@ -208,7 +209,13 @@ export const generateStockCompareExcel = async (input: {
     { header: "Category", key: "category", width: 18 },
     { header: "System Qty", key: "current_stock", width: 12 },
   ];
-  input.systemOnlyRows.forEach((row) => systemOnlySheet.addRow(row));
+  input.systemOnlyRows.forEach((row) =>
+    systemOnlySheet.addRow({
+      ...row,
+      part_no: row.master_part_no,
+      master_part_no: row.part_no,
+    }),
+  );
   styleHeaderRow(systemOnlySheet);
 
   const summarySheet = workbook.addWorksheet("Summary");

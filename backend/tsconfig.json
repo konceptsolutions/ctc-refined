@@ -4,9 +4,6 @@
     "module": "commonjs",
     "composite": true,
     "baseUrl": ".",
-    "paths": {
-      "@prisma/client": ["./src/generated/prisma"]
-    },
     "lib": [
       "ES2020"
     ],

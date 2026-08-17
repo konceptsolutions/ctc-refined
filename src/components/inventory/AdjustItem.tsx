@@ -546,28 +546,55 @@ export const AdjustItem = () => {
     return parts.filter((p) => p.brand === brandFilter);
   }, [parts, brandFilter]);
 
+  const formatPartOptionLabel = useCallback(
+    (
+      p: {
+        partNo?: string | null;
+        masterPartNo?: string | null;
+        brand?: string | null;
+        description?: string | null;
+      },
+      includeDescription = true,
+    ) => {
+      const master = (p.masterPartNo || "").trim();
+      const partNo = (p.partNo || "").trim();
+      const both =
+        master && partNo ? `${master} | ${partNo}` : master || partNo;
+      const brand = p.brand ? ` (${p.brand})` : "";
+      if (!includeDescription) return `${both}${brand}`;
+      const desc = (p.description || "")
+        .replace(/\(Grade:\s*[^)]+\)/gi, "")
+        .trim();
+      return desc ? `${both}${brand} - ${desc}` : `${both}${brand}`;
+    },
+    [],
+  );
+
   const buildPartSelectOptions = useCallback(
-    (selectedPartId?: string, includeDescription = true) => {
+    (
+      selectedPartId?: string,
+      includeDescription = true,
+      fallbackLabel?: string,
+    ) => {
       let list = filteredParts;
       if (selectedPartId && !list.some((p) => p.id === selectedPartId)) {
         const selected = parts.find((p) => p.id === selectedPartId);
         if (selected) list = [selected, ...list];
       }
-      return list.map((p) => {
-        const master = p.masterPartNo || "";
-        const partNo = p.partNo || "";
-        const both =
-          master && partNo ? `${master} | ${partNo}` : master || partNo;
-        const brand = p.brand ? ` (${p.brand})` : "";
-        return {
-          value: p.id,
-          label: includeDescription
-            ? `${both}${brand} - ${p.description}`
-            : `${both}${brand}`,
-        };
-      });
+      const options = list.map((p) => ({
+        value: p.id,
+        label: formatPartOptionLabel(p, includeDescription),
+      }));
+      if (
+        selectedPartId &&
+        fallbackLabel &&
+        !options.some((o) => o.value === selectedPartId)
+      ) {
+        options.unshift({ value: selectedPartId, label: fallbackLabel });
+      }
+      return options;
     },
-    [filteredParts, parts],
+    [filteredParts, parts, formatPartOptionLabel],
   );
 
   const handleBrandFilterChange = (value: string) => {
@@ -582,7 +609,12 @@ export const AdjustItem = () => {
   };
 
   const applyPartDetailsToRow = useCallback(
-    async (rowId: string, partId: string, isAddMode: boolean) => {
+    async (
+      rowId: string,
+      partId: string,
+      isAddMode: boolean,
+      options?: { preserveExisting?: boolean },
+    ) => {
       try {
         const [stockRes, detailRes] = await Promise.all([
           apiClient.getPartCostLookup(partId),
@@ -600,20 +632,44 @@ export const AdjustItem = () => {
 
         const stock = stockRes as any;
         const part = detailRes as any;
-        const qtyInStock = isAddMode
+        const liveStock = isAddMode
           ? (stock.current_stock ?? 0)
           : (stock.available_stock ?? stock.current_stock ?? 0);
         const newRate = parseFloat(part.cost || 0);
+        const preserveExisting = !!options?.preserveExisting;
 
         setAdjustmentItems((items) =>
           items.map((it) => {
             if (it.id !== rowId) return it;
-            const newQty = !isAddMode ? qtyInStock : it.quantity || 0;
+
+            // On edit/refresh, keep the saved quantity. Remove adjustments are
+            // already posted, so live stock is often 0 — adding this row's qty
+            // back makes "Qty In Stock" match what can still be removed.
+            if (preserveExisting) {
+              const qtyInStock = !isAddMode
+                ? liveStock + (Number(it.quantity) || 0)
+                : liveStock;
+              return {
+                ...it,
+                qtyInStock,
+                lastPurchaseRate: parseFloat(
+                  (part.avg_cost || stock.avg_cost || 0).toFixed(3),
+                ),
+              };
+            }
+
+            const newQty = !isAddMode
+              ? Number(it.quantity) > 0
+                ? it.quantity
+                : liveStock
+              : it.quantity || 0;
             return {
               ...it,
               itemName: part.description || part.part_no,
-              qtyInStock,
-              lastPurchaseRate: parseFloat((part.avg_cost || stock.avg_cost || 0).toFixed(3)),
+              qtyInStock: liveStock,
+              lastPurchaseRate: parseFloat(
+                (part.avg_cost || stock.avg_cost || 0).toFixed(3),
+              ),
               rate: newRate,
               priceA: part.priceA || 0,
               priceB: part.priceB || 0,
@@ -624,7 +680,9 @@ export const AdjustItem = () => {
           }),
         );
 
-        await applyPartLocationToRow(rowId, partId, store || undefined);
+        if (!preserveExisting) {
+          await applyPartLocationToRow(rowId, partId, store || undefined);
+        }
       } catch (err) {
         console.error("Error loading part details for adjustment:", err);
       }
@@ -636,7 +694,9 @@ export const AdjustItem = () => {
     if (view !== "create" && view !== "edit") return;
     adjustmentItems.forEach((item) => {
       if (item.itemId) {
-        applyPartDetailsToRow(item.id, item.itemId, !!addInventory);
+        applyPartDetailsToRow(item.id, item.itemId, !!addInventory, {
+          preserveExisting: true,
+        });
       }
     });
     // Intentionally omit adjustmentItems — only refresh when add/remove mode or view changes.
@@ -644,14 +704,15 @@ export const AdjustItem = () => {
   }, [view, addInventory, applyPartDetailsToRow]);
 
   useEffect(() => {
-    if (view !== "create" && view !== "edit") return;
+    if (view !== "create") return;
     if (!store) return;
     adjustmentItems.forEach((item) => {
       if (item.itemId) {
         void applyPartLocationToRow(item.id, item.itemId, store);
       }
     });
-    // Re-pick rack/shelf when store changes; omit adjustmentItems to avoid loops.
+    // Re-pick rack/shelf when store changes on create; skip edit so saved
+    // locations are not overwritten.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, view, applyPartLocationToRow]);
 
@@ -775,6 +836,10 @@ export const AdjustItem = () => {
 
           // When item is selected, use the same stock source as Sales Invoice / Stock In-Out
           if (field === "itemId" && value) {
+            const part = parts.find((p) => p.id === value);
+            if (part) {
+              updated.itemName = formatPartOptionLabel(part);
+            }
             applyPartDetailsToRow(id, value as string, !!addInventory);
           }
 
@@ -964,23 +1029,15 @@ export const AdjustItem = () => {
         store_id: adjustment.store_id,
         addInventory: adjustment.add_inventory,
         items: (adjustment.items || []).map((item: any) => {
-          // Build display name: PartNo (Brand) - Description
-          const partNo = item.part_no || "";
-          const brand = item.brand || "";
-          const description = item.part_description || "";
-
-          let displayName = partNo;
-          if (brand) {
-            displayName += ` (${brand})`;
-          }
-          if (description) {
-            displayName += ` - ${description}`;
-          }
-
           return {
             id: item.id,
             itemId: item.part_id,
-            itemName: displayName,
+            itemName: formatPartOptionLabel({
+              partNo: item.part_no,
+              masterPartNo: item.master_part_no,
+              brand: item.brand,
+              description: item.part_description,
+            }),
             qtyInStock: 0,
             quantity: item.quantity,
             lastPurchaseRate: item.cost || 0,
@@ -1030,7 +1087,12 @@ export const AdjustItem = () => {
           return {
             id: item.id, // Use database ID (UUID)
             itemId: item.part_id,
-            itemName: `${item.part_no}${item.brand ? ` (${item.brand})` : ''} - ${item.part_description || ''}`,
+            itemName: formatPartOptionLabel({
+              partNo: item.part_no,
+              masterPartNo: item.master_part_no,
+              brand: item.brand,
+              description: item.part_description,
+            }),
             qtyInStock: stockBalances[item.part_id]?.qty || 0,
             quantity: item.quantity,
             lastPurchaseRate: item.cost || 0,
@@ -1838,7 +1900,7 @@ export const AdjustItem = () => {
             className="h-6 w-6"
             onClick={handleCancel}
           >
-            <Trash className="w-4 h-4" />
+            <X className="w-4 h-4" />
           </Button>
         </div>
 
@@ -1991,8 +2053,13 @@ export const AdjustItem = () => {
                     <TableRow key={item.id}>
                       <TableCell>
                         <SearchableSelect
-                          options={buildPartSelectOptions(item.itemId)}
+                          options={buildPartSelectOptions(
+                            item.itemId,
+                            true,
+                            item.itemName,
+                          )}
                           value={item.itemId}
+                          selectedLabel={item.itemName}
                           onValueChange={(v) =>
                             handleItemChange(item.id, "itemId", v)
                           }

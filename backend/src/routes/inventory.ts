@@ -2993,10 +2993,9 @@ router.get("/adjustments", async (req: Request, res: Response) => {
       where.OR = [
         { subject: { contains: searchStr, mode: "insensitive" } },
         { notes: { contains: searchStr, mode: "insensitive" } },
-        // Removed internal ID search to avoid matching too many records by numbers in UUID
         ...(!isNaN(searchNum) ? [{ adjustmentNo: searchNum }] : []),
         {
-          store: {
+          Store: {
             OR: [
               { name: { contains: searchStr, mode: "insensitive" } },
               { code: { contains: searchStr, mode: "insensitive" } },
@@ -3004,33 +3003,37 @@ router.get("/adjustments", async (req: Request, res: Response) => {
           },
         },
         {
-          voucher: {
+          Voucher_Adjustment_voucherIdToVoucher: {
             voucherNumber: { contains: searchStr, mode: "insensitive" },
           },
         },
         {
-          items: {
+          AdjustmentItem: {
             some: {
-              OR: [
-                {
-                  Part: {
-                    OR: [
-                      { partNo: { contains: searchStr, mode: "insensitive" } },
-                      {
-                        description: {
-                          contains: searchStr,
-                          mode: "insensitive",
-                        },
-                      },
-                      {
-                        brand: {
-                          name: { contains: searchStr, mode: "insensitive" },
-                        },
-                      },
-                    ],
+              Part: {
+                OR: [
+                  { partNo: { contains: searchStr, mode: "insensitive" } },
+                  {
+                    description: {
+                      contains: searchStr,
+                      mode: "insensitive",
+                    },
                   },
-                },
-              ],
+                  {
+                    Brand: {
+                      name: { contains: searchStr, mode: "insensitive" },
+                    },
+                  },
+                  {
+                    MasterPart: {
+                      masterPartNo: {
+                        contains: searchStr,
+                        mode: "insensitive",
+                      },
+                    },
+                  },
+                ],
+              },
             },
           },
         },
@@ -3878,6 +3881,9 @@ router.get("/adjustments/:id", async (req: Request, res: Response) => {
               include: {
                 Brand: true,
                 Category: true,
+                MasterPart: {
+                  select: { masterPartNo: true },
+                },
               },
             },
             Rack: true,
@@ -3919,12 +3925,16 @@ router.get("/adjustments/:id", async (req: Request, res: Response) => {
       items: adjustment.AdjustmentItem.map((item: any) => ({
         id: item.id,
         part_id: item.partId,
-        part_no: item.Part.partNo,
-        part_description: item.Part.description,
-        brand: item.Part.Brand?.name || "",
-        category: item.Part.Category?.name || "",
+        part_no: item.Part?.partNo || "",
+        master_part_no: item.Part?.MasterPart?.masterPartNo || "",
+        part_description: item.Part?.description || "",
+        brand: item.Part?.Brand?.name || "",
+        category: item.Part?.Category?.name || "",
         quantity: item.quantity,
         cost: item.cost,
+        priceA: item.priceA || 0,
+        priceB: item.priceB || 0,
+        priceM: item.priceM || 0,
         notes: item.notes,
         rack_id: item.rackId,
         rack_code: item.Rack?.codeNo || null,

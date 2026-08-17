@@ -10,6 +10,7 @@ export {
   clearPermissions,
   canAccessPath,
   getFirstAllowedPath,
+  getModuleLandingPath,
 } from "./can";
 export { PermissionGate } from "./PermissionGate";
 export {

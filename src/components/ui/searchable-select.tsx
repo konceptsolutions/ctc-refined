@@ -40,6 +40,11 @@ interface SearchableSelectProps {
    * instead of dumping the full catalog into the dropdown.
    */
   requireSearchAbove?: number;
+  /**
+   * Shown when `value` is set but the matching option is not in `options` yet
+   * (e.g. the catalog is still loading on edit).
+   */
+  selectedLabel?: string;
 }
 
 const DEFAULT_MAX_DISPLAYED_OPTIONS = 80;
@@ -61,6 +66,7 @@ export const SearchableSelect = React.memo(function SearchableSelect({
   onAutoOpenHandled,
   maxDisplayedOptions = DEFAULT_MAX_DISPLAYED_OPTIONS,
   requireSearchAbove = DEFAULT_REQUIRE_SEARCH_ABOVE,
+  selectedLabel,
   ...props
 }: SearchableSelectProps & React.ComponentProps<typeof Input>) {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -94,7 +100,7 @@ export const SearchableSelect = React.memo(function SearchableSelect({
       : [selectedOption.label, selectedOption.description]
           .filter(Boolean)
           .join(" - ")
-    : value || "";
+    : selectedLabel || (allowCustom ? value || "" : "");
 
   // While focused, always show what the user is typing (even when empty).
   const inputValue = isFocused || isOpen ? searchQuery : displayValue;

@@ -13,6 +13,7 @@ import {
   ReceiptText,
 } from "lucide-react";
 import { usePermissions } from "@/permissions/PermissionsProvider";
+import { getFirstAllowedPath } from "@/permissions/can";
 
 // Sales sub-modules
 import { SalesInquiry } from "@/components/sales/SalesInquiry";
@@ -65,7 +66,7 @@ const Sales = () => {
 
   useEffect(() => {
     if (!tabs.length) {
-      navigate("/", { replace: true });
+      navigate(getFirstAllowedPath(), { replace: true });
       return;
     }
     if (!tab || !tabs.some((t) => t.id === tab)) {
