@@ -829,33 +829,36 @@ router.get("/", async (req: Request, res: Response) => {
       params.push(`%${(description as string).trim()}%`);
     }
 
-    const partNoNormSql = `LOWER(TRIM(COALESCE(p."partNo", '')))`;
-    const masterNormSql = `LOWER(TRIM(COALESCE(mp."masterPartNo", '')))`;
-    const duplicatePartNosSql = `SELECT LOWER(TRIM(p2."partNo"))
-      FROM "Part" p2
-      WHERE p2."partNo" IS NOT NULL AND TRIM(p2."partNo") <> ''
-      GROUP BY 1
-      HAVING COUNT(*) > 1`;
-    const duplicateMastersSql = `SELECT LOWER(TRIM(mp2."masterPartNo"))
-      FROM "Part" p2
-      INNER JOIN "MasterPart" mp2 ON p2."masterPartId" = mp2.id
-      WHERE mp2."masterPartNo" IS NOT NULL AND TRIM(mp2."masterPartNo") <> ''
-      GROUP BY 1
-      HAVING COUNT(*) > 1`;
-    // Group by part no when that number is reused; otherwise by master part no.
-    // Description, application, and brand are ignored so near-matches still show.
+    const showDuplicateMeta = duplicates_only === "true";
+    // Precompute duplicate keys once and join — IN (GROUP BY) inside CASE/ORDER/WINDOW
+    // was re-scanned per row and made this filter very slow.
+    // Category, subcategory, application, description, and brand are ignored so
+    // incomplete rows (e.g. category/subcategory not saved) still match.
+    const duplicateJoinsSql = showDuplicateMeta
+      ? `
+      LEFT JOIN (
+        SELECT LOWER(TRIM("partNo")) AS k
+        FROM "Part"
+        WHERE "partNo" IS NOT NULL AND TRIM("partNo") <> ''
+        GROUP BY 1
+        HAVING COUNT(*) > 1
+      ) dup_part_nos ON dup_part_nos.k = LOWER(TRIM(COALESCE(p."partNo", '')))
+      LEFT JOIN (
+        SELECT LOWER(TRIM(mp2."masterPartNo")) AS k
+        FROM "Part" p2
+        INNER JOIN "MasterPart" mp2 ON p2."masterPartId" = mp2.id
+        WHERE mp2."masterPartNo" IS NOT NULL AND TRIM(mp2."masterPartNo") <> ''
+        GROUP BY 1
+        HAVING COUNT(*) > 1
+      ) dup_masters ON dup_masters.k = LOWER(TRIM(COALESCE(mp."masterPartNo", '')))`
+      : "";
     const partDuplicateKeySql = `CASE
-      WHEN ${partNoNormSql} <> '' AND ${partNoNormSql} IN (${duplicatePartNosSql})
-        THEN CONCAT('part|', ${partNoNormSql})
-      ELSE CONCAT('master|', ${masterNormSql})
+      WHEN dup_part_nos.k IS NOT NULL THEN CONCAT('part|', dup_part_nos.k)
+      ELSE CONCAT('master|', COALESCE(dup_masters.k, ''))
     END`;
 
-    if (duplicates_only === "true") {
-      conditions.push(`(
-        (${partNoNormSql} <> '' AND ${partNoNormSql} IN (${duplicatePartNosSql}))
-        OR
-        (${masterNormSql} <> '' AND ${masterNormSql} IN (${duplicateMastersSql}))
-      )`);
+    if (showDuplicateMeta) {
+      conditions.push(`(dup_part_nos.k IS NOT NULL OR dup_masters.k IS NOT NULL)`);
     }
 
     if (status) {
@@ -868,10 +871,9 @@ router.get("/", async (req: Request, res: Response) => {
 
     // Skip images and per-row history/count subqueries for large catalog loads
     // (Sales Inquiry / Invoice dropdowns use limit=all).
-    const skipImages = limitNum > 1000;
+    const skipImages = limitNum > 1000 || showDuplicateMeta;
     const skipHeavyMeta = skipImages;
     const showLocations = include_locations === "true";
-    const showDuplicateMeta = duplicates_only === "true";
     const orderByClause = showDuplicateMeta
       ? `ORDER BY ${partDuplicateKeySql}, p."partNo", p."id"`
       : `ORDER BY p."updatedAt" DESC`;
@@ -909,7 +911,10 @@ router.get("/", async (req: Request, res: Response) => {
         ls.last_sale_customer,
         ls.last_sale_date,`
         }
-        COALESCE(
+        ${
+          skipHeavyMeta
+            ? `'[]'::json as models`
+            : `COALESCE(
           (
             SELECT json_agg(
               json_build_object(
@@ -922,12 +927,14 @@ router.get("/", async (req: Request, res: Response) => {
             WHERE m."partId" = p.id
           ),
           '[]'::json
-        ) as models
-        ${showDuplicateMeta ? `, ${partDuplicateKeySql} as duplicate_key, COUNT(*) OVER (PARTITION BY ${partDuplicateKeySql})::int as duplicate_group_size` : ""}
+        ) as models`
+        }
+        ${showDuplicateMeta ? `, ${partDuplicateKeySql} as duplicate_key, COUNT(*) OVER (PARTITION BY ${partDuplicateKeySql})::int as duplicate_group_size, COUNT(*) OVER ()::int as filtered_total` : ""}
         ${showLocations ? ", COALESCE(loc.locations, '[]'::jsonb) as locations, (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock" : ""}
         ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
       FROM "Part" p
       LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+      ${duplicateJoinsSql}
       LEFT JOIN "Brand" b ON p."brandId" = b.id
       LEFT JOIN "Category" c ON p."categoryId" = c.id
       LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
@@ -996,18 +1003,25 @@ router.get("/", async (req: Request, res: Response) => {
     params.push(limitNum, offset);
 
     const result = await query(sql, params);
-    const countResult = await query(
-      `SELECT count(*) as total FROM "Part" p 
+    let total: number;
+    if (showDuplicateMeta) {
+      total =
+        parseInt(
+          result.rows[0]?.filtered_total || result.rows[0]?.filteredtotal,
+        ) || result.rows.length;
+    } else {
+      const countResult = await query(
+        `SELECT count(*) as total FROM "Part" p 
       LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
       LEFT JOIN "Brand" b ON p."brandId" = b.id
       LEFT JOIN "Category" c ON p."categoryId" = c.id
       LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
       LEFT JOIN "Application" app ON p."applicationId" = app.id
     ${whereClause}`,
-      params.slice(0, -2),
-    ); // Remove limit/offset params
-
-    const total = parseInt(countResult.rows[0].total);
+        params.slice(0, -2),
+      ); // Remove limit/offset params
+      total = parseInt(countResult.rows[0].total);
+    }
 
     // Transform response
     const transformedParts = result.rows.map((part) => {

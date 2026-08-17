@@ -498,20 +498,9 @@ export const ItemsListPage = ({
 
     setItemsLoading(true);
     try {
-      // Build API params with all filters
-      // When ANY filter is active, use a higher limit to get all matching items
-      const hasActiveFilters =
-        activeFilters.master_part_no ||
-        activeFilters.part_no ||
-        activeFilters.search ||
-        activeFilters.brand_name ||
-        activeFilters.description ||
-        (activeFilters.part_type && activeFilters.part_type !== "all") ||
-        (activeFilters.category_name && activeFilters.category_name !== 'all') ||
-        (activeFilters.subcategory_name && activeFilters.subcategory_name !== 'all') ||
-        (activeFilters.application_name && activeFilters.application_name !== 'all') ||
-        activeFilters.duplicates_only === "yes";
-
+      // Duplicate view hides pagination and groups matching rows together,
+      // so load the full match set. Missing category/subcategory must still
+      // be included (e.g. 9M4849).
       const effectiveLimit =
         activeFilters.duplicates_only === "yes" ? "all" : limit;
       const effectivePage =
@@ -626,20 +615,15 @@ export const ItemsListPage = ({
           }
         }
 
-        // Update total items from pagination
         const pagination = response.pagination;
-        if (activeFilters.duplicates_only === "yes") {
-          if (latestRequestIdRef.current === requestId) {
-            setTotalItems(transformedItems.length);
-          }
-        } else if (pagination) {
-          if (latestRequestIdRef.current === requestId) {
-            setTotalItems(pagination.total);
-          }
-        } else {
-          if (latestRequestIdRef.current === requestId) {
-            setTotalItems(transformedItems.length);
-          }
+        if (latestRequestIdRef.current === requestId) {
+          setTotalItems(
+            activeFilters.duplicates_only === "yes"
+              ? transformedItems.length
+              : pagination?.total != null
+                ? pagination.total
+                : transformedItems.length,
+          );
         }
 
         // Also update parts state for PartsList when filtering by part_no or master_part_no
