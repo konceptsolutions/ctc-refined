@@ -642,13 +642,15 @@ export const AdjustItem = () => {
           items.map((it) => {
             if (it.id !== rowId) return it;
 
-            // On edit/refresh, keep the saved quantity. Remove adjustments are
-            // already posted, so live stock is often 0 — adding this row's qty
-            // back makes "Qty In Stock" match what can still be removed.
+            // Edit of a posted remove already deducted this row from live stock.
+            // Add the saved qty back so "Qty in Stock" is the pre-remove balance.
+            // Never do this on create — quantity is often auto-filled with live
+            // stock, which would display it twice (e.g. 5 + 5 = 10).
             if (preserveExisting) {
-              const qtyInStock = !isAddMode
-                ? liveStock + (Number(it.quantity) || 0)
-                : liveStock;
+              const qtyInStock =
+                !isAddMode && view === "edit"
+                  ? liveStock + (Number(it.quantity) || 0)
+                  : liveStock;
               return {
                 ...it,
                 qtyInStock,
@@ -680,14 +682,16 @@ export const AdjustItem = () => {
           }),
         );
 
-        if (!preserveExisting) {
+        // Remove mode has no store; auto-picking location would setStore and
+        // retrigger a refresh that previously doubled qty in stock.
+        if (!preserveExisting && isAddMode) {
           await applyPartLocationToRow(rowId, partId, store || undefined);
         }
       } catch (err) {
         console.error("Error loading part details for adjustment:", err);
       }
     },
-    [applyPartLocationToRow, store],
+    [applyPartLocationToRow, store, view],
   );
 
   useEffect(() => {

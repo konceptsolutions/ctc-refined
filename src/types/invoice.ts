@@ -182,6 +182,7 @@ export interface Invoice {
   quotationStatus?: string;
   /** Present on sales invoices converted from quotations */
   quotationId?: string | null;
+  deliveredTo?: string | null;
   remarks?: string | null;
   previousBalance?: number;
   customerBalance?: number;

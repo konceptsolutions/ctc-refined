@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { apiClient, getApiBaseUrl } from "@/lib/api";
@@ -300,9 +300,14 @@ export const DirectPurchaseOrder = ({
       brand: string;
       uom: string;
       price: number;
+      priceA?: number | null;
+      priceB?: number | null;
+      priceM?: number | null;
+      purchasePrice?: number | null;
       weight: number;
     }[]
   >([]);
+  const partHistoryRequestIdRef = useRef(0);
   const [brands, setBrands] = useState<{ id: string; value: string; label: string }[]>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; value: string; label: string }[]>([]);
   const [branchAccounts, setBranchAccounts] = useState<
@@ -438,6 +443,10 @@ export const DirectPurchaseOrder = ({
           brand: p.brand_name || p.brand?.name || null,
           uom: p.uom || 'pcs',
           price: p.price_a || p.priceA || p.cost || 0,
+          priceA: p.price_a ?? p.priceA ?? null,
+          priceB: p.price_b ?? p.priceB ?? null,
+          priceM: p.price_m ?? p.priceM ?? null,
+          purchasePrice: p.purchasePrice ?? p.purchase_price ?? p.cost ?? null,
           weight: parseFloat(p.weight) || 0,
         })));
       }
@@ -1099,116 +1108,81 @@ export const DirectPurchaseOrder = ({
       return;
     }
 
+    const requestId = ++partHistoryRequestIdRef.current;
+    const cachedPart = parts.find((p) => p.id === partId);
+    const cachedPriceA =
+      cachedPart?.priceA != null ? Number(cachedPart.priceA) : null;
+    const cachedPriceB =
+      cachedPart?.priceB != null ? Number(cachedPart.priceB) : null;
+    const cachedPriceM =
+      cachedPart?.priceM != null ? Number(cachedPart.priceM) : null;
+
     try {
       setLoadingHistory(true);
 
-      // First, fetch the part details to get default prices (fallback)
-      let partPriceA: number | null = null;
-      let partPriceB: number | null = null;
-      let partPriceM: number | null = null;
-      let partCatalogPurchase: number | null = null;
-
-      try {
-        const partResponse = await apiClient.getPart(partId) as any;
-        if (!partResponse.error && partResponse) {
-          partPriceA = partResponse.price_a ?? partResponse.priceA ?? null;
-          partPriceB = partResponse.price_b ?? partResponse.priceB ?? null;
-          partPriceM = partResponse.price_m ?? partResponse.priceM ?? null;
-          const pp =
-            partResponse.purchase_price ??
-            partResponse.purchasePrice ??
-            null;
-          const co = partResponse.cost ?? null;
-          if (pp != null && Number(pp) > 0) {
-            partCatalogPurchase = Number(pp);
-          } else if (co != null && Number(co) > 0) {
-            partCatalogPurchase = Number(co);
-          }
-        }
-      } catch (error: any) {
-        // Don't throw - just continue without part prices
-      }
-
-      // Fetch direct purchase orders to find last purchase for this part
-      let dpoResponse: any = null;
-      try {
-        dpoResponse = await apiClient.getDirectPurchaseOrders({
-          limit: 100,
-          order_type: isTransferIn ? "transfer_in" : "local_purchase",
-        }) as any;
-        // Check if response has error (like 502 Bad Gateway)
-        if (dpoResponse?.error) {
-          dpoResponse = null; // Set to null to skip processing
-        }
-      } catch (error: any) {
-        dpoResponse = null; // Set to null to skip processing
-      }
-
-      let lastPurchasePrice: number | null = null;
-      let lastPurchaseDate: string | null = null;
-      let lastPurchaseDpoNo: string | null = null;
-      let priceA: number | null = null;
-      let priceB: number | null = null;
-      let priceM: number | null = null;
-      let foundDPO = false; // Track if we found any DPO containing this part
-
-      if (dpoResponse && dpoResponse.data && Array.isArray(dpoResponse.data)) {
-        // Sort DPOs by date (most recent first) to ensure we get the latest purchase price
-        const sortedDPOs = [...dpoResponse.data].sort((a: any, b: any) => {
-          const dateA = a.date ? new Date(a.date).getTime() : 0;
-          const dateB = b.date ? new Date(b.date).getTime() : 0;
-          return dateB - dateA; // Most recent first
-        });
-
-        // Find the most recent direct purchase order that contains this part
-        // We need to fetch full order details to get items with prices
-        for (const order of sortedDPOs) {
-          try {
-            // Fetch full order details to get items with purchase_price and price A, B, M
-            const fullOrderResponse = await apiClient.getDirectPurchaseOrder(order.id) as any;
-            // Check if response has error (like 502 Bad Gateway)
-            if (fullOrderResponse?.error) {
-              continue; // Skip this order
-            }
-            if (fullOrderResponse && fullOrderResponse.items && Array.isArray(fullOrderResponse.items)) {
-              const partItem = fullOrderResponse.items.find((item: any) => {
-                // Check both part_id and partId formats
-                return (item.part_id === partId || item.partId === partId);
-              });
-              if (partItem) {
-                foundDPO = true; // Mark that we found a DPO containing this part
-
-                // Get purchase price from this DPO item. Use the raw
-                // purchase price (NOT loaded with distributed expenses) so
-                // the auto-filled "Purchase Price" on the new DPO line
-                // matches what was actually paid per unit on the last DPO.
-                const purchasePrice = partItem.purchase_price ?? partItem.purchasePrice ?? null;
-                const orderDate = fullOrderResponse.date ?? order.date ?? null;
-                const orderDpoNo = fullOrderResponse.dpo_no ?? order.dpo_no ?? order.dpoNumber ?? null;
-
-                // Update lastPurchasePrice from the most recent DPO containing
-                // this part. This is sorted by date desc, so the first match
-                // is the latest.
-                if (lastPurchasePrice === null && purchasePrice !== null && purchasePrice !== undefined) {
-                  lastPurchasePrice = roundPurchasePrice(purchasePrice);
-                  lastPurchaseDate = orderDate;
-                  lastPurchaseDpoNo = orderDpoNo;
-                  foundDPO = true;
-                  break;
+      if (itemRowId && (cachedPriceA != null || cachedPriceB != null)) {
+        setFormItems((prev) =>
+          prev.map((row) =>
+            row.id === itemRowId
+              ? {
+                  ...row,
+                  priceA: cachedPriceA ?? row.priceA,
+                  priceB: cachedPriceB ?? row.priceB,
                 }
-              }
-            }
-          } catch (error: any) {
-            // Continue to next order - don't break the loop
-          }
-        }
+              : row,
+          ),
+        );
+        setRowPriceBaselines((prev) => ({
+          ...prev,
+          [itemRowId]: { priceA: cachedPriceA, priceB: cachedPriceB },
+        }));
+        setPartHistory({
+          priceA: cachedPriceA,
+          priceB: cachedPriceB,
+          priceM: cachedPriceM,
+          lastPurchasePrice: null,
+          lastPurchaseDate: null,
+          lastPurchaseDpoNo: null,
+        });
+        setHistoryBasePrices({ priceA: cachedPriceA, priceB: cachedPriceB });
+      }
 
-        // Always use prices from the Part Entry (parts table)
-        // Since Price A, B, M fields were removed from DPO, they should always come from the part itself
-        priceA = partPriceA;
-        priceB = partPriceB;
-        priceM = partPriceM;
+      const response = (await apiClient.getLastDirectPurchaseByPart(partId, {
+        order_type: isTransferIn ? "transfer_in" : "local_purchase",
+      })) as any;
 
+      if (requestId !== partHistoryRequestIdRef.current) return;
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+
+      const priceA =
+        response?.price_a != null ? Number(response.price_a) : cachedPriceA;
+      const priceB =
+        response?.price_b != null ? Number(response.price_b) : cachedPriceB;
+      const priceM =
+        response?.price_m != null ? Number(response.price_m) : cachedPriceM;
+      const lastPurchasePrice =
+        response?.last_purchase_price != null
+          ? roundPurchasePrice(Number(response.last_purchase_price))
+          : null;
+      const lastPurchaseDate = response?.last_purchase_date || null;
+      const lastPurchaseDpoNo = response?.last_purchase_dpo_no || null;
+      const partCatalogPurchase =
+        response?.catalog_purchase_price != null
+          ? Number(response.catalog_purchase_price)
+          : cachedPart?.purchasePrice != null
+            ? Number(cachedPart.purchasePrice)
+            : null;
+
+      if (response?.brand_name) {
+        setParts((currentParts) =>
+          currentParts.map((p) =>
+            p.id === partId && !p.brand
+              ? { ...p, brand: response.brand_name }
+              : p,
+          ),
+        );
       }
 
       setPartHistory({
@@ -1277,18 +1251,20 @@ export const DirectPurchaseOrder = ({
         );
       }
     } catch (error: any) {
-      // Set all values to null to show N/A in the UI
+      if (requestId !== partHistoryRequestIdRef.current) return;
       setPartHistory({
-        priceA: null,
-        priceB: null,
-        priceM: null,
+        priceA: cachedPriceA,
+        priceB: cachedPriceB,
+        priceM: cachedPriceM,
         lastPurchasePrice: null,
         lastPurchaseDate: null,
         lastPurchaseDpoNo: null,
       });
-      setHistoryBasePrices({ priceA: null, priceB: null });
+      setHistoryBasePrices({ priceA: cachedPriceA, priceB: cachedPriceB });
     } finally {
-      setLoadingHistory(false);
+      if (requestId === partHistoryRequestIdRef.current) {
+        setLoadingHistory(false);
+      }
     }
   };
 
@@ -1325,29 +1301,10 @@ export const DirectPurchaseOrder = ({
             }
           }
 
-          // Update brand information when part is selected; fetch history and suggested purchase price
+          // Fetch last purchase + catalog Price A/B for the selected part
           if (field === "partId") {
             if (typeof value === "string" && value) {
               setSelectedHistoryRowId(id);
-              apiClient
-                .getPart(value)
-                .then((partResponse) => {
-                  const part = partResponse as any;
-                  if (part?.error) {
-                    return;
-                  }
-                  if (part) {
-                    setParts((currentParts) =>
-                      currentParts.map((p) => {
-                        if (p.id === value && !p.brand && part.brand_name) {
-                          return { ...p, brand: part.brand_name };
-                        }
-                        return p;
-                      }),
-                    );
-                  }
-                })
-                .catch(() => {});
               setSelectedPartForHistory(value);
               void fetchPartHistory(value, id);
             }

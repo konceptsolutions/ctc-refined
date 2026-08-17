@@ -3245,6 +3245,7 @@ export const SalesInvoice = ({
             cashAccountId: inv.cashAccountId ?? null,
             bankAmount: Number(inv.bankAmount || 0),
             cashAmount: Number(inv.cashAmount || 0),
+            deliveredTo: inv.deliveredTo || inv.delivered_to || null,
             remarks: inv.remarks ?? null,
             status: inv.status as InvoiceStatus,
             paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -4169,6 +4170,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -4805,6 +4807,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -4915,6 +4918,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -5065,6 +5069,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -5372,7 +5377,7 @@ export const SalesInvoice = ({
         status: inv.status || "pending",
         paymentStatus: inv.paymentStatus || "unpaid",
         accountId: inv.accountId,
-        deliveredTo: inv.deliveredTo,
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         bankAccountId: inv.bankAccountId ?? null,
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
@@ -5470,6 +5475,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus:
@@ -5570,6 +5576,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -5673,6 +5680,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -5775,6 +5783,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -5869,6 +5878,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -6089,6 +6099,7 @@ export const SalesInvoice = ({
         cashAccountId: inv.cashAccountId ?? null,
         bankAmount: Number(inv.bankAmount || 0),
         cashAmount: Number(inv.cashAmount || 0),
+        deliveredTo: inv.deliveredTo || inv.delivered_to || null,
         remarks: inv.remarks ?? null,
         status: inv.status as InvoiceStatus,
         paymentStatus: inv.paymentStatus as "unpaid" | "partial" | "paid",
@@ -6523,8 +6534,8 @@ export const SalesInvoice = ({
               isGstLetterhead
                 ? `<div class="gst-footer">
               <div class="notes">
-                <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || "-")}</div>
-                <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || "-")}</div>
+                <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || invoiceMeta.delivered_to || "-")}</div>
+                <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || invoiceMeta.notes || "-")}</div>
                 <div style="margin-top:4px;">
                   <b>Note:-</b> All manufacturer's Names, Numbers, Symbols and Descriptions are used for reference only.
                   Document invalid without authorised signature and stamp.
@@ -6542,8 +6553,8 @@ export const SalesInvoice = ({
               </div>
             </div>`
                 : `<div class="notes">
-              <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || "-")}</div>
-              <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || "-")}</div>
+              <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || invoiceMeta.delivered_to || "-")}</div>
+              <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || invoiceMeta.notes || "-")}</div>
               <div style="margin-top:8px;">
                 <b>Note:-</b> All manufacturer's Names, Numbers, Symbols and Descriptions are used for reference only.
                 Document invalid without authorised signature and stamp.
@@ -6672,7 +6683,8 @@ export const SalesInvoice = ({
         invoiceNo: fullInvoice?.invoiceNo || invoice.invoiceNo,
         invoiceDate: fullInvoice?.invoiceDate || invoice.invoiceDate,
         customerName: fullInvoice?.customerName || invoice.customerName,
-        deliveredTo: fullInvoice?.deliveredTo || "",
+        deliveredTo:
+          fullInvoice?.deliveredTo || fullInvoice?.delivered_to || "",
         status: fullInvoice?.status || invoice.status,
         userName: getPrintedBy(),
         items: challanItems,
@@ -6715,6 +6727,12 @@ export const SalesInvoice = ({
           fullInv?.overallDiscount != null
             ? Number(fullInv.overallDiscount)
             : invoice.overallDiscount,
+        deliveredTo:
+          fullInv?.deliveredTo ||
+          fullInv?.delivered_to ||
+          invoice.deliveredTo ||
+          null,
+        remarks: fullInv?.remarks ?? fullInv?.notes ?? invoice.remarks ?? null,
       });
     } catch {
       setInvoiceForPrint(invoice);
@@ -9731,6 +9749,16 @@ export const SalesInvoice = ({
                                     invoiceDate:
                                       fullInv?.invoiceDate || inv.invoiceDate,
                                     items: mappedItems,
+                                    deliveredTo:
+                                      fullInv?.deliveredTo ||
+                                      fullInv?.delivered_to ||
+                                      inv.deliveredTo ||
+                                      null,
+                                    remarks:
+                                      fullInv?.remarks ??
+                                      fullInv?.notes ??
+                                      inv.remarks ??
+                                      null,
                                   });
                                 } catch {
                                   setSelectedInvoice({
@@ -10078,6 +10106,21 @@ export const SalesInvoice = ({
                 <div>
                   <p className="text-xs text-muted-foreground">Status</p>
                   {getStatusBadge(selectedInvoice.status)}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Delivered To</p>
+                  <p className="font-medium">
+                    {selectedInvoice.deliveredTo?.trim() || "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Remarks</p>
+                  <p className="font-medium">
+                    {selectedInvoice.remarks?.trim() || "-"}
+                  </p>
                 </div>
               </div>
 

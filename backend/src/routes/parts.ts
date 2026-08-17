@@ -829,33 +829,32 @@ router.get("/", async (req: Request, res: Response) => {
       params.push(`%${(description as string).trim()}%`);
     }
 
-    const partDuplicateKeySql = `CONCAT(
-      LOWER(TRIM(COALESCE(p."partNo", ''))), '|',
-      LOWER(TRIM(COALESCE(mp."masterPartNo", ''))), '|',
-      LOWER(TRIM(COALESCE(p."description", ''))), '|',
-      LOWER(TRIM(COALESCE(app."name", ''))), '|',
-      LOWER(TRIM(COALESCE(b."name", '')))
-    )`;
+    const partNoNormSql = `LOWER(TRIM(COALESCE(p."partNo", '')))`;
+    const masterNormSql = `LOWER(TRIM(COALESCE(mp."masterPartNo", '')))`;
+    const duplicatePartNosSql = `SELECT LOWER(TRIM(p2."partNo"))
+      FROM "Part" p2
+      WHERE p2."partNo" IS NOT NULL AND TRIM(p2."partNo") <> ''
+      GROUP BY 1
+      HAVING COUNT(*) > 1`;
+    const duplicateMastersSql = `SELECT LOWER(TRIM(mp2."masterPartNo"))
+      FROM "Part" p2
+      INNER JOIN "MasterPart" mp2 ON p2."masterPartId" = mp2.id
+      WHERE mp2."masterPartNo" IS NOT NULL AND TRIM(mp2."masterPartNo") <> ''
+      GROUP BY 1
+      HAVING COUNT(*) > 1`;
+    // Group by part no when that number is reused; otherwise by master part no.
+    // Description, application, and brand are ignored so near-matches still show.
+    const partDuplicateKeySql = `CASE
+      WHEN ${partNoNormSql} <> '' AND ${partNoNormSql} IN (${duplicatePartNosSql})
+        THEN CONCAT('part|', ${partNoNormSql})
+      ELSE CONCAT('master|', ${masterNormSql})
+    END`;
 
     if (duplicates_only === "true") {
-      conditions.push(`${partDuplicateKeySql} IN (
-        SELECT dup_key FROM (
-          SELECT
-            CONCAT(
-              LOWER(TRIM(COALESCE(p2."partNo", ''))), '|',
-              LOWER(TRIM(COALESCE(mp2."masterPartNo", ''))), '|',
-              LOWER(TRIM(COALESCE(p2."description", ''))), '|',
-              LOWER(TRIM(COALESCE(app2."name", ''))), '|',
-              LOWER(TRIM(COALESCE(b2."name", '')))
-            ) AS dup_key,
-            COUNT(*)::int AS cnt
-          FROM "Part" p2
-          LEFT JOIN "MasterPart" mp2 ON p2."masterPartId" = mp2.id
-          LEFT JOIN "Brand" b2 ON p2."brandId" = b2.id
-          LEFT JOIN "Application" app2 ON p2."applicationId" = app2.id
-          GROUP BY 1
-          HAVING COUNT(*) > 1
-        ) duplicate_groups
+      conditions.push(`(
+        (${partNoNormSql} <> '' AND ${partNoNormSql} IN (${duplicatePartNosSql}))
+        OR
+        (${masterNormSql} <> '' AND ${masterNormSql} IN (${duplicateMastersSql}))
       )`);
     }
 

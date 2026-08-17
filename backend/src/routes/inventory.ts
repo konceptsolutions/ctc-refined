@@ -8407,6 +8407,87 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
   }
 });
 
+/** Last DPO line for a part + catalog Price A/B — used when selecting a line on Local Purchase. */
+router.get(
+  "/direct-purchase-orders/last-by-part/:partId",
+  async (req: Request, res: Response) => {
+    try {
+      const partId = String(req.params.partId || "").trim();
+      if (!partId) {
+        return res.status(400).json({ error: "Part id is required." });
+      }
+
+      const orderTypeRaw = String(req.query.order_type || "").trim();
+      const orderTypeFilter =
+        orderTypeRaw === "transfer_in"
+          ? "transfer_in"
+          : orderTypeRaw || "local_purchase";
+
+      const [part, lastItem] = await Promise.all([
+        prisma.part.findUnique({
+          where: { id: partId },
+          select: {
+            id: true,
+            priceA: true,
+            priceB: true,
+            priceM: true,
+            purchasePrice: true,
+            cost: true,
+            Brand: { select: { name: true } },
+          },
+        }),
+        prisma.directPurchaseOrderItem.findFirst({
+          where: {
+            partId,
+            DirectPurchaseOrder: {
+              orderType: orderTypeFilter,
+              status: { not: "Cancelled" },
+            },
+          },
+          orderBy: [
+            { DirectPurchaseOrder: { date: "desc" } },
+            { createdAt: "desc" },
+          ],
+          select: {
+            purchasePrice: true,
+            DirectPurchaseOrder: {
+              select: {
+                date: true,
+                dpoNumber: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+      if (!part) {
+        return res.status(404).json({ error: "Part not found" });
+      }
+
+      const catalogPurchase =
+        Number(part.purchasePrice || 0) > 0
+          ? Number(part.purchasePrice)
+          : Number(part.cost || 0) > 0
+            ? Number(part.cost)
+            : null;
+
+      res.json({
+        part_id: part.id,
+        brand_name: part.Brand?.name || null,
+        price_a: part.priceA ?? null,
+        price_b: part.priceB ?? null,
+        price_m: part.priceM ?? null,
+        catalog_purchase_price: catalogPurchase,
+        last_purchase_price: lastItem ? Number(lastItem.purchasePrice) : null,
+        last_purchase_date: lastItem?.DirectPurchaseOrder?.date || null,
+        last_purchase_dpo_no: lastItem?.DirectPurchaseOrder?.dpoNumber || null,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
 // Get single direct purchase order
 router.get(
   "/direct-purchase-orders/:id",

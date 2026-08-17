@@ -108,11 +108,11 @@ export interface Item {
 }
 
 export function getItemDuplicateKey(
-  item: Pick<Item, "partNo" | "masterPartNo" | "description" | "application" | "brand">,
+  item: Pick<Item, "partNo" | "masterPartNo">,
 ): string {
-  return [item.partNo, item.masterPartNo, item.description, item.application, item.brand]
-    .map((value) => String(value || "").trim().toLowerCase())
-    .join("|");
+  const partNo = String(item.partNo || "").trim().toLowerCase();
+  if (partNo) return `part|${partNo}`;
+  return `master|${String(item.masterPartNo || "").trim().toLowerCase()}`;
 }
 
 const DUPLICATE_GROUP_BORDER = [
@@ -1879,8 +1879,8 @@ export const ItemsListView = ({
                 {/* {showDuplicateView && (
                   <span className="text-[10px] text-muted-foreground">
                     Matching records are grouped together. Each group shares the
-                    same five fields but is a separate database item (different
-                    ID/stock).
+                    same part number or master part number, even if description
+                    or application differs. Each row is a separate database item.
                   </span>
                 )} */}
               </div>

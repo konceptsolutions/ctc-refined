@@ -1664,6 +1664,18 @@ class ApiClient {
     });
   }
 
+  async getLastDirectPurchaseByPart(
+    partId: string,
+    params?: { order_type?: string },
+  ) {
+    const queryParams = new URLSearchParams();
+    if (params?.order_type) queryParams.set("order_type", params.order_type);
+    const qs = queryParams.toString();
+    return this.request(
+      `/inventory/direct-purchase-orders/last-by-part/${partId}${qs ? `?${qs}` : ""}`,
+    );
+  }
+
   async getDirectPurchaseOrder(id: string) {
     return this.request(`/inventory/direct-purchase-orders/${id}`);
   }
