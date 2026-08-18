@@ -108,11 +108,12 @@ export interface Item {
 }
 
 export function getItemDuplicateKey(
-  item: Pick<Item, "partNo" | "masterPartNo">,
+  item: Pick<Item, "partNo" | "masterPartNo" | "brand">,
 ): string {
   const partNo = String(item.partNo || "").trim().toLowerCase();
-  if (partNo) return `part|${partNo}`;
-  return `master|${String(item.masterPartNo || "").trim().toLowerCase()}`;
+  const masterPartNo = String(item.masterPartNo || "").trim().toLowerCase();
+  const brand = String(item.brand || "").trim().toLowerCase();
+  return `part|${partNo}|${masterPartNo}|${brand}`;
 }
 
 const DUPLICATE_GROUP_BORDER = [

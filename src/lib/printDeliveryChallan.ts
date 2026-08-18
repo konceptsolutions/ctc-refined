@@ -1,3 +1,5 @@
+import { printDeliveryChallanPdf } from "@/utils/printDeliveryChallanPdf";
+
 type DeliveryChallanItem = {
   partNo: string;
   ssPartNo?: string;
@@ -91,184 +93,17 @@ export const getChallanItemLocation = (item: any, invoice: any): string => {
   return "-";
 };
 
-const esc = (v: unknown) =>
-  String(v ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
 export const printDeliveryChallan = (payload: DeliveryChallanPayload) => {
-  const printDateTime = payload.printDateTime || new Date().toLocaleString();
-  const invoiceDateText = payload.invoiceDate
-    ? new Date(payload.invoiceDate).toLocaleDateString()
-    : "-";
-  const totalQty = payload.items.reduce(
-    (sum, item) => sum + (Number(item.qty) || 0),
-    0,
-  );
-  const totalDelivered = payload.items.reduce(
-    (sum, item) => sum + (Number(item.deliveredQty) || 0),
-    0,
-  );
-  const totalPending = payload.items.reduce(
-    (sum, item) => sum + (Number(item.pendingQty) || 0),
-    0,
-  );
-  const totalWeight = payload.items.reduce(
-    (sum, item) => sum + (Number(item.weight) || 0),
-    0,
-  );
-  const rows = payload.items
-    .map(
-      (item, idx) => `
-      <tr>
-        <td class="c">${idx + 1}</td>
-        <td>${esc(item.partNo || "-")}</td>
-        <td>${esc(item.ssPartNo || item.partNo || "-")}</td>
-        <td>${esc(item.description || "-")}</td>
-        <td>${esc(item.brand || "-")}</td>
-        <td class="c">${esc(item.uom || "NOS")}</td>
-        <td class="c">${Number(item.qty) || 0}</td>
-        <td class="c">${Number(item.deliveredQty) || 0}</td>
-        <td class="c">${Number(item.pendingQty) || 0}</td>
-        <td>${esc(item.location || "-")}</td>
-        <td class="c">${Number(item.weight || 0).toFixed(3)}</td>
-      </tr>
-    `,
-    )
-    .join("");
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Delivery Challan - ${esc(payload.challanNo || payload.invoiceNo)}</title>
-        <style>
-          @page { size: A5 landscape; margin: 8mm; }
-          * { box-sizing: border-box; }
-          html, body { font-family: Arial, sans-serif; font-size: 10px; color: #000; margin: 0; padding: 0; width: 100%; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 8px; }
-          .company { text-align: center; font-weight: 700; font-size: 18px; letter-spacing: .5px; margin-bottom: 4px; }
-          .title { text-align: center; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
-          .left p, .right p { margin: 1px 0; }
-          .right { text-align: right; flex-shrink: 0; }
-          .left { min-width: 0; flex: 1; }
-          table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 6px; }
-          th, td { border: 1px solid #555; padding: 2px 3px; font-size: 9px; word-wrap: break-word; overflow-wrap: break-word; }
-          th { background: #f5f5f5; text-align: left; }
-          .c { text-align: center; }
-          .summary { margin-top: 6px; display: flex; justify-content: space-between; gap: 8px; }
-          .summary .left, .summary .right { width: 49%; min-width: 0; }
-          .right-box { margin-left: auto; width: 38%; max-width: 42%; }
-          .right-box table td { border: none; border-bottom: 1px solid #777; padding: 3px 2px; }
-          .right-box table tr:last-child td { border-bottom: 2px solid #000; font-weight: 700; }
-          .signatures { margin-top: 16px; display: flex; justify-content: space-between; gap: 8px; }
-          .sign { width: 31%; text-align: center; }
-          .line { margin: 14px auto 4px; width: 85%; border-top: 1px solid #333; }
-          @media print {
-            html, body { width: auto; height: auto; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="company">DELIVERY CHALLAN</div>
-        <div class="header">
-          <div class="left">
-            <p><strong>M/S.</strong> ${esc(payload.customerName)}</p>
-            <p>${esc(payload.deliveredTo || "-")}</p>
-          </div>
-          <div class="right">
-            <p>Print: ${esc(printDateTime)}</p>
-            <p>Page 1 of 1</p>
-            <p>No: ${esc(payload.invoiceNo)}</p>
-            <p>Date: ${esc(invoiceDateText)}</p>
-            <p>Challan: ${esc(payload.challanNo)}</p>
-            <p>User: ${esc(payload.userName || "-")}</p>
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th class="c">Sr#</th>
-              <th>Part #</th>
-              <th>SS Part #</th>
-              <th>Description</th>
-              <th>Brand</th>
-              <th class="c">UOM</th>
-              <th class="c">Qty</th>
-              <th class="c">Delivered Qty</th>
-              <th class="c">Pending Qty</th>
-              <th>Location</th>
-              <th class="c">Weight</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows || '<tr><td colspan="11" class="c">No items</td></tr>'}
-            <tr>
-              <td colspan="6" class="c"><strong>Total</strong></td>
-              <td class="c"><strong>${totalQty}</strong></td>
-              <td class="c"><strong>${totalDelivered}</strong></td>
-              <td class="c"><strong>${totalPending}</strong></td>
-              <td>-</td>
-              <td class="c"><strong>${totalWeight.toFixed(3)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="summary">
-          <div class="left">
-            <p><strong>Delivered to :</strong> ${esc(payload.deliveredTo || "-")}</p>
-            <p><strong>Note :-</strong> ${esc(payload.notes || "Received goods as per invoice in original packing and condition.")}</p>
-          </div>
-          <div class="right-box">
-            <table>
-              <tr><td>Status</td><td style="text-align:right">${esc(payload.status || "-")}</td></tr>
-              <tr><td>Invoice No</td><td style="text-align:right">${esc(payload.invoiceNo)}</td></tr>
-            </table>
-          </div>
-        </div>
-
-        <div class="signatures">
-          <div class="sign"><div class="line"></div>( Delivered By )</div>
-          <div class="sign"><div class="line"></div>( Verified By )</div>
-          <div class="sign"><div class="line"></div>( Received By )</div>
-        </div>
-      </body>
-    </html>
-  `;
-
-  const frame = document.createElement("iframe");
-  frame.style.position = "fixed";
-  frame.style.right = "0";
-  frame.style.bottom = "0";
-  frame.style.width = "0";
-  frame.style.height = "0";
-  frame.style.border = "0";
-  document.body.appendChild(frame);
-
-  const cleanup = () => {
-    setTimeout(() => {
-      if (document.body.contains(frame)) document.body.removeChild(frame);
-      window.focus();
-    }, 150);
-  };
-
-  frame.onload = () => {
-    const win = frame.contentWindow;
-    if (!win) {
-      cleanup();
-      return;
-    }
-    win.onafterprint = cleanup;
-    setTimeout(() => {
-      win.focus();
-      win.print();
-    }, 120);
-    setTimeout(cleanup, 3000);
-  };
-
-  frame.srcdoc = html;
+  printDeliveryChallanPdf({
+    challanNo: payload.challanNo,
+    invoiceNo: payload.invoiceNo,
+    invoiceDate: payload.invoiceDate,
+    printDateTime: payload.printDateTime,
+    customerName: payload.customerName,
+    deliveredTo: payload.deliveredTo,
+    status: payload.status,
+    userName: payload.userName,
+    notes: payload.notes,
+    items: payload.items,
+  });
 };

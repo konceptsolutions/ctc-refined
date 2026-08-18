@@ -1897,42 +1897,49 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
           ? debit - credit
           : credit - debit;
 
-      const priorEntries = await prisma.voucherEntry.findMany({
+      const ledgerEntries = await prisma.voucherEntry.findMany({
         where: {
           accountId: receivableEntry.accountId,
           Voucher: {
             status: "posted",
-            AND: [
-              { OR: [{ isCleared: null }, { isCleared: { not: 0 } }] },
-              {
-                OR: [
-                  { date: { lt: receivableEntry.Voucher.date } },
-                  {
-                    date: receivableEntry.Voucher.date,
-                    createdAt: { lt: receivableEntry.Voucher.createdAt },
-                  },
-                ],
-              },
-            ],
+            OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
           },
+        },
+        include: {
+          Voucher: { select: { id: true, date: true, createdAt: true } },
         },
       });
 
-      const priorDebit = priorEntries.reduce((sum, e) => sum + (e.debit || 0), 0);
-      const priorCredit = priorEntries.reduce(
-        (sum, e) => sum + (e.credit || 0),
-        0,
-      );
-
-      previousBalance =
-        Number(receivableEntry.Account.openingBalance || 0) +
-        calcChange(priorDebit, priorCredit);
-      customerBalance =
-        previousBalance +
-        calcChange(
-          Number(receivableEntry.debit || 0),
-          Number(receivableEntry.credit || 0),
+      const thisInvoiceId = id;
+      const thisVoucherId = receivableEntry.voucherId;
+      const thisVoucherDate = new Date(
+        receivableEntry.Voucher.date,
+      ).getTime();
+      const thisVoucherCreated = new Date(
+        receivableEntry.Voucher.createdAt,
+      ).getTime();
+      const belongsToThisInvoice = (entry: (typeof ledgerEntries)[number]) =>
+        entry.salesInvoiceId === thisInvoiceId ||
+        entry.voucherId === thisVoucherId;
+      const isPriorToThisInvoice = (entry: (typeof ledgerEntries)[number]) => {
+        if (belongsToThisInvoice(entry)) return false;
+        const entryDate = new Date(entry.Voucher.date).getTime();
+        if (entryDate < thisVoucherDate) return true;
+        if (entryDate > thisVoucherDate) return false;
+        return (
+          new Date(entry.Voucher.createdAt).getTime() < thisVoucherCreated
         );
+      };
+      const sumChange = (entries: typeof ledgerEntries) =>
+        entries.reduce(
+          (sum, entry) =>
+            sum + calcChange(Number(entry.debit || 0), Number(entry.credit || 0)),
+          0,
+        );
+
+      const opening = Number(receivableEntry.Account.openingBalance || 0);
+      previousBalance = opening + sumChange(ledgerEntries.filter(isPriorToThisInvoice));
+      customerBalance = opening + sumChange(ledgerEntries);
     }
 
     const stockMovements = await prisma.stockMovement.findMany({

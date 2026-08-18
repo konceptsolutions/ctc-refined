@@ -882,35 +882,34 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     const showDuplicateMeta = duplicates_only === "true";
-    // Precompute duplicate keys once and join — IN (GROUP BY) inside CASE/ORDER/WINDOW
-    // was re-scanned per row and made this filter very slow.
-    // Category, subcategory, application, description, and brand are ignored so
-    // incomplete rows (e.g. category/subcategory not saved) still match.
+    // Duplicate = same part no + master part no + brand (all three).
     const duplicateJoinsSql = showDuplicateMeta
       ? `
       LEFT JOIN (
-        SELECT LOWER(TRIM("partNo")) AS k
-        FROM "Part"
-        WHERE "partNo" IS NOT NULL AND TRIM("partNo") <> ''
-        GROUP BY 1
-        HAVING COUNT(*) > 1
-      ) dup_part_nos ON dup_part_nos.k = LOWER(TRIM(COALESCE(p."partNo", '')))
-      LEFT JOIN (
-        SELECT LOWER(TRIM(mp2."masterPartNo")) AS k
+        SELECT
+          LOWER(TRIM(p2."partNo")) AS part_k,
+          LOWER(TRIM(mp2."masterPartNo")) AS master_k,
+          LOWER(TRIM(b2.name)) AS brand_k
         FROM "Part" p2
         INNER JOIN "MasterPart" mp2 ON p2."masterPartId" = mp2.id
-        WHERE mp2."masterPartNo" IS NOT NULL AND TRIM(mp2."masterPartNo") <> ''
-        GROUP BY 1
+        INNER JOIN "Brand" b2 ON p2."brandId" = b2.id
+        WHERE p2."partNo" IS NOT NULL AND TRIM(p2."partNo") <> ''
+          AND mp2."masterPartNo" IS NOT NULL AND TRIM(mp2."masterPartNo") <> ''
+          AND b2.name IS NOT NULL AND TRIM(b2.name) <> ''
+        GROUP BY 1, 2, 3
         HAVING COUNT(*) > 1
-      ) dup_masters ON dup_masters.k = LOWER(TRIM(COALESCE(mp."masterPartNo", '')))`
+      ) dup_items ON dup_items.part_k = LOWER(TRIM(COALESCE(p."partNo", '')))
+        AND dup_items.master_k = LOWER(TRIM(COALESCE(mp."masterPartNo", '')))
+        AND dup_items.brand_k = LOWER(TRIM(COALESCE(b.name, '')))`
       : "";
-    const partDuplicateKeySql = `CASE
-      WHEN dup_part_nos.k IS NOT NULL THEN CONCAT('part|', dup_part_nos.k)
-      ELSE CONCAT('master|', COALESCE(dup_masters.k, ''))
-    END`;
+    const partDuplicateKeySql = `CONCAT(
+      'part|', LOWER(TRIM(COALESCE(p."partNo", ''))),
+      '|', LOWER(TRIM(COALESCE(mp."masterPartNo", ''))),
+      '|', LOWER(TRIM(COALESCE(b.name, '')))
+    )`;
 
     if (showDuplicateMeta) {
-      conditions.push(`(dup_part_nos.k IS NOT NULL OR dup_masters.k IS NOT NULL)`);
+      conditions.push(`dup_items.part_k IS NOT NULL`);
     }
 
     if (status) {
@@ -986,8 +985,8 @@ router.get("/", async (req: Request, res: Response) => {
         ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
       FROM "Part" p
       LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
-      ${duplicateJoinsSql}
       LEFT JOIN "Brand" b ON p."brandId" = b.id
+      ${duplicateJoinsSql}
       LEFT JOIN "Category" c ON p."categoryId" = c.id
       LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
       LEFT JOIN "Application" app ON p."applicationId" = app.id

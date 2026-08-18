@@ -103,6 +103,7 @@ import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import { InvoicePartDropdownList } from "./InvoicePartDropdownList";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
+import { printSalesInvoicePdf } from "@/utils/printSalesInvoicePdf";
 import {
   extractLatestPriceDatesFromHistory,
   formatPriceLastUpdatedLabel,
@@ -4644,7 +4645,7 @@ export const SalesInvoice = ({
     openedInquiryQuotationRef.current = true;
     sessionStorage.removeItem("openSalesQuotationId");
     void handleEditInvoice(found);
-  }, [isQuotation, loadingInvoices, invoices]);
+  }, [isQuotation, loadingInvoices, invoices, handleEditInvoice]);
 
   const refreshCustomersList = async () => {
     try {
@@ -6145,7 +6146,7 @@ export const SalesInvoice = ({
     }
   };
 
-  const handlePrintInvoice = (
+  const handlePrintInvoice = async (
     invoice: Invoice,
     columns?: string[],
     options?: {
@@ -6313,8 +6314,9 @@ export const SalesInvoice = ({
       0,
       Number(invoice.grandTotal || 0) - Number(invoice.paidAmount || 0),
     );
-    // Prefer explicit previous balance from backend if present; fallback from
-    // customer current balance by subtracting this invoice's due amount.
+    // Bal. B/F is outstanding BEFORE this invoice. Total Receivable is
+    // outstanding after it. Never add current amount on top of a balance
+    // that already includes this invoice (that printed 7,000 on a 3,500 bill).
     const explicitPrevBalance = Number(invoiceMeta.previousBalance ?? NaN);
     const customerCurrentBalanceFromInvoice = Number(
       invoiceMeta.customerBalance ?? NaN,
@@ -6332,12 +6334,21 @@ export const SalesInvoice = ({
     )
       ? customerCurrentBalanceFromInvoice
       : customerCurrentBalanceFromState;
-    const balBf = Number.isFinite(explicitPrevBalance)
-      ? Math.max(0, explicitPrevBalance)
-      : Number.isFinite(customerCurrentBalance)
-        ? Math.max(0, customerCurrentBalance - invoiceDue)
-        : 0;
-    const totalReceivable = balBf + currentAmount;
+    let balBf = 0;
+    if (
+      Number.isFinite(explicitPrevBalance) &&
+      Number.isFinite(customerCurrentBalance) &&
+      Math.abs(explicitPrevBalance - customerCurrentBalance) < 0.01
+    ) {
+      balBf = Math.max(0, customerCurrentBalance - invoiceDue);
+    } else if (Number.isFinite(explicitPrevBalance)) {
+      balBf = Math.max(0, explicitPrevBalance);
+    } else if (Number.isFinite(customerCurrentBalance)) {
+      balBf = Math.max(0, customerCurrentBalance - invoiceDue);
+    }
+    const totalReceivable = Number.isFinite(customerCurrentBalance)
+      ? Math.max(0, customerCurrentBalance)
+      : balBf + currentAmount;
     const currentAmountWords = numberToWords(currentAmount);
     const linesBeforeCurrentAmount =
       (discountAmount > 0 ? 1 : 0) +
@@ -6350,296 +6361,36 @@ export const SalesInvoice = ({
     const usePreprintedLetterhead =
       options?.useLetterhead === true && isGstLetterhead;
     const printOrientation = options?.orientation ?? "landscape";
-    const pageMargins = usePreprintedLetterhead
-      ? "28mm 10mm 42mm 22mm"
-      : "8mm";
 
-    const rows =
-      invoice.items?.length
-        ? invoice.items
-            .map(
-              (item, idx) => `
-                <tr>
-                  ${include("sr") ? `<td class="c">${idx + 1}</td>` : ""}
-                  ${include("partNo") ? `<td>${esc(item.partNo)}</td>` : ""}
-                  ${include("altPartNo") ? `<td>${esc(item.partNo || "")}</td>` : ""}
-                  ${include("description") ? `<td>${esc(item.description)}</td>` : ""}
-                  ${include("brand") ? `<td>${esc(item.brand || "")}</td>` : ""}
-                  ${include("uom") ? `<td class="c">NOS</td>` : ""}
-                  ${include("qty") ? `<td class="c">${item.orderedQty || 0}</td>` : ""}
-                  ${include("price") ? `<td class="r">${(item.unitPrice || 0).toLocaleString()}</td>` : ""}
-                  ${include("amount") ? `<td class="r">${(item.lineTotal || 0).toLocaleString()}</td>` : ""}
-                </tr>`,
-            )
-            .join("")
-        : `<tr><td colspan="${visibleColumnCount}" class="c">No items</td></tr>`;
-
-    const printHTML = `
-      <html>
-        <head>
-          <title></title>
-          <style>
-            @page { size: A5 ${printOrientation}; margin: ${pageMargins}; }
-            * { box-sizing: border-box; }
-            html, body { font-family: Arial, sans-serif; font-size: ${isGstLetterhead ? "10px" : "11px"}; color: #000; margin: 0; padding: 0; width: 100%; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .page { width: 100%; max-width: 100%; ${isGstLetterhead ? "page-break-after: avoid; break-after: avoid-page;" : ""} }
-            .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-            .header-row.gst-header { gap: 12px; }
-            .header-left { flex: 1; min-width: 0; }
-            .header-center { flex: 0 0 auto; display: flex; justify-content: center; align-items: flex-start; padding: 0 6px; }
-            .header-right { flex: 1; text-align: right; }
-            .header-row.gst-header .header-left { flex: 1; }
-            .header-row.gst-header .header-center { flex: 0 0 auto; }
-            .header-row.gst-header .header-right { flex: 1; min-width: 0; }
-            .tax-stamp { height: 58px; width: auto; object-fit: contain; display: block; }
-            .tax-stamp.gst-stamp { height: 50px; }
-            .row { display: flex; justify-content: space-between; align-items: flex-start; }
-            .mt-8 { margin-top: 8px; }
-            .muted { color: #444; }
-            .title { font-weight: bold; font-size: ${isGstLetterhead ? "11px" : "12px"}; }
-            table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: ${isGstLetterhead ? "4px" : "8px"}; }
-            th, td { border: 1px solid #444; padding: ${isGstLetterhead ? "2px 3px" : "3px 4px"}; font-size: ${isGstLetterhead ? "9px" : "10px"}; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
-            th { text-align: left; background: #f5f5f5; }
-            .c { text-align: center; }
-            .r { text-align: right; }
-            .totals { width: ${isGstLetterhead ? "38%" : "42%"}; margin-left: auto; margin-top: 0; }
-            .totals td { border: none; border-bottom: 1px solid #aaa; font-size: ${isGstLetterhead ? "9px" : "10px"}; }
-            .totals tr:last-child td { border-bottom: 2px solid #000; font-weight: bold; }
-            .amount-row { display: flex; align-items: flex-start; gap: 8px; margin-top: ${isGstLetterhead ? "6px" : "8px"}; page-break-inside: avoid; break-inside: avoid; }
-            .amount-words { flex: 1; font-size: ${isGstLetterhead ? "10px" : "11px"}; padding-top: 2px; }
-            .notes { margin-top: ${isGstLetterhead ? "6px" : "10px"}; font-size: ${isGstLetterhead ? "9px" : "10px"}; max-width: ${isGstLetterhead ? "68%" : "100%"}; }
-            .gst-footer {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-end;
-              gap: 10px;
-              margin-top: ${isGstLetterhead ? "4px" : "10px"};
-              page-break-inside: avoid;
-              break-inside: avoid;
-            }
-            .gst-footer .notes { margin-top: 0; flex: 1; max-width: calc(100% - 158px); }
-            .signature-field { flex: 0 0 148px; text-align: center; align-self: flex-end; }
-            .signature-slot { height: 44px; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
-            .auth-signature { max-height: 42px; max-width: 136px; width: auto; object-fit: contain; display: block; }
-            .signature-line { border-top: 1px solid #000; width: 100%; }
-            .signature-caption { font-size: 8px; margin-top: 1px; text-align: center; line-height: 1.2; }
-            @media print {
-              html, body { width: auto; height: auto; overflow: visible; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="page">
-            <div class="header-row${isGstLetterhead ? " gst-header" : ""}">
-              <div class="header-left">
-                <div class="title">${esc(invoice.customerName || "Walk-in Customer")}</div>
-                ${
-                  invoice.customerType === "registered" && formattedAddressHtml
-                    ? `<div class="muted">${formattedAddressHtml}</div>`
-                    : ""
-                }
-                ${
-                  invoice.customerType === "registered" && areaText
-                    ? `<div class="muted">${areaText}</div>`
-                    : ""
-                }
-                ${
-                  invoice.customerType === "registered" && contactNoText
-                    ? `<div class="muted">Contact No: ${contactNoText}</div>`
-                    : ""
-                }
-              </div>
-              <div class="header-center">
-                <img src="${salesTaxStampUrl}" alt="Sales tax as per rule will be charged on the final invoice" class="tax-stamp${isGstLetterhead ? " gst-stamp" : ""}" />
-              </div>
-              <div class="header-right">
-                <div>Print: ${esc(printDateTime)}</div>
-                <div>Page 1 of 1</div>
-                <div>${esc(invoice.invoiceNo)}</div>
-                <div>Date: ${esc(dateText)}</div>
-                ${
-                  String(invoice.term || "").trim()
-                    ? invoice.customerType === "registered"
-                      ? `<div>Term: credit for ${esc(String(invoice.term || "").trim())} days</div>`
-                      : `<div>Term: ${esc(String(invoice.term || "").trim())}</div>`
-                    : ""
-                }
-                <div>User: ${esc(printedBy)}</div>
-              </div>
-            </div>
-
-            <table>
-              <thead>
-                <tr>
-                  ${include("sr") ? '<th class="c">Sr#</th>' : ""}
-                  ${include("partNo") ? "<th>Part No.</th>" : ""}
-                  ${include("altPartNo") ? "<th>Alt. Part No.</th>" : ""}
-                  ${include("description") ? "<th>Description</th>" : ""}
-                  ${include("brand") ? "<th>Brand</th>" : ""}
-                  ${include("uom") ? '<th class="c">UOM</th>' : ""}
-                  ${include("qty") ? '<th class="c">Qty</th>' : ""}
-                  ${include("price") ? '<th class="r">Price</th>' : ""}
-                  ${include("amount") ? '<th class="r">Amount</th>' : ""}
-                </tr>
-              </thead>
-              <tbody>
-                ${rows}
-                <tr>
-                  ${
-                    include("qty")
-                      ? `<td colspan="${Math.max(
-                          1,
-                          (include("sr") ? 1 : 0) +
-                            (include("partNo") ? 1 : 0) +
-                            (include("altPartNo") ? 1 : 0) +
-                            (include("description") ? 1 : 0) +
-                            (include("brand") ? 1 : 0) +
-                            (include("uom") ? 1 : 0),
-                        )}" class="r"><b>Total</b></td>
-                         <td class="c"><b>${totalQty}</b></td>`
-                      : `<td colspan="${Math.max(
-                          1,
-                          (include("sr") ? 1 : 0) +
-                            (include("partNo") ? 1 : 0) +
-                            (include("altPartNo") ? 1 : 0) +
-                            (include("description") ? 1 : 0) +
-                            (include("brand") ? 1 : 0) +
-                            (include("uom") ? 1 : 0),
-                        )}" class="r"><b>Total</b></td>`
-                  }
-                  ${include("price") ? "<td></td>" : ""}
-                  ${
-                    include("amount")
-                      ? `<td class="r"><b>${baseTotal.toLocaleString()}</b></td>`
-                      : ""
-                  }
-                </tr>
-              </tbody>
-            </table>
-
-            <div class="amount-row">
-              <div class="amount-words" style="margin-top:${amountWordsOffsetPx}px;"><b>Rupees:-</b> (${esc(currentAmountWords)} Only.)</div>
-              <table class="totals">
-                ${
-                  discountAmount > 0
-                    ? `<tr><td>Discount</td><td class="r">- ${discountAmount.toLocaleString()}</td></tr>`
-                    : ""
-                }
-                ${
-                  freightAmount > 0
-                    ? `<tr><td>Freight</td><td class="r">${freightAmount.toLocaleString()}</td></tr>`
-                    : ""
-                }
-                ${
-                  taxAmount > 0
-                    ? `<tr><td>GST ${taxPercentageStored > 0 ? `@ ${taxPercentageStored}%` : ""}</td><td class="r">${taxAmount.toLocaleString()}</td></tr>`
-                    : ""
-                }
-                <tr><td>Current Amount</td><td class="r">${currentAmount.toLocaleString()}</td></tr>
-                ${
-                  includeBalance
-                    ? `<tr><td>Bal. B/F</td><td class="r">${balBf.toLocaleString()}</td></tr>
-                <tr><td>Total Receivable</td><td class="r">${totalReceivable.toLocaleString()}</td></tr>`
-                    : ""
-                }
-              </table>
-            </div>
-
-            ${
-              isGstLetterhead
-                ? `<div class="gst-footer">
-              <div class="notes">
-                <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || invoiceMeta.delivered_to || "-")}</div>
-                <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || invoiceMeta.notes || "-")}</div>
-                <div style="margin-top:4px;">
-                  <b>Note:-</b> All manufacturer's Names, Numbers, Symbols and Descriptions are used for reference only.
-                  Document invalid without authorised signature and stamp.
-                </div>
-                <div style="margin-top:3px;">
-                  Parts sold may be Exchanged/returned same day only.
-                </div>
-              </div>
-              <div class="signature-field">
-                <div class="signature-slot">
-                  <img src="${authorisedSignatureUrl}" alt="Authorised signature" class="auth-signature" />
-                </div>
-                <div class="signature-line"></div>
-                <div class="signature-caption">(Authorised Signature)</div>
-              </div>
-            </div>`
-                : `<div class="notes">
-              <div><b>Delivered to:</b> ${esc(invoiceMeta.deliveredTo || invoiceMeta.delivered_to || "-")}</div>
-              <div><b>Remarks:</b> ${esc(invoiceMeta.remarks || invoiceMeta.notes || "-")}</div>
-              <div style="margin-top:8px;">
-                <b>Note:-</b> All manufacturer's Names, Numbers, Symbols and Descriptions are used for reference only.
-                Document invalid without authorised signature and stamp.
-              </div>
-              <div style="margin-top:6px;">
-                Parts sold may be Exchanged/returned same day only.
-              </div>
-            </div>`
-            }
-          </div>
-        </body>
-      </html>
-    `;
-
-    const printFrame = document.createElement("iframe");
-    printFrame.style.position = "fixed";
-    printFrame.style.right = "0";
-    printFrame.style.bottom = "0";
-    printFrame.style.width = "0";
-    printFrame.style.height = "0";
-    printFrame.style.border = "0";
-    printFrame.setAttribute("aria-hidden", "true");
-    document.body.appendChild(printFrame);
-
-    const cleanup = () => {
-      setTimeout(() => {
-        if (document.body.contains(printFrame)) {
-          document.body.removeChild(printFrame);
-        }
-        window.focus();
-      }, 200);
-    };
-
-    printFrame.onload = () => {
-      const frameWindow = printFrame.contentWindow;
-      const frameDocument = printFrame.contentDocument;
-      if (!frameWindow || !frameDocument) {
-        cleanup();
-        return;
-      }
-
-      frameWindow.onafterprint = cleanup;
-
-      const images = Array.from(frameDocument.images);
-      const waitForImages =
-        images.length === 0
-          ? Promise.resolve()
-          : Promise.all(
-              images.map(
-                (img) =>
-                  new Promise<void>((resolve) => {
-                    if (img.complete) {
-                      resolve();
-                      return;
-                    }
-                    img.onload = () => resolve();
-                    img.onerror = () => resolve();
-                  }),
-              ),
-            );
-
-      void waitForImages.then(() => {
-        frameWindow.focus();
-        frameWindow.print();
-      });
-      setTimeout(cleanup, 3000);
-    };
-
-    printFrame.srcdoc = printHTML;
+    await printSalesInvoicePdf({
+      invoice,
+      columns: Array.from(enabledColumns),
+      includeBalance,
+      useLetterhead: options?.useLetterhead === true,
+      orientation: printOrientation,
+      printedBy,
+      customerAddressLines: addressParts,
+      area: matchedCustomer?.area || "",
+      contactNo: String(
+        matchedCustomer?.contactNo ||
+          matchedCustomer?.cellNumber ||
+          matchedCustomer?.phone ||
+          "",
+      ).trim(),
+      balBf,
+      totalReceivable,
+      currentAmount,
+      currentAmountWords,
+      discountAmount,
+      freightAmount,
+      taxAmount,
+      taxPercentage: taxPercentageStored,
+      deliveredTo: String(
+        invoiceMeta.deliveredTo || invoiceMeta.delivered_to || "",
+      ),
+      remarks: String(invoiceMeta.remarks || invoiceMeta.notes || ""),
+    });
+    return;
   };
 
   const handlePrintDeliveryChallan = async (invoice: Invoice) => {
