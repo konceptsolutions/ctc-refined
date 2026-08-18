@@ -1055,6 +1055,38 @@ router.get("/", async (req: Request, res: Response) => {
     params.push(limitNum, offset);
 
     const result = await query(sql, params);
+
+    // Large catalog loads skip the per-row Model subquery for speed. Attach
+    // models in one grouped query so sales inquiry/invoice Model filters work.
+    if (skipHeavyMeta && result.rows.length > 0) {
+      const partIds = result.rows.map((row: any) => row.id).filter(Boolean);
+      if (partIds.length > 0) {
+        const modelsResult = await query(
+          `SELECT "partId" as part_id,
+                  json_agg(
+                    json_build_object(
+                      'id', id,
+                      'name', name,
+                      'qty_used', "qtyUsed"
+                    )
+                    ORDER BY name
+                  ) as models
+           FROM "Model"
+           WHERE "partId" = ANY($1::text[])
+           GROUP BY "partId"`,
+          [partIds],
+        );
+        const modelsByPartId = new Map<string, any[]>();
+        for (const row of modelsResult.rows) {
+          const models = Array.isArray(row.models) ? row.models : [];
+          modelsByPartId.set(row.part_id, models);
+        }
+        for (const part of result.rows) {
+          part.models = modelsByPartId.get(part.id) || [];
+        }
+      }
+    }
+
     let total: number;
     if (showDuplicateMeta) {
       total =

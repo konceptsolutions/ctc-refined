@@ -956,7 +956,7 @@ export const CurrentStock = () => {
       downloadBlob(blob, `stock-pdf-compare-${dateStamp}.xlsx`);
 
       toast.success(
-        `Excel report downloaded: ${parsedLineCount} PDF line items, ${summary.matched} matched, ${summary.over + summary.under} with variance, ${summary.notInSystem} not in system.`,
+        `Excel report downloaded: ${parsedLineCount} PDF line items, ${summary.matched} matched, ${summary.over + summary.under} with variance, ${summary.notInSystem} not in system, ${summary.systemOnly} with system stock not in PDF.`,
       );
       setPdfCompareDialogOpen(false);
       setPdfCompareFile(null);

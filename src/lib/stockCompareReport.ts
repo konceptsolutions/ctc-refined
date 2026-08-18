@@ -88,7 +88,6 @@ export const comparePdfStockWithSystem = (
   summary: CompareSummary;
 } => {
   const { byPartAndBrand, byMasterPartAndBrand } = buildSystemLookup(systemStock);
-  const matchedSystemPartIds = new Set<string>();
   const rows: CompareRow[] = [];
 
   for (const pdfRow of pdfRows) {
@@ -97,10 +96,6 @@ export const comparePdfStockWithSystem = (
       byMasterPartAndBrand.get(key) || byPartAndBrand.get(key) || null;
     const systemQty = systemItem?.current_stock ?? -1;
     const status = resolveStatus(pdfRow.qty, systemQty);
-
-    if (systemItem) {
-      matchedSystemPartIds.add(systemItem.part_id);
-    }
 
     rows.push({
       pdfPartNo: pdfRow.partNo,
@@ -118,9 +113,17 @@ export const comparePdfStockWithSystem = (
     });
   }
 
-  const systemOnlyRows = systemStock.filter(
-    (item) => !matchedSystemPartIds.has(item.part_id),
+  const pdfPartNos = new Set(
+    pdfRows.map((row) => normalizePartNo(row.partNo)).filter(Boolean),
   );
+
+  const systemOnlyRows = systemStock.filter((item) => {
+    if (Number(item.current_stock || 0) <= 0) return false;
+    const systemPartNos = [item.master_part_no, item.part_no]
+      .filter(Boolean)
+      .map((value) => normalizePartNo(String(value)));
+    return !systemPartNos.some((partNo) => pdfPartNos.has(partNo));
+  });
 
   const summary: CompareSummary = {
     pdfPages: meta.pageCount,
@@ -200,7 +203,7 @@ export const generateStockCompareExcel = async (input: {
   });
   styleHeaderRow(comparisonSheet);
 
-  const systemOnlySheet = workbook.addWorksheet("System Only");
+  const systemOnlySheet = workbook.addWorksheet("System Stock Not in PDF");
   systemOnlySheet.columns = [
     { header: "Part No", key: "part_no", width: 18 },
     { header: "Master Part No", key: "master_part_no", width: 18 },
@@ -233,7 +236,7 @@ export const generateStockCompareExcel = async (input: {
     ["Over (PDF > System)", input.summary.over],
     ["Under (PDF < System)", input.summary.under],
     ["Not in System", input.summary.notInSystem],
-    ["System Only (not in PDF)", input.summary.systemOnly],
+    ["System Stock Not in PDF", input.summary.systemOnly],
     ["Generated At", new Date().toLocaleString()],
   ];
   summaryRows.forEach(([metric, value]) =>

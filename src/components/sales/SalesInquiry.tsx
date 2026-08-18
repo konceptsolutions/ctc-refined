@@ -3489,6 +3489,7 @@ export const SalesInquiry = ({
                 }
                 placeholder="Model"
                 className="w-[160px]"
+                requireSearchAbove={10000}
               />
               <SearchableSelect
                 options={lookupDescriptionFilterOptions}

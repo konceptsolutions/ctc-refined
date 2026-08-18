@@ -7234,6 +7234,7 @@ export const SalesInvoice = ({
                     }
                     placeholder="Model"
                     className="w-[160px]"
+                    requireSearchAbove={10000}
                   />
                   <SearchableSelect
                     options={searchableDescriptionFilterOptions}
