@@ -358,6 +358,7 @@ type ConfirmQuotationItemInput = {
   khiQuantity?: number;
   isbQuantity?: number;
   otherQuantity?: number;
+  weight?: number;
 };
 
 type PoLaneKey = "khi" | "isb" | "other";
@@ -550,6 +551,10 @@ async function confirmPurchaseQuotation(
         item?.otherQuantity !== undefined
           ? Math.max(0, Math.floor(Number(item.otherQuantity)))
           : undefined,
+      weight:
+        item?.weight !== undefined && Number.isFinite(Number(item.weight))
+          ? Math.max(0, Number(item.weight))
+          : undefined,
     });
   }
 
@@ -561,6 +566,7 @@ async function confirmPurchaseQuotation(
       unitCost: number;
       totalCost: number;
       sortOrder: number;
+      weight: number;
     }>
   > = {
     khi: [],
@@ -647,6 +653,14 @@ async function confirmPurchaseQuotation(
         ? Number(item.sortOrder)
         : 0;
 
+      let itemWeight = Number(item.weight || 0);
+      if (
+        itemInput?.weight !== undefined &&
+        Number.isFinite(Number(itemInput.weight))
+      ) {
+        itemWeight = Math.max(0, Number(itemInput.weight));
+      }
+
       (Object.keys(laneQty) as PoLaneKey[]).forEach((lane) => {
         const quantity = laneQty[lane];
         if (quantity <= 0) return;
@@ -656,7 +670,35 @@ async function confirmPurchaseQuotation(
           unitCost,
           totalCost: unitCost * quantity,
           sortOrder: itemSortOrder,
+          weight: itemWeight,
         });
+      });
+    }
+  }
+
+  const quotationWeightUpdates = new Map<
+    string,
+    { quotationItemId: string; weight: number; totalWeight: number }
+  >();
+  for (const qid of allQuotationIds) {
+    const quotation: any = quotationById.get(qid);
+    if (!quotation) continue;
+    for (const item of quotation.PurchaseQuotationItem || []) {
+      const partId = String(item.partId || "").trim();
+      if (!partId) continue;
+      const itemInput = confirmByQuotationPart.get(`${qid}::${partId}`);
+      if (
+        itemInput?.weight === undefined ||
+        !Number.isFinite(Number(itemInput.weight))
+      ) {
+        continue;
+      }
+      const quotationQty = Number(item.quotationQuantity || 0);
+      const itemWeight = Math.max(0, Number(itemInput.weight));
+      quotationWeightUpdates.set(String(item.id), {
+        quotationItemId: String(item.id),
+        weight: itemWeight,
+        totalWeight: itemWeight * quotationQty,
       });
     }
   }
@@ -683,6 +725,17 @@ async function confirmPurchaseQuotation(
   ).join(", ");
 
   const createdOrders = await prisma.$transaction(async (tx) => {
+    for (const update of quotationWeightUpdates.values()) {
+      await (tx as any).purchaseQuotationItem.update({
+        where: { id: update.quotationItemId },
+        data: {
+          weight: update.weight,
+          totalWeight: update.totalWeight,
+          updatedAt: new Date(),
+        },
+      });
+    }
+
     await (tx as any).purchaseQuotation.updateMany({
       where: { id: { in: allQuotationIds } },
       data: {
@@ -738,6 +791,8 @@ async function confirmPurchaseQuotation(
           quantity: row.quantity,
           unitCost: row.unitCost,
           totalCost: row.totalCost,
+          weight: Number(row.weight || 0),
+          totalWeight: Number(row.weight || 0) * row.quantity,
           receivedQty: 0,
           sortOrder:
             Number.isFinite(Number(row.sortOrder))
@@ -3613,6 +3668,7 @@ type ReceivePurchaseOrderItemInput = {
   fcRate?: number;
   priceA?: number;
   priceB?: number;
+  weight?: number;
 };
 
 type ImportPurchaseOrderExpenses = {
@@ -4215,7 +4271,13 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
 
     const receiveByItemId = new Map<
       string,
-      { receiveQty: number; fcRate?: number; priceA?: number; priceB?: number }
+      {
+        receiveQty: number;
+        fcRate?: number;
+        priceA?: number;
+        priceB?: number;
+        weight?: number;
+      }
     >();
     const newItems: Array<{
       partId: string;
@@ -4223,6 +4285,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       fcRate: number;
       priceA?: number;
       priceB?: number;
+      weight?: number;
     }> = [];
     const partPriceUpdates = new Map<
       string,
@@ -4267,9 +4330,13 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         row.priceB !== undefined && Number.isFinite(Number(row.priceB))
           ? Math.max(0, Number(row.priceB) || 0)
           : undefined;
+      const weight =
+        row.weight !== undefined && Number.isFinite(Number(row.weight))
+          ? Math.max(0, Number(row.weight) || 0)
+          : undefined;
 
       if (itemId && existingItemIds.has(itemId)) {
-        receiveByItemId.set(itemId, { receiveQty, fcRate, priceA, priceB });
+        receiveByItemId.set(itemId, { receiveQty, fcRate, priceA, priceB, weight });
         const poItem = order.PurchaseOrderItem.find((item) => item.id === itemId);
         if (poItem) {
           queuePartPriceUpdate(String(poItem.partId), priceA, priceB);
@@ -4285,6 +4352,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         fcRate: fcRate ?? 0,
         priceA,
         priceB,
+        weight,
       });
       queuePartPriceUpdate(partId, priceA, priceB);
     }
@@ -4322,7 +4390,10 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
             ? roundFc(receiveRow.fcRate)
             : roundFc(quotationFcRate);
         const weight = Number(
-          quotationItem?.weight ?? (poItem as any).weight ?? 0,
+          receiveRow?.weight ??
+            quotationItem?.weight ??
+            (poItem as any).weight ??
+            0,
         );
         const lineUnitCost = roundPurchasePrice(fcRate * conversionRate);
         const receiveQty = variance.receiveQty;
@@ -4360,7 +4431,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
 
         const receiveQty = Math.max(0, Math.floor(Number(newItem.receiveQty) || 0));
         const fcRate = roundFc(newItem.fcRate);
-        const weight = Number(part.weight || 0);
+        const weight = Number(newItem.weight ?? part.weight ?? 0);
         const lineUnitCost = roundPurchasePrice(fcRate * conversionRate);
         const fcAmount = roundFc(fcRate * receiveQty);
         const lineTotalCost = roundPurchasePrice(lineUnitCost * receiveQty);
