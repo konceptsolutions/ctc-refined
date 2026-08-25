@@ -8563,6 +8563,7 @@ router.get(
           id: item.id,
           part_id: item.partId,
           part_no: item.Part.partNo,
+          master_part_no: (item.Part as any).masterPartNo || null,
           part_description: item.Part.description,
           brand: item.Part.Brand?.name || "",
           category: item.Part.Category?.name || "",

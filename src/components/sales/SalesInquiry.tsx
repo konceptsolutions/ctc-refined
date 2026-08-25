@@ -259,11 +259,14 @@ interface SalesInquiryProps {
   hidePrices?: boolean;
   /** Hide the To Invoice / To Quotation / To Local Purchase shortcut buttons. */
   hideShortcuts?: boolean;
+  /** Prefill Part Inquiry Lookup with this part (e.g. purchase invoice eye popup). */
+  initialPartId?: string;
 }
 
 export const SalesInquiry = ({
   hidePrices = false,
   hideShortcuts = false,
+  initialPartId,
 }: SalesInquiryProps = {}) => {
   const navigate = useNavigate();
   const { canCreate } = usePageActions("sales.inquiry");
@@ -2098,6 +2101,82 @@ export const SalesInquiry = ({
     }));
     await handleSelectPart(part);
   };
+
+  // Prefill Part Inquiry Lookup from parent (e.g. Purchase Invoice item eye)
+  const loadedInitialPartRef = useRef<string | null>(null);
+  useEffect(() => {
+    const partId = String(initialPartId || "").trim();
+    if (!partId || loadedInitialPartRef.current === partId) return;
+    loadedInitialPartRef.current = partId;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resp = await apiClient.getPart(partId);
+        if (cancelled) return;
+        const data = (resp as any)?.data || resp;
+        const part = transformPart(
+          { ...data, id: data?.id || partId },
+          {},
+        );
+        if (!part.id) return;
+
+        const row = makeLookupRow();
+        const priceA = parseFloat(part.priceA || "") || 0;
+        const priceB = parseFloat(part.priceB || "") || 0;
+        const priceM = parseFloat(part.priceM || "") || 0;
+        const initialPriceType: "A" | "B" | "M" | undefined = priceA
+          ? "A"
+          : priceB
+            ? "B"
+            : priceM
+              ? "M"
+              : undefined;
+        const initialUnit =
+          initialPriceType === "A"
+            ? priceA
+            : initialPriceType === "B"
+              ? priceB
+              : initialPriceType === "M"
+                ? priceM
+                : 0;
+
+        setLookupRows([
+          {
+            ...row,
+            partId: part.id,
+            search: getItemLabel(part),
+            priceA,
+            priceB,
+            priceM,
+            selectedPriceType: initialPriceType,
+            unitPrice: initialUnit,
+          },
+        ]);
+        setActiveLookupRowId(row.id);
+        setLookupRowPriceBaselines((prev) => ({
+          ...prev,
+          [row.id]: { priceA: priceA || null, priceB: priceB || null },
+        }));
+        await handleSelectPart(part);
+        fetchPartStockForRow(part.id);
+        void fetchPartImages(part.id);
+        void fetchPartPriceLastUpdated(part.id);
+      } catch {
+        if (!cancelled) {
+          toast({
+            title: "Failed to load part",
+            description: "Could not open the selected item in Sales Inquiry.",
+            variant: "destructive",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Run once per initialPartId; handlers are stable enough for this prefill.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPartId]);
 
   const applyPartPricesToCaches = useCallback(
     (partId: string, priceA: number | null, priceB: number | null) => {

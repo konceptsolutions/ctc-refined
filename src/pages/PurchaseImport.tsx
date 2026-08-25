@@ -48,6 +48,7 @@ import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printPurchaseImportInquiry, buildPurchaseImportInquiryPdfBlob } from "@/utils/printPurchaseImportInquiryPdf";
 import { buildPurchaseImportInquiryExcelBlob } from "@/utils/buildPurchaseImportInquiryExcel";
 import { PurchaseInquiry } from "@/components/inventory/PurchaseInquiry";
+import { SalesInquiry } from "@/components/sales/SalesInquiry";
 import {
   SupplierFormDialog,
   type SupplierFormSavedSupplier,
@@ -8625,7 +8626,7 @@ const PurchaseOrderTab = ({
     disc: { ...EMPTY_LINKED_EXPENSE_TEXT },
   });
   const [frtExpenseText, setFrtExpenseText] = useState({ fc: "", lc: "" });
-  const [purchaseInquiryPopupPartId, setPurchaseInquiryPopupPartId] = useState<
+  const [salesInquiryPopupPartId, setSalesInquiryPopupPartId] = useState<
     string | null
   >(null);
 
@@ -10624,6 +10625,7 @@ const PurchaseOrderTab = ({
                           <th className="text-right p-2">Price B</th>
                           <th className="text-right p-2">Unit Cost</th>
                           <th className="text-right p-2">Cost</th>
+                          <th className="text-center p-2 min-w-[72px]">Action</th>
                         </>
                       ) : null}
                     </tr>
@@ -10750,6 +10752,29 @@ const PurchaseOrderTab = ({
                             </td>
                             <td className="p-2 text-right tabular-nums font-medium">
                               {formatImportPoAmount(lineCost)}
+                            </td>
+                            <td className="p-2 text-center">
+                              {(() => {
+                                const partId = String(
+                                  item.partId || item.part_id || "",
+                                ).trim();
+                                return partId ? (
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="h-8 w-8"
+                                    title="View Sales Inquiry for this item"
+                                    onClick={() =>
+                                      setSalesInquiryPopupPartId(partId)
+                                    }
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                );
+                              })()}
                             </td>
                           </>
                         ) : null}
@@ -11140,9 +11165,9 @@ const PurchaseOrderTab = ({
                                 variant="outline"
                                 className="h-8 w-8"
                                 disabled={savingReceive || loadingReceiveForm}
-                                title="View Purchase Inquiry for this item"
+                                title="View Sales Inquiry for this item"
                                 onClick={() =>
-                                  setPurchaseInquiryPopupPartId(line.partId)
+                                  setSalesInquiryPopupPartId(line.partId)
                                 }
                               >
                                 <Eye className="h-4 w-4" />
@@ -11465,20 +11490,20 @@ const PurchaseOrderTab = ({
       </Dialog>
 
       <Dialog
-        open={Boolean(purchaseInquiryPopupPartId)}
+        open={Boolean(salesInquiryPopupPartId)}
         onOpenChange={(open) => {
-          if (!open) setPurchaseInquiryPopupPartId(null);
+          if (!open) setSalesInquiryPopupPartId(null);
         }}
       >
         <DialogContent className="left-0 top-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:rounded-none">
           <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
-            <DialogTitle>Purchase Inquiry</DialogTitle>
+            <DialogTitle>Sales Inquiry</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
-            {purchaseInquiryPopupPartId ? (
-              <PurchaseInquiry
-                key={purchaseInquiryPopupPartId}
-                initialPartId={purchaseInquiryPopupPartId}
+            {salesInquiryPopupPartId ? (
+              <SalesInquiry
+                key={salesInquiryPopupPartId}
+                initialPartId={salesInquiryPopupPartId}
               />
             ) : null}
           </div>

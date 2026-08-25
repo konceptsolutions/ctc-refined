@@ -7,6 +7,8 @@ import {
   formatPurchasePrice,
   roundPurchasePrice,
 } from "@/utils/purchasePriceRound";
+import { printTransferInPdf } from "@/utils/printTransferInPdf";
+import { SalesInquiry } from "@/components/sales/SalesInquiry";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   AlertDialog,
@@ -76,6 +78,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface DirectPurchaseOrderItem {
   id: string;
+  partId?: string;
   partNo: string;
   masterPartNo?: string;
   description: string;
@@ -85,6 +88,8 @@ interface DirectPurchaseOrderItem {
   returnedQuantity: number;
   purchasePrice: number;
   amount: number;
+  priceA?: number | null;
+  priceB?: number | null;
 }
 
 interface DirectPurchaseOrder {
@@ -254,6 +259,13 @@ export const DirectPurchaseOrder = ({
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
+  const [viewItemPriceDrafts, setViewItemPriceDrafts] = useState<
+    Record<string, { priceA: string; priceB: string }>
+  >({});
+  const [updatingViewPrices, setUpdatingViewPrices] = useState(false);
+  const [salesInquiryPopupPartId, setSalesInquiryPopupPartId] = useState<
+    string | null
+  >(null);
 
   // Payment dialog state
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
@@ -992,7 +1004,7 @@ export const DirectPurchaseOrder = ({
       ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
       : "",
     store: dpo.store_name || "N/A",
-    supplier: dpo.supplier_name || "N/A",
+    supplier: dpo.supplier_name || dpo.branch_account_name || "N/A",
     requestDate: new Date(dpo.date).toLocaleDateString("en-GB"),
     date: dpo.date,
     description: dpo.description || "",
@@ -1006,6 +1018,7 @@ export const DirectPurchaseOrder = ({
     account: dpo.account || "",
     items: (dpo.items || []).map((item: any) => ({
       id: item.id,
+      partId: item.part_id || item.partId || "",
       partNo: item.part_no,
       masterPartNo: item.master_part_no || item.masterPartNo || "",
       description: item.part_description || item.part_no,
@@ -1015,6 +1028,18 @@ export const DirectPurchaseOrder = ({
       returnedQuantity: item.returned_quantity || 0,
       purchasePrice: item.purchase_price,
       amount: item.amount,
+      priceA:
+        item.price_a !== undefined && item.price_a !== null
+          ? Number(item.price_a)
+          : item.priceA !== undefined && item.priceA !== null
+            ? Number(item.priceA)
+            : null,
+      priceB:
+        item.price_b !== undefined && item.price_b !== null
+          ? Number(item.price_b)
+          : item.priceB !== undefined && item.priceB !== null
+            ? Number(item.priceB)
+            : null,
     })),
   });
 
@@ -1029,7 +1054,62 @@ export const DirectPurchaseOrder = ({
         return;
       }
 
-      setSelectedOrder(mapDpoToViewOrder(response));
+      let mapped = mapDpoToViewOrder(response);
+
+      const enrichedItems = await Promise.all(
+        mapped.items.map(async (item) => {
+          if (
+            item.partId &&
+            (item.priceA === null ||
+              item.priceA === undefined ||
+              item.priceB === null ||
+              item.priceB === undefined)
+          ) {
+            try {
+              const partResponse = (await apiClient.getPart(item.partId)) as any;
+              const part = partResponse?.data || partResponse;
+              if (part && !part.error) {
+                return {
+                  ...item,
+                  priceA:
+                    item.priceA ??
+                    (part.price_a != null ? Number(part.price_a) : null) ??
+                    (part.priceA != null ? Number(part.priceA) : null),
+                  priceB:
+                    item.priceB ??
+                    (part.price_b != null ? Number(part.price_b) : null) ??
+                    (part.priceB != null ? Number(part.priceB) : null),
+                  masterPartNo:
+                    item.masterPartNo ||
+                    part.master_part_no ||
+                    part.masterPartNo ||
+                    "",
+                };
+              }
+            } catch {
+              // keep mapped values
+            }
+          }
+          return item;
+        }),
+      );
+      mapped = { ...mapped, items: enrichedItems };
+      const drafts: Record<string, { priceA: string; priceB: string }> = {};
+      for (const item of enrichedItems) {
+        drafts[item.id] = {
+          priceA:
+            item.priceA !== null && item.priceA !== undefined
+              ? String(item.priceA)
+              : "",
+          priceB:
+            item.priceB !== null && item.priceB !== undefined
+              ? String(item.priceB)
+              : "",
+        };
+      }
+      setViewItemPriceDrafts(drafts);
+
+      setSelectedOrder(mapped);
       setShowViewDialog(true);
     } catch (error: any) {
       toast.error(`Error fetching order: ${error.message}`);
@@ -1834,6 +1914,200 @@ export const DirectPurchaseOrder = ({
     }
   };
 
+  const handlePrintDocument = (order: DirectPurchaseOrder) => {
+    const opened = printTransferInPdf({
+      title: isTransferIn ? "Transfer In" : "Local Purchase Order",
+      orderNumberLabel: labels.orderNumberLabel,
+      partyFieldLabel: labels.partyFieldLabel,
+      orderNo: order.dpoNo,
+      store: order.store,
+      branch: order.supplier,
+      requestDate: order.date || order.requestDate,
+      invoiceNo: order.invoiceNo,
+      invoiceDate: order.invoiceDate,
+      status: order.status,
+      remarks: order.description,
+      discount: order.discount,
+      totalExpenses: order.totalExpenses,
+      grandTotal: order.grandTotal,
+      items: order.items.map((item) => ({
+        partNo: item.partNo,
+        masterPartNo: item.masterPartNo,
+        description: item.description,
+        brand: item.brand,
+        uom: item.uom,
+        quantity: item.quantity,
+        purchasePrice: item.purchasePrice,
+        amount: item.amount,
+      })),
+    });
+    if (!opened) {
+      toast.error("Please allow pop-ups to print");
+    }
+  };
+
+  const handlePrintOrderFromList = async (order: DirectPurchaseOrder) => {
+    try {
+      setLoading(true);
+      const response = (await apiClient.getDirectPurchaseOrder(order.id)) as any;
+      if (response?.error) {
+        toast.error(response.error);
+        return;
+      }
+      handlePrintDocument(mapDpoToViewOrder(response));
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to load order for print");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewItemPriceChange = (
+    itemId: string,
+    field: "priceA" | "priceB",
+    value: string,
+  ) => {
+    setViewItemPriceDrafts((prev) => ({
+      ...prev,
+      [itemId]: {
+        priceA: prev[itemId]?.priceA ?? "",
+        priceB: prev[itemId]?.priceB ?? "",
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleUpdateAllViewItemPrices = async () => {
+    if (!selectedOrder) return;
+
+    type PriceChange = {
+      itemId: string;
+      partId: string;
+      priceA: number;
+      priceB: number;
+      label: string;
+    };
+
+    const changes: PriceChange[] = [];
+    for (const item of selectedOrder.items) {
+      const partId = String(item.partId || "").trim();
+      if (!partId) continue;
+      const draft = viewItemPriceDrafts[item.id];
+      if (!draft) continue;
+
+      const priceA = Number.parseFloat(draft.priceA);
+      const priceB = Number.parseFloat(draft.priceB);
+      if (
+        !Number.isFinite(priceA) ||
+        priceA < 0 ||
+        !Number.isFinite(priceB) ||
+        priceB < 0
+      ) {
+        toast.error(
+          `Enter valid non-negative Price A / B for ${
+            item.masterPartNo || item.partNo || "item"
+          }.`,
+        );
+        return;
+      }
+
+      const originalA = Number(item.priceA ?? 0) || 0;
+      const originalB = Number(item.priceB ?? 0) || 0;
+      if (
+        Math.abs(priceA - originalA) < 0.00005 &&
+        Math.abs(priceB - originalB) < 0.00005
+      ) {
+        continue;
+      }
+
+      changes.push({
+        itemId: item.id,
+        partId,
+        priceA,
+        priceB,
+        label:
+          [item.masterPartNo, item.partNo].filter(Boolean).join(" | ") ||
+          partId,
+      });
+    }
+
+    if (changes.length === 0) {
+      toast.info("Edit Price A or Price B on one or more items first.");
+      return;
+    }
+
+    setUpdatingViewPrices(true);
+    try {
+      const results = await Promise.allSettled(
+        changes.map((change) =>
+          apiClient.updatePartPrices(change.partId, {
+            priceA: change.priceA,
+            priceB: change.priceB,
+          }),
+        ),
+      );
+
+      const failed: string[] = [];
+      const succeeded = new Set<string>();
+      results.forEach((result, index) => {
+        const change = changes[index];
+        if (result.status === "rejected") {
+          failed.push(change.label);
+          return;
+        }
+        const value = result.value as any;
+        if (value?.error) {
+          failed.push(change.label);
+          return;
+        }
+        succeeded.add(change.itemId);
+      });
+
+      if (succeeded.size > 0) {
+        setSelectedOrder((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: prev.items.map((item) => {
+              const change = changes.find((c) => c.itemId === item.id);
+              if (!change || !succeeded.has(item.id)) return item;
+              return {
+                ...item,
+                priceA: change.priceA,
+                priceB: change.priceB,
+              };
+            }),
+          };
+        });
+        setViewItemPriceDrafts((prev) => {
+          const next = { ...prev };
+          for (const change of changes) {
+            if (!succeeded.has(change.itemId)) continue;
+            next[change.itemId] = {
+              priceA: String(change.priceA),
+              priceB: String(change.priceB),
+            };
+          }
+          return next;
+        });
+      }
+
+      if (failed.length > 0) {
+        toast.error(`Failed to update prices for: ${failed.join(", ")}`);
+      } else {
+        toast.success(
+          `Updated Price A / B for ${succeeded.size} item${
+            succeeded.size === 1 ? "" : "s"
+          }.`,
+        );
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to update prices");
+    } finally {
+      setUpdatingViewPrices(false);
+    }
+  };
+
   // Handle return click
   const handleReturnClick = async (order: DirectPurchaseOrder) => {
     try {
@@ -2061,6 +2335,17 @@ export const DirectPurchaseOrder = ({
                                 className="h-8 w-8"
                               >
                                 <Eye className="h-4 w-4" />
+                              </Button>
+                            </ActionButtonTooltip>
+                            <ActionButtonTooltip label="Print" variant="view">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => void handlePrintOrderFromList(order)}
+                                className="h-8 w-8"
+                                disabled={loading}
+                              >
+                                <Printer className="h-4 w-4" />
                               </Button>
                             </ActionButtonTooltip>
                             {(order.status === "Completed" || order.status === "Received") && (
@@ -3153,8 +3438,17 @@ export const DirectPurchaseOrder = ({
 
   // Render view dialog
   const renderViewDialog = () => (
-    <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-      <DialogContent className="max-w-5xl h-[min(90vh,820px)] max-h-[90vh] overflow-hidden !flex flex-col p-0 gap-0">
+    <Dialog
+      open={showViewDialog}
+      onOpenChange={(open) => {
+        setShowViewDialog(open);
+        if (!open) {
+          setViewItemPriceDrafts({});
+          setSalesInquiryPopupPartId(null);
+        }
+      }}
+    >
+      <DialogContent className="left-0 top-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:rounded-none">
         <DialogHeader className="p-4 border-b bg-muted/30 shrink-0">
           <DialogTitle>{labels.viewDialogTitle}</DialogTitle>
           <DialogDescription>
@@ -3162,10 +3456,10 @@ export const DirectPurchaseOrder = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+        <div className="flex flex-1 flex-col min-h-0 overflow-y-auto">
           {selectedOrder && (
             <>
-              {/* Fixed Top Info */}
+              {/* Top Info */}
               <div className="p-6 pb-2 shrink-0">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                   <div>
@@ -3203,11 +3497,24 @@ export const DirectPurchaseOrder = ({
                 </div>
               </div>
 
-              {/* Scrollable items — fills space between header meta and totals */}
-              <div className="flex-1 min-h-0 px-6 py-2">
-                <div className="h-full min-h-[140px] overflow-y-auto overscroll-contain border rounded-md bg-card">
+              {/* Items */}
+              <div className="px-6 py-2 shrink-0 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-xs text-muted-foreground">
+                    Edit Price A / B on items, then update all changed prices.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={updatingViewPrices}
+                    onClick={() => void handleUpdateAllViewItemPrices()}
+                  >
+                    {updatingViewPrices ? "Updating..." : "Update Prices"}
+                  </Button>
+                </div>
+                <div className="border rounded-md bg-card overflow-x-auto">
                   <table className="w-full caption-bottom text-sm">
-                    <TableHeader className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm shadow-sm">
+                    <TableHeader className="bg-muted/95 backdrop-blur-sm shadow-sm">
                       <TableRow>
                         <ListNumberHeader />
                         <TableHead className="min-w-[120px]">Part No | Master Part</TableHead>
@@ -3217,10 +3524,24 @@ export const DirectPurchaseOrder = ({
                         <TableHead className="min-w-[60px]">Qty</TableHead>
                         <TableHead className="min-w-[120px]">Purchase Price</TableHead>
                         <TableHead className="text-right min-w-[100px]">Amount</TableHead>
+                        <TableHead className="min-w-[100px]">Price A</TableHead>
+                        <TableHead className="min-w-[100px]">Price B</TableHead>
+                        <TableHead className="text-center min-w-[72px]">Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {selectedOrder.items.map((item, index) => (
+                      {selectedOrder.items.map((item, index) => {
+                        const priceDraft = viewItemPriceDrafts[item.id] || {
+                          priceA:
+                            item.priceA !== null && item.priceA !== undefined
+                              ? String(item.priceA)
+                              : "",
+                          priceB:
+                            item.priceB !== null && item.priceB !== undefined
+                              ? String(item.priceB)
+                              : "",
+                        };
+                        return (
                         <TableRow key={item.id} className="hover:bg-muted/30">
                           <ListNumberCell index={index} total={selectedOrder.items.length} />
                           <TableCell className="font-medium">
@@ -3242,8 +3563,55 @@ export const DirectPurchaseOrder = ({
                           <TableCell className="text-right font-medium">
                             {item.amount.toLocaleString("en-PK")}
                           </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8 w-[6.5rem] text-right tabular-nums"
+                              value={priceDraft.priceA}
+                              disabled={updatingViewPrices}
+                              onChange={(e) =>
+                                handleViewItemPriceChange(
+                                  item.id,
+                                  "priceA",
+                                  e.target.value,
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8 w-[6.5rem] text-right tabular-nums"
+                              value={priceDraft.priceB}
+                              disabled={updatingViewPrices}
+                              onChange={(e) =>
+                                handleViewItemPriceChange(
+                                  item.id,
+                                  "priceB",
+                                  e.target.value,
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {item.partId ? (
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                className="h-8 w-8"
+                                title="View Sales Inquiry for this item"
+                                onClick={() =>
+                                  setSalesInquiryPopupPartId(item.partId!)
+                                }
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </table>
                 </div>
@@ -3303,6 +3671,16 @@ export const DirectPurchaseOrder = ({
         </div>
         <DialogFooter className="shrink-0 border-t bg-background p-4">
           <div className="flex gap-2">
+            {selectedOrder && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handlePrintDocument(selectedOrder)}
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Print
+              </Button>
+            )}
             {selectedOrder && (selectedOrder.status === "Order Receivable Pending" || selectedOrder.status === "Completed") && (
               <>
                 {!isTransferIn && (
@@ -3558,6 +3936,27 @@ export const DirectPurchaseOrder = ({
       {showForm && renderCreateEditView()}
       {renderViewDialog()}
       {renderReturnDialog()}
+
+      <Dialog
+        open={Boolean(salesInquiryPopupPartId)}
+        onOpenChange={(open) => {
+          if (!open) setSalesInquiryPopupPartId(null);
+        }}
+      >
+        <DialogContent className="left-0 top-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:rounded-none">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
+            <DialogTitle>Sales Inquiry</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+            {salesInquiryPopupPartId ? (
+              <SalesInquiry
+                key={salesInquiryPopupPartId}
+                initialPartId={salesInquiryPopupPartId}
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Payment Dialog */}
       <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
