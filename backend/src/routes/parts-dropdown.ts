@@ -19,25 +19,25 @@ router.get("/dropdown", async (req: Request, res: Response) => {
 
     try {
         const { search, limit } = req.query;
+        const searchStr = typeof search === "string" ? search.trim() : "";
 
-        // Default behavior: NO LIMIT (undefined take)
-        // If limit is provided and NOT "all", use it.
-        // If limit is "all" or undefined, use undefined (fetch all).
-
+        // Searching: default to a small page so autocomplete stays fast.
+        // No search + no limit: keep legacy "load all" for Adjust Inventory.
         let limitNum: number | undefined = undefined;
         if (limit && limit !== "all") {
-            const parsed = parseInt(limit as string);
-            if (!isNaN(parsed)) {
-                limitNum = parsed;
+            const parsed = parseInt(limit as string, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                limitNum = Math.min(parsed, 500);
             }
+        } else if (searchStr && limit !== "all") {
+            limitNum = 80;
         }
 
         const where: any = {
             status: "active"
         };
 
-        if (search) {
-            const searchStr = search as string;
+        if (searchStr) {
             where.OR = [
                 { partNo: { contains: searchStr, mode: "insensitive" } },
                 { description: { contains: searchStr, mode: "insensitive" } },

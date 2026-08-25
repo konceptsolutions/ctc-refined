@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { PartEntryForm } from "@/components/parts/PartEntryForm";
 import { PartsList, Part } from "@/components/parts/PartsList";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,40 @@ import { apiClient } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
 type RightTab = "parts-list" | "kits-list";
+
+const LIST_PAGE_SIZE = 20;
+
+function mapPartEntryRow(p: any): Part {
+  return {
+    id: p.id,
+    partNo: (p.master_part_no || "").trim(),
+    brand: p.brand_name || "-",
+    type: p.type || "single",
+    uom: p.uom || "NOS",
+    weight: p.weight ? String(p.weight) : "-",
+    cost: p.cost ? parseFloat(p.cost) : null,
+    purchasePrice: null,
+    avgCost: null,
+    price: p.price_a ? parseFloat(p.price_a) : null,
+    priceA:
+      p.price_a !== undefined && p.price_a !== null && p.price_a !== ""
+        ? parseFloat(p.price_a)
+        : p.priceA !== undefined && p.priceA !== null && p.priceA !== ""
+          ? parseFloat(p.priceA)
+          : null,
+    priceB:
+      p.price_b !== undefined && p.price_b !== null && p.price_b !== ""
+        ? parseFloat(p.price_b)
+        : p.priceB !== undefined && p.priceB !== null && p.priceB !== ""
+          ? parseFloat(p.priceB)
+          : null,
+    stock: p.stock || 0,
+    reservedStock: p.reserved_stock || 0,
+    masterPartNo: (p.part_no || "").trim(),
+    modelTotalQty:
+      p.model_total_qty != null ? p.model_total_qty : undefined,
+  };
+}
 
 interface PartEntryPageProps {
   searchFilters: any;
@@ -37,70 +71,98 @@ export const PartEntryPage = ({
   >(null);
   const [loading, setLoading] = useState(false);
   const [kitParts, setKitParts] = useState<Part[]>([]);
+  const [listPage, setListPage] = useState(1);
+  const [listSearch, setListSearch] = useState("");
+  const [debouncedListSearch, setDebouncedListSearch] = useState("");
+  const [listTotal, setListTotal] = useState(0);
+  const [listLoading, setListLoading] = useState(false);
+  const [familyMode, setFamilyMode] = useState(false);
+  const listFetchId = useRef(0);
 
-  // Fetch parts from API - only on initial load if no master part is selected
   useEffect(() => {
-    // Don't fetch all parts if a master part is selected (family parts are shown instead)
-    if (selectedMasterPartNo) {
-      return;
-    }
+    const t = setTimeout(() => setDebouncedListSearch(listSearch.trim()), 250);
+    return () => clearTimeout(t);
+  }, [listSearch]);
 
-    const fetchParts = async () => {
-      setLoading(true);
+  const loadPartsList = useCallback(
+    async (opts?: {
+      page?: number;
+      search?: string;
+      partNo?: string | null;
+      asFamily?: boolean;
+    }) => {
+      const page = opts?.page ?? 1;
+      const search = opts?.search ?? "";
+      const partNo = opts?.partNo;
+      const asFamily = !!opts?.asFamily || !!partNo;
+      const fetchId = ++listFetchId.current;
+      setListLoading(true);
       try {
-        // Optimized: Fetch all parts for faster load and complete list availability
-        const response = await apiClient.getPartEntryList({ limit: "all", page: 1 });
-        const responseData = (response as any).data;
-
-        if (responseData && Array.isArray(responseData)) {
-          // SWAPPED: partNo shows master_part_no, masterPartNo shows part_no (to match ItemsListView)
-          const transformedParts: Part[] = responseData.map((p: any) => ({
-            id: p.id,
-            partNo: (p.master_part_no || "").trim(),
-            brand: p.brand_name || "-",
-            type: p.type || "single",
-            uom: p.uom || "NOS",
-            weight: p.weight ? String(p.weight) : "-",
-            cost: p.cost ? parseFloat(p.cost) : null,
-            purchasePrice: null, // Minimal fields for dedicated list
-            avgCost: null,
-            price: p.price_a ? parseFloat(p.price_a) : null,
-            priceA:
-              p.price_a !== undefined && p.price_a !== null && p.price_a !== ""
-                ? parseFloat(p.price_a)
-                : p.priceA !== undefined && p.priceA !== null && p.priceA !== ""
-                  ? parseFloat(p.priceA)
-                  : null,
-            priceB:
-              p.price_b !== undefined && p.price_b !== null && p.price_b !== ""
-                ? parseFloat(p.price_b)
-                : p.priceB !== undefined && p.priceB !== null && p.priceB !== ""
-                  ? parseFloat(p.priceB)
-                  : null,
-            stock: p.stock || 0,
-            reservedStock: p.reserved_stock || 0,
-            masterPartNo: (p.part_no || "").trim(),
-            modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
-          }));
-          setParts(transformedParts);
-        }
+        const response: any = await apiClient.getPartEntryList({
+          lite: true,
+          page: asFamily ? 1 : page,
+          limit: asFamily ? 500 : LIST_PAGE_SIZE,
+          search: asFamily ? undefined : search || undefined,
+          part_no: partNo || undefined,
+        });
+        if (fetchId !== listFetchId.current) return;
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        const mapped = rows.map(mapPartEntryRow);
+        setParts(mapped);
+        setListTotal(
+          asFamily
+            ? mapped.length
+            : Number(response?.total) || mapped.length,
+        );
+        setListPage(asFamily ? 1 : page);
+        setFamilyMode(asFamily);
       } catch (error: any) {
+        if (fetchId !== listFetchId.current) return;
         toast({
           title: "Error",
           description: error.error || "Failed to fetch parts",
           variant: "destructive",
         });
       } finally {
-        setLoading(false);
+        if (fetchId === listFetchId.current) setListLoading(false);
       }
-    };
+    },
+    [],
+  );
 
-    fetchParts();
-  }, [selectedMasterPartNo]);
+  // Browse mode: paginated lite list (not when showing a selected family)
+  useEffect(() => {
+    if (selectedMasterPartNo || familyMode) return;
+    void loadPartsList({ page: listPage, search: debouncedListSearch });
+  }, [
+    selectedMasterPartNo,
+    familyMode,
+    listPage,
+    debouncedListSearch,
+    loadPartsList,
+  ]);
 
-  // NOTE: Parts fetching is now handled inline in onPartSelected callback
-  // This useEffect only runs when no master part is selected to prevent overwriting family parts
+  const loadFamilyParts = useCallback(
+    async (masterPartNo: string) => {
+      setSelectedMasterPartNo(masterPartNo);
+      setFamilyMode(true);
+      setListSearch("");
+      setDebouncedListSearch("");
+      await loadPartsList({ partNo: masterPartNo.trim(), asFamily: true });
+    },
+    [loadPartsList],
+  );
 
+  const handleSelectListPart = useCallback(
+    async (part: Part) => {
+      // Select immediately so the row highlights without waiting on network.
+      setSelectedPart(part);
+      if (part.masterPartNo) {
+        await loadFamilyParts(part.masterPartNo);
+      }
+    },
+    [loadFamilyParts],
+  );
   const handleSavePart = async (partData: any) => {
     try {
       setLoading(true);
@@ -269,41 +331,15 @@ export const PartEntryPage = ({
     const fetchKitParts = async () => {
       setLoading(true);
       try {
-        const response = await apiClient.getPartEntryList({ limit: "all", page: 1 });
-        const responseData = (response as any).data;
+        const response: any = await apiClient.getPartEntryList({
+          lite: true,
+          type: "kit",
+          limit: 500,
+          page: 1,
+        });
+        const responseData = response?.data;
         if (responseData && Array.isArray(responseData)) {
-          const transformedKitParts: Part[] = responseData
-            .filter((p: any) => (p.type || "single") === "kit")
-            .map((p: any) => ({
-              id: p.id,
-              partNo: (p.master_part_no || "").trim(),
-              brand: p.brand_name || "-",
-              type: p.type || "single",
-              uom: p.uom || "NOS",
-              weight: p.weight ? String(p.weight) : "-",
-              cost: p.cost ? parseFloat(p.cost) : null,
-              purchasePrice: null,
-              avgCost: null,
-              price: p.price_a ? parseFloat(p.price_a) : null,
-              priceA:
-                p.price_a !== undefined && p.price_a !== null && p.price_a !== ""
-                  ? parseFloat(p.price_a)
-                  : p.priceA !== undefined && p.priceA !== null && p.priceA !== ""
-                    ? parseFloat(p.priceA)
-                    : null,
-              priceB:
-                p.price_b !== undefined && p.price_b !== null && p.price_b !== ""
-                  ? parseFloat(p.price_b)
-                  : p.priceB !== undefined && p.priceB !== null && p.priceB !== ""
-                    ? parseFloat(p.priceB)
-                    : null,
-              stock: p.stock || 0,
-              reservedStock: p.reserved_stock || 0,
-              masterPartNo: (p.part_no || "").trim(),
-              modelTotalQty:
-                p.model_total_qty != null ? p.model_total_qty : undefined,
-            }));
-          setKitParts(transformedKitParts);
+          setKitParts(responseData.map(mapPartEntryRow));
         } else {
           setKitParts([]);
         }
@@ -330,70 +366,16 @@ export const PartEntryPage = ({
               onClearSelection={() => {
                 setSelectedPart(null);
                 setSelectedMasterPartNo(null);
+                setFamilyMode(false);
+                setListPage(1);
+                setListSearch("");
+                setDebouncedListSearch("");
 
                 setSearchFilters((prev: any) => ({
                   ...prev,
                   master_part_no: "",
                   part_no: "",
                 }));
-
-                // Optimized: Fetch with smaller initial limit for faster response
-                // The PartsList component handles pagination client-side, so we don't need all parts at once
-                const fetchAllParts = async () => {
-                  setLoading(true);
-                  try {
-                    const response = await apiClient.getPartEntryList({
-                      limit: 500,
-                      page: 1,
-                    });
-                    const responseData = (response as any).data;
-                    if (responseData && Array.isArray(responseData)) {
-                      const transformedParts: Part[] = responseData.map(
-                        (p: any) => ({
-                          id: p.id,
-                          partNo: (p.master_part_no || "").trim(),
-                          brand: p.brand_name || "-",
-                          type: p.type || "single",
-                          uom: p.uom || "NOS",
-                          weight: p.weight ? String(p.weight) : "-",
-                          cost: p.cost ? parseFloat(p.cost) : null,
-                          purchasePrice: null,
-                          avgCost: null,
-                          price: p.price_a ? parseFloat(p.price_a) : null,
-                          priceA:
-                            p.price_a !== undefined &&
-                            p.price_a !== null &&
-                            p.price_a !== ""
-                              ? parseFloat(p.price_a)
-                              : p.priceA !== undefined &&
-                                  p.priceA !== null &&
-                                  p.priceA !== ""
-                                ? parseFloat(p.priceA)
-                                : null,
-                          priceB:
-                            p.price_b !== undefined &&
-                            p.price_b !== null &&
-                            p.price_b !== ""
-                              ? parseFloat(p.price_b)
-                              : p.priceB !== undefined &&
-                                  p.priceB !== null &&
-                                  p.priceB !== ""
-                                ? parseFloat(p.priceB)
-                                : null,
-                          stock: p.stock || 0,
-                          reservedStock: p.reserved_stock || 0,
-                          masterPartNo: (p.part_no || "").trim(),
-                          modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
-                        }),
-                      );
-                      setParts(transformedParts);
-                    }
-                  } catch (error: any) {
-                  } finally {
-                    setLoading(false);
-                  }
-                };
-                fetchAllParts();
               }}
               onPartSelected={(valueFromDropdown: string) => {
                   // SWAPPED: "Master Part No" dropdown passes part_no values, so filter by part_no
@@ -408,75 +390,16 @@ export const PartEntryPage = ({
                     setSearchFilters(newFilters);
                     setItemsPage(1);
                     fetchItems(1, itemsPerPage, newFilters);
-
-                    const fetchPartsByMasterPart = async () => {
-                      setLoading(true);
-                      try {
-                        const response = await apiClient.getPartEntryList({
-                          part_no: valueFromDropdown.trim(),
-                          limit: 10000,
-                        });
-
-                        const partsData = (response as any).data || [];
-
-                        if (partsData.length > 0) {
-                          const transformedParts: Part[] = partsData.map(
-                            (p: any) => ({
-                              id: p.id,
-                              partNo: (p.master_part_no || "").trim(),
-                              brand: p.brand_name || "-",
-                              type: p.type || "single",
-                              uom: p.uom || "NOS",
-                              weight: p.weight ? String(p.weight) : "-",
-                              cost: p.cost ? parseFloat(p.cost) : null,
-                              purchasePrice: null,
-                              avgCost: null,
-                              price: p.price_a ? parseFloat(p.price_a) : null,
-                              priceA:
-                                p.price_a !== undefined &&
-                                p.price_a !== null &&
-                                p.price_a !== ""
-                                  ? parseFloat(p.price_a)
-                                  : p.priceA !== undefined &&
-                                      p.priceA !== null &&
-                                      p.priceA !== ""
-                                    ? parseFloat(p.priceA)
-                                    : null,
-                              priceB:
-                                p.price_b !== undefined &&
-                                p.price_b !== null &&
-                                p.price_b !== ""
-                                  ? parseFloat(p.price_b)
-                                  : p.priceB !== undefined &&
-                                      p.priceB !== null &&
-                                      p.priceB !== ""
-                                    ? parseFloat(p.priceB)
-                                    : null,
-                              stock: p.stock || 0,
-                              reservedStock: p.reserved_stock || 0,
-                              masterPartNo: (p.part_no || "").trim(),
-                              modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
-                            }),
-                          );
-                          setParts(transformedParts);
-                        } else {
-                          setParts([]);
-                        }
-                      } catch (error: any) {
-                        setParts([]);
-                      } finally {
-                        setLoading(false);
-                      }
-                    };
-
-                    fetchPartsByMasterPart();
+                    void loadFamilyParts(valueFromDropdown.trim());
+                  } else {
+                    setFamilyMode(false);
+                    setListPage(1);
+                    void loadPartsList({ page: 1, search: listSearch });
                   }
               }}
               onPartNoSelected={(valueFromDropdown: string) => {
                   // When Part No is selected, keep showing ALL family parts (don't filter to single part)
-                  // The Parts List should continue showing the whole family based on Master Part No
                   if (valueFromDropdown && selectedMasterPartNo) {
-                    // Keep the filter by Master Part No (part_no column) to show whole family
                     const newFilters = {
                       ...searchFilters,
                       part_no: selectedMasterPartNo.trim(),
@@ -485,82 +408,26 @@ export const PartEntryPage = ({
                     setSearchFilters(newFilters);
                     setItemsPage(1);
                     fetchItems(1, itemsPerPage, newFilters);
-                    // Don't change the Parts List - keep showing all family parts
                   } else if (valueFromDropdown && !selectedMasterPartNo) {
-                    // No Master Part selected, filter by the Part No's family
                     const fetchFamilyByPartNo = async () => {
-                      setLoading(true);
                       try {
-                        const response = await apiClient.getPartEntryList({
+                        const response: any = await apiClient.getPartEntryList({
+                          lite: true,
                           search: valueFromDropdown.trim(),
                           limit: 1,
                         });
-
-                        const partsData = (response as any).data || [];
-
+                        const partsData = response?.data || [];
                         if (partsData.length > 0) {
-                          const masterPartNo = (partsData[0].master_part_no || "").trim();
                           const actualPartNo = (partsData[0].part_no || "").trim();
-
                           if (actualPartNo) {
-                            const familyResponse = await apiClient.getPartEntryList({
-                              part_no: actualPartNo,
-                              limit: 10000,
-                            });
-
-                            const familyData = (familyResponse as any).data || [];
-
-                            if (familyData.length > 0) {
-                              const transformedParts: Part[] = familyData.map(
-                                (p: any) => ({
-                                  id: p.id,
-                                  partNo: (p.master_part_no || "").trim(),
-                                  brand: p.brand_name || "-",
-                                  type: p.type || "single",
-                                  uom: p.uom || "NOS",
-                                  weight: p.weight ? String(p.weight) : "-",
-                                  cost: p.cost ? parseFloat(p.cost) : null,
-                                  purchasePrice: null,
-                                  avgCost: null,
-                                  price: p.price_a ? parseFloat(p.price_a) : null,
-                                  priceA:
-                                    p.price_a !== undefined &&
-                                    p.price_a !== null &&
-                                    p.price_a !== ""
-                                      ? parseFloat(p.price_a)
-                                      : p.priceA !== undefined &&
-                                          p.priceA !== null &&
-                                          p.priceA !== ""
-                                        ? parseFloat(p.priceA)
-                                        : null,
-                                  priceB:
-                                    p.price_b !== undefined &&
-                                    p.price_b !== null &&
-                                    p.price_b !== ""
-                                      ? parseFloat(p.price_b)
-                                      : p.priceB !== undefined &&
-                                          p.priceB !== null &&
-                                          p.priceB !== ""
-                                        ? parseFloat(p.priceB)
-                                        : null,
-                                  stock: p.stock || 0,
-                                  reservedStock: p.reserved_stock || 0,
-                                  masterPartNo: (p.part_no || "").trim(),
-                                  modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
-                                }),
-                              );
-                              setParts(transformedParts);
-                              setSelectedMasterPartNo(actualPartNo);
-                            }
+                            await loadFamilyParts(actualPartNo);
                           }
                         }
-                      } catch (error: any) {
-                      } finally {
-                        setLoading(false);
+                      } catch {
+                        /* ignore */
                       }
                     };
-
-                    fetchFamilyByPartNo();
+                    void fetchFamilyByPartNo();
                   } else {
                     const newFilters = {
                       ...searchFilters,
@@ -569,61 +436,10 @@ export const PartEntryPage = ({
                     setSearchFilters(newFilters);
                     setItemsPage(1);
                     fetchItems(1, itemsPerPage, newFilters);
-
-                    const fetchAllParts = async () => {
-                      setLoading(true);
-                      try {
-                        const response = await apiClient.getPartEntryList({
-                          limit: 10000,
-                        });
-                        const responseData = (response as any).data;
-                        if (responseData && Array.isArray(responseData)) {
-                          const transformedParts: Part[] = responseData.map(
-                            (p: any) => ({
-                              id: p.id,
-                              partNo: (p.master_part_no || "").trim(),
-                              brand: p.brand_name || "-",
-                              type: p.type || "single",
-                              uom: p.uom || "NOS",
-                              weight: p.weight ? String(p.weight) : "-",
-                              cost: p.cost ? parseFloat(p.cost) : null,
-                              purchasePrice: null,
-                              avgCost: null,
-                              price: p.price_a ? parseFloat(p.price_a) : null,
-                              priceA:
-                                p.price_a !== undefined &&
-                                p.price_a !== null &&
-                                p.price_a !== ""
-                                  ? parseFloat(p.price_a)
-                                  : p.priceA !== undefined &&
-                                      p.priceA !== null &&
-                                      p.priceA !== ""
-                                    ? parseFloat(p.priceA)
-                                    : null,
-                              priceB:
-                                p.price_b !== undefined &&
-                                p.price_b !== null &&
-                                p.price_b !== ""
-                                  ? parseFloat(p.price_b)
-                                  : p.priceB !== undefined &&
-                                      p.priceB !== null &&
-                                      p.priceB !== ""
-                                    ? parseFloat(p.priceB)
-                                    : null,
-                              stock: p.stock || 0,
-                              reservedStock: p.reserved_stock || 0,
-                              masterPartNo: (p.part_no || "").trim(),
-                            }),
-                          );
-                          setParts(transformedParts);
-                        }
-                      } catch (error: any) {
-                      } finally {
-                        setLoading(false);
-                      }
-                    };
-
-                    fetchAllParts();
+                    setFamilyMode(false);
+                    setSelectedMasterPartNo(null);
+                    setListPage(1);
+                    void loadPartsList({ page: 1, search: listSearch });
                   }
               }}
             />
@@ -676,136 +492,29 @@ export const PartEntryPage = ({
             {rightTab === "parts-list" ? (
               <PartsList
                 parts={parts}
-                onSelectPart={async (part) => {
-                  setSelectedPart(part);
-
-                  // Fetch family parts when a part is selected from the list
-                  if (part.masterPartNo) {
-                    setSelectedMasterPartNo(part.masterPartNo);
-                    setLoading(true);
-                    try {
-                      const response = await apiClient.getPartEntryList({
-                        part_no: part.masterPartNo.trim(),
-                        limit: 10000,
-                      });
-
-                      const partsData = (response as any).data || [];
-
-                      if (partsData.length > 0) {
-                        const transformedParts: Part[] = partsData.map(
-                          (p: any) => ({
-                            id: p.id,
-                            partNo: (p.master_part_no || "").trim(),
-                            brand: p.brand_name || "-",
-                            type: p.type || "single",
-                            uom: p.uom || "NOS",
-                            weight: p.weight ? String(p.weight) : "-",
-                            cost: p.cost ? parseFloat(p.cost) : null,
-                            purchasePrice: null,
-                            avgCost: null,
-                            price: p.price_a ? parseFloat(p.price_a) : null,
-                            priceA:
-                              p.price_a !== undefined &&
-                              p.price_a !== null &&
-                              p.price_a !== ""
-                                ? parseFloat(p.price_a)
-                                : p.priceA !== undefined &&
-                                    p.priceA !== null &&
-                                    p.priceA !== ""
-                                  ? parseFloat(p.priceA)
-                                  : null,
-                            priceB:
-                              p.price_b !== undefined &&
-                              p.price_b !== null &&
-                              p.price_b !== ""
-                                ? parseFloat(p.price_b)
-                                : p.priceB !== undefined &&
-                                    p.priceB !== null &&
-                                    p.priceB !== ""
-                                  ? parseFloat(p.priceB)
-                                  : null,
-                            stock: p.stock || 0,
-                            reservedStock: p.reserved_stock || 0,
-                            masterPartNo: (p.part_no || "").trim(),
-                            modelTotalQty: p.model_total_qty != null ? p.model_total_qty : undefined,
-                          }),
-                        );
-                        setParts(transformedParts);
-                      }
-                    } catch (error: any) {
-                    } finally {
-                      setLoading(false);
-                    }
+                selectedPartId={selectedPart?.id || null}
+                loading={listLoading}
+                totalCount={familyMode ? undefined : listTotal}
+                page={familyMode ? undefined : listPage}
+                pageSize={LIST_PAGE_SIZE}
+                searchQuery={listSearch}
+                onSearchChange={(q) => {
+                  setListSearch(q);
+                  if (familyMode || selectedMasterPartNo) {
+                    setFamilyMode(false);
+                    setSelectedMasterPartNo(null);
                   }
+                  setListPage(1);
                 }}
+                onPageChange={(p) => setListPage(p)}
+                onSelectPart={(part) => void handleSelectListPart(part)}
               />
             ) : (
               <PartsList
                 parts={kitParts}
-                onSelectPart={async (part) => {
-                  setSelectedPart(part);
-
-                  if (part.masterPartNo) {
-                    setSelectedMasterPartNo(part.masterPartNo);
-                    setLoading(true);
-                    try {
-                      const response = await apiClient.getPartEntryList({
-                        part_no: part.masterPartNo.trim(),
-                        limit: 10000,
-                      });
-
-                      const partsData = (response as any).data || [];
-
-                      if (partsData.length > 0) {
-                        const transformedParts: Part[] = partsData.map(
-                          (p: any) => ({
-                            id: p.id,
-                            partNo: (p.master_part_no || "").trim(),
-                            brand: p.brand_name || "-",
-                            type: p.type || "single",
-                            uom: p.uom || "NOS",
-                            weight: p.weight ? String(p.weight) : "-",
-                            cost: p.cost ? parseFloat(p.cost) : null,
-                            purchasePrice: null,
-                            avgCost: null,
-                            price: p.price_a ? parseFloat(p.price_a) : null,
-                            priceA:
-                              p.price_a !== undefined &&
-                              p.price_a !== null &&
-                              p.price_a !== ""
-                                ? parseFloat(p.price_a)
-                                : p.priceA !== undefined &&
-                                    p.priceA !== null &&
-                                    p.priceA !== ""
-                                  ? parseFloat(p.priceA)
-                                  : null,
-                            priceB:
-                              p.price_b !== undefined &&
-                              p.price_b !== null &&
-                              p.price_b !== ""
-                                ? parseFloat(p.price_b)
-                                : p.priceB !== undefined &&
-                                    p.priceB !== null &&
-                                    p.priceB !== ""
-                                  ? parseFloat(p.priceB)
-                                  : null,
-                            stock: p.stock || 0,
-                            reservedStock: p.reserved_stock || 0,
-                            masterPartNo: (p.part_no || "").trim(),
-                            modelTotalQty:
-                              p.model_total_qty != null
-                                ? p.model_total_qty
-                                : undefined,
-                          }),
-                        );
-                        setParts(transformedParts);
-                      }
-                    } catch (error: any) {
-                    } finally {
-                      setLoading(false);
-                    }
-                  }
-                }}
+                selectedPartId={selectedPart?.id || null}
+                loading={loading && kitParts.length === 0}
+                onSelectPart={(part) => void handleSelectListPart(part)}
               />
             )}
           </div>

@@ -581,30 +581,27 @@ export const PartEntryForm = ({
   // "Master Part No" UI field searches/displays values from part_no column
   // ============================================
   useEffect(() => {
+    let cancelled = false;
     const searchMasterPartNo = async () => {
       const searchTerm = masterPartSearch?.trim() || "";
       if (searchTerm.length > 0) {
         setMasterPartSearchLoading(true);
         try {
-          // Use general search for Google-like partial matching
-          const response: any = await apiClient.getParts({
+          // Lightweight dropdown endpoint (no stock joins) keeps autocomplete fast.
+          const response: any = await apiClient.getPartsDropdown({
             search: searchTerm,
-            limit: 500,
-            page: 1,
+            limit: 80,
           });
+
+          if (cancelled) return;
 
           let partsData: any[] = [];
           if (Array.isArray(response)) {
             partsData = response;
-          } else if ((response as any).data) {
-            if (Array.isArray((response as any).data)) {
-              partsData = (response as any).data;
-            } else if (
-              (response as any).data.data &&
-              Array.isArray((response as any).data.data)
-            ) {
-              partsData = (response as any).data.data;
-            }
+          } else if (Array.isArray(response?.data)) {
+            partsData = response.data;
+          } else if (Array.isArray(response?.data?.data)) {
+            partsData = response.data.data;
           }
 
           // Extract UNIQUE part_no values with PARTIAL matching (like Google search)
@@ -615,8 +612,8 @@ export const PartEntryForm = ({
             { value: string; description?: string; application?: string }
           >();
           partsData.forEach((p: any) => {
-            // Use part_no field - this is what ItemsListView displays under "Master Part No" header
-            const value = (p.part_no || "").trim();
+            // Use part_no / partNo field - ItemsListView "Master Part No" column
+            const value = String(p.partNo || p.part_no || "").trim();
             if (value) {
               const valueLower = value.toLowerCase();
               // Partial match: value starts with or contains search term (like Google autocomplete)
@@ -653,19 +650,23 @@ export const PartEntryForm = ({
             return a.value.localeCompare(b.value);
           });
 
-          setMasterPartNoOptions(options);
+          if (!cancelled) setMasterPartNoOptions(options);
         } catch (error) {
-          setMasterPartNoOptions([]);
+          if (!cancelled) setMasterPartNoOptions([]);
         } finally {
-          setMasterPartSearchLoading(false);
+          if (!cancelled) setMasterPartSearchLoading(false);
         }
       } else {
         setMasterPartNoOptions([]);
+        setMasterPartSearchLoading(false);
       }
     };
 
-    const timeoutId = setTimeout(searchMasterPartNo, 300);
-    return () => clearTimeout(timeoutId);
+    const timeoutId = setTimeout(searchMasterPartNo, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [masterPartSearch]);
 
   // ============================================
@@ -673,46 +674,46 @@ export const PartEntryForm = ({
   // This shows all parts that belong to the selected Master Part No family
   // ============================================
   useEffect(() => {
+    let cancelled = false;
     const fetchFamilyParts = async () => {
       if (formData.masterPartNo && formData.masterPartNo.trim().length > 0) {
         setFamilyPartsLoading(true);
         try {
-          // Master Part No UI = part_no column, so fetch by part_no
-          const response: any = await apiClient.getPartEntryList({
-            part_no: formData.masterPartNo.trim(),
-            limit: 500,
-            page: 1,
+          // Master Part No UI = part_no column; use lightweight dropdown API
+          const response: any = await apiClient.getPartsDropdown({
+            search: formData.masterPartNo.trim(),
+            limit: 200,
           });
+
+          if (cancelled) return;
 
           let partsData: any[] = [];
           if (Array.isArray(response)) {
             partsData = response;
-          } else if ((response as any).data) {
-            if (Array.isArray((response as any).data)) {
-              partsData = (response as any).data;
-            } else if (
-              (response as any).data.data &&
-              Array.isArray((response as any).data.data)
-            ) {
-              partsData = (response as any).data.data;
-            }
+          } else if (Array.isArray(response?.data)) {
+            partsData = response.data;
+          } else if (Array.isArray(response?.data?.data)) {
+            partsData = response.data.data;
           }
 
+          const masterKey = formData.masterPartNo.trim().toLowerCase();
           // Extract all parts in this family - show master_part_no as "Part No" dropdown options
           const familyParts = partsData
             .filter(
               (p: any) =>
-                (p.part_no || "").trim().toLowerCase() ===
-                formData.masterPartNo.trim().toLowerCase(),
+                String(p.partNo || p.part_no || "")
+                  .trim()
+                  .toLowerCase() === masterKey,
             )
             .map((p: any) => ({
               id: p.id || "",
-              value: (p.master_part_no || "").trim(),
+              value: String(p.masterPartNo || p.master_part_no || "").trim(),
               description: p.description || "",
-              brand: p.brand_name || p.brand || "",
+              brand: p.brand || p.brand_name || "",
             }))
             .filter((p) => p.value); // Only include parts with a value
 
+          if (cancelled) return;
           setFamilyPartNoOptions(familyParts);
 
           // Auto-fill description from first family part (all family parts share same description)
@@ -731,9 +732,9 @@ export const PartEntryForm = ({
             });
           }
         } catch (error) {
-          setFamilyPartNoOptions([]);
+          if (!cancelled) setFamilyPartNoOptions([]);
         } finally {
-          setFamilyPartsLoading(false);
+          if (!cancelled) setFamilyPartsLoading(false);
         }
       } else {
         setFamilyPartNoOptions([]);
@@ -741,6 +742,9 @@ export const PartEntryForm = ({
     };
 
     fetchFamilyParts();
+    return () => {
+      cancelled = true;
+    };
   }, [formData.masterPartNo]);
 
   // ============================================
@@ -749,6 +753,7 @@ export const PartEntryForm = ({
   // "Part No" UI field searches/displays values from master_part_no column
   // ============================================
   useEffect(() => {
+    let cancelled = false;
     const searchPartNo = async () => {
       const searchTerm = partSearch?.trim() || "";
       if (searchTerm.length > 0) {
@@ -758,25 +763,21 @@ export const PartEntryForm = ({
 
         setPartNoSearchLoading(true);
         try {
-          // Use general search for Google-like partial matching
-          const response: any = await apiClient.getParts({
+          // Lightweight dropdown endpoint (no stock joins) keeps autocomplete fast.
+          const response: any = await apiClient.getPartsDropdown({
             search: searchTerm,
-            limit: 500,
-            page: 1,
+            limit: 80,
           });
+
+          if (cancelled) return;
 
           let partsData: any[] = [];
           if (Array.isArray(response)) {
             partsData = response;
-          } else if ((response as any).data) {
-            if (Array.isArray((response as any).data)) {
-              partsData = (response as any).data;
-            } else if (
-              (response as any).data.data &&
-              Array.isArray((response as any).data.data)
-            ) {
-              partsData = (response as any).data.data;
-            }
+          } else if (Array.isArray(response?.data)) {
+            partsData = response.data;
+          } else if (Array.isArray(response?.data?.data)) {
+            partsData = response.data.data;
           }
 
           // Extract UNIQUE master_part_no values with PARTIAL matching (like Google search)
@@ -787,8 +788,8 @@ export const PartEntryForm = ({
             { id: string; value: string; description?: string; partNo?: string }
           >();
           partsData.forEach((p: any) => {
-            // Use master_part_no field - this is what ItemsListView displays under "Part No" header
-            const value = (p.master_part_no || "").trim();
+            // Use master_part_no / masterPartNo - ItemsListView "Part No" column
+            const value = String(p.masterPartNo || p.master_part_no || "").trim();
             if (value) {
               const valueLower = value.toLowerCase();
               // Partial match: value starts with or contains search term (like Google autocomplete)
@@ -802,7 +803,7 @@ export const PartEntryForm = ({
                     id: p.id || "",
                     value: value,
                     description: p.description || "",
-                    partNo: (p.part_no || "").trim(),
+                    partNo: String(p.partNo || p.part_no || "").trim(),
                   });
                 }
               }
@@ -826,26 +827,32 @@ export const PartEntryForm = ({
             return a.value.localeCompare(b.value);
           });
 
-          setPartNoOptions(options);
-          // Only show dropdown if it's already open (user clicked on the field)
-          if (showPartDropdown || keepPartDropdownOpen) {
-            setShowPartDropdown(true);
+          if (!cancelled) {
+            setPartNoOptions(options);
+            // Only show dropdown if it's already open (user clicked on the field)
+            if (showPartDropdown || keepPartDropdownOpen) {
+              setShowPartDropdown(true);
+            }
           }
         } catch (error) {
-          setPartNoOptions([]);
+          if (!cancelled) setPartNoOptions([]);
         } finally {
-          setPartNoSearchLoading(false);
+          if (!cancelled) setPartNoSearchLoading(false);
         }
       } else {
         setPartNoOptions([]);
+        setPartNoSearchLoading(false);
         if (!keepPartDropdownOpen && !formData.masterPartNo) {
           setShowPartDropdown(false);
         }
       }
     };
 
-    const timeoutId = setTimeout(searchPartNo, 300);
-    return () => clearTimeout(timeoutId);
+    const timeoutId = setTimeout(searchPartNo, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [
     partSearch,
     formData.partNo,

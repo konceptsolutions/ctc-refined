@@ -562,11 +562,14 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
       part_no, // Filter by exact part_no (used for family matching)
       page = "1",
       limit = "100",
+      lite,
+      type,
     } = req.query;
 
     const pageNum = parseInt(page as string) || 1;
     let limitNum = limit === "all" ? 100000 : parseInt(limit as string) || 1000;
     const offset = (pageNum - 1) * limitNum;
+    const isLite = String(lite || "").toLowerCase() === "true" || lite === "1";
 
     const conditions: string[] = [`p."status" = 'active'`];
     const params: any[] = [];
@@ -576,16 +579,28 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
       const rawSearch = String(search).trim();
       const searchStr = `%${rawSearch}%`;
       const normalizedSearch = rawSearch;
-      conditions.push(`(
-        p."partNo" ILIKE $${paramIdx} OR 
-        p."description" ILIKE $${paramIdx} OR 
-        mp."masterPartNo" ILIKE $${paramIdx} OR
-        regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-        regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
-      )`);
-      params.push(searchStr);
-      params.push(normalizedSearch);
-      paramIdx += 2;
+      // Lite search skips expensive regexp_replace — ILIKE is enough for the sidebar.
+      if (isLite) {
+        conditions.push(`(
+          p."partNo" ILIKE $${paramIdx} OR
+          p."description" ILIKE $${paramIdx} OR
+          mp."masterPartNo" ILIKE $${paramIdx} OR
+          b."name" ILIKE $${paramIdx}
+        )`);
+        params.push(searchStr);
+        paramIdx += 1;
+      } else {
+        conditions.push(`(
+          p."partNo" ILIKE $${paramIdx} OR 
+          p."description" ILIKE $${paramIdx} OR 
+          mp."masterPartNo" ILIKE $${paramIdx} OR
+          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
+          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
+        )`);
+        params.push(searchStr);
+        params.push(normalizedSearch);
+        paramIdx += 2;
+      }
     }
 
     if (part_no) {
@@ -594,20 +609,22 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
       paramIdx++;
     }
 
+    if (type && String(type).trim() && String(type).trim() !== "all") {
+      conditions.push(`p."type" = $${paramIdx++}`);
+      params.push(String(type).trim().toLowerCase());
+    }
+
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    const sql = `
-      SELECT 
-        p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."priceB" as price_b, p."type",
-        p.uom, p.weight, p."updatedAt" as updated_at,
-        mp."masterPartNo" as master_part_no,
-        b."name" as brand_name,
-        COALESCE(st.stock, 0) as stock,
-        COALESCE(sr.reserved, 0) as reserved_stock
-      FROM "Part" p
-      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
-      LEFT JOIN "Brand" b ON p."brandId" = b.id
+    const stockSelect = isLite
+      ? `0 as stock, 0 as reserved_stock`
+      : `COALESCE(st.stock, 0) as stock,
+        COALESCE(sr.reserved, 0) as reserved_stock`;
+
+    const stockJoins = isLite
+      ? ""
+      : `
       LEFT JOIN (
           SELECT "partId", 
             SUM(CASE WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as stock
@@ -620,19 +637,49 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
           FROM "StockReservation"
           WHERE status = 'reserved'
           GROUP BY "partId"
-      ) sr ON p.id = sr."partId"
+      ) sr ON p.id = sr."partId"`;
+
+    const sql = `
+      SELECT 
+        p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."priceB" as price_b, p."type",
+        p.uom, p.weight, p."updatedAt" as updated_at,
+        mp."masterPartNo" as master_part_no,
+        b."name" as brand_name,
+        ${stockSelect}
+      FROM "Part" p
+      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+      LEFT JOIN "Brand" b ON p."brandId" = b.id
+      ${stockJoins}
       ${whereClause}
       ORDER BY p."updatedAt" DESC
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}
     `;
 
     params.push(limitNum, offset);
-    const result = await query(sql, params);
+
+    const countParams = params.slice(0, -2);
+    const countSql = `
+      SELECT COUNT(*)::int AS total
+      FROM "Part" p
+      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+      LEFT JOIN "Brand" b ON p."brandId" = b.id
+      ${whereClause}
+    `;
+
+    const [result, countResult] = await Promise.all([
+      query(sql, params),
+      isLite || limit !== "all"
+        ? query(countSql, countParams)
+        : Promise.resolve({ rows: [{ total: 0 }] }),
+    ]);
+    const total =
+      Number(countResult.rows?.[0]?.total) ||
+      (limit === "all" ? result.rows.length : 0);
     const partIds = result.rows.map((r: any) => r.id);
 
     // Model total qty per part (sum of qtyUsed); use sibling's total when part has no models
     let modelTotalByPartId: Record<string, number> = {};
-    if (partIds.length > 0) {
+    if (!isLite && partIds.length > 0) {
       const modelSums = await prisma.model.groupBy({
         by: ["partId"],
         where: { partId: { in: partIds } },
@@ -665,8 +712,8 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
       // For each part in result with 0 model total, look up sibling in full DB by part_no (Part.partNo)
       const partNosToResolve = new Set<string>();
       result.rows.forEach((p: any) => {
-        const total = modelTotalByPartId[p.id] ?? 0;
-        if (total === 0) {
+        const totalQty = modelTotalByPartId[p.id] ?? 0;
+        if (totalQty === 0) {
           const pno = (p.part_no != null && String(p.part_no).trim() !== "") ? String(p.part_no).trim() : null;
           if (pno) partNosToResolve.add(pno);
         }
@@ -689,8 +736,8 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
       // Same by master part: parts with 0 and a masterPartId get total from any sibling in DB
       const masterIdsToResolve = new Set<string>();
       result.rows.forEach((p: any) => {
-        const total = modelTotalByPartId[p.id] ?? 0;
-        if (total === 0) {
+        const totalQty = modelTotalByPartId[p.id] ?? 0;
+        if (totalQty === 0) {
           const mid = p.masterPartId || p.masterpartid;
           if (mid) masterIdsToResolve.add(mid);
         }
@@ -728,8 +775,11 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
         stock: parseInt(p.stock) || 0,
         reserved_stock: parseInt(p.reserved_stock) || 0,
         updated_at: p.updated_at,
-        model_total_qty: modelTotalByPartId[p.id] ?? 0,
+        model_total_qty: isLite ? 0 : (modelTotalByPartId[p.id] ?? 0),
       })),
+      total,
+      page: pageNum,
+      limit: limitNum,
     });
   } catch (error: any) {
     console.error("Error in part-entry-list API:", error.message);

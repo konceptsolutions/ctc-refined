@@ -314,6 +314,8 @@ class ApiClient {
     part_no?: string;
     page?: number;
     limit?: number | string;
+    lite?: boolean | string;
+    type?: string;
   }) {
     const queryParams = new URLSearchParams();
     if (params) {
@@ -333,9 +335,20 @@ class ApiClient {
     );
   }
 
-  async getPartsDropdown(search?: string) {
-    const query = search ? `?search=${search}` : "";
-    return this.request(`/parts-dropdown/dropdown${query}`);
+  async getPartsDropdown(
+    searchOrParams?: string | { search?: string; limit?: number | string },
+  ) {
+    const params =
+      typeof searchOrParams === "string"
+        ? { search: searchOrParams }
+        : searchOrParams || {};
+    const queryParams = new URLSearchParams();
+    if (params.search) queryParams.append("search", String(params.search));
+    if (params.limit !== undefined && params.limit !== null) {
+      queryParams.append("limit", String(params.limit));
+    }
+    const query = queryParams.toString();
+    return this.request(`/parts-dropdown/dropdown${query ? `?${query}` : ""}`);
   }
 
   async getParts(params?: {
