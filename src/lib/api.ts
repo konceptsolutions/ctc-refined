@@ -4171,6 +4171,8 @@ class ApiClient {
       partId: string;
       partNo: string;
       description?: string;
+      divOn?: string;
+      qtyDiv?: number;
       quantity: number;
       unitPrice: number;
     }>;
@@ -4204,6 +4206,8 @@ class ApiClient {
         partId: string;
         partNo: string;
         description?: string;
+        divOn?: string;
+        qtyDiv?: number;
         quantity: number;
         unitPrice: number;
       }>;

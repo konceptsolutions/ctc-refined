@@ -968,6 +968,8 @@ model SalesQuotationItem {
   partId         String
   partNo         String
   description    String?
+  divOn          String?
+  qtyDiv         Int            @default(0)
   quantity       Int
   unitPrice      Float
   total          Float

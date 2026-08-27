@@ -132,6 +132,10 @@ export interface InvoiceItem {
   rackCode?: string;
   shelfNo?: string;
   useUnlocatedStock?: boolean;
+  /** Sales quotation: division note */
+  divOn?: string;
+  /** Sales quotation: qty to put on invoice at initiate */
+  qtyDiv?: number;
 }
 
 export interface DeliveryLogEntry {

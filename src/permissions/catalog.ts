@@ -607,7 +607,7 @@ export function getPresetPermissions(roleName: string): string[] {
   }
 
   if (name === "sales") {
-    // Can create/edit quotations & invoices, but cannot approve / change status / action menu
+    // Create/edit + print quotations/invoices; no approve, status change, or action menu
     return keysForPages(["sales.quotation", "sales.invoice", "sales.returns"]).filter(
       (k) =>
         k !== "action.sales.invoice.status" &&

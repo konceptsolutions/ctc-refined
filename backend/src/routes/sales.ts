@@ -1131,6 +1131,11 @@ router.post("/quotations", async (req: Request, res: Response) => {
             partId: item.partId,
             partNo: item.partNo,
             description: item.description || "",
+            divOn: String(item.divOn ?? "").trim() || null,
+            qtyDiv: Math.max(
+              0,
+              Math.floor(Number(item.qtyDiv ?? 0) || 0),
+            ),
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             total: item.quantity * item.unitPrice,
@@ -1244,6 +1249,11 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
           partId: item.partId,
           partNo: item.partNo,
           description: item.description || "",
+          divOn: String(item.divOn ?? "").trim() || null,
+          qtyDiv: Math.max(
+            0,
+            Math.floor(Number(item.qtyDiv ?? 0) || 0),
+          ),
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           total: item.quantity * item.unitPrice,
@@ -1369,21 +1379,19 @@ router.post(
         return res.status(404).json({ error: "Quotation not found" });
       }
 
-      // Check stock availability — allow short/zero available unless reserved stock exists
-      for (const item of quotation.SalesQuotationItem) {
-        const stock = await getStockBalance(item.partId);
-        const reserved = await getReservedQuantity(item.partId);
-        const { blocked, available } = stockBlocksInvoiceSave(
-          item.quantity,
-          stock,
-          reserved,
+      const itemsForInvoice = quotation.SalesQuotationItem.map((item: any) => {
+        const initiateQty = Math.max(
+          0,
+          Math.floor(Number(item.qtyDiv ?? 0) || 0),
         );
+        return { item, initiateQty };
+      }).filter(({ initiateQty }) => initiateQty > 0);
 
-        if (blocked) {
-          return res.status(400).json({
-            error: `Insufficient stock for part ${item.partNo}. Available: ${available}, Reserved: ${reserved}, Required: ${item.quantity}`,
-          });
-        }
+      if (itemsForInvoice.length === 0) {
+        return res.status(400).json({
+          error:
+            "No quotation items with Delivery Qty greater than zero to initiate into a sales invoice.",
+        });
       }
 
       // Generate robust invoice number (numeric string; legacy INV-* rows still drive sequence)
@@ -1399,17 +1407,17 @@ router.post(
         customerType?: string;
         customerId?: string | null;
       };
-      const subtotal =
-        q.subtotal ??
-        quotation.SalesQuotationItem.reduce((s, i) => s + i.total, 0);
+      const initiatedSubtotal = itemsForInvoice.reduce(
+        (sum, { item, initiateQty }) =>
+          sum + initiateQty * Number(item.unitPrice || 0),
+        0,
+      );
+      const subtotal = initiatedSubtotal;
       const overallDiscount =
         discount != null ? Number(discount) : Number(q.overallDiscount || 0);
       const freight = Number(q.freightCharges || 0);
       const taxAmount = tax != null ? Number(tax) : Number(q.tax || 0);
-      const grandTotal =
-        q.totalAmount != null
-          ? Number(q.totalAmount)
-          : subtotal - overallDiscount + taxAmount + freight;
+      const grandTotal = subtotal - overallDiscount + taxAmount + freight;
       const normalizedCustomerType =
         customerType || q.customerType || "registered";
       const resolvedCustomerId = customerId || q.customerId || null;
@@ -1446,18 +1454,18 @@ router.post(
           quotationId: id,
           updatedAt: new Date(),
           SalesInvoiceItem: {
-            create: quotation.SalesQuotationItem.map((item) => ({
+            create: itemsForInvoice.map(({ item, initiateQty }) => ({
               id: crypto.randomUUID(),
               partId: item.partId,
               partNo: item.partNo,
               description: item.description || "",
-              orderedQty: item.quantity,
+              orderedQty: initiateQty,
               deliveredQty: 0,
-              pendingQty: item.quantity,
+              pendingQty: initiateQty,
               unitPrice: item.unitPrice,
               avgCost: item.Part?.avgCost || item.Part?.cost || 0,
               discount: 0,
-              lineTotal: item.total,
+              lineTotal: initiateQty * Number(item.unitPrice || 0),
               grade: "A",
               brand: item.Part.Brand?.name || "",
             })),

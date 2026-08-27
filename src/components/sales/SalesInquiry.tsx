@@ -54,7 +54,7 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/ui/searchable-select";
-import { Plus, Search, Eye, FileText, CalendarIcon, Package, ShoppingCart, Boxes, Settings2, Truck, Printer, RefreshCw, ArrowRight, ArrowLeftRight, Trash, Info } from "lucide-react";
+import { Plus, Search, Eye, FileText, CalendarIcon, Package, ShoppingCart, Boxes, Settings2, Truck, Printer, RefreshCw, ArrowRight, ArrowLeftRight, Trash, Info, Save } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -261,15 +261,20 @@ interface SalesInquiryProps {
   hideShortcuts?: boolean;
   /** Prefill Part Inquiry Lookup with this part (e.g. purchase invoice eye popup). */
   initialPartId?: string;
+  /** Embedded in a parent dialog — part lookup only, no route navigation. */
+  embeddedPopup?: boolean;
 }
 
 export const SalesInquiry = ({
   hidePrices = false,
   hideShortcuts = false,
   initialPartId,
+  embeddedPopup = false,
 }: SalesInquiryProps = {}) => {
   const navigate = useNavigate();
-  const { canCreate } = usePageActions("sales.inquiry");
+  const { canCreate, canEdit } = usePageActions("sales.inquiry");
+  const suppressNavigation = embeddedPopup;
+  const hideConversionShortcuts = hideShortcuts || embeddedPopup;
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -421,6 +426,16 @@ export const SalesInquiry = ({
     useState("");
   const [alternateItems, setAlternateItems] = useState<PartDetail[]>([]);
   const [loadingAlternateItems, setLoadingAlternateItems] = useState(false);
+  const [altPriceEdits, setAltPriceEdits] = useState<
+    Record<string, { priceA: string; priceB: string }>
+  >({});
+  const [altPriceBaselines, setAltPriceBaselines] = useState<
+    Record<string, { priceA: number | null; priceB: number | null }>
+  >({});
+  const [savingAltPriceById, setSavingAltPriceById] = useState<
+    Record<string, boolean>
+  >({});
+  const [savingAltPrices, setSavingAltPrices] = useState(false);
   const [lookupRowPriceBaselines, setLookupRowPriceBaselines] = useState<
     Record<string, { priceA: number | null; priceB: number | null }>
   >({});
@@ -1504,6 +1519,78 @@ export const SalesInquiry = ({
     loadAlternateItems();
   }, [selectedPart, rackMap, stockMap]);
 
+  // Sync editable Price A/B drafts when alternate list membership changes
+  const alternateIdsKey = useMemo(
+    () => alternateItems.map((i) => i.id).filter(Boolean).join("|"),
+    [alternateItems],
+  );
+
+  useEffect(() => {
+    const nextEdits: Record<string, { priceA: string; priceB: string }> = {};
+    const nextBaselines: Record<
+      string,
+      { priceA: number | null; priceB: number | null }
+    > = {};
+    for (const item of alternateItems) {
+      if (!item.id) continue;
+      const a = Number.parseFloat(item.priceA || "");
+      const b = Number.parseFloat(item.priceB || "");
+      const priceA = Number.isFinite(a) ? a : null;
+      const priceB = Number.isFinite(b) ? b : null;
+      nextEdits[item.id] = {
+        priceA: priceA !== null ? String(priceA) : "",
+        priceB: priceB !== null ? String(priceB) : "",
+      };
+      nextBaselines[item.id] = { priceA, priceB };
+    }
+    setAltPriceEdits(nextEdits);
+    setAltPriceBaselines(nextBaselines);
+    // Only re-init when which alternates are shown changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alternateIdsKey]);
+
+  const altPricesDirty = useMemo(() => {
+    if (hidePrices) return false;
+    return alternateItems.some((item) => {
+      if (!item.id) return false;
+      const draft = altPriceEdits[item.id];
+      const base = altPriceBaselines[item.id];
+      if (!draft || !base) return false;
+      const nextA =
+        draft.priceA.trim() === ""
+          ? null
+          : Number.parseFloat(draft.priceA);
+      const nextB =
+        draft.priceB.trim() === ""
+          ? null
+          : Number.parseFloat(draft.priceB);
+      const aOk =
+        nextA === null || (Number.isFinite(nextA) && (nextA as number) >= 0);
+      const bOk =
+        nextB === null || (Number.isFinite(nextB) && (nextB as number) >= 0);
+      if (!aOk || !bOk) return false;
+      return (
+        (nextA ?? null) !== (base.priceA ?? null) ||
+        (nextB ?? null) !== (base.priceB ?? null)
+      );
+    });
+  }, [alternateItems, altPriceEdits, altPriceBaselines, hidePrices]);
+
+  const handleAltPriceChange = (
+    partId: string,
+    field: "priceA" | "priceB",
+    value: string,
+  ) => {
+    setAltPriceEdits((prev) => ({
+      ...prev,
+      [partId]: {
+        priceA: prev[partId]?.priceA ?? "",
+        priceB: prev[partId]?.priceB ?? "",
+        [field]: value,
+      },
+    }));
+  };
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1989,9 +2076,10 @@ export const SalesInquiry = ({
   useEffect(() => {
     const partIds = Array.from(
       new Set(
-        lookupRows
-          .map((row) => String(row.partId || "").trim())
-          .filter(Boolean),
+        [
+          ...lookupRows.map((row) => String(row.partId || "").trim()),
+          ...alternateItems.map((item) => String(item.id || "").trim()),
+        ].filter(Boolean),
       ),
     );
     if (partIds.length === 0) {
@@ -2016,7 +2104,7 @@ export const SalesInquiry = ({
     return () => {
       cancelled = true;
     };
-  }, [lookupRows]);
+  }, [lookupRows, alternateItems]);
 
   // Refresh stock for visible dropdown options (same source as In Stock column).
   useEffect(() => {
@@ -2216,6 +2304,263 @@ export const SalesInquiry = ({
     },
     [],
   );
+
+  // Enrich alternate rows with stock / images / price dates (same sources as main item)
+  useEffect(() => {
+    for (const item of alternateItems) {
+      const partId = String(item.id || "").trim();
+      if (!partId) continue;
+      if (
+        partStockBalances[partId] === undefined &&
+        !loadingStockBalances[partId]
+      ) {
+        void fetchPartStockForRow(partId);
+      }
+      void fetchPartImages(partId);
+      void fetchPartPriceLastUpdated(partId);
+    }
+  }, [
+    alternateItems,
+    partStockBalances,
+    loadingStockBalances,
+    fetchPartStockForRow,
+    fetchPartImages,
+    fetchPartPriceLastUpdated,
+  ]);
+
+  const applyAlternatePriceUpdates = useCallback(
+    (
+      updates: Array<{
+        partId: string;
+        priceA: number | null;
+        priceB: number | null;
+      }>,
+    ) => {
+      if (updates.length === 0) return;
+      const byId = new Map(updates.map((u) => [u.partId, u]));
+      setAlternateItems((prev) =>
+        prev.map((p) => {
+          const u = p.id ? byId.get(p.id) : undefined;
+          if (!u) return p;
+          return {
+            ...p,
+            priceA: u.priceA === null ? "" : formatPartNumber(u.priceA),
+            priceB: u.priceB === null ? "" : formatPartNumber(u.priceB),
+          };
+        }),
+      );
+      setAltPriceBaselines((prev) => {
+        const next = { ...prev };
+        for (const u of updates) {
+          next[u.partId] = { priceA: u.priceA, priceB: u.priceB };
+        }
+        return next;
+      });
+      setAltPriceEdits((prev) => {
+        const next = { ...prev };
+        for (const u of updates) {
+          next[u.partId] = {
+            priceA: u.priceA === null ? "" : String(u.priceA),
+            priceB: u.priceB === null ? "" : String(u.priceB),
+          };
+        }
+        return next;
+      });
+      for (const u of updates) {
+        applyPartPricesToCaches(u.partId, u.priceA, u.priceB);
+      }
+    },
+    [applyPartPricesToCaches],
+  );
+
+  const handleSaveAlternatePartPrice = async (partId: string) => {
+    const draft = altPriceEdits[partId];
+    const baseline = altPriceBaselines[partId] || {
+      priceA: null,
+      priceB: null,
+    };
+    if (!draft) return;
+
+    const currentA =
+      draft.priceA.trim() === "" ? null : Number.parseFloat(draft.priceA);
+    const currentB =
+      draft.priceB.trim() === "" ? null : Number.parseFloat(draft.priceB);
+    if (
+      (currentA !== null && (!Number.isFinite(currentA) || currentA < 0)) ||
+      (currentB !== null && (!Number.isFinite(currentB) || currentB < 0))
+    ) {
+      toast({
+        title: "Invalid prices",
+        description: "Enter valid non-negative Price A / B.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const aChanged = (currentA ?? null) !== (baseline.priceA ?? null);
+    const bChanged = (currentB ?? null) !== (baseline.priceB ?? null);
+    if (!aChanged && !bChanged) return;
+
+    setSavingAltPriceById((prev) => ({ ...prev, [partId]: true }));
+    try {
+      const payload: { priceA?: number; priceB?: number } = {};
+      if (aChanged && currentA !== null) payload.priceA = currentA;
+      if (bChanged && currentB !== null) payload.priceB = currentB;
+      if (Object.keys(payload).length === 0) return;
+
+      const response = (await apiClient.updatePartPrices(partId, payload)) as {
+        error?: string;
+      };
+      if (response?.error) {
+        toast({
+          title: "Failed to update price",
+          description: response.error,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const nextA = aChanged ? currentA : baseline.priceA;
+      const nextB = bChanged ? currentB : baseline.priceB;
+      applyAlternatePriceUpdates([{ partId, priceA: nextA, priceB: nextB }]);
+      const now = new Date().toISOString();
+      setPartPriceLastUpdatedByPartId((prev) => ({
+        ...prev,
+        [partId]: {
+          priceA: aChanged ? now : (prev[partId]?.priceA ?? null),
+          priceB: bChanged ? now : (prev[partId]?.priceB ?? null),
+        },
+      }));
+      toast({ title: "Price updated" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to update price",
+        description: error?.message || String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAltPriceById((prev) => {
+        const next = { ...prev };
+        delete next[partId];
+        return next;
+      });
+    }
+  };
+
+  const handleSaveAllAlternatePrices = async () => {
+    const dirty = alternateItems.filter((item) => {
+      if (!item.id) return false;
+      const draft = altPriceEdits[item.id];
+      const base = altPriceBaselines[item.id];
+      if (!draft || !base) return false;
+      const nextA =
+        draft.priceA.trim() === "" ? null : Number.parseFloat(draft.priceA);
+      const nextB =
+        draft.priceB.trim() === "" ? null : Number.parseFloat(draft.priceB);
+      return (
+        (nextA ?? null) !== (base.priceA ?? null) ||
+        (nextB ?? null) !== (base.priceB ?? null)
+      );
+    });
+    if (dirty.length === 0) {
+      toast({
+        title: "No price changes",
+        description: "Edit Price A or Price B on one or more alternate items first.",
+      });
+      return;
+    }
+
+    for (const item of dirty) {
+      const draft = altPriceEdits[item.id!];
+      const nextA =
+        draft.priceA.trim() === "" ? null : Number.parseFloat(draft.priceA);
+      const nextB =
+        draft.priceB.trim() === "" ? null : Number.parseFloat(draft.priceB);
+      if (
+        (nextA !== null && (!Number.isFinite(nextA) || nextA < 0)) ||
+        (nextB !== null && (!Number.isFinite(nextB) || nextB < 0))
+      ) {
+        toast({
+          title: "Invalid prices",
+          description: `Enter valid non-negative Price A / B for ${
+            item.partNo || "alternate"
+          }.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setSavingAltPrices(true);
+    const saved: Array<{
+      partId: string;
+      priceA: number | null;
+      priceB: number | null;
+    }> = [];
+    try {
+      for (const item of dirty) {
+        const partId = item.id!;
+        const draft = altPriceEdits[partId];
+        const base = altPriceBaselines[partId] || {
+          priceA: null,
+          priceB: null,
+        };
+        const currentA =
+          draft.priceA.trim() === "" ? null : Number.parseFloat(draft.priceA);
+        const currentB =
+          draft.priceB.trim() === "" ? null : Number.parseFloat(draft.priceB);
+        const aChanged = (currentA ?? null) !== (base.priceA ?? null);
+        const bChanged = (currentB ?? null) !== (base.priceB ?? null);
+        const payload: { priceA?: number; priceB?: number } = {};
+        if (aChanged && currentA !== null) payload.priceA = currentA;
+        if (bChanged && currentB !== null) payload.priceB = currentB;
+        if (Object.keys(payload).length === 0) continue;
+
+        const response = (await apiClient.updatePartPrices(partId, payload)) as {
+          error?: string;
+        };
+        if (response?.error) {
+          if (saved.length > 0) applyAlternatePriceUpdates(saved);
+          toast({
+            title: "Failed to update price",
+            description: response.error,
+            variant: "destructive",
+          });
+          return;
+        }
+        saved.push({
+          partId,
+          priceA: aChanged ? currentA : base.priceA,
+          priceB: bChanged ? currentB : base.priceB,
+        });
+        const now = new Date().toISOString();
+        setPartPriceLastUpdatedByPartId((prev) => ({
+          ...prev,
+          [partId]: {
+            priceA: aChanged ? now : (prev[partId]?.priceA ?? null),
+            priceB: bChanged ? now : (prev[partId]?.priceB ?? null),
+          },
+        }));
+      }
+      applyAlternatePriceUpdates(saved);
+      toast({
+        title: "Updated",
+        description:
+          saved.length === 1
+            ? "Alternate Price A / B saved."
+            : `${saved.length} alternate parts updated.`,
+      });
+    } catch (error: any) {
+      if (saved.length > 0) applyAlternatePriceUpdates(saved);
+      toast({
+        title: "Failed to update alternates",
+        description: error?.message || String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAltPrices(false);
+    }
+  };
 
   const handleLookupRowPriceChange = (
     rowId: string,
@@ -2768,6 +3113,14 @@ export const SalesInquiry = ({
   };
 
   const handleOpenQuotation = (quotationId: string) => {
+    if (suppressNavigation) {
+      toast({
+        title: "Close popup first",
+        description:
+          "Open the quotation from the Sales Quotation page after closing this view.",
+      });
+      return;
+    }
     sessionStorage.setItem("openSalesQuotationId", quotationId);
     navigate("/sales/quotation");
   };
@@ -3068,6 +3421,15 @@ export const SalesInquiry = ({
       JSON.stringify(selectionDraft),
     );
     sessionStorage.setItem("salesInquiryConversionDraft", JSON.stringify(payload));
+
+    if (suppressNavigation) {
+      toast({
+        title: "Close popup first",
+        description:
+          "Use the main Sales Inquiry page to convert items into invoice or quotation.",
+      });
+      return;
+    }
 
     if (target === "invoice") {
       navigate("/sales/invoice");
@@ -3512,7 +3874,7 @@ export const SalesInquiry = ({
               {/* <p className="text-sm text-muted-foreground mt-1">Search for part details using Item filter</p> */}
             </div>
             <div className="flex items-center gap-2">
-              {!hideShortcuts && canCreate && (
+              {!hideConversionShortcuts && canCreate && (
                 <>
                   <Button
                     variant="default"
@@ -4276,37 +4638,91 @@ export const SalesInquiry = ({
             </div>
           </div>
 
-          {/* Alternate Items (full width) */}
+          {/* Alternate Items (full width) — same detail columns as main item */}
           <div className="mt-6">
             <div className="rounded-md border bg-card p-3 flex flex-col min-h-[160px]">
-              <div className="mb-2">
-                <div className="text-sm font-semibold">Alternate Items</div>
-                {/* <div className="text-xs text-muted-foreground">
-                  Match by Part No / Master Part
-                </div> */}
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold">Alternate Items</div>
+                  <div className="text-xs text-muted-foreground">
+                    Same details as the selected item — edit Price A / B, then Update
+                  </div>
+                </div>
+                {!hidePrices && canEdit && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={
+                      !altPricesDirty ||
+                      savingAltPrices ||
+                      alternateItems.length === 0
+                    }
+                    onClick={() => void handleSaveAllAlternatePrices()}
+                  >
+                    {savingAltPrices ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    Update
+                  </Button>
+                )}
               </div>
-              <div className="rounded-md border bg-card overflow-y-auto flex-1 min-h-0 min-w-0 max-h-[520px]">
-                <Table className="table-fixed">
+              <div className="rounded-md border bg-card overflow-x-auto flex-1 min-h-0 min-w-0 max-h-[520px]">
+                <Table className="w-full">
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <ListNumberHeader className="text-xs w-9 px-2" />
-                      <TableHead className="text-xs w-[22%] px-2">Part</TableHead>
-                      <TableHead className="text-xs w-[28%] px-2">Description</TableHead>
-                      <TableHead className="text-xs w-14 px-2">Brand</TableHead>
-                      <TableHead className="text-xs text-right w-[4.75rem] px-2 whitespace-nowrap">Stock</TableHead>
-                      <TableHead className="text-xs text-center w-16 px-2">Action</TableHead>
+                      <ListNumberHeader className="text-xs px-2" />
+                      <TableHead className="text-xs min-w-[360px] w-[360px] px-2">
+                        Part Details
+                      </TableHead>
+                      <TableHead className="text-xs text-center w-[90px] px-2">Brand</TableHead>
+                      <TableHead className="text-xs text-center w-[170px] px-2">
+                        Application
+                      </TableHead>
+                      <TableHead className="text-xs text-center w-[80px] px-2">Reserved</TableHead>
+                      <TableHead className="text-xs text-center w-[80px] px-2">In Stock</TableHead>
+                      <TableHead className="text-xs text-center w-[80px] px-2">
+                        Available Stock
+                      </TableHead>
+                      <TableHead className="text-xs text-center w-[120px] px-2 whitespace-nowrap">
+                        New Stock Arrive
+                      </TableHead>
+                      {!hidePrices && (
+                        <>
+                          <TableHead className="text-xs text-center w-[95px] px-2">
+                            Cost Price
+                          </TableHead>
+                          <TableHead className="text-xs text-center w-[90px] px-2">
+                            Price A
+                          </TableHead>
+                          <TableHead className="text-xs text-center w-[90px] px-2">
+                            Price B
+                          </TableHead>
+                        </>
+                      )}
+                      <TableHead className="text-xs text-center w-[100px] px-2">Location</TableHead>
+                      <TableHead className="text-xs text-center w-[70px] px-2">Image</TableHead>
+                      <TableHead className="text-xs text-center w-[70px] px-2">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {!selectedPart ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground italic">
+                        <TableCell
+                          colSpan={hidePrices ? 10 : 13}
+                          className="text-center py-8 text-sm text-muted-foreground italic"
+                        >
                           Select a part to view alternate items.
                         </TableCell>
                       </TableRow>
                     ) : loadingAlternateItems ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                        <TableCell
+                          colSpan={hidePrices ? 10 : 13}
+                          className="text-center py-8 text-sm text-muted-foreground"
+                        >
                           <div className="flex items-center justify-center gap-2">
                             <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                             Loading alternates...
@@ -4315,50 +4731,276 @@ export const SalesInquiry = ({
                       </TableRow>
                     ) : alternateItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground italic">
+                        <TableCell
+                          colSpan={hidePrices ? 10 : 13}
+                          className="text-center py-8 text-sm text-muted-foreground italic"
+                        >
                           No alternate items found.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      alternateItems.map((item, index) => (
-                        <TableRow key={`${item.id || item.partNo}-${index}`} className="hover:bg-muted/20">
-                          <ListNumberCell index={index} total={alternateItems.length} className="text-xs px-2 py-1.5 whitespace-nowrap" />
-                          <TableCell
-                            className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
-                            title={formatPartIdentityFromUi({
-                              partNo: item.partNo,
-                              masterPart: item.masterPart,
-                            })}
+                      alternateItems.map((item, index) => {
+                        const partId = String(item.id || "").trim();
+                        const stockBalance = partId
+                          ? partStockBalances[partId]
+                          : undefined;
+                        const stockLoading = partId
+                          ? !!loadingStockBalances[partId]
+                          : false;
+                        const currentStock =
+                          stockBalance?.current_stock ??
+                          (item.quantity || 0);
+                        const reservedStock =
+                          stockBalance?.reserved_stock ??
+                          Number(item.reservedQty || 0);
+                        const availableStock =
+                          stockBalance?.available_stock ??
+                          Math.max(0, currentStock - reservedStock);
+                        const balanceAvg = Number(stockBalance?.avg_cost ?? 0);
+                        const partCost = parseFloat(item.cost || "") || 0;
+                        const avgCost =
+                          balanceAvg > 0 ? balanceAvg : partCost;
+                        const arrival = partId
+                          ? partExpectedArrivals[partId]
+                          : undefined;
+                        const priceDates = partId
+                          ? partPriceLastUpdatedByPartId[partId]
+                          : undefined;
+                        const locationText =
+                          (partId && rackMap[partId]) ||
+                          item.rackNo ||
+                          "—";
+                        const draft = partId
+                          ? altPriceEdits[partId] || {
+                              priceA: item.priceA || "",
+                              priceB: item.priceB || "",
+                            }
+                          : { priceA: "", priceB: "" };
+                        const savingRow = partId
+                          ? !!savingAltPriceById[partId]
+                          : false;
+                        return (
+                          <TableRow
+                            key={`${item.id || item.partNo}-${index}`}
+                            className="hover:bg-muted/20"
                           >
-                            {formatPartIdentityFromUi({
-                              partNo: item.partNo,
-                              masterPart: item.masterPart,
-                            })}
-                          </TableCell>
-                          <TableCell
-                            className="text-xs px-2 py-1.5 max-w-0 truncate"
-                            title={item.description || "N/A"}
-                          >
-                            {item.description || "N/A"}
-                          </TableCell>
-                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">{item.brand || "N/A"}</TableCell>
-                          <TableCell className="text-xs text-right font-semibold px-2 py-1.5 whitespace-nowrap tabular-nums">
-                            {Number(item.quantity || 0).toLocaleString("en-US")}
-                          </TableCell>
-                          <TableCell className="text-xs text-center px-2 py-1.5">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-primary hover:bg-primary/10"
-                              onClick={() => handleSwapWithAlternate(item)}
-                              title="Switch active item to this alternate"
-                              disabled={!item.id}
+                            <ListNumberCell
+                              index={index}
+                              total={alternateItems.length}
+                              className="text-xs px-2 py-1.5 whitespace-nowrap"
+                            />
+                            <TableCell
+                              className="text-xs font-medium px-2 py-1.5 max-w-[360px] truncate"
+                              title={getItemLabel(item)}
                             >
-                              <ArrowLeftRight className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                              {getItemLabel(item)}
+                            </TableCell>
+                            <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap truncate">
+                              {item.brand && item.brand !== "N/A"
+                                ? item.brand
+                                : "-"}
+                            </TableCell>
+                            <TableCell
+                              className="text-xs px-2 py-1.5 truncate"
+                              title={item.application || ""}
+                            >
+                              {item.application && item.application !== "N/A"
+                                ? item.application
+                                : "-"}
+                            </TableCell>
+                            <TableCell className="text-xs text-center px-2 py-1.5 tabular-nums">
+                              {!partId
+                                ? "-"
+                                : stockLoading
+                                  ? "..."
+                                  : reservedStock}
+                            </TableCell>
+                            <TableCell className="text-xs text-center px-2 py-1.5">
+                              <div className="flex items-center justify-center gap-1">
+                                <span
+                                  className={cn(
+                                    "font-bold tabular-nums",
+                                    currentStock > 0
+                                      ? "text-foreground"
+                                      : "text-muted-foreground",
+                                  )}
+                                >
+                                  {!partId
+                                    ? "-"
+                                    : stockLoading
+                                      ? "..."
+                                      : currentStock}
+                                </span>
+                                {partId ? (
+                                  <Package className="w-3 h-3 text-muted-foreground" />
+                                ) : null}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs text-center px-2 py-1.5">
+                              {!partId ? (
+                                <span className="text-muted-foreground">-</span>
+                              ) : stockLoading ? (
+                                <span className="text-muted-foreground">...</span>
+                              ) : (
+                                <Badge
+                                  variant={
+                                    availableStock > 0 ? "default" : "destructive"
+                                  }
+                                  className="px-2 py-0.5 font-bold h-fit"
+                                >
+                                  {availableStock}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-center px-2 py-1.5">
+                              {(() => {
+                                if (!partId || !arrival?.estTimeDate) {
+                                  return (
+                                    <span className="text-muted-foreground">-</span>
+                                  );
+                                }
+                                const arriveDate = new Date(arrival.estTimeDate);
+                                const label = Number.isNaN(arriveDate.getTime())
+                                  ? "-"
+                                  : arriveDate.toLocaleDateString("en-GB");
+                                return (
+                                  <span
+                                    className="font-semibold text-emerald-700 dark:text-emerald-400"
+                                    title={
+                                      arrival.poNumber
+                                        ? `PO ${arrival.poNumber}${
+                                            arrival.forwarder
+                                              ? ` · ${arrival.forwarder}`
+                                              : ""
+                                          }`
+                                        : undefined
+                                    }
+                                  >
+                                    {label}
+                                  </span>
+                                );
+                              })()}
+                            </TableCell>
+                            {!hidePrices && (
+                              <>
+                                <TableCell className="text-xs text-center px-2 py-1.5 tabular-nums font-semibold">
+                                  {avgCost > 0
+                                    ? avgCost.toLocaleString("en-US", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })
+                                    : stockLoading
+                                      ? "..."
+                                      : "-"}
+                                </TableCell>
+                                <TableCell className="text-xs text-center px-1 py-1">
+                                  {partId ? (
+                                    <div className="space-y-0.5">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={draft.priceA}
+                                        disabled={
+                                          !canEdit ||
+                                          savingRow ||
+                                          savingAltPrices
+                                        }
+                                        onChange={(e) =>
+                                          handleAltPriceChange(
+                                            partId,
+                                            "priceA",
+                                            e.target.value,
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          if (canEdit) {
+                                            void handleSaveAlternatePartPrice(
+                                              partId,
+                                            );
+                                          }
+                                        }}
+                                        className="h-8 w-full min-w-[72px] px-1.5 text-xs text-center tabular-nums"
+                                        placeholder="A"
+                                      />
+                                      <span className="block text-[9px] leading-tight text-muted-foreground font-bold">
+                                        {formatPriceLastUpdatedLabel(
+                                          priceDates?.priceA,
+                                        )}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs text-center px-1 py-1">
+                                  {partId ? (
+                                    <div className="space-y-0.5">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={draft.priceB}
+                                        disabled={
+                                          !canEdit ||
+                                          savingRow ||
+                                          savingAltPrices
+                                        }
+                                        onChange={(e) =>
+                                          handleAltPriceChange(
+                                            partId,
+                                            "priceB",
+                                            e.target.value,
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          if (canEdit) {
+                                            void handleSaveAlternatePartPrice(
+                                              partId,
+                                            );
+                                          }
+                                        }}
+                                        className="h-8 w-full min-w-[72px] px-1.5 text-xs text-center tabular-nums"
+                                        placeholder="B"
+                                      />
+                                      <span className="block text-[9px] leading-tight text-muted-foreground font-bold">
+                                        {formatPriceLastUpdatedLabel(
+                                          priceDates?.priceB,
+                                        )}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                              </>
+                            )}
+                            <TableCell className="text-xs text-center px-2 py-1.5">
+                              <span
+                                className="text-[11px] leading-tight block max-w-[96px] mx-auto"
+                                title={locationText}
+                              >
+                                {locationText !== "N/A" ? locationText : "—"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center px-2 py-1.5">
+                              {renderPartImageThumbnail(partId, item, "w-9 h-9")}
+                            </TableCell>
+                            <TableCell className="text-xs text-center px-2 py-1.5">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-primary hover:bg-primary/10"
+                                onClick={() => handleSwapWithAlternate(item)}
+                                title="Switch active item to this alternate"
+                                disabled={!item.id}
+                              >
+                                <ArrowLeftRight className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -4690,6 +5332,7 @@ export const SalesInquiry = ({
         </CardContent>
       </Card>
 
+      {!embeddedPopup ? (
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -4801,6 +5444,7 @@ export const SalesInquiry = ({
           </div>
         </CardContent>
       </Card>
+      ) : null}
 
       {/* Hidden Print Component */}
       {

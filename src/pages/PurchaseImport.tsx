@@ -17,7 +17,7 @@ import {
   roundPurchasePrice,
 } from "@/utils/purchasePriceRound";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2, ChevronDown, ChevronUp, Mail } from "lucide-react";
+import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2, ChevronDown, ChevronUp, Mail, X } from "lucide-react";
 import { usePermissions } from "@/permissions/PermissionsProvider";
 import { usePageActions } from "@/permissions/pageActions";
 import { BackOrderSummaryTab } from "@/components/purchase-import/BackOrderSummaryTab";
@@ -811,6 +811,23 @@ type PurchaseQuotationDetailPayload = {
     name: string;
     currency: string;
   };
+  purchaseOrders?: Array<{
+    id: string;
+    poNumber: string;
+    consignee?: string | null;
+    status?: string | null;
+    date?: string | null;
+    items?: Array<{
+      partId: string;
+      quantity: number;
+      unitCost?: number;
+      totalCost?: number;
+      fcRate?: number;
+      fcAmount?: number;
+      weight?: number;
+      totalWeight?: number;
+    }>;
+  }>;
   items: PurchaseQuotationDetailItem[];
 };
 
@@ -6690,6 +6707,7 @@ type PurchaseQuotationListPanelProps = {
   pageId: string;
   onRevise?: (quotationId: string) => void;
   onConfirm?: (quotationId: string) => void;
+  onView?: (quotationId: string) => void;
 };
 
 const PurchaseQuotationListPanel = ({
@@ -6700,6 +6718,7 @@ const PurchaseQuotationListPanel = ({
   pageId,
   onRevise,
   onConfirm,
+  onView,
 }: PurchaseQuotationListPanelProps) => {
   const { toast } = useToast();
   const {
@@ -7336,6 +7355,22 @@ const PurchaseQuotationListPanel = ({
                     <td className="p-2 font-mono text-xs">{poNumber}</td>
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-2">
+                        {onView && isFirstRowForQuotation ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onView(row.id)}
+                            title={
+                              isConfirmed
+                                ? "View confirmed quotation"
+                                : "View quotation"
+                            }
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1" />
+                            View
+                          </Button>
+                        ) : null}
                         {!isConfirmedView &&
                         (action === "confirm" || action === "revise-confirm") &&
                         canApprove ? (
@@ -7599,25 +7634,71 @@ const recalcConfirmRowAmounts = (
 
 const buildConfirmRowsFromQuotationDetail = (
   data: PurchaseQuotationDetailPayload,
+  options?: { useConfirmedPurchaseOrders?: boolean },
 ): PurchaseQuotationConfirmRow[] => {
   const revised = isQuotationRevised(data);
+  const useConfirmed = Boolean(options?.useConfirmedPurchaseOrders);
+  const confirmedByPart = new Map<
+    string,
+    { khiQuantity: number; isbQuantity: number; otherQuantity: number; weight: number }
+  >();
+
+  if (useConfirmed) {
+    for (const po of data.purchaseOrders || []) {
+      const consignee = String(po.consignee || "").trim().toUpperCase();
+      const lane: "khiQuantity" | "isbQuantity" | "otherQuantity" =
+        consignee === "KHI"
+          ? "khiQuantity"
+          : consignee === "ISB"
+            ? "isbQuantity"
+            : "otherQuantity";
+      for (const poItem of po.items || []) {
+        const partId = String(poItem.partId || "").trim();
+        if (!partId) continue;
+        const prev = confirmedByPart.get(partId) || {
+          khiQuantity: 0,
+          isbQuantity: 0,
+          otherQuantity: 0,
+          weight: 0,
+        };
+        prev[lane] += Math.max(0, Math.floor(Number(poItem.quantity || 0)));
+        const itemWeight = Number(poItem.weight || 0);
+        if (itemWeight > 0 && prev.weight <= 0) {
+          prev.weight = itemWeight;
+        }
+        confirmedByPart.set(partId, prev);
+      }
+    }
+  }
+
   return (Array.isArray(data.items) ? data.items : []).map((item) => {
     const effective = getEffectiveQuotationItemValues(item, revised);
-    const confirmQuantity = Number(item.quotationQuantity || 0);
+    const confirmed = confirmedByPart.get(String(item.partId || "").trim());
+    const confirmQuantity = confirmed
+      ? confirmed.khiQuantity + confirmed.isbQuantity + confirmed.otherQuantity
+      : Number(item.quotationQuantity || 0);
     const quotationQuantity = Number(item.quotationQuantity || 0);
     const storedWeight = Number(item.weight || 0);
     const weight =
-      storedWeight > 0
-        ? storedWeight
-        : quotationQuantity > 0
-          ? Number(item.totalWeight || 0) / quotationQuantity
-          : 0;
-    const split = distributeConfirmSplitQuantities(
-      confirmQuantity,
-      Number(item.khiQuantity || 0),
-      Number(item.isbQuantity || 0),
-      Number(item.otherQuantity || 0),
-    );
+      confirmed && confirmed.weight > 0
+        ? confirmed.weight
+        : storedWeight > 0
+          ? storedWeight
+          : quotationQuantity > 0
+            ? Number(item.totalWeight || 0) / quotationQuantity
+            : 0;
+    const split = confirmed
+      ? {
+          khiQuantity: confirmed.khiQuantity,
+          isbQuantity: confirmed.isbQuantity,
+          otherQuantity: confirmed.otherQuantity,
+        }
+      : distributeConfirmSplitQuantities(
+          confirmQuantity,
+          Number(item.khiQuantity || 0),
+          Number(item.isbQuantity || 0),
+          Number(item.otherQuantity || 0),
+        );
     const amounts = recalcConfirmRowAmounts({
       fcRate: effective.fcRate,
       lcRate: effective.lcRate,
@@ -7650,10 +7731,12 @@ const buildConfirmRowsFromQuotationDetail = (
 
 const PurchaseQuotationConfirmForm = ({
   quotationId,
+  readOnly = false,
   onSaved,
   onCancel,
 }: {
   quotationId: string;
+  readOnly?: boolean;
   onSaved?: () => void;
   onCancel?: () => void;
 }) => {
@@ -7679,9 +7762,16 @@ const PurchaseQuotationConfirmForm = ({
   const [selectedCombineIds, setSelectedCombineIds] = useState<string[]>([]);
   const [loadingCombineId, setLoadingCombineId] = useState<string | null>(null);
   const { jumpToId, highlightedId, handleJump, setRowRef } = useItemRowJump();
+  const isViewMode = Boolean(readOnly);
 
   const isRevised = isQuotationRevised(detail);
   const isCombinedView = selectedCombineIds.length > 0;
+  const confirmedPoNumbers = useMemo(() => {
+    const numbers = (detail?.purchaseOrders || [])
+      .map((po) => String(po.poNumber || "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(numbers));
+  }, [detail?.purchaseOrders]);
   const confirmItemJumpOptions = useMemo(
     () =>
       buildItemJumpOptions(
@@ -7708,8 +7798,23 @@ const PurchaseQuotationConfirmForm = ({
           throw new Error("Quotation detail is unavailable.");
         }
         setDetail(data);
-        setConfirmationDate(toInputDate(new Date()));
-        setRows(buildConfirmRowsFromQuotationDetail(data));
+        const isConfirmed =
+          String(data.status || "").trim().toLowerCase() === "confirm" ||
+          (Array.isArray(data.purchaseOrders) && data.purchaseOrders.length > 0);
+        setConfirmationDate(
+          isViewMode || isConfirmed
+            ? toInputDate(data.confirmationDate || new Date())
+            : toInputDate(new Date()),
+        );
+        setRows(
+          buildConfirmRowsFromQuotationDetail(data, {
+            useConfirmedPurchaseOrders: isViewMode || isConfirmed,
+          }),
+        );
+
+        if (isViewMode) {
+          return;
+        }
 
         const supplierId = String(data.supplier?.id || "").trim();
         if (supplierId) {
@@ -7773,7 +7878,7 @@ const PurchaseQuotationConfirmForm = ({
     };
 
     void loadQuotation();
-  }, [quotationId, toast]);
+  }, [quotationId, toast, isViewMode]);
 
   const toggleCombineQuotation = async (targetId: string, checked: boolean) => {
     if (!checked) {
@@ -7980,26 +8085,65 @@ const PurchaseQuotationConfirmForm = ({
   if (loading) {
     return (
       <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground">
-        Loading quotation confirmation...
+        {isViewMode
+          ? "Loading confirmed quotation..."
+          : "Loading quotation confirmation..."}
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-5">
-      <div>
-        <h2 className="text-base font-semibold">Confirm Purchase Quotation</h2>
-        <p className="text-sm text-muted-foreground">
-          Review quotation details and confirm quantities before creating purchase orders by
-          consignee (ISB / KHI / Other).
-          {isRevised ? " Showing revised quotation values." : " Showing original quotation values."}
-          {isCombinedView
-            ? " Combined quotations will confirm together and create shared purchase orders."
-            : ""}
-        </p>
+    <div
+      className={cn(
+        "rounded-lg border border-border bg-card p-4 md:p-6 space-y-5",
+        isViewMode && "pointer-events-none opacity-95",
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-start justify-between gap-3",
+          isViewMode && "pointer-events-auto",
+        )}
+      >
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">
+            {isViewMode
+              ? String(detail?.status || "").trim().toLowerCase() === "confirm"
+                ? "View Confirmed Quotation"
+                : "View Quotation"
+              : "Confirm Purchase Quotation"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {isViewMode
+              ? String(detail?.status || "").trim().toLowerCase() === "confirm"
+                ? "Read-only view of the confirmed quotation and consignee quantities used to create purchase orders."
+                : "Read-only view of this quotation before confirmation."
+              : "Review quotation details and confirm quantities before creating purchase orders by consignee (ISB / KHI / Other)."}
+            {isRevised ? " Showing revised quotation values." : " Showing original quotation values."}
+            {!isViewMode && isCombinedView
+              ? " Combined quotations will confirm together and create shared purchase orders."
+              : ""}
+            {isViewMode && confirmedPoNumbers.length > 0
+              ? ` PO: ${confirmedPoNumbers.join(", ")}.`
+              : ""}
+          </p>
+        </div>
+        {isViewMode ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={onCancel}
+            title="Close"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ) : null}
       </div>
 
-      {combinableQuotations.length > 0 ? (
+      {!isViewMode && combinableQuotations.length > 0 ? (
         <div className="rounded-md border border-border p-3 space-y-3">
           <div>
             <h3 className="text-sm font-semibold">Combine quotations</h3>
@@ -8082,6 +8226,9 @@ const PurchaseQuotationConfirmForm = ({
               type="date"
               value={confirmationDate}
               onChange={(e) => setConfirmationDate(e.target.value)}
+              disabled={isViewMode}
+              readOnly={isViewMode}
+              className={isViewMode ? "bg-muted/40" : undefined}
             />
           </div>
         </div>
@@ -8103,7 +8250,7 @@ const PurchaseQuotationConfirmForm = ({
 
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Items</h3>
-        <div className="flex items-center gap-2">
+        <div className={cn("flex items-center gap-2", isViewMode && "pointer-events-auto")}>
           <ItemJumpSelect
             options={confirmItemJumpOptions}
             value={jumpToId}
@@ -8202,63 +8349,81 @@ const PurchaseQuotationConfirmForm = ({
                   <td className="p-2 text-right tabular-nums">{row.quotationQuantity}</td>
                   <td className="p-2 text-right tabular-nums">{row.shipDays}</td>
                   <td className="p-2 text-right">
-                    <Input
-                      type="number"
-                      min={0}
-                      className={cn(INQUIRY_ISB_QTY_INPUT_CLASS, splitInputClass)}
-                      value={row.isbQuantity === 0 ? "" : row.isbQuantity}
-                      onChange={(e) =>
-                        updateConfirmSplitQuantity(
-                          row.rowId,
-                          "isbQuantity",
-                          Number(e.target.value || 0),
-                        )
-                      }
-                    />
-                  </td>
-                  <td className="p-2 text-right">
-                    <Input
-                      type="number"
-                      min={0}
-                      className={cn(INQUIRY_KHI_QTY_INPUT_CLASS, splitInputClass)}
-                      value={row.khiQuantity === 0 ? "" : row.khiQuantity}
-                      onChange={(e) =>
-                        updateConfirmSplitQuantity(
-                          row.rowId,
-                          "khiQuantity",
-                          Number(e.target.value || 0),
-                        )
-                      }
-                    />
-                  </td>
-                  {SHOW_OTHER_QTY ? (
-                    <td className="p-2 text-right">
+                    {isViewMode ? (
+                      <span className="tabular-nums">{row.isbQuantity}</span>
+                    ) : (
                       <Input
                         type="number"
                         min={0}
-                        className={cn(INQUIRY_OTHER_QTY_INPUT_CLASS, splitInputClass)}
-                        value={row.otherQuantity === 0 ? "" : row.otherQuantity}
+                        className={cn(INQUIRY_ISB_QTY_INPUT_CLASS, splitInputClass)}
+                        value={row.isbQuantity === 0 ? "" : row.isbQuantity}
                         onChange={(e) =>
                           updateConfirmSplitQuantity(
                             row.rowId,
-                            "otherQuantity",
+                            "isbQuantity",
                             Number(e.target.value || 0),
                           )
                         }
                       />
+                    )}
+                  </td>
+                  <td className="p-2 text-right">
+                    {isViewMode ? (
+                      <span className="tabular-nums">{row.khiQuantity}</span>
+                    ) : (
+                      <Input
+                        type="number"
+                        min={0}
+                        className={cn(INQUIRY_KHI_QTY_INPUT_CLASS, splitInputClass)}
+                        value={row.khiQuantity === 0 ? "" : row.khiQuantity}
+                        onChange={(e) =>
+                          updateConfirmSplitQuantity(
+                            row.rowId,
+                            "khiQuantity",
+                            Number(e.target.value || 0),
+                          )
+                        }
+                      />
+                    )}
+                  </td>
+                  {SHOW_OTHER_QTY ? (
+                    <td className="p-2 text-right">
+                      {isViewMode ? (
+                        <span className="tabular-nums">{row.otherQuantity}</span>
+                      ) : (
+                        <Input
+                          type="number"
+                          min={0}
+                          className={cn(INQUIRY_OTHER_QTY_INPUT_CLASS, splitInputClass)}
+                          value={row.otherQuantity === 0 ? "" : row.otherQuantity}
+                          onChange={(e) =>
+                            updateConfirmSplitQuantity(
+                              row.rowId,
+                              "otherQuantity",
+                              Number(e.target.value || 0),
+                            )
+                          }
+                        />
+                      )}
                     </td>
                   ) : null}
                   <td className="p-2 text-right">
-                    <Input
-                      type="number"
-                      min={0}
-                      className={cn(QUOTATION_QTY_INPUT_CLASS, splitInputClass)}
-                      value={row.confirmQuantity === 0 ? "" : row.confirmQuantity}
-                      onChange={(e) => handleConfirmQtyChange(row.rowId, e.target.value)}
-                    />
-                    {splitMismatch ? (
-                      <p className="mt-1 text-left text-xs text-destructive">{splitMismatch}</p>
-                    ) : null}
+                    {isViewMode ? (
+                      <span className="tabular-nums">{row.confirmQuantity}</span>
+                    ) : (
+                      <>
+                        <Input
+                          type="number"
+                          min={0}
+                          className={cn(QUOTATION_QTY_INPUT_CLASS, splitInputClass)}
+                          value={row.confirmQuantity === 0 ? "" : row.confirmQuantity}
+                          onChange={(e) => handleConfirmQtyChange(row.rowId, e.target.value)}
+                        />
+                        {splitMismatch ? (
+                          <p className="mt-1 text-left text-xs text-destructive">{splitMismatch}</p>
+                        ) : null}
+                      </>
+                    )}
                   </td>
                   <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                     {formatLastFcRateDisplay(row.lastFcRate)}
@@ -8268,14 +8433,18 @@ const PurchaseQuotationConfirmForm = ({
                   <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>{formatImportPoWhole(row.lcRate)}</td>
                   <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>{formatImportPoWhole(row.lcAmount)}</td>
                   <td className="p-2 text-right">
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className="h-8 text-right"
-                      value={row.weight}
-                      onChange={(e) => handleConfirmWeightChange(row.rowId, e.target.value)}
-                    />
+                    {isViewMode ? (
+                      <span className="tabular-nums">{Number(row.weight || 0).toFixed(2)}</span>
+                    ) : (
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="h-8 text-right"
+                        value={row.weight}
+                        onChange={(e) => handleConfirmWeightChange(row.rowId, e.target.value)}
+                      />
+                    )}
                   </td>
                   <td className="p-2 text-right tabular-nums">{row.totalWeight.toFixed(2)}</td>
                 </tr>
@@ -8313,7 +8482,7 @@ const PurchaseQuotationConfirmForm = ({
         </table>
       </div>
 
-      {hasSplitMismatch ? (
+      {!isViewMode && hasSplitMismatch ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive space-y-1">
           <p className="font-medium">
             {SHOW_OTHER_QTY
@@ -8328,11 +8497,11 @@ const PurchaseQuotationConfirmForm = ({
         </div>
       ) : null}
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className={cn("flex justify-end gap-2 pt-2", isViewMode && "pointer-events-auto")}>
         <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
-          Cancel
+          {isViewMode ? "Back" : "Cancel"}
         </Button>
-        {canApprove && (
+        {!isViewMode && canApprove && (
           <Button
             type="button"
             onClick={handleConfirm}
@@ -8443,7 +8612,18 @@ const PurchaseReviseQuotationTab = () => {
 const PurchaseConfirmQuotationTab = () => {
   const [showConfirmForm, setShowConfirmForm] = useState(false);
   const [confirmQuotationId, setConfirmQuotationId] = useState<string | null>(null);
+  const [viewingQuotationId, setViewingQuotationId] = useState<string | null>(null);
   const [listRefreshKey, setListRefreshKey] = useState(0);
+
+  if (viewingQuotationId) {
+    return (
+      <PurchaseQuotationConfirmForm
+        quotationId={viewingQuotationId}
+        readOnly
+        onCancel={() => setViewingQuotationId(null)}
+      />
+    );
+  }
 
   if (showConfirmForm && confirmQuotationId) {
     return (
@@ -8465,7 +8645,7 @@ const PurchaseConfirmQuotationTab = () => {
   return (
     <div className="space-y-4">
       <PurchaseQuotationListPanel
-        key={listRefreshKey}
+        key={`open-${listRefreshKey}`}
         view="open"
         action="confirm"
         title="Confirmation"
@@ -8475,13 +8655,16 @@ const PurchaseConfirmQuotationTab = () => {
           setConfirmQuotationId(quotationId);
           setShowConfirmForm(true);
         }}
+        onView={(quotationId) => setViewingQuotationId(quotationId)}
       />
       <PurchaseQuotationListPanel
+        key={`confirmed-${listRefreshKey}`}
         view="confirmed"
         action="none"
         title="Confirmed List"
         description="Confirmed quotations split by consignee."
         pageId="purchase-import.confirm-quotation"
+        onView={(quotationId) => setViewingQuotationId(quotationId)}
       />
     </div>
   );

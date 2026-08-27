@@ -2848,6 +2848,29 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
             },
           },
         },
+        PurchaseOrder: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            poNumber: true,
+            consignee: true,
+            status: true,
+            date: true,
+            PurchaseOrderItem: {
+              orderBy: { sortOrder: "asc" },
+              select: {
+                partId: true,
+                quantity: true,
+                unitCost: true,
+                totalCost: true,
+                fcRate: true,
+                fcAmount: true,
+                weight: true,
+                totalWeight: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -2861,6 +2884,24 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
           consignee: row.PurchaseImportRequest.consignee,
         })
       : null;
+
+    const purchaseOrders = (row.PurchaseOrder || []).map((po: any) => ({
+      id: po.id,
+      poNumber: po.poNumber,
+      consignee: po.consignee || null,
+      status: po.status,
+      date: po.date,
+      items: (po.PurchaseOrderItem || []).map((item: any) => ({
+        partId: item.partId,
+        quantity: Number(item.quantity || 0),
+        unitCost: Number(item.unitCost || 0),
+        totalCost: Number(item.totalCost || 0),
+        fcRate: Number(item.fcRate || 0),
+        fcAmount: Number(item.fcAmount || 0),
+        weight: Number(item.weight || 0),
+        totalWeight: Number(item.totalWeight || 0),
+      })),
+    }));
 
     res.json({
       data: {
@@ -2886,6 +2927,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
           name: row.Supplier?.companyName || row.Supplier?.name || "-",
           currency: row.Supplier?.currencyName || row.currency || "USD",
         },
+        purchaseOrders,
         items: await attachLastSupplierFcRates(
           row.supplierId,
           (row.PurchaseQuotationItem || []).map((item: any) => {

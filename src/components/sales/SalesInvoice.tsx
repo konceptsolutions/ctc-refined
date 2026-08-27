@@ -104,6 +104,9 @@ import { CustomerFormDialog } from "./CustomerFormDialog";
 import { InvoicePartDropdownList } from "./InvoicePartDropdownList";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { printSalesInvoicePdf } from "@/utils/printSalesInvoicePdf";
+import { printSalesQuotationPdf } from "@/utils/printSalesQuotationPdf";
+import { isAdminRole } from "@/utils/auth";
+import { SalesInquiry } from "./SalesInquiry";
 import {
   extractLatestPriceDatesFromHistory,
   formatPriceLastUpdatedLabel,
@@ -218,6 +221,34 @@ function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] 
       brand: linePart.brand,
       rackCode: selectedRackCodes.join(", "),
       shelfNo: selectedShelfNos.join(", "),
+    };
+  });
+}
+
+function mapApiSalesQuotationItemsToInvoiceItems(
+  fullItems: any[],
+): InvoiceItem[] {
+  if (!Array.isArray(fullItems)) return [];
+  return fullItems.map((item: any) => {
+    const qtyReq = Number(item.quantity || 0);
+    const unitPrice = Number(item.unitPrice || 0);
+    return {
+      id: item.id,
+      partId: item.partId,
+      partNo: item.partNo || item.Part?.partNo || "",
+      description: item.description || item.Part?.description || "",
+      orderedQty: qtyReq,
+      qtyDiv: Math.max(0, Number(item.qtyDiv ?? 0) || 0),
+      divOn: String(item.divOn || ""),
+      deliveredQty: 0,
+      pendingQty: qtyReq,
+      reversedQty: 0,
+      unitPrice,
+      discount: 0,
+      discountType: "percent" as const,
+      lineTotal: Number(item.total ?? qtyReq * unitPrice),
+      grade: (item.Part?.grade || "A") as ItemGrade,
+      brand: item.Part?.Brand?.name || "",
     };
   });
 }
@@ -457,6 +488,8 @@ interface LinePartAssociationState {
 interface InlineItemRow {
   id: string;
   selectedPartId: string;
+  divOn?: string;
+  qtyDiv?: number;
   qty: number;
   priceA?: number; // Editable Price A / Avg Price (transfer-out)
   priceB?: number; // Editable Price B / Purchase Price (transfer-out)
@@ -563,6 +596,7 @@ export const SalesInvoice = ({
   const navigate = useNavigate();
   const isQuotation = documentKind === "quotation";
   const isTransferOut = documentKind === "transfer-out";
+  const showInquiryViewColumn = isAdminRole() && !isTransferOut;
   const pageId = isQuotation
     ? "sales.quotation"
     : isTransferOut
@@ -573,6 +607,7 @@ export const SalesInvoice = ({
     canEdit,
     canStatus: canChangeInvoiceStatus,
     canApprove: canApproveDocument,
+    canPrint,
     canMenuMore: canUseActionMenu,
   } = usePageActions(pageId);
   const canUseDocumentForm = canCreate || canEdit;
@@ -939,8 +974,23 @@ export const SalesInvoice = ({
     { id: "price", label: "Price" },
     { id: "amount", label: "Amount" },
   ] as const;
+  const quotationPrintColumns = [
+    { id: "sr", label: "Sr#" },
+    { id: "partNo", label: "Part No." },
+    { id: "altPartNo", label: "Alt. Part No." },
+    { id: "description", label: "Description" },
+    { id: "brand", label: "Brand" },
+    { id: "uom", label: "UOM" },
+    { id: "qtyReq", label: "Qty Req." },
+    { id: "deliveryQty", label: "Delivery Qty" },
+    { id: "divOn", label: "DIV. On" },
+    { id: "price", label: "Price" },
+    { id: "amount", label: "Amount" },
+  ] as const;
   const [selectedInvoicePrintColumns, setSelectedInvoicePrintColumns] =
     useState<string[]>(invoicePrintColumns.map((c) => c.id));
+  const [selectedQuotationPrintColumns, setSelectedQuotationPrintColumns] =
+    useState<string[]>(quotationPrintColumns.map((c) => c.id));
   const [showInvoicePrintColumnsDialog, setShowInvoicePrintColumnsDialog] =
     useState(false);
   const [invoiceForPrint, setInvoiceForPrint] = useState<Invoice | null>(null);
@@ -949,6 +999,9 @@ export const SalesInvoice = ({
   const [printInvoiceOrientation, setPrintInvoiceOrientation] = useState<
     "landscape" | "portrait"
   >("landscape");
+  const [salesInquiryPopupPartId, setSalesInquiryPopupPartId] = useState<
+    string | null
+  >(null);
 
   // Hold Dialog
   const [showHoldDialog, setShowHoldDialog] = useState(false);
@@ -976,6 +1029,10 @@ export const SalesInvoice = ({
   const [invoiceToUnapprove, setInvoiceToUnapprove] = useState<Invoice | null>(
     null,
   );
+  const [showQuotationUnapproveConfirm, setShowQuotationUnapproveConfirm] =
+    useState(false);
+  const [quotationToUnapprove, setQuotationToUnapprove] =
+    useState<Invoice | null>(null);
   const [showQuotationInitiateConfirm, setShowQuotationInitiateConfirm] =
     useState(false);
   const [quotationToInitiate, setQuotationToInitiate] = useState<Invoice | null>(
@@ -1038,6 +1095,8 @@ export const SalesInvoice = ({
                 ? (crypto as any).randomUUID()
                 : `inq-${Date.now()}-${idx}`,
             selectedPartId: item.partId,
+            divOn: "",
+            qtyDiv: 0,
             qty: Number(item.quantity) || 1,
             priceA,
             priceB,
@@ -1508,6 +1567,8 @@ export const SalesInvoice = ({
     const newItem: InlineItemRow = {
       id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       selectedPartId: "",
+      divOn: "",
+      qtyDiv: 0,
       qty: 0,
       priceA: undefined,
       priceB: undefined,
@@ -2141,6 +2202,8 @@ export const SalesInvoice = ({
         const newItem: InlineItemRow = {
           id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           selectedPartId: partId,
+          divOn: "",
+          qtyDiv: 0,
           qty: addQty,
           priceA: isTransferOut ? 0 : (existingPart?.priceA ?? 0),
           priceB: isTransferOut ? 0 : (existingPart?.priceB ?? 0),
@@ -3127,6 +3190,8 @@ export const SalesInvoice = ({
         lineTotal: item.total,
         grade: "A" as ItemGrade,
         brand: item.Part?.Brand?.name || "",
+        divOn: String(item.divOn || ""),
+        qtyDiv: Math.max(0, Number(item.qtyDiv ?? 0) || 0),
       })) || [],
     subtotal: Number(q.subtotal ?? q.totalAmount ?? 0),
     overallDiscount: Number(q.overallDiscount || 0),
@@ -3880,39 +3945,45 @@ export const SalesInvoice = ({
     }
 
     // Validate stock: allow save when available is 0 / short, unless reserved qty exists
-    for (const item of inlineItems) {
-      if (!item.selectedPartId || item.qty <= 0) continue;
+    if (!isQuotation) {
+      for (const item of inlineItems) {
+        if (!item.selectedPartId || item.qty <= 0) continue;
 
-      const part = getPartForItem(item.selectedPartId);
-      if (!part) continue;
+        const part = getPartForItem(item.selectedPartId);
+        if (!part) continue;
 
-      const partNoDesc = part.description
-        ? `${part.partNo} - ${part.description}`
-        : part.partNo;
+        const partNoDesc = part.description
+          ? `${part.partNo} - ${part.description}`
+          : part.partNo;
 
-      const stockBalance = partStockBalances[part.id];
-      const reserved =
-        stockBalance?.reserved_stock ?? Number(part.reservedQty || 0);
-      const inStock =
-        stockBalance?.current_stock ?? Number(part.stockQty || 0);
-      const available =
-        stockBalance?.available_stock ??
-        part.availableQty ??
-        Math.max(0, inStock - reserved);
+        const stockBalance = partStockBalances[part.id];
+        const reserved =
+          stockBalance?.reserved_stock ?? Number(part.reservedQty || 0);
+        const inStock =
+          stockBalance?.current_stock ?? Number(part.stockQty || 0);
+        const available =
+          stockBalance?.available_stock ??
+          part.availableQty ??
+          Math.max(0, inStock - reserved);
 
-      if (shouldBlockSaleQtyForReservedStock(item.qty, available, reserved)) {
-        toast({
-          title: "Insufficient Available Stock",
-          description: `Quantity (${item.qty}) for ${partNoDesc} exceeds available stock (${available}) while ${reserved} is reserved. Reduce qty or free reserved stock before saving.`,
-          variant: "destructive",
-        });
-        return;
+        if (shouldBlockSaleQtyForReservedStock(item.qty, available, reserved)) {
+          toast({
+            title: "Insufficient Available Stock",
+            description: `Quantity (${item.qty}) for ${partNoDesc} exceeds available stock (${available}) while ${reserved} is reserved. Reduce qty or free reserved stock before saving.`,
+            variant: "destructive",
+          });
+          return;
+        }
       }
     }
 
     // Convert inline items to invoice items
     const invoiceItems = inlineItems
-      .filter((i) => i.selectedPartId && i.qty > 0)
+      .filter((i) => {
+        if (!i.selectedPartId) return false;
+        if (isQuotation) return Number(i.qty || 0) >= 0;
+        return i.qty > 0;
+      })
       .map((item) => {
         const part = getPartForItem(item.selectedPartId);
         // Prefer explicit unitPrice (custom or A/B/M), otherwise derive from price type
@@ -3926,6 +3997,10 @@ export const SalesInvoice = ({
           partNo: part?.partNo || item.partNoFallback || "",
           description: part?.description || item.descriptionFallback || "",
           orderedQty: item.qty,
+          divOn: isQuotation ? String(item.divOn || "") : undefined,
+          qtyDiv: isQuotation
+            ? Math.max(0, Number(item.qtyDiv ?? 0) || 0)
+            : undefined,
           unitPrice,
           discount: 0,
           lineTotal: calculateLineTotal(item),
@@ -3987,6 +4062,8 @@ export const SalesInvoice = ({
             partId: i.partId,
             partNo: i.partNo,
             description: i.description,
+            divOn: String((i as any).divOn || ""),
+            qtyDiv: Math.max(0, Number((i as any).qtyDiv ?? 0) || 0),
             quantity: i.orderedQty,
             unitPrice: i.unitPrice,
           })),
@@ -4429,6 +4506,10 @@ export const SalesInvoice = ({
             id: item.id,
             selectedPartId: item.partId,
             qty: isQuotation ? item.quantity : item.orderedQty,
+            divOn: isQuotation ? String(item.divOn || "") : undefined,
+            qtyDiv: isQuotation
+              ? Math.max(0, Number(item.qtyDiv ?? 0) || 0)
+              : undefined,
             // Restore unitPrice and infer selectedPriceType based on part prices
             unitPrice: item.unitPrice,
             selectedPriceType: (() => {
@@ -5928,7 +6009,9 @@ export const SalesInvoice = ({
     status: "pending" | "approved",
   ) => {
     const allowed =
-      status === "approved" ? canApproveDocument : canChangeInvoiceStatus;
+      status === "approved"
+        ? canApproveDocument
+        : canApproveDocument || canChangeInvoiceStatus;
     if (!allowed) {
       toast({
         title: "Not allowed",
@@ -5950,8 +6033,12 @@ export const SalesInvoice = ({
         return;
       }
       toast({
-        title: "Quotation Updated",
-        description: `Quotation ${quotation.invoiceNo} marked as ${status}.`,
+        title:
+          status === "pending" ? "Quotation Un-approved" : "Quotation Updated",
+        description:
+          status === "pending"
+            ? `Quotation ${quotation.invoiceNo} is pending again and can be edited.`
+            : `Quotation ${quotation.invoiceNo} marked as ${status}.`,
       });
       setInvoiceListRefreshTick((t) => t + 1);
     } catch (error: any) {
@@ -6393,6 +6480,114 @@ export const SalesInvoice = ({
     return;
   };
 
+  const handlePrintQuotation = async (
+    invoice: Invoice,
+    columns?: string[],
+  ) => {
+    try {
+      let fullQuotation: any = null;
+      let mappedItems = invoice.items || [];
+
+      if (
+        !mappedItems.length ||
+        mappedItems.some((item) => item.qtyDiv === undefined)
+      ) {
+        const resp = (await apiClient.getSalesQuotation(invoice.id)) as any;
+        fullQuotation = resp?.data || resp;
+        const fullItems = Array.isArray(fullQuotation?.SalesQuotationItem)
+          ? fullQuotation.SalesQuotationItem
+          : [];
+        mappedItems = mapApiSalesQuotationItemsToInvoiceItems(fullItems);
+      }
+
+      const getPrintedBy = () => {
+        try {
+          const token = localStorage.getItem("authToken");
+          if (!token) return "Unknown User";
+          const parts = token.split(".");
+          if (parts.length < 2) return "Unknown User";
+          const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+          const payload = JSON.parse(atob(padded));
+          return (
+            payload?.name ||
+            payload?.username ||
+            payload?.fullName ||
+            payload?.userName ||
+            payload?.email ||
+            payload?.sub ||
+            "Unknown User"
+          );
+        } catch {
+          return "Unknown User";
+        }
+      };
+
+      const matchedCustomer = customers.find(
+        (c) =>
+          c.id === invoice.customerId ||
+          c.name?.trim().toLowerCase() === invoice.customerName?.trim().toLowerCase(),
+      );
+      const addressParts = String(matchedCustomer?.address || "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+      const printInvoice: Invoice = {
+        ...invoice,
+        invoiceDate:
+          fullQuotation?.quotationDate || invoice.invoiceDate,
+        customerName: fullQuotation?.customerName || invoice.customerName,
+        customerType: (fullQuotation?.customerType ||
+          invoice.customerType) as CustomerType,
+        customerId: fullQuotation?.customerId || invoice.customerId,
+        subtotal: Number(
+          fullQuotation?.subtotal ?? invoice.subtotal ?? 0,
+        ),
+        overallDiscount: Number(
+          fullQuotation?.overallDiscount ?? invoice.overallDiscount ?? 0,
+        ),
+        freightCharges: Number(
+          fullQuotation?.freightCharges ?? invoice.freightCharges ?? 0,
+        ),
+        tax: Number(fullQuotation?.tax ?? invoice.tax ?? 0),
+        taxPercentage:
+          fullQuotation?.taxPercentage != null
+            ? Number(fullQuotation.taxPercentage)
+            : invoice.taxPercentage,
+        grandTotal: Number(
+          fullQuotation?.totalAmount ?? invoice.grandTotal ?? 0,
+        ),
+        items: mappedItems.length ? mappedItems : invoice.items || [],
+        remarks: fullQuotation?.notes ?? invoice.remarks ?? null,
+      };
+
+      await printSalesQuotationPdf({
+        invoice: printInvoice,
+        columns: columns || quotationPrintColumns.map((c) => c.id),
+        printedBy: getPrintedBy(),
+        customerAddressLines: addressParts,
+        area: matchedCustomer?.area || "",
+        contactNo: String(
+          matchedCustomer?.contactNo ||
+            matchedCustomer?.cellNumber ||
+            matchedCustomer?.phone ||
+            "",
+        ).trim(),
+        validUntil:
+          fullQuotation?.validUntil ||
+          (invoice as Invoice & { validUntil?: string }).validUntil,
+        remarks: String(fullQuotation?.notes ?? invoice.remarks ?? ""),
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to print quotation",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handlePrintDeliveryChallan = async (invoice: Invoice) => {
     try {
       const response = (await apiClient.getSalesInvoice(invoice.id)) as any;
@@ -6467,6 +6662,43 @@ export const SalesInvoice = ({
 
   const openSalesInvoicePrintDialog = async (invoice: Invoice) => {
     try {
+      if (isQuotation) {
+        const resp = (await apiClient.getSalesQuotation(invoice.id)) as any;
+        const fullQuotation = resp?.data || resp;
+        const fullItems = Array.isArray(fullQuotation?.SalesQuotationItem)
+          ? fullQuotation.SalesQuotationItem
+          : [];
+        const mappedItems = mapApiSalesQuotationItemsToInvoiceItems(fullItems);
+        setInvoiceForPrint({
+          ...invoice,
+          invoiceDate:
+            fullQuotation?.quotationDate || invoice.invoiceDate,
+          validUntil:
+            fullQuotation?.validUntil ||
+            (invoice as Invoice & { validUntil?: string }).validUntil,
+          customerName: fullQuotation?.customerName || invoice.customerName,
+          customerType: (fullQuotation?.customerType ||
+            invoice.customerType) as CustomerType,
+          customerId: fullQuotation?.customerId || invoice.customerId,
+          subtotal: Number(fullQuotation?.subtotal ?? invoice.subtotal ?? 0),
+          overallDiscount: Number(
+            fullQuotation?.overallDiscount ?? invoice.overallDiscount ?? 0,
+          ),
+          freightCharges: Number(
+            fullQuotation?.freightCharges ?? invoice.freightCharges ?? 0,
+          ),
+          tax: Number(fullQuotation?.tax ?? invoice.tax ?? 0),
+          taxPercentage:
+            fullQuotation?.taxPercentage != null
+              ? Number(fullQuotation.taxPercentage)
+              : invoice.taxPercentage,
+          grandTotal: Number(
+            fullQuotation?.totalAmount ?? invoice.grandTotal ?? 0,
+          ),
+          items: mappedItems.length ? mappedItems : invoice.items || [],
+          remarks: fullQuotation?.notes ?? invoice.remarks ?? null,
+        });
+      } else {
       const resp = (await apiClient.getSalesInvoice(invoice.id)) as any;
       const fullInv = resp?.data || resp;
       setInvoiceForPrint({
@@ -6501,12 +6733,19 @@ export const SalesInvoice = ({
           null,
         remarks: fullInv?.remarks ?? fullInv?.notes ?? invoice.remarks ?? null,
       });
+      }
     } catch {
       setInvoiceForPrint(invoice);
     } finally {
+      if (isQuotation) {
+        setSelectedQuotationPrintColumns(
+          quotationPrintColumns.map((c) => c.id),
+        );
+      } else {
       setPrintInvoiceWithBalance(true);
       setPrintInvoiceOnLetterhead(false);
       setPrintInvoiceOrientation("landscape");
+      }
       setShowInvoicePrintColumnsDialog(true);
     }
   };
@@ -7023,11 +7262,15 @@ export const SalesInvoice = ({
                   <Table className="w-full table-fixed">
                     <colgroup>
                       <col className="w-[4%]" />
-                      <col className="w-[24%]" />
+                      <col className={showInquiryViewColumn ? "w-[20%]" : "w-[22%]"} />
+                      {showInquiryViewColumn ? <col className="w-[4%]" /> : null}
                       <col className="w-[6%]" />
                       <col className="w-[5%]" />
                       <col className="w-[5%]" />
-                      <col className="w-[5%]" />
+                      {isQuotation ? <col className="w-[5%]" /> : null}
+                      {isQuotation ? <col className="w-[5%]" /> : null}
+                      {isQuotation ? <col className="w-[7%]" /> : null}
+                      {!isQuotation ? <col className="w-[5%]" /> : null}
                       <col className="w-[6%]" />
                       <col className="w-[6%]" />
                       {isTransferOut ? <col className="w-[7%]" /> : null}
@@ -7045,6 +7288,11 @@ export const SalesInvoice = ({
                         <TableHead className="min-w-0 font-bold text-foreground text-sm py-3">
                           Part Details
                         </TableHead>
+                        {showInquiryViewColumn ? (
+                          <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                            View
+                          </TableHead>
+                        ) : null}
                         <TableHead
                           className="text-center font-bold text-foreground text-sm py-3 cursor-default select-none"
                           onClick={() => setShowLastSaleInfo((prev) => !prev)}
@@ -7057,9 +7305,26 @@ export const SalesInvoice = ({
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Stock
                         </TableHead>
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
-                          Qty
-                        </TableHead>
+                        {isQuotation ? (
+                          <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                            Qty Req.
+                          </TableHead>
+                        ) : null}
+                        {isQuotation ? (
+                          <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                            Delivery Qty
+                          </TableHead>
+                        ) : null}
+                        {isQuotation ? (
+                          <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                            DIV. On
+                          </TableHead>
+                        ) : null}
+                        {!isQuotation ? (
+                          <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                            Qty
+                          </TableHead>
+                        ) : null}
                         <TableHead className="text-center font-bold text-foreground text-sm py-3">
                           Rate
                         </TableHead>
@@ -7120,6 +7385,8 @@ export const SalesInvoice = ({
                             </TableCell>
                             <TableCell className="md:table-cell block min-w-0 p-0 md:p-4 align-top">
                               <span className="md:hidden text-xs font-bold text-muted-foreground block mb-1.5 uppercase tracking-wider">
+                                <span className="inline-flex items-center gap-2 flex-wrap">
+                                  <span>
                                 Part Details #{index + 1}
                                 {part?.brands?.[0]?.name ? (
                                   <>
@@ -7145,6 +7412,22 @@ export const SalesInvoice = ({
                                     </span>
                                   </>
                                 ) : null}
+                                  </span>
+                                  {showInquiryViewColumn && pid ? (
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="outline"
+                                      className="h-7 w-7 shrink-0"
+                                      title="View Sales Inquiry for this item"
+                                      onClick={() =>
+                                        setSalesInquiryPopupPartId(pid)
+                                      }
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </Button>
+                                  ) : null}
+                                </span>
                               </span>
                               <div className="space-y-2">
                                 <div className="relative">
@@ -7611,6 +7894,27 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
+                            {showInquiryViewColumn ? (
+                              <TableCell className="hidden md:table-cell align-top text-center">
+                                {pid ? (
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    className="h-8 w-8"
+                                    title="View Sales Inquiry for this item"
+                                    onClick={() =>
+                                      setSalesInquiryPopupPartId(pid)
+                                    }
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                            ) : null}
+
                             {/* Brand (Desktop ONLY) — header toggles last sales */}
                             <TableCell className="hidden md:table-cell text-center align-top">
                               <div className="flex flex-col items-center justify-center gap-0.5">
@@ -7743,7 +8047,82 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
-                            {/* Column 7: Qty (Desktop ONLY UI, Mobile combined section below) */}
+                            {/* Quotation: Qty Req. → Delivery Qty → DIV. On */}
+                            {isQuotation ? (
+                              <TableCell className="hidden md:table-cell align-top">
+                                <div className="flex flex-col items-center justify-center">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={item.qty || ""}
+                                    onChange={(e) => {
+                                      const val =
+                                        parseInt(e.target.value, 10) || 0;
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "qty",
+                                        val,
+                                      );
+                                    }}
+                                    className="w-20 h-10 text-center font-bold text-base"
+                                    placeholder="0"
+                                  />
+                                </div>
+                              </TableCell>
+                            ) : null}
+                            {isQuotation ? (
+                              <TableCell className="hidden md:table-cell align-top">
+                                <div className="flex flex-col items-center justify-center">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={
+                                      item.qtyDiv === 0 || item.qtyDiv
+                                        ? item.qtyDiv
+                                        : ""
+                                    }
+                                    onChange={(e) => {
+                                      const val = Math.max(
+                                        0,
+                                        parseInt(e.target.value, 10) || 0,
+                                      );
+                                      handleUpdateInlineItem(
+                                        item.id,
+                                        "qtyDiv",
+                                        val,
+                                      );
+                                    }}
+                                    className="w-20 h-10 text-center font-bold text-base"
+                                    placeholder="0"
+                                  />
+                                  {Number(item.qtyDiv || 0) === 0 &&
+                                  item.selectedPartId ? (
+                                    <p className="text-amber-600 text-[9px] font-semibold">
+                                      Skip on initiate
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </TableCell>
+                            ) : null}
+                            {isQuotation ? (
+                              <TableCell className="hidden md:table-cell align-top">
+                                <Input
+                                  value={item.divOn || ""}
+                                  onChange={(e) =>
+                                    handleUpdateInlineItem(
+                                      item.id,
+                                      "divOn",
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="DIV. On"
+                                  className="h-10 text-xs"
+                                />
+                              </TableCell>
+                            ) : null}
+
+                            {/* Qty (non-quotation only) */}
+                            {!isQuotation ? (
                             <TableCell className="hidden md:table-cell align-top">
                               <div className="flex flex-col items-center justify-center">
                                 <Input
@@ -7800,6 +8179,7 @@ export const SalesInvoice = ({
                                 )}
                               </div>
                             </TableCell>
+                            ) : null}
 
                             {/* Column 8: Rate (Desktop ONLY) */}
                             <TableCell className="hidden md:table-cell text-center align-top">
@@ -8221,27 +8601,110 @@ export const SalesInvoice = ({
                             {/* Mobile: Qty & Rate (Hidden on Desktop) */}
                             <TableCell className="md:hidden block p-0 align-middle">
                               <span className="text-xs font-bold text-muted-foreground block mb-2 uppercase tracking-wider">
-                                Qty & Rate
+                                {isQuotation ? "Qty Req. / Delivery / DIV. On" : "Qty & Rate"}
                               </span>
-                              <div className="grid grid-cols-2 gap-2 items-center">
-                                <div className="space-y-1">
-                                  <span className="text-[9px] text-muted-foreground uppercase">
-                                    Qty
-                                  </span>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={item.qty || ""}
-                                    onChange={(e) =>
-                                      handleUpdateInlineItem(
-                                        item.id,
-                                        "qty",
-                                        parseInt(e.target.value) || 0,
-                                      )
-                                    }
-                                    className="h-8 text-center font-bold"
-                                  />
+                              {isQuotation ? (
+                                <div className="grid grid-cols-3 gap-2 items-start mb-2">
+                                  <div className="space-y-1">
+                                    <span className="text-[9px] text-muted-foreground uppercase">
+                                      Qty Req.
+                                    </span>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={item.qty || ""}
+                                      onChange={(e) =>
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "qty",
+                                          parseInt(e.target.value, 10) || 0,
+                                        )
+                                      }
+                                      className="h-8 text-center font-bold"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <span className="text-[9px] text-muted-foreground uppercase">
+                                      Delivery
+                                    </span>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={
+                                        item.qtyDiv === 0 || item.qtyDiv
+                                          ? item.qtyDiv
+                                          : ""
+                                      }
+                                      onChange={(e) =>
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "qtyDiv",
+                                          parseInt(e.target.value, 10) || 0,
+                                        )
+                                      }
+                                      className="h-8 text-center font-bold"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <span className="text-[9px] text-muted-foreground uppercase">
+                                      DIV. On
+                                    </span>
+                                    <Input
+                                      value={item.divOn || ""}
+                                      onChange={(e) =>
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "divOn",
+                                          e.target.value,
+                                        )
+                                      }
+                                      className="h-8 text-xs"
+                                    />
+                                  </div>
                                 </div>
+                              ) : (
+                                <div className="grid grid-cols-2 gap-2 items-center mb-2">
+                                  <div className="space-y-1">
+                                    <span className="text-[9px] text-muted-foreground uppercase">
+                                      Qty
+                                    </span>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={item.qty || ""}
+                                      onChange={(e) =>
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "qty",
+                                          parseInt(e.target.value) || 0,
+                                        )
+                                      }
+                                      className="h-8 text-center font-bold"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <span className="text-[9px] text-muted-foreground uppercase">
+                                      Rate
+                                    </span>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={item.unitPrice ?? ""}
+                                      onChange={(e) =>
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "unitPrice",
+                                          e.target.value === ""
+                                            ? undefined
+                                            : parseFloat(e.target.value) || 0,
+                                        )
+                                      }
+                                      className="h-8 text-center font-bold"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                              {isQuotation ? (
                                 <div className="space-y-1">
                                   <span className="text-[9px] text-muted-foreground uppercase">
                                     Rate
@@ -8262,7 +8725,7 @@ export const SalesInvoice = ({
                                     className="h-8 text-center font-bold"
                                   />
                                 </div>
-                              </div>
+                              ) : null}
                             </TableCell>
 
                             {/* Column: Location (before Image) */}
@@ -8343,7 +8806,7 @@ export const SalesInvoice = ({
                           </TableRow>
                           {hasModels && !partsModelFilter.trim() ? (
                               <TableRow key={`${item.id}-qty-used`} className="hidden md:table-row border-b bg-muted/20">
-                                <TableCell colSpan={12} className="px-4 pt-0 pb-2">
+                                <TableCell colSpan={showInquiryViewColumn ? 13 : 12} className="px-4 pt-0 pb-2">
                                   <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">
                                       Quantity Used
@@ -8425,6 +8888,7 @@ export const SalesInvoice = ({
                         <TableCell className="font-semibold text-xs uppercase text-muted-foreground">
                           Total
                         </TableCell>
+                        {showInquiryViewColumn ? <TableCell /> : null}
                         {/* Brand */}
                         <TableCell />
                         {/* Reserved */}
@@ -9509,6 +9973,45 @@ export const SalesInvoice = ({
                               className="h-8 w-8 text-muted-foreground hover:text-foreground"
                               onClick={async () => {
                                 try {
+                                  if (isQuotation) {
+                                    const resp =
+                                      (await apiClient.getSalesQuotation(
+                                        inv.id,
+                                      )) as any;
+                                    const fullQuotation = resp?.data || resp;
+                                    const fullItems = Array.isArray(
+                                      fullQuotation?.SalesQuotationItem,
+                                    )
+                                      ? fullQuotation.SalesQuotationItem
+                                      : inv.items || [];
+
+                                    const mappedItems =
+                                      mapApiSalesQuotationItemsToInvoiceItems(
+                                        fullItems,
+                                      );
+
+                                    setSelectedInvoice({
+                                      ...inv,
+                                      invoiceDate:
+                                        fullQuotation?.quotationDate ||
+                                        inv.invoiceDate,
+                                      validUntil:
+                                        fullQuotation?.validUntil ||
+                                        (inv as Invoice & {
+                                          validUntil?: string;
+                                        }).validUntil,
+                                      items: mappedItems,
+                                      remarks:
+                                        fullQuotation?.notes ??
+                                        inv.remarks ??
+                                        null,
+                                      quotationStatus:
+                                        fullQuotation?.status ||
+                                        (inv as Invoice & {
+                                          quotationStatus?: string;
+                                        }).quotationStatus,
+                                    });
+                                  } else {
                                   const resp = (await apiClient.getSalesInvoice(
                                     inv.id,
                                   )) as any;
@@ -9540,6 +10043,7 @@ export const SalesInvoice = ({
                                       inv.remarks ??
                                       null,
                                   });
+                                  }
                                 } catch {
                                   setSelectedInvoice({
                                     ...inv,
@@ -9568,18 +10072,20 @@ export const SalesInvoice = ({
                                     Approve
                                   </Button>
                                 )}
-                                {(inv.status as string) === "approved" && canChangeInvoiceStatus && (
+                                {(inv.status as string) === "approved" && (
                                   <>
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      className="h-8 text-xs"
-                                      onClick={() =>
-                                        void handleUpdateQuotationStatus(inv, "pending")
-                                      }
+                                      className="h-8 text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                                      onClick={() => {
+                                        setQuotationToUnapprove(inv);
+                                        setShowQuotationUnapproveConfirm(true);
+                                      }}
+                                      title="Un-approve quotation so it can be edited before initiate"
                                     >
                                       <Ban className="w-3 h-3 mr-1" />
-                                      Pending
+                                      Un-approve
                                     </Button>
                                     <Button
                                       variant="default"
@@ -9635,6 +10141,18 @@ export const SalesInvoice = ({
                                 )}
                               </>
                             ))}
+                            {/* Print — quotation list */}
+                            {canPrint && isQuotation ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                onClick={() => openSalesInvoicePrintDialog(inv)}
+                                title="Print Quotation"
+                              >
+                                <Printer className="w-4 h-4" />
+                              </Button>
+                            ) : null}
                             {/* Print / extra menu — Action Menu permission */}
                             {canUseActionMenu && !isQuotation && <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -9848,13 +10366,14 @@ export const SalesInvoice = ({
         </>
       )}
 
-      {/* View Invoice Dialog */}
+      {/* View Invoice / Quotation Dialog */}
       <Dialog open={showViewInvoice} onOpenChange={setShowViewInvoice}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-primary" />
-              Invoice Details - {selectedInvoice?.invoiceNo}
+              {isQuotation ? "Quotation Details" : "Invoice Details"} -{" "}
+              {selectedInvoice?.invoiceNo}
             </DialogTitle>
           </DialogHeader>
 
@@ -9867,6 +10386,21 @@ export const SalesInvoice = ({
                     {formatInvoiceDateDisplay(selectedInvoice.invoiceDate)}
                   </p>
                 </div>
+                {isQuotation ? (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Valid Until</p>
+                    <p className="font-medium">
+                      {(selectedInvoice as Invoice & { validUntil?: string })
+                        .validUntil
+                        ? formatInvoiceDateDisplay(
+                            (selectedInvoice as Invoice & {
+                              validUntil?: string;
+                            }).validUntil!,
+                          )
+                        : "-"}
+                    </p>
+                  </div>
+                ) : null}
                 <div>
                   <p className="text-xs text-muted-foreground">
                     {isTransferOut ? "Branch" : "Customer"}
@@ -9885,10 +10419,17 @@ export const SalesInvoice = ({
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Status</p>
-                  {getStatusBadge(selectedInvoice.status)}
+                  {isQuotation
+                    ? getQuotationStatusBadge(
+                        (selectedInvoice as Invoice & {
+                          quotationStatus?: string;
+                        }).quotationStatus || selectedInvoice.status,
+                      )
+                    : getStatusBadge(selectedInvoice.status)}
                 </div>
               </div>
 
+              {!isQuotation ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">Delivered To</p>
@@ -9903,6 +10444,14 @@ export const SalesInvoice = ({
                   </p>
                 </div>
               </div>
+              ) : (
+                <div>
+                  <p className="text-xs text-muted-foreground">Remarks</p>
+                  <p className="font-medium">
+                    {selectedInvoice.remarks?.trim() || "-"}
+                  </p>
+                </div>
+              )}
 
               {selectedInvoice.holdReason && (
                 <div className="p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
@@ -9923,14 +10472,28 @@ export const SalesInvoice = ({
                       <TableHead>Part No</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead>Brand</TableHead>
-                      <TableHead>Rack/Shelf</TableHead>
-                      <TableHead className="text-center">Ordered</TableHead>
-                      <TableHead className="text-center">Delivered</TableHead>
-                      <TableHead className="text-center">Pending</TableHead>
-                      <TableHead className="text-center">Reversed</TableHead>
+                      {isQuotation ? (
+                        <>
+                          <TableHead className="text-center">Qty Req.</TableHead>
+                          <TableHead className="text-center">
+                            Delivery Qty
+                          </TableHead>
+                          <TableHead className="text-center">DIV. On</TableHead>
+                        </>
+                      ) : (
+                        <>
+                          <TableHead>Rack/Shelf</TableHead>
+                          <TableHead className="text-center">Ordered</TableHead>
+                          <TableHead className="text-center">Delivered</TableHead>
+                          <TableHead className="text-center">Pending</TableHead>
+                          <TableHead className="text-center">Reversed</TableHead>
+                        </>
+                      )}
                       <TableHead className="text-center">Rate</TableHead>
                       <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-center">Actions</TableHead>
+                      {!isQuotation ? (
+                        <TableHead className="text-center">Actions</TableHead>
+                      ) : null}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -9946,23 +10509,39 @@ export const SalesInvoice = ({
                           <TableCell className="text-sm">
                             {item.brand || "-"}
                           </TableCell>
-                          <TableCell className="text-xs">
-                            {item.rackCode || item.shelfNo
-                              ? `${item.rackCode || "-"} / ${item.shelfNo || "-"}`
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {item.orderedQty}
-                          </TableCell>
-                          <TableCell className="text-center text-green-600">
-                            {item.deliveredQty}
-                          </TableCell>
-                          <TableCell className="text-center text-primary">
-                            {item.pendingQty}
-                          </TableCell>
-                          <TableCell className="text-center text-red-600">
-                            {item.reversedQty || 0}
-                          </TableCell>
+                          {isQuotation ? (
+                            <>
+                              <TableCell className="text-center">
+                                {item.orderedQty}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {item.qtyDiv ?? 0}
+                              </TableCell>
+                              <TableCell className="text-center text-sm">
+                                {item.divOn?.trim() || "-"}
+                              </TableCell>
+                            </>
+                          ) : (
+                            <>
+                              <TableCell className="text-xs">
+                                {item.rackCode || item.shelfNo
+                                  ? `${item.rackCode || "-"} / ${item.shelfNo || "-"}`
+                                  : "-"}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {item.orderedQty}
+                              </TableCell>
+                              <TableCell className="text-center text-green-600">
+                                {item.deliveredQty}
+                              </TableCell>
+                              <TableCell className="text-center text-primary">
+                                {item.pendingQty}
+                              </TableCell>
+                              <TableCell className="text-center text-red-600">
+                                {item.reversedQty || 0}
+                              </TableCell>
+                            </>
+                          )}
                           <TableCell className="text-center">
                             {item.unitPrice
                               ? item.unitPrice.toFixed(2)
@@ -9971,6 +10550,7 @@ export const SalesInvoice = ({
                           <TableCell className="text-right">
                             Rs {item.lineTotal.toFixed(2)}
                           </TableCell>
+                          {!isQuotation ? (
                           <TableCell className="text-center">
                             {selectedInvoice.customerType === "registered" &&
                               (item.pendingQty || 0) - (item.reversedQty || 0) >
@@ -9995,13 +10575,19 @@ export const SalesInvoice = ({
                                 </Button>
                               )}
                           </TableCell>
+                          ) : null}
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={11} className="text-center py-4">
+                        <TableCell
+                          colSpan={isQuotation ? 8 : 11}
+                          className="text-center py-4"
+                        >
                           <p className="text-muted-foreground">
-                            No items found for this invoice
+                            {isQuotation
+                              ? "No items found for this quotation"
+                              : "No items found for this invoice"}
                           </p>
                         </TableCell>
                       </TableRow>
@@ -10011,12 +10597,16 @@ export const SalesInvoice = ({
               </div>
 
               <div className="flex justify-between items-center p-4 bg-muted/30 rounded-lg">
+                {!isQuotation ? (
                 <div>
                   <p className="text-sm text-muted-foreground">
                     Payment Status
                   </p>
                   {getPaymentBadge(selectedInvoice.paymentStatus)}
                 </div>
+                ) : (
+                  <div />
+                )}
                 <div className="text-right">
                   <p className="text-sm text-muted-foreground">Sub Total</p>
                   <p className="text-base font-semibold">
@@ -10044,13 +10634,17 @@ export const SalesInvoice = ({
                   <p className="text-2xl font-bold text-primary">
                     Rs {selectedInvoice.grandTotal.toLocaleString()}
                   </p>
+                  {!isQuotation ? (
                   <p className="text-sm text-muted-foreground">
                     Paid: Rs {selectedInvoice.paidAmount.toLocaleString()}
                   </p>
+                  ) : null}
                 </div>
               </div>
 
               <div className="flex gap-2 justify-end">
+                {!isQuotation ? (
+                <>
                 <Button variant="outline" size="sm">
                   <Download className="w-4 h-4 mr-2" />
                   Download
@@ -10077,6 +10671,20 @@ export const SalesInvoice = ({
                   <Printer className="w-4 h-4 mr-2" />
                   Print Challan
                 </Button>
+                </>
+                ) : canPrint ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    selectedInvoice &&
+                    openSalesInvoicePrintDialog(selectedInvoice)
+                  }
+                >
+                  <Printer className="w-4 h-4 mr-2" />
+                  Print Quotation
+                </Button>
+                ) : null}
               </div>
             </div>
           )}
@@ -10089,9 +10697,13 @@ export const SalesInvoice = ({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Print Invoice</DialogTitle>
+            <DialogTitle>
+              {isQuotation ? "Print Quotation" : "Print Invoice"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {!isQuotation ? (
+              <>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Balance on print</Label>
               <div className="flex flex-col gap-2">
@@ -10163,24 +10775,45 @@ export const SalesInvoice = ({
                 </label>
               </div>
             )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Quotation prints on A4 portrait with terms and conditions at
+                the bottom.
+              </p>
+            )}
             <div className="space-y-2">
               <Label className="text-sm font-medium">Columns</Label>
               <div className="space-y-3">
-            {invoicePrintColumns.map((col) => (
+            {(isQuotation ? quotationPrintColumns : invoicePrintColumns).map(
+              (col) => (
               <div key={col.id} className="flex items-center gap-2">
                 <Checkbox
-                  checked={selectedInvoicePrintColumns.includes(col.id)}
+                  checked={
+                    isQuotation
+                      ? selectedQuotationPrintColumns.includes(col.id)
+                      : selectedInvoicePrintColumns.includes(col.id)
+                  }
                   onCheckedChange={(checked) => {
+                    if (isQuotation) {
+                      setSelectedQuotationPrintColumns((prev) => {
+                        if (checked) return Array.from(new Set([...prev, col.id]));
+                        const next = prev.filter((id) => id !== col.id);
+                        return next.length > 0 ? next : [col.id];
+                      });
+                    } else {
                     setSelectedInvoicePrintColumns((prev) => {
                       if (checked) return Array.from(new Set([...prev, col.id]));
                       const next = prev.filter((id) => id !== col.id);
                       return next.length > 0 ? next : [col.id];
                     });
+                    }
                   }}
                 />
                 <Label>{col.label}</Label>
               </div>
-            ))}
+            ),
+            )}
               </div>
             </div>
           </div>
@@ -10194,11 +10827,18 @@ export const SalesInvoice = ({
             <Button
               onClick={() => {
                 if (!invoiceForPrint) return;
+                if (isQuotation) {
+                  handlePrintQuotation(
+                    invoiceForPrint,
+                    selectedQuotationPrintColumns,
+                  );
+                } else {
                 handlePrintInvoice(invoiceForPrint, selectedInvoicePrintColumns, {
                   includeBalance: printInvoiceWithBalance,
                   useLetterhead: printInvoiceOnLetterhead,
                   orientation: printInvoiceOrientation,
                 });
+                }
                 setShowInvoicePrintColumnsDialog(false);
               }}
             >
@@ -10801,6 +11441,52 @@ export const SalesInvoice = ({
                 }
                 setShowUnapproveConfirm(false);
                 setInvoiceToUnapprove(null);
+              }}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              Un-approve
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Quotation Un-approve Confirmation */}
+      <AlertDialog
+        open={showQuotationUnapproveConfirm}
+        onOpenChange={(open) => {
+          setShowQuotationUnapproveConfirm(open);
+          if (!open) setQuotationToUnapprove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              Un-approve Quotation?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will change quotation {quotationToUnapprove?.invoiceNo} back
+              to Pending so it can be edited before Initiate.
+              <br />
+              <br />
+              You can approve it again after making changes. Initiate will not
+              be available until it is approved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setQuotationToUnapprove(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (quotationToUnapprove) {
+                  void handleUpdateQuotationStatus(
+                    quotationToUnapprove,
+                    "pending",
+                  );
+                }
+                setShowQuotationUnapproveConfirm(false);
+                setQuotationToUnapprove(null);
               }}
               className="bg-amber-600 hover:bg-amber-700"
             >
@@ -11553,6 +12239,41 @@ export const SalesInvoice = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {showInquiryViewColumn ? (
+        <Dialog
+          open={Boolean(salesInquiryPopupPartId)}
+          onOpenChange={(open) => {
+            if (!open) setSalesInquiryPopupPartId(null);
+          }}
+        >
+          <DialogContent className="left-0 top-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:rounded-none [&>button]:hidden">
+            <DialogHeader className="shrink-0 border-b px-6 py-4 flex flex-row items-center justify-between space-y-0">
+              <DialogTitle>Sales Inquiry</DialogTitle>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={() => setSalesInquiryPopupPartId(null)}
+                aria-label="Close Sales Inquiry"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+              {salesInquiryPopupPartId ? (
+                <SalesInquiry
+                  key={salesInquiryPopupPartId}
+                  initialPartId={salesInquiryPopupPartId}
+                  hideShortcuts
+                  embeddedPopup
+                />
+              ) : null}
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 };
