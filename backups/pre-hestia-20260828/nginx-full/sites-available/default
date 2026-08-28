@@ -1,0 +1,90 @@
+server {
+    server_name www.crystaltrading.net;
+    return 301 https://crystaltrading.net$request_uri;
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/crystaltrading.net/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/crystaltrading.net/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+server {
+    server_name crystaltrading.net;
+
+    root /var/www/ctc;
+    index index.html;
+
+    # Hashed Vite bundles — safe to cache permanently
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # Always revalidate the HTML shell so deploys show up without a hard refresh
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+    }
+
+    location / {
+        # SPA routes fall back to index.html (inherits no-cache via internal redirect)
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:5001/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /uploads/ {
+        proxy_pass http://localhost:5001/uploads/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/crystaltrading.net/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/crystaltrading.net/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+
+server {
+    if ($host = crystaltrading.net) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name crystaltrading.net;
+    return 404; # managed by Certbot
+
+
+}
+server {
+    if ($host = www.crystaltrading.net) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name www.crystaltrading.net;
+    return 404; # managed by Certbot
+
+
+}
