@@ -237,13 +237,14 @@ function mapApiSalesQuotationItemsToInvoiceItems(
   return fullItems.map((item: any) => {
     const qtyReq = Number(item.quantity || 0);
     const unitPrice = Number(item.unitPrice || 0);
+    const qtyDiv = Math.max(0, Number(item.qtyDiv ?? 0) || 0);
     return {
       id: item.id,
       partId: item.partId,
       partNo: item.partNo || item.Part?.partNo || "",
       description: item.description || item.Part?.description || "",
       orderedQty: qtyReq,
-      qtyDiv: Math.max(0, Number(item.qtyDiv ?? 0) || 0),
+      qtyDiv,
       divOn: String(item.divOn || ""),
       deliveredQty: 0,
       pendingQty: qtyReq,
@@ -251,7 +252,7 @@ function mapApiSalesQuotationItemsToInvoiceItems(
       unitPrice,
       discount: 0,
       discountType: "percent" as const,
-      lineTotal: Number(item.total ?? qtyReq * unitPrice),
+      lineTotal: Number(item.total ?? qtyDiv * unitPrice),
       grade: (item.Part?.grade || "A") as ItemGrade,
       brand: item.Part?.Brand?.name || "",
     };
@@ -3696,7 +3697,9 @@ export const SalesInvoice = ({
   // Calculate line total for inline item
   const calculateLineTotal = (item: InlineItemRow) => {
     const part = getPartForItem(item.selectedPartId);
-    const qty = item.qty || 0;
+    const qty = isQuotation
+      ? Math.max(0, Number(item.qtyDiv ?? 0) || 0)
+      : item.qty || 0;
     if (!part && item.unitPrice == null) return 0;
 
     // Prefer explicit unitPrice (allows custom price), otherwise derive from price type
@@ -7287,26 +7290,41 @@ export const SalesInvoice = ({
 
               {inlineItems.length > 0 && (
                 <div className="border rounded-lg overflow-x-auto shadow-sm w-full min-w-0">
-                  <Table className="w-full table-fixed">
+                  <Table
+                    className={cn(
+                      "w-full table-fixed",
+                      isQuotation ? "min-w-[1360px]" : "min-w-[1100px]",
+                    )}
+                  >
                     <colgroup>
+                      <col className="w-[3%]" />
+                      <col
+                        className={
+                          showInquiryViewColumn
+                            ? isQuotation
+                              ? "w-[19%]"
+                              : "w-[20%]"
+                            : isQuotation
+                              ? "w-[22%]"
+                              : "w-[22%]"
+                        }
+                      />
+                      {showInquiryViewColumn ? <col className="w-[3%]" /> : null}
+                      <col className="w-[5%]" />
                       <col className="w-[4%]" />
-                      <col className={showInquiryViewColumn ? "w-[20%]" : "w-[22%]"} />
-                      {showInquiryViewColumn ? <col className="w-[4%]" /> : null}
-                      <col className="w-[6%]" />
-                      <col className="w-[5%]" />
-                      <col className="w-[5%]" />
-                      {isQuotation ? <col className="w-[5%]" /> : null}
-                      {isQuotation ? <col className="w-[5%]" /> : null}
+                      <col className="w-[4%]" />
+                      {isQuotation ? <col className="w-[6%]" /> : null}
+                      {isQuotation ? <col className="w-[6%]" /> : null}
                       {isQuotation ? <col className="w-[7%]" /> : null}
                       {!isQuotation ? <col className="w-[5%]" /> : null}
-                      <col className="w-[6%]" />
-                      <col className="w-[6%]" />
-                      {isTransferOut ? <col className="w-[7%]" /> : null}
-                      <col className="w-[7%]" />
-                      <col className="w-[7%]" />
-                      <col className="w-[8%]" />
                       <col className="w-[5%]" />
                       <col className="w-[5%]" />
+                      {isTransferOut ? <col className="w-[6%]" /> : null}
+                      <col className="w-[7%]" />
+                      <col className="w-[7%]" />
+                      <col className="w-[7%]" />
+                      <col className="w-[4%]" />
+                      <col className="w-[4%]" />
                     </colgroup>
                     <TableHeader className="hidden md:table-header-group bg-muted/50">
                       <TableRow className="border-b">
@@ -7334,17 +7352,17 @@ export const SalesInvoice = ({
                           Stock
                         </TableHead>
                         {isQuotation ? (
-                          <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                          <TableHead className="text-center font-bold text-foreground text-xs py-3 px-1">
                             Qty Req.
                           </TableHead>
                         ) : null}
                         {isQuotation ? (
-                          <TableHead className="text-center font-bold text-foreground text-sm py-3">
-                            Delivery Qty
+                          <TableHead className="text-center font-bold text-foreground text-xs py-3 px-1">
+                            Del. Qty
                           </TableHead>
                         ) : null}
                         {isQuotation ? (
-                          <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                          <TableHead className="text-center font-bold text-foreground text-xs py-3 px-1">
                             DIV. On
                           </TableHead>
                         ) : null}
@@ -8077,8 +8095,8 @@ export const SalesInvoice = ({
 
                             {/* Quotation: Qty Req. → Delivery Qty → DIV. On */}
                             {isQuotation ? (
-                              <TableCell className="hidden md:table-cell align-top">
-                                <div className="flex flex-col items-center justify-center">
+                              <TableCell className="hidden md:table-cell align-top px-1 min-w-0">
+                                <div className="flex flex-col items-stretch justify-center min-w-0">
                                   <Input
                                     type="number"
                                     min={0}
@@ -8092,15 +8110,15 @@ export const SalesInvoice = ({
                                         val,
                                       );
                                     }}
-                                    className="w-20 h-10 text-center font-bold text-base"
+                                    className="w-full min-w-0 h-9 text-center font-bold text-sm px-1"
                                     placeholder="0"
                                   />
                                 </div>
                               </TableCell>
                             ) : null}
                             {isQuotation ? (
-                              <TableCell className="hidden md:table-cell align-top">
-                                <div className="flex flex-col items-center justify-center">
+                              <TableCell className="hidden md:table-cell align-top px-1 min-w-0">
+                                <div className="flex flex-col items-stretch justify-center min-w-0">
                                   <Input
                                     type="number"
                                     min={0}
@@ -8120,20 +8138,26 @@ export const SalesInvoice = ({
                                         val,
                                       );
                                     }}
-                                    className="w-20 h-10 text-center font-bold text-base"
+                                    className="w-full min-w-0 h-9 text-center font-bold text-sm px-1"
                                     placeholder="0"
+                                    title={
+                                      Number(item.qtyDiv || 0) === 0 &&
+                                      item.selectedPartId
+                                        ? "Skipped when initiating invoice"
+                                        : undefined
+                                    }
                                   />
                                   {Number(item.qtyDiv || 0) === 0 &&
                                   item.selectedPartId ? (
-                                    <p className="text-amber-600 text-[9px] font-semibold">
-                                      Skip on initiate
+                                    <p className="text-amber-600 text-[8px] font-semibold leading-tight text-center mt-0.5 truncate">
+                                      Skip
                                     </p>
                                   ) : null}
                                 </div>
                               </TableCell>
                             ) : null}
                             {isQuotation ? (
-                              <TableCell className="hidden md:table-cell align-top">
+                              <TableCell className="hidden md:table-cell align-top px-1 min-w-0">
                                 <Input
                                   value={item.divOn || ""}
                                   onChange={(e) =>
@@ -8144,7 +8168,7 @@ export const SalesInvoice = ({
                                     )
                                   }
                                   placeholder="DIV. On"
-                                  className="h-10 text-xs"
+                                  className="w-full min-w-0 h-9 text-xs px-1"
                                 />
                               </TableCell>
                             ) : null}
@@ -8210,7 +8234,7 @@ export const SalesInvoice = ({
                             ) : null}
 
                             {/* Column 8: Rate (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-top">
+                            <TableCell className="hidden md:table-cell text-center align-top px-1 min-w-0">
                               <Input
                                 type="number"
                                 min={0}
@@ -8224,12 +8248,15 @@ export const SalesInvoice = ({
                                       : parseFloat(e.target.value) || 0,
                                   )
                                 }
-                                className="w-28 text-center h-10 text-base"
+                                className={cn(
+                                  "w-full min-w-0 text-center h-9 text-sm mx-auto px-1",
+                                  isQuotation ? "max-w-[4.5rem]" : "max-w-[7rem]",
+                                )}
                               />
                             </TableCell>
 
                             {/* Column 9: Total */}
-                            <TableCell className="md:table-cell block p-0 md:p-4 md:text-center align-top font-bold">
+                            <TableCell className="md:table-cell block p-0 md:p-2 md:text-center align-top font-bold min-w-0">
                               <div className="flex md:flex-col justify-between items-center bg-primary/5 p-3 md:p-0 rounded border border-primary/10 md:border-0 md:bg-transparent">
                                 <span className="md:hidden text-xs font-bold text-primary uppercase">
                                   Total
@@ -8319,7 +8346,7 @@ export const SalesInvoice = ({
                             ) : null}
 
                             {/* Column 11: Price A / Avg Price (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-top">
+                            <TableCell className="hidden md:table-cell text-center align-top px-1 min-w-0">
                               {(() => {
                                 if (
                                   isTransferOut &&
@@ -8383,7 +8410,7 @@ export const SalesInvoice = ({
                             </TableCell>
 
                             {/* Column 12: Price B / Purchase Price (Desktop ONLY) */}
-                            <TableCell className="hidden md:table-cell text-center align-top">
+                            <TableCell className="hidden md:table-cell text-center align-top px-1 min-w-0">
                               {(() => {
                                 if (
                                   isTransferOut &&

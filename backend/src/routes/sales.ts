@@ -186,6 +186,16 @@ async function setQuotationTermsField(
   `;
 }
 
+function quotationItemLineTotal(item: {
+  quantity?: number;
+  qtyDiv?: number;
+  unitPrice?: number;
+}): number {
+  const unitPrice = Number(item.unitPrice || 0);
+  const qtyDiv = Math.max(0, Math.floor(Number(item.qtyDiv ?? 0) || 0));
+  return qtyDiv * unitPrice;
+}
+
 /** Until Prisma client is regenerated, attach quotationTerms from DB. */
 async function attachQuotationTerms<T extends { id: string }>(
   quotations: T[],
@@ -1175,7 +1185,7 @@ router.post("/quotations", async (req: Request, res: Response) => {
             ),
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            total: item.quantity * item.unitPrice,
+            total: quotationItemLineTotal(item),
           })),
         },
       },
@@ -1301,7 +1311,7 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
           ),
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          total: item.quantity * item.unitPrice,
+          total: quotationItemLineTotal(item),
         })),
       });
     }
