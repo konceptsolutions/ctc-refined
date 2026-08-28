@@ -1556,6 +1556,148 @@ router.get('/analytics/customer-aging-overdue', async (req: Request, res: Respon
   }
 });
 
+// Sales profit by invoice (date range)
+router.get('/sales/profit', async (req: Request, res: Response) => {
+  try {
+    const { from_date, to_date, search } = req.query;
+
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
+    }
+
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
+    const searchText = String(search || '').trim().toLowerCase();
+
+    const invoices = await prisma.salesInvoice.findMany({
+      where: {
+        invoiceDate: { gte: fromDate, lte: toDate },
+        status: { in: SALES_REPORT_INVOICE_STATUSES },
+        customerType: { not: 'transfer' },
+        NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+      },
+      include: {
+        SalesInvoiceItem: {
+          select: {
+            partNo: true,
+            description: true,
+            brand: true,
+            orderedQty: true,
+            deliveredQty: true,
+            unitPrice: true,
+            lineTotal: true,
+            avgCost: true,
+          },
+        },
+        Customer: { select: { name: true } },
+      },
+      orderBy: [{ invoiceDate: 'desc' }, { invoiceNo: 'desc' }],
+    });
+
+    const rows: Array<{
+      id: string;
+      invoice_no: string;
+      invoice_date: Date;
+      customer_name: string;
+      status: string;
+      payment_status: string;
+      grand_total: number;
+      sales_amount: number;
+      cost_amount: number;
+      profit_amount: number;
+      margin_percent: number;
+      items: Array<{
+        part_no: string;
+        description: string;
+        brand: string;
+        quantity: number;
+        unit_price: number;
+        avg_cost: number;
+        line_total: number;
+        line_cost: number;
+        line_profit: number;
+      }>;
+    }> = [];
+
+    let totalSales = 0;
+    let totalCost = 0;
+
+    for (const inv of invoices) {
+      const customerName =
+        inv.customerName || inv.Customer?.name || 'Walk-in Customer';
+
+      if (searchText) {
+        const haystack = `${customerName} ${inv.invoiceNo}`.toLowerCase();
+        if (!haystack.includes(searchText)) continue;
+      }
+
+      const items = inv.SalesInvoiceItem.map((item) => {
+        const qty =
+          Number(item.deliveredQty) > 0
+            ? Number(item.deliveredQty)
+            : Number(item.orderedQty) || 0;
+        const lineTotal = Number(item.lineTotal) || 0;
+        const avgCost = Number(item.avgCost) || 0;
+        const lineCost = avgCost * qty;
+        const lineProfit = lineTotal - lineCost;
+        return {
+          part_no: item.partNo,
+          description: item.description || '',
+          brand: item.brand || '',
+          quantity: qty,
+          unit_price: Number(item.unitPrice) || 0,
+          avg_cost: avgCost,
+          line_total: lineTotal,
+          line_cost: lineCost,
+          line_profit: lineProfit,
+        };
+      });
+
+      const salesAmount = items.reduce((sum, row) => sum + row.line_total, 0);
+      const costAmount = items.reduce((sum, row) => sum + row.line_cost, 0);
+      const profitAmount = salesAmount - costAmount;
+      const marginPercent =
+        salesAmount > 0 ? (profitAmount / salesAmount) * 100 : 0;
+
+      totalSales += salesAmount;
+      totalCost += costAmount;
+
+      rows.push({
+        id: inv.id,
+        invoice_no: inv.invoiceNo,
+        invoice_date: inv.invoiceDate,
+        customer_name: customerName,
+        status: inv.status,
+        payment_status: inv.paymentStatus,
+        grand_total: Number(inv.grandTotal) || 0,
+        sales_amount: salesAmount,
+        cost_amount: costAmount,
+        profit_amount: profitAmount,
+        margin_percent: marginPercent,
+        items,
+      });
+    }
+
+    const totalProfit = totalSales - totalCost;
+
+    res.json({
+      data: rows,
+      summary: {
+        invoice_count: rows.length,
+        total_sales: totalSales,
+        total_cost: totalCost,
+        total_profit: totalProfit,
+        margin_percent:
+          totalSales > 0 ? (totalProfit / totalSales) * 100 : 0,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Supplier Performance
 router.get('/analytics/supplier-performance', async (req: Request, res: Response) => {
   try {

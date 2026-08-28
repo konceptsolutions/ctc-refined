@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ShoppingCart, Search, Plus, Eye } from "lucide-react";
 import { toast } from "sonner";
+import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 
 interface ImportExpense {
   id: string;
@@ -175,9 +176,16 @@ export const ImportExpensesTab = () => {
                     <Badge className={getStatusBadge(expense.status)}>{expense.status}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Button variant="outline" size="sm" onClick={() => handleView(expense)}>
-                      View
-                    </Button>
+                    <ActionButtonTooltip label="View" variant="view">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => handleView(expense)}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                    </ActionButtonTooltip>
                   </TableCell>
                 </TableRow>
               ))}

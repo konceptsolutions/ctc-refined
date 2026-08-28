@@ -443,8 +443,14 @@ export const ActivityLogsTab = () => {
                   </TableCell>
                   <TableCell>
                     {(log.details || log.entityType || log.userId) && (
-                      <Button variant="ghost" size="sm" className="text-primary" onClick={() => setSelectedLog(log)}>
-                        View
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => setSelectedLog(log)}
+                        title="View"
+                      >
+                        <Eye className="w-4 h-4" />
                       </Button>
                     )}
                   </TableCell>

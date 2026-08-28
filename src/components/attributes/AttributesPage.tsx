@@ -14,6 +14,7 @@ import {
   Filter,
   MoreVertical,
   Trash,
+  Pencil,
   ChevronDown,
   CopyMinus,
 } from "lucide-react";
@@ -643,8 +644,8 @@ export const AttributesPage = () => {
           brandsArray.map((b: any) => ({
             ...b,
             createdAt: b.createdAt
-              ? new Date(b.createdAt).toLocaleDateString("en-GB")
-              : new Date().toLocaleDateString("en-GB"),
+              ? new Date(b.createdAt).toLocaleDateString('en-US')
+              : new Date().toLocaleDateString('en-US'),
           })),
         );
       }
@@ -673,8 +674,8 @@ export const AttributesPage = () => {
           .map((a: any) => ({
             ...a,
             createdAt: a.createdAt
-              ? new Date(a.createdAt).toLocaleDateString("en-GB")
-              : new Date().toLocaleDateString("en-GB"),
+              ? new Date(a.createdAt).toLocaleDateString('en-US')
+              : new Date().toLocaleDateString('en-US'),
           }));
         setApplications(deduplicated);
       }
@@ -919,8 +920,8 @@ export const AttributesPage = () => {
             {
               ...brandData,
               createdAt: brandData.createdAt
-                ? new Date(brandData.createdAt).toLocaleDateString("en-GB")
-                : new Date().toLocaleDateString("en-GB"),
+                ? new Date(brandData.createdAt).toLocaleDateString('en-US')
+                : new Date().toLocaleDateString('en-US'),
             },
             ...prev,
           ]);
@@ -1030,7 +1031,7 @@ export const AttributesPage = () => {
                 ? new Date(applicationData.createdAt).toLocaleDateString(
                     "en-GB",
                   )
-                : new Date().toLocaleDateString("en-GB"),
+                : new Date().toLocaleDateString('en-US'),
             },
             ...prev,
           ]);
@@ -1326,7 +1327,7 @@ export const AttributesPage = () => {
               ? {
                   ...brandData,
                   createdAt: brandData.createdAt
-                    ? new Date(brandData.createdAt).toLocaleDateString("en-GB")
+                    ? new Date(brandData.createdAt).toLocaleDateString('en-US')
                     : b.createdAt,
                 }
               : b,
@@ -1472,22 +1473,24 @@ export const AttributesPage = () => {
                   <div className="flex gap-1">
                     {canEdit && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        title="Edit"
                         onClick={() => openEditCategory(category)}
                       >
-                        Edit
+                        <Pencil className="w-3.5 h-3.5" />
                       </Button>
                     )}
                     {canDelete && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        title="Delete"
                         onClick={() => openDeleteDialog("category", category.id)}
                       >
-                        Delete
+                        <Trash className="w-3.5 h-3.5" />
                       </Button>
                     )}
                   </div>
@@ -1566,24 +1569,26 @@ export const AttributesPage = () => {
                   <div className="flex gap-1">
                     {canEdit && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        title="Edit"
                         onClick={() => openEditSubcategory(subcategory)}
                       >
-                        Edit
+                        <Pencil className="w-3.5 h-3.5" />
                       </Button>
                     )}
                     {canDelete && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        title="Delete"
                         onClick={() =>
                           openDeleteDialog("subcategory", subcategory.id)
                         }
                       >
-                        Delete
+                        <Trash className="w-3.5 h-3.5" />
                       </Button>
                     )}
                   </div>
@@ -1661,22 +1666,24 @@ export const AttributesPage = () => {
                   <div className="flex gap-1">
                     {canEdit && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        title="Edit"
                         onClick={() => openEditBrand(brand)}
                       >
-                        Edit
+                        <Pencil className="w-3.5 h-3.5" />
                       </Button>
                     )}
                     {canDelete && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        title="Delete"
                         onClick={() => openDeleteDialog("brand", brand.id)}
                       >
-                        Delete
+                        <Trash className="w-3.5 h-3.5" />
                       </Button>
                     )}
                   </div>
@@ -1748,24 +1755,26 @@ export const AttributesPage = () => {
                   <div className="flex gap-1">
                     {canEdit && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        title="Edit"
                         onClick={() => openEditApplication(application)}
                       >
-                        Edit
+                        <Pencil className="w-3.5 h-3.5" />
                       </Button>
                     )}
                     {canDelete && (
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        title="Delete"
                         onClick={() =>
                           openDeleteDialog("application", application.id)
                         }
                       >
-                        Delete
+                        <Trash className="w-3.5 h-3.5" />
                       </Button>
                     )}
                   </div>

@@ -297,7 +297,7 @@ export const TrialBalanceTab = () => {
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {fromDateObj ? (
-                    format(fromDateObj, "dd/MM/yyyy")
+                    formatUiDate(fromDateObj)
                   ) : (
                     <span>Pick date</span>
                   )}
@@ -326,7 +326,7 @@ export const TrialBalanceTab = () => {
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {toDateObj ? (
-                    format(toDateObj, "dd/MM/yyyy")
+                    formatUiDate(toDateObj)
                   ) : (
                     <span>Pick date</span>
                   )}
@@ -357,9 +357,9 @@ export const TrialBalanceTab = () => {
         <CardContent className="p-0">
           {data?.date && (
             <p className="text-sm text-muted-foreground px-4 pt-3">
-              Period: {fromDateObj ? format(fromDateObj, "dd/MM/yyyy") : ""}
+              Period: {fromDateObj ? formatUiDate(fromDateObj) : ""}
               {fromDateObj && toDateObj ? " to " : ""}
-              {toDateObj ? format(toDateObj, "dd/MM/yyyy") : ""}
+              {toDateObj ? formatUiDate(toDateObj) : ""}
             </p>
           )}
           <div className="border rounded-lg overflow-hidden">

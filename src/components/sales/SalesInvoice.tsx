@@ -105,6 +105,11 @@ import { InvoicePartDropdownList } from "./InvoicePartDropdownList";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { printSalesInvoicePdf } from "@/utils/printSalesInvoicePdf";
 import { printSalesQuotationPdf } from "@/utils/printSalesQuotationPdf";
+import {
+  DEFAULT_SALES_QUOTATION_TERM,
+  normalizeQuotationTerm,
+  SALES_QUOTATION_TERM_OPTIONS,
+} from "@/constants/salesQuotationTerms";
 import { isAdminRole } from "@/utils/auth";
 import { SalesInquiry } from "./SalesInquiry";
 import {
@@ -923,6 +928,9 @@ export const SalesInvoice = ({
   const [quotationStatus, setQuotationStatus] = useState<
     "pending" | "approved" | "converted"
   >("pending");
+  const [quotationTerms, setQuotationTerms] = useState<string>(
+    DEFAULT_SALES_QUOTATION_TERM,
+  );
   const [taxType, setTaxType] = useState("Without GST");
   const [gstPercentage, setGstPercentage] = useState(0);
   const [customGstPercentage, setCustomGstPercentage] = useState("");
@@ -3209,6 +3217,7 @@ export const SalesInvoice = ({
     updatedAt: q.updatedAt,
     validUntil: q.validUntil,
     quotationStatus: q.status,
+    quotationTerms: q.quotationTerms ?? null,
   } as Invoice & { validUntil?: string; quotationStatus?: string });
 
   // Fetch invoices / quotations from backend
@@ -4051,6 +4060,7 @@ export const SalesInvoice = ({
           customerAddress: selectedCustomer?.address,
           status: editingInvoiceId ? quotationStatus : "pending",
           notes: remarks,
+          quotationTerms,
           subtotal,
           overallDiscount: discount,
           freightCharges,
@@ -4319,6 +4329,7 @@ export const SalesInvoice = ({
       new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
     );
     setQuotationStatus("pending");
+    setQuotationTerms(DEFAULT_SALES_QUOTATION_TERM);
     setShowBackToInquiry(false);
   };
 
@@ -4415,6 +4426,11 @@ export const SalesInvoice = ({
           (fullInvoice.status ||
             invoice.quotationStatus ||
             "pending") as typeof quotationStatus,
+        );
+        setQuotationTerms(
+          normalizeQuotationTerm(
+            fullInvoice.quotationTerms || invoice.quotationTerms,
+          ),
         );
       }
       if (!isTransferOut) {
@@ -4715,6 +4731,9 @@ export const SalesInvoice = ({
     }
   };
 
+  const handleEditInvoiceRef = useRef(handleEditInvoice);
+  handleEditInvoiceRef.current = handleEditInvoice;
+
   useEffect(() => {
     if (!isQuotation || openedInquiryQuotationRef.current || loadingInvoices) {
       return;
@@ -4725,8 +4744,8 @@ export const SalesInvoice = ({
     if (!found) return;
     openedInquiryQuotationRef.current = true;
     sessionStorage.removeItem("openSalesQuotationId");
-    void handleEditInvoice(found);
-  }, [isQuotation, loadingInvoices, invoices, handleEditInvoice]);
+    void handleEditInvoiceRef.current(found);
+  }, [isQuotation, loadingInvoices, invoices]);
 
   const refreshCustomersList = async () => {
     try {
@@ -6560,6 +6579,9 @@ export const SalesInvoice = ({
         ),
         items: mappedItems.length ? mappedItems : invoice.items || [],
         remarks: fullQuotation?.notes ?? invoice.remarks ?? null,
+        quotationTerms: normalizeQuotationTerm(
+          fullQuotation?.quotationTerms ?? invoice.quotationTerms,
+        ),
       };
 
       await printSalesQuotationPdf({
@@ -6578,6 +6600,9 @@ export const SalesInvoice = ({
           fullQuotation?.validUntil ||
           (invoice as Invoice & { validUntil?: string }).validUntil,
         remarks: String(fullQuotation?.notes ?? invoice.remarks ?? ""),
+        quotationTerms: normalizeQuotationTerm(
+          fullQuotation?.quotationTerms ?? invoice.quotationTerms,
+        ),
       });
     } catch (error: any) {
       toast({
@@ -6697,6 +6722,9 @@ export const SalesInvoice = ({
           ),
           items: mappedItems.length ? mappedItems : invoice.items || [],
           remarks: fullQuotation?.notes ?? invoice.remarks ?? null,
+          quotationTerms: normalizeQuotationTerm(
+            fullQuotation?.quotationTerms ?? invoice.quotationTerms,
+          ),
         });
       } else {
       const resp = (await apiClient.getSalesInvoice(invoice.id)) as any;
@@ -9623,6 +9651,26 @@ export const SalesInvoice = ({
                       onChange={(e) => setValidUntil(e.target.value)}
                       className="bg-background border-primary/20 h-9 text-sm"
                     />
+                  </div>
+                  <div className="space-y-1.5 w-full min-w-[280px] max-w-xl">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      Terms
+                    </Label>
+                    <Select
+                      value={quotationTerms}
+                      onValueChange={setQuotationTerms}
+                    >
+                      <SelectTrigger className="h-9 text-sm bg-background">
+                        <SelectValue placeholder="Select terms" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SALES_QUOTATION_TERM_OPTIONS.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1.5 w-36">
                     <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">

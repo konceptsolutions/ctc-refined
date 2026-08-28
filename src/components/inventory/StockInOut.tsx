@@ -1241,7 +1241,6 @@ export const StockInOut = () => {
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
                 className="h-10 bg-background pr-10"
-                placeholder="dd/mm/yyyy"
               />
               <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             </div>
@@ -1256,7 +1255,6 @@ export const StockInOut = () => {
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
                 className="h-10 bg-background pr-10"
-                placeholder="dd/mm/yyyy"
               />
               <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             </div>

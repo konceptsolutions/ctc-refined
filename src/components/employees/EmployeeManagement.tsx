@@ -131,7 +131,7 @@ const formatDate = (value?: string | null) => {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-GB");
+  return date.toLocaleDateString('en-US');
 };
 
 const todayDateMax = () => getCurrentDatePakistan();
@@ -696,8 +696,14 @@ export const EmployeeManagement = () => {
                       <TableCell>
                         <div className="flex items-center justify-center gap-1 flex-wrap">
                           {canEdit && (
-                            <Button size="sm" variant="outline" onClick={() => openEditDialog(employee)}>
-                              <Pencil className="h-3.5 w-3.5" />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
+                              onClick={() => openEditDialog(employee)}
+                              title="Edit"
+                            >
+                              <Pencil className="h-4 w-4" />
                             </Button>
                           )}
                           {canCreate && (

@@ -1,3 +1,4 @@
+import { formatUiDate, parseFlexibleDateToISO, UI_DATE_PLACEHOLDER } from "@/utils/dateUtils";
 import { useState, useEffect, useMemo } from "react";
 import { format } from "date-fns";
 import { Search, Edit, MoreVertical, Printer, CheckCircle, Clock, Trash, Plus, CalendarIcon, Eye } from "lucide-react";
@@ -343,7 +344,7 @@ export const ViewVouchersTab = ({
       try {
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return dateString;
-        return date.toLocaleDateString("en-GB");
+        return date.toLocaleDateString('en-US');
       } catch {
         return dateString;
       }
@@ -707,22 +708,7 @@ export const ViewVouchersTab = ({
     // Convert date to YYYY-MM-DD format for date input
     let editDateValue = voucher.date;
     if (voucher.date) {
-      try {
-        // Handle DD/MM/YYYY format
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(voucher.date)) {
-          const [day, month, year] = voucher.date.split('/');
-          editDateValue = `${year}-${month}-${day}`;
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(voucher.date)) {
-          editDateValue = voucher.date;
-        } else {
-          const date = new Date(voucher.date);
-          if (!isNaN(date.getTime())) {
-            editDateValue = date.toISOString().split('T')[0];
-          }
-        }
-      } catch {
-        // Keep original if conversion fails
-      }
+      editDateValue = parseFlexibleDateToISO(voucher.date) ?? voucher.date;
     }
 
     setEditNarration(voucher.narration || "");
@@ -1172,25 +1158,9 @@ export const ViewVouchersTab = ({
   // Helper function to format date safely
   const formatDisplayDate = (dateString: string): string => {
     if (!dateString) return "-";
-    try {
-      // Handle ISO format (YYYY-MM-DD)
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-        const [year, month, day] = dateString.split('-');
-        return `${day}/${month}/${year}`;
-      }
-      // Handle DD/MM/YYYY format
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
-        return dateString;
-      }
-      // Try parsing as date
-      const date = new Date(dateString);
-      if (!isNaN(date.getTime())) {
-        return date.toLocaleDateString("en-GB");
-      }
-      return dateString;
-    } catch {
-      return dateString;
-    }
+    const iso = parseFlexibleDateToISO(dateString);
+    if (iso) return formatUiDate(iso);
+    return dateString;
   };
 
   // Helper function to format amount with proper decimals
@@ -1287,7 +1257,7 @@ export const ViewVouchersTab = ({
                   )}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
-                  {fromDate ? format(fromDate, "dd/MM/yyyy") : <span>DD/MM/YYYY</span>}
+                  {fromDate ? formatUiDate(fromDate) : <span>{UI_DATE_PLACEHOLDER}</span>}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
@@ -1314,7 +1284,7 @@ export const ViewVouchersTab = ({
                   )}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
-                  {toDate ? format(toDate, "dd/MM/yyyy") : <span>DD/MM/YYYY</span>}
+                  {toDate ? formatUiDate(toDate) : <span>{UI_DATE_PLACEHOLDER}</span>}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
@@ -1501,25 +1471,23 @@ export const ViewVouchersTab = ({
                         <ActionButtonTooltip label="View" variant="view">
                           <Button
                             variant="ghost"
-                            size="sm"
-                            className="gap-1 text-primary"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
                             onClick={() => fetchVoucherDetails(voucher.id)}
                           >
                             <Eye className="h-4 w-4" />
-                            View
                           </Button>
                         </ActionButtonTooltip>
                         {canEdit && (
                           <ActionButtonTooltip label="Edit" variant="edit">
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className="gap-1 text-primary"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
                               onClick={() => handleEdit(voucher)}
                               disabled={voucher.status !== "draft"}
                             >
                               <Edit className="h-4 w-4" />
-                              Edit
                             </Button>
                           </ActionButtonTooltip>
                         )}

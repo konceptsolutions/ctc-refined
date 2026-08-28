@@ -133,7 +133,7 @@ export const StockTransfer = () => {
       const formattedTransfers: Transfer[] = transfersData.map((t: any) => ({
         id: t.id,
         transferNumber: t.transfer_number || t.transferNumber,
-        date: new Date(t.date).toLocaleDateString('en-GB'),
+        date: new Date(t.date).toLocaleDateString('en-US'),
         status: t.status as Transfer["status"],
         notes: t.notes || '',
         items: [],
@@ -740,7 +740,8 @@ export const StockTransfer = () => {
                         <ActionButtonTooltip label="View" variant="view">
                           <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
                             onClick={async () => {
                               setLoading(true);
                               try {
@@ -764,7 +765,7 @@ export const StockTransfer = () => {
                                 setViewingTransfer({
                                   id: transferData.id,
                                   transferNumber: transferData.transfer_number || transfer.transferNumber,
-                                  date: new Date(transferData.date).toLocaleDateString('en-GB'),
+                                  date: new Date(transferData.date).toLocaleDateString('en-US'),
                                   status: transferData.status as Transfer["status"],
                                   notes: transferData.notes || '',
                                   items: (transferData.items || []).map((item: any) => ({
@@ -793,32 +794,28 @@ export const StockTransfer = () => {
                                 setLoading(false);
                               }
                             }}
-                            className="text-primary hover:text-primary/80 text-sm font-medium flex items-center gap-1 transition-colors"
                           >
                             <Eye className="w-4 h-4" />
-                            View
                           </Button>
                         </ActionButtonTooltip>
                         <ActionButtonTooltip label="Edit" variant="edit">
                           <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
                             onClick={() => openEditForm(transfer)}
-                            className="text-primary hover:text-primary/80 text-sm font-medium flex items-center gap-1 transition-colors"
                           >
                             <Pencil className="w-4 h-4" />
-                            Edit
                           </Button>
                         </ActionButtonTooltip>
                         <ActionButtonTooltip label="Delete" variant="delete">
                           <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => handleDeleteClick(transfer.id)}
-                            className="text-destructive hover:text-destructive/80 text-sm font-medium flex items-center gap-1 transition-colors"
                           >
                             <Trash className="w-4 h-4" />
-                            Delete
                           </Button>
                         </ActionButtonTooltip>
                       </div>

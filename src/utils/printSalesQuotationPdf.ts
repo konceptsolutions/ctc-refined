@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { buildSalesQuotationTermsForPrint } from "@/constants/salesQuotationTerms";
 import autoTable from "jspdf-autotable";
 import { openPdfPrintDialog, formatPdfMoney, formatPdfDate } from "@/utils/pdfPrint";
 import type { Invoice, InvoiceItem } from "@/types/invoice";
@@ -12,6 +13,7 @@ export type SalesQuotationPdfInput = {
   contactNo?: string;
   validUntil?: string;
   remarks?: string;
+  quotationTerms?: string;
 };
 
 type QuotationColumnId =
@@ -44,16 +46,6 @@ const COLUMN_META: Array<{
   { id: "divOn", header: "DIV. On", width: 16, align: "center" },
   { id: "price", header: "Price", width: 16, align: "right" },
   { id: "amount", header: "Amount", width: 18, align: "right" },
-];
-
-const QUOTATION_TERMS = [
-  "100% Advance with Order Confirmation.",
-  "Prices quoted are exclusive of sales tax.",
-  "- Pre-delivery inspection may be carried out at our premises.",
-  "- Ex-Stock items are subject to prior sales without notice.",
-  "- Quotation is valid for 5 Days.",
-  "- Delivery within 2 days after receiving of order confirmation, subject to force majeure clause.",
-  "- Delivery : Ex-Warehouse, Sarai Kharbuza, Tarnol, Islamabad.",
 ];
 
 const PLAIN_TABLE = {
@@ -429,7 +421,8 @@ export const printSalesQuotationPdf = async (input: SalesQuotationPdfInput) => {
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  for (const term of QUOTATION_TERMS) {
+  const termsForPrint = buildSalesQuotationTermsForPrint(input.quotationTerms);
+  for (const term of termsForPrint) {
     const lines = doc.splitTextToSize(term, contentW);
     y = ensureSpace(
       doc,
@@ -445,18 +438,33 @@ export const printSalesQuotationPdf = async (input: SalesQuotationPdfInput) => {
   }
 
   y += 2;
-  const closing = [
-    "Thanking you and assuring you of our best cooperation and services at all times, we remain.",
-    "Your's Truly.",
-  ];
-  for (const line of closing) {
-    const lines = doc.splitTextToSize(line, contentW - 50);
-    y = ensureSpace(doc, y, lines.length * 3.8 + 1, marginT, marginB, pageH, drawHeader);
-    doc.text(lines, marginL, y);
-    y += lines.length * 3.8 + 1.5;
+  const closingLine =
+    "If you have any questions, please do not hesitate to reach out. We appreciate the opportunity to earn your business.";
+
+  doc.setFont("helvetica", "bold");
+  let closingFontSize = 8;
+  doc.setFontSize(closingFontSize);
+  while (
+    closingFontSize > 5 &&
+    doc.getTextWidth(closingLine) > contentW
+  ) {
+    closingFontSize -= 0.5;
+    doc.setFontSize(closingFontSize);
   }
 
+  y = ensureSpace(doc, y, 8, marginT, marginB, pageH, drawHeader);
+  doc.text(closingLine, marginL, y);
+  y += 6;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  y = ensureSpace(doc, y, 6, marginT, marginB, pageH, drawHeader);
+  doc.text("Yours Truly.", marginL, y);
+  y += 8;
+
   if (input.remarks?.trim()) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
     const remarkLines = doc.splitTextToSize(
       `Remarks: ${input.remarks.trim()}`,
       contentW,
@@ -467,7 +475,9 @@ export const printSalesQuotationPdf = async (input: SalesQuotationPdfInput) => {
   }
 
   y = ensureSpace(doc, y, 14, marginT, marginB, pageH, drawHeader);
+  y += 4;
   const sigX = pageW - marginR - 42;
+  doc.setFont("helvetica", "normal");
   doc.setLineWidth(0.2);
   doc.line(sigX, y, sigX + 42, y);
   doc.setFontSize(8);

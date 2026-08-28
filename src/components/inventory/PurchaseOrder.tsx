@@ -1,3 +1,4 @@
+import { formatUiDate, parseFlexibleDateToISO } from "@/utils/dateUtils";
 import React, { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 import apiClient from "@/lib/api";
@@ -737,7 +738,7 @@ export const PurchaseOrder = () => {
           poNo: po.po_number || po.poNumber || `PO-${po.id}`,
           supplier: po.supplier_name || po.supplier || "N/A",
           store: receiveStore,
-          requestDate: po.date ? format(new Date(po.date), "dd/MM/yyyy") : format(new Date(), "dd/MM/yyyy"),
+          requestDate: po.date ? formatUiDate(new Date(po.date)) : formatUiDate(new Date()),
           receiveDate: receiveDate,
           grandTotal: po.total_amount || 0,
           remarks: po.notes || "",
@@ -1039,7 +1040,7 @@ export const PurchaseOrder = () => {
           }
           // If no saved date, use request date
           if (!receiveDate) {
-            receiveDate = po.date ? format(new Date(po.date), "dd/MM/yyyy") : null;
+            receiveDate = po.date ? formatUiDate(new Date(po.date)) : null;
           }
         }
 
@@ -1048,7 +1049,7 @@ export const PurchaseOrder = () => {
           poNo: po.po_number || po.poNumber || `PO-${po.id}`,
           supplier: po.supplier_name || po.supplier || "N/A",
           store: po.store_name || po.store || "-",
-          requestDate: po.date ? format(new Date(po.date), "dd/MM/yyyy") : format(new Date(), "dd/MM/yyyy"),
+          requestDate: po.date ? formatUiDate(new Date(po.date)) : formatUiDate(new Date()),
           receiveDate: receiveDate,
           grandTotal: po.total_amount || 0,
           remarks: po.notes || "",
@@ -1282,14 +1283,10 @@ export const PurchaseOrder = () => {
       if (savedReceiveData && order.status === "Received") {
         try {
           const receiveData = JSON.parse(savedReceiveData);
-          // Parse receive date from dd/MM/yyyy format
+          // Parse receive date (MM-dd-yyyy or legacy formats)
           if (receiveData.receiveDate) {
-            const dateParts = receiveData.receiveDate.split("/");
-            if (dateParts.length === 3) {
-              setReceiveDate(new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0])));
-            } else {
-              setReceiveDate(new Date());
-            }
+            const iso = parseFlexibleDateToISO(String(receiveData.receiveDate));
+            setReceiveDate(iso ? new Date(iso) : new Date());
           } else {
             setReceiveDate(new Date());
           }
@@ -1697,7 +1694,7 @@ export const PurchaseOrder = () => {
       // Save receive date and store to localStorage
       const receiveDataKey = `po_receive_data_${selectedOrder.id}`;
       const receiveData = {
-        receiveDate: format(receiveDate, "dd/MM/yyyy"),
+        receiveDate: formatUiDate(receiveDate),
         receiveStore: receiveStore,
         receiveRemarks: receiveRemarks,
       };
@@ -1955,18 +1952,23 @@ export const PurchaseOrder = () => {
                         </Button>
                       </ActionButtonTooltip>
                       <ActionButtonTooltip label="Edit" variant="edit">
-                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleEdit(order)}>
-                          Edit
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          onClick={() => handleEdit(order)}
+                        >
+                          <Edit className="w-4 h-4" />
                         </Button>
                       </ActionButtonTooltip>
                       <ActionButtonTooltip label="Delete" variant="delete">
                         <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                           onClick={() => handleDelete(order)}
                         >
-                          Delete
+                          <Trash className="w-4 h-4" />
                         </Button>
                       </ActionButtonTooltip>
                       {order.status === "Received" ? (
@@ -2105,7 +2107,7 @@ export const PurchaseOrder = () => {
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full h-9 mt-1 justify-start text-left font-normal">
                     <Calendar className="mr-2 h-4 w-4" />
-                    {format(formRequestDate, "dd/MM/yyyy")}
+                    {formatUiDate(formRequestDate)}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -2369,7 +2371,7 @@ export const PurchaseOrder = () => {
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full h-9 mt-1 justify-start text-left font-normal">
                       <Calendar className="mr-2 h-4 w-4" />
-                      {format(receiveDate, "dd/MM/yyyy")}
+                      {formatUiDate(receiveDate)}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">

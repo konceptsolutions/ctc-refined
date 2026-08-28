@@ -185,6 +185,7 @@ export interface Invoice {
   /** Quotation-only (when reused from sales quotation list) */
   validUntil?: string;
   quotationStatus?: string;
+  quotationTerms?: string | null;
   /** Present on sales invoices converted from quotations */
   quotationId?: string | null;
   deliveredTo?: string | null;

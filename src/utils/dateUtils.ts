@@ -1,3 +1,5 @@
+import { format, isValid, parse } from "date-fns";
+
 /**
  * Gets the current date in Pakistan timezone (Asia/Karachi) in YYYY-MM-DD format
  * This ensures the date is correct regardless of the user's local timezone
@@ -107,17 +109,73 @@ export function getStartOfCurrentMonthPakistan(): string {
   }
 }
 
+/** Standard display format for date inputs across the app */
+export const UI_DATE_FORMAT = "MM-dd-yyyy";
+export const UI_DATE_PLACEHOLDER = "MM-DD-YYYY";
+
+/** Default year range for calendar pickers */
+export const CALENDAR_FROM_YEAR = 1990;
+export const CALENDAR_TO_YEAR = new Date().getFullYear() + 5;
+
 /**
- * Formats a date string to YYYY-MM-DD format
+ * Formats a date string to YYYY-MM-DD format (API / storage)
  * @param date - Date string or Date object
  * @returns string - Formatted date in YYYY-MM-DD format
  */
 export function formatDateYYYYMMDD(date: string | Date): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  const dateObj = typeof date === "string" ? new Date(date) : date;
+  if (!isValid(dateObj)) return "";
   const year = dateObj.getFullYear();
-  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Formats a date for UI display (MM-dd-yyyy)
+ */
+export function formatUiDate(
+  date: string | Date | undefined | null,
+): string {
+  if (date == null || date === "") return "";
+  const dateObj = typeof date === "string" ? new Date(date) : date;
+  if (!isValid(dateObj)) return "";
+  return format(dateObj, UI_DATE_FORMAT);
+}
+
+/**
+ * Parses a UI display date string (MM-dd-yyyy) to Date
+ */
+export function parseUiDate(value: string): Date | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = parse(trimmed, UI_DATE_FORMAT, new Date());
+  return isValid(parsed) ? parsed : undefined;
+}
+
+/**
+ * Parse common display / legacy date strings to YYYY-MM-DD (API format).
+ */
+export function parseFlexibleDateToISO(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const uiParsed = parseUiDate(trimmed);
+  if (uiParsed) return formatDateYYYYMMDD(uiParsed);
+
+  if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
+    const [month, day, year] = trimmed.split("-");
+    return `${year}-${month}-${day}`;
+  }
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+    const [month, day, year] = trimmed.split("/");
+    return `${year}-${month}-${day}`;
+  }
+
+  const fallback = new Date(trimmed);
+  return isValid(fallback) ? formatDateYYYYMMDD(fallback) : undefined;
 }
 
 /** Pakistan financial year: 1 July – 30 June */

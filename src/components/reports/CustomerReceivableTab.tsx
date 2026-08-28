@@ -1,3 +1,4 @@
+import { UI_DATE_PLACEHOLDER } from "@/utils/dateUtils";
 import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,7 +57,7 @@ interface LedgerDialog {
   loading: boolean;
 }
 
-/** Backend returns dates as "DD/MM/YYYY" — parse safely */
+/** Backend returns dates as UI_DATE_PLACEHOLDER — parse safely */
 function parseBackendDate(str: string): Date | null {
   if (!str || str === "-") return null;
   const parts = str.split("/");

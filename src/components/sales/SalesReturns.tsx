@@ -1572,13 +1572,12 @@ export const SalesReturns = () => {
                                 <ActionButtonTooltip label="Delete" variant="delete">
                                   <Button
                                     variant="ghost"
-                                    size="sm"
-                                    className="h-7 gap-1 text-xs text-destructive"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                                     disabled={actionSubmittingId === returnItem.id}
                                     onClick={() => handleDeleteClick(returnItem)}
                                   >
-                                    <Trash className="w-3 h-3" />
-                                    Delete
+                                    <Trash className="w-4 h-4" />
                                   </Button>
                                 </ActionButtonTooltip>
                               )}

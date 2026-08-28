@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { formatUiDate, UI_DATE_PLACEHOLDER } from "@/utils/dateUtils";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,13 +41,15 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Bell, Calendar as CalendarIcon, CreditCard, Download, X } from "lucide-react";
+import { Search, Bell, Calendar as CalendarIcon, CreditCard, Download, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import { cn } from "@/lib/utils";
 import { unlockBrowserPrintLayout } from "@/utils/printUtils";
 import apiClient from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
+import { isAdminRole } from "@/utils/auth";
+import { exportRowsToExcel } from "@/utils/exportUtils";
 
 interface Receivable {
   id: string;
@@ -64,12 +67,40 @@ interface Receivable {
   remindersSent: number;
   promisedPayments: number;
   status: "pending" | "overdue" | "paid" | "reminded" | "rescheduled" | "disputed";
+  paymentStatus: "unpaid" | "partial" | "paid";
 }
 
 const mockReceivables: Receivable[] = [];
 
+const normalizeInvoicesResponse = (response: unknown): any[] => {
+  if (Array.isArray(response)) return response;
+  if (response && typeof response === "object") {
+    const payload = response as Record<string, unknown>;
+    if (Array.isArray(payload.data)) return payload.data;
+  }
+  return [];
+};
+
+const receivableSearchText = (item: Receivable) =>
+  [
+    item.invoiceNo,
+    item.customerName,
+    item.customerCode,
+    item.customerContact,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+interface PaymentAccount {
+  id: string;
+  name: string;
+  code: string;
+}
+
 export const ReceivableReminders = () => {
   const { canExport, canEdit } = usePageActions("sales.receivable-reminders");
+  const isAdmin = isAdminRole();
   const [receivables, setReceivables] = useState<Receivable[]>(mockReceivables);
   const [loadingReceivables, setLoadingReceivables] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -78,6 +109,7 @@ export const ReceivableReminders = () => {
   
   // Dialog states
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [isMarkPaidOpen, setIsMarkPaidOpen] = useState(false);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [isReminderOpen, setIsReminderOpen] = useState(false);
   const [selectedReceivable, setSelectedReceivable] = useState<Receivable | null>(null);
@@ -85,8 +117,12 @@ export const ReceivableReminders = () => {
   // Payment form state
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState<Date | undefined>(new Date());
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [referenceNo, setReferenceNo] = useState("");
+  const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [recordingPayment, setRecordingPayment] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<PaymentAccount[]>([]);
+  const [cashAccounts, setCashAccounts] = useState<PaymentAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
   
   // Reschedule form state
   const [newDueDate, setNewDueDate] = useState<Date | undefined>();
@@ -99,13 +135,15 @@ export const ReceivableReminders = () => {
   const [promisedDate, setPromisedDate] = useState<Date | undefined>();
   const [promisedAmount, setPromisedAmount] = useState("");
 
-  const filteredReceivables = receivables.filter((item) => {
-    const matchesSearch =
-      item.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.customerName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === "all" || item.status === filterStatus;
-    return matchesSearch && matchesFilter;
-  });
+  const filteredReceivables = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    return receivables.filter((item) => {
+      const matchesFilter =
+        filterStatus === "all" || item.status === filterStatus;
+      if (!query) return matchesFilter;
+      return matchesFilter && receivableSearchText(item).includes(query);
+    });
+  }, [receivables, searchTerm, filterStatus]);
 
   // Calculate summary stats
   // Total invoice amount = received + remaining for all invoices
@@ -125,112 +163,226 @@ export const ReceivableReminders = () => {
     .filter((r) => r.status === "overdue" || r.daysOverdue > 0)
     .reduce((sum, r) => sum + Number(r.balance || 0), 0);
 
-  useEffect(() => {
-    const fetchReceivables = async () => {
-      try {
-        setLoadingReceivables(true);
-        const [invoicesResponse, customersResponse] = await Promise.all([
-          apiClient.getSalesInvoices(),
-          apiClient.getCustomers({ status: "active", limit: 1000 }),
-        ]);
-        const invoices = Array.isArray(invoicesResponse)
-          ? invoicesResponse
-          : ((invoicesResponse as any)?.data || []);
-        const customersData = Array.isArray(customersResponse)
-          ? customersResponse
-          : (customersResponse as any)?.data || [];
-        const customerContactById = new Map<string, string>();
-        const customerContactByName = new Map<string, string>();
-        for (const customer of customersData) {
-          const contact =
-            String(customer?.contactNo || customer?.cellNumber || "").trim() ||
-            "-";
-          if (customer?.id) {
-            customerContactById.set(String(customer.id), contact);
-          }
-          const nameKey = String(customer?.name || "")
-            .trim()
-            .toLowerCase();
-          if (nameKey) {
-            customerContactByName.set(nameKey, contact);
-          }
+  const loadReceivables = useCallback(async () => {
+    try {
+      setLoadingReceivables(true);
+      const [invoicesResponse, customersResponse] = await Promise.all([
+        apiClient.getSalesInvoices(),
+        apiClient.getCustomers({ status: "active", limit: 1000 }),
+      ]);
+      const invoices = normalizeInvoicesResponse(invoicesResponse);
+      const customersData = Array.isArray(customersResponse)
+        ? customersResponse
+        : (customersResponse as any)?.data || [];
+      const customerContactById = new Map<string, string>();
+      const customerContactByName = new Map<string, string>();
+      for (const customer of customersData) {
+        const contact =
+          String(customer?.contactNo || customer?.cellNumber || "").trim() ||
+          "-";
+        if (customer?.id) {
+          customerContactById.set(String(customer.id), contact);
         }
-        const approvedInvoices = invoices.filter((inv: any) =>
-          ["approved", "partially_delivered", "fully_delivered"].includes(
-            String(inv?.status || "").toLowerCase(),
-          ),
+        const nameKey = String(customer?.name || "")
+          .trim()
+          .toLowerCase();
+        if (nameKey) {
+          customerContactByName.set(nameKey, contact);
+        }
+      }
+      const approvedInvoices = invoices.filter((inv: any) =>
+        ["approved", "partially_delivered", "fully_delivered"].includes(
+          String(inv?.status || "").toLowerCase(),
+        ),
+      );
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const mapped: Receivable[] = approvedInvoices.map((inv: any) => {
+        const rawInvoiceDate = inv.invoiceDate ?? inv.invoice_date;
+        const invoiceDateObj = rawInvoiceDate ? new Date(rawInvoiceDate) : new Date();
+        const invoiceDateForCalc = isValid(invoiceDateObj)
+          ? invoiceDateObj
+          : new Date();
+        const rawTerm = String(inv.term || "").trim();
+        const termDays = parseInt(rawTerm, 10);
+
+        const dueDateObj = new Date(invoiceDateForCalc);
+        if (Number.isFinite(termDays) && termDays > 0) {
+          dueDateObj.setDate(dueDateObj.getDate() + termDays);
+        }
+
+        const remaining = Math.max(
+          0,
+          Number(inv.grandTotal ?? inv.grand_total ?? 0) -
+            Number(inv.paidAmount ?? inv.paid_amount ?? 0),
         );
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
 
-        const mapped: Receivable[] = approvedInvoices.map((inv: any) => {
-          const invoiceDateObj = new Date(inv.invoiceDate);
-          const rawTerm = String(inv.term || "").trim();
-          const termDays = parseInt(rawTerm, 10);
+        const dueAt = new Date(dueDateObj);
+        dueAt.setHours(0, 0, 0, 0);
+        const daysOverdue =
+          remaining > 0 && dueAt < today
+            ? Math.floor((today.getTime() - dueAt.getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
 
-          const dueDateObj = new Date(invoiceDateObj);
-          if (Number.isFinite(termDays) && termDays > 0) {
-            dueDateObj.setDate(dueDateObj.getDate() + termDays);
-          }
+        const status: Receivable["status"] =
+          remaining <= 0
+            ? "paid"
+            : daysOverdue > 0
+              ? "overdue"
+              : "pending";
 
-          const remaining = Math.max(
-            0,
-            Number(inv.grandTotal || 0) - Number(inv.paidAmount || 0),
+        const customerId = String(inv.customerId ?? inv.customer_id ?? "").trim();
+        const customerName =
+          String(
+            inv.customerName ??
+              inv.customer_name ??
+              inv.Customer?.name ??
+              inv.Customer?.shortTitle ??
+              "",
+          ).trim() || "Walk-in Customer";
+        const customerCode =
+          String(inv.Customer?.code ?? customerId ?? "").trim() || "-";
+        const invoiceNo =
+          String(inv.invoiceNo ?? inv.invoice_no ?? "").trim() || "-";
+        const customerContact =
+          (customerId && customerContactById.get(customerId)) ||
+          customerContactByName.get(customerName.trim().toLowerCase()) ||
+          "-";
+
+        const rawPaymentStatus = String(
+          inv.paymentStatus ?? inv.payment_status ?? "unpaid",
+        )
+          .trim()
+          .toLowerCase();
+        const paymentStatus: Receivable["paymentStatus"] =
+          rawPaymentStatus === "paid"
+            ? "paid"
+            : rawPaymentStatus === "partial"
+              ? "partial"
+              : "unpaid";
+
+        return {
+          id: inv.id,
+          invoiceNo,
+          invoiceDate: formatUiDate(invoiceDateForCalc),
+          term: rawTerm || "-",
+          customerName,
+          customerCode,
+          customerContact,
+          balance: remaining,
+          paidAmount: Number(inv.paidAmount ?? inv.paid_amount ?? 0),
+          dueDate: formatUiDate(dueDateObj),
+          originalDueDate: formatUiDate(dueDateObj),
+          daysOverdue,
+          remindersSent: 0,
+          promisedPayments: 0,
+          status,
+          paymentStatus,
+        };
+      });
+
+      setReceivables(mapped);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to load receivables",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingReceivables(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadReceivables();
+  }, [loadReceivables]);
+
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      try {
+        setLoadingAccounts(true);
+        const response = (await apiClient.getAccounts({
+          status: "Active",
+        })) as any;
+        const accountsData = Array.isArray(response)
+          ? response
+          : response.data || [];
+
+        if (!Array.isArray(accountsData) || accountsData.length === 0) {
+          setBankAccounts([]);
+          setCashAccounts([]);
+          return;
+        }
+
+        const currentAssetsAccounts = accountsData.filter((acc: any) => {
+          if (!acc?.id || !acc?.name) return false;
+          const mainGroupName = (
+            acc.Subgroup?.MainGroup?.name || ""
+          ).toLowerCase();
+          const mainGroupType = (
+            acc.Subgroup?.MainGroup?.type || ""
+          ).toLowerCase();
+          return (
+            mainGroupName.includes("current asset") || mainGroupType === "asset"
           );
-
-          const dueAt = new Date(dueDateObj);
-          dueAt.setHours(0, 0, 0, 0);
-          const daysOverdue =
-            remaining > 0 && dueAt < today
-              ? Math.floor((today.getTime() - dueAt.getTime()) / (1000 * 60 * 60 * 24))
-              : 0;
-
-          const status: Receivable["status"] =
-            remaining <= 0
-              ? "paid"
-              : daysOverdue > 0
-                ? "overdue"
-                : "pending";
-
-          const customerId = String(inv.customerId || "");
-          const customerName = inv.customerName || "Walk-in Customer";
-          const customerContact =
-            (customerId && customerContactById.get(customerId)) ||
-            customerContactByName.get(customerName.trim().toLowerCase()) ||
-            "-";
-
-          return {
-            id: inv.id,
-            invoiceNo: inv.invoiceNo || "-",
-            invoiceDate: format(invoiceDateObj, "dd/MM/yyyy"),
-            term: rawTerm || "-",
-            customerName,
-            customerCode: customerId || "-",
-            customerContact,
-            balance: remaining,
-            paidAmount: Number(inv.paidAmount || 0),
-            dueDate: format(dueDateObj, "dd/MM/yyyy"),
-            originalDueDate: format(dueDateObj, "dd/MM/yyyy"),
-            daysOverdue,
-            remindersSent: 0,
-            promisedPayments: 0,
-            status,
-          };
         });
 
-        setReceivables(mapped);
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error?.message || "Failed to load receivables",
-          variant: "destructive",
-        });
+        const bankAccountsList = currentAssetsAccounts
+          .filter((acc: any) => {
+            const subgroupCode = acc.Subgroup?.code || "";
+            const accountCode = acc.code || "";
+            const accountName = (acc.name || "").toLowerCase();
+            if (accountName.includes("abdullah")) return false;
+            if (subgroupCode === "104" || subgroupCode === "101") return false;
+            if (subgroupCode === "103") return true;
+            if (subgroupCode === "102") return false;
+            if (/^103\d{3}$/.test(accountCode)) {
+              if (
+                accountName.includes("cash") ||
+                accountName.includes("petty")
+              ) {
+                return false;
+              }
+              return true;
+            }
+            return (
+              accountName.includes("bank") &&
+              !accountName.includes("cash") &&
+              !accountName.includes("petty") &&
+              !accountName.includes("inventory")
+            );
+          })
+          .map((acc: any) => ({
+            id: acc.id,
+            name: acc.name || "",
+            code: acc.code || "",
+          }));
+
+        const cashAccountsList = currentAssetsAccounts
+          .filter((acc: any) => {
+            const subgroupCode = (acc.Subgroup?.code || "").trim();
+            const subgroupName = (acc.Subgroup?.name || "").toLowerCase();
+            if (subgroupCode === "102") return true;
+            return subgroupName.includes("cash") && !subgroupName.includes("bank");
+          })
+          .map((acc: any) => ({
+            id: acc.id,
+            name: acc.name || "",
+            code: acc.code || "",
+          }));
+
+        setBankAccounts(bankAccountsList);
+        setCashAccounts(cashAccountsList);
+      } catch {
+        setBankAccounts([]);
+        setCashAccounts([]);
       } finally {
-        setLoadingReceivables(false);
+        setLoadingAccounts(false);
       }
     };
 
-    fetchReceivables();
+    void fetchAccounts();
   }, []);
 
   const handleSelectAll = (checked: boolean) => {
@@ -253,9 +405,49 @@ export const ReceivableReminders = () => {
     setSelectedReceivable(receivable);
     setPaymentAmount("");
     setPaymentDate(new Date());
-    setPaymentMethod("cash");
-    setReferenceNo("");
+    setPaymentAccountId(
+      cashAccounts[0]?.id || bankAccounts[0]?.id || "",
+    );
     setIsPaymentOpen(true);
+  };
+
+  const openMarkPaidDialog = (receivable: Receivable) => {
+    if (!["unpaid", "partial"].includes(receivable.paymentStatus)) return;
+    setSelectedReceivable(receivable);
+    setIsMarkPaidOpen(true);
+  };
+
+  const handleMarkAsPaid = async () => {
+    if (!selectedReceivable) return;
+
+    setMarkingPaid(true);
+    try {
+      const response = await apiClient.markInvoiceAsPaid(selectedReceivable.id);
+
+      if ((response as any)?.error) {
+        toast({
+          title: "Error",
+          description: (response as any).error || "Failed to mark invoice as paid",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsMarkPaidOpen(false);
+      toast({
+        title: "Invoice Marked as Paid",
+        description: `${selectedReceivable.invoiceNo} payment status updated to paid.`,
+      });
+      await loadReceivables();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to mark invoice as paid",
+        variant: "destructive",
+      });
+    } finally {
+      setMarkingPaid(false);
+    }
   };
 
   const openRescheduleDialog = (receivable: Receivable) => {
@@ -278,26 +470,68 @@ export const ReceivableReminders = () => {
     setIsReminderOpen(true);
   };
 
-  const handleRecordPayment = () => {
-    if (selectedReceivable && paymentAmount) {
-      const amount = parseFloat(paymentAmount);
-      setReceivables(
-        receivables.map((r) =>
-          r.id === selectedReceivable.id
-            ? {
-                ...r,
-                paidAmount: r.paidAmount + amount,
-                balance: r.balance - amount,
-                status: r.balance - amount <= 0 ? "paid" : r.status,
-              }
-            : r
-        )
-      );
+  const handleRecordPayment = async () => {
+    if (!selectedReceivable) return;
+
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Please enter a valid payment amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (amount > selectedReceivable.balance + 0.01) {
+      toast({
+        title: "Invalid Amount",
+        description: `Payment cannot exceed the balance of Rs. ${selectedReceivable.balance.toLocaleString()}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!paymentAccountId) {
+      toast({
+        title: "Select Account",
+        description: "Please select a bank or cash account for the payment.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRecordingPayment(true);
+    try {
+      const response = await apiClient.recordPayment(selectedReceivable.id, {
+        amount,
+        accountId: paymentAccountId,
+        paymentDate: paymentDate
+          ? format(paymentDate, "yyyy-MM-dd")
+          : format(new Date(), "yyyy-MM-dd"),
+      });
+
+      if ((response as any)?.error) {
+        toast({
+          title: "Error",
+          description: (response as any).error || "Failed to record payment",
+          variant: "destructive",
+        });
+        return;
+      }
+
       setIsPaymentOpen(false);
       toast({
         title: "Payment Recorded",
         description: `Rs. ${amount.toLocaleString()} payment recorded for ${selectedReceivable.invoiceNo}.`,
       });
+      await loadReceivables();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to record payment",
+        variant: "destructive",
+      });
+    } finally {
+      setRecordingPayment(false);
     }
   };
 
@@ -308,7 +542,7 @@ export const ReceivableReminders = () => {
           r.id === selectedReceivable.id
             ? {
                 ...r,
-                dueDate: format(newDueDate, "dd/MM/yyyy"),
+                dueDate: formatUiDate(newDueDate),
                 daysOverdue: 0,
                 status: "rescheduled" as const,
               }
@@ -349,6 +583,7 @@ export const ReceivableReminders = () => {
   const getExportData = () => {
     const headers = [
       "Invoice",
+      "Invoice Date",
       "Customer",
       "Contact Number",
       "Term",
@@ -361,6 +596,7 @@ export const ReceivableReminders = () => {
     ];
     const rows = filteredReceivables.map((item) => [
       item.invoiceNo,
+      item.invoiceDate,
       item.customerName,
       item.customerContact,
       item.term,
@@ -374,19 +610,34 @@ export const ReceivableReminders = () => {
     return { headers, rows };
   };
 
-  const handleExportExcel = () => {
-    const { headers, rows } = getExportData();
-    const csvContent = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `receivables_${format(new Date(), "yyyy-MM-dd")}.csv`;
-    link.click();
+  const handleExportExcel = async () => {
+    if (filteredReceivables.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "There are no receivable invoices to export.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    toast({
-      title: "Report Exported",
-      description: "Receivables report has been exported to Excel.",
-    });
+    const { headers, rows } = getExportData();
+    try {
+      await exportRowsToExcel(
+        headers,
+        rows,
+        `receivables_${format(new Date(), "yyyy-MM-dd")}.xlsx`,
+      );
+      toast({
+        title: "Report Exported",
+        description: `${filteredReceivables.length} receivable(s) exported to Excel.`,
+      });
+    } catch {
+      toast({
+        title: "Export failed",
+        description: "Could not generate the Excel file. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleExportPdf = () => {
@@ -429,7 +680,7 @@ export const ReceivableReminders = () => {
                 <tr>
                   ${row
                     .map((cell, index) =>
-                      index >= 5 && index <= 7
+                      (index >= 6 && index <= 8) || typeof cell === "number"
                         ? `<td class="num">${esc(cell)}</td>`
                         : `<td>${esc(cell)}</td>`,
                     )
@@ -705,7 +956,20 @@ export const ReceivableReminders = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-center gap-1">
-                        {canEdit && (
+                        {isAdmin &&
+                          (item.paymentStatus === "unpaid" ||
+                            item.paymentStatus === "partial") && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                              onClick={() => openMarkPaidDialog(item)}
+                              title="Mark as Paid"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        {canEdit && item.balance > 0 && item.status !== "paid" && (
                           <>
                             <Button
                               variant="ghost"
@@ -776,6 +1040,16 @@ export const ReceivableReminders = () => {
                   placeholder="0"
                   max={selectedReceivable.balance}
                 />
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto p-0 text-xs"
+                  onClick={() =>
+                    setPaymentAmount(String(selectedReceivable.balance))
+                  }
+                >
+                  Pay full balance (Rs. {selectedReceivable.balance.toLocaleString()})
+                </Button>
               </div>
 
               <div className="space-y-2">
@@ -784,7 +1058,7 @@ export const ReceivableReminders = () => {
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full justify-start text-left font-normal">
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {paymentDate ? format(paymentDate, "dd/MM/yyyy") : "Pick date"}
+                      {paymentDate ? formatUiDate(paymentDate) : "Pick date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0 bg-popover z-50" align="start">
@@ -800,34 +1074,117 @@ export const ReceivableReminders = () => {
               </div>
 
               <div className="space-y-2">
-                <Label>Payment Method</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <Label>Bank / Cash Account *</Label>
+                <Select
+                  value={paymentAccountId}
+                  onValueChange={setPaymentAccountId}
+                  disabled={loadingAccounts}
+                >
                   <SelectTrigger className="bg-background">
-                    <SelectValue />
+                    <SelectValue
+                      placeholder={
+                        loadingAccounts ? "Loading accounts..." : "Select account"
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent className="bg-popover z-50">
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="cheque">Cheque</SelectItem>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="online">Online Payment</SelectItem>
+                    {cashAccounts.length > 0 ? (
+                      <>
+                        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Cash Accounts
+                        </div>
+                        {cashAccounts.map((acc) => (
+                          <SelectItem key={acc.id} value={acc.id}>
+                            {acc.name} ({acc.code || "Cash"})
+                          </SelectItem>
+                        ))}
+                      </>
+                    ) : null}
+                    {bankAccounts.length > 0 ? (
+                      <>
+                        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Bank Accounts
+                        </div>
+                        {bankAccounts.map((acc) => (
+                          <SelectItem key={acc.id} value={acc.id}>
+                            {acc.name} ({acc.code || "Bank"})
+                          </SelectItem>
+                        ))}
+                      </>
+                    ) : null}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>Reference No</Label>
-                <Input
-                  value={referenceNo}
-                  onChange={(e) => setReferenceNo(e.target.value)}
-                  placeholder="Cheque no. / Transaction ID"
-                />
-              </div>
-
               <div className="flex gap-3 pt-2">
-                <Button onClick={handleRecordPayment} className="flex-1 bg-primary hover:bg-primary/90 text-white">
-                  Record Payment
+                <Button
+                  onClick={() => void handleRecordPayment()}
+                  disabled={recordingPayment}
+                  className="flex-1 bg-primary hover:bg-primary/90 text-white"
+                >
+                  {recordingPayment ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Record Payment"
+                  )}
                 </Button>
-                <Button variant="outline" onClick={() => setIsPaymentOpen(false)}>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsPaymentOpen(false)}
+                  disabled={recordingPayment}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark as Paid Dialog (admin only — status sync, no voucher) */}
+      <Dialog open={isMarkPaidOpen} onOpenChange={setIsMarkPaidOpen}>
+        <DialogContent className="max-w-md bg-background">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">Mark Invoice as Paid</DialogTitle>
+          </DialogHeader>
+          {selectedReceivable && (
+            <div className="space-y-4">
+              <div className="bg-muted/30 p-3 rounded-lg text-sm space-y-1">
+                <p><span className="text-muted-foreground">Invoice:</span> {selectedReceivable.invoiceNo}</p>
+                <p><span className="text-muted-foreground">Customer:</span> {selectedReceivable.customerName}</p>
+                <p>
+                  <span className="text-muted-foreground">Current Status:</span>{" "}
+                  <span className="font-medium capitalize">{selectedReceivable.paymentStatus}</span>
+                </p>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Use this when payment was already received through an RV voucher but the
+                invoice still shows as unpaid or partially paid. This only updates the
+                invoice payment status — no voucher will be created.
+              </p>
+              <div className="flex gap-3 pt-2">
+                <Button
+                  onClick={() => void handleMarkAsPaid()}
+                  disabled={markingPaid}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  {markingPaid ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    "Mark as Paid"
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsMarkPaidOpen(false)}
+                  disabled={markingPaid}
+                >
                   Cancel
                 </Button>
               </div>
@@ -857,7 +1214,7 @@ export const ReceivableReminders = () => {
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full justify-start text-left font-normal">
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {newDueDate ? format(newDueDate, "dd/MM/yyyy") : "dd/mm/yyyy"}
+                      {newDueDate ? formatUiDate(newDueDate) : UI_DATE_PLACEHOLDER}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0 bg-popover z-50" align="start">
@@ -992,7 +1349,7 @@ export const ReceivableReminders = () => {
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full justify-start text-left font-normal">
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {promisedDate ? format(promisedDate, "dd/MM/yyyy") : "dd/mm/yyyy"}
+                      {promisedDate ? formatUiDate(promisedDate) : UI_DATE_PLACEHOLDER}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0 bg-popover z-50" align="start">

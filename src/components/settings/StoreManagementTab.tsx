@@ -702,21 +702,25 @@ export const StoreManagementTab = () => {
                         </Badge>
                         {canEdit && (
                           <ActionButtonTooltip label="Edit" variant="edit">
-                            <Button variant="outline" size="sm" onClick={() => handleEditStore(store)}>
-                              <Edit className="w-3 h-3 mr-1" />
-                              Edit
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
+                              onClick={() => handleEditStore(store)}
+                            >
+                              <Edit className="w-4 h-4" />
                             </Button>
                           </ActionButtonTooltip>
                         )}
                         {canDelete && (
                           <ActionButtonTooltip label="Delete" variant="delete">
                             <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-destructive border-destructive/50 hover:bg-destructive/10"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={() => handleDeleteStore(store.id)}
                             >
-                              <Trash className="w-3 h-3" />
+                              <Trash className="w-4 h-4" />
                             </Button>
                           </ActionButtonTooltip>
                         )}
@@ -776,8 +780,13 @@ export const StoreManagementTab = () => {
                                         </Badge>
                                         {canEdit && (
                                           <ActionButtonTooltip label="Edit" variant="edit">
-                                            <Button variant="ghost" size="sm" onClick={() => handleEditRack(rack)}>
-                                              <Edit className="w-3 h-3" />
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7 text-muted-foreground hover:text-primary"
+                                              onClick={() => handleEditRack(rack)}
+                                            >
+                                              <Edit className="w-3.5 h-3.5" />
                                             </Button>
                                           </ActionButtonTooltip>
                                         )}
@@ -785,11 +794,11 @@ export const StoreManagementTab = () => {
                                           <ActionButtonTooltip label="Delete" variant="delete">
                                             <Button
                                               variant="ghost"
-                                              size="sm"
-                                              className="text-destructive hover:bg-destructive/10"
+                                              size="icon"
+                                              className="h-7 w-7 text-destructive hover:bg-destructive/10"
                                               onClick={() => handleDeleteRack(rack.id)}
                                             >
-                                              <Trash className="w-3 h-3" />
+                                              <Trash className="w-3.5 h-3.5" />
                                             </Button>
                                           </ActionButtonTooltip>
                                         )}
@@ -832,7 +841,12 @@ export const StoreManagementTab = () => {
                                                 <div className="flex items-center gap-1">
                                                   {canEdit && (
                                                     <ActionButtonTooltip label="Edit" variant="edit">
-                                                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleEditShelf(shelf)}>
+                                                      <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-6 w-6 text-muted-foreground hover:text-primary"
+                                                        onClick={() => handleEditShelf(shelf)}
+                                                      >
                                                         <Edit className="w-3 h-3" />
                                                       </Button>
                                                     </ActionButtonTooltip>
@@ -841,8 +855,8 @@ export const StoreManagementTab = () => {
                                                     <ActionButtonTooltip label="Delete" variant="delete">
                                                       <Button
                                                         variant="ghost"
-                                                        size="sm"
-                                                        className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10"
+                                                        size="icon"
+                                                        className="h-6 w-6 text-destructive hover:bg-destructive/10"
                                                         onClick={() => handleDeleteShelf(shelf.id)}
                                                       >
                                                         <Trash className="w-3 h-3" />

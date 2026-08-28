@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -272,7 +273,7 @@ export const IncomeStatementTab = () => {
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {fromDate ? format(fromDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                      {fromDate ? formatUiDate(fromDate) : <span>Pick a date</span>}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -298,7 +299,7 @@ export const IncomeStatementTab = () => {
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {toDate ? format(toDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                      {toDate ? formatUiDate(toDate) : <span>Pick a date</span>}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">

@@ -6521,42 +6521,45 @@ const PurchaseInquiryListPanel = ({
                             ) : null}
                             <Button
                               type="button"
-                              size="sm"
-                              variant="outline"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
                               onClick={() => onViewRequest?.(row.id)}
+                              title="View"
                             >
-                              <Eye className="w-3.5 h-3.5 mr-1" />
-                              View
+                              <Eye className="w-4 h-4" />
                             </Button>
                             {canEdit && (
                             <Button
                               type="button"
-                              size="sm"
-                              variant="outline"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
                               disabled={isConfirmed}
+                              title="Edit"
                               onClick={() => {
                                 if (isConfirmed) return;
                                 onEditRequest?.(row.id);
                               }}
                             >
-                              <Pencil className="w-3.5 h-3.5 mr-1" />
-                              Edit
+                              <Pencil className="w-4 h-4" />
                             </Button>
                             )}
                             {!hasQuotation && canDelete ? (
                               <Button
                                 type="button"
-                                size="sm"
-                                variant="outline"
-                                className="text-destructive hover:text-destructive"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                                 disabled={deletingRequestId === row.id}
-                                title="Delete inquiry (only when no quotation exists)"
+                                title={
+                                  deletingRequestId === row.id
+                                    ? "Deleting..."
+                                    : "Delete inquiry (only when no quotation exists)"
+                                }
                                 onClick={() => void handleDeleteRequest(row.id)}
                               >
-                                <Trash className="w-3.5 h-3.5 mr-1" />
-                                {deletingRequestId === row.id
-                                  ? "Deleting..."
-                                  : "Delete"}
+                                <Trash className="w-4 h-4" />
                               </Button>
                             ) : null}
                           </>
@@ -7358,8 +7361,9 @@ const PurchaseQuotationListPanel = ({
                         {onView && isFirstRowForQuotation ? (
                           <Button
                             type="button"
-                            size="sm"
-                            variant="outline"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
                             onClick={() => onView(row.id)}
                             title={
                               isConfirmed
@@ -7367,8 +7371,7 @@ const PurchaseQuotationListPanel = ({
                                 : "View quotation"
                             }
                           >
-                            <Eye className="w-3.5 h-3.5 mr-1" />
-                            View
+                            <Eye className="w-4 h-4" />
                           </Button>
                         ) : null}
                         {!isConfirmedView &&
@@ -7457,17 +7460,18 @@ const PurchaseQuotationListPanel = ({
                         {!isConfirmed && canDelete ? (
                           <Button
                             type="button"
-                            size="sm"
-                            variant="outline"
-                            className="text-destructive hover:text-destructive"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                             disabled={deletingQuotationId === row.id}
-                            title="Delete quotation (only when not confirmed)"
+                            title={
+                              deletingQuotationId === row.id
+                                ? "Deleting..."
+                                : "Delete quotation (only when not confirmed)"
+                            }
                             onClick={() => void handleDeleteQuotation(row.id)}
                           >
-                            <Trash className="w-3.5 h-3.5 mr-1" />
-                            {deletingQuotationId === row.id
-                              ? "Deleting..."
-                              : "Delete"}
+                            <Trash className="w-4 h-4" />
                           </Button>
                         ) : null}
                       </div>
@@ -10355,12 +10359,13 @@ const PurchaseOrderTab = ({
                     <div className="flex items-center justify-center gap-1.5">
                       <Button
                         type="button"
-                        size="sm"
-                        variant="outline"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
                         onClick={() => openOrderDetail(row.id)}
+                        title="View"
                       >
-                        <Eye className="w-3.5 h-3.5 mr-1" />
-                        View
+                        <Eye className="w-4 h-4" />
                       </Button>
                       {canPrint && (
                       <PrintPdfButton
@@ -10378,15 +10383,18 @@ const PurchaseOrderTab = ({
                       {!isReceivedPurchaseOrder(row.status) && canDelete ? (
                         <Button
                           type="button"
-                          size="sm"
-                          variant="outline"
-                          className="text-destructive hover:text-destructive"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                           disabled={deletingOrderId === row.id}
-                          title="Delete purchase order (only when not received)"
+                          title={
+                            deletingOrderId === row.id
+                              ? "Deleting..."
+                              : "Delete purchase order (only when not received)"
+                          }
                           onClick={() => void handleDeleteOrder(row.id)}
                         >
-                          <Trash className="w-3.5 h-3.5 mr-1" />
-                          {deletingOrderId === row.id ? "Deleting..." : "Delete"}
+                          <Trash className="w-4 h-4" />
                         </Button>
                       ) : null}
                       {(() => {

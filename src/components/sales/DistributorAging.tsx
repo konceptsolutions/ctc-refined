@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -78,7 +79,16 @@ export const DistributorAging = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, sortBy]);
 
-  const filteredData = useMemo(() => agingData, [agingData]);
+  const filteredData = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return agingData;
+    return agingData.filter((row) => {
+      const haystack = `${row.customer} ${row.invoice_no}`
+        .trim()
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [agingData, searchTerm]);
   const totalDue = useMemo(
     () => filteredData.reduce((sum, row) => sum + Number(row.due_amount || 0), 0),
     [filteredData],
@@ -89,9 +99,9 @@ export const DistributorAging = () => {
     const rows = filteredData.map((item) => [
       item.customer,
       item.invoice_no,
-      format(new Date(item.invoice_date), "dd/MM/yyyy"),
+      formatUiDate(new Date(item.invoice_date)),
       formatTermDisplay(item.term),
-      format(new Date(item.due_date), "dd/MM/yyyy"),
+      formatUiDate(new Date(item.due_date)),
       item.due_amount,
       item.payment_status,
     ]);
@@ -122,7 +132,7 @@ export const DistributorAging = () => {
     const printContent = `
       <html>
         <head>
-          <title>Aging Report - ${format(new Date(), "dd/MM/yyyy")}</title>
+          <title>Aging Report - ${formatUiDate(new Date())}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
             h1 { text-align: center; margin-bottom: 20px; }
@@ -142,7 +152,7 @@ export const DistributorAging = () => {
         </head>
         <body>
           <h1>Overdue Invoices by Term</h1>
-          <p style="text-align: center; color: #666;">Generated on ${format(new Date(), "dd/MM/yyyy HH:mm")}</p>
+          <p style="text-align: center; color: #666;">Generated on ${format(new Date(), 'MM-dd-yyyy HH:mm')}</p>
 
           <table>
             <thead>
@@ -161,9 +171,9 @@ export const DistributorAging = () => {
                 <tr>
                   <td>${item.customer}</td>
                   <td>${item.invoice_no}</td>
-                  <td>${format(new Date(item.invoice_date), "dd/MM/yyyy")}</td>
+                  <td>${formatUiDate(new Date(item.invoice_date))}</td>
                   <td>${formatTermDisplay(item.term)}</td>
-                  <td>${format(new Date(item.due_date), "dd/MM/yyyy")}</td>
+                  <td>${formatUiDate(new Date(item.due_date))}</td>
                   <td><strong>Rs. ${Number(item.due_amount || 0).toLocaleString()}</strong></td>
                   <td>${item.payment_status}</td>
                 </tr>
@@ -208,7 +218,7 @@ export const DistributorAging = () => {
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search customer..."
+            placeholder="Search invoice or customer..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -221,7 +231,7 @@ export const DistributorAging = () => {
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-32 justify-start text-left font-normal">
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {fromDate ? format(fromDate, "dd/MM/yyyy") : "Pick date"}
+                {fromDate ? formatUiDate(fromDate) : "Pick date"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 bg-popover z-50" align="start">
@@ -242,7 +252,7 @@ export const DistributorAging = () => {
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-32 justify-start text-left font-normal">
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {toDate ? format(toDate, "dd/MM/yyyy") : "Pick date"}
+                {toDate ? formatUiDate(toDate) : "Pick date"}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 bg-popover z-50" align="start">
@@ -316,9 +326,9 @@ export const DistributorAging = () => {
                       <ListNumberCell index={index} total={filteredData.length} />
                       <TableCell className="font-medium text-foreground">{item.customer}</TableCell>
                       <TableCell>{item.invoice_no}</TableCell>
-                      <TableCell>{format(new Date(item.invoice_date), "dd/MM/yyyy")}</TableCell>
+                      <TableCell>{formatUiDate(new Date(item.invoice_date))}</TableCell>
                       <TableCell>{formatTermDisplay(item.term)}</TableCell>
-                      <TableCell>{format(new Date(item.due_date), "dd/MM/yyyy")}</TableCell>
+                      <TableCell>{formatUiDate(new Date(item.due_date))}</TableCell>
                       <TableCell className="text-right font-semibold">
                         Rs. {Number(item.due_amount || 0).toLocaleString()}
                       </TableCell>

@@ -1,3 +1,4 @@
+import { parseFlexibleDateToISO } from "@/utils/dateUtils";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -524,30 +525,8 @@ export const VoucherManagement = () => {
 
   // Helper function to convert date string to ISO format
   const convertDateToISO = (dateString: string): string => {
-    if (!dateString) return new Date().toISOString().split('T')[0];
-
-    // If already in ISO format (YYYY-MM-DD), return as is
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-      return dateString;
-    }
-
-    // If in DD/MM/YYYY format, convert it
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
-      const [day, month, year] = dateString.split('/');
-      return `${year}-${month}-${day}`;
-    }
-
-    // Try to parse as date
-    try {
-      const date = new Date(dateString);
-      if (!isNaN(date.getTime())) {
-        return date.toISOString().split('T')[0];
-      }
-    } catch {
-      // If parsing fails, return current date
-    }
-
-    return new Date().toISOString().split('T')[0];
+    if (!dateString) return new Date().toISOString().split("T")[0];
+    return parseFlexibleDateToISO(dateString) ?? new Date().toISOString().split("T")[0];
   };
 
   const handleSaveVoucher = async (data: any): Promise<boolean> => {

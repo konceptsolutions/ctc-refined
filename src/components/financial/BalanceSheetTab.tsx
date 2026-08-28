@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -296,7 +297,7 @@ export const BalanceSheetTab = () => {
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {selectedDate ? (
-                      format(selectedDate, "dd/MM/yyyy")
+                      formatUiDate(selectedDate)
                     ) : (
                       <span>Pick a date</span>
                     )}

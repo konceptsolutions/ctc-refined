@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Users, Plus, Search, Trash2, X } from "lucide-react";
+import { Users, Plus, Search, Trash2, X, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -740,11 +740,13 @@ export const CustomerManagement = () => {
                         <div className="flex items-center gap-2">
                           {canEdit && (
                             <Button
-                              variant="link"
-                              className="h-auto p-0 text-xs text-primary"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-primary"
                               onClick={() => handleOpenDialog(customer)}
+                              title="Edit"
                             >
-                              Edit
+                              <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           )}
                           {canDelete && customer.canDelete && (

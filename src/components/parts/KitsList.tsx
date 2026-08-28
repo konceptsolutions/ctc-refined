@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil, Trash } from "lucide-react";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 
 export interface KitItem {
@@ -242,22 +242,22 @@ export const KitsList = ({
                   <div className="flex gap-2 flex-shrink-0">
                     <ActionButtonTooltip label="Edit" variant="edit">
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-3"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
                         onClick={() => handleEditClick(kit)}
                       >
-                        Edit
+                        <Pencil className="w-3.5 h-3.5" />
                       </Button>
                     </ActionButtonTooltip>
                     <ActionButtonTooltip label="Delete" variant="delete">
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-3 text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                         onClick={() => handleDeleteClick(kit)}
                       >
-                        Delete
+                        <Trash className="w-3.5 h-3.5" />
                       </Button>
                     </ActionButtonTooltip>
                   </div>

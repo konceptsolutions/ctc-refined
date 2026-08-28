@@ -171,6 +171,10 @@ export const PERMISSION_CATALOG: PermissionNode[] = [
         { key: "action.sales.customer-receivable.print", label: "Print", kind: "action" },
         { key: "action.sales.customer-receivable.export", label: "Export", kind: "action" },
       ]),
+      page("sales.sale-profit-report", "Sale Profit Report", "/sales/sale-profit-report", "sale-profit-report", [
+        { key: "action.sales.sale-profit-report.print", label: "Print", kind: "action" },
+        { key: "action.sales.sale-profit-report.export", label: "Export", kind: "action" },
+      ]),
     ],
   },
   {

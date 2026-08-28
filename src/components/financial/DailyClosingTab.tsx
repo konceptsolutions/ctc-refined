@@ -19,11 +19,19 @@ import { apiClient } from "@/lib/api";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printDailyClosing } from "@/utils/printDailyClosingPdf";
 import { Badge } from "@/components/ui/badge";
-import { ChevronsUpDown, Loader2, RefreshCw } from "lucide-react";
+import { ChevronsUpDown, Loader2, RefreshCw, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { usePageActions } from "@/permissions/pageActions";
+import { isAdminRole } from "@/utils/auth";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { SaleProfitReport } from "@/components/sales/SaleProfitReport";
 
 type DailyClosingColumn = {
   id: string;
@@ -84,11 +92,11 @@ type DailyClosingData = {
 };
 
 const formatMoney = (value: number) => {
-  const num = Number(value || 0);
+  const num = Math.round(Number(value || 0));
   if (num === 0) return "0";
   return num.toLocaleString("en-PK", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 0,
   });
 };
 
@@ -151,6 +159,7 @@ export const DailyClosingTab = ({
   hideDatePicker?: boolean;
 } = {}) => {
   const { canPrint } = usePageActions("financial.daily-closing");
+  const isAdmin = isAdminRole();
   const [internalDate, setInternalDate] = useState(getCurrentDatePakistan());
   const closingDate = controlledDate ?? internalDate;
   const setClosingDate = (value: string) => {
@@ -163,6 +172,7 @@ export const DailyClosingTab = ({
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [data, setData] = useState<DailyClosingData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saleProfitOpen, setSaleProfitOpen] = useState(false);
 
   const accountFilterLabel = (() => {
     if (selectedAccountIds.length === 0) return "All accounts";
@@ -255,7 +265,7 @@ export const DailyClosingTab = ({
     <div className="space-y-4">
       <Card>
         <CardContent className="pt-6 space-y-4">
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-end gap-3 w-full">
             {!hideDatePicker ? (
               <div className="space-y-2">
                 <Label htmlFor="daily-closing-date">Closing Date</Label>
@@ -338,47 +348,22 @@ export const DailyClosingTab = ({
               )}
               Refresh
             </Button>
-            {canPrint && (
-              <PrintPdfButton onPrint={handlePrint} disabled={!data || loading} />
-            )}
-          </div>
-
-          {data && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Card className="border-primary/20 bg-primary/5">
-                <CardContent className="p-3">
-                  <p className="text-xs text-muted-foreground">Opening</p>
-                  <p className="text-base font-bold tabular-nums">
-                    Rs {formatMoney(data.totals.openingBalance)}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="border-green-500/20 bg-green-500/5">
-                <CardContent className="p-3">
-                  <p className="text-xs text-muted-foreground">Receipts</p>
-                  <p className="text-base font-bold tabular-nums text-green-700">
-                    Rs {formatMoney(data.totals.receipts)}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="border-red-500/20 bg-red-500/5">
-                <CardContent className="p-3">
-                  <p className="text-xs text-muted-foreground">Payments</p>
-                  <p className="text-base font-bold tabular-nums text-red-700">
-                    Rs {formatMoney(data.totals.payments)}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="border-blue-500/20 bg-blue-500/5">
-                <CardContent className="p-3">
-                  <p className="text-xs text-muted-foreground">Closing</p>
-                  <p className="text-base font-bold tabular-nums text-blue-700">
-                    Rs {formatMoney(data.totals.closingBalance)}
-                  </p>
-                </CardContent>
-              </Card>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  onClick={() => setSaleProfitOpen(true)}
+                  disabled={!closingDate}
+                >
+                  <TrendingUp className="w-4 h-4 mr-1" />
+                  Sale Profit Report
+                </Button>
+              )}
+              {canPrint && (
+                <PrintPdfButton onPrint={handlePrint} disabled={!data || loading} />
+              )}
             </div>
-          )}
+          </div>
 
           {data ? (
             <div className="space-y-3 pt-2">
@@ -567,6 +552,21 @@ export const DailyClosingTab = ({
         <div className="text-center py-12 text-muted-foreground">
           No cash or bank accounts found for the selected date.
         </div>
+      )}
+
+      {isAdmin && (
+        <Dialog open={saleProfitOpen} onOpenChange={setSaleProfitOpen}>
+          <DialogContent className="flex max-h-[90vh] w-full max-w-[95vw] flex-col overflow-hidden lg:max-w-6xl">
+            <DialogHeader>
+              <DialogTitle>Sale Profit Report</DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto pr-1">
+              {saleProfitOpen && closingDate ? (
+                <SaleProfitReport fixedDate={closingDate} />
+              ) : null}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

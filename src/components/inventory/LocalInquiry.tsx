@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -632,7 +633,7 @@ export const LocalInquiry = () => {
                       >
                         <Calendar className="mr-2 h-4 w-4" />
                         {inquiryDate
-                          ? format(inquiryDate, "MM/dd/yyyy")
+                          ? formatUiDate(inquiryDate)
                           : "Select date"}
                       </Button>
                     </PopoverTrigger>
@@ -839,7 +840,7 @@ export const LocalInquiry = () => {
                     <Button variant="outline" className="w-40 justify-start">
                       <Calendar className="mr-2 h-4 w-4" />
                       {filterFromDate
-                        ? format(filterFromDate, "MM/dd/yyyy")
+                        ? formatUiDate(filterFromDate)
                         : "From"}
                     </Button>
                   </PopoverTrigger>
@@ -860,7 +861,7 @@ export const LocalInquiry = () => {
                     <Button variant="outline" className="w-40 justify-start">
                       <Calendar className="mr-2 h-4 w-4" />
                       {filterToDate
-                        ? format(filterToDate, "MM/dd/yyyy")
+                        ? formatUiDate(filterToDate)
                         : "To"}
                     </Button>
                   </PopoverTrigger>
@@ -1006,7 +1007,7 @@ export const LocalInquiry = () => {
                           </TableCell>
                           <TableCell>
                             {row.inquiryDate
-                              ? format(new Date(row.inquiryDate), "MM/dd/yyyy")
+                              ? formatUiDate(new Date(row.inquiryDate))
                               : "-"}
                           </TableCell>
                           <TableCell>{row.supplierName || "-"}</TableCell>
@@ -1020,7 +1021,7 @@ export const LocalInquiry = () => {
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end gap-1">
-                              <ActionButtonTooltip label="View" variant="edit">
+                              <ActionButtonTooltip label="View" variant="view">
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -1109,7 +1110,7 @@ export const LocalInquiry = () => {
                 <div>
                   <p className="text-muted-foreground">Date</p>
                   <p className="font-medium">
-                    {format(new Date(viewRow.inquiryDate), "MM/dd/yyyy")}
+                    {formatUiDate(new Date(viewRow.inquiryDate))}
                   </p>
                 </div>
                 <div>
@@ -1183,7 +1184,7 @@ export const LocalInquiry = () => {
                     <p className="font-semibold">{inquiry.inquiryNo}</p>
                     <p className="text-muted-foreground">
                       {inquiry.inquiryDate
-                        ? format(new Date(inquiry.inquiryDate), "MM/dd/yyyy")
+                        ? formatUiDate(new Date(inquiry.inquiryDate))
                         : "-"}{" "}
                       · {inquiry.supplierName || "-"}
                     </p>

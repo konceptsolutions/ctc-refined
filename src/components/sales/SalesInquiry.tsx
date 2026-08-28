@@ -3929,7 +3929,7 @@ export const SalesInquiry = ({
                   setLookupModelFilter(value === "__all__" ? "" : value)
                 }
                 placeholder="Model"
-                className="w-[160px]"
+                className="w-[120px]"
                 requireSearchAbove={10000}
               />
               <SearchableSelect
@@ -3939,7 +3939,7 @@ export const SalesInquiry = ({
                   setLookupDescriptionFilter(value === "__all__" ? "" : value)
                 }
                 placeholder="Description"
-                className="w-[170px]"
+                className="w-[260px]"
               />
               <SearchableSelect
                 options={lookupApplicationFilterOptions}
@@ -3948,7 +3948,7 @@ export const SalesInquiry = ({
                   setLookupApplicationFilter(value === "__all__" ? "" : value)
                 }
                 placeholder="Application"
-                className="w-[170px]"
+                className="w-[280px]"
               />
             </div>
             <Button
@@ -4373,7 +4373,7 @@ export const SalesInquiry = ({
                               const arriveDate = new Date(arrival.estTimeDate);
                               const label = Number.isNaN(arriveDate.getTime())
                                 ? "-"
-                                : arriveDate.toLocaleDateString("en-GB");
+                                : arriveDate.toLocaleDateString('en-US');
                               return (
                                 <span
                                   className="text-xs font-semibold text-emerald-700 dark:text-emerald-400"
@@ -4862,7 +4862,7 @@ export const SalesInquiry = ({
                                 const arriveDate = new Date(arrival.estTimeDate);
                                 const label = Number.isNaN(arriveDate.getTime())
                                   ? "-"
-                                  : arriveDate.toLocaleDateString("en-GB");
+                                  : arriveDate.toLocaleDateString('en-US');
                                 return (
                                   <span
                                     className="font-semibold text-emerald-700 dark:text-emerald-400"
@@ -5234,7 +5234,7 @@ export const SalesInquiry = ({
                     )
                   }
                   placeholder="Description"
-                  className="w-[180px] [&_input]:h-8 [&_input]:text-xs"
+                  className="w-[260px] [&_input]:h-8 [&_input]:text-xs"
                   disabled={!selectedModelName || loadingModelAssociations}
                 />
                 <SearchableSelect
@@ -5246,7 +5246,7 @@ export const SalesInquiry = ({
                     )
                   }
                   placeholder="Application"
-                  className="w-[180px] [&_input]:h-8 [&_input]:text-xs"
+                  className="w-[280px] [&_input]:h-8 [&_input]:text-xs"
                   disabled={!selectedModelName || loadingModelAssociations}
                 />
               </div>

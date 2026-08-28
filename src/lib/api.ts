@@ -3415,6 +3415,27 @@ class ApiClient {
     );
   }
 
+  async getSalesProfitReport(params: {
+    from_date: string;
+    to_date: string;
+    search?: string;
+  }) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (
+        value !== undefined &&
+        value !== null &&
+        (typeof value !== "string" || value !== "")
+      ) {
+        queryParams.append(key, String(value));
+      }
+    });
+    const queryString = queryParams.toString();
+    return this.request(
+      `/reports/sales/profit${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
   async getSupplierPerformance(params?: {
     from_date?: string;
     to_date?: string;
@@ -4161,6 +4182,7 @@ class ApiClient {
     customerAddress?: string;
     status?: string;
     notes?: string;
+    quotationTerms?: string;
     subtotal?: number;
     overallDiscount?: number;
     freightCharges?: number;
@@ -4196,6 +4218,7 @@ class ApiClient {
       customerAddress?: string;
       status?: string;
       notes?: string;
+      quotationTerms?: string;
       subtotal?: number;
       overallDiscount?: number;
       freightCharges?: number;
@@ -4404,6 +4427,12 @@ class ApiClient {
     return this.request(`/sales/invoices/${id}/payment`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async markInvoiceAsPaid(id: string) {
+    return this.request(`/sales/invoices/${id}/mark-paid`, {
+      method: "POST",
     });
   }
 

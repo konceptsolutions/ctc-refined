@@ -1,3 +1,4 @@
+import { formatUiDate, UI_DATE_PLACEHOLDER } from "@/utils/dateUtils";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -276,7 +277,7 @@ export const GeneralJournalTab = () => {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {fromDate ? format(fromDate, "dd/MM/yyyy") : <span>DD/MM/YYYY</span>}
+                    {fromDate ? formatUiDate(fromDate) : <span>{UI_DATE_PLACEHOLDER}</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -301,7 +302,7 @@ export const GeneralJournalTab = () => {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {toDate ? format(toDate, "dd/MM/yyyy") : <span>DD/MM/YYYY</span>}
+                    {toDate ? formatUiDate(toDate) : <span>{UI_DATE_PLACEHOLDER}</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">

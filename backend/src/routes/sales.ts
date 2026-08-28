@@ -1,4 +1,5 @@
 import express, { Request, Response } from "express";
+import { AuthRequest, authorizeRoles } from "../middleware/authMiddleware";
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
@@ -171,6 +172,40 @@ async function setQuotationFinancialFields(
       "customerId" = ${data.customerId ?? null}
     WHERE "id" = ${quotationId}
   `;
+}
+
+async function setQuotationTermsField(
+  quotationId: string,
+  quotationTerms: string | null | undefined,
+): Promise<void> {
+  if (quotationTerms === undefined) return;
+  await prisma.$executeRaw`
+    UPDATE "SalesQuotation"
+    SET "quotationTerms" = ${String(quotationTerms || "").trim() || null}
+    WHERE "id" = ${quotationId}
+  `;
+}
+
+/** Until Prisma client is regenerated, attach quotationTerms from DB. */
+async function attachQuotationTerms<T extends { id: string }>(
+  quotations: T[],
+): Promise<Array<T & { quotationTerms: string | null }>> {
+  if (!quotations.length) return [];
+  const ids = quotations.map((q) => q.id);
+  const rows = await prisma.$queryRaw<
+    Array<{ id: string; quotationTerms: string | null }>
+  >(
+    Prisma.sql`
+      SELECT "id", "quotationTerms"
+      FROM "SalesQuotation"
+      WHERE "id" IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}`))})
+    `,
+  );
+  const termsById = new Map(rows.map((row) => [row.id, row.quotationTerms]));
+  return quotations.map((q) => ({
+    ...q,
+    quotationTerms: termsById.get(q.id) ?? null,
+  }));
 }
 
 async function getNextNumberForPrefix(args: {
@@ -1024,7 +1059,7 @@ router.get("/quotations", async (req: Request, res: Response) => {
       orderBy: { quotationDate: "desc" },
     });
 
-    res.json(quotations);
+    res.json(await attachQuotationTerms(quotations));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1054,7 +1089,8 @@ router.get("/quotations/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Quotation not found" });
     }
 
-    res.json(quotation);
+    const [withTerms] = await attachQuotationTerms([quotation]);
+    res.json(withTerms);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1074,6 +1110,7 @@ router.post("/quotations", async (req: Request, res: Response) => {
       customerId,
       status,
       notes,
+      quotationTerms,
       items,
       subtotal,
       overallDiscount,
@@ -1164,6 +1201,10 @@ router.post("/quotations", async (req: Request, res: Response) => {
       customerType: customerType || "registered",
       customerId: customerId || null,
     });
+    await setQuotationTermsField(
+      quotation.id,
+      quotationTerms?.trim() || null,
+    );
 
     const updatedQuotation = await prisma.salesQuotation.findUnique({
       where: { id: quotation.id },
@@ -1175,9 +1216,12 @@ router.post("/quotations", async (req: Request, res: Response) => {
         },
       },
     });
+    const [quotationWithTerms] = await attachQuotationTerms(
+      updatedQuotation ? [updatedQuotation] : [],
+    );
 
     res.json({
-      ...updatedQuotation,
+      ...quotationWithTerms,
       customerType: customerType || "registered",
       customerId: customerId || null,
       subtotal: lineSubtotal,
@@ -1210,6 +1254,7 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
       customerId,
       status,
       notes,
+      quotationTerms,
       items,
       subtotal,
       overallDiscount,
@@ -1302,6 +1347,12 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
       customerType: customerType || undefined,
       customerId: customerId !== undefined ? customerId || null : undefined,
     });
+    await setQuotationTermsField(
+      id,
+      quotationTerms !== undefined
+        ? String(quotationTerms || "").trim() || null
+        : undefined,
+    );
 
     const updatedQuotation = await prisma.salesQuotation.findUnique({
       where: { id },
@@ -1313,9 +1364,12 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
         },
       },
     });
+    const [quotationWithTerms] = await attachQuotationTerms(
+      updatedQuotation ? [updatedQuotation] : [],
+    );
 
     res.json({
-      ...updatedQuotation,
+      ...quotationWithTerms,
       subtotal: lineSubtotal,
       overallDiscount: discount,
       freightCharges: freight,
@@ -4123,6 +4177,71 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Admin-only: sync invoice payment status when payment was already received via RV voucher
+router.post(
+  "/invoices/:id/mark-paid",
+  authorizeRoles("admin"),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const invoice = await prisma.salesInvoice.findUnique({
+        where: { id },
+        include: { Receivable: true },
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      const currentStatus = String(invoice.paymentStatus || "unpaid")
+        .trim()
+        .toLowerCase();
+
+      if (currentStatus === "paid") {
+        return res.status(400).json({ error: "Invoice is already marked as paid" });
+      }
+
+      if (!["unpaid", "partial"].includes(currentStatus)) {
+        return res.status(400).json({
+          error: "Only unpaid or partially paid invoices can be marked as paid",
+        });
+      }
+
+      const grandTotal = Number(invoice.grandTotal) || 0;
+
+      await prisma.salesInvoice.update({
+        where: { id },
+        data: {
+          paymentStatus: "paid",
+          paidAmount: grandTotal,
+        },
+      });
+
+      if (invoice.Receivable) {
+        const receivableAmount = Number(invoice.Receivable.amount) || grandTotal;
+        await prisma.receivable.update({
+          where: { invoiceId: id },
+          data: {
+            paidAmount: receivableAmount,
+            dueAmount: 0,
+            status: "paid",
+          },
+        });
+      }
+
+      const updatedInvoice = await prisma.salesInvoice.findUnique({
+        where: { id },
+        include: { Receivable: true },
+      });
+
+      res.json(updatedInvoice);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
 
 // Put invoice on hold
 router.post("/invoices/:id/hold", async (req: Request, res: Response) => {

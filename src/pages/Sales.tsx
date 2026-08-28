@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Receipt,
   ReceiptText,
+  TrendingUp,
 } from "lucide-react";
 import { usePermissions } from "@/permissions/PermissionsProvider";
 import { getFirstAllowedPath } from "@/permissions/can";
@@ -23,6 +24,7 @@ import { SalesReturns } from "@/components/sales/SalesReturns";
 import { DistributorAging } from "@/components/sales/DistributorAging";
 import { ReceivableReminders } from "@/components/sales/ReceivableReminders";
 import CustomerReceivableTab from "@/components/reports/CustomerReceivableTab";
+import { SaleProfitReport } from "@/components/sales/SaleProfitReport";
 
 type SalesTab =
   | "inquiry"
@@ -31,7 +33,8 @@ type SalesTab =
   | "returns"
   | "distributor-aging"
   | "receivable-reminders"
-  | "customer-receivable";
+  | "customer-receivable"
+  | "sale-profit-report";
 
 interface TabConfig {
   id: SalesTab;
@@ -49,6 +52,7 @@ const allTabs: TabConfig[] = [
   { id: "distributor-aging", label: "Aging Report", icon: Clock, description: "Aging report analysis", permission: "page.sales.distributor-aging" },
   { id: "receivable-reminders", label: "Receivables", icon: Bell, description: "Reminders & rescheduling", permission: "page.sales.receivable-reminders" },
   { id: "customer-receivable", label: "Customer Receivable", icon: ReceiptText, description: "Customer receivable balances report", permission: "page.sales.customer-receivable" },
+  { id: "sale-profit-report", label: "Sale Profit", icon: TrendingUp, description: "Invoice profit by date range", permission: "page.sales.sale-profit-report" },
 ];
 
 const Sales = () => {
@@ -92,6 +96,8 @@ const Sales = () => {
         return <ReceivableReminders />;
       case "customer-receivable":
         return <CustomerReceivableTab />;
+      case "sale-profit-report":
+        return <SaleProfitReport />;
       default:
         return <SalesInvoice />;
     }

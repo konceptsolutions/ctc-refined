@@ -954,6 +954,7 @@ model SalesQuotation {
   taxPercentage      Float?
   totalAmount        Float                @default(0)
   notes              String?
+  quotationTerms     String?
   invoiceId          String?              @unique
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt

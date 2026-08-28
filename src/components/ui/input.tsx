@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { DateInput } from "@/components/ui/date-input";
 
 const isPartCodeField = (props: React.ComponentProps<"input">) => {
   const hints = [
@@ -29,6 +30,30 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
     ref,
   ) => {
     const isNumberType = type === "number";
+    const isDateType = type === "date";
+
+    if (isDateType) {
+      const { value, onChange, disabled, id, className: inputClassName, ...dateProps } =
+        props;
+      void dateProps;
+      const dateValue = value == null ? "" : String(value);
+
+      return (
+        <DateInput
+          id={id}
+          disabled={disabled}
+          value={dateValue}
+          onChange={(next) => {
+            onChange?.({
+              target: { value: next },
+              currentTarget: { value: next },
+            } as React.ChangeEvent<HTMLInputElement>);
+          }}
+          buttonClassName={cn("h-10", inputClassName)}
+        />
+      );
+    }
+
     const finalType = isNumberType ? "text" : type;
     const finalInputMode = isNumberType ? inputMode || "decimal" : inputMode;
     const partCodeFont = isPartCodeField(props);

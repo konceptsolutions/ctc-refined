@@ -167,6 +167,14 @@ export const PERMISSION_CATALOG: PermissionNode[] = [
         { key: "field.sales.distributor-aging.balance", label: "Balance", kind: "field" },
       ]),
       page("sales.receivable-reminders", "Receivables", "/sales/receivable-reminders", "receivable-reminders"),
+      page("sales.customer-receivable", "Customer Receivable", "/sales/customer-receivable", "customer-receivable", [
+        { key: "action.sales.customer-receivable.print", label: "Print", kind: "action" },
+        { key: "action.sales.customer-receivable.export", label: "Export", kind: "action" },
+      ]),
+      page("sales.sale-profit-report", "Sale Profit Report", "/sales/sale-profit-report", "sale-profit-report", [
+        { key: "action.sales.sale-profit-report.print", label: "Print", kind: "action" },
+        { key: "action.sales.sale-profit-report.export", label: "Export", kind: "action" },
+      ]),
     ],
   },
   {

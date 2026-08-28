@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { format } from "date-fns";
 import { apiClient } from "@/lib/api";
@@ -1678,7 +1679,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateFrom ? format(new Date(dateFrom), "dd/MM/yyyy") : "Pick a date"}
+                    {dateFrom ? formatUiDate(new Date(dateFrom)) : "Pick a date"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -1736,7 +1737,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateTo ? format(new Date(dateTo), "dd/MM/yyyy") : "Pick a date"}
+                    {dateTo ? formatUiDate(new Date(dateTo)) : "Pick a date"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">

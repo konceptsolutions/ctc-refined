@@ -423,11 +423,13 @@ export const EditKitForm = ({ kit, onSave, onDelete, onCancel }: EditKitFormProp
           )}
         </Button>
         <Button 
-          variant="outline" 
-          className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+          title="Delete"
           onClick={() => onDelete(kit)}
         >
-          Delete
+          <Trash className="w-4 h-4" />
         </Button>
         <Button variant="outline" onClick={onCancel}>
           Cancel

@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
@@ -404,13 +405,13 @@ export const DirectPurchaseOrder = ({
         dpoNo: o.dpo_no,
         invoiceNo: o.invoice_no || "",
         invoiceDate: o.invoice_date
-          ? new Date(o.invoice_date).toLocaleDateString("en-GB")
+          ? new Date(o.invoice_date).toLocaleDateString('en-US')
           : "",
         store: o.store_name || "N/A",
         supplier: isTransferIn
           ? branchAccountDisplayName(o.branch_account_name) || "N/A"
           : o.supplier_name || "N/A",
-        requestDate: new Date(o.date).toLocaleDateString('en-GB'),
+        requestDate: new Date(o.date).toLocaleDateString('en-US'),
         date: o.date, // Raw date for sorting
         description: o.description || "",
         grandTotal: o.total_amount || 0,
@@ -1001,11 +1002,11 @@ export const DirectPurchaseOrder = ({
     dpoNo: dpo.dpo_no,
     invoiceNo: dpo.invoice_no || "",
     invoiceDate: dpo.invoice_date
-      ? new Date(dpo.invoice_date).toLocaleDateString("en-GB")
+      ? new Date(dpo.invoice_date).toLocaleDateString('en-US')
       : "",
     store: dpo.store_name || "N/A",
     supplier: dpo.supplier_name || dpo.branch_account_name || "N/A",
-    requestDate: new Date(dpo.date).toLocaleDateString("en-GB"),
+    requestDate: new Date(dpo.date).toLocaleDateString('en-US'),
     date: dpo.date,
     description: dpo.description || "",
     grandTotal: dpo.total_amount || 0,
@@ -2502,7 +2503,7 @@ export const DirectPurchaseOrder = ({
                 <p className="text-[10px] text-muted-foreground italic">Includes distributed expenses</p>
                 {partHistory.lastPurchaseDate && (
                   <p className="text-xs text-muted-foreground">
-                    {new Date(partHistory.lastPurchaseDate).toLocaleDateString('en-GB')}
+                    {new Date(partHistory.lastPurchaseDate).toLocaleDateString('en-US')}
                   </p>
                 )}
               </div>
@@ -2605,7 +2606,7 @@ export const DirectPurchaseOrder = ({
                       )}
                     >
                       <Calendar className="mr-2 h-4 w-4" />
-                      {formRequestDate ? format(formRequestDate, "MM/dd/yyyy") : "Select date"}
+                      {formRequestDate ? formatUiDate(formRequestDate) : "Select date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -2639,7 +2640,7 @@ export const DirectPurchaseOrder = ({
                     >
                       <Calendar className="mr-2 h-4 w-4" />
                       {formInvoiceDate
-                        ? format(formInvoiceDate, "MM/dd/yyyy")
+                        ? formatUiDate(formInvoiceDate)
                         : "Select date"}
                     </Button>
                   </PopoverTrigger>
@@ -3744,7 +3745,7 @@ export const DirectPurchaseOrder = ({
                         !returnDate && "text-muted-foreground"
                       )}
                     >
-                      {returnDate ? format(returnDate, "dd/MM/yyyy") : <span>Pick a date</span>}
+                      {returnDate ? formatUiDate(returnDate) : <span>Pick a date</span>}
                       <Calendar className="h-4 w-4 opacity-50" />
                     </Button>
                   </PopoverTrigger>
@@ -4038,7 +4039,7 @@ export const DirectPurchaseOrder = ({
                       )}
                     >
                       <Calendar className="mr-2 h-4 w-4" />
-                      {paymentDate ? format(paymentDate, "MM/dd/yyyy") : "Select date"}
+                      {paymentDate ? formatUiDate(paymentDate) : "Select date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">

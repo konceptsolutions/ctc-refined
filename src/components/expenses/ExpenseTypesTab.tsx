@@ -287,16 +287,21 @@ export const ExpenseTypesTab = ({ onUpdate }: ExpenseTypesTabProps) => {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <ActionButtonTooltip label="Edit" variant="edit">
-                          <Button variant="outline" size="sm" onClick={() => handleEdit(type)}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={() => handleEdit(type)}
+                          >
                             <Edit className="w-4 h-4" />
                           </Button>
                         </ActionButtonTooltip>
                         <ActionButtonTooltip label="Delete" variant="delete">
                           <Button 
-                            variant="outline" 
-                            size="sm" 
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => handleDeleteClick(type)}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
                           >
                             <Trash className="w-4 h-4" />
                           </Button>

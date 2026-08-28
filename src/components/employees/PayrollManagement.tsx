@@ -109,7 +109,7 @@ const formatDate = (value?: string | null) => {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-GB");
+  return date.toLocaleDateString('en-US');
 };
 
 const formatPayrollMonth = (value?: string | null) => {
@@ -673,12 +673,13 @@ export const PayrollManagement = () => {
                           )}
                           {canEdit && row.hasAccrual !== false && row.paymentStatus !== "paid" ? (
                             <Button
-                              size="sm"
-                              variant="outline"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
                               title="Edit payroll"
                               onClick={() => openEditPayrollDialog(row)}
                             >
-                              <Pencil className="h-3.5 w-3.5" />
+                              <Pencil className="h-4 w-4" />
                             </Button>
                           ) : null}
                           {canCreate && row.hasAccrual !== false && row.outstanding > 0.01 ? (

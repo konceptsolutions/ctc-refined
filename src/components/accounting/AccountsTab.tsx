@@ -910,12 +910,11 @@ export const AccountsTab = () => {
                             <ActionButtonTooltip label="Edit" variant="edit">
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
+                                className="h-8 w-8 text-primary hover:text-primary/80"
                                 onClick={() => handleEditAccount(account)}
-                                className="text-primary hover:text-primary/80 transition-colors"
                               >
-                                <Pencil className="h-4 w-4 mr-1" />
-                                Edit
+                                <Pencil className="h-4 w-4" />
                               </Button>
                             </ActionButtonTooltip>
                           )}
@@ -923,12 +922,11 @@ export const AccountsTab = () => {
                             <ActionButtonTooltip label="Delete" variant="delete">
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive/80"
                                 onClick={() => handleDeleteAccount(account.id)}
-                                className="text-destructive hover:text-destructive/80 transition-colors"
                               >
-                                <Trash className="h-4 w-4 mr-1" />
-                                Delete
+                                <Trash className="h-4 w-4" />
                               </Button>
                             </ActionButtonTooltip>
                           )}

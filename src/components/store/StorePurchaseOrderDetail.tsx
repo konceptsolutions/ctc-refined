@@ -179,15 +179,13 @@ export const StorePurchaseOrderDetail = ({
         <DialogFooter className="flex items-center justify-between sm:justify-between">
           <div className="flex gap-2">
             {canEdit && onEdit && (
-              <Button variant="outline" onClick={onEdit}>
-                <Edit className="w-4 h-4 mr-2" />
-                Edit
+              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onEdit} title="Edit">
+                <Edit className="w-4 h-4" />
               </Button>
             )}
             {canDelete && onDelete && (
-              <Button variant="outline" onClick={onDelete}>
-                <Trash className="w-4 h-4 mr-2" />
-                Delete
+              <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={onDelete} title="Delete">
+                <Trash className="w-4 h-4" />
               </Button>
             )}
           </div>

@@ -3,7 +3,41 @@ import * as PopoverPrimitive from "@radix-ui/react-popover";
 
 import { cn } from "@/lib/utils";
 
-const Popover = PopoverPrimitive.Root;
+export const PopoverOpenContext = React.createContext(false);
+
+type PopoverProps = React.ComponentPropsWithoutRef<
+  typeof PopoverPrimitive.Root
+>;
+
+const Popover = ({ open: openProp, onOpenChange, children, ...props }: PopoverProps) => {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(
+    props.defaultOpen ?? false,
+  );
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : uncontrolledOpen;
+
+  const handleOpenChange = React.useCallback(
+    (nextOpen: boolean) => {
+      if (!isControlled) {
+        setUncontrolledOpen(nextOpen);
+      }
+      onOpenChange?.(nextOpen);
+    },
+    [isControlled, onOpenChange],
+  );
+
+  return (
+    <PopoverOpenContext.Provider value={open}>
+      <PopoverPrimitive.Root
+        open={openProp}
+        onOpenChange={handleOpenChange}
+        {...props}
+      >
+        {children}
+      </PopoverPrimitive.Root>
+    </PopoverOpenContext.Provider>
+  );
+};
 
 const PopoverTrigger = PopoverPrimitive.Trigger;
 

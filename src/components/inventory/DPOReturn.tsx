@@ -138,7 +138,7 @@ export const DPOReturn = () => {
                 directPurchaseOrderId: r.directPurchaseOrderId,
                 dpoNumber: r.DirectPurchaseOrder?.dpoNumber || "N/A",
                 supplierName: r.DirectPurchaseOrder?.Supplier?.companyName || r.DirectPurchaseOrder?.Supplier?.name || "N/A",
-                returnDate: new Date(r.returnDate).toLocaleDateString('en-GB'),
+                returnDate: new Date(r.returnDate).toLocaleDateString('en-US'),
                 reason: r.reason || "",
                 totalAmount: r.totalAmount || 0,
                 status: r.status,
