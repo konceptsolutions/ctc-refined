@@ -1,7 +1,10 @@
 import express, { Request, Response } from 'express';
 import prisma from '../config/database';
 import crypto from 'crypto';
-import { resolveCashBankModeFromAccount } from '../utils/cashBankMode';
+import {
+  isCashBankAccount,
+  resolveCashBankModeFromAccount,
+} from '../utils/cashBankMode';
 
 const router = express.Router();
 
@@ -336,6 +339,7 @@ router.get('/', async (req: Request, res: Response) => {
                     select: {
                       code: true,
                       name: true,
+                      MainGroup: { select: { type: true } },
                     },
                   },
                 },
@@ -359,14 +363,7 @@ router.get('/', async (req: Request, res: Response) => {
       for (const entry of voucher.VoucherEntry) {
         const amt = side === "debit" ? Number(entry.debit || 0) : Number(entry.credit || 0);
         if (amt <= 0 || !entry.accountId || !entry.Account) continue;
-        const subgroupCode = String(entry.Account.Subgroup?.code || "");
-        const isCashBank =
-          subgroupCode.startsWith("102") ||
-          subgroupCode.startsWith("103") ||
-          subgroupCode.startsWith("108") ||
-          /cash|bank/i.test(String(entry.Account.Subgroup?.name || "")) ||
-          /cash|bank/i.test(String(entry.Account.name || ""));
-        if (!isCashBank) continue;
+        if (!isCashBankAccount(entry.Account)) continue;
         if (amt > bestAmt) {
           bestAmt = amt;
           bestId = entry.accountId;
@@ -394,6 +391,7 @@ router.get('/', async (req: Request, res: Response) => {
               select: {
                 code: true,
                 name: true,
+                MainGroup: { select: { type: true } },
               },
             },
           },
