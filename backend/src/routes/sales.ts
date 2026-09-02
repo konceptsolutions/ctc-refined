@@ -11,6 +11,7 @@ import {
   hydrateSalesInvoiceItems,
   resolveInvoiceItemPartFields,
 } from "../utils/salesInvoiceItemPart";
+import { getPartFamilyIds } from "../utils/partFamilySearch";
 
 const router = express.Router();
 
@@ -1721,7 +1722,8 @@ router.get("/invoices", async (req: Request, res: Response) => {
     const bid =
       brandId && String(brandId).trim() ? String(brandId).trim() : "";
     if (pid) {
-      const lineWhere: any = { partId: pid };
+      const familyPartIds = await getPartFamilyIds(pid);
+      const lineWhere: any = { partId: { in: familyPartIds } };
       if (bid) {
         lineWhere.Part = { brandId: bid };
       }

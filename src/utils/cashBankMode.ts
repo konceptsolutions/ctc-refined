@@ -102,3 +102,14 @@ export function isCashLedgerAccount(account: AccountWithSubgroup): boolean {
 export function isBankLedgerAccount(account: AccountWithSubgroup): boolean {
   return isCashBankAccount(account) && getAccountCashBankMode(account) === "online";
 }
+
+/** Normalize API cash/bank account rows when mode is missing. */
+export function normalizeCashBankModeFromApi(row: {
+  mode?: string | null;
+  code?: string | null;
+}): CashBankPaymentMode {
+  if (row.mode === "online" || row.mode === "cash") return row.mode;
+  const code = String(row.code || "").trim();
+  if (/^10[38]/.test(code)) return "online";
+  return "cash";
+}

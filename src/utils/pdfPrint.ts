@@ -1,7 +1,13 @@
 import { jsPDF } from "jspdf";
 
+/** Delay print until the PDF viewer has rendered every page (slow servers need more time). */
+const getPdfRenderDelayMs = (pageCount: number) =>
+  Math.min(8000, Math.max(1200, 800 + Math.max(1, pageCount) * 350));
+
 /** Open a jsPDF document in a new tab and trigger the browser print dialog. */
 export const openPdfPrintDialog = (doc: jsPDF): boolean => {
+  const pageCount = doc.getNumberOfPages();
+  const renderDelayMs = getPdfRenderDelayMs(pageCount);
   const pdfBlob = doc.output("blob");
   const url = URL.createObjectURL(pdfBlob);
   const printWindow = window.open(url, "_blank");
@@ -10,17 +16,23 @@ export const openPdfPrintDialog = (doc: jsPDF): boolean => {
     return false;
   }
 
+  let printed = false;
   const triggerPrint = () => {
+    if (printed) return;
+    printed = true;
     try {
       printWindow.focus();
       printWindow.print();
     } finally {
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
     }
   };
 
-  printWindow.addEventListener?.("load", triggerPrint);
-  window.setTimeout(triggerPrint, 500);
+  // Blob PDFs often fire "load" before all pages are painted — wait before printing.
+  printWindow.addEventListener?.("load", () => {
+    window.setTimeout(triggerPrint, renderDelayMs);
+  });
+  window.setTimeout(triggerPrint, renderDelayMs + 500);
   return true;
 };
 
@@ -30,16 +42,10 @@ export const formatPdfMoney = (value: number, fractionDigits = 0) =>
     maximumFractionDigits: fractionDigits,
   });
 
+import { formatUiDate } from "./dateUtils";
+
 export const formatPdfDate = (value?: string | Date | null) => {
   if (!value) return "-";
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    return `${day}/${month}/${year}`;
-  }
-  const dateObj = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(dateObj.getTime())) return String(value);
-  const day = String(dateObj.getDate()).padStart(2, "0");
-  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
-  const year = dateObj.getFullYear();
-  return `${day}/${month}/${year}`;
+  const formatted = formatUiDate(value);
+  return formatted || "-";
 };

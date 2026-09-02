@@ -24,6 +24,7 @@ import { Download, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { exportToCSV } from "@/utils/exportUtils";
+import { formatUiDate } from "@/utils/dateUtils";
 
 interface ExpenseRecord {
   id: string;
@@ -66,7 +67,7 @@ const ExpensesReportTab = () => {
       if (response.data) {
         const formatted = response.data.map((e: any) => ({
           id: e.id,
-          date: new Date(e.date).toLocaleDateString(),
+          date: formatUiDate(e.date) || "",
           reference: e.id,
           category: e.expenseType?.name || "N/A",
           description: e.description || "",

@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -144,7 +145,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
               <div>
                 <p className="text-sm text-muted-foreground">Order Date</p>
                 <p className="font-medium">
-                  {format(new Date(order.date), "MMMM dd, yyyy")}
+                  {formatUiDate(order.date)}
                 </p>
               </div>
               <div>
@@ -219,7 +220,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
 
             {/* Footer */}
             <div className="footer">
-              <p>Generated on {format(new Date(), "MMMM dd, yyyy 'at' hh:mm a")}</p>
+              <p>Generated on {formatUiDate(new Date())}</p>
               <p>Thank you for your business!</p>
             </div>
           </div>

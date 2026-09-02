@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,8 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api";
+import { filterPartsWithFamilyExpansion } from "@/lib/part-family-search";
+import { formatUiDate } from "@/utils/dateUtils";
 import { toast } from "@/hooks/use-toast";
 import {
     Search,
@@ -116,11 +118,7 @@ export const DetailsPartSearch = () => {
                         try {
                             const dateObj = new Date(rawDate);
                             if (!isNaN(dateObj.getTime())) {
-                                formattedDate = dateObj.toLocaleDateString('en-GB', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric'
-                                });
+                                formattedDate = formatUiDate(dateObj) || "-";
                             }
                         } catch (e) {
                             formattedDate = String(rawDate).split('T')[0];
@@ -163,10 +161,17 @@ export const DetailsPartSearch = () => {
         }
     };
 
-    const filteredItems = items.filter(item =>
-        item.partNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.brand.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredItems = useMemo(
+        () =>
+            filterPartsWithFamilyExpansion(
+                items.map((item) => ({
+                    ...item,
+                    part_no: item.altNo,
+                    master_part_no: item.partNo,
+                })),
+                searchTerm,
+            ),
+        [items, searchTerm],
     );
 
     const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
@@ -182,7 +187,7 @@ export const DetailsPartSearch = () => {
             if (Array.isArray(data)) {
                 const transformed: PriceHistoryEntry[] = data.map((h: any) => ({
                     id: h.id,
-                    date: new Date(h.created_at).toLocaleDateString(),
+                    date: formatUiDate(h.created_at) || "-",
                     brand: h.brand || "-",
                     mainCategory: h.category || "-",
                     subCategory: h.subcategory || "-",

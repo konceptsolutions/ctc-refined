@@ -1,5 +1,6 @@
 import { Voucher } from "./VoucherManagement";
 import { ACCOUNTING_COLORS } from "@/utils/accountingColors";
+import { formatUiDate } from "@/utils/dateUtils";
 
 interface VoucherPrintViewProps {
   voucher: Voucher;
@@ -44,10 +45,10 @@ export const VoucherPrintView = ({ voucher }: VoucherPrintViewProps) => {
           )}
         </div>
         <div className="space-y-2 text-right">
-          <p><span className="font-semibold">Date:</span> {new Date(voucher.date).toLocaleDateString('en-US')}</p>
+          <p><span className="font-semibold">Date:</span> {formatUiDate(voucher.date) || "-"}</p>
           <p><span className="font-semibold">Status:</span> {voucher.status.charAt(0).toUpperCase() + voucher.status.slice(1)}</p>
           {voucher.chequeDate && (
-            <p><span className="font-semibold">Cheque Date:</span> {new Date(voucher.chequeDate).toLocaleDateString('en-US')}</p>
+            <p><span className="font-semibold">Cheque Date:</span> {formatUiDate(voucher.chequeDate) || "-"}</p>
           )}
         </div>
       </div>

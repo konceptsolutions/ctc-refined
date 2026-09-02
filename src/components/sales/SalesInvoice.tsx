@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "@/lib/api";
+import { filterPartsWithFamilyExpansion, buildPartSearchableSelectFields, resolveFilterPartFamilyIds } from "@/lib/part-family-search";
 import { shareImagesAcrossFamilyItems } from "@/lib/part-images";
 import { usePageActions } from "@/permissions/pageActions";
 import {
@@ -118,6 +119,7 @@ import {
 } from "@/lib/part-price-dates";
 import {
   buildPakistanFinancialYearOptions,
+  formatUiDate,
   getPakistanFinancialYearStartYear,
   isDateInPakistanFinancialYear,
 } from "@/utils/dateUtils";
@@ -230,6 +232,13 @@ function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] 
   });
 }
 
+const DEFAULT_QUOTATION_DELIVERY = "STK";
+
+function normalizeQuotationDelivery(value: unknown): string {
+  const trimmed = String(value ?? "").trim();
+  return trimmed || DEFAULT_QUOTATION_DELIVERY;
+}
+
 function mapApiSalesQuotationItemsToInvoiceItems(
   fullItems: any[],
 ): InvoiceItem[] {
@@ -245,7 +254,7 @@ function mapApiSalesQuotationItemsToInvoiceItems(
       description: item.description || item.Part?.description || "",
       orderedQty: qtyReq,
       qtyDiv,
-      divOn: String(item.divOn || ""),
+      divOn: normalizeQuotationDelivery(item.divOn),
       deliveredQty: 0,
       pendingQty: qtyReq,
       reversedQty: 0,
@@ -991,8 +1000,8 @@ export const SalesInvoice = ({
     { id: "brand", label: "Brand" },
     { id: "uom", label: "UOM" },
     { id: "qtyReq", label: "Qty Req." },
-    { id: "deliveryQty", label: "Delivery Qty" },
-    { id: "divOn", label: "DIV. On" },
+    { id: "deliveryQty", label: "Qty" },
+    { id: "divOn", label: "Delivery" },
     { id: "price", label: "Price" },
     { id: "amount", label: "Amount" },
   ] as const;
@@ -1104,7 +1113,7 @@ export const SalesInvoice = ({
                 ? (crypto as any).randomUUID()
                 : `inq-${Date.now()}-${idx}`,
             selectedPartId: item.partId,
-            divOn: "",
+            divOn: DEFAULT_QUOTATION_DELIVERY,
             qtyDiv: 0,
             qty: Number(item.quantity) || 1,
             priceA,
@@ -1508,6 +1517,9 @@ export const SalesInvoice = ({
   // Invoice kind (simple / with tax / with discount) is client-side on loaded rows.
   const filteredInvoices = useMemo(() => {
     const fyStartYear = parseInt(filterFinancialYear, 10);
+    const filterPartFamilyIds = filterPartId.trim()
+      ? resolveFilterPartFamilyIds(filterPartId.trim(), parts)
+      : [];
     return invoices
       .filter((inv) => {
         if ((inv.customerName || "").toLowerCase().includes("demo")) {
@@ -1531,6 +1543,13 @@ export const SalesInvoice = ({
           }
         }
 
+        if (isQuotation && filterPartFamilyIds.length > 0) {
+          const hasFamilyItem = (inv.items || []).some((item) =>
+            filterPartFamilyIds.includes(item.partId),
+          );
+          if (!hasFamilyItem) return false;
+        }
+
         if (filterInvoiceKind === "simple" && !invoiceIsSimpleForList(inv)) {
           return false;
         }
@@ -1548,7 +1567,7 @@ export const SalesInvoice = ({
       })
       .slice()
       .sort(compareInvoicesByDateAndNoDesc);
-  }, [invoices, searchTerm, filterInvoiceKind, filterFinancialYear, isQuotation]);
+  }, [invoices, searchTerm, filterInvoiceKind, filterFinancialYear, isQuotation, filterPartId, parts]);
 
   const invoiceListTotalPages =
     Math.ceil(filteredInvoices.length / invoiceListPageSize) || 1;
@@ -1576,7 +1595,7 @@ export const SalesInvoice = ({
     const newItem: InlineItemRow = {
       id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       selectedPartId: "",
-      divOn: "",
+      divOn: DEFAULT_QUOTATION_DELIVERY,
       qtyDiv: 0,
       qty: 0,
       priceA: undefined,
@@ -2211,7 +2230,7 @@ export const SalesInvoice = ({
         const newItem: InlineItemRow = {
           id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           selectedPartId: partId,
-          divOn: "",
+          divOn: DEFAULT_QUOTATION_DELIVERY,
           qtyDiv: 0,
           qty: addQty,
           priceA: isTransferOut ? 0 : (existingPart?.priceA ?? 0),
@@ -2450,51 +2469,39 @@ export const SalesInvoice = ({
         .trim()
         .toLowerCase();
 
-      const filtered = parts.filter((part) => {
-        const partNo = String(part.partNo || "").toLowerCase();
-        const masterPartNo = String(part.masterPartNo || "").toLowerCase();
-        const description = String(part.description || "").toLowerCase();
-        const category = String(part.category || "").toLowerCase();
-        const application = String(part.application || "").toLowerCase();
-        const modelNames = (part.machineModels || []).map((m) =>
-          String(m.name || "").toLowerCase(),
-        );
-        const brandNames = (part.brands || []).map((b) =>
-          String(b.name || "").toLowerCase(),
-        );
+      const filtered = (() => {
+        const pool = parts.filter((part) => {
+          const description = String(part.description || "").toLowerCase();
+          const application = String(part.application || "").toLowerCase();
+          const modelNames = (part.machineModels || []).map((m) =>
+            String(m.name || "").toLowerCase(),
+          );
 
-        const matchesSearch =
-          !searchValue ||
-          partNo.includes(searchValue) ||
-          masterPartNo.includes(searchValue) ||
-          description.includes(searchValue) ||
-          category.includes(searchValue) ||
-          application.includes(searchValue) ||
-          modelNames.some((name) => name.includes(searchValue)) ||
-          brandNames.some((name) => name.includes(searchValue));
+          const matchesModel =
+            options?.ignoreModel ||
+            !selectedModel ||
+            modelNames.some((name) => name === selectedModel);
+          if (!matchesModel) return false;
 
-        if (!matchesSearch) return false;
+          const matchesDescription =
+            options?.ignoreDescription ||
+            !selectedDescription ||
+            description === selectedDescription;
+          if (!matchesDescription) return false;
 
-        const matchesModel =
-          options?.ignoreModel ||
-          !selectedModel ||
-          modelNames.some((name) => name === selectedModel);
-        if (!matchesModel) return false;
+          const matchesApplication =
+            options?.ignoreApplication ||
+            !selectedApplication ||
+            application === selectedApplication;
+          if (!matchesApplication) return false;
 
-        const matchesDescription =
-          options?.ignoreDescription ||
-          !selectedDescription ||
-          description === selectedDescription;
-        if (!matchesDescription) return false;
+          return true;
+        });
 
-        const matchesApplication =
-          options?.ignoreApplication ||
-          !selectedApplication ||
-          application === selectedApplication;
-        if (!matchesApplication) return false;
+        if (!searchValue) return pool;
 
-        return true;
-      });
+        return filterPartsWithFamilyExpansion(pool, searchValue);
+      })();
 
       return [...filtered].sort((a, b) => {
         const aHasStock = Number(a.availableQty || 0) > 0;
@@ -3135,6 +3142,10 @@ export const SalesInvoice = ({
           value: p.id,
           label,
           description: descParts.length ? descParts.join(" · ") : undefined,
+          ...buildPartSearchableSelectFields({
+            partNo: p.partNo,
+            masterPartNo: p.masterPartNo,
+          }),
         };
       }),
     ],
@@ -3199,7 +3210,7 @@ export const SalesInvoice = ({
         lineTotal: item.total,
         grade: "A" as ItemGrade,
         brand: item.Part?.Brand?.name || "",
-        divOn: String(item.divOn || ""),
+        divOn: normalizeQuotationDelivery(item.divOn),
         qtyDiv: Math.max(0, Number(item.qtyDiv ?? 0) || 0),
       })) || [],
     subtotal: Number(q.subtotal ?? q.totalAmount ?? 0),
@@ -4009,7 +4020,9 @@ export const SalesInvoice = ({
           partNo: part?.partNo || item.partNoFallback || "",
           description: part?.description || item.descriptionFallback || "",
           orderedQty: item.qty,
-          divOn: isQuotation ? String(item.divOn || "") : undefined,
+          divOn: isQuotation
+            ? normalizeQuotationDelivery(item.divOn)
+            : undefined,
           qtyDiv: isQuotation
             ? Math.max(0, Number(item.qtyDiv ?? 0) || 0)
             : undefined,
@@ -4075,7 +4088,7 @@ export const SalesInvoice = ({
             partId: i.partId,
             partNo: i.partNo,
             description: i.description,
-            divOn: String((i as any).divOn || ""),
+            divOn: normalizeQuotationDelivery((i as any).divOn),
             qtyDiv: Math.max(0, Number((i as any).qtyDiv ?? 0) || 0),
             quantity: i.orderedQty,
             unitPrice: i.unitPrice,
@@ -4525,7 +4538,9 @@ export const SalesInvoice = ({
             id: item.id,
             selectedPartId: item.partId,
             qty: isQuotation ? item.quantity : item.orderedQty,
-            divOn: isQuotation ? String(item.divOn || "") : undefined,
+            divOn: isQuotation
+              ? normalizeQuotationDelivery(item.divOn)
+              : undefined,
             qtyDiv: isQuotation
               ? Math.max(0, Number(item.qtyDiv ?? 0) || 0)
               : undefined,
@@ -6265,7 +6280,64 @@ export const SalesInvoice = ({
     },
   ) => {
     const includeBalance = options?.includeBalance !== false;
-    const invoiceMeta = invoice as any;
+    let printInvoice = invoice;
+    try {
+      const resp = (await apiClient.getSalesInvoice(invoice.id)) as any;
+      const fullInv = resp?.data || resp;
+      const fullItems = Array.isArray(fullInv?.SalesInvoiceItem)
+        ? fullInv.SalesInvoiceItem
+        : invoice.items || [];
+      const mappedItems = mapApiSalesInvoiceItemsToInvoiceItems(fullItems);
+      printInvoice = {
+        ...invoice,
+        invoiceDate: fullInv?.invoiceDate || invoice.invoiceDate,
+        term: fullInv?.term ?? invoice.term,
+        customerName: fullInv?.customerName || invoice.customerName,
+        customerId: fullInv?.customerId || invoice.customerId,
+        customerType: (fullInv?.customerType ||
+          invoice.customerType) as CustomerType,
+        subtotal:
+          fullInv?.subtotal != null ? Number(fullInv.subtotal) : invoice.subtotal,
+        overallDiscount:
+          fullInv?.overallDiscount != null
+            ? Number(fullInv.overallDiscount)
+            : invoice.overallDiscount,
+        freightCharges: Number(
+          fullInv?.freightCharges ?? invoice.freightCharges ?? 0,
+        ),
+        tax: fullInv?.tax != null ? Number(fullInv.tax) : invoice.tax,
+        taxPercentage:
+          fullInv?.taxPercentage != null
+            ? Number(fullInv.taxPercentage)
+            : invoice.taxPercentage,
+        grandTotal:
+          fullInv?.grandTotal != null
+            ? Number(fullInv.grandTotal)
+            : invoice.grandTotal,
+        paidAmount:
+          fullInv?.paidAmount != null
+            ? Number(fullInv.paidAmount)
+            : invoice.paidAmount,
+        deliveredTo:
+          fullInv?.deliveredTo ||
+          fullInv?.delivered_to ||
+          invoice.deliveredTo ||
+          null,
+        remarks: fullInv?.remarks ?? fullInv?.notes ?? invoice.remarks ?? null,
+        previousBalance:
+          fullInv?.previousBalance != null
+            ? Number(fullInv.previousBalance)
+            : invoice.previousBalance,
+        customerBalance:
+          fullInv?.customerBalance != null
+            ? Number(fullInv.customerBalance)
+            : invoice.customerBalance,
+        items: mappedItems.length ? mappedItems : invoice.items || [],
+      };
+    } catch {
+      printInvoice = invoice;
+    }
+    const invoiceMeta = printInvoice as any;
     const enabledColumns = new Set(columns || selectedInvoicePrintColumns);
     const include = (id: string) => enabledColumns.has(id);
     const visibleColumnCount = Math.max(
@@ -6357,9 +6429,7 @@ export const SalesInvoice = ({
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 
-    const dateText = invoice.invoiceDate
-      ? new Date(invoice.invoiceDate).toLocaleDateString()
-      : "";
+    const dateText = formatUiDate(printInvoice.invoiceDate) || "";
     const printDateTime = new Date().toLocaleString();
     const getPrintedBy = () => {
       try {
@@ -6386,8 +6456,8 @@ export const SalesInvoice = ({
     const printedBy = getPrintedBy();
     const matchedCustomer = customers.find(
       (c) =>
-        c.id === invoice.customerId ||
-        c.name?.trim().toLowerCase() === invoice.customerName?.trim().toLowerCase(),
+        c.id === printInvoice.customerId ||
+        c.name?.trim().toLowerCase() === printInvoice.customerName?.trim().toLowerCase(),
     );
     const addressParts = String(matchedCustomer?.address || "")
       .split(",")
@@ -6406,22 +6476,22 @@ export const SalesInvoice = ({
       ).trim(),
     );
     const totalQty =
-      invoice.items?.reduce((sum, i) => sum + (i.orderedQty || 0), 0) || 0;
+      printInvoice.items?.reduce((sum, i) => sum + (i.orderedQty || 0), 0) || 0;
     const baseTotal = Number(
-      invoice.subtotal ??
-        invoice.items?.reduce((sum, i) => sum + Number(i.lineTotal || 0), 0) ??
+      printInvoice.subtotal ??
+        printInvoice.items?.reduce((sum, i) => sum + Number(i.lineTotal || 0), 0) ??
         0,
     );
-    const discountAmount = Number(invoice.overallDiscount || 0);
-    const freightAmount = Number(invoice.freightCharges || 0);
-    const taxAmount = Number(invoice.tax || 0);
+    const discountAmount = Number(printInvoice.overallDiscount || 0);
+    const freightAmount = Number(printInvoice.freightCharges || 0);
+    const taxAmount = Number(printInvoice.tax || 0);
     const taxPercentageStored = Number(
-      invoice.taxPercentage ?? invoiceMeta.taxPercentage ?? 0,
+      printInvoice.taxPercentage ?? invoiceMeta.taxPercentage ?? 0,
     );
-    const currentAmount = Number(invoice.grandTotal || 0);
+    const currentAmount = Number(printInvoice.grandTotal || 0);
     const invoiceDue = Math.max(
       0,
-      Number(invoice.grandTotal || 0) - Number(invoice.paidAmount || 0),
+      Number(printInvoice.grandTotal || 0) - Number(printInvoice.paidAmount || 0),
     );
     // Bal. B/F is outstanding BEFORE this invoice. Total Receivable is
     // outstanding after it. Never add current amount on top of a balance
@@ -6433,9 +6503,9 @@ export const SalesInvoice = ({
     const customerCurrentBalanceFromState = Number(
       customers.find(
         (c) =>
-          c.id === invoice.customerId ||
+          c.id === printInvoice.customerId ||
           c.name?.trim().toLowerCase() ===
-            invoice.customerName?.trim().toLowerCase(),
+            printInvoice.customerName?.trim().toLowerCase(),
       )?.balance ?? NaN,
     );
     const customerCurrentBalance = Number.isFinite(
@@ -6472,7 +6542,7 @@ export const SalesInvoice = ({
     const printOrientation = options?.orientation ?? "landscape";
 
     await printSalesInvoicePdf({
-      invoice,
+      invoice: printInvoice,
       columns: Array.from(enabledColumns),
       includeBalance,
       useLetterhead: options?.useLetterhead === true,
@@ -6508,19 +6578,12 @@ export const SalesInvoice = ({
   ) => {
     try {
       let fullQuotation: any = null;
-      let mappedItems = invoice.items || [];
-
-      if (
-        !mappedItems.length ||
-        mappedItems.some((item) => item.qtyDiv === undefined)
-      ) {
-        const resp = (await apiClient.getSalesQuotation(invoice.id)) as any;
-        fullQuotation = resp?.data || resp;
-        const fullItems = Array.isArray(fullQuotation?.SalesQuotationItem)
-          ? fullQuotation.SalesQuotationItem
-          : [];
-        mappedItems = mapApiSalesQuotationItemsToInvoiceItems(fullItems);
-      }
+      const resp = (await apiClient.getSalesQuotation(invoice.id)) as any;
+      fullQuotation = resp?.data || resp;
+      const fullItems = Array.isArray(fullQuotation?.SalesQuotationItem)
+        ? fullQuotation.SalesQuotationItem
+        : [];
+      const mappedItems = mapApiSalesQuotationItemsToInvoiceItems(fullItems);
 
       const getPrintedBy = () => {
         try {
@@ -6621,6 +6684,7 @@ export const SalesInvoice = ({
       const response = (await apiClient.getSalesInvoice(invoice.id)) as any;
       const fullInvoice = response?.data || response;
       const rawItems = fullInvoice?.SalesInvoiceItem || [];
+      const mappedItems = mapApiSalesInvoiceItemsToInvoiceItems(rawItems);
 
       const getPrintedBy = () => {
         try {
@@ -6647,9 +6711,13 @@ export const SalesInvoice = ({
 
       const challanNo = `CH-${fullInvoice?.invoiceNo || invoice.invoiceNo}`;
       const challanItems = (rawItems as any[]).map((item) => {
-        const listItem = invoice.items?.find((i) => i.id === item.id);
+        const mappedItem = mappedItems.find((row) => row.id === item.id);
         const locationText = getChallanItemLocation(
-          { ...item, rackCode: listItem?.rackCode, shelfNo: listItem?.shelfNo },
+          {
+            ...item,
+            rackCode: mappedItem?.rackCode,
+            shelfNo: mappedItem?.shelfNo,
+          },
           fullInvoice,
         );
         const linePart = resolveInvoiceLinePartFields(item);
@@ -6732,6 +6800,10 @@ export const SalesInvoice = ({
       } else {
       const resp = (await apiClient.getSalesInvoice(invoice.id)) as any;
       const fullInv = resp?.data || resp;
+      const fullItems = Array.isArray(fullInv?.SalesInvoiceItem)
+        ? fullInv.SalesInvoiceItem
+        : invoice.items || [];
+      const mappedItems = mapApiSalesInvoiceItemsToInvoiceItems(fullItems);
       setInvoiceForPrint({
         ...invoice,
         previousBalance:
@@ -6763,6 +6835,7 @@ export const SalesInvoice = ({
           invoice.deliveredTo ||
           null,
         remarks: fullInv?.remarks ?? fullInv?.notes ?? invoice.remarks ?? null,
+        items: mappedItems.length ? mappedItems : invoice.items || [],
       });
       }
     } catch {
@@ -6802,20 +6875,8 @@ export const SalesInvoice = ({
     return labels[status] ?? status;
   };
 
-  const formatInvoiceDateDisplay = (value?: string) => {
-    if (!value) return "-";
-    const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-    if (ymdMatch) {
-      const [, y, m, d] = ymdMatch;
-      return `${d}/${m}/${y.slice(-2)}`;
-    }
-    const dt = new Date(value);
-    if (Number.isNaN(dt.getTime())) return value;
-    const day = String(dt.getDate()).padStart(2, "0");
-    const month = String(dt.getMonth() + 1).padStart(2, "0");
-    const year = String(dt.getFullYear()).slice(-2);
-    return `${day}/${month}/${year}`;
-  };
+  const formatInvoiceDateDisplay = (value?: string) =>
+    formatUiDate(value) || "-";
 
   const getStatusBadge = (status: InvoiceStatus | string) => {
     const styles: Record<string, string> = {
@@ -7314,8 +7375,8 @@ export const SalesInvoice = ({
                       <col className="w-[4%]" />
                       <col className="w-[4%]" />
                       {isQuotation ? <col className="w-[6%]" /> : null}
-                      {isQuotation ? <col className="w-[6%]" /> : null}
-                      {isQuotation ? <col className="w-[7%]" /> : null}
+                      {isQuotation ? <col className="w-[4%]" /> : null}
+                      {isQuotation ? <col className="w-[5%]" /> : null}
                       {!isQuotation ? <col className="w-[5%]" /> : null}
                       <col className="w-[5%]" />
                       <col className="w-[5%]" />
@@ -7357,13 +7418,13 @@ export const SalesInvoice = ({
                           </TableHead>
                         ) : null}
                         {isQuotation ? (
-                          <TableHead className="text-center font-bold text-foreground text-xs py-3 px-1">
-                            Del. Qty
+                          <TableHead className="text-center font-bold text-foreground text-[11px] py-3 px-0.5">
+                            Qty
                           </TableHead>
                         ) : null}
                         {isQuotation ? (
-                          <TableHead className="text-center font-bold text-foreground text-xs py-3 px-1">
-                            DIV. On
+                          <TableHead className="text-center font-bold text-foreground text-[11px] py-3 px-0.5">
+                            Delivery
                           </TableHead>
                         ) : null}
                         {!isQuotation ? (
@@ -8093,7 +8154,7 @@ export const SalesInvoice = ({
                               </div>
                             </TableCell>
 
-                            {/* Quotation: Qty Req. → Delivery Qty → DIV. On */}
+                            {/* Quotation: Qty Req. → Qty → Delivery */}
                             {isQuotation ? (
                               <TableCell className="hidden md:table-cell align-top px-1 min-w-0">
                                 <div className="flex flex-col items-stretch justify-center min-w-0">
@@ -8117,7 +8178,7 @@ export const SalesInvoice = ({
                               </TableCell>
                             ) : null}
                             {isQuotation ? (
-                              <TableCell className="hidden md:table-cell align-top px-1 min-w-0">
+                              <TableCell className="hidden md:table-cell align-top px-0.5 min-w-0">
                                 <div className="flex flex-col items-stretch justify-center min-w-0">
                                   <Input
                                     type="number"
@@ -8138,7 +8199,7 @@ export const SalesInvoice = ({
                                         val,
                                       );
                                     }}
-                                    className="w-full min-w-0 h-9 text-center font-bold text-sm px-1"
+                                    className="w-full min-w-0 max-w-[3.25rem] mx-auto h-8 text-center font-bold text-xs px-0.5"
                                     placeholder="0"
                                     title={
                                       Number(item.qtyDiv || 0) === 0 &&
@@ -8157,7 +8218,7 @@ export const SalesInvoice = ({
                               </TableCell>
                             ) : null}
                             {isQuotation ? (
-                              <TableCell className="hidden md:table-cell align-top px-1 min-w-0">
+                              <TableCell className="hidden md:table-cell align-top px-0.5 min-w-0">
                                 <Input
                                   value={item.divOn || ""}
                                   onChange={(e) =>
@@ -8167,8 +8228,8 @@ export const SalesInvoice = ({
                                       e.target.value,
                                     )
                                   }
-                                  placeholder="DIV. On"
-                                  className="w-full min-w-0 h-9 text-xs px-1"
+                                  placeholder="Delivery"
+                                  className="w-full min-w-0 max-w-[4.5rem] mx-auto h-8 text-[11px] px-0.5"
                                 />
                               </TableCell>
                             ) : null}
@@ -8656,7 +8717,7 @@ export const SalesInvoice = ({
                             {/* Mobile: Qty & Rate (Hidden on Desktop) */}
                             <TableCell className="md:hidden block p-0 align-middle">
                               <span className="text-xs font-bold text-muted-foreground block mb-2 uppercase tracking-wider">
-                                {isQuotation ? "Qty Req. / Delivery / DIV. On" : "Qty & Rate"}
+                                {isQuotation ? "Qty Req. / Qty / Delivery" : "Qty & Rate"}
                               </span>
                               {isQuotation ? (
                                 <div className="grid grid-cols-3 gap-2 items-start mb-2">
@@ -8680,7 +8741,7 @@ export const SalesInvoice = ({
                                   </div>
                                   <div className="space-y-1">
                                     <span className="text-[9px] text-muted-foreground uppercase">
-                                      Delivery
+                                      Qty
                                     </span>
                                     <Input
                                       type="number"
@@ -8702,7 +8763,7 @@ export const SalesInvoice = ({
                                   </div>
                                   <div className="space-y-1">
                                     <span className="text-[9px] text-muted-foreground uppercase">
-                                      DIV. On
+                                      Delivery
                                     </span>
                                     <Input
                                       value={item.divOn || ""}
@@ -10550,10 +10611,8 @@ export const SalesInvoice = ({
                       {isQuotation ? (
                         <>
                           <TableHead className="text-center">Qty Req.</TableHead>
-                          <TableHead className="text-center">
-                            Delivery Qty
-                          </TableHead>
-                          <TableHead className="text-center">DIV. On</TableHead>
+                          <TableHead className="text-center">Qty</TableHead>
+                          <TableHead className="text-center">Delivery</TableHead>
                         </>
                       ) : (
                         <>
@@ -10593,7 +10652,7 @@ export const SalesInvoice = ({
                                 {item.qtyDiv ?? 0}
                               </TableCell>
                               <TableCell className="text-center text-sm">
-                                {item.divOn?.trim() || "-"}
+                                {normalizeQuotationDelivery(item.divOn)}
                               </TableCell>
                             </>
                           ) : (

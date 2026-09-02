@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { openPdfPrintDialog, formatPdfMoney } from "@/utils/pdfPrint";
+import { formatUiDate } from "@/utils/dateUtils";
 import type { Invoice } from "@/types/invoice";
 
 export type SalesInvoicePdfInput = {
@@ -126,9 +127,7 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
       : Promise.resolve(null),
   ]);
 
-  const invoiceDate = input.invoice.invoiceDate
-    ? new Date(input.invoice.invoiceDate).toLocaleDateString()
-    : "-";
+  const invoiceDate = formatUiDate(input.invoice.invoiceDate) || "-";
   const printDateTime = new Date().toLocaleString();
   const termText = String(input.invoice.term || "").trim();
   const items = input.invoice.items || [];
@@ -243,7 +242,7 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
       left: marginL,
       right: marginR,
       top: marginT + headerHeight,
-      bottom: 10,
+      bottom: Math.max(marginB, 15),
     },
     head: [visibleCols.map((col) => col.header)],
     body: body.length
@@ -251,6 +250,7 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
       : [visibleCols.map((_, idx) => (idx === 0 ? "No items" : ""))],
     foot: [foot],
     showFoot: "lastPage",
+    showHead: "everyPage",
     columnStyles,
     didDrawPage: (data) => {
       // Header is drawn once above for page 1. Only repeat it when the

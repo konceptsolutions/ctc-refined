@@ -89,7 +89,7 @@ export const CompanyProfileTab = () => {
   });
 
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
-    dateFormat: "MM-DD-YYYY",
+    dateFormat: "DD-MM-YYYY",
     timeFormat: "24h",
     currency: "PKR",
     timezone: "Asia/Karachi",
@@ -152,7 +152,7 @@ export const CompanyProfileTab = () => {
           // Safely merge systemSettings with defaults
           if (data.systemSettings) {
             setSystemSettings({
-              dateFormat: data.systemSettings.dateFormat || "MM-DD-YYYY",
+              dateFormat: data.systemSettings.dateFormat || "DD-MM-YYYY",
               timeFormat: data.systemSettings.timeFormat || "24h",
               currency: data.systemSettings.currency || "PKR",
               timezone: data.systemSettings.timezone || "Asia/Karachi",
@@ -374,6 +374,7 @@ export const CompanyProfileTab = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="DD-MM-YYYY">DD-MM-YYYY</SelectItem>
                       <SelectItem value="MM-DD-YYYY">MM-DD-YYYY</SelectItem>
                       <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
                       <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>

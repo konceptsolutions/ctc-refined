@@ -3,6 +3,10 @@ import { createPortal } from "react-dom";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import {
+  filterSearchableSelectOptionsWithFamilyExpansion,
+  type PartSearchableSelectOption,
+} from "@/lib/part-family-search";
 
 export interface SearchableSelectOption {
   value: string;
@@ -10,6 +14,12 @@ export interface SearchableSelectOption {
   description?: string;
   /** Extra text shown in the dropdown list only (e.g. brand), not in the selected field */
   listOnlyDescription?: string;
+  /** DB part_no family key — expands alternates when searching by part number */
+  familyKey?: string;
+  /** UI Part No (DB master_part_no) */
+  uiPartNo?: string;
+  /** UI Master Part (DB part_no) */
+  uiMasterPart?: string;
 }
 
 interface SearchableSelectProps {
@@ -113,12 +123,22 @@ export const SearchableSelect = React.memo(function SearchableSelect({
 
     let matched = options;
     if (query) {
-      matched = options.filter(
-        (opt) =>
-          opt.label.toLowerCase().includes(query) ||
-          opt.description?.toLowerCase().includes(query) ||
-          opt.listOnlyDescription?.toLowerCase().includes(query),
+      const hasFamilyKeys = options.some(
+        (opt) => opt.familyKey || opt.uiMasterPart || opt.uiPartNo,
       );
+      if (hasFamilyKeys) {
+        matched = filterSearchableSelectOptionsWithFamilyExpansion(
+          options as PartSearchableSelectOption[],
+          query,
+        );
+      } else {
+        matched = options.filter(
+          (opt) =>
+            opt.label.toLowerCase().includes(query) ||
+            opt.description?.toLowerCase().includes(query) ||
+            opt.listOnlyDescription?.toLowerCase().includes(query),
+        );
+      }
     }
 
     return matched.slice(0, Math.max(1, maxDisplayedOptions));

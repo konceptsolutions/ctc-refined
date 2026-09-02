@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { filterPartsWithFamilyExpansion } from "@/lib/part-family-search";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
+import { formatUiDate } from "@/utils/dateUtils";
 import { formatPurchasePrice } from "@/utils/purchasePriceRound";
 import { usePageActions } from "@/permissions/pageActions";
 import {
@@ -685,7 +687,7 @@ export const PricingCosting = () => {
               const updateTime = new Date(updateInfo.timestamp).getTime();
               localStoragePriceUpdates[itemId] = {
                 timestamp: updateInfo.timestamp,
-                date: updateInfo.date || new Date(updateTime).toLocaleDateString(),
+                date: updateInfo.date || formatUiDate(updateTime) || "",
                 time: updateInfo.time || new Date(updateTime).toLocaleTimeString(),
                 amount: updateInfo.amount || {},
                 previousPrice: updateInfo.previousPrice || {},
@@ -734,7 +736,7 @@ export const PricingCosting = () => {
               const numericValue = Number(apiLastUpdateValueRaw);
               latestFromApi = {
                 timestamp: updateTime.toISOString(),
-                date: updateTime.toLocaleDateString(),
+                date: formatUiDate(updateTime) || "",
                 time: updateTime.toLocaleTimeString(),
                 amount: Number.isFinite(numericValue)
                   ? { [normalizedField]: numericValue }
@@ -937,7 +939,7 @@ export const PricingCosting = () => {
               ""
             ).trim(),
             description: item.part?.description || item.description || "",
-            date: dateObj.toLocaleDateString(),
+            date: formatUiDate(dateObj) || "",
             time: dateObj.toLocaleTimeString(),
             updatedBy: item.updatedBy || "System",
             reason: item.reason || "",
@@ -1042,15 +1044,18 @@ export const PricingCosting = () => {
 
   // Filter items - memoized for performance
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      const partNoStr = String(item.partNo || "");
-      const partNoAltStr = String(item.partNoAlt || "");
-      const descriptionStr = String(item.description || "");
-      const searchTermStr = String(searchTerm || "");
-      const matchesSearch =
-        partNoStr.toLowerCase().includes(searchTermStr.toLowerCase()) ||
-        partNoAltStr.toLowerCase().includes(searchTermStr.toLowerCase()) ||
-        descriptionStr.toLowerCase().includes(searchTermStr.toLowerCase());
+    const searchPool = searchTerm.trim()
+      ? filterPartsWithFamilyExpansion(
+          items.map((item) => ({
+            ...item,
+            part_no: item.partNo,
+            master_part_no: item.partNoAlt,
+          })),
+          searchTerm,
+        )
+      : items;
+
+    return searchPool.filter((item) => {
       const matchesCategory =
         filterCategory === "all" || item.category === filterCategory;
       const matchesSubCategory =
@@ -1117,7 +1122,6 @@ export const PricingCosting = () => {
       }
 
       return (
-        matchesSearch &&
         matchesCategory &&
         matchesSubCategory &&
         matchesBrand &&
@@ -1169,27 +1173,22 @@ export const PricingCosting = () => {
   }, [filteredItems, sortOrder]);
 
   const profitabilityFilteredItems = useMemo(() => {
-    const searchLower = profitabilitySearch.trim().toLowerCase();
+    const searchPool = profitabilitySearch.trim()
+      ? filterPartsWithFamilyExpansion(
+          items.map((item) => ({
+            ...item,
+            part_no: item.partNo,
+            master_part_no: item.partNoAlt,
+          })),
+          profitabilitySearch,
+        )
+      : items;
 
-    const filtered = items.filter((item) => {
+    const filtered = searchPool.filter((item) => {
       const price = Number(item.priceA || 0);
       const avgPrice = Number(item.avgPrice || 0);
       const profit = price - avgPrice;
       const margin = avgPrice > 0 ? ((price - avgPrice) / avgPrice) * 100 : null;
-
-      if (searchLower) {
-        const haystack = [
-          item.partNo,
-          item.partNoAlt || "",
-          item.description,
-          item.brand,
-          item.category,
-          item.subcategory || "",
-        ]
-          .join(" ")
-          .toLowerCase();
-        if (!haystack.includes(searchLower)) return false;
-      }
 
       if (profitabilityCategory !== "all" && item.category !== profitabilityCategory) {
         return false;
@@ -1482,7 +1481,7 @@ export const PricingCosting = () => {
         modified: false,
         lastUpdated: {
           timestamp: now.toISOString(),
-          date: now.toLocaleDateString(),
+          date: formatUiDate(now) || "",
           time: now.toLocaleTimeString(),
           amount: updatedAmounts,
           previousPrice: previousPrice,
@@ -1499,7 +1498,7 @@ export const PricingCosting = () => {
         );
         priceUpdatedItems[item.id] = {
           timestamp: now.toISOString(),
-          date: now.toLocaleDateString(),
+          date: formatUiDate(now) || "",
           time: now.toLocaleTimeString(),
           partNo: item.partNo,
           amount: updatedAmounts, // Store updated amounts for popup
@@ -3563,7 +3562,7 @@ export const PricingCosting = () => {
                     })();
                     const dateObj = entry.date ? new Date(entry.date) : null;
                     const dateStr = dateObj
-                      ? dateObj.toLocaleDateString()
+                      ? formatUiDate(dateObj) || "—"
                       : "-";
                     const timeStr = dateObj
                       ? dateObj.toLocaleTimeString()

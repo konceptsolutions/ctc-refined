@@ -11,9 +11,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Trash, Plus, PlusCircle, Check } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
+import { formatUiDate } from "@/utils/dateUtils";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
 interface DirectPurchaseOrderItem {
@@ -799,7 +799,7 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
                       variant="outline"
                       className={cn("w-full justify-start text-left font-normal", !formDate && "text-muted-foreground")}
                     >
-                      {formDate ? format(formDate, "PPP") : "Pick a date"}
+                      {formDate ? formatUiDate(formDate) : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">

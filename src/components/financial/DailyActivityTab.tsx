@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/collapsible";
 import { getCurrentDatePakistan } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
+import { formatUiDate } from "@/utils/dateUtils";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import {
   printDailyActivity,
@@ -102,12 +103,7 @@ const formatMoney = (value: number) =>
     maximumFractionDigits: 2,
   });
 
-const formatDate = (value: string) => {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-US');
-};
+const formatDate = (value: string) => formatUiDate(value) || "—";
 
 const statusBadgeClass = (status: string) => {
   const s = String(status || "").toLowerCase();

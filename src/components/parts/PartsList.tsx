@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { cn } from "@/lib/utils";
+import { filterPartsWithFamilyExpansion } from "@/lib/part-family-search";
 import { Loader2 } from "lucide-react";
 
 export interface Part {
@@ -76,17 +77,14 @@ export const PartsList = ({
 
   const filteredParts = useMemo(() => {
     if (serverMode) return parts;
-    const query = searchQuery.toLowerCase();
-    return parts.filter((part) => {
-      const mp = part.masterPartNo
-        ? String(part.masterPartNo).toLowerCase()
-        : "";
-      return (
-        part.partNo.toLowerCase().includes(query) ||
-        mp.includes(query) ||
-        part.brand.toLowerCase().includes(query)
-      );
-    });
+    return filterPartsWithFamilyExpansion(
+      parts.map((part) => ({
+        ...part,
+        master_part_no: part.masterPartNo,
+        part_no: part.partNo,
+      })),
+      searchQuery,
+    );
   }, [parts, searchQuery, serverMode]);
 
   const effectiveTotal = serverMode ? totalCount : filteredParts.length;

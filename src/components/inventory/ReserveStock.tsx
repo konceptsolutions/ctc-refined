@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Search,
   Package,
@@ -29,6 +29,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api";
+import { filterPartsWithFamilyExpansion } from "@/lib/part-family-search";
+import { formatUiDate } from "@/utils/dateUtils";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -160,9 +162,17 @@ export const ReserveStock = () => {
   }, []);
 
   // Filter items by search term
-  const filteredItems = items.filter(item =>
-    item.partNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.description.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredItems = useMemo(
+    () =>
+      filterPartsWithFamilyExpansion(
+        items.map((item) => ({
+          ...item,
+          part_no: item.partNo,
+          master_part_no: item.masterPartNo,
+        })),
+        searchTerm,
+      ),
+    [items, searchTerm],
   );
 
   // Handle reserve/update stock
@@ -363,7 +373,7 @@ export const ReserveStock = () => {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {item.reservedAt ? new Date(item.reservedAt).toLocaleDateString() : "-"}
+                      {formatUiDate(item.reservedAt) || "-"}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">

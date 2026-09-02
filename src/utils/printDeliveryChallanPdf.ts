@@ -43,14 +43,91 @@ export const printDeliveryChallanPdf = (input: DeliveryChallanPdfInput) => {
     (sum, item) => sum + (Number(item.deliveredQty) || 0),
     0,
   );
-  const totalPending = items.reduce(
-    (sum, item) => sum + (Number(item.pendingQty) || 0),
-    0,
-  );
   const totalWeight = items.reduce(
     (sum, item) => sum + (Number(item.weight) || 0),
     0,
   );
+  const isFullyDelivered =
+    String(input.status || "").toLowerCase() === "fully_delivered" ||
+    (items.length > 0 &&
+      items.every((item) => Number(item.pendingQty || 0) <= 0));
+
+  const tableHead = [
+    "Sr#",
+    "Part #",
+    "SS Part #",
+    "Description",
+    "Brand",
+    "UOM",
+    "Qty",
+    ...(isFullyDelivered ? ["Delivered Qty"] : []),
+    "Location",
+    "Weight",
+  ];
+
+  const tableBody = items.length
+    ? items.map((item, idx) => [
+        String(idx + 1),
+        item.partNo || "-",
+        item.ssPartNo || item.partNo || "-",
+        item.description || "-",
+        item.brand || "-",
+        item.uom || "NOS",
+        String(Number(item.qty) || 0),
+        ...(isFullyDelivered
+          ? [String(Number(item.deliveredQty) || 0)]
+          : []),
+        item.location || "-",
+        Number(item.weight || 0).toFixed(3),
+      ])
+    : [
+        [
+          "",
+          "No items",
+          ...Array.from({ length: tableHead.length - 2 }, () => ""),
+        ],
+      ];
+
+  const tableFoot = [
+    [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "Total",
+      String(totalQty),
+      ...(isFullyDelivered ? [String(totalDelivered)] : []),
+      "-",
+      totalWeight.toFixed(3),
+    ],
+  ];
+
+  const columnStyles: Record<number, { cellWidth: number; halign?: "center" }> =
+    isFullyDelivered
+      ? {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 22 },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 38 },
+          4: { cellWidth: 16 },
+          5: { cellWidth: 12, halign: "center" },
+          6: { cellWidth: 12, halign: "center" },
+          7: { cellWidth: 18, halign: "center" },
+          8: { cellWidth: 22 },
+          9: { cellWidth: 14, halign: "center" },
+        }
+      : {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 24 },
+          2: { cellWidth: 24 },
+          3: { cellWidth: 44 },
+          4: { cellWidth: 18 },
+          5: { cellWidth: 12, halign: "center" },
+          6: { cellWidth: 12, halign: "center" },
+          7: { cellWidth: 24 },
+          8: { cellWidth: 16, halign: "center" },
+        };
 
   const drawHeader = () => {
     doc.setTextColor(0, 0, 0);
@@ -81,53 +158,12 @@ export const printDeliveryChallanPdf = (input: DeliveryChallanPdfInput) => {
   autoTable(doc, {
     theme: "plain",
     startY: margin + 28,
-    margin: { left: margin, right: margin, top: margin + 28, bottom: 10 },
-    head: [
-      [
-        "Sr#",
-        "Part #",
-        "SS Part #",
-        "Description",
-        "Brand",
-        "UOM",
-        "Qty",
-        "Delivered Qty",
-        "Pending Qty",
-        "Location",
-        "Weight",
-      ],
-    ],
-    body: items.length
-      ? items.map((item, idx) => [
-          String(idx + 1),
-          item.partNo || "-",
-          item.ssPartNo || item.partNo || "-",
-          item.description || "-",
-          item.brand || "-",
-          item.uom || "NOS",
-          String(Number(item.qty) || 0),
-          String(Number(item.deliveredQty) || 0),
-          String(Number(item.pendingQty) || 0),
-          item.location || "-",
-          Number(item.weight || 0).toFixed(3),
-        ])
-      : [["", "No items", "", "", "", "", "", "", "", "", ""]],
-    foot: [
-      [
-        "",
-        "",
-        "",
-        "",
-        "",
-        "Total",
-        String(totalQty),
-        String(totalDelivered),
-        String(totalPending),
-        "-",
-        totalWeight.toFixed(3),
-      ],
-    ],
+    margin: { left: margin, right: margin, top: margin + 28, bottom: 22 },
+    head: [tableHead],
+    body: tableBody,
+    foot: tableFoot,
     showFoot: "lastPage",
+    showHead: "everyPage",
     styles: {
       font: "helvetica",
       fontSize: 7.5,
@@ -151,19 +187,7 @@ export const printDeliveryChallanPdf = (input: DeliveryChallanPdfInput) => {
       fontStyle: "bold",
       fontSize: 7.5,
     },
-    columnStyles: {
-      0: { cellWidth: 10, halign: "center" },
-      1: { cellWidth: 22 },
-      2: { cellWidth: 22 },
-      3: { cellWidth: 40 },
-      4: { cellWidth: 16 },
-      5: { cellWidth: 12, halign: "center" },
-      6: { cellWidth: 12, halign: "center" },
-      7: { cellWidth: 18, halign: "center" },
-      8: { cellWidth: 16, halign: "center" },
-      9: { cellWidth: 22 },
-      10: { cellWidth: 14, halign: "center" },
-    },
+    columnStyles,
     didDrawPage: (data) => {
       if (data.pageNumber > 1) drawHeader();
     },

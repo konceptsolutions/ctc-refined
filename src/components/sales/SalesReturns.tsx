@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiClient } from "@/lib/api";
 import { getCustomerTypeLabel } from "@/types/invoice";
+import { formatUiDate } from "@/utils/dateUtils";
 import {
   Table,
   TableBody,
@@ -199,14 +200,8 @@ const pickDirectLinePrice = (
   return { selectedPriceType: "", unitPrice: "" };
 };
 
-const formatDisplayDate = (value?: string | Date | null) => {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleDateString();
-  } catch {
-    return String(value);
-  }
-};
+const formatDisplayDate = (value?: string | Date | null) =>
+  formatUiDate(value) || "—";
 
 const mapOriginalInvoiceFromApi = (fullInv: any): OriginalInvoiceDetails => {
   const items: OriginalInvoiceItem[] = (fullInv.SalesInvoiceItem || []).map(
@@ -277,7 +272,7 @@ function mapApiSalesReturn(row: any): SalesReturn {
   let returnDate = "";
   if (row.returnDate) {
     try {
-      returnDate = new Date(row.returnDate).toLocaleDateString();
+      returnDate = formatUiDate(row.returnDate) || "—";
     } catch {
       returnDate = String(row.returnDate);
     }

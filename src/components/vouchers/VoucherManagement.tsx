@@ -37,7 +37,7 @@ export interface Voucher {
   id: string;
   voucherNumber: string;
   type: "receipt" | "payment" | "journal" | "contra";
-  mode?: "cash" | "online";
+  mode?: "cash" | "online" | "cash+online";
   conversionRate?: number;
   date: string;
   narration: string;
@@ -989,7 +989,18 @@ export const VoucherManagement = () => {
       }
 
       if (response.data) {
-        setVouchers(vouchers.map(v => v.id === updatedVoucher.id ? response.data : v));
+        const updated = response.data as Voucher;
+        const normalized: Voucher = {
+          ...updated,
+          entries:
+            updated.entries ??
+            updated.VoucherEntry ??
+            vouchers.find((v) => v.id === updatedVoucher.id)?.entries ??
+            [],
+        };
+        setVouchers(
+          vouchers.map((v) => (v.id === updatedVoucher.id ? normalized : v)),
+        );
         toast({ title: "Success", description: "Voucher updated successfully" });
       }
     } catch (error: any) {

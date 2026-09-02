@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { formatUiDate } from '@/utils/dateUtils';
 import {
   Dialog,
   DialogContent,
@@ -114,17 +115,7 @@ export const HistoryPopup: React.FC<HistoryPopupProps> = ({ open, onOpenChange, 
     }
   };
 
-  const formatDate = (dateString: string) => {
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
+  const formatDate = (dateString: string) => formatUiDate(dateString) || dateString;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -15,6 +15,7 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { Printer, Search, Download } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
+import { formatUiDate } from "@/utils/dateUtils";
 import { exportToCSV } from "@/utils/exportUtils";
 
 interface SupplierRow {
@@ -150,7 +151,7 @@ ${printRef.current.innerHTML}
             {/* Hidden print content */}
             <div ref={printRef} className="hidden">
               <h2>Supplier Payable Report</h2>
-              <p>As of: {asOf ? new Date(asOf).toLocaleDateString() : toDate}</p>
+              <p>As of: {asOf ? formatUiDate(asOf) || toDate : toDate}</p>
               <table>
                 <thead>
                   <tr>
@@ -223,7 +224,7 @@ ${printRef.current.innerHTML}
                   <span className="font-semibold font-mono">{fmt(totalBalance)}</span>
                 </div>
                 <div className="text-xs text-muted-foreground text-right">
-                  As of {asOf ? new Date(asOf).toLocaleDateString() : toDate}
+                  As of {asOf ? formatUiDate(asOf) || toDate : toDate}
                 </div>
               </div>
             </div>

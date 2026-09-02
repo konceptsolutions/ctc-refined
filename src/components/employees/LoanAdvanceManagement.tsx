@@ -32,7 +32,7 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
-import { getCurrentDatePakistan } from "@/utils/dateUtils";
+import { getCurrentDatePakistan, formatUiDate } from "@/utils/dateUtils";
 
 type EmployeeOption = {
   id: string;
@@ -96,12 +96,7 @@ const formatMoney = (value: number) =>
     maximumFractionDigits: 2,
   });
 
-const formatDate = (value?: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-US');
-};
+const formatDate = (value?: string | null) => formatUiDate(value) || "—";
 
 const todayDateMax = () => getCurrentDatePakistan();
 

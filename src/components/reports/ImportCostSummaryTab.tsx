@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatUiDate } from "@/utils/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -236,7 +237,7 @@ const ImportCostSummaryTab = () => {
                 importData.map((record, index) => (
                   <TableRow key={record.id}>
                     <ListNumberCell index={index} total={importData.length} />
-                    <TableCell>{record.date}</TableCell>
+                    <TableCell>{formatUiDate(record.date) || record.date}</TableCell>
                     <TableCell className="font-medium text-primary">{record.lcNumber}</TableCell>
                     <TableCell>{record.supplier}</TableCell>
                     <TableCell>

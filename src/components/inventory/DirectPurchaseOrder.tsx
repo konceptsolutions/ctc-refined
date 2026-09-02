@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { apiClient, getApiBaseUrl } from "@/lib/api";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
+import { buildPartSearchableSelectFields } from "@/lib/part-family-search";
 import {
   formatPurchasePrice,
   roundPurchasePrice,
@@ -89,6 +90,7 @@ interface DirectPurchaseOrderItem {
   returnedQuantity: number;
   purchasePrice: number;
   amount: number;
+  weight?: number;
   priceA?: number | null;
   priceB?: number | null;
 }
@@ -154,6 +156,65 @@ type InquiryConversionDraft = {
 };
 
 const DPO_FIXED_EXPENSE_ACCOUNT = "Local Purchase Freight";
+
+type DpoExpenseLineInput = {
+  quantity: number;
+  weight?: number;
+};
+
+const formatDpoMoney = (value: number) =>
+  value.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+function getDpoDistributionShares(items: DpoExpenseLineInput[]): number[] {
+  return items.map((item) => {
+    const qty = Number(item.quantity) || 0;
+    const unitWeight = Number(item.weight) || 0;
+    if (qty <= 0) return 0;
+    return unitWeight > 0 ? qty * unitWeight : qty;
+  });
+}
+
+function distributeDpoExpenses(
+  items: DpoExpenseLineInput[],
+  totalExpenses: number,
+): number[] {
+  if (totalExpenses <= 0 || items.length === 0) {
+    return items.map(() => 0);
+  }
+
+  const shares = getDpoDistributionShares(items);
+  const totalShare = shares.reduce((sum, value) => sum + value, 0);
+
+  if (totalShare <= 0) {
+    const equalShare = totalExpenses / items.length;
+    return items.map(() => equalShare);
+  }
+
+  return shares.map((share) => (share / totalShare) * totalExpenses);
+}
+
+function getDpoExpensePerUnit(
+  items: DpoExpenseLineInput[],
+  totalExpenses: number,
+  index: number,
+): number {
+  const qty = Number(items[index]?.quantity) || 0;
+  if (qty <= 0) return 0;
+  const distributed = distributeDpoExpenses(items, totalExpenses);
+  return (distributed[index] || 0) / qty;
+}
+
+function getDpoCostPerUnit(
+  purchasePrice: number,
+  items: DpoExpenseLineInput[],
+  totalExpenses: number,
+  index: number,
+): number {
+  return purchasePrice + getDpoExpensePerUnit(items, totalExpenses, index);
+}
 
 const DPO_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
@@ -405,13 +466,13 @@ export const DirectPurchaseOrder = ({
         dpoNo: o.dpo_no,
         invoiceNo: o.invoice_no || "",
         invoiceDate: o.invoice_date
-          ? new Date(o.invoice_date).toLocaleDateString('en-US')
+          ? formatUiDate(o.invoice_date) || "-"
           : "",
         store: o.store_name || "N/A",
         supplier: isTransferIn
           ? branchAccountDisplayName(o.branch_account_name) || "N/A"
           : o.supplier_name || "N/A",
-        requestDate: new Date(o.date).toLocaleDateString('en-US'),
+        requestDate: formatUiDate(o.date) || "-",
         date: o.date, // Raw date for sorting
         description: o.description || "",
         grandTotal: o.total_amount || 0,
@@ -450,7 +511,7 @@ export const DirectPurchaseOrder = ({
       if (Array.isArray(partsData)) {
         setParts(partsData.map((p: any) => ({
           id: p.id,
-          partNo: p.part_no || p.partNo || p.master_part_no || p.masterPartNo || '',
+          partNo: p.part_no || p.partNo || '',
           masterPartNo: p.master_part_no || p.masterPartNo || '',
           description: p.description || '',
           brand: p.brand_name || p.brand?.name || null,
@@ -501,7 +562,11 @@ export const DirectPurchaseOrder = ({
   // Fetch suppliers from API
   const fetchSuppliers = async () => {
     try {
-      const response = await apiClient.getSuppliers({ status: 'active', limit: 1000 }) as any;
+      const response = await apiClient.getSuppliers({
+        status: "active",
+        type: "local",
+        limit: 1000,
+      }) as any;
       const data = response.data || response;
       const suppliersData = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
 
@@ -1002,11 +1067,11 @@ export const DirectPurchaseOrder = ({
     dpoNo: dpo.dpo_no,
     invoiceNo: dpo.invoice_no || "",
     invoiceDate: dpo.invoice_date
-      ? new Date(dpo.invoice_date).toLocaleDateString('en-US')
+      ? formatUiDate(dpo.invoice_date) || "-"
       : "",
     store: dpo.store_name || "N/A",
     supplier: dpo.supplier_name || dpo.branch_account_name || "N/A",
-    requestDate: new Date(dpo.date).toLocaleDateString('en-US'),
+    requestDate: formatUiDate(dpo.date) || "-",
     date: dpo.date,
     description: dpo.description || "",
     grandTotal: dpo.total_amount || 0,
@@ -1029,6 +1094,7 @@ export const DirectPurchaseOrder = ({
       returnedQuantity: item.returned_quantity || 0,
       purchasePrice: item.purchase_price,
       amount: item.amount,
+      weight: Number(item.weight ?? item.part_weight ?? 0) || 0,
       priceA:
         item.price_a !== undefined && item.price_a !== null
           ? Number(item.price_a)
@@ -1072,6 +1138,14 @@ export const DirectPurchaseOrder = ({
               if (part && !part.error) {
                 return {
                   ...item,
+                  weight:
+                    item.weight && item.weight > 0
+                      ? item.weight
+                      : part.weight != null
+                        ? Number(part.weight)
+                        : part.weight_kg != null
+                          ? Number(part.weight_kg)
+                          : 0,
                   priceA:
                     item.priceA ??
                     (part.price_a != null ? Number(part.price_a) : null) ??
@@ -1545,20 +1619,6 @@ export const DirectPurchaseOrder = ({
     }, 0);
   };
 
-  // Per-line distribution weight = quantity × per-unit weight (kg). Items
-  // without a weight fall back to their quantity so they still get a share
-  // proportional to how many pieces they contribute. If neither weight nor
-  // quantity is available, the line gets a zero share (handled below).
-  const itemDistributionShares = useMemo(() => {
-    return formItems.map((item) => {
-      const qty = typeof item.quantity === "number" ? item.quantity : 0;
-      const unitWeight = typeof item.weight === "number" ? item.weight : 0;
-      if (qty <= 0) return 0;
-      return unitWeight > 0 ? qty * unitWeight : qty;
-    });
-  }, [formItems]);
-
-  // Calculate total expenses
   const calculateTotalExpenses = () => {
     return formExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   };
@@ -1568,19 +1628,14 @@ export const DirectPurchaseOrder = ({
   // every line has zero quantity.
   const calculateDistributedExpenses = useMemo(() => {
     const totalExpenses = formExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    if (totalExpenses === 0 || formItems.length === 0) {
-      return formItems.map(() => 0);
-    }
-
-    const totalShare = itemDistributionShares.reduce((sum, value) => sum + value, 0);
-
-    if (totalShare <= 0) {
-      const equalShare = totalExpenses / formItems.length;
-      return formItems.map(() => equalShare);
-    }
-
-    return itemDistributionShares.map((share) => (share / totalShare) * totalExpenses);
-  }, [formItems, formExpenses, itemDistributionShares]);
+    return distributeDpoExpenses(
+      formItems.map((item) => ({
+        quantity: typeof item.quantity === "number" ? item.quantity : 0,
+        weight: typeof item.weight === "number" ? item.weight : 0,
+      })),
+      totalExpenses,
+    );
+  }, [formItems, formExpenses]);
 
   const itemPartTotals = useMemo(() => {
     const totalExpenses = formExpenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -1606,6 +1661,39 @@ export const DirectPurchaseOrder = ({
     );
   }, [formItems, formExpenses, calculateDistributedExpenses]);
 
+  const formExpenseLines = useMemo(
+    () =>
+      formItems.map((row) => ({
+        quantity: typeof row.quantity === "number" ? row.quantity : 0,
+        weight: typeof row.weight === "number" ? row.weight : 0,
+      })),
+    [formItems],
+  );
+
+  const viewItemCostPerUnit = useMemo(() => {
+    if (!selectedOrder) return [];
+    const totalExpenses = selectedOrder.totalExpenses ?? 0;
+    const lines = selectedOrder.items.map((item) => ({
+      quantity: item.quantity,
+      weight: item.weight ?? 0,
+    }));
+    return selectedOrder.items.map((item, index) =>
+      getDpoCostPerUnit(item.purchasePrice, lines, totalExpenses, index),
+    );
+  }, [selectedOrder]);
+
+  const viewItemExpensePerUnit = useMemo(() => {
+    if (!selectedOrder) return [];
+    const totalExpenses = selectedOrder.totalExpenses ?? 0;
+    const lines = selectedOrder.items.map((item) => ({
+      quantity: item.quantity,
+      weight: item.weight ?? 0,
+    }));
+    return selectedOrder.items.map((_, index) =>
+      getDpoExpensePerUnit(lines, totalExpenses, index),
+    );
+  }, [selectedOrder]);
+
   const partSelectOptions = useMemo(
     () =>
       parts.map((p) => ({
@@ -1620,6 +1708,7 @@ export const DirectPurchaseOrder = ({
         ]
           .filter(Boolean)
           .join(" | "),
+        ...buildPartSearchableSelectFields(p),
       })),
     [parts],
   );
@@ -2503,7 +2592,7 @@ export const DirectPurchaseOrder = ({
                 <p className="text-[10px] text-muted-foreground italic">Includes distributed expenses</p>
                 {partHistory.lastPurchaseDate && (
                   <p className="text-xs text-muted-foreground">
-                    {new Date(partHistory.lastPurchaseDate).toLocaleDateString('en-US')}
+                    {formatUiDate(partHistory.lastPurchaseDate) || "-"}
                   </p>
                 )}
               </div>
@@ -2810,6 +2899,19 @@ export const DirectPurchaseOrder = ({
                                 />
                               </div>
                               <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground">Cost / Unit</Label>
+                                <div className="h-10 flex items-center rounded-md border border-input bg-muted/40 px-3 text-sm tabular-nums font-medium">
+                                  {formatDpoMoney(
+                                    getDpoCostPerUnit(
+                                      price,
+                                      formExpenseLines,
+                                      calculateTotalExpenses(),
+                                      index,
+                                    ),
+                                  )}
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
                                 <Label className="text-xs text-muted-foreground">Price A</Label>
                                 <Input
                                   type="number"
@@ -2939,6 +3041,7 @@ export const DirectPurchaseOrder = ({
                               <TableHead className="min-w-[60px]">UoM</TableHead>
                               <TableHead className="w-24">Qty</TableHead>
                               <TableHead className="w-28">Purchase Price</TableHead>
+                              <TableHead className="text-right min-w-[100px]">Cost / Unit</TableHead>
                               <TableHead className="w-24">Price A</TableHead>
                               <TableHead className="w-24">Price B</TableHead>
                               <TableHead className="w-16 text-right">Weight</TableHead>
@@ -3007,6 +3110,18 @@ export const DirectPurchaseOrder = ({
                                       placeholder=""
                                       className="w-full min-w-[100px]"
                                     />
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium tabular-nums">
+                                    {formatDpoMoney(
+                                      getDpoCostPerUnit(
+                                        typeof item.purchasePrice === "number"
+                                          ? item.purchasePrice
+                                          : 0,
+                                        formExpenseLines,
+                                        calculateTotalExpenses(),
+                                        index,
+                                      ),
+                                    )}
                                   </TableCell>
                                   <TableCell>
                                     <Input
@@ -3525,6 +3640,8 @@ export const DirectPurchaseOrder = ({
                         <TableHead className="min-w-[60px]">Qty</TableHead>
                         <TableHead className="min-w-[120px]">Purchase Price</TableHead>
                         <TableHead className="text-right min-w-[100px]">Amount</TableHead>
+                        <TableHead className="text-right min-w-[100px]">EXP / unit</TableHead>
+                        <TableHead className="text-right min-w-[100px]">Cost / Unit</TableHead>
                         <TableHead className="min-w-[100px]">Price A</TableHead>
                         <TableHead className="min-w-[100px]">Price B</TableHead>
                         <TableHead className="text-center min-w-[72px]">Action</TableHead>
@@ -3563,6 +3680,12 @@ export const DirectPurchaseOrder = ({
                           <TableCell>{formatPurchasePrice(item.purchasePrice)}</TableCell>
                           <TableCell className="text-right font-medium">
                             {item.amount.toLocaleString("en-PK")}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatDpoMoney(viewItemExpensePerUnit[index] ?? 0)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatDpoMoney(viewItemCostPerUnit[index] ?? item.purchasePrice)}
                           </TableCell>
                           <TableCell>
                             <Input

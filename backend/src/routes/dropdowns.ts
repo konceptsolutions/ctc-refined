@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import prisma from "../config/database";
+import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch";
 import { randomUUID } from "crypto";
 
 const router = express.Router();
@@ -479,13 +480,15 @@ router.get("/parts", async (req: Request, res: Response) => {
     }
 
     if (search) {
-      const searchOr = [
-        { partNo: { contains: search as string } },
-        { description: { contains: search as string } },
-        { brand: { name: { contains: search as string } } },
-        { MasterPart: { masterPartNo: { contains: search as string } } },
-      ];
-      where.OR = where.OR ? [...where.OR, ...searchOr] : searchOr;
+      const searchWhere = await buildPartSearchWhereWithFamily(String(search).trim(), {
+        status: "active",
+      });
+      if (master_part_no) {
+        where.AND = [{ OR: where.OR }, { OR: searchWhere.OR }];
+        delete where.OR;
+      } else {
+        Object.assign(where, searchWhere);
+      }
     }
 
     const parts = await prisma.part.findMany({

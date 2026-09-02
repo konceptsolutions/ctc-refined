@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiClient } from "@/lib/api";
+import { formatUiDate } from "@/utils/dateUtils";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { toast } from "sonner";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
@@ -133,7 +134,7 @@ export const StockTransfer = () => {
       const formattedTransfers: Transfer[] = transfersData.map((t: any) => ({
         id: t.id,
         transferNumber: t.transfer_number || t.transferNumber,
-        date: new Date(t.date).toLocaleDateString('en-US'),
+        date: formatUiDate(t.date) || "-",
         status: t.status as Transfer["status"],
         notes: t.notes || '',
         items: [],
@@ -765,7 +766,7 @@ export const StockTransfer = () => {
                                 setViewingTransfer({
                                   id: transferData.id,
                                   transferNumber: transferData.transfer_number || transfer.transferNumber,
-                                  date: new Date(transferData.date).toLocaleDateString('en-US'),
+                                  date: formatUiDate(transferData.date) || "-",
                                   status: transferData.status as Transfer["status"],
                                   notes: transferData.notes || '',
                                   items: (transferData.items || []).map((item: any) => ({

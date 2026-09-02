@@ -10,12 +10,15 @@ import {
   syncEmployeeAccountNames,
   getStaffSalaryExpenseAccount,
   getEmployeeAccountByRole,
-  isCashBankAccount,
   postEmployeeVoucher,
   reverseEmployeeVoucher,
   postOpeningBalanceJv,
   type EmployeeAccountRole,
 } from "../utils/employeeAccounting";
+import {
+  getAccountCashBankMode,
+  isCashBankAccount as isChartCashBankAccount,
+} from "../utils/cashBankMode";
 
 const EMPLOYEE_ID_PARAM = ":id([0-9a-fA-F-]{36})";
 
@@ -30,14 +33,233 @@ const EMPLOYEE_TX_TYPES = [
   "salary_payment",
 ] as const;
 
+type EmployeeTxType = (typeof EMPLOYEE_TX_TYPES)[number];
+
+function parseNonNegativeAmount(value: unknown, fallback = 0): number {
+  const num = Number(value ?? fallback);
+  if (!Number.isFinite(num) || num < 0) return fallback;
+  return Math.round(num * 100) / 100;
+}
+
+function parseOptionalDescription(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function validatePayrollExtraFieldDescriptions(params: {
+  extraPayment: number;
+  extraPaymentDescription: string | null;
+  extraDeduction: number;
+  extraDeductionDescription: string | null;
+}): string | null {
+  if (params.extraPayment > 0 && !String(params.extraPaymentDescription || "").trim()) {
+    return "Extra payment description is required when an extra payment amount is entered.";
+  }
+  if (params.extraDeduction > 0 && !String(params.extraDeductionDescription || "").trim()) {
+    return "Extra deduction description is required when an extra deduction amount is entered.";
+  }
+  return null;
+}
+
+function calculatePayrollNetPayable(params: {
+  grossAmount: number;
+  loanRecovery: number;
+  advanceRecovery: number;
+  extraPayment: number;
+  extraDeduction: number;
+}): number {
+  const net =
+    params.grossAmount +
+    params.extraPayment -
+    params.loanRecovery -
+    params.advanceRecovery -
+    params.extraDeduction;
+  return Math.round(net * 100) / 100;
+}
+
+function calculatePayrollExpenseDebit(params: {
+  grossAmount: number;
+  extraPayment: number;
+  extraDeduction: number;
+}): number {
+  return Math.round(
+    (params.grossAmount + params.extraPayment - params.extraDeduction) * 100,
+  ) / 100;
+}
+
+type PayrollVoucherAccount = { id: string; code: string; name: string };
+
+function buildPayrollAccrualVoucherEntries(params: {
+  employeeId: string;
+  expenseAccount: PayrollVoucherAccount;
+  salaryAccount: PayrollVoucherAccount;
+  loanAccount: PayrollVoucherAccount;
+  advanceAccount: PayrollVoucherAccount;
+  accountLabel: (account: PayrollVoucherAccount) => string;
+  grossAmount: number;
+  extraPayment: number;
+  extraPaymentDescription: string | null;
+  extraDeduction: number;
+  extraDeductionDescription: string | null;
+  netPaid: number;
+  loanRecovery: number;
+  advanceRecovery: number;
+  description?: string;
+  daysWorked: number;
+  workingDays: number;
+}) {
+  const entries: Array<{
+    accountId: string;
+    accountName: string;
+    debit: number;
+    credit: number;
+    description?: string;
+    employeeId: string;
+  }> = [
+    {
+      accountId: params.expenseAccount.id,
+      accountName: params.accountLabel(params.expenseAccount),
+      debit: params.grossAmount,
+      credit: 0,
+      description: `Gross salary (${params.daysWorked}/${params.workingDays} days)`,
+      employeeId: params.employeeId,
+    },
+  ];
+
+  if (params.extraPayment > 0) {
+    entries.push({
+      accountId: params.expenseAccount.id,
+      accountName: params.accountLabel(params.expenseAccount),
+      debit: params.extraPayment,
+      credit: 0,
+      description: params.extraPaymentDescription || "Extra payment",
+      employeeId: params.employeeId,
+    });
+  }
+
+  if (params.extraDeduction > 0) {
+    entries.push({
+      accountId: params.expenseAccount.id,
+      accountName: params.accountLabel(params.expenseAccount),
+      debit: 0,
+      credit: params.extraDeduction,
+      description: params.extraDeductionDescription || "Extra deduction",
+      employeeId: params.employeeId,
+    });
+  }
+
+  entries.push({
+    accountId: params.salaryAccount.id,
+    accountName: params.accountLabel(params.salaryAccount),
+    debit: 0,
+    credit: params.netPaid,
+    description: params.description || "Net salary payable",
+    employeeId: params.employeeId,
+  });
+
+  if (params.loanRecovery > 0) {
+    entries.push({
+      accountId: params.loanAccount.id,
+      accountName: params.accountLabel(params.loanAccount),
+      debit: 0,
+      credit: params.loanRecovery,
+      description: "Loan recovery",
+      employeeId: params.employeeId,
+    });
+  }
+
+  if (params.advanceRecovery > 0) {
+    entries.push({
+      accountId: params.advanceAccount.id,
+      accountName: params.accountLabel(params.advanceAccount),
+      debit: 0,
+      credit: params.advanceRecovery,
+      description: "Advance recovery",
+      employeeId: params.employeeId,
+    });
+  }
+
+  return entries;
+}
+
+async function setEmployeePayrollSupplementaryFields(
+  transactionId: string,
+  data: {
+    leaves: number;
+    extraPayment: number;
+    extraPaymentDescription: string | null;
+    extraDeduction: number;
+    extraDeductionDescription: string | null;
+  },
+): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "EmployeeTransaction"
+    SET
+      "leaves" = ${data.leaves},
+      "extraPayment" = ${data.extraPayment},
+      "extraPaymentDescription" = ${data.extraPaymentDescription},
+      "extraDeduction" = ${data.extraDeduction},
+      "extraDeductionDescription" = ${data.extraDeductionDescription}
+    WHERE "id" = ${transactionId}
+  `;
+}
+
+async function getEmployeePayrollSupplementaryFieldsMap(ids: string[]) {
+  if (!ids.length) {
+    return new Map<
+      string,
+      {
+        leaves: number;
+        extraPayment: number;
+        extraPaymentDescription: string | null;
+        extraDeduction: number;
+        extraDeductionDescription: string | null;
+      }
+    >();
+  }
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      leaves: number | null;
+      extraPayment: number | null;
+      extraPaymentDescription: string | null;
+      extraDeduction: number | null;
+      extraDeductionDescription: string | null;
+    }>
+  >(
+    Prisma.sql`
+      SELECT
+        "id",
+        "leaves",
+        "extraPayment",
+        "extraPaymentDescription",
+        "extraDeduction",
+        "extraDeductionDescription"
+      FROM "EmployeeTransaction"
+      WHERE "id" IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}`))})
+    `,
+  );
+
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      {
+        leaves: Number(row.leaves || 0),
+        extraPayment: Number(row.extraPayment || 0),
+        extraPaymentDescription: row.extraPaymentDescription,
+        extraDeduction: Number(row.extraDeduction || 0),
+        extraDeductionDescription: row.extraDeductionDescription,
+      },
+    ]),
+  );
+}
+
 const LOAN_ADVANCE_TX_TYPES = [
   "advance_issue",
   "loan_issue",
   "loan_recovery",
   "advance_recovery",
 ] as const;
-
-type EmployeeTxType = (typeof EMPLOYEE_TX_TYPES)[number];
 
 type EmployeeAccountRecord = {
   id: string;
@@ -212,12 +434,13 @@ router.get("/cash-bank-accounts", async (_req: Request, res: Response) => {
     });
 
     const cashBank = accounts
-      .filter((account) => isCashBankAccount(account))
+      .filter((account) => isChartCashBankAccount(account))
       .map((account) => ({
         id: account.id,
         code: account.code,
         name: account.name,
         label: `${account.code} - ${account.name}`,
+        mode: getAccountCashBankMode(account),
       }));
 
     res.json({ data: cashBank });
@@ -358,7 +581,7 @@ router.put("/loan-advance-transactions/:txId", async (req: Request, res: Respons
       where: { id: cashBankAccountId },
       include: { Subgroup: { include: { MainGroup: true } } },
     });
-    if (!cashAccount || !isCashBankAccount(cashAccount)) {
+    if (!cashAccount || !isChartCashBankAccount(cashAccount)) {
       return res.status(400).json({ error: "Selected account is not a cash/bank account." });
     }
 
@@ -566,6 +789,10 @@ router.get("/payroll-transactions", async (req: Request, res: Response) => {
       }),
     ]);
 
+    const payrollSupplementaryFieldsMap = await getEmployeePayrollSupplementaryFieldsMap(
+      accruals.map((accrual) => accrual.id),
+    );
+
     type PayrollBucket = {
       accrual?: (typeof accruals)[number];
       payments: (typeof payments)[number][];
@@ -611,6 +838,7 @@ router.get("/payroll-transactions", async (req: Request, res: Response) => {
           accrual.workingDays ?? accrual.Employee?.workingDays ?? 26,
         );
         const absentDays = Number(accrual.absentDays || 0);
+        const supplementary = payrollSupplementaryFieldsMap.get(accrual.id);
 
         return {
           id: accrual.id,
@@ -619,10 +847,15 @@ router.get("/payroll-transactions", async (req: Request, res: Response) => {
           payrollMonth: bucket.month,
           grossAmount: Number(accrual.amount || 0),
           absentDays,
+          leaves: Number(supplementary?.leaves || 0),
           workingDays,
           daysWorked: workingDays - absentDays,
           loanRecovery: Number(accrual.loanRecovery || 0),
           advanceRecovery: Number(accrual.advanceRecovery || 0),
+          extraPayment: Number(supplementary?.extraPayment || 0),
+          extraPaymentDescription: supplementary?.extraPaymentDescription || null,
+          extraDeduction: Number(supplementary?.extraDeduction || 0),
+          extraDeductionDescription: supplementary?.extraDeductionDescription || null,
           netPayable,
           paidAmount,
           outstanding,
@@ -647,6 +880,7 @@ router.get("/payroll-transactions", async (req: Request, res: Response) => {
         payrollMonth: bucket.month,
         grossAmount,
         absentDays: 0,
+        leaves: 0,
         workingDays: Number(employee?.workingDays || 26),
         daysWorked: Number(employee?.workingDays || 26),
         loanRecovery: 0,
@@ -731,6 +965,9 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
       return res.status(404).json({ error: "Employee not found." });
     }
 
+    const existingSupplementaryMap = await getEmployeePayrollSupplementaryFieldsMap([existing.id]);
+    const existingSupplementary = existingSupplementaryMap.get(existing.id);
+
     const date = req.body?.date ? parseDate(req.body.date) : existing.date;
     const payrollMonth =
       parsePayrollMonth(req.body?.payrollMonth) || existing.payrollMonth || payrollMonthKey;
@@ -738,6 +975,10 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
       req.body?.absentDays !== undefined
         ? Number(req.body.absentDays || 0)
         : Number(existing.absentDays || 0);
+    const leaves =
+      req.body?.leaves !== undefined
+        ? parseNonNegativeAmount(req.body.leaves, 0)
+        : Number(existingSupplementary?.leaves || 0);
     const loanRecovery =
       req.body?.loanRecovery !== undefined
         ? Number(req.body.loanRecovery || 0)
@@ -746,6 +987,22 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
       req.body?.advanceRecovery !== undefined
         ? Number(req.body.advanceRecovery || 0)
         : Number(existing.advanceRecovery || 0);
+    const extraPayment =
+      req.body?.extraPayment !== undefined
+        ? parseNonNegativeAmount(req.body.extraPayment, 0)
+        : Number(existingSupplementary?.extraPayment || 0);
+    const extraDeduction =
+      req.body?.extraDeduction !== undefined
+        ? parseNonNegativeAmount(req.body.extraDeduction, 0)
+        : Number(existingSupplementary?.extraDeduction || 0);
+    const extraPaymentDescription =
+      req.body?.extraPaymentDescription !== undefined
+        ? parseOptionalDescription(req.body.extraPaymentDescription) || null
+        : existingSupplementary?.extraPaymentDescription || null;
+    const extraDeductionDescription =
+      req.body?.extraDeductionDescription !== undefined
+        ? parseOptionalDescription(req.body.extraDeductionDescription) || null
+        : existingSupplementary?.extraDeductionDescription || null;
     const description =
       req.body?.description !== undefined
         ? String(req.body.description || "").trim()
@@ -794,6 +1051,9 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
         error: "Absent days must be between 0 and working days.",
       });
     }
+    if (leaves < 0) {
+      return res.status(400).json({ error: "Leaves cannot be negative." });
+    }
 
     let grossAmount: number;
     try {
@@ -809,7 +1069,33 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
       return res.status(400).json({ error: "Accrued salary amount must be greater than zero." });
     }
 
-    const netPaid = grossAmount - loanRecovery - advanceRecovery;
+    const extraFieldError = validatePayrollExtraFieldDescriptions({
+      extraPayment,
+      extraPaymentDescription,
+      extraDeduction,
+      extraDeductionDescription,
+    });
+    if (extraFieldError) {
+      return res.status(400).json({ error: extraFieldError });
+    }
+
+    const netPaid = calculatePayrollNetPayable({
+      grossAmount,
+      loanRecovery,
+      advanceRecovery,
+      extraPayment,
+      extraDeduction,
+    });
+    const expenseDebit = calculatePayrollExpenseDebit({
+      grossAmount,
+      extraPayment,
+      extraDeduction,
+    });
+    if (expenseDebit < 0) {
+      return res.status(400).json({
+        error: "Extra deduction cannot exceed gross salary plus extra payment.",
+      });
+    }
     if (netPaid < 0) {
       return res.status(400).json({ error: "Recoveries cannot exceed gross salary." });
     }
@@ -867,52 +1153,25 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
       `${account.code}-${account.name}`;
     const daysWorked = workingDays - absentDays;
 
-    const accrualEntries: Array<{
-      accountId: string;
-      accountName: string;
-      debit: number;
-      credit: number;
-      description?: string;
-      employeeId: string;
-    }> = [
-      {
-        accountId: expenseAccount.id,
-        accountName: accountLabel(expenseAccount),
-        debit: grossAmount,
-        credit: 0,
-        description,
-        employeeId: employee.id,
-      },
-      {
-        accountId: salaryAccountFresh.id,
-        accountName: accountLabel(salaryAccountFresh),
-        debit: 0,
-        credit: netPaid,
-        description: description || "Net salary payable",
-        employeeId: employee.id,
-      },
-    ];
-
-    if (loanRecovery > 0) {
-      accrualEntries.push({
-        accountId: loanAccountFresh.id,
-        accountName: accountLabel(loanAccountFresh),
-        debit: 0,
-        credit: loanRecovery,
-        description: "Loan recovery",
-        employeeId: employee.id,
-      });
-    }
-    if (advanceRecovery > 0) {
-      accrualEntries.push({
-        accountId: advanceAccountFresh.id,
-        accountName: accountLabel(advanceAccountFresh),
-        debit: 0,
-        credit: advanceRecovery,
-        description: "Advance recovery",
-        employeeId: employee.id,
-      });
-    }
+    const accrualEntries = buildPayrollAccrualVoucherEntries({
+      employeeId: employee.id,
+      expenseAccount,
+      salaryAccount: salaryAccountFresh,
+      loanAccount: loanAccountFresh,
+      advanceAccount: advanceAccountFresh,
+      accountLabel,
+      grossAmount,
+      extraPayment,
+      extraPaymentDescription,
+      extraDeduction,
+      extraDeductionDescription,
+      netPaid,
+      loanRecovery,
+      advanceRecovery,
+      description,
+      daysWorked,
+      workingDays,
+    });
 
     const voucher = await postEmployeeVoucher({
       type: "journal",
@@ -954,8 +1213,28 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
       },
     });
 
+    await setEmployeePayrollSupplementaryFields(transaction.id, {
+      leaves,
+      extraPayment,
+      extraPaymentDescription,
+      extraDeduction,
+      extraDeductionDescription,
+    });
+
     const balances = mapEmployeeBalances(await getEmployeeAccounts(employee.id));
-    res.json({ data: { transaction, balances } });
+    res.json({
+      data: {
+        transaction: {
+          ...transaction,
+          leaves,
+          extraPayment,
+          extraPaymentDescription,
+          extraDeduction,
+          extraDeductionDescription,
+        },
+        balances,
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1370,8 +1649,15 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
 
     const amount = Number(req.body?.amount || 0);
     const absentDays = Number(req.body?.absentDays || 0);
+    const leaves = parseNonNegativeAmount(req.body?.leaves, 0);
     const loanRecovery = Number(req.body?.loanRecovery || 0);
     const advanceRecovery = Number(req.body?.advanceRecovery || 0);
+    const extraPayment = parseNonNegativeAmount(req.body?.extraPayment, 0);
+    const extraDeduction = parseNonNegativeAmount(req.body?.extraDeduction, 0);
+    const extraPaymentDescription =
+      parseOptionalDescription(req.body?.extraPaymentDescription) || null;
+    const extraDeductionDescription =
+      parseOptionalDescription(req.body?.extraDeductionDescription) || null;
     const payrollMonth = parsePayrollMonth(req.body?.payrollMonth);
     const cashBankAccountId = String(req.body?.cashBankAccountId || "").trim();
     const description = req.body?.description ? String(req.body.description).trim() : "";
@@ -1519,6 +1805,10 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
         return res.status(400).json({ error: "Accrued salary amount must be greater than zero." });
       }
 
+      if (leaves < 0) {
+        return res.status(400).json({ error: "Leaves cannot be negative." });
+      }
+
       const daysWorked = workingDays - absentDays;
 
       if (loanRecovery > Number(loanAccount.currentBalance || 0) + 0.01) {
@@ -1528,9 +1818,35 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
         return res.status(400).json({ error: "Advance recovery exceeds outstanding advance balance." });
       }
 
-      netPaid = grossAmount - loanRecovery - advanceRecovery;
+      netPaid = calculatePayrollNetPayable({
+        grossAmount,
+        loanRecovery,
+        advanceRecovery,
+        extraPayment,
+        extraDeduction,
+      });
+      const expenseDebit = calculatePayrollExpenseDebit({
+        grossAmount,
+        extraPayment,
+        extraDeduction,
+      });
+      if (expenseDebit < 0) {
+        return res.status(400).json({
+          error: "Extra deduction cannot exceed gross salary plus extra payment.",
+        });
+      }
       if (netPaid < 0) {
-        return res.status(400).json({ error: "Recoveries cannot exceed gross salary." });
+        return res.status(400).json({ error: "Recoveries and deductions exceed gross salary." });
+      }
+
+      const extraFieldError = validatePayrollExtraFieldDescriptions({
+        extraPayment,
+        extraPaymentDescription,
+        extraDeduction,
+        extraDeductionDescription,
+      });
+      if (extraFieldError) {
+        return res.status(400).json({ error: extraFieldError });
       }
 
       const expenseAccount = await getStaffSalaryExpenseAccount();
@@ -1540,53 +1856,25 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
         });
       }
 
-      const accrualEntries: Array<{
-        accountId: string;
-        accountName: string;
-        debit: number;
-        credit: number;
-        description?: string;
-        employeeId: string;
-      }> = [
-        {
-          accountId: expenseAccount.id,
-          accountName: accountLabel(expenseAccount),
-          debit: grossAmount,
-          credit: 0,
-          description,
-          employeeId: employee.id,
-        },
-        {
-          accountId: salaryAccount.id,
-          accountName: accountLabel(salaryAccount),
-          debit: 0,
-          credit: netPaid,
-          description: description || "Net salary payable",
-          employeeId: employee.id,
-        },
-      ];
-
-      if (loanRecovery > 0) {
-        accrualEntries.push({
-          accountId: loanAccount.id,
-          accountName: accountLabel(loanAccount),
-          debit: 0,
-          credit: loanRecovery,
-          description: "Loan recovery",
-          employeeId: employee.id,
-        });
-      }
-
-      if (advanceRecovery > 0) {
-        accrualEntries.push({
-          accountId: advanceAccount.id,
-          accountName: accountLabel(advanceAccount),
-          debit: 0,
-          credit: advanceRecovery,
-          description: "Advance recovery",
-          employeeId: employee.id,
-        });
-      }
+      const accrualEntries = buildPayrollAccrualVoucherEntries({
+        employeeId: employee.id,
+        expenseAccount,
+        salaryAccount,
+        loanAccount,
+        advanceAccount,
+        accountLabel,
+        grossAmount,
+        extraPayment,
+        extraPaymentDescription,
+        extraDeduction,
+        extraDeductionDescription,
+        netPaid,
+        loanRecovery,
+        advanceRecovery,
+        description,
+        daysWorked,
+        workingDays,
+      });
 
       voucher = await postEmployeeVoucher({
         type: "journal",
@@ -1630,12 +1918,36 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
       }
 
       const salaryPayableBalance = Number(salaryAccount.currentBalance || 0);
-      const payAmount = amount > 0 ? amount : monthOutstanding;
-      if (payAmount <= 0) {
+      const cashAmount = parseNonNegativeAmount(req.body?.cashAmount, 0);
+      const bankAmount = parseNonNegativeAmount(req.body?.bankAmount, 0);
+      const cashAccountId = String(req.body?.cashAccountId || "").trim();
+      const bankAccountId = String(req.body?.bankAccountId || "").trim();
+
+      let payAmount = cashAmount + bankAmount;
+      const paymentCredits: Array<{ accountId: string; amount: number }> = [];
+
+      if (payAmount > 0) {
+        if (cashAmount > 0) {
+          if (!cashAccountId) {
+            return res.status(400).json({
+              error: "Cash account is required when cash amount is greater than zero.",
+            });
+          }
+          paymentCredits.push({ accountId: cashAccountId, amount: cashAmount });
+        }
+        if (bankAmount > 0) {
+          if (!bankAccountId) {
+            return res.status(400).json({
+              error: "Bank account is required when bank amount is greater than zero.",
+            });
+          }
+          paymentCredits.push({ accountId: bankAccountId, amount: bankAmount });
+        }
+      } else if (amount > 0 && cashBankAccountId) {
+        payAmount = amount;
+        paymentCredits.push({ accountId: cashBankAccountId, amount: payAmount });
+      } else {
         return res.status(400).json({ error: "Salary payment amount must be greater than zero." });
-      }
-      if (!cashBankAccountId) {
-        return res.status(400).json({ error: "Cash/Bank account is required." });
       }
 
       if (salaryPayableBalance + 0.01 < payAmount) {
@@ -1647,6 +1959,36 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
         return res.status(400).json({
           error: `Payment exceeds ${payrollMonth} outstanding salary (${monthOutstanding.toFixed(2)}).`,
         });
+      }
+
+      for (const credit of paymentCredits) {
+        const account = await prisma.account.findUnique({
+          where: { id: credit.accountId },
+          include: { Subgroup: { include: { MainGroup: true } } },
+        });
+        if (!account || !isChartCashBankAccount(account)) {
+          return res.status(400).json({ error: "Invalid cash/bank account selected." });
+        }
+      }
+
+      if (cashAmount > 0 && cashAccountId) {
+        const cashAccount = await prisma.account.findUnique({
+          where: { id: cashAccountId },
+          include: { Subgroup: { include: { MainGroup: true } } },
+        });
+        if (!cashAccount || getAccountCashBankMode(cashAccount) !== "cash") {
+          return res.status(400).json({ error: "Selected cash account is not a cash ledger." });
+        }
+      }
+
+      if (bankAmount > 0 && bankAccountId) {
+        const bankAccount = await prisma.account.findUnique({
+          where: { id: bankAccountId },
+          include: { Subgroup: { include: { MainGroup: true } } },
+        });
+        if (!bankAccount || getAccountCashBankMode(bankAccount) !== "online") {
+          return res.status(400).json({ error: "Selected bank account is not a bank ledger." });
+        }
       }
 
       netPaid = payAmount;
@@ -1667,22 +2009,28 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
           description: description || "Salary payment",
           employeeId: employee.id,
         },
-        {
-          accountId: cashBankAccountId,
-          accountName: await resolveCashBankLabel(cashBankAccountId),
+      ];
+
+      for (const credit of paymentCredits) {
+        entries.push({
+          accountId: credit.accountId,
+          accountName: await resolveCashBankLabel(credit.accountId),
           debit: 0,
-          credit: payAmount,
+          credit: credit.amount,
           description: "Net salary paid",
           employeeId: employee.id,
-        },
-      ];
+        });
+      }
+
+      const primaryCashBankAccountId =
+        cashAccountId || bankAccountId || cashBankAccountId || undefined;
 
       voucher = await postEmployeeVoucher({
         type: "payment",
         date,
         narration: `Salary payment (${payrollMonth}): ${employee.name}`,
         employeeId: employee.id,
-        cashBankAccountId,
+        cashBankAccountId: primaryCashBankAccountId,
         entries,
       });
       referenceAmount = payAmount;
@@ -1711,10 +2059,30 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
       },
     });
 
+    if (type === "salary_accrual") {
+      await setEmployeePayrollSupplementaryFields(transaction.id, {
+        leaves,
+        extraPayment,
+        extraPaymentDescription,
+        extraDeduction,
+        extraDeductionDescription,
+      });
+    }
+
     const refreshedAccounts = await getEmployeeAccounts(employee.id);
     res.status(201).json({
       data: {
-        transaction,
+        transaction:
+          type === "salary_accrual"
+            ? {
+                ...transaction,
+                leaves,
+                extraPayment,
+                extraPaymentDescription,
+                extraDeduction,
+                extraDeductionDescription,
+              }
+            : transaction,
         balances: mapEmployeeBalances(refreshedAccounts),
       },
     });

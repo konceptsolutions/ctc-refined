@@ -49,7 +49,7 @@ import {
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
-import { getCurrentDatePakistan } from "@/utils/dateUtils";
+import { getCurrentDatePakistan, formatUiDateTime } from "@/utils/dateUtils";
 import { Label } from "@/components/ui/label";
 
 interface ActivityLog {
@@ -391,7 +391,7 @@ export const ActivityLogsTab = () => {
                   <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}
+                      {log.timestamp ? formatUiDateTime(log.timestamp) : 'N/A'}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -520,7 +520,7 @@ export const ActivityLogsTab = () => {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Timestamp</p>
-                  <p className="font-medium">{selectedLog.timestamp ? new Date(selectedLog.timestamp).toLocaleString() : 'N/A'}</p>
+                  <p className="font-medium">{selectedLog.timestamp ? formatUiDateTime(selectedLog.timestamp) : 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Entity</p>

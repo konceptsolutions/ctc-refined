@@ -42,8 +42,8 @@ const COLUMN_META: Array<{
   { id: "brand", header: "Brand", width: 16, align: "left" },
   { id: "uom", header: "UOM", width: 10, align: "center" },
   { id: "qtyReq", header: "Qty Req.", width: 14, align: "center" },
-  { id: "deliveryQty", header: "Delivery Qty", width: 16, align: "center" },
-  { id: "divOn", header: "DIV. On", width: 16, align: "center" },
+  { id: "deliveryQty", header: "Qty", width: 12, align: "center" },
+  { id: "divOn", header: "Delivery", width: 14, align: "center" },
   { id: "price", header: "Price", width: 16, align: "right" },
   { id: "amount", header: "Amount", width: 18, align: "right" },
 ];
@@ -266,7 +266,7 @@ export const printSalesQuotationPdf = async (input: SalesQuotationPdfInput) => {
       case "deliveryQty":
         return String(item.qtyDiv ?? 0);
       case "divOn":
-        return String(item.divOn || "");
+        return String(item.divOn?.trim() || "STK");
       case "price":
         return formatPdfMoney(Number(item.unitPrice || 0));
       case "amount":
@@ -326,6 +326,7 @@ export const printSalesQuotationPdf = async (input: SalesQuotationPdfInput) => {
       : [visibleCols.map((_, idx) => (idx === 0 ? "No items" : ""))],
     foot: [foot],
     showFoot: "lastPage",
+    showHead: "everyPage",
     columnStyles,
     didDrawPage: (data) => {
       if (data.pageNumber > 1) drawHeader();

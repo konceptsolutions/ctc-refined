@@ -1,4 +1,4 @@
-import { UI_DATE_PLACEHOLDER } from "@/utils/dateUtils";
+import { UI_DATE_PLACEHOLDER, formatUiDate } from "@/utils/dateUtils";
 import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,8 +72,7 @@ function parseBackendDate(str: string): Date | null {
 }
 
 function displayDate(str: string): string {
-  const d = parseBackendDate(str);
-  return d ? d.toLocaleDateString() : str || "—";
+  return formatUiDate(str) || str || "—";
 }
 
 const CustomerReceivableTab = () => {
@@ -290,7 +289,7 @@ const CustomerReceivableTab = () => {
             {/* Hidden print content */}
             <div ref={printRef} className="hidden">
               <h2>Customer Receivable Report</h2>
-              <p>As of: {asOf ? new Date(asOf).toLocaleDateString() : toDate}</p>
+              <p>As of: {asOf ? formatUiDate(asOf) || toDate : toDate}</p>
               <table>
                 <thead>
                   <tr>
@@ -385,7 +384,7 @@ const CustomerReceivableTab = () => {
                   <span className="font-semibold font-mono">{fmt(totalBalance)}</span>
                 </div>
                 <div className="text-xs text-muted-foreground text-right">
-                  As of {asOf ? new Date(asOf).toLocaleDateString() : toDate}
+                  As of {asOf ? formatUiDate(asOf) || toDate : toDate}
                 </div>
               </div>
             </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { formatUiDate } from "@/utils/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
@@ -515,7 +516,7 @@ export const JournalEntriesTab = () => {
                   >
                     <ListNumberCell index={index} total={filteredEntries.length} />
                     <TableCell className="font-medium text-primary">{entry.entryNo}</TableCell>
-                    <TableCell>{entry.date}</TableCell>
+                    <TableCell>{formatUiDate(entry.date) || entry.date}</TableCell>
                     <TableCell>{entry.reference}</TableCell>
                     <TableCell>{entry.description}</TableCell>
                     <TableCell className={`text-right font-mono ${drValueClass(1, true)}`}>Rs {entry.totalDebit.toLocaleString()}</TableCell>
@@ -542,7 +543,7 @@ export const JournalEntriesTab = () => {
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                 <div>
                                   <span className="text-muted-foreground">Date:</span>
-                                  <p className="font-medium">{entry.date}</p>
+                                  <p className="font-medium">{formatUiDate(entry.date) || entry.date}</p>
                                 </div>
                                 <div>
                                   <span className="text-muted-foreground">Reference:</span>

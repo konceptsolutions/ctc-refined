@@ -1,15 +1,21 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { formatUiDate } from "@/utils/dateUtils";
 
 export type PayslipPdfRow = {
   date: string;
   payrollMonth?: string | null;
   grossAmount: number;
   absentDays: number;
+  leaves?: number;
   workingDays: number;
   daysWorked: number;
   loanRecovery: number;
   advanceRecovery: number;
+  extraPayment?: number;
+  extraPaymentDescription?: string | null;
+  extraDeduction?: number;
+  extraDeductionDescription?: string | null;
   netPayable: number;
   paidAmount: number;
   outstanding: number;
@@ -30,12 +36,7 @@ const formatMoney = (value: number) =>
     maximumFractionDigits: 2,
   });
 
-const formatDate = (value?: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-US');
-};
+const formatDate = (value?: string | null) => formatUiDate(value) || "—";
 
 const formatPayrollMonth = (value?: string | null) => {
   if (!value) return "—";
@@ -79,28 +80,64 @@ export function printPayslipPdf(row: PayslipPdfRow): boolean {
     ? (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6
     : 70;
 
+  const extraPayment = Number(row.extraPayment || 0);
+  const extraDeduction = Number(row.extraDeduction || 0);
+  const extraPaymentDescription = String(row.extraPaymentDescription || "").trim();
+  const extraDeductionDescription = String(row.extraDeductionDescription || "").trim();
+  const hasExtraPayment = extraPayment > 0 || extraPaymentDescription.length > 0;
+  const hasExtraDeduction = extraDeduction > 0 || extraDeductionDescription.length > 0;
+
+  const summaryBody: string[][] = [
+    ["Working Days", "", String(row.workingDays)],
+    ["Absent Days", "", String(row.absentDays)],
+    ["Leaves", "", String(row.leaves ?? 0)],
+    ["Days Worked", "", String(row.daysWorked)],
+    ["Gross Salary", "", formatMoney(row.grossAmount)],
+    ["Loan Recovery", "", formatMoney(row.loanRecovery)],
+    ["Advance Recovery", "", formatMoney(row.advanceRecovery)],
+  ];
+
+  if (hasExtraPayment) {
+    summaryBody.push([
+      "Extra Payment",
+      extraPaymentDescription || "—",
+      formatMoney(extraPayment),
+    ]);
+  }
+
+  if (hasExtraDeduction) {
+    summaryBody.push([
+      "Extra Deduction",
+      extraDeductionDescription || "—",
+      formatMoney(extraDeduction),
+    ]);
+  }
+
+  const netPayableRowIndex = summaryBody.length;
+  summaryBody.push(
+    ["Net Payable", "", formatMoney(row.netPayable)],
+    ["Paid", "", formatMoney(row.paidAmount)],
+    ["Outstanding", "", formatMoney(row.outstanding)],
+  );
+  const outstandingRowIndex = summaryBody.length - 1;
+
   autoTable(doc, {
     startY: summaryStartY,
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 2 },
     headStyles: { fillColor: [245, 245, 245], textColor: 20, fontStyle: "bold" },
-    head: [["Description", "Amount (PKR)"]],
-    body: [
-      ["Working Days", String(row.workingDays)],
-      ["Absent Days", String(row.absentDays)],
-      ["Days Worked", String(row.daysWorked)],
-      ["Gross Salary", formatMoney(row.grossAmount)],
-      ["Loan Recovery", formatMoney(row.loanRecovery)],
-      ["Advance Recovery", formatMoney(row.advanceRecovery)],
-      ["Net Payable", formatMoney(row.netPayable)],
-      ["Paid", formatMoney(row.paidAmount)],
-      ["Outstanding", formatMoney(row.outstanding)],
-    ],
+    head: [["Description", "Particulars", "Amount (PKR)"]],
+    body: summaryBody,
     columnStyles: {
-      1: { halign: "right" },
+      0: { cellWidth: 42 },
+      1: { cellWidth: 88 },
+      2: { halign: "right", cellWidth: 32 },
     },
     didParseCell: (data) => {
-      if (data.section === "body" && (data.row.index === 6 || data.row.index === 8)) {
+      if (
+        data.section === "body" &&
+        (data.row.index === netPayableRowIndex || data.row.index === outstandingRowIndex)
+      ) {
         data.cell.styles.fontStyle = "bold";
         data.cell.styles.fillColor = [250, 250, 250];
       }

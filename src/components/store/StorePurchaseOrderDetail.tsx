@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -92,7 +93,7 @@ export const StorePurchaseOrderDetail = ({
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Date</p>
-                    <p className="font-medium">{format(new Date(order.date), "MMM dd, yyyy")}</p>
+                    <p className="font-medium">{formatUiDate(order.date)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Supplier</p>
@@ -101,7 +102,7 @@ export const StorePurchaseOrderDetail = ({
                   {order.expected_date && (
                     <div>
                       <p className="text-sm text-muted-foreground">Expected Date</p>
-                      <p className="font-medium">{format(new Date(order.expected_date), "MMM dd, yyyy")}</p>
+                      <p className="font-medium">{formatUiDate(order.expected_date)}</p>
                     </div>
                   )}
                   <div className="col-span-2">

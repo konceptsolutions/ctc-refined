@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Building2, Search, Plus, Eye } from "lucide-react";
 import { toast } from "sonner";
+import { formatUiDate } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 
@@ -79,7 +80,7 @@ export const OperationalExpensesTab = ({ onUpdate }: OperationalExpensesTabProps
         const data = Array.isArray(response.data) ? response.data : [];
         setExpenses(data.map((exp: any) => ({
           id: exp.id,
-          date: new Date(exp.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+          date: formatUiDate(exp.date) || "",
           voucherNo: exp.voucherNo,
           expenseType: exp.expenseType,
           description: exp.description || "",
@@ -139,7 +140,7 @@ export const OperationalExpensesTab = ({ onUpdate }: OperationalExpensesTabProps
         const exp = response.data;
         setViewingExpense({
           id: exp.id,
-          date: new Date(exp.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+          date: formatUiDate(exp.date) || "",
           voucherNo: exp.voucherNo,
           expenseType: exp.expenseType,
           description: exp.description || "",

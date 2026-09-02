@@ -13,6 +13,7 @@ import {
   resolveSharedImagesForPart,
   syncImagesToAlternateParts,
 } from "../utils/partAlternateImages";
+import { buildPartFamilySearchSql, buildPartFamilySearchLiteSql, buildPartIdentityFilterSql } from "../utils/partFamilySearch";
 
 const router = express.Router();
 
@@ -581,22 +582,11 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
       const normalizedSearch = rawSearch;
       // Lite search skips expensive regexp_replace — ILIKE is enough for the sidebar.
       if (isLite) {
-        conditions.push(`(
-          p."partNo" ILIKE $${paramIdx} OR
-          p."description" ILIKE $${paramIdx} OR
-          mp."masterPartNo" ILIKE $${paramIdx} OR
-          b."name" ILIKE $${paramIdx}
-        )`);
+        conditions.push(buildPartFamilySearchLiteSql(paramIdx));
         params.push(searchStr);
         paramIdx += 1;
       } else {
-        conditions.push(`(
-          p."partNo" ILIKE $${paramIdx} OR 
-          p."description" ILIKE $${paramIdx} OR 
-          mp."masterPartNo" ILIKE $${paramIdx} OR
-          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
-        )`);
+        conditions.push(buildPartFamilySearchSql(paramIdx, paramIdx + 1));
         params.push(searchStr);
         params.push(normalizedSearch);
         paramIdx += 2;
@@ -604,7 +594,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
     }
 
     if (part_no) {
-      conditions.push(`(p."partNo" ILIKE $${paramIdx} OR mp."masterPartNo" ILIKE $${paramIdx})`);
+      conditions.push(buildPartIdentityFilterSql(paramIdx));
       params.push(`%${(part_no as string).trim()}%`);
       paramIdx++;
     }
@@ -830,37 +820,11 @@ router.get("/", async (req: Request, res: Response) => {
 
     // Build WHERE clause
     if (search) {
-      const { update_mode } = req.query;
       const searchStr = (search as string).trim();
       const searchPattern = `%${searchStr}%`;
       const normalizedSearchPattern = searchStr;
 
-      if (update_mode === "group") {
-        // Expand search to include all "family items" (parts sharing the same masterPartId)
-        conditions.push(`(
-          p."partNo" ILIKE $${paramIdx} OR 
-          p."description" ILIKE $${paramIdx} OR 
-          mp."masterPartNo" ILIKE $${paramIdx} OR
-          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-          (p."masterPartId" IS NOT NULL AND p."masterPartId" IN (
-              SELECT "masterPartId" FROM "Part" 
-              WHERE "partNo" ILIKE $${paramIdx} AND "masterPartId" IS NOT NULL
-              UNION
-              SELECT id FROM "MasterPart" 
-              WHERE "masterPartNo" ILIKE $${paramIdx}
-          ))
-        )`);
-      } else {
-        // Standard search for individual items
-        conditions.push(`(
-          p."partNo" ILIKE $${paramIdx} OR 
-          p."description" ILIKE $${paramIdx} OR 
-          mp."masterPartNo" ILIKE $${paramIdx} OR
-          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
-        )`);
-      }
+      conditions.push(buildPartFamilySearchSql(paramIdx, paramIdx + 1));
       params.push(searchPattern);
       params.push(normalizedSearchPattern);
       paramIdx += 2;
@@ -915,13 +879,13 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     if (master_part_no) {
-      conditions.push(`(mp."masterPartNo" ILIKE $${paramIdx} OR p."partNo" ILIKE $${paramIdx})`);
+      conditions.push(buildPartIdentityFilterSql(paramIdx));
       params.push(`%${(master_part_no as string).trim()}%`);
       paramIdx++;
     }
 
     if (part_no) {
-      conditions.push(`(p."partNo" ILIKE $${paramIdx} OR mp."masterPartNo" ILIKE $${paramIdx})`);
+      conditions.push(buildPartIdentityFilterSql(paramIdx));
       params.push(`%${(part_no as string).trim()}%`);
       paramIdx++;
     }
@@ -1268,32 +1232,7 @@ router.get("/details-search", async (req: Request, res: Response) => {
       const searchPattern = `%${searchStr}%`;
       const normalizedSearchPattern = searchStr;
 
-      if (update_mode === "group") {
-        // Expand search to include all "family items" (parts sharing the same masterPartId)
-        conditions.push(`(
-          p."partNo" ILIKE $${paramIdx} OR 
-          p."description" ILIKE $${paramIdx} OR 
-          mp."masterPartNo" ILIKE $${paramIdx} OR
-          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-          (p."masterPartId" IS NOT NULL AND p."masterPartId" IN (
-              SELECT "masterPartId" FROM "Part" 
-              WHERE "partNo" ILIKE $${paramIdx} AND "masterPartId" IS NOT NULL
-              UNION
-              SELECT id FROM "MasterPart" 
-              WHERE "masterPartNo" ILIKE $${paramIdx}
-          ))
-        )`);
-      } else {
-        // Standard search for individual items
-        conditions.push(`(
-          p."partNo" ILIKE $${paramIdx} OR 
-          p."description" ILIKE $${paramIdx} OR 
-          mp."masterPartNo" ILIKE $${paramIdx} OR
-          regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-          regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
-        )`);
-      }
+      conditions.push(buildPartFamilySearchSql(paramIdx, paramIdx + 1));
       params.push(searchPattern);
       params.push(normalizedSearchPattern);
       paramIdx += 2;
@@ -1424,13 +1363,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
       const rawSearch = String(search).trim();
       const searchStr = `%${rawSearch}%`;
       const normalizedSearch = rawSearch;
-      conditions.push(`(
-        p."partNo" ILIKE $${paramIdx} OR 
-        p."description" ILIKE $${paramIdx} OR 
-        mp."masterPartNo" ILIKE $${paramIdx} OR
-        regexp_replace(UPPER(COALESCE(p."partNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%' OR
-        regexp_replace(UPPER(COALESCE(mp."masterPartNo", '')), '[^A-Z0-9]', '', 'g') LIKE '%' || regexp_replace(UPPER($${paramIdx + 1}), '[^A-Z0-9]', '', 'g') || '%'
-      )`);
+      conditions.push(buildPartFamilySearchSql(paramIdx, paramIdx + 1));
       params.push(searchStr);
       params.push(normalizedSearch);
       paramIdx += 2;

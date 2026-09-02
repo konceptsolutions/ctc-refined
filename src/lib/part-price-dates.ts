@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { formatUiDate } from "@/utils/dateUtils";
 
 export const normalizePriceHistoryField = (field: string) =>
   String(field || "")
@@ -23,9 +23,5 @@ export const extractLatestPriceDatesFromHistory = (
 
 export const formatPriceLastUpdatedLabel = (iso?: string | null) => {
   if (!iso) return "—";
-  try {
-    return format(new Date(iso), "dd MMM yyyy");
-  } catch {
-    return "—";
-  }
+  return formatUiDate(iso) || "—";
 };

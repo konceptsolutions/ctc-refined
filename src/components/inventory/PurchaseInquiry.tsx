@@ -6,6 +6,7 @@ import apiClient from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { fcHeaderClass, fcValueClass, lcHeaderClass, lcValueClass } from "@/utils/accountingColors";
 import { formatPurchasePrice, formatFc } from "@/utils/purchasePriceRound";
+import { formatUiDate } from "@/utils/dateUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -1932,7 +1933,7 @@ export const PurchaseInquiry = ({
                               </TableCell>
                               <TableCell className="text-xs font-medium whitespace-nowrap">{row.poNo || "—"}</TableCell>
                               <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                {row.date ? format(new Date(row.date), "dd MMM yy") : "—"}
+                                {formatUiDate(row.date) || "—"}
                               </TableCell>
                               <TableCell className="text-xs tabular-nums">{fmtQty(row.qty)}</TableCell>
                               <TableCell className="text-xs tabular-nums">{fmtQty(row.receivedQty)}</TableCell>
@@ -2001,11 +2002,11 @@ export const PurchaseInquiry = ({
                               <ListNumberCell index={index} total={inquiryData.quotationRecords.length} className="text-xs" />
                               <TableCell className="text-xs font-medium whitespace-nowrap">{row.quotationNo || "—"}</TableCell>
                               <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                {row.date ? format(new Date(row.date), "dd MMM yy") : "—"}
+                                {formatUiDate(row.date) || "—"}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                                 {row.confirmationDate
-                                  ? format(new Date(row.confirmationDate), "dd MMM yy")
+                                  ? formatUiDate(row.confirmationDate) || "—"
                                   : row.status?.toLowerCase() === "confirm" ||
                                       row.status?.toLowerCase() === "confirmed"
                                     ? "Confirmed"
@@ -2135,7 +2136,7 @@ export const PurchaseInquiry = ({
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                                 {invoice.invoice_date
-                                  ? format(new Date(invoice.invoice_date), "dd MMM yy")
+                                  ? formatUiDate(invoice.invoice_date) || "—"
                                   : "—"}
                               </TableCell>
                               <TableCell

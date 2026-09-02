@@ -1,3 +1,4 @@
+import { formatUiDate } from "@/utils/dateUtils";
 import { useState, useEffect } from "react";
 import {
   Dialog,
@@ -241,7 +242,7 @@ export const StoreAdjustedItem = ({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <Label className="text-muted-foreground">Date</Label>
-                  <p className="font-medium">{format(new Date(adjustment.date), "MMM dd, yyyy")}</p>
+                  <p className="font-medium">{formatUiDate(adjustment.date)}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Subject</Label>

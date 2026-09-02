@@ -2561,10 +2561,19 @@ class ApiClient {
       payrollMonth?: string;
       amount?: number;
       absentDays?: number;
+      leaves?: number;
       workingDays?: number;
       loanRecovery?: number;
       advanceRecovery?: number;
+      extraPayment?: number;
+      extraPaymentDescription?: string;
+      extraDeduction?: number;
+      extraDeductionDescription?: string;
       cashBankAccountId?: string;
+      cashAmount?: number;
+      bankAmount?: number;
+      cashAccountId?: string;
+      bankAccountId?: string;
       description?: string;
     },
   ) {
@@ -2596,10 +2605,15 @@ class ApiClient {
     data: {
       date?: string;
       payrollMonth?: string;
-      workingDays?: number;
       absentDays?: number;
+      leaves?: number;
+      workingDays?: number;
       loanRecovery?: number;
       advanceRecovery?: number;
+      extraPayment?: number;
+      extraPaymentDescription?: string;
+      extraDeduction?: number;
+      extraDeductionDescription?: string;
       description?: string;
     },
   ) {

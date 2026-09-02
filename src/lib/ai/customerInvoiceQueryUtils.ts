@@ -67,16 +67,8 @@ export function extractCustomerNameFromInvoiceQuery(query: string): string | nul
   return null;
 }
 
+import { formatUiDate } from "@/utils/dateUtils";
+
 export function formatInvoiceDate(isoOrDate: string): string {
-  const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoOrDate);
-  if (ymd) {
-    const [, y, m, d] = ymd;
-    return `${d}/${m}/${y}`;
-  }
-  const dt = new Date(isoOrDate);
-  if (Number.isNaN(dt.getTime())) return isoOrDate;
-  const day = String(dt.getDate()).padStart(2, "0");
-  const month = String(dt.getMonth() + 1).padStart(2, "0");
-  const year = dt.getFullYear();
-  return `${day}/${month}/${year}`;
+  return formatUiDate(isoOrDate) || isoOrDate;
 }

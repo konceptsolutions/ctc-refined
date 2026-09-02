@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { applyPdfAmountColor } from "@/utils/accountingColors";
+import { formatUiDate } from "@/utils/dateUtils";
 
 export type IncomeStatementPrintAccount = {
   label: string;
@@ -26,19 +27,7 @@ const formatMoney = (value: number) =>
     maximumFractionDigits: 0,
   });
 
-const formatPrintDate = (value: string) => {
-  if (!value) return "-";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split("-");
-    return `${day}/${month}/${year}`;
-  }
-  const dateObj = new Date(value);
-  if (Number.isNaN(dateObj.getTime())) return value;
-  const day = String(dateObj.getDate()).padStart(2, "0");
-  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
-  const year = dateObj.getFullYear();
-  return `${day}/${month}/${year}`;
-};
+const formatPrintDate = (value: string) => formatUiDate(value) || "-";
 
 const openPdfPrintDialog = (doc: jsPDF): boolean => {
   const pdfBlob = doc.output("blob");

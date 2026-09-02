@@ -32,9 +32,10 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
-import { calculateAccruedSalary } from "@/lib/employeePayroll";
+import { calculateAccruedSalary, validateEmployeeSalaryPaymentSplit, validatePayrollExtraFieldDescriptions } from "@/lib/employeePayroll";
 import { printPayslipPdf } from "@/utils/payslipPdf";
-import { getCurrentDatePakistan } from "@/utils/dateUtils";
+import { getCurrentDatePakistan, formatUiDate } from "@/utils/dateUtils";
+import { normalizeCashBankModeFromApi } from "@/utils/cashBankMode";
 
 type PayrollRow = {
   id: string;
@@ -43,10 +44,15 @@ type PayrollRow = {
   payrollMonth?: string | null;
   grossAmount: number;
   absentDays: number;
+  leaves: number;
   workingDays: number;
   daysWorked: number;
   loanRecovery: number;
   advanceRecovery: number;
+  extraPayment?: number;
+  extraPaymentDescription?: string | null;
+  extraDeduction?: number;
+  extraDeductionDescription?: string | null;
   netPayable: number;
   paidAmount: number;
   outstanding: number;
@@ -70,6 +76,7 @@ type PayrollRow = {
 type CashBankOption = {
   id: string;
   label: string;
+  mode?: "cash" | "online";
 };
 
 type EmployeeOption = {
@@ -105,12 +112,7 @@ const formatMoney = (value: number) =>
     maximumFractionDigits: 2,
   });
 
-const formatDate = (value?: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-US');
-};
+const formatDate = (value?: string | null) => formatUiDate(value) || "—";
 
 const formatPayrollMonth = (value?: string | null) => {
   if (!value) return "—";
@@ -149,17 +151,37 @@ export const PayrollManagement = () => {
   const [accruePayrollMonth, setAccruePayrollMonth] = useState(() => getCurrentPayrollMonth());
   const [accrueWorkingDays, setAccrueWorkingDays] = useState("26");
   const [accrueAbsentDays, setAccrueAbsentDays] = useState("0");
+  const [accrueLeaves, setAccrueLeaves] = useState("0");
   const [accrueLoanRecovery, setAccrueLoanRecovery] = useState("");
   const [accrueAdvanceRecovery, setAccrueAdvanceRecovery] = useState("");
+  const [accrueExtraPayment, setAccrueExtraPayment] = useState("");
+  const [accrueExtraPaymentDescription, setAccrueExtraPaymentDescription] = useState("");
+  const [accrueExtraDeduction, setAccrueExtraDeduction] = useState("");
+  const [accrueExtraDeductionDescription, setAccrueExtraDeductionDescription] = useState("");
   const [accrueDescription, setAccrueDescription] = useState("");
   const [accrueSaving, setAccrueSaving] = useState(false);
 
   const [payRow, setPayRow] = useState<PayrollRow | null>(null);
   const [payDate, setPayDate] = useState(() => getCurrentDatePakistan());
-  const [payAmount, setPayAmount] = useState("");
-  const [payCashBankAccountId, setPayCashBankAccountId] = useState("");
+  const [payCashAmount, setPayCashAmount] = useState("");
+  const [payBankAmount, setPayBankAmount] = useState("");
+  const [payCashAccountId, setPayCashAccountId] = useState("");
+  const [payBankAccountId, setPayBankAccountId] = useState("");
   const [payDescription, setPayDescription] = useState("");
   const [paySaving, setPaySaving] = useState(false);
+
+  const cashAccounts = useMemo(
+    () => cashBankAccounts.filter((account) => account.mode === "cash"),
+    [cashBankAccounts],
+  );
+  const bankAccounts = useMemo(
+    () => cashBankAccounts.filter((account) => account.mode === "online"),
+    [cashBankAccounts],
+  );
+  const payTotalAmount = useMemo(
+    () => Math.max(0, Number(payCashAmount || 0)) + Math.max(0, Number(payBankAmount || 0)),
+    [payCashAmount, payBankAmount],
+  );
 
   const fetchPayroll = useCallback(async () => {
     setLoading(true);
@@ -200,6 +222,10 @@ export const PayrollManagement = () => {
         accounts.map((row: any) => ({
           id: row.id,
           label: row.label || `${row.code} - ${row.name}`,
+          mode: normalizeCashBankModeFromApi({
+            mode: row.mode,
+            code: row.code,
+          }),
         })),
       );
     } catch {
@@ -246,6 +272,7 @@ export const PayrollManagement = () => {
     if (editingPayrollId) return;
     setAccrueWorkingDays(String(Number(selectedAccrueEmployee.workingDays || 26)));
     setAccrueAbsentDays("0");
+    setAccrueLeaves("0");
   }, [selectedAccrueEmployee?.id, editingPayrollId]);
 
   const grossSalaryPreview = useMemo(() => {
@@ -261,8 +288,16 @@ export const PayrollManagement = () => {
     () =>
       grossSalaryPreview -
       Number(accrueLoanRecovery || 0) -
-      Number(accrueAdvanceRecovery || 0),
-    [accrueAdvanceRecovery, accrueLoanRecovery, grossSalaryPreview],
+      Number(accrueAdvanceRecovery || 0) +
+      Number(accrueExtraPayment || 0) -
+      Number(accrueExtraDeduction || 0),
+    [
+      accrueAdvanceRecovery,
+      accrueExtraDeduction,
+      accrueExtraPayment,
+      accrueLoanRecovery,
+      grossSalaryPreview,
+    ],
   );
 
   const totalPages = Math.max(1, Math.ceil(totalRecords / rowsPerPage));
@@ -280,8 +315,10 @@ export const PayrollManagement = () => {
   const openPayDialog = (row: PayrollRow) => {
     setPayRow(row);
     setPayDate(getCurrentDatePakistan());
-    setPayAmount(String(row.outstanding || ""));
-    setPayCashBankAccountId(cashBankAccounts[0]?.id || "");
+    setPayCashAmount(String(row.outstanding || ""));
+    setPayBankAmount("");
+    setPayCashAccountId(cashAccounts[0]?.id || "");
+    setPayBankAccountId(bankAccounts[0]?.id || "");
     setPayDescription(`Salary payment for ${formatPayrollMonth(row.payrollMonth)}`);
   };
 
@@ -293,8 +330,13 @@ export const PayrollManagement = () => {
     setAccruePayrollMonth(getCurrentPayrollMonth());
     setAccrueWorkingDays("26");
     setAccrueAbsentDays("0");
+    setAccrueLeaves("0");
     setAccrueLoanRecovery("");
     setAccrueAdvanceRecovery("");
+    setAccrueExtraPayment("");
+    setAccrueExtraPaymentDescription("");
+    setAccrueExtraDeduction("");
+    setAccrueExtraDeductionDescription("");
     setAccrueDescription("");
   };
 
@@ -328,12 +370,21 @@ export const PayrollManagement = () => {
     setAccruePayrollMonth(row.payrollMonth || getCurrentPayrollMonth());
     setAccrueWorkingDays(String(Number(row.workingDays || row.employee?.workingDays || 26)));
     setAccrueAbsentDays(String(Number(row.absentDays || 0)));
+    setAccrueLeaves(String(Number(row.leaves || 0)));
     setAccrueLoanRecovery(
       Number(row.loanRecovery || 0) > 0 ? String(row.loanRecovery) : "",
     );
     setAccrueAdvanceRecovery(
       Number(row.advanceRecovery || 0) > 0 ? String(row.advanceRecovery) : "",
     );
+    setAccrueExtraPayment(
+      Number(row.extraPayment || 0) > 0 ? String(row.extraPayment) : "",
+    );
+    setAccrueExtraPaymentDescription(row.extraPaymentDescription || "");
+    setAccrueExtraDeduction(
+      Number(row.extraDeduction || 0) > 0 ? String(row.extraDeduction) : "",
+    );
+    setAccrueExtraDeductionDescription(row.extraDeductionDescription || "");
     setAccrueDescription(row.description || "");
     setIsAccrueOpen(true);
   };
@@ -384,6 +435,7 @@ export const PayrollManagement = () => {
 
     const workingDays = Number(accrueWorkingDays || 0);
     const absentDays = Number(accrueAbsentDays || 0);
+    const leaves = Number(accrueLeaves || 0);
     if (!Number.isFinite(workingDays) || workingDays < 1) {
       toast({
         title: "Validation",
@@ -396,6 +448,14 @@ export const PayrollManagement = () => {
       toast({
         title: "Validation",
         description: "Absent days must be between 0 and working days.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (leaves < 0) {
+      toast({
+        title: "Validation",
+        description: "Leaves cannot be negative.",
         variant: "destructive",
       });
       return;
@@ -419,6 +479,21 @@ export const PayrollManagement = () => {
       return;
     }
 
+    const extraFieldError = validatePayrollExtraFieldDescriptions({
+      extraPayment: Number(accrueExtraPayment || 0),
+      extraPaymentDescription: accrueExtraPaymentDescription,
+      extraDeduction: Number(accrueExtraDeduction || 0),
+      extraDeductionDescription: accrueExtraDeductionDescription,
+    });
+    if (extraFieldError) {
+      toast({
+        title: "Validation",
+        description: extraFieldError,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setAccrueSaving(true);
     try {
       const response = editingPayrollId
@@ -427,8 +502,13 @@ export const PayrollManagement = () => {
             payrollMonth: accruePayrollMonth,
             workingDays,
             absentDays,
+            leaves,
             loanRecovery: Number(accrueLoanRecovery || 0),
             advanceRecovery: Number(accrueAdvanceRecovery || 0),
+            extraPayment: Number(accrueExtraPayment || 0),
+            extraPaymentDescription: accrueExtraPaymentDescription || undefined,
+            extraDeduction: Number(accrueExtraDeduction || 0),
+            extraDeductionDescription: accrueExtraDeductionDescription || undefined,
             description: accrueDescription || undefined,
           })
         : await apiClient.createEmployeeTransaction(accrueEmployeeId, {
@@ -437,8 +517,13 @@ export const PayrollManagement = () => {
             payrollMonth: accruePayrollMonth,
             workingDays,
             absentDays,
+            leaves,
             loanRecovery: Number(accrueLoanRecovery || 0),
             advanceRecovery: Number(accrueAdvanceRecovery || 0),
+            extraPayment: Number(accrueExtraPayment || 0),
+            extraPaymentDescription: accrueExtraPaymentDescription || undefined,
+            extraDeduction: Number(accrueExtraDeduction || 0),
+            extraDeductionDescription: accrueExtraDeductionDescription || undefined,
             description: accrueDescription || undefined,
           });
 
@@ -478,29 +563,19 @@ export const PayrollManagement = () => {
       return;
     }
 
-    const amount = Number(payAmount || 0);
-    if (amount <= 0) {
+    const cashAmount = Math.max(0, Number(payCashAmount || 0));
+    const bankAmount = Math.max(0, Number(payBankAmount || 0));
+    const paymentError = validateEmployeeSalaryPaymentSplit({
+      cashAmount,
+      bankAmount,
+      outstanding: payRow.outstanding,
+      cashAccountId: payCashAccountId,
+      bankAccountId: payBankAccountId,
+    });
+    if (paymentError) {
       toast({
         title: "Validation",
-        description: "Payment amount must be greater than zero.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (amount > payRow.outstanding + 0.01) {
-      toast({
-        title: "Validation",
-        description: `Payment cannot exceed outstanding amount (${formatMoney(payRow.outstanding)}).`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!payCashBankAccountId) {
-      toast({
-        title: "Validation",
-        description: "Please select a cash/bank account.",
+        description: paymentError,
         variant: "destructive",
       });
       return;
@@ -512,8 +587,10 @@ export const PayrollManagement = () => {
         type: "salary_payment",
         date: payDate,
         payrollMonth: payRow.payrollMonth || undefined,
-        amount,
-        cashBankAccountId: payCashBankAccountId,
+        cashAmount,
+        bankAmount,
+        cashAccountId: cashAmount > 0 ? payCashAccountId : undefined,
+        bankAccountId: bankAmount > 0 ? payBankAccountId : undefined,
         description: payDescription || undefined,
       });
 
@@ -613,6 +690,7 @@ export const PayrollManagement = () => {
                   <TableHead>Accrual Date</TableHead>
                   <TableHead className="text-right">Gross</TableHead>
                   <TableHead className="text-right">Absent</TableHead>
+                  <TableHead className="text-right">Leaves</TableHead>
                   <TableHead className="text-right">Loan Rec.</TableHead>
                   <TableHead className="text-right">Advance Rec.</TableHead>
                   <TableHead className="text-right">Net Payable</TableHead>
@@ -625,13 +703,13 @@ export const PayrollManagement = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
                       Loading payroll records...
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
                       No payroll records found. Click Accrue Salary to generate payroll.
                     </TableCell>
                   </TableRow>
@@ -649,6 +727,7 @@ export const PayrollManagement = () => {
                       <TableCell>{formatDate(row.date)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatMoney(row.grossAmount)}</TableCell>
                       <TableCell className="text-right tabular-nums">{row.absentDays}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.leaves ?? 0}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatMoney(row.loanRecovery)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatMoney(row.advanceRecovery)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatMoney(row.netPayable)}</TableCell>
@@ -780,29 +859,59 @@ export const PayrollManagement = () => {
                   onChange={(e) => setPayDate(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Amount *</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Cash Amount</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={payCashAmount}
+                    onChange={(e) => setPayCashAmount(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Cash Account</Label>
+                  <Select value={payCashAccountId} onValueChange={setPayCashAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select cash account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cashAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Bank Amount</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={payBankAmount}
+                    onChange={(e) => setPayBankAmount(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Bank Account</Label>
+                  <Select value={payBankAccountId} onValueChange={setPayBankAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select bank account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bankAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Cash / Bank Account *</Label>
-                <Select value={payCashBankAccountId} onValueChange={setPayCashBankAccountId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cashBankAccounts.map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm flex justify-between">
+                <span>Total Payment</span>
+                <span className="font-semibold tabular-nums">{formatMoney(payTotalAmount)}</span>
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
@@ -883,7 +992,7 @@ export const PayrollManagement = () => {
             </div>
             {selectedAccrueEmployee ? (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label>Working Days</Label>
                     <Input
@@ -912,6 +1021,17 @@ export const PayrollManagement = () => {
                       value={accrueAbsentDays}
                       onChange={(e) => setAccrueAbsentDays(e.target.value)}
                     />
+                    <p className="text-xs text-muted-foreground">Deducts from salary.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Leaves</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={accrueLeaves}
+                      onChange={(e) => setAccrueLeaves(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Recorded only; no salary deduction.</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -940,11 +1060,69 @@ export const PayrollManagement = () => {
                     </p>
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Extra Payment</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={accrueExtraPayment}
+                      onChange={(e) => setAccrueExtraPayment(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>
+                      Extra Payment Description
+                      {Number(accrueExtraPayment || 0) > 0 ? " *" : ""}
+                    </Label>
+                    <Input
+                      value={accrueExtraPaymentDescription}
+                      onChange={(e) => setAccrueExtraPaymentDescription(e.target.value)}
+                      placeholder="e.g. overtime, bonus"
+                      required={Number(accrueExtraPayment || 0) > 0}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Extra Deduction</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={accrueExtraDeduction}
+                      onChange={(e) => setAccrueExtraDeduction(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>
+                      Extra Deduction Description
+                      {Number(accrueExtraDeduction || 0) > 0 ? " *" : ""}
+                    </Label>
+                    <Input
+                      value={accrueExtraDeductionDescription}
+                      onChange={(e) => setAccrueExtraDeductionDescription(e.target.value)}
+                      placeholder="e.g. penalty, adjustment"
+                      required={Number(accrueExtraDeduction || 0) > 0}
+                    />
+                  </div>
+                </div>
                 <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
                   <div className="flex justify-between">
                     <span>Gross Salary</span>
                     <span className="tabular-nums">{formatMoney(grossSalaryPreview)}</span>
                   </div>
+                  {Number(accrueExtraPayment || 0) > 0 ? (
+                    <div className="flex justify-between text-emerald-700">
+                      <span>Extra Payment</span>
+                      <span className="tabular-nums">+{formatMoney(Number(accrueExtraPayment || 0))}</span>
+                    </div>
+                  ) : null}
+                  {Number(accrueExtraDeduction || 0) > 0 ? (
+                    <div className="flex justify-between text-destructive">
+                      <span>Extra Deduction</span>
+                      <span className="tabular-nums">-{formatMoney(Number(accrueExtraDeduction || 0))}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between font-semibold">
                     <span>Net Payable</span>
                     <span className="tabular-nums">{formatMoney(netSalaryPreview)}</span>

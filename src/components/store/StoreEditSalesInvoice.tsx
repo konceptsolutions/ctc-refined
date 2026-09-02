@@ -9,10 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, Trash, Search } from "lucide-react";
 import { apiClient } from "@/lib/api";
+import { filterPartsWithFamilyExpansion } from "@/lib/part-family-search";
 import { toast } from "sonner";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format } from "date-fns";
+import { formatUiDate } from "@/utils/dateUtils";
 import { cn } from "@/lib/utils";
 import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
 
@@ -316,11 +317,9 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
     const searchTerm = (partSearchTerms[itemId] || "").toLowerCase().trim();
     if (!searchTerm) return parts.slice(0, 50);
 
-    return parts.filter((part) =>
-      part.partNo.toLowerCase().includes(searchTerm) ||
-      part.description.toLowerCase().includes(searchTerm) ||
-      part.brand.toLowerCase().includes(searchTerm)
-    ).slice(0, 50);
+    return filterPartsWithFamilyExpansion(parts, searchTerm, {
+      maxResults: 50,
+    });
   };
 
   const calculateLineTotal = (item: OrderItemForm): number => {
@@ -430,7 +429,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
                       )}
                       disabled={!canEdit}
                     >
-                      {formDate ? format(formDate, "PPP") : "Pick a date"}
+                      {formDate ? formatUiDate(formDate) : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">

@@ -14,7 +14,7 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getCurrentDatePakistan } from "@/utils/dateUtils";
+import { getCurrentDatePakistan, formatUiDate } from "@/utils/dateUtils";
 import { apiClient } from "@/lib/api";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printDailyClosing } from "@/utils/printDailyClosingPdf";
@@ -22,7 +22,6 @@ import { Badge } from "@/components/ui/badge";
 import { ChevronsUpDown, Loader2, RefreshCw, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
 import { usePageActions } from "@/permissions/pageActions";
 import { isAdminRole } from "@/utils/auth";
 import {
@@ -366,6 +365,35 @@ export const DailyClosingTab = ({
           </div>
 
           {data ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Card className="border-green-500/20 bg-green-500/5">
+                <CardContent className="p-3">
+                  <p className="text-xs text-muted-foreground">Receipts</p>
+                  <p className="text-base font-bold tabular-nums text-green-700">
+                    Rs {formatMoney(data.totals.receipts)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="border-red-500/20 bg-red-500/5">
+                <CardContent className="p-3">
+                  <p className="text-xs text-muted-foreground">Payments</p>
+                  <p className="text-base font-bold tabular-nums text-red-700">
+                    Rs {formatMoney(data.totals.payments)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="border-blue-500/20 bg-blue-500/5">
+                <CardContent className="p-3">
+                  <p className="text-xs text-muted-foreground">Closing</p>
+                  <p className="text-base font-bold tabular-nums text-blue-700">
+                    Rs {formatMoney(data.totals.closingBalance)}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+
+          {data ? (
             <div className="space-y-3 pt-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -431,9 +459,7 @@ export const DailyClosingTab = ({
                             {invoice.invoiceNo}
                           </TableCell>
                           <TableCell className="whitespace-nowrap">
-                            {invoice.invoiceDate
-                              ? format(new Date(invoice.invoiceDate), "dd MMM yyyy")
-                              : "-"}
+                            {formatUiDate(invoice.invoiceDate) || "-"}
                           </TableCell>
                           <TableCell>{invoice.customerName || "-"}</TableCell>
                           <TableCell className="whitespace-nowrap">

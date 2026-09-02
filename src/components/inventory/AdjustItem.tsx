@@ -56,7 +56,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
+import { formatUiDate } from "@/utils/dateUtils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { buildPartSearchableSelectFields } from "@/lib/part-family-search";
 import { usePageActions } from "@/permissions/pageActions";
 
 interface AdjustmentItem {
@@ -198,7 +200,7 @@ export const AdjustItem = () => {
         data.map((a: any) => ({
           id: a.id,
           adjustment_no: a.adjustment_no,
-          date: new Date(a.date).toLocaleDateString('en-US'),
+          date: formatUiDate(a.date) || "-",
           subject: a.subject || "",
           store: a.store_name || "N/A",
           store_id: a.store_id,
@@ -584,6 +586,7 @@ export const AdjustItem = () => {
       const options = list.map((p) => ({
         value: p.id,
         label: formatPartOptionLabel(p, includeDescription),
+        ...buildPartSearchableSelectFields(p),
       }));
       if (
         selectedPartId &&
@@ -1027,7 +1030,7 @@ export const AdjustItem = () => {
       const adjustment = response;
       const viewRecord: AdjustmentRecord = {
         id: adjustment.id,
-        date: new Date(adjustment.date).toLocaleDateString('en-US'),
+        date: formatUiDate(adjustment.date) || "-",
         subject: adjustment.subject || "",
         store: adjustment.store_name || "N/A",
         store_id: adjustment.store_id,

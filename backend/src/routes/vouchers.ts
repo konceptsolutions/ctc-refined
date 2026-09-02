@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import {
   isCashBankAccount,
   resolveCashBankModeFromAccount,
+  resolveVoucherCashBankMode,
 } from '../utils/cashBankMode';
 
 const router = express.Router();
@@ -376,8 +377,21 @@ router.get('/', async (req: Request, res: Response) => {
       new Set(
         vouchers
           .filter((v) => v.type === "payment" || v.type === "receipt")
-          .map((v) => resolveCashBankIdFromEntries(v))
-          .filter((id): id is string => Boolean(id)),
+          .flatMap((v) => {
+            const side = v.type === "receipt" ? "debit" : "credit";
+            const ids: string[] = [];
+            if (v.cashBankAccount) ids.push(v.cashBankAccount);
+            for (const entry of v.VoucherEntry) {
+              const amt =
+                side === "debit"
+                  ? Number(entry.debit || 0)
+                  : Number(entry.credit || 0);
+              if (amt <= 0 || !entry.accountId) continue;
+              if (entry.Account && !isCashBankAccount(entry.Account)) continue;
+              ids.push(entry.accountId);
+            }
+            return ids;
+          }),
       ),
     );
     const cashBankAccounts = cashBankAccountIds.length
@@ -416,10 +430,12 @@ router.get('/', async (req: Request, res: Response) => {
     ) {
       filteredVouchers = filteredVouchers.filter((voucher) => {
         if (voucher.type !== 'payment' && voucher.type !== 'receipt') return false;
-        const cashBankId = resolveCashBankIdFromEntries(voucher);
-        if (!cashBankId) return false;
-        const mode = accountModeById.get(cashBankId) ?? 'cash';
-        return mode === requestedMode;
+        const mode = resolveVoucherCashBankMode(voucher, accountModeById);
+        if (!mode) return false;
+        if (requestedMode === 'cash') {
+          return mode === 'cash' || mode === 'cash+online';
+        }
+        return mode === 'online' || mode === 'cash+online';
       });
     }
 
@@ -449,7 +465,7 @@ router.get('/', async (req: Request, res: Response) => {
       conversionRate: (voucher as any).conversionRate ?? undefined,
       mode:
         voucher.type === 'payment' || voucher.type === 'receipt'
-          ? (cashBankId ? accountModeById.get(cashBankId) ?? 'cash' : undefined)
+          ? resolveVoucherCashBankMode(voucher, accountModeById)
           : undefined,
       chequeNumber: voucher.chequeNumber || undefined,
       chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
@@ -548,9 +564,16 @@ router.get('/:id', async (req: Request, res: Response) => {
               select: {
                 id: true,
                 code: true,
-                name: true
-              }
-            }
+                name: true,
+                Subgroup: {
+                  select: {
+                    code: true,
+                    name: true,
+                    MainGroup: { select: { type: true } },
+                  },
+                },
+              },
+            },
           },
           orderBy: { sortOrder: 'asc' },
         },
@@ -561,6 +584,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Voucher not found' });
     }
 
+    const mode = resolveVoucherCashBankMode(voucher);
+
     res.json({
       data: {
         id: voucher.id,
@@ -570,6 +595,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         narration: voucher.narration || '',
         cashBankAccount: voucher.cashBankAccount || '',
         conversionRate: (voucher as any).conversionRate ?? undefined,
+        mode,
         chequeNumber: voucher.chequeNumber || undefined,
         chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
         checkClearDate: voucher.checkClearDate ? voucher.checkClearDate.toISOString().split('T')[0] : undefined,
@@ -730,21 +756,34 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    let mode: 'cash' | 'online' | undefined;
-    if (
-      (voucher.type === 'payment' || voucher.type === 'receipt') &&
-      voucher.cashBankAccount
-    ) {
-      const cashBankAccount = await prisma.account.findUnique({
-        where: { id: voucher.cashBankAccount },
-        select: {
-          name: true,
-          Subgroup: { select: { code: true, name: true } },
+    const voucherWithEntries = await prisma.voucher.findUnique({
+      where: { id: voucher.id },
+      include: {
+        VoucherEntry: {
+          include: {
+            Account: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                Subgroup: {
+                  select: {
+                    code: true,
+                    name: true,
+                    MainGroup: { select: { type: true } },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { sortOrder: 'asc' },
         },
-      });
-      if (cashBankAccount) {
-        mode = resolveCashBankModeFromAccount(cashBankAccount);
-      }
+      },
+    });
+
+    let mode: 'cash' | 'online' | 'cash+online' | undefined;
+    if (voucherWithEntries) {
+      mode = resolveVoucherCashBankMode(voucherWithEntries);
     }
 
     const mappedEntries = (voucher as any).VoucherEntry.map((entry: any) => ({
@@ -1067,6 +1106,16 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
+    if (entries && Array.isArray(entries)) {
+      updatedVoucher =
+        (await prisma.voucher.findUnique({
+          where: { id },
+          include: {
+            VoucherEntry: { orderBy: { sortOrder: "asc" } },
+          },
+        })) ?? updatedVoucher;
+    }
+
     res.json({
       data: {
         id: updatedVoucher!.id,
@@ -1076,12 +1125,33 @@ router.put('/:id', async (req: Request, res: Response) => {
         narration: updatedVoucher!.narration || "",
         cashBankAccount: updatedVoucher!.cashBankAccount || "",
         conversionRate: (updatedVoucher as any).conversionRate ?? undefined,
-        VoucherEntry: updatedVoucher!.VoucherEntry.map((entry) => ({
+        chequeNumber: updatedVoucher!.chequeNumber || undefined,
+        chequeDate: updatedVoucher!.chequeDate
+          ? updatedVoucher!.chequeDate.toISOString().split("T")[0]
+          : undefined,
+        checkClearDate: updatedVoucher!.checkClearDate
+          ? updatedVoucher!.checkClearDate.toISOString().split("T")[0]
+          : undefined,
+        isCleared: updatedVoucher!.isCleared,
+        entries: updatedVoucher!.VoucherEntry.map((entry) => ({
           id: entry.id,
-          account: entry.accountName,
+          account: entry.accountId || entry.accountName,
+          accountId: entry.accountId,
+          accountName: entry.accountName,
           description: entry.description || "",
           debit: entry.debit,
           credit: entry.credit,
+          sortOrder: entry.sortOrder,
+        })),
+        VoucherEntry: updatedVoucher!.VoucherEntry.map((entry) => ({
+          id: entry.id,
+          account: entry.accountId || entry.accountName,
+          accountId: entry.accountId,
+          accountName: entry.accountName,
+          description: entry.description || "",
+          debit: entry.debit,
+          credit: entry.credit,
+          sortOrder: entry.sortOrder,
         })),
         totalDebit: updatedVoucher!.totalDebit,
         totalCredit: updatedVoucher!.totalCredit,

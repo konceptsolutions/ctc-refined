@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ShoppingCart, Search, Plus, Eye } from "lucide-react";
 import { toast } from "sonner";
+import { formatUiDate } from "@/utils/dateUtils";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 
 interface ImportExpense {
@@ -86,7 +87,7 @@ export const ImportExpensesTab = () => {
     const newVoucherNo = `IE-2025-${String(expenses.length + 1).padStart(3, "0")}`;
     const newExpense: ImportExpense = {
       id: String(expenses.length + 1),
-      date: new Date(formData.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+      date: formatUiDate(formData.date) || "",
       voucherNo: newVoucherNo,
       expenseType: formData.expenseType,
       description: formData.description,

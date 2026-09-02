@@ -152,7 +152,7 @@ export const DistributorAging = () => {
         </head>
         <body>
           <h1>Overdue Invoices by Term</h1>
-          <p style="text-align: center; color: #666;">Generated on ${format(new Date(), 'MM-dd-yyyy HH:mm')}</p>
+          <p style="text-align: center; color: #666;">Generated on ${formatUiDate(new Date())} ${format(new Date(), 'HH:mm')}</p>
 
           <table>
             <thead>

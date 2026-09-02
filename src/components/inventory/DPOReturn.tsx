@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 import { apiClient } from "@/lib/api";
+import { formatUiDate } from "@/utils/dateUtils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
     AlertDialog,
@@ -138,7 +139,7 @@ export const DPOReturn = () => {
                 directPurchaseOrderId: r.directPurchaseOrderId,
                 dpoNumber: r.DirectPurchaseOrder?.dpoNumber || "N/A",
                 supplierName: r.DirectPurchaseOrder?.Supplier?.companyName || r.DirectPurchaseOrder?.Supplier?.name || "N/A",
-                returnDate: new Date(r.returnDate).toLocaleDateString('en-US'),
+                returnDate: formatUiDate(r.returnDate) || "-",
                 reason: r.reason || "",
                 totalAmount: r.totalAmount || 0,
                 status: r.status,

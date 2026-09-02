@@ -25,6 +25,7 @@ import {
   drHeaderClass,
   drValueClass,
 } from "@/utils/accountingColors";
+import { formatUiDate } from "@/utils/dateUtils";
 
 interface VoucherViewDialogProps {
   open: boolean;
@@ -33,21 +34,8 @@ interface VoucherViewDialogProps {
   voucherNumber?: string | null;
 }
 
-const formatDisplayDate = (dateString?: string | null): string => {
-  if (!dateString) return "-";
-  try {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-      const [year, month, day] = dateString.split("-");
-      return `${day}/${month}/${year}`;
-    }
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) return dateString;
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return dateString;
-    return date.toLocaleDateString('en-US');
-  } catch {
-    return dateString;
-  }
-};
+const formatDisplayDate = (dateString?: string | null): string =>
+  formatUiDate(dateString) || "-";
 
 const formatAmount = (amount: number): string =>
   amount.toLocaleString("en-PK", {

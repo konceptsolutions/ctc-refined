@@ -38,8 +38,9 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
-import { calculateAccruedSalary } from "@/lib/employeePayroll";
-import { getCurrentDatePakistan } from "@/utils/dateUtils";
+import { calculateAccruedSalary, validateEmployeeSalaryPaymentSplit, validatePayrollExtraFieldDescriptions } from "@/lib/employeePayroll";
+import { getCurrentDatePakistan, formatUiDate } from "@/utils/dateUtils";
+import { normalizeCashBankModeFromApi } from "@/utils/cashBankMode";
 
 type EmployeeRow = {
   id: string;
@@ -68,6 +69,7 @@ type EmployeeRow = {
 type CashBankOption = {
   id: string;
   label: string;
+  mode?: "cash" | "online";
 };
 
 type EmployeeTransaction = {
@@ -127,12 +129,7 @@ const formatMoney = (value: number) =>
     maximumFractionDigits: 2,
   });
 
-const formatDate = (value?: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-US');
-};
+const formatDate = (value?: string | null) => formatUiDate(value) || "—";
 
 const todayDateMax = () => getCurrentDatePakistan();
 const currentMonthMax = () => getCurrentDatePakistan().slice(0, 7);
@@ -175,11 +172,33 @@ export const EmployeeManagement = () => {
   const [txAmount, setTxAmount] = useState("");
   const [txWorkingDays, setTxWorkingDays] = useState("26");
   const [txAbsentDays, setTxAbsentDays] = useState("");
+  const [txLeaves, setTxLeaves] = useState("0");
   const [txLoanRecovery, setTxLoanRecovery] = useState("");
   const [txAdvanceRecovery, setTxAdvanceRecovery] = useState("");
+  const [txExtraPayment, setTxExtraPayment] = useState("");
+  const [txExtraPaymentDescription, setTxExtraPaymentDescription] = useState("");
+  const [txExtraDeduction, setTxExtraDeduction] = useState("");
+  const [txExtraDeductionDescription, setTxExtraDeductionDescription] = useState("");
   const [txCashBankAccountId, setTxCashBankAccountId] = useState("");
+  const [txCashAmount, setTxCashAmount] = useState("");
+  const [txBankAmount, setTxBankAmount] = useState("");
+  const [txCashAccountId, setTxCashAccountId] = useState("");
+  const [txBankAccountId, setTxBankAccountId] = useState("");
   const [txDescription, setTxDescription] = useState("");
   const [txSaving, setTxSaving] = useState(false);
+
+  const cashAccounts = useMemo(
+    () => cashBankAccounts.filter((account) => account.mode === "cash"),
+    [cashBankAccounts],
+  );
+  const bankAccounts = useMemo(
+    () => cashBankAccounts.filter((account) => account.mode === "online"),
+    [cashBankAccounts],
+  );
+  const txSalaryPaymentTotal = useMemo(
+    () => Math.max(0, Number(txCashAmount || 0)) + Math.max(0, Number(txBankAmount || 0)),
+    [txCashAmount, txBankAmount],
+  );
 
   const [historyEmployee, setHistoryEmployee] = useState<EmployeeRow | null>(null);
   const [historyRows, setHistoryRows] = useState<EmployeeTransaction[]>([]);
@@ -194,6 +213,10 @@ export const EmployeeManagement = () => {
         rows.map((row: any) => ({
           id: row.id,
           label: row.label || `${row.code} - ${row.name}`,
+          mode: normalizeCashBankModeFromApi({
+            mode: row.mode,
+            code: row.code,
+          }),
         })),
       );
     } catch {
@@ -239,6 +262,7 @@ export const EmployeeManagement = () => {
   const totalPages = Math.max(1, Math.ceil(totalRecords / rowsPerPage));
 
   const txNeedsCashBank = ["advance_issue", "loan_issue", "salary_payment"].includes(txType);
+  const txUsesSplitSalaryPayment = txType === "salary_payment";
   const txSupportsRecoveries = txType === "salary_accrual";
 
   const grossSalaryPreview = useMemo(() => {
@@ -268,9 +292,18 @@ export const EmployeeManagement = () => {
     return (
       grossSalaryPreview -
       Number(txLoanRecovery || 0) -
-      Number(txAdvanceRecovery || 0)
+      Number(txAdvanceRecovery || 0) +
+      Number(txExtraPayment || 0) -
+      Number(txExtraDeduction || 0)
     );
-  }, [grossSalaryPreview, txAdvanceRecovery, txLoanRecovery, txSupportsRecoveries]);
+  }, [
+    grossSalaryPreview,
+    txAdvanceRecovery,
+    txExtraDeduction,
+    txExtraPayment,
+    txLoanRecovery,
+    txSupportsRecoveries,
+  ]);
 
   const filteredHistoryRows = useMemo(() => {
     if (historyTypeFilter === "all") return historyRows;
@@ -324,9 +357,18 @@ export const EmployeeManagement = () => {
     setTxAmount("");
     setTxWorkingDays(String(Number(employee.workingDays || 26)));
     setTxAbsentDays("0");
+    setTxLeaves("0");
     setTxLoanRecovery("");
     setTxAdvanceRecovery("");
+    setTxExtraPayment("");
+    setTxExtraPaymentDescription("");
+    setTxExtraDeduction("");
+    setTxExtraDeductionDescription("");
     setTxCashBankAccountId(cashBankAccounts[0]?.id || "");
+    setTxCashAmount(type === "salary_payment" ? String(employee.salaryPayableBalance || "") : "");
+    setTxBankAmount("");
+    setTxCashAccountId(cashAccounts[0]?.id || "");
+    setTxBankAccountId(bankAccounts[0]?.id || "");
     setTxDescription("");
   };
 
@@ -531,6 +573,15 @@ export const EmployeeManagement = () => {
         });
         return;
       }
+      const leaves = Number(txLeaves || 0);
+      if (leaves < 0) {
+        toast({
+          title: "Validation",
+          description: "Leaves cannot be negative.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (grossSalaryPreview <= 0) {
         toast({
           title: "Validation",
@@ -539,9 +590,40 @@ export const EmployeeManagement = () => {
         });
         return;
       }
+
+      const extraFieldError = validatePayrollExtraFieldDescriptions({
+        extraPayment: Number(txExtraPayment || 0),
+        extraPaymentDescription: txExtraPaymentDescription,
+        extraDeduction: Number(txExtraDeduction || 0),
+        extraDeductionDescription: txExtraDeductionDescription,
+      });
+      if (extraFieldError) {
+        toast({
+          title: "Validation",
+          description: extraFieldError,
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
-    if (txNeedsCashBank && !txCashBankAccountId) {
+    if (txUsesSplitSalaryPayment) {
+      const paymentError = validateEmployeeSalaryPaymentSplit({
+        cashAmount: Number(txCashAmount || 0),
+        bankAmount: Number(txBankAmount || 0),
+        outstanding: Number(txEmployee.salaryPayableBalance || 0),
+        cashAccountId: txCashAccountId,
+        bankAccountId: txBankAccountId,
+      });
+      if (paymentError) {
+        toast({
+          title: "Validation",
+          description: paymentError,
+          variant: "destructive",
+        });
+        return;
+      }
+    } else if (txNeedsCashBank && !txCashBankAccountId) {
       toast({
         title: "Validation",
         description: "Please select a cash/bank account.",
@@ -556,12 +638,32 @@ export const EmployeeManagement = () => {
         type: txType as any,
         date: txDate,
         payrollMonth: txType === "salary_accrual" || txType === "salary_payment" ? txPayrollMonth : undefined,
-        amount: txType === "salary_accrual" ? undefined : Number(txAmount || 0),
+        amount:
+          txType === "salary_accrual"
+            ? undefined
+            : txUsesSplitSalaryPayment
+              ? undefined
+              : Number(txAmount || 0),
         absentDays: txType === "salary_accrual" ? Number(txAbsentDays || 0) : undefined,
+        leaves: txType === "salary_accrual" ? Number(txLeaves || 0) : undefined,
         workingDays: txType === "salary_accrual" ? Number(txWorkingDays || 0) : undefined,
         loanRecovery: Number(txLoanRecovery || 0),
         advanceRecovery: Number(txAdvanceRecovery || 0),
-        cashBankAccountId: txCashBankAccountId || undefined,
+        extraPayment: Number(txExtraPayment || 0),
+        extraPaymentDescription: txExtraPaymentDescription || undefined,
+        extraDeduction: Number(txExtraDeduction || 0),
+        extraDeductionDescription: txExtraDeductionDescription || undefined,
+        cashBankAccountId: txUsesSplitSalaryPayment ? undefined : txCashBankAccountId || undefined,
+        cashAmount: txUsesSplitSalaryPayment ? Math.max(0, Number(txCashAmount || 0)) : undefined,
+        bankAmount: txUsesSplitSalaryPayment ? Math.max(0, Number(txBankAmount || 0)) : undefined,
+        cashAccountId:
+          txUsesSplitSalaryPayment && Number(txCashAmount || 0) > 0
+            ? txCashAccountId
+            : undefined,
+        bankAccountId:
+          txUsesSplitSalaryPayment && Number(txBankAmount || 0) > 0
+            ? txBankAccountId
+            : undefined,
         description: txDescription || undefined,
       });
 
@@ -988,7 +1090,7 @@ export const EmployeeManagement = () => {
             )}
             {txType === "salary_accrual" && txEmployee ? (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label>Working Days</Label>
                     <Input
@@ -1018,31 +1120,90 @@ export const EmployeeManagement = () => {
                       onChange={(e) => setTxAbsentDays(e.target.value)}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label>Leaves</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={txLeaves}
+                      onChange={(e) => setTxLeaves(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Monthly salary: {formatMoney(txEmployee.monthlySalary)} · Days worked:{" "}
                   {daysWorkedPreview} / {Math.max(1, Number(txWorkingDays || 26))}
                 </p>
               </>
+            ) : txUsesSplitSalaryPayment ? (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Salary payable balance: {formatMoney(txEmployee?.salaryPayableBalance || 0)}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Cash Amount</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={txCashAmount}
+                      onChange={(e) => setTxCashAmount(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Cash Account</Label>
+                    <Select value={txCashAccountId} onValueChange={setTxCashAccountId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select cash account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cashAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Bank Amount</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={txBankAmount}
+                      onChange={(e) => setTxBankAmount(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Bank Account</Label>
+                    <Select value={txBankAccountId} onValueChange={setTxBankAccountId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select bank account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {bankAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm flex justify-between">
+                  <span>Total Payment</span>
+                  <span className="font-semibold tabular-nums">{formatMoney(txSalaryPaymentTotal)}</span>
+                </div>
+              </div>
             ) : (
               <div className="space-y-2">
-                <Label>{txType === "salary_payment" ? "Net Amount to Pay" : "Amount"}</Label>
+                <Label>Amount</Label>
                 <Input
                   type="number"
                   min={0}
                   value={txAmount}
                   onChange={(e) => setTxAmount(e.target.value)}
-                  placeholder={
-                    txType === "salary_payment" && txEmployee
-                      ? String(txEmployee.salaryPayableBalance || txEmployee.monthlySalary || "")
-                      : undefined
-                  }
                 />
-                {txType === "salary_payment" && txEmployee ? (
-                  <p className="text-xs text-muted-foreground">
-                    Salary payable balance: {formatMoney(txEmployee.salaryPayableBalance || 0)}
-                  </p>
-                ) : null}
               </div>
             )}
             {txSupportsRecoveries ? (
@@ -1073,6 +1234,50 @@ export const EmployeeManagement = () => {
                     </p>
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Extra Payment</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={txExtraPayment}
+                      onChange={(e) => setTxExtraPayment(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>
+                      Extra Payment Description
+                      {Number(txExtraPayment || 0) > 0 ? " *" : ""}
+                    </Label>
+                    <Input
+                      value={txExtraPaymentDescription}
+                      onChange={(e) => setTxExtraPaymentDescription(e.target.value)}
+                      required={Number(txExtraPayment || 0) > 0}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Extra Deduction</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={txExtraDeduction}
+                      onChange={(e) => setTxExtraDeduction(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>
+                      Extra Deduction Description
+                      {Number(txExtraDeduction || 0) > 0 ? " *" : ""}
+                    </Label>
+                    <Input
+                      value={txExtraDeductionDescription}
+                      onChange={(e) => setTxExtraDeductionDescription(e.target.value)}
+                      required={Number(txExtraDeduction || 0) > 0}
+                    />
+                  </div>
+                </div>
                 <div className="rounded-md border bg-muted/30 p-3 text-sm">
                   <div className="flex justify-between">
                     <span>Accrued Gross Salary</span>
@@ -1085,7 +1290,7 @@ export const EmployeeManagement = () => {
                 </div>
               </>
             ) : null}
-            {txNeedsCashBank ? (
+            {txNeedsCashBank && !txUsesSplitSalaryPayment ? (
               <div className="space-y-2">
                 <Label>Cash / Bank Account</Label>
                 <Select value={txCashBankAccountId} onValueChange={setTxCashBankAccountId}>

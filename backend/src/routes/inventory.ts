@@ -7,6 +7,10 @@ import * as crypto from "crypto";
 import prisma from "../config/database";
 import { Prisma } from "@prisma/client";
 import {
+  buildPartListSearchWithFamilySql,
+  buildPartSearchWhereWithFamily,
+} from "../utils/partFamilySearch";
+import {
   processPurchaseReceive,
   calculateAverageCostDPO,
 } from "../utils/inventoryFormulas";
@@ -1712,7 +1716,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
     }
 
     if (search) {
-      whereClause += ` AND (p."partNo" ILIKE $${paramIdx} OR p.description ILIKE $${paramIdx} OR b.name ILIKE $${paramIdx} OR mp."masterPartNo" ILIKE $${paramIdx})`;
+      whereClause += ` AND ${buildPartListSearchWithFamilySql(paramIdx)}`;
       params.push(`%${search}%`);
       paramIdx++;
     }
@@ -2250,15 +2254,20 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
     );
 
     // Get all active parts
-    const where: any = { status: "active" };
+    const baseWhere: any = { status: "active" };
     if (category && category !== "all" && category !== "All Categories") {
       const categoryRecord = await prisma.category.findFirst({
         where: { name: { contains: category as string } },
       });
       if (categoryRecord) {
-        where.categoryId = categoryRecord.id;
+        baseWhere.categoryId = categoryRecord.id;
       }
     }
+
+    const where =
+      search && String(search).trim()
+        ? await buildPartSearchWhereWithFamily(String(search).trim(), baseWhere)
+        : baseWhere;
 
     const parts = await prisma.part.findMany({
       where,
@@ -2360,18 +2369,6 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
         }
       }
 
-      // Apply search filter
-      if (search) {
-        const searchLower = (search as string).toLowerCase();
-        const matchesSearch =
-          part.partNo.toLowerCase().includes(searchLower) ||
-          (part.description || "").toLowerCase().includes(searchLower) ||
-          (part.Category?.name || "").toLowerCase().includes(searchLower);
-        if (!matchesSearch) {
-          continue;
-        }
-      }
-
       results.push({
         id: part.id,
         partNo: part.partNo,
@@ -2406,15 +2403,20 @@ router.get("/stock-balance-valuation", async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     // Get all active parts
-    const where: any = { status: "active" };
+    const baseWhere: any = { status: "active" };
     if (category && category !== "All Categories") {
       const categoryRecord = await prisma.category.findFirst({
         where: { name: { contains: category as string } },
       });
       if (categoryRecord) {
-        where.categoryId = categoryRecord.id;
+        baseWhere.categoryId = categoryRecord.id;
       }
     }
+
+    const where =
+      search && String(search).trim()
+        ? await buildPartSearchWhereWithFamily(String(search).trim(), baseWhere)
+        : baseWhere;
 
     const parts = await prisma.part.findMany({
       where,
@@ -2486,18 +2488,8 @@ router.get("/stock-balance-valuation", async (req: Request, res: Response) => {
       );
 
       if (partLocations.length === 0) {
-        // If no movements, include the part with zero stock (only if matches search)
-        const matchesSearch =
-          !search ||
-          part.partNo
-            .toLowerCase()
-            .includes((search as string).toLowerCase()) ||
-          (part.description || "")
-            .toLowerCase()
-            .includes((search as string).toLowerCase());
-
-        if (matchesSearch) {
-          result.push({
+        // If no movements, include the part with zero stock
+        result.push({
             id: itemId++,
             partNo: part.partNo,
             description: part.description || "",
@@ -2511,7 +2503,6 @@ router.get("/stock-balance-valuation", async (req: Request, res: Response) => {
             rack: "-",
             shelf: "-",
           });
-        }
       } else {
         // Create an entry for each location
         for (const [key, stockData] of partLocations) {
@@ -2551,18 +2542,8 @@ router.get("/stock-balance-valuation", async (req: Request, res: Response) => {
       }
     }
 
-    // Apply search filter
-    let filteredResult = result;
-    if (search) {
-      const searchLower = (search as string).toLowerCase();
-      filteredResult = filteredResult.filter(
-        (item) =>
-          item.partNo.toLowerCase().includes(searchLower) ||
-          item.description.toLowerCase().includes(searchLower),
-      );
-    }
-
     // Apply category filter (already done in query, but double-check)
+    let filteredResult = result;
     if (category && category !== "All Categories") {
       filteredResult = filteredResult.filter((item) =>
         item.category
@@ -8571,6 +8552,7 @@ router.get(
           quantity: item.quantity,
           returned_quantity: returnedQtyMap.get(item.partId) || 0,
           purchase_price: item.purchasePrice,
+          weight: item.Part.weight ?? 0,
           sale_price: item.salePrice,
           amount: item.amount,
           price_a:

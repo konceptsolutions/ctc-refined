@@ -61,7 +61,9 @@ import { toast } from "@/hooks/use-toast";
 import { PrintableDocument, printDocument } from "./PrintableDocument";
 import { usePageActions } from "@/permissions/pageActions";
 import { apiClient } from "@/lib/api";
+import { filterPartsWithFamilyExpansion } from "@/lib/part-family-search";
 import { formatPurchasePrice } from "@/utils/purchasePriceRound";
+import { formatUiDate } from "@/utils/dateUtils";
 import {
   extractLatestPriceDatesFromHistory,
   formatPriceLastUpdatedLabel,
@@ -1102,28 +1104,15 @@ export const SalesInquiry = ({
 
     let filtered = combined;
     if (itemSearch) {
+      filtered = filterPartsWithFamilyExpansion(
+        combined.map((item) => ({
+          ...item,
+          masterPartNo: item.masterPart,
+        })),
+        itemSearch,
+      );
+
       const searchLower = itemSearch.toLowerCase();
-
-      filtered = filtered.filter((item) => {
-        const pNo = item.partNo.toLowerCase();
-        const mNo = item.masterPart.toLowerCase();
-        const description = item.description.toLowerCase();
-        const category = item.category.toLowerCase();
-        const subCategory = item.subCategory.toLowerCase();
-        const application = (item.application || "").toLowerCase();
-        const brand = item.brand.toLowerCase();
-
-        return (
-          pNo.includes(searchLower) ||
-          mNo.includes(searchLower) ||
-          description.includes(searchLower) ||
-          category.includes(searchLower) ||
-          subCategory.includes(searchLower) ||
-          application.includes(searchLower) ||
-          brand.includes(searchLower)
-        );
-      });
-
       // Prioritize exact partNo/master matches followed by startsWith
       filtered = [...filtered].sort((a, b) => {
         const stockCmp = compareStockPriority(a, b);
@@ -1328,27 +1317,8 @@ export const SalesInquiry = ({
       const application = lookupApplicationFilter.trim().toLowerCase();
 
       let list = lookupPartsPool.filter((p) => {
-        const pNo = (p.partNo || "").toLowerCase();
-        const mNo = (p.masterPart || "").toLowerCase();
         const desc = (p.description || "").toLowerCase();
-        const cat = (p.category || "").toLowerCase();
-        const sub = (p.subCategory || "").toLowerCase();
         const app = (p.application || "").toLowerCase();
-        const brand = (p.brand || "").toLowerCase();
-
-        if (
-          search &&
-          !(
-            pNo.includes(search) ||
-            mNo.includes(search) ||
-            desc.includes(search) ||
-            cat.includes(search) ||
-            sub.includes(search) ||
-            app.includes(search) ||
-            brand.includes(search)
-          )
-        )
-          return false;
 
         if (description && desc !== description) return false;
         if (application && app !== application) return false;
@@ -1361,6 +1331,13 @@ export const SalesInquiry = ({
         }
         return true;
       });
+
+      if (search) {
+        list = filterPartsWithFamilyExpansion(
+          list.map((p) => ({ ...p, masterPartNo: p.masterPart })),
+          search,
+        );
+      }
 
       if (search) {
         list = [...list].sort((a, b) => {
@@ -3471,7 +3448,7 @@ export const SalesInquiry = ({
                 <div>
                   <Label className="text-xs text-muted-foreground">Inquiry Date</Label>
                   <div className="text-sm font-medium">
-                    {fullInquiryData.inquiryDate ? format(new Date(fullInquiryData.inquiryDate), 'PPP') : 'N/A'}
+                    {fullInquiryData.inquiryDate ? formatUiDate(fullInquiryData.inquiryDate) : 'N/A'}
                   </div>
                 </div>
                 <div>
@@ -3714,7 +3691,7 @@ export const SalesInquiry = ({
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {inquiryDate ? format(inquiryDate, "PPP") : <span>Pick a date</span>}
+                      {inquiryDate ? formatUiDate(inquiryDate) : <span>Pick a date</span>}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
@@ -4373,7 +4350,7 @@ export const SalesInquiry = ({
                               const arriveDate = new Date(arrival.estTimeDate);
                               const label = Number.isNaN(arriveDate.getTime())
                                 ? "-"
-                                : arriveDate.toLocaleDateString('en-US');
+                                : formatUiDate(arriveDate) || '—';
                               return (
                                 <span
                                   className="text-xs font-semibold text-emerald-700 dark:text-emerald-400"
@@ -4862,7 +4839,7 @@ export const SalesInquiry = ({
                                 const arriveDate = new Date(arrival.estTimeDate);
                                 const label = Number.isNaN(arriveDate.getTime())
                                   ? "-"
-                                  : arriveDate.toLocaleDateString('en-US');
+                                  : formatUiDate(arriveDate) || '—';
                                 return (
                                   <span
                                     className="font-semibold text-emerald-700 dark:text-emerald-400"
@@ -5083,7 +5060,7 @@ export const SalesInquiry = ({
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {invoice.invoice_date
-                                ? format(new Date(invoice.invoice_date), "dd MMM yyyy")
+                                ? formatUiDate(invoice.invoice_date) || "—"
                                 : "N/A"}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
@@ -5189,7 +5166,7 @@ export const SalesInquiry = ({
                             <TableCell className="text-xs font-medium">{row.poNo}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {row.date
-                                ? format(new Date(row.date), "dd MMM yyyy")
+                                ? formatUiDate(row.date) || "—"
                                 : "N/A"}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
@@ -5406,12 +5383,12 @@ export const SalesInquiry = ({
                       <TableCell className="font-medium">{q.quotationNo}</TableCell>
                       <TableCell>
                         {q.quotationDate
-                          ? format(new Date(q.quotationDate), "dd MMM yyyy")
+                          ? formatUiDate(q.quotationDate) || "—"
                           : "-"}
                       </TableCell>
                       <TableCell>
                         {q.validUntil
-                          ? format(new Date(q.validUntil), "dd MMM yyyy")
+                          ? formatUiDate(q.validUntil) || "—"
                           : "-"}
                       </TableCell>
                       <TableCell>{q.customerName || "-"}</TableCell>
@@ -5455,7 +5432,7 @@ export const SalesInquiry = ({
               type="inquiry"
               data={{
                 documentNo: printInquiry.inquiryNo,
-                date: printInquiry.inquiryDate ? format(new Date(printInquiry.inquiryDate), 'PPP') : '',
+                date: printInquiry.inquiryDate ? formatUiDate(printInquiry.inquiryDate) : '',
                 customerName: printInquiry.customerName,
                 customerEmail: printInquiry.customerEmail || '',
                 customerPhone: printInquiry.customerPhone || '',

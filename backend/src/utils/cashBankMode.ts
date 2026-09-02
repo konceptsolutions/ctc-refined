@@ -96,3 +96,63 @@ export function resolveCashBankModeFromAccount(account: {
     mainGroupType: getMainGroupType(account),
   });
 }
+
+export const getAccountCashBankMode = resolveCashBankModeFromAccount;
+
+export type VoucherCashBankMode = CashBankPaymentMode | "cash+online";
+
+type VoucherEntryForMode = {
+  accountId?: string | null;
+  debit?: number | null;
+  credit?: number | null;
+  Account?: {
+    name?: string | null;
+    Subgroup?: {
+      code?: string | null;
+      name?: string | null;
+      MainGroup?: { type?: string | null } | null;
+    } | null;
+  } | null;
+};
+
+/** Derive payment/receipt mode from all cash/bank lines on the voucher. */
+export function resolveVoucherCashBankMode(
+  voucher: {
+    type: string;
+    cashBankAccount?: string | null;
+    VoucherEntry?: VoucherEntryForMode[];
+  },
+  accountModeById?: Map<string, CashBankPaymentMode>,
+): VoucherCashBankMode | undefined {
+  if (voucher.type !== "payment" && voucher.type !== "receipt") return undefined;
+
+  const side = voucher.type === "receipt" ? "debit" : "credit";
+  const modes = new Set<CashBankPaymentMode>();
+
+  for (const entry of voucher.VoucherEntry || []) {
+    const amount =
+      side === "debit"
+        ? Number(entry.debit || 0)
+        : Number(entry.credit || 0);
+    if (amount <= 0 || !entry.accountId) continue;
+
+    let mode: CashBankPaymentMode | undefined;
+    if (entry.Account && isCashBankAccount(entry.Account)) {
+      mode = resolveCashBankModeFromAccount(entry.Account);
+    } else if (accountModeById) {
+      mode = accountModeById.get(entry.accountId);
+    }
+    if (mode) modes.add(mode);
+  }
+
+  if (modes.has("cash") && modes.has("online")) return "cash+online";
+  if (modes.has("online")) return "online";
+  if (modes.has("cash")) return "cash";
+
+  if (voucher.cashBankAccount && accountModeById) {
+    const fallback = accountModeById.get(voucher.cashBankAccount);
+    if (fallback) return fallback;
+  }
+
+  return undefined;
+}

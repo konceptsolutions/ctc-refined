@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 import { printBackOrderSummary } from "@/utils/printBackOrderSummaryPdf";
 import { fcHeaderClass, fcValueClass } from "@/utils/accountingColors";
+import { formatUiDate } from "@/utils/dateUtils";
 import { FileBarChart2, Search } from "lucide-react";
 import { usePageActions } from "@/permissions/pageActions";
 
@@ -130,16 +131,8 @@ const formatRate = (value: number) => {
   });
 };
 
-const formatDisplayDate = (value?: string | null) => {
-  if (!value) return "-";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [y, m, d] = value.split("-");
-    return `${d}/${m}/${y}`;
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-US');
-};
+const formatDisplayDate = (value?: string | null) =>
+  formatUiDate(value) || "-";
 
 const PoItemsTable = ({ group }: { group: PoGroup }) => {
   const rows = group.items || [];

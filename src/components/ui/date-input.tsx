@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/popover";
 import {
   formatUiDate,
+  UI_DATE_FORMAT,
   UI_DATE_PLACEHOLDER,
 } from "@/utils/dateUtils";
 
@@ -30,8 +31,10 @@ function parseValue(value?: string): Date | undefined {
   if (!value) return undefined;
   const iso = parse(value.slice(0, 10), "yyyy-MM-dd", new Date());
   if (isValid(iso)) return iso;
-  const ui = parse(value, "MM-dd-yyyy", new Date());
+  const ui = parse(value, UI_DATE_FORMAT, new Date());
   if (isValid(ui)) return ui;
+  const legacy = parse(value, "MM-dd-yyyy", new Date());
+  if (isValid(legacy)) return legacy;
   const fallback = new Date(value);
   return isValid(fallback) ? fallback : undefined;
 }

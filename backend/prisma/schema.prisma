@@ -267,9 +267,14 @@ model EmployeeTransaction {
   payrollMonth    String?
   amount          Float
   absentDays      Float    @default(0)
+  leaves          Float    @default(0)
   workingDays     Float?
   loanRecovery    Float    @default(0)
   advanceRecovery Float    @default(0)
+  extraPayment    Float    @default(0)
+  extraPaymentDescription String?
+  extraDeduction  Float    @default(0)
+  extraDeductionDescription String?
   netPaid         Float    @default(0)
   description     String?
   voucherId       String?

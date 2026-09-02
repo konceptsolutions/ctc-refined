@@ -80,6 +80,8 @@ import { getUserRole, isStoreUserRole } from "@/utils/auth";
 import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
 import { SalesInquiry } from "@/components/sales/SalesInquiry";
 
+const ORDER_TABLE_DATE_CLASS = "whitespace-nowrap min-w-[6.5rem] w-[6.5rem]";
+
 interface DirectPurchaseOrderItem {
   id: string;
   partId: string;
@@ -1091,7 +1093,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
       const rawItems = invoiceData.SalesInvoiceItem || invoiceData.items || [];
       const challanItems = rawItems.map((item: any) => {
-        const location = getChallanItemLocation(item, invoiceData);
+        const location = getChallanItemLocation(
+          {
+            ...item,
+            Part: item.Part || item.part,
+          },
+          invoiceData,
+        );
         const linePart = resolveInvoiceLinePartFields(item);
 
         return {
@@ -1316,7 +1324,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   <h2>${order.po_number}</h2>
                 </div>
                 <div class="info">
-                  <p><strong>Date:</strong> ${format(new Date(order.date), "MMM dd, yyyy")}</p>
+                  <p><strong>Date:</strong> ${formatUiDate(order.date)}</p>
                   <p><strong>Supplier:</strong> ${order.supplier_name || "N/A"}</p>
                   <p><strong>Status:</strong> ${order.status}</p>
                 </div>
@@ -1941,7 +1949,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           <TableRow>
                             <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
-                            <TableHead>Date</TableHead>
+                            <TableHead className={ORDER_TABLE_DATE_CLASS}>Date</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Supplier/Store/Customer</TableHead>
                             <TableHead>Items</TableHead>
@@ -1957,8 +1965,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                             <TableRow key={`${row.type}-${row.id}`}>
                               <ListNumberCell index={index} total={mixedOrders.length} />
                               <TableCell className="font-medium">{row.number}</TableCell>
-                              <TableCell>
-                                {row.date ? format(new Date(row.date), "MMM dd, yyyy") : "-"}
+                              <TableCell className={ORDER_TABLE_DATE_CLASS}>
+                                {row.date ? formatUiDate(row.date) : "-"}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline">
@@ -2155,7 +2163,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           <TableRow>
                             <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
-                            <TableHead>Date</TableHead>
+                            <TableHead className={ORDER_TABLE_DATE_CLASS}>Date</TableHead>
                             <TableHead>Supplier</TableHead>
                             <TableHead>Items</TableHead>
                             <TableHead>Quantity</TableHead>
@@ -2170,8 +2178,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell className="font-medium">
                                 {order.po_number}
                               </TableCell>
-                              <TableCell>
-                                {format(new Date(order.date), "MMM dd, yyyy")}
+                              <TableCell className={ORDER_TABLE_DATE_CLASS}>
+                                {formatUiDate(order.date)}
                               </TableCell>
                               <TableCell>{order.supplier_name}</TableCell>
                               <TableCell>{order.items_count} items</TableCell>
@@ -2271,7 +2279,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           <TableRow>
                             <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
-                            <TableHead>Date</TableHead>
+                            <TableHead className={ORDER_TABLE_DATE_CLASS}>Date</TableHead>
                             <TableHead>Supplier/Store</TableHead>
                             <TableHead>Items</TableHead>
                             <TableHead>Quantity</TableHead>
@@ -2286,8 +2294,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell className="font-medium">
                                 {order.dpo_no}
                               </TableCell>
-                              <TableCell>
-                                {format(new Date(order.date), "MMM dd, yyyy")}
+                              <TableCell className={ORDER_TABLE_DATE_CLASS}>
+                                {formatUiDate(order.date)}
                               </TableCell>
                               <TableCell>{getDpoPartyLabel(order)}</TableCell>
                               <TableCell>{order.items_count} items</TableCell>
@@ -2373,7 +2381,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           <TableRow>
                             <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
-                            <TableHead>Date</TableHead>
+                            <TableHead className={ORDER_TABLE_DATE_CLASS}>Date</TableHead>
                             <TableHead>Customer</TableHead>
                             <TableHead>Items</TableHead>
                             <TableHead>Status</TableHead>
@@ -2388,8 +2396,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell className="font-medium">
                                 {invoice.invoiceNo}
                               </TableCell>
-                              <TableCell>
-                                {format(new Date(invoice.invoiceDate), "MMM dd, yyyy")}
+                              <TableCell className={ORDER_TABLE_DATE_CLASS}>
+                                {formatUiDate(invoice.invoiceDate)}
                               </TableCell>
                               <TableCell>{invoice.customerName}</TableCell>
                               <TableCell>{invoice.items_count} items</TableCell>
@@ -2459,7 +2467,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           <TableRow>
                             <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
-                            <TableHead>Date</TableHead>
+                            <TableHead className={ORDER_TABLE_DATE_CLASS}>Date</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Branch</TableHead>
                             <TableHead>Items</TableHead>
@@ -2473,8 +2481,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                             <TableRow key={`tin-${order.id}`}>
                               <ListNumberCell index={index} total={filteredTransferInOrders.length} />
                               <TableCell className="font-medium">{order.dpo_no}</TableCell>
-                              <TableCell>
-                                {format(new Date(order.date), "MMM dd, yyyy")}
+                              <TableCell className={ORDER_TABLE_DATE_CLASS}>
+                                {formatUiDate(order.date)}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline">Transfer In</Badge>
@@ -2586,7 +2594,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                           <TableRow>
                             <ListNumberHeader />
                             <TableHead>Order Number</TableHead>
-                            <TableHead>Date</TableHead>
+                            <TableHead className={ORDER_TABLE_DATE_CLASS}>Date</TableHead>
                             <TableHead>Branch</TableHead>
                             <TableHead>Items</TableHead>
                             <TableHead>Status</TableHead>
@@ -2601,8 +2609,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell className="font-medium">
                                 {invoice.invoiceNo}
                               </TableCell>
-                              <TableCell>
-                                {format(new Date(invoice.invoiceDate), "MMM dd, yyyy")}
+                              <TableCell className={ORDER_TABLE_DATE_CLASS}>
+                                {formatUiDate(invoice.invoiceDate)}
                               </TableCell>
                               <TableCell>{invoice.customerName}</TableCell>
                               <TableCell>{invoice.items_count} items</TableCell>

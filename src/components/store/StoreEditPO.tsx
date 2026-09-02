@@ -11,9 +11,9 @@ import { Plus, Trash } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { toast } from "sonner";
+import { formatUiDate } from "@/utils/dateUtils";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
 interface PurchaseOrderItem {
@@ -249,7 +249,7 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
                         !formDate && "text-muted-foreground"
                       )}
                     >
-                      {formDate ? format(formDate, "PPP") : "Pick a date"}
+                      {formDate ? formatUiDate(formDate) : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
@@ -274,7 +274,7 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
                         !formExpectedDate && "text-muted-foreground"
                       )}
                     >
-                      {formExpectedDate ? format(formExpectedDate, "PPP") : "Pick a date"}
+                      {formExpectedDate ? formatUiDate(formExpectedDate) : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">

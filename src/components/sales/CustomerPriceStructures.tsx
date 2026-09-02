@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { formatUiDate } from "@/utils/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -538,7 +539,7 @@ export const CustomerPriceStructures = () => {
         <div class="header">
           <h1>LUCKY HYDRAULIC PARTS</h1>
           <p>Customer Price Structures Report</p>
-          <p>Generated: ${new Date().toLocaleDateString()}</p>
+          <p>Generated: ${formatUiDate(new Date())}</p>
         </div>
         <table>
           <thead>

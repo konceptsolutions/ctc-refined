@@ -110,8 +110,8 @@ export function getStartOfCurrentMonthPakistan(): string {
 }
 
 /** Standard display format for date inputs across the app */
-export const UI_DATE_FORMAT = "MM-dd-yyyy";
-export const UI_DATE_PLACEHOLDER = "MM-DD-YYYY";
+export const UI_DATE_FORMAT = "dd-MM-yyyy";
+export const UI_DATE_PLACEHOLDER = "DD-MM-YYYY";
 
 /** Default year range for calendar pickers */
 export const CALENDAR_FROM_YEAR = 1990;
@@ -132,7 +132,7 @@ export function formatDateYYYYMMDD(date: string | Date): string {
 }
 
 /**
- * Formats a date for UI display (MM-dd-yyyy)
+ * Formats a date for UI display (dd-MM-yyyy)
  */
 export function formatUiDate(
   date: string | Date | undefined | null,
@@ -143,8 +143,18 @@ export function formatUiDate(
   return format(dateObj, UI_DATE_FORMAT);
 }
 
+/** Formats a date-time for UI display (dd-MM-yyyy HH:mm) */
+export function formatUiDateTime(
+  date: string | Date | undefined | null,
+): string {
+  if (date == null || date === "") return "";
+  const dateObj = typeof date === "string" ? new Date(date) : date;
+  if (!isValid(dateObj)) return "";
+  return format(dateObj, "dd-MM-yyyy HH:mm");
+}
+
 /**
- * Parses a UI display date string (MM-dd-yyyy) to Date
+ * Parses a UI display date string (dd-MM-yyyy) to Date
  */
 export function parseUiDate(value: string): Date | undefined {
   const trimmed = value.trim();
@@ -164,13 +174,16 @@ export function parseFlexibleDateToISO(value: string): string | undefined {
   const uiParsed = parseUiDate(trimmed);
   if (uiParsed) return formatDateYYYYMMDD(uiParsed);
 
+  const legacyParsed = parse(trimmed, "MM-dd-yyyy", new Date());
+  if (isValid(legacyParsed)) return formatDateYYYYMMDD(legacyParsed);
+
   if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
-    const [month, day, year] = trimmed.split("-");
+    const [day, month, year] = trimmed.split("-");
     return `${year}-${month}-${day}`;
   }
 
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-    const [month, day, year] = trimmed.split("/");
+    const [day, month, year] = trimmed.split("/");
     return `${year}-${month}-${day}`;
   }
 

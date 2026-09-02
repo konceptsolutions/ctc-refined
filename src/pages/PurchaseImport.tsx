@@ -16,6 +16,7 @@ import {
   roundFc,
   roundPurchasePrice,
 } from "@/utils/purchasePriceRound";
+import { formatUiDate } from "@/utils/dateUtils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2, ChevronDown, ChevronUp, Mail, X } from "lucide-react";
 import { usePermissions } from "@/permissions/PermissionsProvider";
@@ -26,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { buildPartSearchableSelectFields } from "@/lib/part-family-search";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -1693,6 +1695,7 @@ const buildSortedPartSelectOptions = (
     label: `${p.masterPartNo || "-"} | ${p.partNo}`,
     description: String(p.description || "").trim() || "-",
     listOnlyDescription: String(p.brand || "").trim() || undefined,
+    ...buildPartSearchableSelectFields(p),
   }));
 };
 
@@ -2928,7 +2931,7 @@ const PurchaseImportRequestForm = ({
                                       </td>
                                       <td className="py-1 pr-2 whitespace-nowrap">
                                         {inv.invoice_date
-                                          ? new Date(inv.invoice_date).toLocaleDateString()
+                                          ? formatUiDate(inv.invoice_date) || "-"
                                           : "-"}
                                       </td>
                                       <td className="py-1 pr-2 max-w-[180px] truncate" title={inv.customer_name || ""}>
@@ -2985,7 +2988,7 @@ const PurchaseImportRequestForm = ({
                                 {row.lastPurchases.map((p, idx) => (
                                   <tr key={`${row.id}-p-${idx}`} className="border-t">
                                     <td className="py-1">
-                                      {p.date ? new Date(p.date).toLocaleDateString() : "-"}
+                                      {p.date ? formatUiDate(p.date) || "-" : "-"}
                                     </td>
                                     <td className="py-1">{p.source}</td>
                                     <td className="py-1">{p.documentNumber}</td>
@@ -6466,7 +6469,7 @@ const PurchaseInquiryListPanel = ({
                       {getListRowNumber(index, currentPage, itemsPerPage, totalRecords)}
                     </td>
                     <td className="p-2">
-                      {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}
+                      {row.createdAt ? formatUiDate(row.createdAt) || "-" : "-"}
                     </td>
                     <td className="p-2 font-mono text-xs">{row.requestNo || "-"}</td>
                     <td className="p-2">{supplierName}</td>
@@ -7314,19 +7317,19 @@ const PurchaseQuotationListPanel = ({
                       <>
                         <td className="p-2">
                           {row.confirmationDate
-                            ? new Date(row.confirmationDate).toLocaleDateString()
+                            ? formatUiDate(row.confirmationDate) || "-"
                             : "-"}
                         </td>
                         <td className="p-2">
                           {row.quotationDate
-                            ? new Date(row.quotationDate).toLocaleDateString()
+                            ? formatUiDate(row.quotationDate) || "-"
                             : "-"}
                         </td>
                       </>
                     ) : (
                       <td className="p-2">
                         {row.quotationDate
-                          ? new Date(row.quotationDate).toLocaleDateString()
+                          ? formatUiDate(row.quotationDate) || "-"
                           : "-"}
                       </td>
                     )}
@@ -10326,7 +10329,7 @@ const PurchaseOrderTab = ({
                     {getListRowNumber(index, currentPage, itemsPerPage, totalRecords)}
                   </td>
                   <td className="p-2">
-                    {row.date ? new Date(row.date).toLocaleDateString() : "-"}
+                    {row.date ? formatUiDate(row.date) || "-" : "-"}
                   </td>
                   <td className="p-2 font-mono text-xs">{row.poNumber || "-"}</td>
                   <td className="p-2 font-mono text-xs">
@@ -10340,9 +10343,7 @@ const PurchaseOrderTab = ({
                   <td className="p-2">{row.forwarder || "-"}</td>
                   <td className="p-2">
                     {row.estTimeDate || row.expectedDate
-                      ? new Date(
-                          row.estTimeDate || row.expectedDate || "",
-                        ).toLocaleDateString()
+                        ? formatUiDate(row.estTimeDate || row.expectedDate || "") || "-"
                       : "-"}
                   </td>
                   <td className="p-2 text-right">{row.itemsCount}</td>
@@ -10524,7 +10525,7 @@ const PurchaseOrderTab = ({
                 <div>
                   <span className="text-muted-foreground">Date:</span>{" "}
                   {viewOrder.date
-                    ? new Date(viewOrder.date).toLocaleDateString()
+                    ? formatUiDate(viewOrder.date) || "-"
                     : "-"}
                 </div>
                 <div>
@@ -10544,9 +10545,7 @@ const PurchaseOrderTab = ({
                 {(viewOrder.invoiceDate || viewOrder.invoice_date) ? (
                   <div>
                     <span className="text-muted-foreground">Invoice Date:</span>{" "}
-                    {new Date(
-                      viewOrder.invoiceDate || viewOrder.invoice_date,
-                    ).toLocaleDateString()}
+                    {formatUiDate(viewOrder.invoiceDate || viewOrder.invoice_date) || "-"}
                   </div>
                 ) : null}
                 {(viewOrder.blNo || viewOrder.bl_no) ? (
@@ -10558,7 +10557,7 @@ const PurchaseOrderTab = ({
                 {(viewOrder.blDate || viewOrder.bl_date) ? (
                   <div>
                     <span className="text-muted-foreground">BL Date:</span>{" "}
-                    {new Date(viewOrder.blDate || viewOrder.bl_date).toLocaleDateString()}
+                    {formatUiDate(viewOrder.blDate || viewOrder.bl_date) || "-"}
                   </div>
                 ) : null}
                 <div>
@@ -10568,9 +10567,7 @@ const PurchaseOrderTab = ({
                 <div>
                   <span className="text-muted-foreground">Est Time Date:</span>{" "}
                   {viewOrder.estTimeDate || viewOrder.expectedDate
-                    ? new Date(
-                        viewOrder.estTimeDate || viewOrder.expectedDate,
-                      ).toLocaleDateString()
+                    ? formatUiDate(viewOrder.estTimeDate || viewOrder.expectedDate) || "-"
                     : "-"}
                 </div>
                 {viewOrder.currency ? (

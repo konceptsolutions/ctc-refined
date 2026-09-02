@@ -74,6 +74,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { openPrintHtml } from "@/utils/printUtils";
+import { formatUiDate } from "@/utils/dateUtils";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { CompactPartForm } from "./CompactPartForm";
@@ -2792,7 +2793,7 @@ export const ItemsListView = ({
 
               const updateDate =
                 priceUpdateInfo.date ||
-                new Date(priceUpdateInfo.timestamp).toLocaleDateString();
+                formatUiDate(priceUpdateInfo.timestamp);
               const updateTime =
                 priceUpdateInfo.time ||
                 new Date(priceUpdateInfo.timestamp).toLocaleTimeString();

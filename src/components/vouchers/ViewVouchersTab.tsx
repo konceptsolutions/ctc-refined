@@ -1,5 +1,5 @@
 import { formatUiDate, parseFlexibleDateToISO, UI_DATE_PLACEHOLDER } from "@/utils/dateUtils";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { format } from "date-fns";
 import { Search, Edit, MoreVertical, Printer, CheckCircle, Clock, Trash, Plus, CalendarIcon, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -223,6 +223,8 @@ export const ViewVouchersTab = ({
   const [editIsCleared, setEditIsCleared] = useState<number | null>(null);
   const [editExchangeRate, setEditExchangeRate] = useState("1");
   const [editIsInternational, setEditIsInternational] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const editRequestRef = useRef(0);
   const [internationalAccountIds, setInternationalAccountIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -340,15 +342,7 @@ export const ViewVouchersTab = ({
       return convertLessThanThousand(wholePart);
     };
 
-    const formatDate = (dateString: string) => {
-      try {
-        const date = new Date(dateString);
-        if (isNaN(date.getTime())) return dateString;
-        return date.toLocaleDateString('en-US');
-      } catch {
-        return dateString;
-      }
-    };
+    const formatDate = (dateString: string) => formatUiDate(dateString) || dateString;
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -633,9 +627,15 @@ export const ViewVouchersTab = ({
 
   // Skip local filtering, use vouchers directly as they will come filtered from server
   const filteredVouchers = vouchers;
-  const getVoucherMode = (voucher: Voucher): "cash" | "online" | "-" => {
+  const getVoucherMode = (voucher: Voucher): "cash" | "online" | "cash+online" | "-" => {
     if (voucher.type !== "payment" && voucher.type !== "receipt") return "-";
-    if (voucher.mode === "cash" || voucher.mode === "online") return voucher.mode;
+    if (
+      voucher.mode === "cash" ||
+      voucher.mode === "online" ||
+      voucher.mode === "cash+online"
+    ) {
+      return voucher.mode;
+    }
     if (!voucher.cashBankAccount) return "-";
     const account = rawAccounts.find((acc) => acc.id === voucher.cashBankAccount);
     if (account) return getAccountCashBankMode(account);
@@ -677,6 +677,129 @@ export const ViewVouchersTab = ({
     });
   };
 
+  const resetEditDialog = () => {
+    editRequestRef.current += 1;
+    setEditingVoucher(null);
+    setEditLoading(false);
+    setEditEntries([]);
+    setEditNarration("");
+    setEditDate("");
+    setEditCheckClearDate("");
+    setEditChequeNumber("");
+    setEditChequeDate("");
+    setEditIsCleared(null);
+    setEditExchangeRate("1");
+    setEditIsInternational(false);
+  };
+
+  const populateEditFormFromVoucher = (
+    voucher: Voucher,
+    intlIds: Set<string>,
+  ) => {
+    setEditNarration(voucher.narration || "");
+
+    let editDateValue = voucher.date;
+    if (voucher.date) {
+      editDateValue = parseFlexibleDateToISO(voucher.date) ?? voucher.date;
+    }
+    setEditDate(editDateValue);
+
+    let checkClearDateValue = "";
+    if (voucher.checkClearDate) {
+      try {
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(voucher.checkClearDate)) {
+          const [day, month, year] = voucher.checkClearDate.split("/");
+          checkClearDateValue = `${year}-${month}-${day}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(voucher.checkClearDate)) {
+          checkClearDateValue = voucher.checkClearDate;
+        } else {
+          const date = new Date(voucher.checkClearDate);
+          if (!isNaN(date.getTime())) {
+            checkClearDateValue = date.toISOString().split("T")[0];
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    setEditCheckClearDate(checkClearDateValue);
+    setEditChequeNumber(voucher.chequeNumber || "");
+
+    let editChequeDateValue = "";
+    if (voucher.chequeDate) {
+      try {
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(voucher.chequeDate)) {
+          const [day, month, year] = voucher.chequeDate.split("/");
+          editChequeDateValue = `${year}-${month}-${day}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(voucher.chequeDate)) {
+          editChequeDateValue = voucher.chequeDate;
+        } else {
+          const date = new Date(voucher.chequeDate);
+          if (!isNaN(date.getTime())) {
+            editChequeDateValue = date.toISOString().split("T")[0];
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    setEditChequeDate(editChequeDateValue);
+    setEditIsCleared(
+      voucher.isCleared !== undefined && voucher.isCleared !== null
+        ? Number(voucher.isCleared)
+        : null,
+    );
+
+    const isIntl = isInternationalVoucher(voucher, intlIds);
+    const parsedRate = Number(voucher.conversionRate);
+    const rate =
+      Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 1;
+    setEditIsInternational(isIntl);
+    setEditExchangeRate(String(rate));
+
+    const rawEntries = voucher.entries || voucher.VoucherEntry || [];
+    const mappedEntries = rawEntries.map((entry) => {
+      const accountId = String(
+        entry.account ||
+          entry.accountId ||
+          (entry as { Account?: { id?: string } }).Account?.id ||
+          "",
+      );
+      const lcDebit = Number(entry.debit || 0);
+      const lcCredit = Number(entry.credit || 0);
+      const fcDebit = isIntl ? Number((lcDebit / rate).toFixed(6)) : lcDebit;
+      const fcCredit = isIntl ? Number((lcCredit / rate).toFixed(6)) : lcCredit;
+      return {
+        id: entry.id || `${Date.now()}-${Math.random()}`,
+        account: accountId,
+        accountName: entry.accountName || "",
+        description: entry.description || "",
+        debit: fcDebit,
+        credit: fcCredit,
+        debitLc: isIntl ? lcDebit : undefined,
+        creditLc: isIntl ? lcCredit : undefined,
+        sortOrder: entry.sortOrder || 0,
+      };
+    });
+
+    const finalEntriesToEdit =
+      mappedEntries.length > 0
+        ? mappedEntries
+        : [
+            {
+              id: Date.now().toString(),
+              account: "",
+              description: "",
+              debit: 0,
+              credit: 0,
+              debitLc: "",
+              creditLc: "",
+            },
+          ];
+
+    setEditEntries(finalEntriesToEdit as any);
+  };
+
   const handleEdit = async (voucher: Voucher) => {
     if (voucher.status === "posted") {
       toast({
@@ -686,6 +809,10 @@ export const ViewVouchersTab = ({
       });
       return;
     }
+
+    const requestId = ++editRequestRef.current;
+    setEditLoading(true);
+    setEditingVoucher(voucher);
 
     let intlIds = internationalAccountIds;
     if (intlIds.size === 0) {
@@ -703,89 +830,32 @@ export const ViewVouchersTab = ({
       }
     }
 
-    setEditingVoucher(voucher);
-    setEditNarration(voucher.narration);
-    // Convert date to YYYY-MM-DD format for date input
-    let editDateValue = voucher.date;
-    if (voucher.date) {
-      editDateValue = parseFlexibleDateToISO(voucher.date) ?? voucher.date;
+    try {
+      const response = (await apiClient.getVoucher(voucher.id)) as any;
+      if (requestId !== editRequestRef.current) return;
+
+      const fullVoucher = (response?.data || response) as Voucher;
+      if (!fullVoucher?.id) {
+        throw new Error("Failed to load voucher details");
+      }
+
+      populateEditFormFromVoucher(fullVoucher, intlIds);
+      setEditingVoucher(fullVoucher);
+    } catch (error) {
+      if (requestId !== editRequestRef.current) return;
+      console.error("Failed to load voucher for editing:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load voucher details. Please try again.",
+        variant: "destructive",
+      });
+      resetEditDialog();
+      return;
+    } finally {
+      if (requestId === editRequestRef.current) {
+        setEditLoading(false);
+      }
     }
-
-    setEditNarration(voucher.narration || "");
-    setEditDate(editDateValue);
-    
-    // Set new fields
-    let checkClearDateValue = "";
-    if (voucher.checkClearDate) {
-      try {
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(voucher.checkClearDate)) {
-          const [day, month, year] = voucher.checkClearDate.split('/');
-          checkClearDateValue = `${year}-${month}-${day}`;
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(voucher.checkClearDate)) {
-          checkClearDateValue = voucher.checkClearDate;
-        } else {
-          const date = new Date(voucher.checkClearDate);
-          if (!isNaN(date.getTime())) {
-            checkClearDateValue = date.toISOString().split('T')[0];
-          }
-        }
-      } catch { }
-    }
-    setEditCheckClearDate(checkClearDateValue);
-    setEditChequeNumber(voucher.chequeNumber || "");
-    
-    let editChequeDateValue = "";
-    if (voucher.chequeDate) {
-      try {
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(voucher.chequeDate)) {
-          const [day, month, year] = voucher.chequeDate.split('/');
-          editChequeDateValue = `${year}-${month}-${day}`;
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(voucher.chequeDate)) {
-          editChequeDateValue = voucher.chequeDate;
-        } else {
-          const date = new Date(voucher.chequeDate);
-          if (!isNaN(date.getTime())) {
-            editChequeDateValue = date.toISOString().split('T')[0];
-          }
-        }
-      } catch { }
-    }
-    setEditChequeDate(editChequeDateValue);
-    setEditIsCleared(voucher.isCleared !== undefined && voucher.isCleared !== null ? Number(voucher.isCleared) : null);
-
-    const isIntl = isInternationalVoucher(voucher, intlIds);
-    const parsedRate = Number(voucher.conversionRate);
-    const rate =
-      Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 1;
-    setEditIsInternational(isIntl);
-    setEditExchangeRate(String(rate));
-
-    // Ensure all entries have the expected fields for the edit form.
-    // International edit form works in FC + LC; stored amounts are LC.
-    const mappedEntries = (voucher.entries || voucher.VoucherEntry || []).map(entry => {
-      const lcDebit = Number(entry.debit || 0);
-      const lcCredit = Number(entry.credit || 0);
-      const fcDebit = isIntl ? Number((lcDebit / rate).toFixed(6)) : lcDebit;
-      const fcCredit = isIntl ? Number((lcCredit / rate).toFixed(6)) : lcCredit;
-      return {
-        id: entry.id || `${Date.now()}-${Math.random()}`,
-        account: entry.account || entry.accountId || "", // Consistent mapping for SearchableSelect
-        accountName: entry.accountName || "",
-        description: entry.description || "",
-        debit: fcDebit,
-        credit: fcCredit,
-        debitLc: isIntl ? lcDebit : undefined,
-        creditLc: isIntl ? lcCredit : undefined,
-        sortOrder: entry.sortOrder || 0
-      };
-    });
-
-    // Fallback: if voucher has no entries, add an empty row to prevent empty UI
-    const finalEntriesToEdit = mappedEntries.length > 0
-      ? mappedEntries
-      : [{ id: Date.now().toString(), account: "", description: "", debit: 0, credit: 0, debitLc: "", creditLc: "" }];
-
-    setEditEntries(finalEntriesToEdit as any);
   };
 
   const handleSaveEdit = async () => {
@@ -919,7 +989,7 @@ export const ViewVouchersTab = ({
         totalDebit,
         totalCredit,
       });
-      setEditingVoucher(null);
+      resetEditDialog();
     } catch {
       // Error toast is shown by onUpdateVoucher
     }
@@ -1597,7 +1667,12 @@ export const ViewVouchersTab = ({
       </div>
 
       {/* Edit Dialog */}
-      <Dialog open={!!editingVoucher} onOpenChange={() => setEditingVoucher(null)}>
+      <Dialog
+        open={!!editingVoucher}
+        onOpenChange={(open) => {
+          if (!open) resetEditDialog();
+        }}
+      >
         <DialogContent className={`${editIsInternational ? "max-w-6xl" : "max-w-4xl"} max-h-[90vh] overflow-y-auto`}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1615,6 +1690,12 @@ export const ViewVouchersTab = ({
           </DialogHeader>
 
           <div className="space-y-6">
+            {editLoading ? (
+              <div className="py-16 text-center text-muted-foreground">
+                Loading voucher details...
+              </div>
+            ) : (
+              <>
             {/* Voucher Type Header */}
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
@@ -1915,7 +1996,7 @@ export const ViewVouchersTab = ({
 
               {/* Save Button */}
               <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline" onClick={handleSaveEdit}>
+                <Button variant="outline" onClick={handleSaveEdit} disabled={editLoading}>
                   💾 Save
                 </Button>
                 {canMenuMore && (
@@ -1938,17 +2019,25 @@ export const ViewVouchersTab = ({
             <Button
               variant="ghost"
               className="text-primary"
-              onClick={() => setEditingVoucher(null)}
+              onClick={resetEditDialog}
+              disabled={editLoading}
             >
               <Trash className="h-4 w-4 mr-1" />
               Cancel
             </Button>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
       {/* View Voucher Dialog (read-only) */}
-      <Dialog open={!!viewingVoucher} onOpenChange={() => setViewingVoucher(null)}>
+      <Dialog
+        open={!!viewingVoucher}
+        onOpenChange={(open) => {
+          if (!open) setViewingVoucher(null);
+        }}
+      >
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

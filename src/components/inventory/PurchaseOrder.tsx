@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 import apiClient from "@/lib/api";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
+import { filterPartsWithFamilyExpansion } from "@/lib/part-family-search";
 import {
   formatPurchasePrice,
   roundPurchasePrice,
@@ -2159,24 +2160,7 @@ export const PurchaseOrder = () => {
               // Filter parts based on search query (using regular function, not hook)
               const filteredParts = (() => {
                 if (!searchQuery.trim()) return availableParts;
-                const query = searchQuery.toLowerCase();
-                return availableParts.filter((part) => {
-                  const partNo = (part.partNo || "").toLowerCase();
-                  const application = (part.application || "").toLowerCase();
-                  const brand = (part.brand || "").toLowerCase();
-                  const category = (part.category || "").toLowerCase();
-                  const subcategory = (part.subcategory || "").toLowerCase();
-                  const description = (part.description || "").toLowerCase();
-
-                  return (
-                    partNo.includes(query) ||
-                    application.includes(query) ||
-                    brand.includes(query) ||
-                    category.includes(query) ||
-                    subcategory.includes(query) ||
-                    description.includes(query)
-                  );
-                });
+                return filterPartsWithFamilyExpansion(availableParts, searchQuery);
               })();
 
               return (

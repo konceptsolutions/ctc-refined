@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatUiDate } from "@/utils/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -216,7 +217,7 @@ const PurchasesReportTab = () => {
                 purchaseData.map((record, index) => (
                   <TableRow key={record.id}>
                     <ListNumberCell index={index} total={purchaseData.length} />
-                    <TableCell>{record.date}</TableCell>
+                    <TableCell>{formatUiDate(record.date) || record.date}</TableCell>
                     <TableCell className="font-medium">{record.poNumber}</TableCell>
                     <TableCell>{record.supplier}</TableCell>
                     <TableCell className="text-center">{record.items}</TableCell>

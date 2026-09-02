@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
 import { apiClient } from "@/lib/api";
+import { formatUiDate } from "@/utils/dateUtils";
 import { cn } from "@/lib/utils";
 
 // Types
@@ -644,8 +645,8 @@ export const AttributesPage = () => {
           brandsArray.map((b: any) => ({
             ...b,
             createdAt: b.createdAt
-              ? new Date(b.createdAt).toLocaleDateString('en-US')
-              : new Date().toLocaleDateString('en-US'),
+              ? formatUiDate(b.createdAt)
+              : formatUiDate(new Date()),
           })),
         );
       }
@@ -674,8 +675,8 @@ export const AttributesPage = () => {
           .map((a: any) => ({
             ...a,
             createdAt: a.createdAt
-              ? new Date(a.createdAt).toLocaleDateString('en-US')
-              : new Date().toLocaleDateString('en-US'),
+              ? formatUiDate(a.createdAt)
+              : formatUiDate(new Date()),
           }));
         setApplications(deduplicated);
       }
@@ -887,9 +888,7 @@ export const AttributesPage = () => {
                 ? {
                     ...brandData,
                     createdAt: brandData.createdAt
-                      ? new Date(brandData.createdAt).toLocaleDateString(
-                          "en-GB",
-                        )
+                      ? formatUiDate(brandData.createdAt)
                       : b.createdAt,
                   }
                 : b,
@@ -920,8 +919,8 @@ export const AttributesPage = () => {
             {
               ...brandData,
               createdAt: brandData.createdAt
-                ? new Date(brandData.createdAt).toLocaleDateString('en-US')
-                : new Date().toLocaleDateString('en-US'),
+                ? formatUiDate(brandData.createdAt)
+                : formatUiDate(new Date()),
             },
             ...prev,
           ]);
@@ -995,9 +994,7 @@ export const AttributesPage = () => {
                 ? {
                     ...applicationData,
                     createdAt: applicationData.createdAt
-                      ? new Date(applicationData.createdAt).toLocaleDateString(
-                          "en-GB",
-                        )
+                      ? formatUiDate(applicationData.createdAt)
                       : a.createdAt,
                   }
                 : a,
@@ -1028,10 +1025,8 @@ export const AttributesPage = () => {
             {
               ...applicationData,
               createdAt: applicationData.createdAt
-                ? new Date(applicationData.createdAt).toLocaleDateString(
-                    "en-GB",
-                  )
-                : new Date().toLocaleDateString('en-US'),
+                ? formatUiDate(applicationData.createdAt)
+                : formatUiDate(new Date()),
             },
             ...prev,
           ]);
@@ -1327,7 +1322,7 @@ export const AttributesPage = () => {
               ? {
                   ...brandData,
                   createdAt: brandData.createdAt
-                    ? new Date(brandData.createdAt).toLocaleDateString('en-US')
+                    ? formatUiDate(brandData.createdAt)
                     : b.createdAt,
                 }
               : b,
@@ -1370,9 +1365,7 @@ export const AttributesPage = () => {
               ? {
                   ...applicationData,
                   createdAt: applicationData.createdAt
-                    ? new Date(applicationData.createdAt).toLocaleDateString(
-                        "en-GB",
-                      )
+                    ? formatUiDate(applicationData.createdAt)
                     : a.createdAt,
                 }
               : a,

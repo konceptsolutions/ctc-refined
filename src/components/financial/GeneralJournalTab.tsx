@@ -376,7 +376,7 @@ export const GeneralJournalTab = () => {
                         {entry.VoucherNo}
                       </span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{entry.date}</TableCell>
+                    <TableCell className="text-muted-foreground">{formatUiDate(entry.date) || entry.date}</TableCell>
                     <TableCell className="font-medium text-foreground">{entry.account}</TableCell>
                     <TableCell className="max-w-md text-muted-foreground">
                       <span className="line-clamp-2">{entry.description}</span>

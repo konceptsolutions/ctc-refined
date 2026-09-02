@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
+import { formatUiDate } from "@/utils/dateUtils";
 import { toast } from "sonner";
 
 interface StockItem {
@@ -852,18 +853,13 @@ export const StockInOut = () => {
       // Format date for display
       const formatDate = (dateStr: string) => {
         if (!dateStr) return "";
-        try {
-          const date = new Date(dateStr);
-          return date.toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-        } catch {
-          return dateStr;
-        }
+        const date = new Date(dateStr);
+        if (Number.isNaN(date.getTime())) return dateStr;
+        const time = date.toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return `${formatUiDate(date)} ${time}`;
       };
 
       // Create print window
@@ -876,9 +872,9 @@ export const StockInOut = () => {
 
       const filterInfo = [];
       if (fromDate)
-        filterInfo.push(`From: ${new Date(fromDate).toLocaleDateString()}`);
+        filterInfo.push(`From: ${formatUiDate(fromDate) || fromDate}`);
       if (toDate)
-        filterInfo.push(`To: ${new Date(toDate).toLocaleDateString()}`);
+        filterInfo.push(`To: ${formatUiDate(toDate) || toDate}`);
       if (item) {
         const selectedPart = parts.find((p) => p.value === item);
         if (selectedPart) filterInfo.push(`Part: ${selectedPart.label}`);
@@ -1092,18 +1088,13 @@ export const StockInOut = () => {
       // Format date for CSV
       const formatDate = (dateStr: string) => {
         if (!dateStr) return "";
-        try {
-          const date = new Date(dateStr);
-          return date.toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-        } catch {
-          return dateStr;
-        }
+        const date = new Date(dateStr);
+        if (Number.isNaN(date.getTime())) return dateStr;
+        const time = date.toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return `${formatUiDate(date)} ${time}`;
       };
 
       // CSV Headers
@@ -1431,13 +1422,7 @@ export const StockInOut = () => {
                     {stockItem.shelf}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                    {stockItem.date
-                      ? new Date(stockItem.date).toLocaleDateString("en-GB", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      })
-                      : "-"}
+                    {formatUiDate(stockItem.date) || "-"}
                   </TableCell>
                 </TableRow>
               ))

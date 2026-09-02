@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import prisma from "../config/database";
+import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch";
 
 const router = express.Router();
 
@@ -33,18 +34,10 @@ router.get("/dropdown", async (req: Request, res: Response) => {
             limitNum = 80;
         }
 
-        const where: any = {
-            status: "active"
-        };
-
-        if (searchStr) {
-            where.OR = [
-                { partNo: { contains: searchStr, mode: "insensitive" } },
-                { description: { contains: searchStr, mode: "insensitive" } },
-                { Brand: { name: { contains: searchStr, mode: "insensitive" } } },
-                { MasterPart: { masterPartNo: { contains: searchStr, mode: "insensitive" } } }
-            ];
-        }
+        const where: any = await buildPartSearchWhereWithFamily(
+            searchStr,
+            { status: "active" },
+        );
 
         // Use select to fetch ONLY what is needed for the dropdown label
         // Label format: Part No (master_part_no) | Master Part (part_no)
