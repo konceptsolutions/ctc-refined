@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
 
 export function partDirectSearchOr(searchStr: string) {
@@ -42,7 +43,7 @@ export async function buildPartSearchWhereWithFamily(
     ),
   );
 
-  const orClauses = partDirectSearchOr(trimmed);
+  const orClauses: Prisma.PartWhereInput[] = [...partDirectSearchOr(trimmed)];
   if (familyPartNos.length > 0) {
     orClauses.push({ partNo: { in: familyPartNos } });
   }
