@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Dialog,
   DialogContent,
@@ -150,6 +151,7 @@ interface ModelAssociationItem {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   application?: string;
   model: string;
   quantity: number;
@@ -1647,6 +1649,7 @@ export const SalesInquiry = ({
         partNo: String(item.part_no || item.partNo || ""),
         description: String(item.description || ""),
         brand: String(item.brand_name || item.brand || ""),
+        origin: String(item.origin || "").trim() || undefined,
         application: String(item.application_name || item.application || ""),
         model: String(item.model_name || item.model || cleanModel),
         quantity: Number(item.quantity ?? item.qty_used ?? 0),
@@ -4265,11 +4268,15 @@ export const SalesInquiry = ({
                             </div>
                           </TableCell>
                           <TableCell className="text-center align-top">
-                            <span className="text-xs font-medium text-foreground">
-                              {rowPart?.brand && rowPart.brand !== "N/A"
-                                ? rowPart.brand
-                                : "-"}
-                            </span>
+                            <BrandOriginCell
+                              brand={
+                                rowPart?.brand && rowPart.brand !== "N/A"
+                                  ? rowPart.brand
+                                  : "-"
+                              }
+                              origin={rowPart?.origin}
+                              align="center"
+                            />
                           </TableCell>
                           <TableCell className="text-center align-top px-2">
                             <span
@@ -4773,9 +4780,14 @@ export const SalesInquiry = ({
                               {getItemLabel(item)}
                             </TableCell>
                             <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap truncate">
-                              {item.brand && item.brand !== "N/A"
-                                ? item.brand
-                                : "-"}
+                              <BrandOriginCell
+                                brand={
+                                  item.brand && item.brand !== "N/A"
+                                    ? item.brand
+                                    : "-"
+                                }
+                                origin={item.origin}
+                              />
                             </TableCell>
                             <TableCell
                               className="text-xs px-2 py-1.5 truncate"
@@ -5280,7 +5292,9 @@ export const SalesInquiry = ({
                           >
                             {item.description || "N/A"}
                           </TableCell>
-                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">{item.brand || "N/A"}</TableCell>
+                          <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">
+                            <BrandOriginCell brand={item.brand || "N/A"} origin={item.origin} />
+                          </TableCell>
                           <TableCell className="text-xs px-2 py-1.5 truncate max-w-0">{item.model || "N/A"}</TableCell>
                           <TableCell className="text-xs text-right font-semibold px-2 py-1.5 whitespace-nowrap tabular-nums">
                             {Number(item.quantity || 0).toLocaleString("en-US")}

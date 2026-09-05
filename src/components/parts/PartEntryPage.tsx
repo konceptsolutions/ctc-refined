@@ -19,6 +19,7 @@ function mapPartEntryRow(p: any): Part {
     id: p.id,
     partNo: (p.master_part_no || "").trim(),
     brand: p.brand_name || "-",
+    origin: String(p.origin || "").trim() || undefined,
     type: p.type || "single",
     uom: p.uom || "NOS",
     weight: p.weight ? String(p.weight) : "-",

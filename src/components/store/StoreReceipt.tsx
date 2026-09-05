@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { format } from "date-fns";
 import { Printer } from "lucide-react";
 import { useRef } from "react";
@@ -13,6 +14,7 @@ interface DirectPurchaseOrderItem {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   quantity: number;
   purchasePrice: number;
   salePrice: number;
@@ -187,7 +189,9 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
                         <ListNumberCell index={index} total={order.items.length} />
                         <TableCell className="font-medium align-middle">{item.partNo}</TableCell>
                         <TableCell className="align-middle">{item.description || "-"}</TableCell>
-                        <TableCell className="align-middle">{item.brand}</TableCell>
+                        <TableCell className="align-middle">
+                          <BrandOriginCell brand={item.brand} origin={item.origin} />
+                        </TableCell>
                         <TableCell className="text-right align-middle">{item.quantity}</TableCell>
                         <TableCell className="text-right align-middle">
                           Rs {formatMoney(item.purchasePrice)}

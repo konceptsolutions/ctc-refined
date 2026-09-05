@@ -15,6 +15,10 @@ import { formatUiDate } from "@/utils/dateUtils";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import {
+  performedByPayload,
+  useStoreOperatorAuth,
+} from "@/hooks/useStoreOperatorAuth";
 
 interface DirectPurchaseOrderItem {
   id: string;
@@ -504,6 +508,7 @@ const ShelfCombobox = ({ shelves, value, rackId, disabled, onChange, onShelfCrea
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEditDPOProps) => {
+  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
   const [loading, setLoading] = useState(false);
   const [formDate, setFormDate] = useState<Date>(new Date());
   const [formStore, setFormStore] = useState("");
@@ -741,6 +746,12 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
     try {
       setLoading(true);
 
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       // Build items — if locations have rack/shelf, use first location's rack/shelf
       const itemsForUpdate: any[] = [];
       formItems.forEach((item) => {
@@ -766,9 +777,14 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
         store_id: formStore,
         description: formDescription || undefined,
         items: itemsForUpdate,
+        ...by,
       });
 
-      toast.success("Local Purchase Order updated successfully");
+      toast.success(
+        operator
+          ? `Local Purchase Order updated successfully (Saved as ${operator.name})`
+          : "Local Purchase Order updated successfully",
+      );
       onOpenChange(false);
       if (onSuccess) onSuccess();
     } catch (error: any) {

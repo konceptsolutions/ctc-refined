@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -15,6 +16,7 @@ interface PurchaseOrderItem {
   part_no: string;
   part_description?: string;
   brand: string;
+  origin?: string;
   quantity: number;
   received_qty?: number;
   unit_cost: number;
@@ -146,7 +148,9 @@ export const StorePurchaseOrderDetail = ({
                             <ListNumberCell index={index} total={order.items.length} className="align-middle" />
                             <TableCell className="font-medium align-middle">{item.part_no}</TableCell>
                             <TableCell className="align-middle">{item.part_description || "-"}</TableCell>
-                            <TableCell className="align-middle">{item.brand || "N/A"}</TableCell>
+                            <TableCell className="align-middle">
+                              <BrandOriginCell brand={item.brand || "N/A"} origin={item.origin} />
+                            </TableCell>
                             <TableCell className="text-right align-middle">{item.quantity}</TableCell>
                             <TableCell className="text-right align-middle">
                               {item.received_qty !== undefined ? item.received_qty : "-"}

@@ -1,17 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -21,6 +12,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import { Download, Star, TrendingUp, TrendingDown, Minus, Clock, Package, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -31,20 +26,54 @@ interface SupplierData {
   supplier: string;
   totalOrders: number;
   totalValue: number;
-  onTimeDelivery: number; 
-  qualityRating: number;
-  avgDeliveryDays: number;
-  defectRate: number;
+  onTimeDelivery: number | null;
+  qualityRating: number | null;
+  avgDeliveryDays: number | null;
+  defectRate: number | null;
   trend: "up" | "down" | "stable";
 }
+
+const unwrapList = (res: any): any[] => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
+};
+
+const formatMoney = (n: number) =>
+  `Rs ${Math.round(n).toLocaleString()}`;
+
+const na = <span className="text-muted-foreground">N/A</span>;
 
 const SupplierPerformanceTab = () => {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [supplier, setSupplier] = useState("all");
+  const [supplier, setSupplier] = useState("");
+  const [supplierOptions, setSupplierOptions] = useState<SearchableSelectOption[]>([]);
 
   const [supplierData, setSupplierData] = useState<SupplierData[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await apiClient.getSuppliers({ status: "active", limit: 5000 });
+        setSupplierOptions(
+          unwrapList(res)
+            .map((s: any) => ({
+              value: String(s.id),
+              label: String(s.companyName || s.name || "").trim(),
+            }))
+            .filter((s: SearchableSelectOption) => s.value && s.label)
+            .sort((a: SearchableSelectOption, b: SearchableSelectOption) =>
+              a.label.localeCompare(b.label),
+            ),
+        );
+      } catch {
+        toast.error("Failed to load suppliers");
+      }
+    };
+    load();
+  }, []);
 
   const fetchData = async () => {
     if (!fromDate || !toDate) {
@@ -57,7 +86,7 @@ const SupplierPerformanceTab = () => {
       const response = await apiClient.getSupplierPerformance({
         from_date: fromDate,
         to_date: toDate,
-        supplier_id: supplier !== "all" ? supplier : undefined,
+        supplier_id: supplier || undefined,
       });
 
       if (response.data) {
@@ -73,13 +102,14 @@ const SupplierPerformanceTab = () => {
 
   const summaryData = {
     totalSuppliers: supplierData.length,
-    avgOnTime: supplierData.length > 0
-      ? supplierData.reduce((sum, s) => sum + s.onTimeDelivery, 0) / supplierData.length
-      : 0,
-    avgQuality: supplierData.length > 0
-      ? (supplierData.reduce((sum, s) => sum + s.qualityRating, 0) / supplierData.length).toFixed(1)
-      : "0.0",
+    totalOrders: supplierData.reduce((sum, s) => sum + s.totalOrders, 0),
     totalPurchases: supplierData.reduce((sum, s) => sum + s.totalValue, 0),
+    topSupplier:
+      supplierData.length > 0
+        ? supplierData.reduce((max, s) =>
+            s.totalValue > max.totalValue ? s : max,
+          ).supplier
+        : "-",
   };
 
   const handleGenerateReport = fetchData;
@@ -89,8 +119,14 @@ const SupplierPerformanceTab = () => {
       toast.error("No data to export");
       return;
     }
-    const headers = ["Supplier", "Total Orders", "Total Value", "On-Time Delivery", "Quality Rating", "Avg Delivery Days", "Defect Rate", "Trend"];
-    const success = exportToCSV(supplierData, headers, `supplier-performance-${fromDate}-to-${toDate}.csv`);
+    const headers = ["Supplier", "Total Orders", "Total Value", "Trend"];
+    const rows = supplierData.map((s) => ({
+      supplier: s.supplier,
+      totalOrders: s.totalOrders,
+      totalValue: s.totalValue,
+      trend: s.trend,
+    }));
+    const success = exportToCSV(rows, headers, `supplier-performance-${fromDate}-to-${toDate}.csv`);
     if (success) {
       toast.success("Report exported successfully");
     } else {
@@ -106,28 +142,6 @@ const SupplierPerformanceTab = () => {
     }
   };
 
-  const getRatingStars = (rating: number) => {
-    const fullStars = Math.floor(rating);
-    return (
-      <div className="flex items-center gap-1">
-        {[...Array(5)].map((_, i) => (
-          <Star 
-            key={i} 
-            className={`w-3 h-3 ${i < fullStars ? "fill-warning text-warning" : "text-muted"}`} 
-          />
-        ))}
-        <span className="text-sm ml-1">{rating}</span>
-      </div>
-    );
-  };
-
-  const getDeliveryBadge = (percentage: number) => {
-    if (percentage >= 95) return <Badge className="bg-success/10 text-success border-0">{percentage}%</Badge>;
-    if (percentage >= 85) return <Badge className="bg-info/10 text-info border-0">{percentage}%</Badge>;
-    if (percentage >= 75) return <Badge className="bg-warning/10 text-warning border-0">{percentage}%</Badge>;
-    return <Badge className="bg-destructive/10 text-destructive border-0">{percentage}%</Badge>;
-  };
-
   return (
     <div className="space-y-6">
       {/* Header & Filters */}
@@ -136,7 +150,7 @@ const SupplierPerformanceTab = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle className="text-lg">Supplier Performance</CardTitle>
-              <p className="text-sm text-muted-foreground">Evaluate supplier quality, delivery, and reliability</p>
+              <p className="text-sm text-muted-foreground">Purchase volume by supplier (direct + import POs)</p>
             </div>
             <Button onClick={handleExport} className="bg-primary hover:bg-primary/90">
               <Download className="w-4 h-4 mr-2" />
@@ -164,20 +178,17 @@ const SupplierPerformanceTab = () => {
             </div>
             <div className="space-y-2">
               <Label>Supplier</Label>
-              <Select value={supplier} onValueChange={setSupplier}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Suppliers" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Suppliers</SelectItem>
-                  {supplierData.map(s => (
-                    <SelectItem key={s.id} value={s.id}>{s.supplier}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={supplierOptions}
+                value={supplier}
+                onValueChange={setSupplier}
+                placeholder="All Suppliers"
+                maxDisplayedOptions={80}
+                requireSearchAbove={5000}
+              />
             </div>
             <div className="flex items-end">
-              <Button onClick={handleGenerateReport} className="w-full">
+              <Button onClick={handleGenerateReport} className="w-full" disabled={loading}>
                 Generate Report
               </Button>
             </div>
@@ -191,7 +202,7 @@ const SupplierPerformanceTab = () => {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-1">
               <Package className="w-4 h-4 text-primary" />
-              <p className="text-xs font-medium text-primary">Total Suppliers</p>
+              <p className="text-xs font-medium text-primary">Suppliers</p>
             </div>
             <p className="text-2xl font-bold">{summaryData.totalSuppliers}</p>
           </CardContent>
@@ -200,18 +211,9 @@ const SupplierPerformanceTab = () => {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-1">
               <CheckCircle className="w-4 h-4 text-success" />
-              <p className="text-xs font-medium text-success">Avg On-Time</p>
+              <p className="text-xs font-medium text-success">Total Orders</p>
             </div>
-            <p className="text-2xl font-bold">{summaryData.avgOnTime}%</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-warning/5 border-warning/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Star className="w-4 h-4 text-warning" />
-              <p className="text-xs font-medium text-warning">Avg Quality</p>
-            </div>
-            <p className="text-2xl font-bold">{summaryData.avgQuality}/5</p>
+            <p className="text-2xl font-bold">{summaryData.totalOrders}</p>
           </CardContent>
         </Card>
         <Card className="bg-info/5 border-info/20">
@@ -220,39 +222,37 @@ const SupplierPerformanceTab = () => {
               <Clock className="w-4 h-4 text-info" />
               <p className="text-xs font-medium text-info">Total Purchases</p>
             </div>
-            <p className="text-2xl font-bold">Rs {(summaryData.totalPurchases / 1000000).toFixed(1)}M</p>
+            <p className="text-2xl font-bold">{formatMoney(summaryData.totalPurchases)}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-warning/5 border-warning/20">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Star className="w-4 h-4 text-warning" />
+              <p className="text-xs font-medium text-warning">Top Supplier</p>
+            </div>
+            <p className="text-lg font-bold truncate">{summaryData.topSupplier}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Supplier Performance Cards */}
+      {/* Top suppliers */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {supplierData.slice(0, 3).map((supplier) => (
-          <Card key={supplier.id}>
+        {supplierData.slice(0, 3).map((s) => (
+          <Card key={s.id}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-medium">{supplier.supplier}</h3>
-                {getTrendIcon(supplier.trend)}
+                <h3 className="font-medium">{s.supplier}</h3>
+                {getTrendIcon(s.trend)}
               </div>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-muted-foreground">On-Time Delivery</span>
-                    {getDeliveryBadge(supplier.onTimeDelivery)}
-                  </div>
-                  <Progress value={supplier.onTimeDelivery} className="h-2" />
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Orders</span>
+                  <span className="font-medium">{s.totalOrders}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Quality Rating</span>
-                  {getRatingStars(supplier.qualityRating)}
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Avg Delivery</span>
-                  <span className="font-medium">{supplier.avgDeliveryDays} days</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Orders</span>
-                  <span className="font-medium">{supplier.totalOrders}</span>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Purchase value</span>
+                  <span className="font-medium">{formatMoney(s.totalValue)}</span>
                 </div>
               </div>
             </CardContent>
@@ -281,21 +281,35 @@ const SupplierPerformanceTab = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {supplierData.map((row, index) => (
-                <TableRow key={row.id}>
-                  <ListNumberCell index={index} total={supplierData.length} />
-                  <TableCell className="font-medium">{row.supplier}</TableCell>
-                  <TableCell className="text-center">{row.totalOrders}</TableCell>
-                  <TableCell className="text-right">Rs {row.totalValue.toLocaleString()}</TableCell>
-                  <TableCell className="text-center">{getDeliveryBadge(row.onTimeDelivery)}</TableCell>
-                  <TableCell className="text-center">{getRatingStars(row.qualityRating)}</TableCell>
-                  <TableCell className="text-center">{row.avgDeliveryDays}</TableCell>
-                  <TableCell className={`text-center ${row.defectRate > 1 ? "text-destructive" : "text-success"}`}>
-                    {row.defectRate}%
+              {supplierData.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                    Select a date range and generate the report
                   </TableCell>
-                  <TableCell className="text-center">{getTrendIcon(row.trend)}</TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                supplierData.map((row, index) => (
+                  <TableRow key={row.id}>
+                    <ListNumberCell index={index} total={supplierData.length} />
+                    <TableCell className="font-medium">{row.supplier}</TableCell>
+                    <TableCell className="text-center">{row.totalOrders}</TableCell>
+                    <TableCell className="text-right">{formatMoney(row.totalValue)}</TableCell>
+                    <TableCell className="text-center">
+                      {row.onTimeDelivery == null ? na : `${row.onTimeDelivery}%`}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {row.qualityRating == null ? na : row.qualityRating}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {row.avgDeliveryDays == null ? na : row.avgDeliveryDays}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {row.defectRate == null ? na : `${row.defectRate}%`}
+                    </TableCell>
+                    <TableCell className="text-center">{getTrendIcon(row.trend)}</TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

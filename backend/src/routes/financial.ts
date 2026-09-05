@@ -652,15 +652,17 @@ router.get("/public-income-statement", async (req: Request, res: Response) => {
     const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
 
     res.json({
-      revenue,
-      cost,
-      expenses,
-      summary: {
-        totalRevenue,
-        totalCost,
-        grossProfit: totalRevenue - totalCost,
-        totalExpenses,
-        netProfit: totalRevenue - totalCost - totalExpenses,
+      data: {
+        revenue,
+        cost,
+        expenses,
+        summary: {
+          totalRevenue,
+          totalCost,
+          grossProfit: totalRevenue - totalCost,
+          totalExpenses,
+          netProfit: totalRevenue - totalCost - totalExpenses,
+        },
       },
     });
   } catch (error: any) {
@@ -797,15 +799,17 @@ router.get("/income-statement", async (req: Request, res: Response) => {
     const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
 
     res.json({
-      revenue,
-      cost,
-      expenses,
-      summary: {
-        totalRevenue,
-        totalCost,
-        grossProfit: totalRevenue - totalCost,
-        totalExpenses,
-        netProfit: totalRevenue - totalCost - totalExpenses,
+      data: {
+        revenue,
+        cost,
+        expenses,
+        summary: {
+          totalRevenue,
+          totalCost,
+          grossProfit: totalRevenue - totalCost,
+          totalExpenses,
+          netProfit: totalRevenue - totalCost - totalExpenses,
+        },
       },
     });
   } catch (error: any) {

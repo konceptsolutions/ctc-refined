@@ -3,6 +3,7 @@ export function resolveInvoiceLinePartFields(item: any): {
   partNo: string;
   description: string;
   brand: string;
+  origin: string;
 } {
   const part = item?.Part || item?.part || {};
   const master = part?.MasterPart || part?.masterPart || {};
@@ -20,5 +21,8 @@ export function resolveInvoiceLinePartFields(item: any): {
   const brand = String(
     item?.brand || part?.Brand?.name || part?.brand?.name || "",
   ).trim();
-  return { partNo, description, brand };
+  const origin = String(
+    item?.origin || part?.origin || "",
+  ).trim();
+  return { partNo, description, brand, origin };
 }

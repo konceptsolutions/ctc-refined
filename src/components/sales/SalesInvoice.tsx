@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Select,
   SelectContent,
@@ -107,7 +108,9 @@ import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliver
 import { printSalesInvoicePdf } from "@/utils/printSalesInvoicePdf";
 import { printSalesQuotationPdf } from "@/utils/printSalesQuotationPdf";
 import {
+  DEFAULT_SALES_QUOTATION_DELIVERY_DAYS,
   DEFAULT_SALES_QUOTATION_TERM,
+  normalizeDeliveryDays,
   normalizeQuotationTerm,
   SALES_QUOTATION_TERM_OPTIONS,
 } from "@/constants/salesQuotationTerms";
@@ -226,6 +229,7 @@ function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] 
       lineTotal: Number(item.lineTotal || 0),
       grade: (item.grade || "A") as ItemGrade,
       brand: linePart.brand,
+      origin: linePart.origin,
       rackCode: selectedRackCodes.join(", "),
       shelfNo: selectedShelfNos.join(", "),
     };
@@ -489,6 +493,7 @@ interface ModelAssociationRow {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   application?: string;
   model: string;
   quantity: number;
@@ -940,6 +945,9 @@ export const SalesInvoice = ({
   >("pending");
   const [quotationTerms, setQuotationTerms] = useState<string>(
     DEFAULT_SALES_QUOTATION_TERM,
+  );
+  const [deliveryDays, setDeliveryDays] = useState(
+    String(DEFAULT_SALES_QUOTATION_DELIVERY_DAYS),
   );
   const [taxType, setTaxType] = useState("Without GST");
   const [gstPercentage, setGstPercentage] = useState(0);
@@ -1681,6 +1689,7 @@ export const SalesInvoice = ({
       const partNo = String(part.partNo || "");
       const masterPart = String(part.masterPartNo || "");
       const brand = String(part.brands?.[0]?.name || "");
+      const origin = String(part.origin || "");
 
       if (
         selectedDescription &&
@@ -1705,6 +1714,7 @@ export const SalesInvoice = ({
           partNo,
           description,
           brand,
+          origin,
           application,
           model: String(match.name || ""),
           quantity: Number(match.requiredQty || 0),
@@ -1717,6 +1727,7 @@ export const SalesInvoice = ({
             partNo,
             description,
             brand,
+            origin,
             application,
             model: String(m.name || ""),
             quantity: Number(m.requiredQty || 0),
@@ -1729,6 +1740,7 @@ export const SalesInvoice = ({
           partNo,
           description,
           brand,
+          origin,
           application,
           model: "",
           quantity: 0,
@@ -2392,6 +2404,7 @@ export const SalesInvoice = ({
               brands: p.brand_name
                 ? [{ id: p.brand_id || "", name: p.brand_name }]
                 : [],
+              origin: String(p.origin || "").trim() || undefined,
               locations: p.locations || [],
               machineModels: Array.isArray(p.models)
                 ? p.models
@@ -3230,6 +3243,10 @@ export const SalesInvoice = ({
     validUntil: q.validUntil,
     quotationStatus: q.status,
     quotationTerms: q.quotationTerms ?? null,
+    deliveryDays:
+      q.deliveryDays != null
+        ? normalizeDeliveryDays(q.deliveryDays)
+        : DEFAULT_SALES_QUOTATION_DELIVERY_DAYS,
   } as Invoice & { validUntil?: string; quotationStatus?: string });
 
   // Fetch invoices / quotations from backend
@@ -3319,6 +3336,7 @@ export const SalesInvoice = ({
                 lineTotal: item.lineTotal,
                 grade: (item.grade || "A") as ItemGrade,
                 brand: linePart.brand,
+                origin: linePart.origin,
               };
               }) || [],
             subtotal: inv.subtotal,
@@ -4031,6 +4049,7 @@ export const SalesInvoice = ({
           lineTotal: calculateLineTotal(item),
           grade: part?.grade || "A",
           brand: part?.brands[0]?.name || "",
+          origin: part?.origin || "",
           useUnlocatedStock: false,
         };
       });
@@ -4077,6 +4096,11 @@ export const SalesInvoice = ({
           status: editingInvoiceId ? quotationStatus : "pending",
           notes: remarks,
           quotationTerms,
+          deliveryDays: normalizeDeliveryDays(
+            deliveryDays === "" || deliveryDays == null
+              ? DEFAULT_SALES_QUOTATION_DELIVERY_DAYS
+              : deliveryDays,
+          ),
           subtotal,
           overallDiscount: discount,
           freightCharges,
@@ -4262,6 +4286,7 @@ export const SalesInvoice = ({
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
           brand: item.brand || item?.Part?.Brand?.name || "",
+          origin: item.origin || item?.Part?.origin || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -4346,6 +4371,7 @@ export const SalesInvoice = ({
     );
     setQuotationStatus("pending");
     setQuotationTerms(DEFAULT_SALES_QUOTATION_TERM);
+    setDeliveryDays(String(DEFAULT_SALES_QUOTATION_DELIVERY_DAYS));
     setShowBackToInquiry(false);
   };
 
@@ -4446,6 +4472,15 @@ export const SalesInvoice = ({
         setQuotationTerms(
           normalizeQuotationTerm(
             fullInvoice.quotationTerms || invoice.quotationTerms,
+          ),
+        );
+        setDeliveryDays(
+          String(
+            normalizeDeliveryDays(
+              fullInvoice.deliveryDays ??
+                invoice.deliveryDays ??
+                DEFAULT_SALES_QUOTATION_DELIVERY_DAYS,
+            ),
           ),
         );
       }
@@ -4928,6 +4963,7 @@ export const SalesInvoice = ({
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
           brand: item.brand || item?.Part?.Brand?.name || "",
+          origin: item.origin || item?.Part?.origin || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5039,6 +5075,7 @@ export const SalesInvoice = ({
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
           brand: item.brand || item?.Part?.Brand?.name || "",
+          origin: item.origin || item?.Part?.origin || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5190,6 +5227,7 @@ export const SalesInvoice = ({
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
           brand: item.brand || item?.Part?.Brand?.name || "",
+          origin: item.origin || item?.Part?.origin || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5801,6 +5839,7 @@ export const SalesInvoice = ({
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
           brand: item.brand || item?.Part?.Brand?.name || "",
+          origin: item.origin || item?.Part?.origin || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5904,6 +5943,7 @@ export const SalesInvoice = ({
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
           brand: item.brand || item?.Part?.Brand?.name || "",
+          origin: item.origin || item?.Part?.origin || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -5999,6 +6039,7 @@ export const SalesInvoice = ({
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
           brand: item.brand || item?.Part?.Brand?.name || "",
+          origin: item.origin || item?.Part?.origin || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -6226,6 +6267,7 @@ export const SalesInvoice = ({
           lineTotal: item.lineTotal,
           grade: (item.grade || "A") as ItemGrade,
           brand: item.brand || item?.Part?.Brand?.name || "",
+          origin: item.origin || item?.Part?.origin || "",
         })),
         subtotal: inv.subtotal,
         overallDiscount: inv.overallDiscount || 0,
@@ -6648,12 +6690,18 @@ export const SalesInvoice = ({
         quotationTerms: normalizeQuotationTerm(
           fullQuotation?.quotationTerms ?? invoice.quotationTerms,
         ),
+        deliveryDays: normalizeDeliveryDays(
+          fullQuotation?.deliveryDays ??
+            invoice.deliveryDays ??
+            DEFAULT_SALES_QUOTATION_DELIVERY_DAYS,
+        ),
       };
 
       await printSalesQuotationPdf({
         invoice: printInvoice,
         columns: columns || quotationPrintColumns.map((c) => c.id),
         printedBy: getPrintedBy(),
+        signedBy: getPrintedBy(),
         customerAddressLines: addressParts,
         area: matchedCustomer?.area || "",
         contactNo: String(
@@ -6668,6 +6716,11 @@ export const SalesInvoice = ({
         remarks: String(fullQuotation?.notes ?? invoice.remarks ?? ""),
         quotationTerms: normalizeQuotationTerm(
           fullQuotation?.quotationTerms ?? invoice.quotationTerms,
+        ),
+        deliveryDays: normalizeDeliveryDays(
+          fullQuotation?.deliveryDays ??
+            invoice.deliveryDays ??
+            DEFAULT_SALES_QUOTATION_DELIVERY_DAYS,
         ),
       });
     } catch (error: any) {
@@ -6795,6 +6848,11 @@ export const SalesInvoice = ({
           remarks: fullQuotation?.notes ?? invoice.remarks ?? null,
           quotationTerms: normalizeQuotationTerm(
             fullQuotation?.quotationTerms ?? invoice.quotationTerms,
+          ),
+          deliveryDays: normalizeDeliveryDays(
+            fullQuotation?.deliveryDays ??
+              invoice.deliveryDays ??
+              DEFAULT_SALES_QUOTATION_DELIVERY_DAYS,
           ),
         });
       } else {
@@ -8024,11 +8082,11 @@ export const SalesInvoice = ({
 
                             {/* Brand (Desktop ONLY) — header toggles last sales */}
                             <TableCell className="hidden md:table-cell text-center align-top">
-                              <div className="flex flex-col items-center justify-center gap-0.5">
-                                <span className="text-xs font-medium text-foreground">
-                                  {part?.brands?.[0]?.name || "-"}
-                                </span>
-                              </div>
+                              <BrandOriginCell
+                                brand={part?.brands?.[0]?.name}
+                                origin={part?.origin}
+                                align="center"
+                              />
                             </TableCell>
 
                             {/* Reserved (Desktop ONLY) */}
@@ -9463,7 +9521,11 @@ export const SalesInvoice = ({
                                     {row.description || "N/A"}
                                   </TableCell>
                                   <TableCell className="text-[10px] px-2 py-1 whitespace-nowrap">
-                                    {row.brand || "N/A"}
+                                    <BrandOriginCell
+                                      brand={row.brand}
+                                      origin={row.origin}
+                                      brandClassName="text-[10px]"
+                                    />
                                   </TableCell>
                                   <TableCell className="text-[10px] px-2 py-1 truncate max-w-0">
                                     {row.model || "N/A"}
@@ -9737,6 +9799,27 @@ export const SalesInvoice = ({
                       type="date"
                       value={validUntil}
                       onChange={(e) => setValidUntil(e.target.value)}
+                      className="bg-background border-primary/20 h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5 w-28">
+                    <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">
+                      Delivery Days
+                    </Label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={deliveryDays}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, "");
+                        setDeliveryDays(raw);
+                      }}
+                      onBlur={() => {
+                        setDeliveryDays(
+                          String(normalizeDeliveryDays(deliveryDays)),
+                        );
+                      }}
                       className="bg-background border-primary/20 h-9 text-sm"
                     />
                   </div>
@@ -10641,7 +10724,10 @@ export const SalesInvoice = ({
                             {item.description}
                           </TableCell>
                           <TableCell className="text-sm">
-                            {item.brand || "-"}
+                            <BrandOriginCell
+                              brand={item.brand}
+                              origin={item.origin}
+                            />
                           </TableCell>
                           {isQuotation ? (
                             <>

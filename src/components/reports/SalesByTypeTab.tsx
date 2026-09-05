@@ -23,7 +23,6 @@ import { Download, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { exportToCSV } from "@/utils/exportUtils";
-import { useEffect } from "react";
 
 interface SalesTypeData {
   type: string;
@@ -41,14 +40,6 @@ const SalesByTypeTab = () => {
   const [salesData, setSalesData] = useState<SalesTypeData[]>([]);
   const [isGenerated, setIsGenerated] = useState(false);
 
-  const mockData: SalesTypeData[] = [
-    { type: "Cash Sales", transactions: 245, totalAmount: 1850000, avgTransaction: 7551, profit: 407000, percentage: 35 },
-    { type: "Credit Sales", transactions: 180, totalAmount: 2450000, avgTransaction: 13611, profit: 539000, percentage: 45 },
-    { type: "Online Sales", transactions: 85, totalAmount: 680000, avgTransaction: 8000, profit: 149600, percentage: 12 },
-    { type: "Wholesale", transactions: 45, totalAmount: 320000, avgTransaction: 7111, profit: 70400, percentage: 6 },
-    { type: "Retail", transactions: 12, totalAmount: 95000, avgTransaction: 7917, profit: 20900, percentage: 2 },
-  ];
-
   const handleGenerateReport = async () => {
     if (!fromDate || !toDate) {
       toast.error("Please select both from and to dates");
@@ -59,6 +50,7 @@ const SalesByTypeTab = () => {
       const response = await apiClient.getSalesByType({
         from_date: fromDate,
         to_date: toDate,
+        sales_type: salesType,
       });
 
       if (response.data) {
@@ -87,23 +79,23 @@ const SalesByTypeTab = () => {
     }
   };
 
-  const summaryCards = [
-    { label: "Cash Sales", value: "PKR 0.00", color: "bg-primary/5 border-primary/20", textColor: "text-primary" },
-    { label: "Credit Sales", value: "PKR 0.00", color: "bg-info/5 border-info/20", textColor: "text-info" },
-    { label: "Online Sales", value: "PKR 0.00", color: "bg-destructive/5 border-destructive/20", textColor: "text-destructive" },
-    { label: "Wholesale", value: "PKR 0.00", color: "bg-warning/5 border-warning/20", textColor: "text-warning" },
-    { label: "Retail", value: "PKR 0.00", color: "bg-success/5 border-success/20", textColor: "text-success" },
+  const summaryCardMeta = [
+    { label: "Cash Sales", color: "bg-primary/5 border-primary/20", textColor: "text-primary" },
+    { label: "Credit Sales", color: "bg-info/5 border-info/20", textColor: "text-info" },
+    { label: "Online Sales", color: "bg-destructive/5 border-destructive/20", textColor: "text-destructive" },
+    { label: "Wholesale", color: "bg-warning/5 border-warning/20", textColor: "text-warning" },
+    { label: "Retail", color: "bg-success/5 border-success/20", textColor: "text-success" },
   ];
 
   const getUpdatedSummary = () => {
-    if (!isGenerated) return summaryCards;
-    return [
-      { label: "Cash Sales", value: `PKR ${mockData[0].totalAmount.toLocaleString()}`, color: "bg-primary/5 border-primary/20", textColor: "text-primary" },
-      { label: "Credit Sales", value: `PKR ${mockData[1].totalAmount.toLocaleString()}`, color: "bg-info/5 border-info/20", textColor: "text-info" },
-      { label: "Online Sales", value: `PKR ${mockData[2].totalAmount.toLocaleString()}`, color: "bg-destructive/5 border-destructive/20", textColor: "text-destructive" },
-      { label: "Wholesale", value: `PKR ${mockData[3].totalAmount.toLocaleString()}`, color: "bg-warning/5 border-warning/20", textColor: "text-warning" },
-      { label: "Retail", value: `PKR ${mockData[4].totalAmount.toLocaleString()}`, color: "bg-success/5 border-success/20", textColor: "text-success" },
-    ];
+    const amountFor = (label: string) => {
+      const row = salesData.find((d) => d.type === label);
+      return row ? `Rs ${row.totalAmount.toLocaleString()}` : "Rs 0";
+    };
+    return summaryCardMeta.map((card) => ({
+      ...card,
+      value: isGenerated ? amountFor(card.label) : "Rs 0",
+    }));
   };
 
   return (

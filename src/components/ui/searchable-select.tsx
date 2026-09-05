@@ -408,7 +408,7 @@ export const SearchableSelect = React.memo(function SearchableSelect({
       return;
     }
     // Sentinel "all" values should open with an empty query so the full list shows
-    if (!value || value === "__all__") {
+    if (!value || value === "__all__" || value === "all") {
       openDropdown();
       setSearchQuery("");
       return;

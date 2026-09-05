@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Select,
   SelectContent,
@@ -69,6 +70,7 @@ interface PriceItem {
   category: string;
   subcategory?: string; // Sub category field
   brand: string;
+  origin?: string;
   modelNames?: string[];
   avgPrice: number;
   lastPurchasePrice: number;
@@ -766,6 +768,7 @@ export const PricingCosting = () => {
             category: item.category_name || item.category || "Uncategorized",
             subcategory: item.subcategory_name || item.subcategory || "",
             brand: item.brand_name || item.brand || "Unknown",
+            origin: item.origin || undefined,
             modelNames: Array.isArray(item.models)
               ? item.models
                   .map((m: any) => String(m?.name || "").trim())
@@ -2193,7 +2196,9 @@ export const PricingCosting = () => {
                               {item.description}
                             </TableCell>
                             <TableCell>{item.category}</TableCell>
-                            <TableCell>{item.brand}</TableCell>
+                            <TableCell>
+                              <BrandOriginCell brand={item.brand} origin={item.origin} />
+                            </TableCell>
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                               {formatCurrency(item.avgPrice)}
                             </TableCell>
@@ -2752,7 +2757,9 @@ export const PricingCosting = () => {
                             </TableCell>
                             <TableCell>{item.description}</TableCell>
                             <TableCell>{item.category}</TableCell>
-                            <TableCell>{item.brand}</TableCell>
+                            <TableCell>
+                              <BrandOriginCell brand={item.brand} origin={item.origin} />
+                            </TableCell>
                             <TableCell className="text-right text-muted-foreground whitespace-nowrap">
                               {formatCurrency(item.avgPrice)}
                             </TableCell>

@@ -90,7 +90,7 @@ export const TrialBalanceTab = () => {
         let totalCredit = 0;
 
         flatData.forEach((item: any) => {
-          if (item.type === 'subgroup') {
+          if (item.type === 'subgroup' || item.type === 'Subgroup') {
             // Create or get subgroup
             if (!subgroupMap.has(item.name)) {
               const parts = item.name.split('-');

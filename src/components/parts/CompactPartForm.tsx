@@ -209,6 +209,9 @@ export const CompactPartForm = ({
 
   useEffect(() => {
     if (!isNewMode || editItem) return;
+    // Never auto-load images while the user is still searching/typing.
+    if (showMasterPartDropdown) return;
+
     const dbPartNo = String(formData.partNo || "").trim();
     const dbMasterPartNo = String(masterPartSearch || formData.masterPartNo || "").trim();
     if (!dbPartNo && !dbMasterPartNo) return;
@@ -229,7 +232,14 @@ export const CompactPartForm = ({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [isNewMode, editItem, formData.partNo, formData.masterPartNo, masterPartSearch]);
+  }, [
+    isNewMode,
+    editItem,
+    showMasterPartDropdown,
+    formData.partNo,
+    formData.masterPartNo,
+    masterPartSearch,
+  ]);
 
   // Fetch dropdown data
   useEffect(() => {

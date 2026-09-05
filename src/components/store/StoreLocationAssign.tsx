@@ -13,9 +13,14 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 import { MapPin } from "lucide-react";
+import {
+  performedByPayload,
+  useStoreOperatorAuth,
+} from "@/hooks/useStoreOperatorAuth";
 
 interface DirectPurchaseOrderItem {
   id: string;
@@ -23,6 +28,7 @@ interface DirectPurchaseOrderItem {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   quantity: number;
   purchasePrice: number;
   salePrice: number;
@@ -100,6 +106,7 @@ export const StoreLocationAssign = ({
   onOpenChange,
   onSuccess,
 }: StoreLocationAssignProps) => {
+  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
   const [racks, setRacks] = useState<Rack[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchingRacks, setFetchingRacks] = useState(false);
@@ -471,6 +478,12 @@ export const StoreLocationAssign = ({
 
     try {
       setLoading(true);
+
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
       
       // Update each item with location - we need to send all items with updated locations
       const updatedItems = order.items.map((item) => {
@@ -499,6 +512,7 @@ export const StoreLocationAssign = ({
             rack_id: item.rack_id,
             shelf_id: item.shelf_id,
           })),
+          ...by,
         });
         if (response.error) {
           toast.error(response.error);
@@ -508,6 +522,7 @@ export const StoreLocationAssign = ({
         // Update the DPO with new locations
         const response = await apiClient.updateDirectPurchaseOrder(order.id, {
           items: updatedItems,
+          ...by,
         });
 
         if (response.error) {
@@ -516,7 +531,11 @@ export const StoreLocationAssign = ({
         }
       }
 
-      toast.success("Locations assigned successfully");
+      toast.success(
+        operator
+          ? `Locations assigned successfully (Saved as ${operator.name})`
+          : "Locations assigned successfully",
+      );
       onSuccess();
     } catch (error: any) {
       toast.error(error.error || "Failed to assign locations");
@@ -673,7 +692,9 @@ export const StoreLocationAssign = ({
                             <ListNumberCell index={index} total={order.items.length} className="align-top py-3" />
                             <TableCell className="font-medium align-top py-3">{item.partNo}</TableCell>
                             <TableCell className="align-top py-3 max-w-[170px] truncate">{item.description || "-"}</TableCell>
-                            <TableCell className="align-top py-3 px-2">{item.brand}</TableCell>
+                            <TableCell className="align-top py-3 px-2">
+                              <BrandOriginCell brand={item.brand} origin={item.origin} />
+                            </TableCell>
                             <TableCell className="text-right align-top py-3 px-2">{item.quantity}</TableCell>
                             <TableCell className="align-top py-3 text-xs text-muted-foreground leading-snug max-w-[150px]">
                               {hasSavedAssignment ? (

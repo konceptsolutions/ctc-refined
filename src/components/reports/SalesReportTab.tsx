@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatUiDate } from "@/utils/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import { Badge } from "@/components/ui/badge";
-import { Download, FileText, Calendar } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 
@@ -32,16 +32,63 @@ interface SalesRecord {
   customer: string;
   items: number;
   amount: number;
+  profit?: number;
   status: "paid" | "pending" | "partial"; 
+}
+
+interface CustomerOption {
+  id: string;
+  name: string;
 }
 
 const SalesReportTab = () => {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [customer, setCustomer] = useState("all");
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [salesData, setSalesData] = useState<SalesRecord[]>([]);
+  const [summary, setSummary] = useState({
+    totalSales: 0,
+    totalInvoices: 0,
+    pendingPayment: 0,
+    profit: 0,
+  });
   const [isGenerated, setIsGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+
+  useEffect(() => {
+    const loadCustomers = async () => {
+      try {
+        setLoadingCustomers(true);
+        const response = (await apiClient.getCustomers({
+          status: "active",
+          limit: 2000,
+        })) as any;
+        const rows = Array.isArray(response)
+          ? response
+          : response.data || [];
+        const formatted: CustomerOption[] = (Array.isArray(rows) ? rows : [])
+          .map((c: any) => ({
+            id: String(c.id),
+            name: String(c.name || "").trim(),
+          }))
+          .filter(
+            (c: CustomerOption) =>
+              c.id && c.name && !c.name.toLowerCase().includes("demo"),
+          )
+          .sort((a: CustomerOption, b: CustomerOption) =>
+            a.name.localeCompare(b.name),
+          );
+        setCustomers(formatted);
+      } catch {
+        toast.error("Failed to load customers");
+      } finally {
+        setLoadingCustomers(false);
+      }
+    };
+    loadCustomers();
+  }, []);
 
   const handleGenerateReport = async () => {
     if (!fromDate || !toDate) {
@@ -59,6 +106,31 @@ const SalesReportTab = () => {
 
       if (response.data) {
         setSalesData(response.data);
+        const s = (response as any).summary;
+        if (s) {
+          setSummary({
+            totalSales: Number(s.totalSales) || 0,
+            totalInvoices: Number(s.totalInvoices) || 0,
+            pendingPayment: Number(s.pendingPayment) || 0,
+            profit: Number(s.profit) || 0,
+          });
+        } else {
+          const totalSales = response.data.reduce(
+            (sum: number, r: SalesRecord) => sum + (r.amount || 0),
+            0,
+          );
+          setSummary({
+            totalSales,
+            totalInvoices: response.data.length,
+            pendingPayment: response.data
+              .filter((r: SalesRecord) => r.status !== "paid")
+              .reduce((sum: number, r: SalesRecord) => sum + (r.amount || 0), 0),
+            profit: response.data.reduce(
+              (sum: number, r: SalesRecord) => sum + (r.profit || 0),
+              0,
+            ),
+          });
+        }
         setIsGenerated(true);
         toast.success("Report generated successfully");
       } else {
@@ -108,11 +180,6 @@ const SalesReportTab = () => {
       toast.error("Failed to export report");
     }
   };
-
-  const totalSales = salesData.reduce((sum, record) => sum + record.amount, 0);
-  const totalInvoices = salesData.length;
-  const pendingPayment = salesData.filter(r => r.status !== "paid").reduce((sum, r) => sum + r.amount, 0);
-  const profit = totalSales * 0.22;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -165,13 +232,15 @@ const SalesReportTab = () => {
               <Label>Customer</Label>
               <Select value={customer} onValueChange={setCustomer}>
                 <SelectTrigger>
-                  <SelectValue placeholder="All Customers" />
+                  <SelectValue placeholder={loadingCustomers ? "Loading..." : "All Customers"} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-72">
                   <SelectItem value="all">All Customers</SelectItem>
-                  <SelectItem value="auto-parts">Auto Parts Karachi</SelectItem>
-                  <SelectItem value="honda-plaza">Honda Plaza Lahore</SelectItem>
-                  <SelectItem value="toyota-center">Toyota Center</SelectItem>
+                  {customers.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -189,25 +258,33 @@ const SalesReportTab = () => {
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-primary">Total Sales</p>
-            <p className="text-2xl font-bold mt-1">PKR {totalSales.toLocaleString()}</p>
+            <p className="text-2xl font-bold mt-1">
+              Rs {isGenerated ? summary.totalSales.toLocaleString() : "0"}
+            </p>
           </CardContent>
         </Card>
         <Card className="bg-info/5 border-info/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-info">Total Invoices</p>
-            <p className="text-2xl font-bold mt-1">{totalInvoices}</p>
+            <p className="text-2xl font-bold mt-1">
+              {isGenerated ? summary.totalInvoices : 0}
+            </p>
           </CardContent>
         </Card>
         <Card className="bg-destructive/5 border-destructive/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-destructive">Pending Payment</p>
-            <p className="text-2xl font-bold mt-1">PKR {pendingPayment.toLocaleString()}</p>
+            <p className="text-2xl font-bold mt-1">
+              Rs {isGenerated ? summary.pendingPayment.toLocaleString() : "0"}
+            </p>
           </CardContent>
         </Card>
         <Card className="bg-success/5 border-success/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-success">Profit</p>
-            <p className="text-2xl font-bold mt-1">PKR {profit.toLocaleString()}</p>
+            <p className="text-2xl font-bold mt-1">
+              Rs {isGenerated ? summary.profit.toLocaleString() : "0"}
+            </p>
           </CardContent>
         </Card>
       </div>

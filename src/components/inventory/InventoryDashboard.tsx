@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
@@ -137,10 +138,10 @@ export const InventoryDashboard = () => {
     outOfStock: 0,
   });
 
-  const [lowStockItems, setLowStockItems] = useState<{ id: string; partNo: string; name: string; category: string; qty: number; minQty: number; brand: string }[]>([]);
-  const [outOfStockItems, setOutOfStockItems] = useState<{ id: string; partNo: string; name: string; category: string; qty: number; brand: string }[]>([]);
-  const [topItemsByValue, setTopItemsByValue] = useState<{ id: string; partNo: string; name: string; brand: string; qty: number; value: number }[]>([]);
-  const [topItemsByQty, setTopItemsByQty] = useState<{ id: string; partNo: string; name: string; brand: string; qty: number; value: number }[]>([]);
+  const [lowStockItems, setLowStockItems] = useState<{ id: string; partNo: string; name: string; category: string; qty: number; minQty: number; brand: string; origin?: string }[]>([]);
+  const [outOfStockItems, setOutOfStockItems] = useState<{ id: string; partNo: string; name: string; category: string; qty: number; brand: string; origin?: string }[]>([]);
+  const [topItemsByValue, setTopItemsByValue] = useState<{ id: string; partNo: string; name: string; brand: string; origin?: string; qty: number; value: number }[]>([]);
+  const [topItemsByQty, setTopItemsByQty] = useState<{ id: string; partNo: string; name: string; brand: string; origin?: string; qty: number; value: number }[]>([]);
 
   // Chart data state
   const [categoryDistribution, setCategoryDistribution] = useState<{ name: string; value: number; color: string }[]>([]);
@@ -198,6 +199,7 @@ export const InventoryDashboard = () => {
             qty: item.current_stock,
             minQty: item.reorder_level || 0,
             brand: item.brand || '-',
+            origin: item.origin || undefined,
           }))
         );
       }
@@ -211,6 +213,7 @@ export const InventoryDashboard = () => {
             category: item.category || '-',
             qty: item.current_stock,
             brand: item.brand || '-',
+            origin: item.origin || undefined,
           }))
         );
       }
@@ -226,6 +229,7 @@ export const InventoryDashboard = () => {
             partNo: item.part_no,
             name: item.description || item.part_no,
             brand: item.brand || '-',
+            origin: item.origin || undefined,
             qty: item.current_stock,
             value: item.value,
           }));
@@ -241,6 +245,7 @@ export const InventoryDashboard = () => {
             partNo: item.part_no,
             name: item.description || item.part_no,
             brand: item.brand || '-',
+            origin: item.origin || undefined,
             qty: item.current_stock,
             value: item.value,
           }));
@@ -571,7 +576,9 @@ export const InventoryDashboard = () => {
                       <ListNumberCell index={index} total={topItemsByValue.length} />
                       <TableCell className="text-xs font-medium">{item.partNo}</TableCell>
                       <TableCell className="text-xs truncate max-w-[120px]">{item.name}</TableCell>
-                      <TableCell className="text-xs">{item.brand}</TableCell>
+                      <TableCell className="text-xs">
+                        <BrandOriginCell brand={item.brand} origin={item.origin} />
+                      </TableCell>
                       <TableCell className="text-xs text-right">{item.qty}</TableCell>
                       <TableCell className="text-xs text-right text-green-600 font-medium">
                         Rs {item.value.toLocaleString()}
@@ -608,7 +615,9 @@ export const InventoryDashboard = () => {
                       <ListNumberCell index={index} total={topItemsByQty.length} />
                       <TableCell className="text-xs font-medium">{item.partNo}</TableCell>
                       <TableCell className="text-xs truncate max-w-[120px]">{item.name}</TableCell>
-                      <TableCell className="text-xs">{item.brand}</TableCell>
+                      <TableCell className="text-xs">
+                        <BrandOriginCell brand={item.brand} origin={item.origin} />
+                      </TableCell>
                       <TableCell className="text-xs text-right font-medium text-blue-600">{item.qty}</TableCell>
                       <TableCell className="text-xs text-right">
                         Rs {item.value.toLocaleString()}
@@ -724,7 +733,9 @@ export const InventoryDashboard = () => {
                   <TableCell className="font-medium">{item.partNo}</TableCell>
                   <TableCell>{item.name}</TableCell>
                   <TableCell>{item.category}</TableCell>
-                  <TableCell>{item.brand}</TableCell>
+                  <TableCell>
+                    <BrandOriginCell brand={item.brand} origin={item.origin} />
+                  </TableCell>
                   <TableCell className="text-center text-yellow-600 font-medium">{item.qty}</TableCell>
                   <TableCell className="text-center">{item.minQty}</TableCell>
                 </TableRow>
@@ -759,7 +770,9 @@ export const InventoryDashboard = () => {
                   <TableCell className="font-medium">{item.partNo}</TableCell>
                   <TableCell>{item.name}</TableCell>
                   <TableCell>{item.category}</TableCell>
-                  <TableCell>{item.brand}</TableCell>
+                  <TableCell>
+                    <BrandOriginCell brand={item.brand} origin={item.origin} />
+                  </TableCell>
                   <TableCell className="text-center text-red-600 font-medium">{item.qty}</TableCell>
                 </TableRow>
               ))}

@@ -17,6 +17,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -28,7 +30,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
   Select,
   SelectContent,
@@ -50,6 +51,7 @@ interface StockItem {
   oemPartNo: string;
   name: string;
   brand: string;
+  origin?: string;
   model: string;
   uom: string;
   qty: number;
@@ -686,6 +688,7 @@ export const StockInOut = () => {
               oemPartNo: movement.part_no || "",
               name: movement.part_description || "",
               brand: movement.brand || "",
+              origin: movement.origin || "",
               model: "",
               uom: "pcs",
               qty: actualQty,
@@ -795,6 +798,7 @@ export const StockInOut = () => {
             oemPartNo: movement.part_no || "",
             name: movement.part_description || "",
             brand: movement.brand || "",
+            origin: movement.origin || "",
             model: "",
             uom: "pcs",
             qty: actualQty,
@@ -820,6 +824,7 @@ export const StockInOut = () => {
             oemPartNo: movement.part_no || "",
             name: movement.part_description || "",
             brand: movement.brand || "",
+            origin: movement.origin || "",
             model: "",
             uom: "pcs",
             qty: actualQty,
@@ -1388,7 +1393,7 @@ export const StockInOut = () => {
                   </TableCell>
 
                   <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                    {stockItem.brand}
+                    <BrandOriginCell brand={stockItem.brand} origin={stockItem.origin} />
                   </TableCell>
 
                   <TableCell className="text-sm text-muted-foreground">

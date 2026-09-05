@@ -38,6 +38,8 @@ const TargetAchievementTab = () => {
   const [period, setPeriod] = useState("monthly");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [targetData, setTargetData] = useState<TargetData[]>([]);
+  const [daysLeft, setDaysLeft] = useState(0);
+  const [targetBasis, setTargetBasis] = useState("");
   const [loading, setLoading] = useState(false);
 
   const fetchData = async () => {
@@ -50,6 +52,8 @@ const TargetAchievementTab = () => {
 
       if (response.data) {
         setTargetData(response.data);
+        setDaysLeft(Number(response.meta?.daysLeft) || 0);
+        setTargetBasis(String(response.meta?.targetBasis || ""));
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to load data");
@@ -62,14 +66,13 @@ const TargetAchievementTab = () => {
     fetchData();
   }, [period, month]);
 
+  const salesRow = targetData.find((t) => t.category === "Sales");
   const overallProgress = {
-    target: targetData.reduce((sum, t) => sum + t.target, 0),
-    achieved: targetData.reduce((sum, t) => sum + t.achieved, 0),
-    percentage: targetData.reduce((sum, t) => sum + t.target, 0) > 0
-      ? (targetData.reduce((sum, t) => sum + t.achieved, 0) / targetData.reduce((sum, t) => sum + t.target, 0) * 100)
-      : 0,
-    remaining: Math.max(0, targetData.reduce((sum, t) => sum + t.target, 0) - targetData.reduce((sum, t) => sum + t.achieved, 0)),
-    daysLeft: 0,
+    target: salesRow?.target || 0,
+    achieved: salesRow?.achieved || 0,
+    percentage: salesRow?.percentage || 0,
+    remaining: Math.max(0, (salesRow?.target || 0) - (salesRow?.achieved || 0)),
+    daysLeft,
   };
 
   const handleExport = () => {
@@ -110,7 +113,9 @@ const TargetAchievementTab = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle className="text-lg">Target vs Achievement</CardTitle>
-              <p className="text-sm text-muted-foreground">Track performance against set targets</p>
+              <p className="text-sm text-muted-foreground">
+                Achievement from sales invoices; target is the same period last year
+              </p>
             </div>
             <Button onClick={handleExport} className="bg-primary hover:bg-primary/90">
               <Download className="w-4 h-4 mr-2" />
@@ -149,7 +154,7 @@ const TargetAchievementTab = () => {
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
             <Target className="w-5 h-5 text-primary" />
-            Overall Monthly Target Progress
+            Overall {period.charAt(0).toUpperCase() + period.slice(1)} Sales Progress
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -160,6 +165,11 @@ const TargetAchievementTab = () => {
                 <p className="text-sm text-muted-foreground">
                   Rs {overallProgress.achieved.toLocaleString()} of Rs {overallProgress.target.toLocaleString()}
                 </p>
+                {targetBasis === "prior_year_same_period" && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Target based on prior-year same period
+                  </p>
+                )}
               </div>
               <div className="text-right">
                 <p className="text-sm font-medium text-primary">

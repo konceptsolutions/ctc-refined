@@ -27,8 +27,7 @@ export type DailyClosingPrintInput = {
 
 const money = (value: number) => {
   const num = Math.round(Number(value || 0));
-  if (num === 0) return "0";
-  return formatPdfMoney(num, 0);
+  return `${formatPdfMoney(num, 0)}/-`;
 };
 
 export const printDailyClosing = (input: DailyClosingPrintInput): boolean => {

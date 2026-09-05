@@ -960,6 +960,7 @@ model SalesQuotation {
   totalAmount        Float                @default(0)
   notes              String?
   quotationTerms     String?
+  deliveryDays       Int?                 @default(2)
   invoiceId          String?              @unique
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt

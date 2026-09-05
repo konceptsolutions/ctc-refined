@@ -79,6 +79,10 @@ import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/s
 import { getUserRole, isStoreUserRole } from "@/utils/auth";
 import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
 import { SalesInquiry } from "@/components/sales/SalesInquiry";
+import {
+  performedByPayload,
+  useStoreOperatorAuth,
+} from "@/hooks/useStoreOperatorAuth";
 
 const ORDER_TABLE_DATE_CLASS = "whitespace-nowrap min-w-[6.5rem] w-[6.5rem]";
 
@@ -88,6 +92,7 @@ interface DirectPurchaseOrderItem {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   quantity: number;
   purchasePrice: number;
   salePrice: number;
@@ -243,6 +248,7 @@ const mapApiDpoToStoreOrder = (order: any): DirectPurchaseOrder => ({
         description:
           item.part_description || item.description || item.part?.description || "",
         brand: item.brand || item.part?.brand?.name || "N/A",
+        origin: item.origin || item.part?.origin || undefined,
         quantity: Number(item.quantity) || 0,
         purchasePrice: Number(item.purchase_price ?? item.purchasePrice ?? 0),
         salePrice: Number(item.sale_price ?? item.salePrice ?? 0),
@@ -401,6 +407,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const { addNotification } = useNotifications();
   const [searchParams] = useSearchParams();
   const { canEdit, canApprove, canPrint } = usePageActions("store.orders");
+  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
   const isStoreOnlyUser = getUserRole() === "store" || isStoreUserRole();
   const [orders, setOrders] = useState<DirectPurchaseOrder[]>([]);
   const [transferInOrders, setTransferInOrders] = useState<DirectPurchaseOrder[]>([]);
@@ -769,6 +776,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
               partNo: item.part_no || (item.part?.partNo) || "N/A",
               description: item.part_description || (item.part?.description) || item.description || "",
               brand: item.brand || (item.part?.brand?.name) || "N/A",
+              origin: item.origin || item.part?.origin || undefined,
               quantity: item.quantity || 0,
               uom: item.uom || item.part?.uom || "pcs",
               purchasePrice: item.purchase_price || item.purchasePrice || 0,
@@ -1219,6 +1227,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           partNo: item.part_no || item.partNo || "N/A",
           description: item.part_description || item.description || "",
           brand: item.brand || "N/A",
+          origin: item.origin || item.part?.origin || undefined,
           quantity:
             Number(item.received_qty ?? item.receivedQty ?? item.quantity ?? 0) || 0,
           purchasePrice: Number(item.unit_cost || item.unitCost || 0),
@@ -1274,13 +1283,21 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     try {
       setLoading(true);
 
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       if (deleteOrderType === "dpo" && selectedOrder) {
-        await apiClient.deleteDirectPurchaseOrder(selectedOrder.id);
+        await apiClient.deleteDirectPurchaseOrder(selectedOrder.id, by);
         toast.success(`Local Purchase Order ${selectedOrder.dpo_no} deleted successfully`);
+        if (operator) toast.success(`Saved as ${operator.name}`);
         await fetchOrders();
       } else if (deleteOrderType === "po" && selectedPurchaseOrder) {
-        await apiClient.deletePurchaseOrder(selectedPurchaseOrder.id);
+        await apiClient.deletePurchaseOrder(selectedPurchaseOrder.id, by);
         toast.success(`Purchase Order ${selectedPurchaseOrder.po_number} deleted successfully`);
+        if (operator) toast.success(`Saved as ${operator.name}`);
         await fetchPurchaseOrders();
       }
 
@@ -1407,6 +1424,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
     try {
       setLoading(true);
+
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       // IMPORTANT: "all" is a UI-only value; never send it to backend as store_id
       const resolvedStoreId = selectedStoreId === "all" ? undefined : selectedStoreId;
 
@@ -1437,9 +1461,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           order_type: fullOrder.order_type || "local_purchase",
           branch_account_id: fullOrder.branch_account_id || undefined,
           items: itemsForUpdate,
+          ...by,
         });
 
         toast.success(`Order ${selectedOrder.dpo_no} has been received and stock added`);
+        if (operator) toast.success(`Saved as ${operator.name}`);
       } else if (receivingOrderType === "po" && selectedPurchaseOrder) {
         // Receive Purchase Order
         // First, fetch the full PO details to get items
@@ -1471,9 +1497,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           date: receiveDate,
           ...(resolvedStoreId ? { store_id: resolvedStoreId } : {}),
           items: itemsForUpdate,
+          ...by,
         });
 
         toast.success(`Purchase Order ${selectedPurchaseOrder.po_number} has been received and stock added`);
+        if (operator) toast.success(`Saved as ${operator.name}`);
 
         const refreshedPo = await apiClient.getPurchaseOrder(selectedPurchaseOrder.id);
         const refreshedData: any = refreshedPo.data || refreshedPo;

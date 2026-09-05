@@ -3,6 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -10,6 +11,7 @@ interface DirectPurchaseOrderItem {
   id: string;
   partNo: string;
   brand: string;
+  origin?: string;
   quantity: number;
   uom?: string;
   rackCode?: string;
@@ -70,7 +72,9 @@ export const StoreOrderDetail = ({ order, open, onOpenChange }: StoreOrderDetail
                           <TableRow key={item.id} className="h-12">
                             <ListNumberCell index={index} total={order.items.length} className="align-middle" />
                             <TableCell className="font-medium align-middle">{item.partNo}</TableCell>
-                            <TableCell className="align-middle">{item.brand}</TableCell>
+                            <TableCell className="align-middle">
+                              <BrandOriginCell brand={item.brand} origin={item.origin} />
+                            </TableCell>
                             <TableCell className="text-right align-middle">{item.quantity}</TableCell>
                             <TableCell className="align-middle">{item.uom || "pcs"}</TableCell>
                             <TableCell className="align-middle">{item.rackCode || "-"}</TableCell>

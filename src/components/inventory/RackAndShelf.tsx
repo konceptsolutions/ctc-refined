@@ -34,6 +34,10 @@ import { Search, Plus, Loader2, Package, Edit, Trash, RefreshCw, ChevronDown, Ch
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import {
+  performedByPayload,
+  useStoreOperatorAuth,
+} from "@/hooks/useStoreOperatorAuth";
+import {
   Table,
   TableBody,
   TableCell,
@@ -85,6 +89,7 @@ type FormMode = "list" | "create-rack" | "edit-rack" | "create-shelf" | "edit-sh
 
 export const RackAndShelf = () => {
   const { canCreate, canEdit, canDelete } = usePageActions("store.rack-shelf");
+  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
   // Data state
   const [racks, setRacks] = useState<Rack[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>([]);
@@ -416,6 +421,12 @@ export const RackAndShelf = () => {
       setLoading(true);
       setRowErrors({}); // Clear errors before attempting to save
 
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       let successCount = 0;
       const finalErrors: Record<number, string> = {};
 
@@ -425,7 +436,8 @@ export const RackAndShelf = () => {
             shelfNo: row.shelfName.trim(),
             rackId: row.rackId,
             status: "Active",
-          });
+            ...by,
+          } as any);
 
           if (result.error) {
             throw result;
@@ -447,7 +459,11 @@ export const RackAndShelf = () => {
         await loadShelves();
         await loadRacks();
         await loadStockData();
-        toast.success(`Successfully added ${successCount} shelf${successCount !== 1 ? 'ves' : ''}`);
+        toast.success(
+          operator
+            ? `Successfully added ${successCount} shelf${successCount !== 1 ? "ves" : ""} (Saved as ${operator.name})`
+            : `Successfully added ${successCount} shelf${successCount !== 1 ? "ves" : ""}`,
+        );
 
         if (Object.keys(finalErrors).length === 0) {
           resetBulkShelfForm();
@@ -518,11 +534,18 @@ export const RackAndShelf = () => {
     }
 
     try {
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       const rackResponse = await apiClient.createRack({
         codeNo: combinedRackName.trim(),
         storeId: combinedStoreId,
         status: "Active",
-      });
+        ...by,
+      } as any);
 
       let createdRackId = (rackResponse as any)?.data?.id || (rackResponse as any)?.id;
 
@@ -547,13 +570,18 @@ export const RackAndShelf = () => {
           shelfNo: shelfName.trim(),
           rackId: createdRackId,
           status: "Active",
-        })
+          ...by,
+        } as any)
       );
       await Promise.all(shelfPromises);
       await loadRacks();
       await loadShelves();
       await loadStockData();
-      toast.success(`Rack "${combinedRackName.trim()}" with ${validShelfNames.length} shelves created successfully`);
+      toast.success(
+        operator
+          ? `Rack "${combinedRackName.trim()}" with ${validShelfNames.length} shelves created successfully (Saved as ${operator.name})`
+          : `Rack "${combinedRackName.trim()}" with ${validShelfNames.length} shelves created successfully`,
+      );
       resetCombinedForm();
       setCombinedDialogOpen(false);
     } catch (error: any) {
@@ -603,16 +631,27 @@ export const RackAndShelf = () => {
     }
 
     try {
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       if (formMode === "create-rack") {
         await apiClient.createRack({
           codeNo: rackCodeNo.trim(),
           storeId: rackStoreId,
           description: rackDescription.trim() || undefined,
           status: rackStatus,
-        });
+          ...by,
+        } as any);
         await loadRacks();
         await loadStockData();
-        toast.success("Rack created successfully");
+        toast.success(
+          operator
+            ? `Rack created successfully (Saved as ${operator.name})`
+            : "Rack created successfully",
+        );
         setRackDialogOpen(false);
       } else if (formMode === "edit-rack" && selectedRack) {
         await apiClient.updateRack(selectedRack.id, {
@@ -620,15 +659,20 @@ export const RackAndShelf = () => {
           storeId: rackStoreId,
           description: rackDescription.trim() || undefined,
           status: rackStatus,
-        });
+          ...by,
+        } as any);
         await loadRacks();
         await loadShelves();
         await loadStockData();
-        toast.success("Rack updated successfully");
+        toast.success(
+          operator
+            ? `Rack updated successfully (Saved as ${operator.name})`
+            : "Rack updated successfully",
+        );
         setRackDialogOpen(false);
       }
     } catch (error: any) {
-      toast.error(error.error || 'Failed to save rack');
+      toast.error(error.error || "Failed to save rack");
     }
   };
 
@@ -693,28 +737,44 @@ export const RackAndShelf = () => {
       return;
     }
     try {
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       if (formMode === "create-shelf") {
         await apiClient.createShelf({
           shelfNo: shelfNo.trim(),
           rackId: shelfRackId,
           description: shelfDescription.trim() || undefined,
           status: shelfStatus,
-        });
+          ...by,
+        } as any);
         await loadShelves();
         await loadRacks();
         await loadStockData();
-        toast.success("Shelf created successfully");
+        toast.success(
+          operator
+            ? `Shelf created successfully (Saved as ${operator.name})`
+            : "Shelf created successfully",
+        );
         setShelfDialogOpen(false);
       } else if (formMode === "edit-shelf" && selectedShelf) {
         await apiClient.updateShelf(selectedShelf.id, {
           shelfNo: shelfNo.trim(),
           description: shelfDescription.trim() || undefined,
           status: shelfStatus,
-        });
+          ...by,
+        } as any);
         await loadShelves();
         await loadRacks();
         await loadStockData();
-        toast.success("Shelf updated successfully");
+        toast.success(
+          operator
+            ? `Shelf updated successfully (Saved as ${operator.name})`
+            : "Shelf updated successfully",
+        );
         setShelfDialogOpen(false);
       }
     } catch (error: any) {

@@ -1,17 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatUiDate } from "@/utils/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -21,6 +14,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import { Download, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -33,17 +30,43 @@ interface PurchaseRecord {
   supplier: string;
   items: number;
   amount: number;
-  status: "completed" | "pending" | "partial"; 
+  status: "completed" | "pending" | "partial";
 }
+
+const unwrapList = (res: any): any[] => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
+};
 
 const PurchasesReportTab = () => {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [supplier, setSupplier] = useState("all");
+  const [supplier, setSupplier] = useState("");
+  const [supplierOptions, setSupplierOptions] = useState<SearchableSelectOption[]>([]);
   const [purchaseData, setPurchaseData] = useState<PurchaseRecord[]>([]);
-  const [isGenerated, setIsGenerated] = useState(false);
 
-  const mockPurchaseData: PurchaseRecord[] = [];
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await apiClient.getSuppliers({ status: "active", limit: 5000 });
+        setSupplierOptions(
+          unwrapList(res)
+            .map((s: any) => ({
+              value: String(s.id),
+              label: String(s.companyName || s.name || "").trim(),
+            }))
+            .filter((s: SearchableSelectOption) => s.value && s.label)
+            .sort((a: SearchableSelectOption, b: SearchableSelectOption) =>
+              a.label.localeCompare(b.label),
+            ),
+        );
+      } catch {
+        toast.error("Failed to load suppliers");
+      }
+    };
+    load();
+  }, []);
 
   const handleGenerateReport = async () => {
     if (!fromDate || !toDate) {
@@ -55,12 +78,11 @@ const PurchasesReportTab = () => {
       const response = await apiClient.getPurchasesReport({
         from_date: fromDate,
         to_date: toDate,
-        supplier_id: supplier !== "all" ? supplier : undefined,
+        supplier_id: supplier || undefined,
       });
 
       if (response.data) {
         setPurchaseData(response.data);
-        setIsGenerated(true);
         toast.success("Purchase report generated successfully");
       } else {
         toast.error(response.error || "Failed to generate report");
@@ -76,18 +98,19 @@ const PurchasesReportTab = () => {
       return;
     }
     const headers = ["Date", "PO Number", "Supplier", "Items", "Amount", "Status"];
-    const success = exportToCSV(purchaseData, headers, `purchases-report-${fromDate}-to-${toDate}.csv`);
-    if (success) {
-      toast.success("Report exported successfully");
-    } else {
-      toast.error("Failed to export report");
-    }
+    const success = exportToCSV(
+      purchaseData,
+      headers,
+      `purchases-report-${fromDate}-to-${toDate}.csv`,
+    );
+    if (success) toast.success("Report exported successfully");
+    else toast.error("Failed to export report");
   };
 
   const totalPurchases = purchaseData.reduce((sum, record) => sum + record.amount, 0);
   const totalOrders = purchaseData.length;
-  const pendingOrders = purchaseData.filter(r => r.status === "pending").length;
-  const completedOrders = purchaseData.filter(r => r.status === "completed").length;
+  const pendingOrders = purchaseData.filter((r) => r.status === "pending").length;
+  const completedOrders = purchaseData.filter((r) => r.status === "completed").length;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -104,13 +127,14 @@ const PurchasesReportTab = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header & Filters */}
       <Card>
         <CardHeader className="pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle className="text-lg">Purchases Report</CardTitle>
-              <p className="text-sm text-muted-foreground">View and analyze all purchase transactions</p>
+              <p className="text-sm text-muted-foreground">
+                View and analyze all purchase transactions
+              </p>
             </div>
             <Button onClick={handleExport} className="bg-primary hover:bg-primary/90">
               <Download className="w-4 h-4 mr-2" />
@@ -122,33 +146,30 @@ const PurchasesReportTab = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>From Date</Label>
-              <Input 
-                type="date" 
-                value={fromDate} 
+              <Input
+                type="date"
+                value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>To Date</Label>
-              <Input 
-                type="date" 
-                value={toDate} 
+              <Input
+                type="date"
+                value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>Supplier</Label>
-              <Select value={supplier} onValueChange={setSupplier}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Suppliers" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Suppliers</SelectItem>
-                  <SelectItem value="toyota">Toyota Parts Supplier</SelectItem>
-                  <SelectItem value="honda">Honda Genuine Parts</SelectItem>
-                  <SelectItem value="suzuki">Suzuki Motors Ltd</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={supplierOptions}
+                value={supplier}
+                onValueChange={setSupplier}
+                placeholder="All Suppliers"
+                maxDisplayedOptions={80}
+                requireSearchAbove={5000}
+              />
             </div>
             <div className="flex items-end">
               <Button onClick={handleGenerateReport} className="w-full">
@@ -159,12 +180,13 @@ const PurchasesReportTab = () => {
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-primary">Total Purchases</p>
-            <p className="text-2xl font-bold mt-1">PKR {totalPurchases.toLocaleString()}</p>
+            <p className="text-2xl font-bold mt-1">
+              Rs {totalPurchases.toLocaleString()}
+            </p>
           </CardContent>
         </Card>
         <Card className="bg-info/5 border-info/20">
@@ -187,7 +209,6 @@ const PurchasesReportTab = () => {
         </Card>
       </div>
 
-      {/* Data Table */}
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -217,14 +238,18 @@ const PurchasesReportTab = () => {
                 purchaseData.map((record, index) => (
                   <TableRow key={record.id}>
                     <ListNumberCell index={index} total={purchaseData.length} />
-                    <TableCell>{formatUiDate(record.date) || record.date}</TableCell>
+                    <TableCell>
+                      {formatUiDate(record.date) || record.date}
+                    </TableCell>
                     <TableCell className="font-medium">{record.poNumber}</TableCell>
                     <TableCell>{record.supplier}</TableCell>
                     <TableCell className="text-center">{record.items}</TableCell>
                     <TableCell className="text-right font-medium">
                       Rs {record.amount.toLocaleString()}
                     </TableCell>
-                    <TableCell className="text-center">{getStatusBadge(record.status)}</TableCell>
+                    <TableCell className="text-center">
+                      {getStatusBadge(record.status)}
+                    </TableCell>
                   </TableRow>
                 ))
               )}

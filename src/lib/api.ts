@@ -26,6 +26,8 @@ const API_BASE_URL = getApiBaseUrl();
 
 interface ApiResponse<T> {
   data?: T;
+  meta?: Record<string, any>;
+  summary?: Record<string, any>;
   pagination?: {
     page: number;
     limit: number;
@@ -79,12 +81,13 @@ class ApiClient {
       mergedHeaders.set("Authorization", `Bearer ${token}`);
     }
 
-    // Ensure Content-Type is set for POST/PUT requests with body
+    // Ensure Content-Type is set for requests with a JSON body
     if (
       options.body &&
       (options.method === "POST" ||
         options.method === "PUT" ||
-        options.method === "PATCH")
+        options.method === "PATCH" ||
+        options.method === "DELETE")
     ) {
       if (!mergedHeaders.has("Content-Type")) {
         mergedHeaders.set("Content-Type", "application/json");
@@ -303,6 +306,19 @@ class ApiClient {
     role?: "admin" | "store";
   }) {
     return this.request("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /** Match password to an active user without changing the session. */
+  async verifyPassword(data: { password: string }) {
+    return this.request<{
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+    }>("/auth/verify-password", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -1359,6 +1375,9 @@ class ApiClient {
       notes?: string;
       status?: string;
       store_id?: string;
+      performedBy?: string;
+      performedById?: string;
+      performedByRole?: string;
       items?: Array<{
         part_id: string;
         quantity: number;
@@ -1384,6 +1403,9 @@ class ApiClient {
     id: string,
     data: {
       store_id?: string;
+      performedBy?: string;
+      performedById?: string;
+      performedByRole?: string;
       items: Array<{
         part_id: string;
         store_id?: string | null;
@@ -1398,9 +1420,14 @@ class ApiClient {
     });
   }
 
-  async deletePurchaseOrder(id: string) {
+  async deletePurchaseOrder(id: string, data?: {
+    performedBy?: string;
+    performedById?: string;
+    performedByRole?: string;
+  }) {
     return this.request(`/inventory/purchase-orders/${id}`, {
       method: "DELETE",
+      ...(data ? { body: JSON.stringify(data) } : {}),
     });
   }
 
@@ -1747,6 +1774,9 @@ class ApiClient {
       description?: string;
       status?: string;
       discount?: number;
+      performedBy?: string;
+      performedById?: string;
+      performedByRole?: string;
       items?: Array<{
         part_id: string;
         quantity: number;
@@ -1772,9 +1802,17 @@ class ApiClient {
     });
   }
 
-  async deleteDirectPurchaseOrder(id: string) {
+  async deleteDirectPurchaseOrder(
+    id: string,
+    data?: {
+      performedBy?: string;
+      performedById?: string;
+      performedByRole?: string;
+    },
+  ) {
     return this.request(`/inventory/direct-purchase-orders/${id}`, {
       method: "DELETE",
+      ...(data ? { body: JSON.stringify(data) } : {}),
     });
   }
 
@@ -3183,7 +3221,11 @@ class ApiClient {
     );
   }
 
-  async getSalesByType(params?: { from_date?: string; to_date?: string }) {
+  async getSalesByType(params?: {
+    from_date?: string;
+    to_date?: string;
+    sales_type?: string;
+  }) {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -4197,6 +4239,7 @@ class ApiClient {
     status?: string;
     notes?: string;
     quotationTerms?: string;
+    deliveryDays?: number;
     subtotal?: number;
     overallDiscount?: number;
     freightCharges?: number;
@@ -4233,6 +4276,7 @@ class ApiClient {
       status?: string;
       notes?: string;
       quotationTerms?: string;
+      deliveryDays?: number;
       subtotal?: number;
       overallDiscount?: number;
       freightCharges?: number;
@@ -4417,6 +4461,9 @@ class ApiClient {
       challanNo: string;
       deliveryDate: string;
       deliveredBy?: string;
+      performedBy?: string;
+      performedById?: string;
+      performedByRole?: string;
       items: Array<{
         invoiceItemId: string;
         quantity: number;

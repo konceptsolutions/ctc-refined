@@ -1,15 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,6 +12,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import { Download, Users } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -30,18 +27,44 @@ interface CustomerData {
   contact: string;
   totalOrders: number;
   totalSales: number;
-  balanceDue: number; 
+  balanceDue: number;
   lastOrder: string;
 }
+
+const unwrapList = (res: any): any[] => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
+};
 
 const CustomerAnalysisTab = () => {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [customer, setCustomer] = useState("all");
+  const [customer, setCustomer] = useState("");
+  const [customerOptions, setCustomerOptions] = useState<SearchableSelectOption[]>([]);
   const [customerData, setCustomerData] = useState<CustomerData[]>([]);
-  const [isGenerated, setIsGenerated] = useState(false);
 
-  const mockCustomerData: CustomerData[] = [];
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await apiClient.getCustomers({ status: "active", limit: 2000 });
+        setCustomerOptions(
+          unwrapList(res)
+            .map((c: any) => ({
+              value: String(c.id),
+              label: String(c.name || c.companyName || "").trim(),
+            }))
+            .filter((c: SearchableSelectOption) => c.value && c.label)
+            .sort((a: SearchableSelectOption, b: SearchableSelectOption) =>
+              a.label.localeCompare(b.label),
+            ),
+        );
+      } catch {
+        toast.error("Failed to load customers");
+      }
+    };
+    load();
+  }, []);
 
   const handleGenerateReport = async () => {
     if (!fromDate || !toDate) {
@@ -53,12 +76,11 @@ const CustomerAnalysisTab = () => {
       const response = await apiClient.getCustomerAnalysis({
         from_date: fromDate,
         to_date: toDate,
-        customer_id: customer !== "all" ? customer : undefined,
+        customer_id: customer || undefined,
       });
 
       if (response.data) {
         setCustomerData(response.data);
-        setIsGenerated(true);
         toast.success("Customer analysis report generated");
       }
     } catch (error: any) {
@@ -83,8 +105,8 @@ const CustomerAnalysisTab = () => {
   const totalCustomers = customerData.length;
   const totalSales = customerData.reduce((sum, c) => sum + c.totalSales, 0);
   const totalReceivables = customerData.reduce((sum, c) => sum + c.balanceDue, 0);
-  const topCustomer = customerData.length > 0 
-    ? customerData.reduce((max, c) => c.totalSales > max.totalSales ? c : max).customer 
+  const topCustomer = customerData.length > 0
+    ? customerData.reduce((max, c) => (c.totalSales > max.totalSales ? c : max)).customer
     : "-";
 
   return (
@@ -107,33 +129,30 @@ const CustomerAnalysisTab = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>From Date</Label>
-              <Input 
-                type="date" 
-                value={fromDate} 
+              <Input
+                type="date"
+                value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>To Date</Label>
-              <Input 
-                type="date" 
-                value={toDate} 
+              <Input
+                type="date"
+                value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>Customer</Label>
-              <Select value={customer} onValueChange={setCustomer}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Customers" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Customers</SelectItem>
-                  <SelectItem value="auto-parts">Auto Parts Karachi</SelectItem>
-                  <SelectItem value="honda-plaza">Honda Plaza Lahore</SelectItem>
-                  <SelectItem value="toyota-center">Toyota Center</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={customerOptions}
+                value={customer}
+                onValueChange={setCustomer}
+                placeholder="All Customers"
+                maxDisplayedOptions={80}
+                requireSearchAbove={5000}
+              />
             </div>
             <div className="flex items-end">
               <Button onClick={handleGenerateReport} className="w-full">

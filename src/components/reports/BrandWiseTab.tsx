@@ -1,16 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -20,15 +13,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import { Download, TrendingUp, TrendingDown, Minus, BarChart3, Table as TableIcon } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { exportToCSV } from "@/utils/exportUtils";
-import { useEffect } from "react";
 
 interface BrandData {
   brand: string;
-  avgSale: number; 
+  avgSale: number;
   products: number;
   totalSales: number;
   purchases: number;
@@ -40,11 +36,37 @@ interface BrandData {
 const BrandWiseTab = () => {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [brandFilter, setBrandFilter] = useState("all");
+  const [brandFilter, setBrandFilter] = useState("");
+  const [brandOptions, setBrandOptions] = useState<SearchableSelectOption[]>([]);
   const [viewMode, setViewMode] = useState<"table" | "chart">("table");
 
   const [brandData, setBrandData] = useState<BrandData[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const loadBrands = async () => {
+      try {
+        const response = await apiClient.getBrands(undefined, 10000);
+        const rows = Array.isArray(response)
+          ? response
+          : (response as any).data || [];
+        setBrandOptions(
+          (Array.isArray(rows) ? rows : [])
+            .map((b: any) => ({
+              value: String(b.id),
+              label: String(b.name || "").trim(),
+            }))
+            .filter((b: SearchableSelectOption) => b.value && b.label)
+            .sort((a: SearchableSelectOption, b: SearchableSelectOption) =>
+              a.label.localeCompare(b.label),
+            ),
+        );
+      } catch {
+        // keep empty; user can still run All Brands
+      }
+    };
+    loadBrands();
+  }, []);
 
   const fetchData = async () => {
     if (!fromDate || !toDate) {
@@ -57,7 +79,7 @@ const BrandWiseTab = () => {
       const response = await apiClient.getBrandWise({
         from_date: fromDate,
         to_date: toDate,
-        brand: brandFilter !== "all" ? brandFilter : undefined,
+        brand: brandFilter || undefined,
       });
 
       if (response.data) {
@@ -181,19 +203,14 @@ const BrandWiseTab = () => {
             </div>
             <div className="space-y-2">
               <Label>Brand</Label>
-              <Select value={brandFilter} onValueChange={setBrandFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Brands" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Brands</SelectItem>
-                  <SelectItem value="toyota">Toyota</SelectItem>
-                  <SelectItem value="honda">Honda</SelectItem>
-                  <SelectItem value="suzuki">Suzuki</SelectItem>
-                  <SelectItem value="nissan">Nissan</SelectItem>
-                  <SelectItem value="mitsubishi">Mitsubishi</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={brandOptions}
+                value={brandFilter}
+                onValueChange={setBrandFilter}
+                placeholder="All Brands"
+                maxDisplayedOptions={80}
+                requireSearchAbove={5000}
+              />
             </div>
             <div className="flex items-end">
               <Button onClick={handleGenerateReport} className="w-full">

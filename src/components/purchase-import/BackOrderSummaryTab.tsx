@@ -11,12 +11,14 @@ import { fcHeaderClass, fcValueClass } from "@/utils/accountingColors";
 import { formatUiDate } from "@/utils/dateUtils";
 import { FileBarChart2, Search } from "lucide-react";
 import { usePageActions } from "@/permissions/pageActions";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 
 type SummaryLine = {
   partId: string;
   partNo: string;
   masterPartNo: string;
   brand: string;
+  origin?: string;
   description: string;
   fcRate: number;
   orderQty: number;
@@ -49,6 +51,7 @@ const mapSummaryLine = (line: any, index: number): SummaryLine => ({
   partNo: line?.partNo || line?.part_no || "-",
   masterPartNo: line?.masterPartNo || line?.master_part_no || "-",
   brand: line?.brand || "-",
+  origin: line?.origin || line?.Part?.origin || undefined,
   description: line?.description || "-",
   fcRate: Number(line?.fcRate ?? line?.fc_rate ?? 0) || 0,
   orderQty: Number(line?.orderQty ?? line?.order_qty ?? line?.quantity ?? 0) || 0,
@@ -192,7 +195,9 @@ const PoItemsTable = ({ group }: { group: PoGroup }) => {
                       {row.masterPartNo || "-"}
                     </div>
                   </td>
-                  <td className="p-2">{row.brand || "-"}</td>
+                  <td className="p-2">
+                    <BrandOriginCell brand={row.brand} origin={row.origin} />
+                  </td>
                   <td className="p-2">{row.description || "-"}</td>
                   <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                     {formatRate(row.fcRate)}

@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Select,
   SelectContent,
@@ -72,6 +73,7 @@ interface ReturnItem {
   partNo: string;
   itemName: string;
   brand: string;
+  origin?: string;
   model: string;
   uom: string;
   returnQty: number;
@@ -84,6 +86,7 @@ interface OriginalInvoiceItem {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   uom: string;
   orderedQty: number;
   deliveredQty: number;
@@ -212,6 +215,7 @@ const mapOriginalInvoiceFromApi = (fullInv: any): OriginalInvoiceDetails => {
         description:
           String(item.description || part.description || "").trim() || "—",
         brand: String(item.brand || part.Brand?.name || "").trim() || "—",
+        origin: String(part.origin || item.origin || "").trim() || undefined,
         uom: String(part.uom || "pcs").trim() || "pcs",
         orderedQty: Number(item.orderedQty) || 0,
         deliveredQty: Number(item.deliveredQty) || 0,
@@ -253,7 +257,8 @@ function mapApiSalesReturn(row: any): SalesReturn {
       id: String(it.id),
       partNo: String(p.partNo || "").trim(),
       itemName: String(p.description || "").trim() || "—",
-      brand: "",
+      brand: String(p.Brand?.name || p.brand || it.brand || "").trim() || "—",
+      origin: String(p.origin || it.origin || "").trim() || undefined,
       model: "",
       uom,
       returnQty: Number(it.returnQuantity) || 0,
@@ -1748,7 +1753,9 @@ export const SalesReturns = () => {
                         <TableCell className="text-xs">{idx + 1}</TableCell>
                         <TableCell className="text-xs">{item.partNo}</TableCell>
                         <TableCell className="text-xs">{item.itemName}</TableCell>
-                        <TableCell className="text-xs">{item.brand}</TableCell>
+                        <TableCell className="text-xs">
+                          <BrandOriginCell brand={item.brand} origin={item.origin} />
+                        </TableCell>
                         <TableCell className="text-xs">{item.model || "-"}</TableCell>
                         <TableCell className="text-xs">{item.uom}</TableCell>
                         <TableCell className="text-xs text-right">{item.returnQty}</TableCell>
@@ -1943,7 +1950,9 @@ export const SalesReturns = () => {
                           <TableCell className="text-xs">{idx + 1}</TableCell>
                           <TableCell className="text-xs">{item.partNo}</TableCell>
                           <TableCell className="text-xs">{item.description}</TableCell>
-                          <TableCell className="text-xs">{item.brand}</TableCell>
+                          <TableCell className="text-xs">
+                            <BrandOriginCell brand={item.brand} origin={item.origin} />
+                          </TableCell>
                           <TableCell className="text-xs">{item.uom}</TableCell>
                           <TableCell className="text-xs text-right">
                             {item.orderedQty}

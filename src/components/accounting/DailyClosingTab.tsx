@@ -220,18 +220,18 @@ const DailyClosingTab = () => {
                           <TableCell>{account.name}</TableCell>
                           <TableCell className="capitalize">{account.type || 'N/A'}</TableCell>
                           <TableCell className="text-right">
-                            {account.openingBalance.toLocaleString('en-PK', {
+                            {`${account.openingBalance.toLocaleString('en-PK', {
                               style: 'currency',
                               currency: 'PKR',
                               minimumFractionDigits: 2
-                            })}
+                            })}/-`}
                           </TableCell>
                           <TableCell className="text-right font-semibold">
-                            {account.currentBalance.toLocaleString('en-PK', {
+                            {`${account.currentBalance.toLocaleString('en-PK', {
                               style: 'currency',
                               currency: 'PKR',
                               minimumFractionDigits: 2
-                            })}
+                            })}/-`}
                           </TableCell>
                         </TableRow>
                       ))

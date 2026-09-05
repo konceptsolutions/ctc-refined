@@ -12,6 +12,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
     Select,
     SelectContent,
@@ -43,6 +44,7 @@ interface PartPriceItem {
     partNo: string;
     altNo: string;
     brand: string;
+    origin?: string;
     description: string;
     stock: number;
     reserved: number;
@@ -135,6 +137,7 @@ export const DetailsPartSearch = () => {
                         partNo: mNo || pNo,
                         altNo: mNo ? pNo : "",
                         brand: p.brand_name || p.brand || "-",
+                        origin: String(p.origin || "").trim() || undefined,
                         description: p.description || "",
                         stock: Number(p.stock) || 0,
                         reserved: Number(p.reserved_stock || p.reservedStock || 0),
@@ -474,7 +477,9 @@ export const DetailsPartSearch = () => {
                                                 />
                                                 <TableCell className="px-2 py-1 text-xs font-medium border-r part-code-font font-mono">{item.partNo}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs border-r part-code-font font-mono">{item.altNo}</TableCell>
-                                                <TableCell className="px-2 py-1 text-xs border-r">{item.brand}</TableCell>
+                                                <TableCell className="px-2 py-1 text-xs border-r">
+                                                    <BrandOriginCell brand={item.brand} origin={item.origin} />
+                                                </TableCell>
                                                 <TableCell className="px-2 py-1 text-[10px] border-r max-w-[150px] truncate uppercase">{item.description}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs text-center border-r font-bold">{item.stock}</TableCell>
                                                 <TableCell className="px-2 py-1 text-xs text-center border-r font-bold text-primary dark:text-primary">{item.reserved}</TableCell>

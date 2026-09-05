@@ -85,18 +85,30 @@ export const IncomeStatementTab = () => {
       
       console.log("Fetching income statement...", fromDate, toDate);
       
-      // Use public endpoint for testing without authentication
-      const result = await apiClient.get<IncomeStatementApiResponse>('/public-income-statement', {
-        params: {
+      // Prefer authenticated financial endpoint; fall back to public
+      let result: any;
+      try {
+        result = await apiClient.getIncomeStatement({
           from_date: fromDate,
           to_date: toDate,
-        }
-      });
+        });
+      } catch {
+        result = await apiClient.get<IncomeStatementApiResponse>('/public-income-statement', {
+          params: {
+            from_date: fromDate,
+            to_date: toDate,
+          }
+        });
+      }
       
       console.log("API Result:", result);
       
-      // API returns data wrapped in result.data
-      const resultData = result.data;
+      // Support both { data: { revenue... } } and flat { revenue... }
+      const resultData = (result as any)?.data?.revenue !== undefined
+        ? (result as any).data
+        : (result as any)?.revenue !== undefined
+          ? result
+          : (result as any)?.data;
       console.log("Processing data:", resultData);
       
       if (resultData && resultData.revenue !== undefined) {

@@ -1,16 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -20,6 +13,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import { Download, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -29,27 +26,81 @@ import { formatUiDate } from "@/utils/dateUtils";
 interface ExpenseRecord {
   id: string;
   date: string;
-  reference: string; 
+  reference: string;
   category: string;
   description: string;
   amount: number;
-  status: "paid" | "pending" | "approved";
+  status: "paid" | "pending" | "approved" | string;
 }
+
+const unwrapList = (res: any): any[] => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
+};
+
+const isCurrentCalendarMonth = (dateStr: string) => {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+};
 
 const ExpensesReportTab = () => {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState("");
+  const [categoryOptions, setCategoryOptions] = useState<SearchableSelectOption[]>([]);
   const [expenseData, setExpenseData] = useState<ExpenseRecord[]>([]);
-  const [isGenerated, setIsGenerated] = useState(false);
 
-  const mockExpenseData: ExpenseRecord[] = [
-    { id: "1", date: "2024-12-26", reference: "EXP-2024-0245", category: "Utilities", description: "Electricity bill December", amount: 45000, status: "paid" },
-    { id: "2", date: "2024-12-25", reference: "EXP-2024-0244", category: "Rent", description: "Warehouse rent December", amount: 120000, status: "paid" },
-    { id: "3", date: "2024-12-24", reference: "EXP-2024-0243", category: "Salaries", description: "Staff salaries December", amount: 350000, status: "pending" },
-    { id: "4", date: "2024-12-23", reference: "EXP-2024-0242", category: "Transport", description: "Delivery vehicle fuel", amount: 28000, status: "paid" },
-    { id: "5", date: "2024-12-22", reference: "EXP-2024-0241", category: "Maintenance", description: "Equipment repair", amount: 15000, status: "approved" },
-  ];
+  useEffect(() => {
+    const load = async () => {
+      try {
+        let res = await apiClient.getExpenseTypes({ status: "Active", limit: 1000 });
+        let rows = unwrapList(res);
+        if (rows.length === 0) {
+          res = await apiClient.getExpenseTypes({ limit: 1000 });
+          rows = unwrapList(res);
+        }
+        if (rows.length > 0) {
+          setCategoryOptions(
+            rows
+              .map((t: any) => ({
+                value: String(t.id),
+                label: String(t.name || "").trim(),
+              }))
+              .filter((t: SearchableSelectOption) => t.value && t.label)
+              .sort((a: SearchableSelectOption, b: SearchableSelectOption) =>
+                a.label.localeCompare(b.label),
+              ),
+          );
+          return;
+        }
+
+        // Fallback: expense subgroups from chart of accounts
+        const subgroupsRes = await apiClient.getSubgroups({ isActive: true });
+        const subgroups = unwrapList(subgroupsRes);
+        const expenseSubs = subgroups
+          .filter((s: any) => {
+            const type = String(s.MainGroup?.type || s.mainGroup?.type || "").toLowerCase();
+            const name = String(s.MainGroup?.name || s.mainGroup?.name || "");
+            return type === "expense" && !/cost of sales|^cost$/i.test(name);
+          })
+          .map((s: any) => ({
+            value: String(s.name || "").trim(),
+            label: String(s.name || "").trim(),
+          }))
+          .filter((s: SearchableSelectOption) => s.value && s.label);
+        const unique = Array.from(
+          new Map(expenseSubs.map((s: SearchableSelectOption) => [s.value, s])).values(),
+        ).sort((a, b) => a.label.localeCompare(b.label));
+        setCategoryOptions(unique);
+      } catch {
+        toast.error("Failed to load expense categories");
+      }
+    };
+    load();
+  }, []);
 
   const handleGenerateReport = async () => {
     if (!fromDate || !toDate) {
@@ -61,21 +112,33 @@ const ExpensesReportTab = () => {
       const response = await apiClient.getExpensesReport({
         from_date: fromDate,
         to_date: toDate,
-        category: category !== "all" ? category : undefined,
+        category: category || undefined,
       });
 
       if (response.data) {
-        const formatted = response.data.map((e: any) => ({
-          id: e.id,
-          date: formatUiDate(e.date) || "",
-          reference: e.id,
-          category: e.expenseType?.name || "N/A",
-          description: e.description || "",
-          amount: e.amount,
-          status: "paid" as const,
-        }));
-        setExpenseData(formatted);
-        setIsGenerated(true);
+        const rows = Array.isArray(response.data) ? response.data : [];
+        const alreadyShaped =
+          rows.length === 0 ||
+          (rows[0] &&
+            "reference" in rows[0] &&
+            "category" in rows[0] &&
+            typeof rows[0].category === "string");
+
+        if (alreadyShaped) {
+          setExpenseData(rows as ExpenseRecord[]);
+        } else {
+          setExpenseData(
+            rows.map((e: any) => ({
+              id: e.id,
+              date: e.date,
+              reference: e.reference || e.id,
+              category: e.expenseType?.name || e.category || "N/A",
+              description: e.description || "",
+              amount: e.amount,
+              status: e.status || "paid",
+            })),
+          );
+        }
         toast.success("Expense report generated successfully");
       }
     } catch (error: any) {
@@ -98,9 +161,13 @@ const ExpensesReportTab = () => {
   };
 
   const totalExpenses = expenseData.reduce((sum, record) => sum + record.amount, 0);
-  const thisMonth = expenseData.filter(r => r.date.startsWith("2024-12")).reduce((sum, r) => sum + r.amount, 0);
-  const pendingExpenses = expenseData.filter(r => r.status === "pending").reduce((sum, r) => sum + r.amount, 0);
-  const categories = [...new Set(expenseData.map(r => r.category))].length;
+  const thisMonth = expenseData
+    .filter((r) => isCurrentCalendarMonth(r.date))
+    .reduce((sum, r) => sum + r.amount, 0);
+  const pendingExpenses = expenseData
+    .filter((r) => r.status === "pending")
+    .reduce((sum, r) => sum + r.amount, 0);
+  const categories = [...new Set(expenseData.map((r) => r.category))].length;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -135,35 +202,30 @@ const ExpensesReportTab = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>From Date</Label>
-              <Input 
-                type="date" 
-                value={fromDate} 
+              <Input
+                type="date"
+                value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>To Date</Label>
-              <Input 
-                type="date" 
-                value={toDate} 
+              <Input
+                type="date"
+                value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>Category</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Categories" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  <SelectItem value="utilities">Utilities</SelectItem>
-                  <SelectItem value="rent">Rent</SelectItem>
-                  <SelectItem value="salaries">Salaries</SelectItem>
-                  <SelectItem value="transport">Transport</SelectItem>
-                  <SelectItem value="maintenance">Maintenance</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={categoryOptions}
+                value={category}
+                onValueChange={setCategory}
+                placeholder="All Categories"
+                maxDisplayedOptions={80}
+                requireSearchAbove={5000}
+              />
             </div>
             <div className="flex items-end">
               <Button onClick={handleGenerateReport} className="w-full">
@@ -232,7 +294,7 @@ const ExpensesReportTab = () => {
                 expenseData.map((record, index) => (
                   <TableRow key={record.id}>
                     <ListNumberCell index={index} total={expenseData.length} />
-                    <TableCell>{record.date}</TableCell>
+                    <TableCell>{formatUiDate(record.date) || record.date}</TableCell>
                     <TableCell className="font-medium">{record.reference}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{record.category}</Badge>

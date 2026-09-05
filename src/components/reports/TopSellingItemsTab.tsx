@@ -19,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
-import { Download } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";

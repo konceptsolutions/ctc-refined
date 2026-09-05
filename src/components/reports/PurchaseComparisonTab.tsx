@@ -25,15 +25,28 @@ interface ComparisonData {
   previousPeriod: number;
   change: number;
   items: number;
-  avgDelivery: number;
+  avgDelivery: number | null;
+}
+
+interface ComparisonSummary {
+  currentPeriod: number;
+  previousPeriod: number;
+  change: number;
+  totalItems: number;
 }
 
 const PurchaseComparisonTab = () => {
-  const [period1Start, setPeriod1Start] = useState(""); 
+  const [period1Start, setPeriod1Start] = useState("");
   const [period1End, setPeriod1End] = useState("");
   const [period2Start, setPeriod2Start] = useState("");
   const [period2End, setPeriod2End] = useState("");
   const [comparisonData, setComparisonData] = useState<ComparisonData[]>([]);
+  const [summary, setSummary] = useState<ComparisonSummary>({
+    currentPeriod: 0,
+    previousPeriod: 0,
+    change: 0,
+    totalItems: 0,
+  });
   const [loading, setLoading] = useState(false);
 
   const fetchData = async () => {
@@ -51,8 +64,14 @@ const PurchaseComparisonTab = () => {
         period2_end: period2End,
       });
 
-      if (response.data && response.data.comparison) {
-        setComparisonData(response.data.comparison);
+      if (response.data) {
+        setComparisonData(response.data.comparison || []);
+        setSummary({
+          currentPeriod: Number(response.data.currentPeriod) || 0,
+          previousPeriod: Number(response.data.previousPeriod) || 0,
+          change: Number(response.data.change) || 0,
+          totalItems: Number(response.data.totalItems) || 0,
+        });
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to load data");
@@ -135,28 +154,33 @@ const PurchaseComparisonTab = () => {
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-primary">Current Period Total</p>
-            <p className="text-2xl font-bold mt-1">Rs 0</p>
+            <p className="text-2xl font-bold mt-1">
+              Rs {summary.currentPeriod.toLocaleString()}
+            </p>
           </CardContent>
         </Card>
         <Card className="bg-info/5 border-info/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-info">Previous Period Total</p>
-            <p className="text-2xl font-bold mt-1">Rs 0</p>
+            <p className="text-2xl font-bold mt-1">
+              Rs {summary.previousPeriod.toLocaleString()}
+            </p>
           </CardContent>
         </Card>
         <Card className="bg-success/5 border-success/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-success">Change</p>
             <p className="text-2xl font-bold mt-1 flex items-center gap-1">
-              <Minus className="w-5 h-5" />
-              0%
+              {getTrendIcon(summary.change)}
+              {summary.change > 0 ? "+" : ""}
+              {summary.change}%
             </p>
           </CardContent>
         </Card>
         <Card className="bg-warning/5 border-warning/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-warning">Total Items</p>
-            <p className="text-2xl font-bold mt-1">0</p>
+            <p className="text-2xl font-bold mt-1">{summary.totalItems}</p>
           </CardContent>
         </Card>
       </div>
@@ -238,7 +262,9 @@ const PurchaseComparisonTab = () => {
                     </div>
                   </TableCell>
                   <TableCell className="text-center">{row.items}</TableCell>
-                  <TableCell className="text-center">{row.avgDelivery} days</TableCell>
+                  <TableCell className="text-center">
+                    {row.avgDelivery == null ? "—" : `${row.avgDelivery} days`}
+                  </TableCell>
                 </TableRow>
               ))
               )}

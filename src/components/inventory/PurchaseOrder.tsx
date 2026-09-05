@@ -39,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Select,
   SelectContent,
@@ -76,6 +77,7 @@ interface PurchaseOrderItem {
   masterPartNo?: string;
   description: string;
   brand: string;
+  origin?: string;
   uom: string;
   quantity: number;
   receivedQty: number;
@@ -478,7 +480,9 @@ const ViewOrderDialog = ({ open, onOpenChange, order, statusColors, formatCurren
                         {formatPartIdentityFromDb(item)}
                       </TableCell>
                       <TableCell className="text-sm">{item.description}</TableCell>
-                      <TableCell className="text-sm">{item.brand}</TableCell>
+                      <TableCell className="text-sm">
+                        <BrandOriginCell brand={item.brand} origin={item.origin} />
+                      </TableCell>
                       <TableCell className="text-sm">{item.uom || "pcs"}</TableCell>
                       <TableCell className="text-sm text-right">{item.quantity || item.receivedQty || 0}</TableCell>
                       <TableCell className="text-sm text-right">{formatCurrency(item.purchasePrice || 0)}</TableCell>
@@ -628,7 +632,7 @@ export const PurchaseOrder = () => {
   const [loading, setLoading] = useState(false);
 
   // Available data for dropdowns
-  const [availableParts, setAvailableParts] = useState<{ id: string; partNo: string; masterPartNo?: string; description: string; brand: string; uom: string; price: number; cost: number; currentStock: number; lastPurchaseDate: string; application?: string; category?: string; subcategory?: string }[]>([]);
+  const [availableParts, setAvailableParts] = useState<{ id: string; partNo: string; masterPartNo?: string; description: string; brand: string; origin?: string; uom: string; price: number; cost: number; currentStock: number; lastPurchaseDate: string; application?: string; category?: string; subcategory?: string }[]>([]);
   const [availableSuppliers, setAvailableSuppliers] = useState<string[]>([]);
   const [availableSuppliersData, setAvailableSuppliersData] = useState<{ id: string; code: string; companyName: string }[]>([]);
   const [availableStores, setAvailableStores] = useState<{ id: string; name: string }[]>([]);
@@ -708,6 +712,7 @@ export const PurchaseOrder = () => {
           masterPartNo: item.master_part_no || item.masterPartNo || "",
           description: item.part_description || item.description || "",
           brand: item.brand || "N/A",
+          origin: item.origin || item.Part?.origin || undefined,
           uom: "pcs",
           quantity: item.quantity || 0,
           receivedQty: item.received_qty || item.receivedQty || 0,
@@ -788,6 +793,7 @@ export const PurchaseOrder = () => {
           masterPartNo: part.master_part_no || part.masterPartNo || "",
           description: part.description || "",
           brand: part.brand_name || part.brand?.name || "N/A",
+          origin: part.origin || undefined,
           uom: part.uom || "pcs",
           price: part.price_a || part.priceA || 0,
           cost: part.cost || 0,
@@ -1010,15 +1016,16 @@ export const PurchaseOrder = () => {
             partNo: partNo,
             masterPartNo: item.master_part_no || item.masterPartNo || part?.masterPartNo || "",
             description: item.part_description || item.description || "",
-            brand: item.brand || "N/A",
-            uom: "pcs",
-            quantity: item.quantity || 0,
-            receivedQty: item.received_qty || item.receivedQty || 0,
-            purchasePrice: item.unit_cost || item.unitCost || 0,
-            salePrice: 0,
-            cost: item.total_cost || item.totalCost || 0,
-            amount: item.total_cost || item.totalCost || 0,
-            remarks: item.notes || "",
+          brand: item.brand || "N/A",
+          origin: item.origin || item.Part?.origin || undefined,
+          uom: "pcs",
+          quantity: item.quantity || 0,
+          receivedQty: item.received_qty || item.receivedQty || 0,
+          purchasePrice: item.unit_cost || item.unitCost || 0,
+          salePrice: 0,
+          cost: item.total_cost || item.totalCost || 0,
+          amount: item.total_cost || item.totalCost || 0,
+          remarks: item.notes || "",
             rackId: savedItem.rackId,
             shelfId: savedItem.shelfId,
             priceA: savedItem.priceA || part?.price || 0,
@@ -1265,6 +1272,7 @@ export const PurchaseOrder = () => {
           masterPartNo: item.master_part_no || item.masterPartNo || "",
           description: item.part_description || item.description || "",
           brand: item.brand || "N/A",
+          origin: item.origin || item.Part?.origin || undefined,
           uom: "pcs",
           quantity: item.quantity || 0,
           receivedQty: item.received_qty || item.receivedQty || 0,

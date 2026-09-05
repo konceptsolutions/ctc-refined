@@ -74,6 +74,67 @@ export function wasActivityLogged(req: any): boolean {
 }
 
 /**
+ * Prefer store operator password attribution from the request body;
+ * fall back to the JWT user on the session.
+ */
+export function resolveStorePerformer(req: any): {
+  user: string;
+  userId: string | null;
+  userRole: string;
+  sessionUser: string | null;
+  sessionUserId: string | null;
+  sessionUserRole: string | null;
+  attributedViaPassword: boolean;
+} {
+  const u = req?.user;
+  const sessionUser = u?.name || u?.email || null;
+  const sessionUserId = u?.id ? String(u.id) : null;
+  const sessionUserRole = u?.role ? String(u.role) : null;
+  const body = req?.body || {};
+
+  if (body.performedById || body.performedBy) {
+    return {
+      user: String(body.performedBy || "Unknown"),
+      userId: body.performedById ? String(body.performedById) : null,
+      userRole: String(body.performedByRole || "Store Operator"),
+      sessionUser,
+      sessionUserId,
+      sessionUserRole,
+      attributedViaPassword: true,
+    };
+  }
+
+  return {
+    user: sessionUser || "Unknown",
+    userId: sessionUserId,
+    userRole: sessionUserRole || "Unknown",
+    sessionUser,
+    sessionUserId,
+    sessionUserRole,
+    attributedViaPassword: false,
+  };
+}
+
+/** Append "by Operator from session Admin" when password attribution differs from login. */
+export function withOperatorAttribution(
+  description: string,
+  performer: ReturnType<typeof resolveStorePerformer>,
+): string {
+  if (!performer.attributedViaPassword) return description;
+  const op = `${performer.user}${
+    performer.userRole ? ` (${performer.userRole})` : ""
+  }`;
+  const sessionDiffers =
+    performer.sessionUser &&
+    performer.sessionUserId &&
+    performer.sessionUserId !== performer.userId;
+  if (sessionDiffers) {
+    return `${description} by ${op} from session ${performer.sessionUser} (${performer.sessionUserRole || "user"})`;
+  }
+  return `${description} by ${op}`;
+}
+
+/**
  * Helper function to get IP address from Express request
  */
 export function getClientIp(req: any): string {

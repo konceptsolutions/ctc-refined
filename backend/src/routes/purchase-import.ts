@@ -1096,6 +1096,7 @@ router.get("/alternate-parts/:partId", async (req: Request, res: Response) => {
           p."partNo" AS "partNo",
           p.description,
           COALESCE(p.weight, 0) AS weight,
+          COALESCE(p.origin, '') AS origin,
           COALESCE(mp."masterPartNo", '') AS "masterPartNo",
           COALESCE(b.name, '') AS brand_name
         FROM "Part" p
@@ -1112,6 +1113,7 @@ router.get("/alternate-parts/:partId", async (req: Request, res: Response) => {
       partNo: string;
       description: string | null;
       weight: number;
+      origin: string | null;
       masterPartNo: string;
       brand_name: string;
     }>;
@@ -1123,6 +1125,7 @@ router.get("/alternate-parts/:partId", async (req: Request, res: Response) => {
         masterPartNo: row.masterPartNo || "",
         description: row.description || "",
         brand: row.brand_name || "",
+        origin: row.origin || "",
         weight: Number(row.weight || 0),
       })),
     });
@@ -1145,6 +1148,7 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
         partNo: true,
         description: true,
         weight: true,
+        origin: true,
         priceA: true,
         priceB: true,
         Brand: { select: { name: true } },
@@ -1264,6 +1268,7 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
           description: part.description || "",
           masterPartNo: part.MasterPart?.masterPartNo || "",
           brand: part.Brand?.name || "",
+          origin: part.origin || "",
           weight: part.weight || 0,
           priceA: part.priceA ?? 0,
           priceB: part.priceB ?? 0,
@@ -2079,6 +2084,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
                 description: true,
                 MasterPart: { select: { masterPartNo: true } },
                 Brand: { select: { name: true } },
+                origin: true,
               },
             },
           },
@@ -2129,6 +2135,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
                     description: true,
                     MasterPart: { select: { masterPartNo: true } },
                     Brand: { select: { name: true } },
+                origin: true,
                   },
                 },
               },
@@ -2158,6 +2165,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         partNo: item.Part?.partNo || "",
         description: item.Part?.description || "",
         brand: item.Part?.Brand?.name || "",
+        origin: item.Part?.origin || "",
         currentStock: stockByPartId.get(String(item.partId)) ?? 0,
         demandQuantity: Number(item.demandQuantity || 0),
         quotationQuantity: Number(item.quotationQuantity || 0),
@@ -2176,6 +2184,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         partNo: item.Part?.partNo || "",
         description: item.Part?.description || "",
         brand: item.Part?.Brand?.name || "",
+        origin: item.Part?.origin || "",
         currentStock: Number(item.currentStock || 0),
         demandQuantity: Number(item.demandQuantity || 0),
         weight: Number(item.weight || 0),
@@ -2381,6 +2390,7 @@ router.get("/requests/:requestId/quotation-comparison", async (req: Request, res
                   description: true,
                   MasterPart: { select: { masterPartNo: true } },
                   Brand: { select: { name: true } },
+                origin: true,
                 },
               },
             },
@@ -2409,6 +2419,7 @@ router.get("/requests/:requestId/quotation-comparison", async (req: Request, res
           partNo: item.Part?.partNo || "",
           description: item.Part?.description || "",
           brand: item.Part?.Brand?.name || "",
+        origin: item.Part?.origin || "",
           demandQty: Number(item.demandQuantity || 0),
           quotes: {},
         };
@@ -2844,6 +2855,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
                 description: true,
                 MasterPart: { select: { masterPartNo: true } },
                 Brand: { select: { name: true } },
+                origin: true,
               },
             },
           },
@@ -2940,6 +2952,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
             partNo: item.Part?.partNo || "",
             description: item.Part?.description || "",
             brand: item.Part?.Brand?.name || "",
+        origin: item.Part?.origin || "",
             currentStock: Number(split?.currentStock || 0),
             demandQuantity: Number(item.demandQuantity || 0),
             quotationQuantity: Number(item.quotationQuantity || 0),
@@ -3974,6 +3987,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
                 priceB: true,
                 MasterPart: { select: { masterPartNo: true } },
                 Brand: { select: { name: true } },
+                origin: true,
               },
             },
           },
@@ -4057,6 +4071,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           partNo: poItem.Part?.partNo || "",
           description: poItem.Part?.description || "",
           brand: poItem.Part?.Brand?.name || "",
+          origin: poItem.Part?.origin || "",
           currentStock: Number(requestItem?.currentStock || 0),
           demandQuantity: Number(quotationItem?.demandQuantity || 0),
           quotationQuantity: Number(quotationItem?.quotationQuantity || 0),
@@ -4113,6 +4128,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         partNo: poItem.Part?.partNo || "",
         description: poItem.Part?.description || "",
         brand: poItem.Part?.Brand?.name || "",
+          origin: poItem.Part?.origin || "",
         currentStock: Number(requestItem?.currentStock || 0),
         demandQuantity: Number(quotationItem?.demandQuantity || 0),
         quotationQuantity: Number(quotationItem?.quotationQuantity || 0),
@@ -4954,6 +4970,7 @@ router.get("/reports/back-order-summary", async (req: Request, res: Response) =>
                 description: true,
                 MasterPart: { select: { masterPartNo: true } },
                 Brand: { select: { name: true } },
+                origin: true,
               },
             },
           },
@@ -5003,6 +5020,7 @@ router.get("/reports/back-order-summary", async (req: Request, res: Response) =>
             partNo: item.Part?.partNo || "-",
             masterPartNo: item.Part?.MasterPart?.masterPartNo || "-",
             brand: item.Part?.Brand?.name || "-",
+            origin: item.Part?.origin || "-",
             description: item.Part?.description || "-",
             fcRate: Number(item.fcRate ?? item.fc_rate ?? 0) || 0,
             orderQty: Number(item.quantity) || 0,
@@ -5125,6 +5143,7 @@ router.get("/requests", async (req: Request, res: Response) => {
                   description: true,
                   MasterPart: { select: { masterPartNo: true } },
                   Brand: { select: { name: true } },
+                origin: true,
                 },
               },
             },

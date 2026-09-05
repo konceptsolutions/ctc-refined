@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { cn } from "@/lib/utils";
 import { filterPartsWithFamilyExpansion } from "@/lib/part-family-search";
 import { Loader2 } from "lucide-react";
@@ -19,6 +20,7 @@ export interface Part {
   id: string;
   partNo: string;
   brand: string;
+  origin?: string;
   type?: string;
   uom: string;
   weight: string;
@@ -191,7 +193,7 @@ export const PartsList = ({
                       {part.partNo}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-xs py-1.5">
-                      {part.brand}
+                      <BrandOriginCell brand={part.brand} origin={part.origin} />
                     </TableCell>
                     <TableCell className="text-muted-foreground text-xs py-1.5">
                       {part.uom}

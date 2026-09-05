@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Dialog,
   DialogContent,
@@ -249,6 +250,7 @@ export const AdjustItem = () => {
             partId: item.part_id,
             partNo: item.part_no,
             brand: item.brand || "",
+            origin: item.origin || item.Part?.origin || "",
             itemName: item.part_description || item.part_no,
             quantity: item.quantity,
             rate: item.cost || 0,
@@ -1739,7 +1741,7 @@ export const AdjustItem = () => {
                               {item.partNo || "N/A"}
                             </TableCell>
                             <TableCell className="text-xs">
-                              {item.brand || "-"}
+                              <BrandOriginCell brand={item.brand || "-"} origin={item.origin} />
                             </TableCell>
                             <TableCell className="text-xs truncate max-w-[200px]">
                               {item.itemName}

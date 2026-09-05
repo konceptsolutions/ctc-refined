@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,7 @@ interface ReservedStockItem {
   partNo: string;
   description: string;
   brand?: string;
+  origin?: string;
   category?: string;
   reservedQuantity: number;
   reservedAt: string;
@@ -116,6 +118,7 @@ export const ReserveStock = () => {
             partNo: [movement.master_part_no, movement.part_no].filter(Boolean).filter((v: string, i: number, arr: string[]) => arr.indexOf(v) === i).join(" | ") || movement.part_no || movement.master_part_no || '',
             description: movement.part_description || movement.description || '',
             brand: movement.brand || '',
+            origin: movement.origin || '',
             category: movement.category || '',
             reservedQuantity: quantity,
             reservedAt: movement.created_at || movement.date || '',
@@ -366,7 +369,9 @@ export const ReserveStock = () => {
                     <ListNumberCell index={index} total={filteredItems.length} />
                     <TableCell className="font-medium">{item.partNo}</TableCell>
                     <TableCell>{item.description}</TableCell>
-                    <TableCell>{item.brand || "-"}</TableCell>
+                    <TableCell>
+                      <BrandOriginCell brand={item.brand || "-"} origin={item.origin} />
+                    </TableCell>
                     <TableCell className="text-right">
                       <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                         {item.reservedQuantity}

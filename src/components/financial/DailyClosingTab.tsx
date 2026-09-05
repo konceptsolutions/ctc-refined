@@ -92,11 +92,11 @@ type DailyClosingData = {
 
 const formatMoney = (value: number) => {
   const num = Math.round(Number(value || 0));
-  if (num === 0) return "0";
-  return num.toLocaleString("en-PK", {
+  const formatted = num.toLocaleString("en-PK", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   });
+  return `${formatted}/-`;
 };
 
 const amountCell = (columns: DailyClosingColumn[], amounts: Record<string, number>) =>
@@ -110,7 +110,7 @@ const amountCell = (columns: DailyClosingColumn[], amounts: Record<string, numbe
           value === 0 && "text-muted-foreground/50",
         )}
       >
-        {value === 0 ? "0" : formatMoney(value)}
+        {formatMoney(value)}
       </TableCell>
     );
   });

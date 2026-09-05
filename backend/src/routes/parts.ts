@@ -632,7 +632,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
     const sql = `
       SELECT 
         p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."priceB" as price_b, p."type",
-        p.uom, p.weight, p."updatedAt" as updated_at,
+        p.uom, p.weight, p.origin, p."updatedAt" as updated_at,
         mp."masterPartNo" as master_part_no,
         b."name" as brand_name,
         ${stockSelect}
@@ -945,7 +945,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     const sql = `
       SELECT 
-        p.id, p."partNo", p."type", p.description, p.remarks, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p."createdAt", p."updatedAt",
+        p.id, p."partNo", p."type", p.description, p.remarks, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p.origin, p."createdAt", p."updatedAt",
         p."masterPartId", p."brandId", p."categoryId", p."subcategoryId", p."applicationId",
         p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceM",
         mp."masterPartNo" as master_part_no,
@@ -1149,6 +1149,7 @@ router.get("/", async (req: Request, res: Response) => {
         application_name: part.application_name || part.applicationname,
         description: part.description,
         remarks: part.remarks || null,
+        origin: part.origin || null,
         hs_code: part.hsCode || part.hscode,
         weight: part.weight,
         reorder_level: part.reorderLevel || part.reorderlevel,
@@ -1267,7 +1268,7 @@ router.get("/details-search", async (req: Request, res: Response) => {
     const sql = `
       SELECT 
         p.id, p."partNo" as part_no, p.description, p.cost, p."purchasePrice" as purchase_price, p."avgCost" as avg_cost, 
-        p."priceA" as price_a, p."priceB" as price_b, p."priceM" as price_m, p."updatedAt" as updated_at,
+        p."priceA" as price_a, p."priceB" as price_b, p."priceM" as price_m, p.origin, p."updatedAt" as updated_at,
         mp."masterPartNo" as master_part_no,
         b."name" as brand_name,
         c."name" as category_name,
@@ -1873,6 +1874,7 @@ router.get("/model-associations/:modelName", async (req: Request, res: Response)
       partNo: row.Part?.partNo || "N/A",
       description: row.Part?.description || "N/A",
       brand: row.Part?.Brand?.name || "N/A",
+      origin: row.Part?.origin || null,
       application: row.Part?.Application?.name || application || "N/A",
       model: row.name,
       quantity: row.qtyUsed || 0,

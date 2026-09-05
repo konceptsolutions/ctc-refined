@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { usePageActions } from "@/permissions/pageActions";
 import {
   Filter,
@@ -58,6 +59,11 @@ import {
   type SystemStockItem,
 } from "@/lib/stockCompareReport";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
+import {
+  performedByPayload,
+  StoreOperatorAuthProvider,
+  useStoreOperatorAuth,
+} from "@/hooks/useStoreOperatorAuth";
 
 interface StockItem {
   part_id: string;
@@ -65,6 +71,7 @@ interface StockItem {
   master_part_no: string | null;
   description: string | null;
   brand: string | null;
+  origin?: string | null;
   category: string | null;
   location: string | null;
   rack: string | null;
@@ -75,8 +82,15 @@ interface StockItem {
 
 type StockStatusFilter = "all" | "in_stock" | "out_of_stock" | "low_stock";
 
-export const CurrentStock = () => {
+export const CurrentStock = () => (
+  <StoreOperatorAuthProvider>
+    <CurrentStockInner />
+  </StoreOperatorAuthProvider>
+);
+
+const CurrentStockInner = () => {
   const { canEdit, canExport } = usePageActions("inventory.current-stock");
+  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(
     () => searchParams.get("search")?.trim() || "",
@@ -577,6 +591,13 @@ export const CurrentStock = () => {
 
     try {
       setIsUpdating(true);
+
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       const qty = parseInt(editQuantity);
 
       // Validation: Cannot assign/transfer more than available
@@ -603,8 +624,13 @@ export const CurrentStock = () => {
             rack_id: !editRackId || editRackId === "none" ? null : editRackId,
             shelf_id:
               !editShelfId || editShelfId === "none" ? null : editShelfId,
-          });
-          toast.success("Stock assigned to location successfully");
+            ...by,
+          } as any);
+          toast.success(
+            operator
+              ? `Stock assigned to location successfully (Saved as ${operator.name})`
+              : "Stock assigned to location successfully",
+          );
         } else {
           toast.error("Please select a target store");
           setIsUpdating(false);
@@ -618,7 +644,6 @@ export const CurrentStock = () => {
           return;
         }
 
-        // Construct Source Object from location data
         // Construct Source Object from location data
         // Prioritize explicit IDs if available (even if null)
         const sourceData = {
@@ -656,8 +681,13 @@ export const CurrentStock = () => {
             shelf_id:
               !editShelfId || editShelfId === "none" ? null : editShelfId,
           },
-        });
-        toast.success("Stock transferred successfully");
+          ...by,
+        } as any);
+        toast.success(
+          operator
+            ? `Stock transferred successfully (Saved as ${operator.name})`
+            : "Stock transferred successfully",
+        );
 
         // Return to assign mode or close? Let's stay in dialog but refresh
         setEditMode("assign");
@@ -829,6 +859,13 @@ export const CurrentStock = () => {
 
     try {
       setSavingBulk(true);
+
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       for (const row of validRows) {
         // Validation: Cannot move OUT more than current stock
         if (row.type === "out") {
@@ -851,9 +888,14 @@ export const CurrentStock = () => {
           rack_id: row.rackId === "none" ? null : row.rackId || null,
           shelf_id: row.shelfId === "none" ? null : row.shelfId || null,
           notes: row.notes || null,
-        });
+          ...by,
+        } as any);
       }
-      toast.success("Stock updated successfully");
+      toast.success(
+        operator
+          ? `Stock updated successfully (Saved as ${operator.name})`
+          : "Stock updated successfully",
+      );
       setBulkDialogOpen(false);
       setBulkRows([
         {
@@ -876,7 +918,7 @@ export const CurrentStock = () => {
     } finally {
       setSavingBulk(false);
     }
-  }, [bulkRows, parts, fetchStockData]);
+  }, [bulkRows, parts, fetchStockData, requestOperatorAuth, requiresOperatorAuth]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1369,7 +1411,9 @@ export const CurrentStock = () => {
                       {item.master_part_no || "-"}
                     </TableCell>
                     <TableCell>{item.part_no || "-"}</TableCell>
-                    <TableCell>{item.brand || "-"}</TableCell>
+                    <TableCell>
+                      <BrandOriginCell brand={item.brand || "-"} origin={item.origin} />
+                    </TableCell>
                     <TableCell>{item.category || "-"}</TableCell>
                     <TableCell className="max-w-[200px] truncate">
                       {item.description || "-"}

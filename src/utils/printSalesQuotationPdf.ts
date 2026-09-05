@@ -14,6 +14,8 @@ export type SalesQuotationPdfInput = {
   validUntil?: string;
   remarks?: string;
   quotationTerms?: string;
+  deliveryDays?: number | null;
+  signedBy?: string;
 };
 
 type QuotationColumnId =
@@ -422,7 +424,10 @@ export const printSalesQuotationPdf = async (input: SalesQuotationPdfInput) => {
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  const termsForPrint = buildSalesQuotationTermsForPrint(input.quotationTerms);
+  const termsForPrint = buildSalesQuotationTermsForPrint(
+    input.quotationTerms,
+    input.deliveryDays,
+  );
   for (const term of termsForPrint) {
     const lines = doc.splitTextToSize(term, contentW);
     y = ensureSpace(
@@ -482,7 +487,13 @@ export const printSalesQuotationPdf = async (input: SalesQuotationPdfInput) => {
   doc.setLineWidth(0.2);
   doc.line(sigX, y, sigX + 42, y);
   doc.setFontSize(8);
-  doc.text("(NAVYD)", sigX + 21, y + 4.5, { align: "center" });
+  const signer = String(input.signedBy || input.printedBy || "").trim();
+  const signatureLabel = signer
+    ? `(${signer.toUpperCase()})`
+    : "";
+  if (signatureLabel) {
+    doc.text(signatureLabel, sigX + 21, y + 4.5, { align: "center" });
+  }
 
   if (!openPdfPrintDialog(doc)) {
     doc.save(`quotation-${input.invoice.invoiceNo || "print"}.pdf`);

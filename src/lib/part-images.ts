@@ -29,6 +29,7 @@ export async function fetchFamilyPartImages(
     apiClient.getParts({ master_part_no: key, limit: 50, page: 1 }),
   ]);
 
+  const keySet = new Set(keys.map((key) => key.toLowerCase()));
   const responses = await Promise.all(requests);
   let imageP1: string | null = null;
   let imageP2: string | null = null;
@@ -40,6 +41,21 @@ export async function fetchFamilyPartImages(
         ? response
         : [];
     for (const row of rows) {
+      // Only reuse images from an exact family key match — never from
+      // partial search hits (e.g. typing "2p" must not show "2P0266" images).
+      const rowPartNo = String(row.part_no || row.partNo || "").trim().toLowerCase();
+      const rowMasterPartNo = String(
+        row.master_part_no || row.masterPartNo || "",
+      )
+        .trim()
+        .toLowerCase();
+      if (
+        !keySet.has(rowPartNo) &&
+        !keySet.has(rowMasterPartNo)
+      ) {
+        continue;
+      }
+
       if (!imageP1) {
         imageP1 = String(row.image_p1 || row.imageP1 || "").trim() || null;
       }

@@ -18,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
-import { Download, TrendingUp, TrendingDown } from "lucide-react";
+import { Download } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -196,54 +196,36 @@ const PeriodicSalesTab = () => {
           <CardContent className="p-4">
             <p className="text-xs font-medium text-primary uppercase">Total Sales</p>
             <p className="text-2xl font-bold mt-1">{summaryData.totalSales}</p>
-            <p className="text-xs text-success flex items-center gap-1 mt-1">
-              <TrendingUp className="w-3 h-3" /> +12.5% vs prev
-            </p>
           </CardContent>
         </Card>
         <Card className="bg-info/5 border-info/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-info uppercase">Total Orders</p>
             <p className="text-2xl font-bold mt-1">{summaryData.totalOrders}</p>
-            <p className="text-xs text-success flex items-center gap-1 mt-1">
-              <TrendingUp className="w-3 h-3" /> +8.2% vs prev
-            </p>
           </CardContent>
         </Card>
         <Card className="bg-destructive/5 border-destructive/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-destructive uppercase">Returns</p>
             <p className="text-2xl font-bold mt-1">{summaryData.returns}</p>
-            <p className="text-xs text-destructive flex items-center gap-1 mt-1">
-              <TrendingDown className="w-3 h-3" /> -3.1% vs prev
-            </p>
           </CardContent>
         </Card>
         <Card className="bg-success/5 border-success/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-success uppercase">Total Profit</p>
             <p className="text-2xl font-bold mt-1">{summaryData.totalProfit}</p>
-            <p className="text-xs text-success flex items-center gap-1 mt-1">
-              <TrendingUp className="w-3 h-3" /> +15.3% vs prev
-            </p>
           </CardContent>
         </Card>
         <Card className="bg-warning/5 border-warning/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-warning uppercase">Avg Margin</p>
             <p className="text-2xl font-bold mt-1">{summaryData.avgMargin}</p>
-            <p className="text-xs text-success flex items-center gap-1 mt-1">
-              <TrendingUp className="w-3 h-3" /> +0.5% vs prev
-            </p>
           </CardContent>
         </Card>
         <Card className="bg-chart-purple/5 border-chart-purple/20">
           <CardContent className="p-4">
             <p className="text-xs font-medium text-chart-purple uppercase">Avg Order</p>
             <p className="text-2xl font-bold mt-1">{summaryData.avgOrder}</p>
-            <p className="text-xs text-success flex items-center gap-1 mt-1">
-              <TrendingUp className="w-3 h-3" /> +4.2% vs prev
-            </p>
           </CardContent>
         </Card>
       </div>
@@ -251,7 +233,9 @@ const PeriodicSalesTab = () => {
       {/* Sales Trend Chart */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Sales Trend - Monthly View</CardTitle>
+          <CardTitle className="text-base">
+            Sales Trend — {periodType.charAt(0).toUpperCase() + periodType.slice(1)} View
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-72">
@@ -262,7 +246,13 @@ const PeriodicSalesTab = () => {
                   axisLine={false} 
                   tickLine={false} 
                   tick={{ fontSize: 12 }}
-                  tickFormatter={(value) => `${value}M`}
+                  tickFormatter={(value) =>
+                    value >= 1
+                      ? `${value.toFixed(1)}M`
+                      : value >= 0.001
+                        ? `${(value * 1000).toFixed(0)}K`
+                        : `${value}`
+                  }
                 />
                 <Tooltip 
                   formatter={(value: number) => [`Rs ${(value * 1000000).toLocaleString()}`, "Sales"]}
@@ -279,11 +269,11 @@ const PeriodicSalesTab = () => {
         </CardContent>
       </Card>
 
-      {/* Monthly Breakdown Table */}
+      {/* Period Breakdown Table */}
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Monthly Breakdown</CardTitle>
+            <CardTitle className="text-base">Period Breakdown</CardTitle>
             <Button variant="ghost" size="sm">
               <Download className="w-4 h-4" />
             </Button>

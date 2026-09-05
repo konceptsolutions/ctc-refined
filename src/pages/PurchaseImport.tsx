@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { buildPartSearchableSelectFields } from "@/lib/part-family-search";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -234,6 +235,7 @@ type PartOption = {
   description: string;
   hsCode: string;
   brand: string;
+  origin?: string;
   weight: number;
 };
 
@@ -389,6 +391,7 @@ type ImportPurchaseOrderReceiveLine = {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   currentStock: number;
   demandQuantity: number;
   quotationQuantity: number;
@@ -732,6 +735,7 @@ type PurchaseQuotationDetailItem = {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   currentStock?: number;
   demandQuantity: number;
   quotationQuantity: number;
@@ -883,6 +887,7 @@ type PurchaseQuotationContextItem = {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   currentStock: number;
   demandQuantity: number;
   khiQuantity?: number;
@@ -1220,6 +1225,7 @@ const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
   partNo: "",
   description: "",
   brand: "",
+  origin: "",
   currentStock: 0,
   demandQuantity: 0,
   khiQuantity: 0,
@@ -1250,6 +1256,7 @@ type UnquotedItemView = {
   partNo?: string | null;
   description?: string | null;
   brand?: string | null;
+  origin?: string | null;
   demandQuantity?: number | null;
   quotationQuantity?: number | null;
   lastFcRate?: number | null;
@@ -1314,7 +1321,9 @@ const UnquotedItemsDialog = ({
                       {row.description || "-"}
                     </div>
                   </td>
-                  <td className="p-2">{row.brand || "-"}</td>
+                  <td className="p-2">
+                    <BrandOriginCell brand={row.brand} origin={row.origin} />
+                  </td>
                   <td className="p-2 text-right tabular-nums">
                     {Number(row.demandQuantity || 0)}
                   </td>
@@ -1746,6 +1755,9 @@ const buildQuotationPartFieldsFromSelection = (
       alternate.description || part.description || fromOptions?.description || "",
     ).trim(),
     brand: String(alternate.brand || part.brand || fromOptions?.brand || "").trim(),
+    origin: String(
+      alternate.origin || part.origin || fromOptions?.origin || "",
+    ).trim(),
     currentStock: Number(detailsData?.currentStock ?? 0),
     weight: Number(part.weight ?? alternate.weight ?? fromOptions?.weight ?? 0),
     priceA: Number(part.priceA ?? part.price_a ?? 0),
@@ -1769,6 +1781,7 @@ const mapApiPartToOption = (row: any): PartOption => ({
   description: String(row.description || "").trim(),
   hsCode: String(row.hs_code || row.hsCode || "").trim(),
   brand: String(row.brand_name || row.brand || row.Brand?.name || "").trim(),
+  origin: String(row.origin || "").trim() || undefined,
   weight: Number(row.weight || 0),
 });
 
@@ -2010,6 +2023,7 @@ const PurchaseImportRequestForm = ({
           description: p.description || "",
           hsCode: p.hs_code || p.hsCode || "",
           brand: p.brand || "",
+          origin: p.origin || "",
           weight: Number(p.weight || 0),
         }));
         setPartOptions(nextParts);
@@ -3289,6 +3303,7 @@ const PurchaseImportRequestView = ({
             description: p.description || "",
             hsCode: p.hs_code || p.hsCode || "",
             brand: p.brand || "",
+            origin: p.origin || "",
             weight: Number(p.weight || 0),
           })),
         );
@@ -3366,6 +3381,7 @@ const PurchaseImportRequestView = ({
           partNo: part?.partNo || "-",
           description: part?.description || "-",
           brand: part?.brand || "-",
+          origin: part?.origin,
           khiQuantity,
           isbQuantity,
           otherQuantity,
@@ -3865,7 +3881,9 @@ const PurchaseImportRequestView = ({
                         {item.description}
                       </div>
                     </td>
-                    <td className="p-2">{item.brand}</td>
+                    <td className="p-2">
+                      <BrandOriginCell brand={item.brand} origin={item.origin} />
+                    </td>
                     <td className="p-2 text-right">{Number(item.currentStock || 0)}</td>
                     <td className="p-2 text-right">
                       <span className={INQUIRY_ISB_QTY_DISPLAY_CLASS}>
@@ -3991,6 +4009,7 @@ const PurchaseQuotationForm = ({
             description: p.description || "",
             hsCode: p.hs_code || p.hsCode || "",
             brand: p.brand || "",
+            origin: p.origin || "",
             weight: Number(p.weight || 0),
           })),
         );
@@ -4109,6 +4128,7 @@ const PurchaseQuotationForm = ({
         partNo: "",
         description: "",
         brand: "",
+        origin: "",
         currentStock: 0,
         weight: 0,
         lastFcRate: 0,
@@ -4763,7 +4783,9 @@ const PurchaseQuotationForm = ({
                           </div>
                         )}
                       </td>
-                      <td className="p-2">{row.brand || "-"}</td>
+                      <td className="p-2">
+                    <BrandOriginCell brand={row.brand} origin={row.origin} />
+                  </td>
                       <td className="p-2 text-right">{row.currentStock}</td>
                       <td className="p-2 text-right">
                         {row.isNewRow ? (
@@ -5100,6 +5122,7 @@ const PurchaseQuotationRevisionForm = ({
             description: p.description || "",
             hsCode: p.hs_code || p.hsCode || "",
             brand: p.brand || "",
+            origin: p.origin || "",
             weight: Number(p.weight || 0),
           })),
         );
@@ -5137,6 +5160,7 @@ const PurchaseQuotationRevisionForm = ({
                 partNo: item.partNo || "",
                 description: item.description || "",
                 brand: item.brand || "",
+                origin: item.origin || (item as any).origin || "",
                 currentStock: Number((item as any).currentStock || 0),
                 demandQuantity: Number(item.demandQuantity || 0),
                 khiQuantity: Number((item as any).khiQuantity || 0),
@@ -5610,7 +5634,9 @@ const PurchaseQuotationRevisionForm = ({
                           {row.description || "-"}
                         </div>
                       </td>
-                      <td className="p-2">{row.brand || "-"}</td>
+                      <td className="p-2">
+                    <BrandOriginCell brand={row.brand} origin={row.origin} />
+                  </td>
                       <td className="p-2 text-right">{row.currentStock || 0}</td>
                       <td className="p-2 text-right">{row.demandQuantity}</td>
                       <td className="p-2 text-right">
@@ -6140,6 +6166,7 @@ const PurchaseInquiryListPanel = ({
           partNo: item.partNo,
           description: item.description,
           brand: item.brand,
+          origin: item.origin,
           currentStock: item.currentStock,
           requestQty: Number(item.demandQuantity || 0),
           quotationQty,
@@ -6265,6 +6292,7 @@ const PurchaseInquiryListPanel = ({
           partNo: item.partNo,
           description: item.description,
           brand: item.brand,
+          origin: item.origin,
           demandQuantity: Number(item.demandQuantity || 0),
           quotationQuantity: Number(item.quotationQuantity ?? item.demandQuantity ?? 0),
           lastFcRate: Number(item.lastFcRate || 0),
@@ -7016,6 +7044,7 @@ const PurchaseQuotationListPanel = ({
           partNo: item.partNo,
           description: item.description,
           brand: item.brand,
+          origin: item.origin,
           currentStock: item.currentStock,
           requestQty: Number(item.demandQuantity || 0),
           quotationQty,
@@ -7607,6 +7636,7 @@ type PurchaseQuotationConfirmRow = {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   currentStock: number;
   demandQuantity: number;
   quotationQuantity: number;
@@ -7722,6 +7752,7 @@ const buildConfirmRowsFromQuotationDetail = (
       partNo: item.partNo || "",
       description: item.description || "",
       brand: item.brand || "",
+      origin: item.origin || "",
       currentStock: Number(item.currentStock || 0),
       demandQuantity: Number(item.demandQuantity || 0),
       quotationQuantity,
@@ -8350,7 +8381,9 @@ const PurchaseQuotationConfirmForm = ({
                     </div>
                     <div className="text-xs text-muted-foreground">{row.description || "-"}</div>
                   </td>
-                  <td className="p-2">{row.brand || "-"}</td>
+                  <td className="p-2">
+                    <BrandOriginCell brand={row.brand} origin={row.origin} />
+                  </td>
                   <td className="p-2 text-right tabular-nums">{row.currentStock}</td>
                   <td className="p-2 text-right tabular-nums">{row.demandQuantity}</td>
                   <td className="p-2 text-right tabular-nums">{row.quotationQuantity}</td>
@@ -9195,6 +9228,7 @@ const PurchaseOrderTab = ({
           partNo: item.partNo || item.part_no || "-",
           description: item.description || item.part_description || "-",
           brand: item.brand || "",
+          origin: item.origin || "",
           orderQty,
           receivedQty,
           additionalQty,
@@ -9483,6 +9517,7 @@ const PurchaseOrderTab = ({
           partNo: item.partNo || item.part_no || "-",
           description: item.description || item.part_description || "-",
           brand: item.brand || "",
+          origin: item.origin || "",
           currentStock: Number(item.currentStock || 0),
           demandQuantity: Number(item.demandQuantity || 0),
           quotationQuantity: Number(item.quotationQuantity || 0),
@@ -9524,6 +9559,7 @@ const PurchaseOrderTab = ({
             description: p.description || "",
             hsCode: p.hs_code || p.hsCode || "",
             brand: p.brand || "",
+            origin: p.origin || "",
             weight: Number(p.weight || 0),
           })),
         );
@@ -9859,6 +9895,7 @@ const PurchaseOrderTab = ({
                 partNo: "",
                 description: "",
                 brand: "",
+                origin: "",
                 currentStock: 0,
                 weight: 0,
                 totalWeight: 0,
@@ -10873,7 +10910,10 @@ const PurchaseOrderTab = ({
                           {item.description || item.part_description || "-"}
                         </td>
                         <td className="p-2">
-                          {item.brand || "-"}
+                          <BrandOriginCell
+                            brand={item.brand}
+                            origin={item.origin}
+                          />
                         </td>
                         <td className="p-2 text-right tabular-nums">{orderQty}</td>
                         <td className="p-2 text-right tabular-nums">{receivedQty}</td>
@@ -11222,7 +11262,9 @@ const PurchaseOrderTab = ({
                             </>
                           )}
                         </td>
-                        <td className="p-2">{line.brand || "-"}</td>
+                        <td className="p-2">
+                          <BrandOriginCell brand={line.brand} origin={line.origin} />
+                        </td>
                         {!isInvoiceMode ? (
                           <>
                             <td className="p-2 text-right tabular-nums">{line.currentStock}</td>

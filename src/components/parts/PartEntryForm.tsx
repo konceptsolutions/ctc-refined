@@ -167,36 +167,6 @@ export const PartEntryForm = ({
   const fileInputP1Ref = useRef<HTMLInputElement>(null);
   const fileInputP2Ref = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (editingPartId || (selectedPart?.id && !isAddingNew)) return;
-    const dbPartNo = String(formData.masterPartNo || "").trim();
-    const dbMasterPartNo = String(formData.partNo || "").trim();
-    if (!dbPartNo && !dbMasterPartNo) return;
-
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      try {
-        const shared = await fetchFamilyPartImages(dbPartNo, dbMasterPartNo);
-        if (cancelled || !shared) return;
-        setImageP1((prev) => prev || shared.imageP1);
-        setImageP2((prev) => prev || shared.imageP2);
-      } catch {
-        // Family image is optional while creating a new item.
-      }
-    }, 400);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [
-    editingPartId,
-    selectedPart?.id,
-    isAddingNew,
-    formData.partNo,
-    formData.masterPartNo,
-  ]);
-
   // Validation errors for prices
   const [priceAError, setPriceAError] = useState<string>("");
   const [priceBError, setPriceBError] = useState<string>("");
@@ -247,6 +217,41 @@ export const PartEntryForm = ({
   const [showSubcategoryDropdown, setShowSubcategoryDropdown] = useState(false);
   const [showApplicationDropdown, setShowApplicationDropdown] = useState(false);
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
+
+  useEffect(() => {
+    if (editingPartId || (selectedPart?.id && !isAddingNew)) return;
+    // Never auto-load images while the user is still searching/typing.
+    if (showMasterPartDropdown || showPartDropdown) return;
+
+    const dbPartNo = String(formData.masterPartNo || "").trim();
+    const dbMasterPartNo = String(formData.partNo || "").trim();
+    if (!dbPartNo && !dbMasterPartNo) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const shared = await fetchFamilyPartImages(dbPartNo, dbMasterPartNo);
+        if (cancelled || !shared) return;
+        setImageP1((prev) => prev || shared.imageP1);
+        setImageP2((prev) => prev || shared.imageP2);
+      } catch {
+        // Family image is optional while creating a new item.
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    editingPartId,
+    selectedPart?.id,
+    isAddingNew,
+    showMasterPartDropdown,
+    showPartDropdown,
+    formData.partNo,
+    formData.masterPartNo,
+  ]);
 
   // Flags to prevent closing dropdowns when typing
   const [keepPartDropdownOpen, setKeepPartDropdownOpen] = useState(false);
@@ -1272,6 +1277,33 @@ export const PartEntryForm = ({
     });
   };
 
+  const selectBrand = (brand: { id: string; name: string }) => {
+    const previousBrand = String(formData.brand || "").trim().toLowerCase();
+    const nextBrand = String(brand.name || "").trim();
+    const brandChanged =
+      previousBrand !== nextBrand.toLowerCase();
+
+    handleInputChange("brand", nextBrand);
+    setBrandId(brand.id);
+    setBrandSearch(nextBrand);
+    setShowBrandDropdown(false);
+    setBrandHighlightedIndex(-1);
+
+    // Changing brand on a selected/edited part resets sell/cost prices.
+    if (brandChanged && (editingPartId || selectedPart || isEditing)) {
+      setFormData((prev) => ({
+        ...prev,
+        brand: nextBrand,
+        cost: "0",
+        priceA: "0",
+        priceB: "0",
+      }));
+      setCostError("");
+      setPriceAError("");
+      setPriceBError("");
+    }
+  };
+
   // Format weight to max 3 decimal places
   const formatWeightValue = (value: string): string => {
     if (!value || value.trim() === "") {
@@ -1993,6 +2025,11 @@ export const PartEntryForm = ({
                       setShowMasterPartDropdown(true);
                       setMasterPartSearch(value);
                       handleInputChange("masterPartNo", value);
+                      // Searching is not a selection — don't keep previous/family images.
+                      if (!editingPartId) {
+                        setImageP1(null);
+                        setImageP2(null);
+                      }
                     }}
                     onFocus={() => {
                       // Close other dropdowns
@@ -2388,6 +2425,11 @@ export const PartEntryForm = ({
                       const value = e.target.value;
                       setPartSearch(value);
                       handleInputChange("partNo", value);
+                      // Searching is not a selection — don't keep previous/family images.
+                      if (!editingPartId) {
+                        setImageP1(null);
+                        setImageP2(null);
+                      }
                       // Don't auto-show dropdown on change - only show on click
                     }}
                     onKeyDown={(e) => {
@@ -3244,12 +3286,7 @@ export const PartEntryForm = ({
                           brandHighlightedIndex >= 0 &&
                           brandHighlightedIndex < filtered.length
                         ) {
-                          const selectedBrand = filtered[brandHighlightedIndex];
-                          handleInputChange("brand", selectedBrand.name);
-                          setBrandId(selectedBrand.id);
-                          setBrandSearch(selectedBrand.name);
-                          setShowBrandDropdown(false);
-                          setBrandHighlightedIndex(-1);
+                          selectBrand(filtered[brandHighlightedIndex]);
                         }
                       } else if (e.key === "Escape") {
                         setShowBrandDropdown(false);
@@ -3337,11 +3374,7 @@ export const PartEntryForm = ({
                             }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleInputChange("brand", brand.name);
-                              setBrandId(brand.id);
-                              setBrandSearch(brand.name);
-                              setShowBrandDropdown(false);
-                              setBrandHighlightedIndex(-1);
+                              selectBrand(brand);
                             }}
                             className={cn(
                               "w-full text-left px-4 py-3 text-sm hover:bg-muted transition-colors border-b border-border last:border-b-0 truncate",

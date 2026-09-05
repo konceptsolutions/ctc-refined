@@ -28,6 +28,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import apiClient from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
@@ -42,6 +43,7 @@ interface ProfitItemRow {
   part_no: string;
   description: string;
   brand: string;
+  origin?: string;
   quantity: number;
   unit_price: number;
   avg_cost: number;
@@ -576,7 +578,10 @@ export const SaleProfitReport = ({ fixedDate }: SaleProfitReportProps = {}) => {
                                         <TableCell>{item.part_no}</TableCell>
                                         <TableCell>{item.description}</TableCell>
                                         <TableCell>
-                                          {item.brand || "-"}
+                                          <BrandOriginCell
+                                            brand={item.brand || "-"}
+                                            origin={item.origin}
+                                          />
                                         </TableCell>
                                         <TableCell className="text-right">
                                           {item.quantity}

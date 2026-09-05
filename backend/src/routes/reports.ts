@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 
 const router = express.Router();
@@ -816,87 +817,166 @@ router.get('/dashboard/recent-activity', async (req: Request, res: Response) => 
 });
 
 // Sales Report
+// Sales Report — invoice list from SalesInvoice (not purchases)
 router.get('/sales', async (req: Request, res: Response) => {
   try {
     const { from_date, to_date, customer_id } = req.query;
 
-    const where: any = {};
-
-    if (from_date && to_date) {
-      where.date = {
-        gte: new Date(from_date as string),
-        lte: new Date(to_date as string),
-      };
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
     }
 
-    // Note: DirectPurchaseOrder is used as sales proxy since invoices table doesn't exist
-    const purchases = await prisma.directPurchaseOrder.findMany({
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
+
+    const where: any = {
+      invoiceDate: { gte: fromDate, lte: toDate },
+      status: { in: SALES_REPORT_INVOICE_STATUSES },
+      customerType: { not: 'transfer' },
+      NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+    };
+
+    if (customer_id) {
+      where.customerId = String(customer_id);
+    }
+
+    const invoices = await prisma.salesInvoice.findMany({
       where,
       include: {
-        DirectPurchaseOrderItem: {
-          include: {
-            Part: true,
+        SalesInvoiceItem: {
+          select: {
+            orderedQty: true,
+            deliveredQty: true,
+            lineTotal: true,
+            avgCost: true,
           },
         },
+        Customer: {
+          select: { id: true, name: true },
+        },
       },
-      orderBy: { date: 'desc' },
+      orderBy: { invoiceDate: 'desc' },
     });
 
-    const salesData = purchases.map((p: any) => ({
-      id: p.id,
-      date: new Date(p.date).toLocaleDateString(),
-      invoiceNo: p.dpoNumber,
-      customer: 'N/A', // Customer info not in schema
-      items: p.DirectPurchaseOrderItem.length,
-      amount: p.totalAmount || 0,
-      status: p.status === 'Completed' ? 'paid' : 'pending' as 'paid' | 'pending' | 'partial',
-    }));
+    const mapPaymentStatus = (paymentStatus: string): 'paid' | 'pending' | 'partial' => {
+      const s = String(paymentStatus || '').toLowerCase();
+      if (s === 'paid' || s === 'fully_paid') return 'paid';
+      if (s === 'partial' || s === 'partially_paid') return 'partial';
+      return 'pending';
+    };
 
-    res.json({ data: salesData });
+    const salesData = invoices.map((inv) => {
+      let lineSales = 0;
+      let cost = 0;
+      for (const item of inv.SalesInvoiceItem) {
+        const qty =
+          Number(item.deliveredQty) > 0
+            ? Number(item.deliveredQty)
+            : Number(item.orderedQty) || 0;
+        lineSales += Number(item.lineTotal) || 0;
+        cost += (Number(item.avgCost) || 0) * qty;
+      }
+      // Invoice amount should match the posted grand total
+      const amount =
+        Number(inv.grandTotal) > 0
+          ? Number(inv.grandTotal)
+          : lineSales;
+
+      return {
+        id: inv.id,
+        date: inv.invoiceDate.toISOString().slice(0, 10),
+        invoiceNo: inv.invoiceNo,
+        customer:
+          inv.Customer?.name ||
+          inv.customerName ||
+          (inv.customerType === 'walking' ? 'Cash Sale' : 'N/A'),
+        items: inv.SalesInvoiceItem.length,
+        amount: Math.round(amount),
+        profit: Math.round((lineSales > 0 ? lineSales : amount) - cost),
+        status: mapPaymentStatus(inv.paymentStatus),
+        paymentStatus: inv.paymentStatus,
+      };
+    });
+
+    const summary = {
+      totalSales: salesData.reduce((s, r) => s + r.amount, 0),
+      totalInvoices: salesData.length,
+      pendingPayment: salesData
+        .filter((r) => r.status !== 'paid')
+        .reduce((s, r) => s + r.amount, 0),
+      profit: salesData.reduce((s, r) => s + r.profit, 0),
+    };
+
+    res.json({ data: salesData, summary });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Periodic Sales Report
+// Periodic Sales Report — based on SalesInvoice (+ returns), not purchases
 router.get('/sales/periodic', async (req: Request, res: Response) => {
   try {
     const { period_type, year } = req.query;
     const periodType = (period_type as string) || 'monthly';
     const yearNum = parseInt(year as string) || new Date().getFullYear();
 
-    const startDate = new Date(yearNum, 0, 1);
-    const endDate = new Date(yearNum, 11, 31, 23, 59, 59);
+    const startDate = new Date(yearNum, 0, 1, 0, 0, 0, 0);
+    const endDate = new Date(yearNum, 11, 31, 23, 59, 59, 999);
 
-    const purchases = await prisma.directPurchaseOrder.findMany({
-      where: {
-        date: {
-          gte: startDate,
-          lte: endDate,
+    const invoiceWhere = {
+      invoiceDate: { gte: startDate, lte: endDate },
+      status: { in: SALES_REPORT_INVOICE_STATUSES },
+      customerType: { not: 'transfer' },
+      NOT: { customerName: { contains: 'demo', mode: 'insensitive' as const } },
+    };
+
+    const [invoices, returns] = await Promise.all([
+      prisma.salesInvoice.findMany({
+        where: invoiceWhere,
+        include: {
+          SalesInvoiceItem: {
+            select: {
+              orderedQty: true,
+              deliveredQty: true,
+              lineTotal: true,
+              avgCost: true,
+            },
+          },
         },
-      },
-      include: {
-        DirectPurchaseOrderItem: true,
-      },
-    });
+      }),
+      prisma.salesReturn.findMany({
+        where: {
+          returnDate: { gte: startDate, lte: endDate },
+          status: { in: ['completed', 'approved'] },
+        },
+        select: {
+          returnDate: true,
+          totalAmount: true,
+        },
+      }),
+    ]);
 
-    let periodData: Record<string, any> = {};
+    type PeriodBucket = {
+      period: string;
+      sortKey: string;
+      grossSales: number;
+      orders: number;
+      returns: number;
+      netSales: number;
+      profit: number;
+      margin: number;
+      avgOrder: number;
+    };
 
-    purchases.forEach((purchase: any) => {
-      const date = new Date(purchase.date);
-      let periodKey: string;
+    const periodData: Record<string, PeriodBucket> = {};
 
-      if (periodType === 'daily') {
-        periodKey = date.toLocaleDateString();
-      } else if (periodType === 'monthly') {
-        periodKey = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-      } else {
-        periodKey = yearNum.toString();
-      }
-
+    const ensureBucket = (periodKey: string, sortKey: string) => {
       if (!periodData[periodKey]) {
         periodData[periodKey] = {
           period: periodKey,
+          sortKey,
           grossSales: 0,
           orders: 0,
           returns: 0,
@@ -906,74 +986,91 @@ router.get('/sales/periodic', async (req: Request, res: Response) => {
           avgOrder: 0,
         };
       }
-
-      periodData[periodKey].grossSales += purchase.totalAmount || 0;
-      periodData[periodKey].orders += 1;
-      periodData[periodKey].netSales += purchase.totalAmount || 0;
-    });
-
-    // Calculate profit and margin (assume 22% margin)
-    Object.values(periodData).forEach((period: any) => {
-      period.profit = period.netSales * 0.22;
-      period.margin = period.netSales > 0 ? 22 : 0;
-      period.avgOrder = period.orders > 0 ? period.netSales / period.orders : 0;
-    });
-
-    const result = Object.values(periodData).sort((a: any, b: any) => {
-      return new Date(a.period).getTime() - new Date(b.period).getTime();
-    });
-
-    res.json({ data: result });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Sales by Type
-router.get('/sales/by-type', async (req: Request, res: Response) => {
-  try {
-    const { from_date, to_date } = req.query;
-
-    const where: any = {};
-    if (from_date && to_date) {
-      where.date = {
-        gte: new Date(from_date as string),
-        lte: new Date(to_date as string),
-      };
-    }
-
-    const purchases = await prisma.directPurchaseOrder.findMany({
-      where,
-      include: {
-        DirectPurchaseOrderItem: true,
-      },
-    });
-
-    // Group by payment mode or status as type
-    const typeData: Record<string, any> = {
-      'Cash Sales': { transactions: 0, totalAmount: 0, profit: 0 },
-      'Credit Sales': { transactions: 0, totalAmount: 0, profit: 0 },
-      'Online Sales': { transactions: 0, totalAmount: 0, profit: 0 },
+      return periodData[periodKey];
     };
 
-    purchases.forEach((purchase: any) => {
-      // Simplified: use status as type
-      const type = purchase.status === 'Completed' ? 'Cash Sales' : 'Credit Sales';
-      typeData[type].transactions += 1;
-      typeData[type].totalAmount += purchase.totalAmount || 0;
-      typeData[type].profit += (purchase.totalAmount || 0) * 0.22;
-    });
+    const periodKeyFor = (date: Date) => {
+      if (periodType === 'daily') {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return {
+          period: date.toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          }),
+          sortKey: `${y}-${m}-${d}`,
+        };
+      }
+      if (periodType === 'yearly') {
+        return { period: String(yearNum), sortKey: String(yearNum) };
+      }
+      // monthly (default)
+      return {
+        period: date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        sortKey: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+      };
+    };
 
-    const totalAmount = Object.values(typeData).reduce((sum: number, t: any) => sum + t.totalAmount, 0);
+    for (const inv of invoices) {
+      const date = new Date(inv.invoiceDate);
+      const { period, sortKey } = periodKeyFor(date);
+      const bucket = ensureBucket(period, sortKey);
 
-    const result = Object.entries(typeData).map(([type, data]) => ({
-      type,
-      transactions: data.transactions,
-      totalAmount: data.totalAmount,
-      avgTransaction: data.transactions > 0 ? data.totalAmount / data.transactions : 0,
-      profit: data.profit,
-      percentage: totalAmount > 0 ? (data.totalAmount / totalAmount * 100) : 0,
-    }));
+      let salesAmount = 0;
+      let costAmount = 0;
+      for (const item of inv.SalesInvoiceItem) {
+        const qty =
+          Number(item.deliveredQty) > 0
+            ? Number(item.deliveredQty)
+            : Number(item.orderedQty) || 0;
+        const lineTotal = Number(item.lineTotal) || 0;
+        const avgCost = Number(item.avgCost) || 0;
+        salesAmount += lineTotal;
+        costAmount += avgCost * qty;
+      }
+      // Prefer line totals; fall back to invoice grandTotal if lines are empty
+      if (salesAmount <= 0) {
+        salesAmount = Number(inv.grandTotal) || 0;
+      }
+
+      bucket.grossSales += salesAmount;
+      bucket.orders += 1;
+      bucket.profit += salesAmount - costAmount;
+    }
+
+    for (const ret of returns) {
+      const date = new Date(ret.returnDate);
+      if (date.getFullYear() !== yearNum) continue;
+      const { period, sortKey } = periodKeyFor(date);
+      const bucket = ensureBucket(period, sortKey);
+      bucket.returns += Number(ret.totalAmount) || 0;
+    }
+
+    const result = Object.values(periodData)
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+      .map((period) => {
+        const netSales = Math.max(0, period.grossSales - period.returns);
+        const margin =
+          period.grossSales > 0
+            ? Math.round((period.profit / period.grossSales) * 1000) / 10
+            : 0;
+        const avgOrder =
+          period.orders > 0
+            ? Math.round(period.grossSales / period.orders)
+            : 0;
+        return {
+          period: period.period,
+          grossSales: Math.round(period.grossSales),
+          orders: period.orders,
+          returns: Math.round(period.returns),
+          netSales: Math.round(netSales),
+          profit: Math.round(period.profit),
+          margin,
+          avgOrder,
+        };
+      });
 
     res.json({ data: result });
   } catch (error: any) {
@@ -981,113 +1078,485 @@ router.get('/sales/by-type', async (req: Request, res: Response) => {
   }
 });
 
-// Target Achievement
-router.get('/sales/target-achievement', async (req: Request, res: Response) => {
+// Sales by Type — Cash / Credit / Online derived from invoice customerType + payment split
+router.get('/sales/by-type', async (req: Request, res: Response) => {
   try {
-    const { period, month } = req.query;
+    const { from_date, to_date, sales_type } = req.query;
 
-    // Mock target data - in real app, this would come from a targets table
-    const targets = [
-      { category: 'Sales', target: 1000000, achieved: 0 },
-      { category: 'Orders', target: 100, achieved: 0 },
-      { category: 'Profit', target: 220000, achieved: 0 },
-    ];
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
+    }
 
-    // Calculate achieved values
-    const startDate = month
-      ? new Date(month as string)
-      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const endDate = month
-      ? new Date(new Date(month as string).getFullYear(), new Date(month as string).getMonth() + 1, 0)
-      : new Date();
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
 
-    const purchases = await prisma.directPurchaseOrder.aggregate({
-      _sum: { totalAmount: true },
-      _count: true,
+    const invoices = await prisma.salesInvoice.findMany({
       where: {
-        date: {
-          gte: startDate,
-          lte: endDate,
+        invoiceDate: { gte: fromDate, lte: toDate },
+        status: { in: SALES_REPORT_INVOICE_STATUSES },
+        customerType: { not: 'transfer' },
+        NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+      },
+      include: {
+        SalesInvoiceItem: {
+          select: {
+            orderedQty: true,
+            deliveredQty: true,
+            lineTotal: true,
+            avgCost: true,
+          },
         },
       },
     });
 
-    targets[0].achieved = purchases._sum.totalAmount || 0;
-    targets[1].achieved = purchases._count || 0;
-    targets[2].achieved = (purchases._sum.totalAmount || 0) * 0.22;
+    const typeData: Record<
+      string,
+      { transactions: number; totalAmount: number; profit: number }
+    > = {
+      'Cash Sales': { transactions: 0, totalAmount: 0, profit: 0 },
+      'Credit Sales': { transactions: 0, totalAmount: 0, profit: 0 },
+      'Online Sales': { transactions: 0, totalAmount: 0, profit: 0 },
+      Wholesale: { transactions: 0, totalAmount: 0, profit: 0 },
+      Retail: { transactions: 0, totalAmount: 0, profit: 0 },
+    };
 
-    const result = targets.map((t) => ({
-      category: t.category,
-      target: t.target,
-      achieved: t.achieved,
-      percentage: t.target > 0 ? (t.achieved / t.target * 100) : 0,
-      status: t.achieved >= t.target ? 'exceeded' : t.achieved >= t.target * 0.8 ? 'on-track' : 'behind' as 'exceeded' | 'on-track' | 'behind',
-    }));
+    const classifyInvoice = (inv: any): string => {
+      const customerType = String(inv.customerType || '').toLowerCase();
+      const cashAmount = Number(inv.cashAmount) || 0;
+      const bankAmount = Number(inv.bankAmount) || 0;
+
+      // Registered / party customers are credit (AR) sales
+      if (customerType === 'registered') {
+        return 'Credit Sales';
+      }
+
+      // Walk-in: bank-only → online; otherwise cash
+      if (customerType === 'walking') {
+        if (bankAmount > 0 && bankAmount >= cashAmount) {
+          return 'Online Sales';
+        }
+        return 'Cash Sales';
+      }
+
+      // Fallback by payment mix
+      if (bankAmount > cashAmount) return 'Online Sales';
+      if (cashAmount > 0) return 'Cash Sales';
+      return 'Credit Sales';
+    };
+
+    for (const inv of invoices) {
+      const type = classifyInvoice(inv);
+      let salesAmount = 0;
+      let costAmount = 0;
+      for (const item of inv.SalesInvoiceItem) {
+        const qty =
+          Number(item.deliveredQty) > 0
+            ? Number(item.deliveredQty)
+            : Number(item.orderedQty) || 0;
+        const lineTotal = Number(item.lineTotal) || 0;
+        salesAmount += lineTotal;
+        costAmount += (Number(item.avgCost) || 0) * qty;
+      }
+      if (salesAmount <= 0) {
+        salesAmount = Number(inv.grandTotal) || 0;
+      }
+
+      typeData[type].transactions += 1;
+      typeData[type].totalAmount += salesAmount;
+      typeData[type].profit += salesAmount - costAmount;
+    }
+
+    const filter = String(sales_type || 'all').toLowerCase();
+    const typeFilterMap: Record<string, string> = {
+      cash: 'Cash Sales',
+      credit: 'Credit Sales',
+      online: 'Online Sales',
+      wholesale: 'Wholesale',
+      retail: 'Retail',
+    };
+
+    let entries = Object.entries(typeData);
+    if (filter && filter !== 'all' && typeFilterMap[filter]) {
+      entries = entries.filter(([type]) => type === typeFilterMap[filter]);
+    }
+
+    const totalAmount = entries.reduce((sum, [, data]) => sum + data.totalAmount, 0);
+
+    const result = entries
+      .map(([type, data]) => ({
+        type,
+        transactions: data.transactions,
+        totalAmount: Math.round(data.totalAmount),
+        avgTransaction:
+          data.transactions > 0
+            ? Math.round(data.totalAmount / data.transactions)
+            : 0,
+        profit: Math.round(data.profit),
+        percentage:
+          totalAmount > 0
+            ? Math.round((data.totalAmount / totalAmount) * 1000) / 10
+            : 0,
+      }))
+      // Hide unused categories (Wholesale/Retail have no invoice field yet)
+      .filter(
+        (row) =>
+          row.transactions > 0 ||
+          !['Wholesale', 'Retail'].includes(row.type),
+      );
 
     res.json({ data: result });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Target Achievement — achieved from SalesInvoice; target = same period prior year
+router.get('/sales/target-achievement', async (req: Request, res: Response) => {
+  try {
+    const { period, month } = req.query;
+    const periodType = String(period || 'monthly').toLowerCase();
+
+    const now = new Date();
+    let startDate: Date;
+    let endDate: Date;
+
+    if (month && /^\d{4}-\d{2}$/.test(String(month))) {
+      const [y, m] = String(month).split('-').map(Number);
+      if (periodType === 'yearly') {
+        startDate = new Date(y, 0, 1, 0, 0, 0, 0);
+        endDate = new Date(y, 11, 31, 23, 59, 59, 999);
+      } else if (periodType === 'quarterly') {
+        const qStartMonth = Math.floor((m - 1) / 3) * 3;
+        startDate = new Date(y, qStartMonth, 1, 0, 0, 0, 0);
+        endDate = new Date(y, qStartMonth + 3, 0, 23, 59, 59, 999);
+      } else if (periodType === 'weekly') {
+        // Week containing the 1st of the selected month
+        const first = new Date(y, m - 1, 1);
+        const day = first.getDay(); // 0 Sun
+        const diffToMon = (day + 6) % 7;
+        startDate = new Date(y, m - 1, 1 - diffToMon, 0, 0, 0, 0);
+        endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+        endDate.setHours(23, 59, 59, 999);
+      } else {
+        // monthly
+        startDate = new Date(y, m - 1, 1, 0, 0, 0, 0);
+        endDate = new Date(y, m, 0, 23, 59, 59, 999);
+      }
+    } else if (periodType === 'yearly') {
+      startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else if (periodType === 'quarterly') {
+      const qStartMonth = Math.floor(now.getMonth() / 3) * 3;
+      startDate = new Date(now.getFullYear(), qStartMonth, 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), qStartMonth + 3, 0, 23, 59, 59, 999);
+    } else if (periodType === 'weekly') {
+      const day = now.getDay();
+      const diffToMon = (day + 6) % 7;
+      startDate = new Date(now);
+      startDate.setDate(now.getDate() - diffToMon);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6);
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    // Prior-year same window used as target baseline
+    const priorStart = new Date(startDate);
+    priorStart.setFullYear(priorStart.getFullYear() - 1);
+    const priorEnd = new Date(endDate);
+    priorEnd.setFullYear(priorEnd.getFullYear() - 1);
+
+    const salesWhere = (from: Date, to: Date) => ({
+      invoiceDate: { gte: from, lte: to },
+      status: { in: SALES_REPORT_INVOICE_STATUSES },
+      customerType: { not: 'transfer' },
+      NOT: { customerName: { contains: 'demo', mode: 'insensitive' as const } },
+    });
+
+    const [currentInvoices, priorInvoices] = await Promise.all([
+      prisma.salesInvoice.findMany({
+        where: salesWhere(startDate, endDate),
+        include: {
+          SalesInvoiceItem: {
+            select: {
+              orderedQty: true,
+              deliveredQty: true,
+              lineTotal: true,
+              avgCost: true,
+            },
+          },
+        },
+      }),
+      prisma.salesInvoice.findMany({
+        where: salesWhere(priorStart, priorEnd),
+        include: {
+          SalesInvoiceItem: {
+            select: {
+              orderedQty: true,
+              deliveredQty: true,
+              lineTotal: true,
+              avgCost: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const summarize = (invoices: typeof currentInvoices) => {
+      let sales = 0;
+      let profit = 0;
+      for (const inv of invoices) {
+        let salesAmount = 0;
+        let costAmount = 0;
+        for (const item of inv.SalesInvoiceItem) {
+          const qty =
+            Number(item.deliveredQty) > 0
+              ? Number(item.deliveredQty)
+              : Number(item.orderedQty) || 0;
+          const lineTotal = Number(item.lineTotal) || 0;
+          salesAmount += lineTotal;
+          costAmount += (Number(item.avgCost) || 0) * qty;
+        }
+        if (salesAmount <= 0) {
+          salesAmount = Number(inv.grandTotal) || 0;
+        }
+        sales += salesAmount;
+        profit += salesAmount - costAmount;
+      }
+      return {
+        sales: Math.round(sales),
+        orders: invoices.length,
+        profit: Math.round(profit),
+      };
+    };
+
+    const achieved = summarize(currentInvoices);
+    const prior = summarize(priorInvoices);
+
+    // If prior year has no data, use a modest uplift over current as soft target floor
+    const salesTarget =
+      prior.sales > 0 ? prior.sales : Math.max(achieved.sales, 1);
+    const ordersTarget =
+      prior.orders > 0 ? prior.orders : Math.max(achieved.orders, 1);
+    const profitTarget =
+      prior.profit > 0 ? prior.profit : Math.max(achieved.profit, 1);
+
+    const buildRow = (category: string, target: number, value: number) => {
+      const percentage =
+        target > 0 ? Math.round((value / target) * 1000) / 10 : 0;
+      const status =
+        value >= target
+          ? 'exceeded'
+          : value >= target * 0.8
+            ? 'on-track'
+            : 'behind';
+      return {
+        category,
+        target: Math.round(target),
+        achieved: Math.round(value),
+        percentage,
+        status: status as 'exceeded' | 'on-track' | 'behind',
+      };
+    };
+
+    const result = [
+      buildRow('Sales', salesTarget, achieved.sales),
+      buildRow('Orders', ordersTarget, achieved.orders),
+      buildRow('Profit', profitTarget, achieved.profit),
+    ];
+
+    const msLeft = Math.max(0, endDate.getTime() - Date.now());
+    const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+
+    res.json({
+      data: result,
+      meta: {
+        period: periodType,
+        from: startDate.toISOString(),
+        to: endDate.toISOString(),
+        priorFrom: priorStart.toISOString(),
+        priorTo: priorEnd.toISOString(),
+        daysLeft,
+        targetBasis:
+          prior.sales > 0 || prior.orders > 0
+            ? 'prior_year_same_period'
+            : 'current_period_floor',
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Stock Movement Report
+// Stock Movement — real parts + sales velocity from SalesInvoiceItem
 router.get('/inventory/stock-movement', async (req: Request, res: Response) => {
   try {
-    const { period, category, brand } = req.query;
-    const periodDays = parseInt(period as string) || 90;
+    const { period, category, brand, category_id, brand_id } = req.query;
+    const periodDays = parseInt(String(period || '30'), 10) || 30;
 
     const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
     startDate.setDate(startDate.getDate() - periodDays);
+    const endDate = new Date();
+    endDate.setHours(23, 59, 59, 999);
 
     const where: any = { status: 'active' };
 
-    if (category && category !== 'all') {
-      const categoryRecord = await prisma.category.findFirst({
-        where: { name: category as string },
-      });
-      if (categoryRecord) {
+    const categoryId =
+      (category_id && String(category_id)) ||
+      (category && category !== 'all' ? String(category) : '');
+    const brandId =
+      (brand_id && String(brand_id)) ||
+      (brand && brand !== 'all' ? String(brand) : '');
+
+    if (categoryId) {
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          categoryId,
+        );
+      if (isUuid) {
+        where.categoryId = categoryId;
+      } else {
+        const categoryRecord = await prisma.category.findFirst({
+          where: { name: { equals: categoryId, mode: 'insensitive' } },
+        });
+        if (!categoryRecord) {
+          return res.json({ data: [] });
+        }
         where.categoryId = categoryRecord.id;
       }
     }
 
-    if (brand && brand !== 'all') {
-      const brandRecord = await prisma.brand.findFirst({
-        where: { name: brand as string },
-      });
-      if (brandRecord) {
+    if (brandId) {
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          brandId,
+        );
+      if (isUuid) {
+        where.brandId = brandId;
+      } else {
+        const brandRecord = await prisma.brand.findFirst({
+          where: { name: { equals: brandId, mode: 'insensitive' } },
+        });
+        if (!brandRecord) {
+          return res.json({ data: [] });
+        }
         where.brandId = brandRecord.id;
       }
     }
 
-    const parts = await prisma.part.findMany({
-      where,
-      include: {
-        Brand: true,
-        Category: true,
-        StockMovement: {
-          where: {
-            createdAt: { gte: startDate },
-            type: 'out',
-          },
-        },
-      },
-    });
+    const salesInvoiceWhere = {
+      invoiceDate: { gte: startDate, lte: endDate },
+      status: { in: SALES_REPORT_INVOICE_STATUSES },
+      customerType: { not: 'transfer' },
+      NOT: { customerName: { contains: 'demo', mode: 'insensitive' as const } },
+    };
 
-    const result = parts.map((part: any) => {
-      const totalOut = part.StockMovement.reduce((sum, m) => sum + m.quantity, 0);
-      const avgMonthly = totalOut / (periodDays / 30);
+    const [parts, salesAgg, stockAgg] = await Promise.all([
+      prisma.part.findMany({
+        where,
+        select: {
+          id: true,
+          partNo: true,
+          description: true,
+          cost: true,
+          avgCost: true,
+          Brand: { select: { name: true } },
+          Category: { select: { name: true } },
+        },
+      }),
+      prisma.salesInvoiceItem.groupBy({
+        by: ['partId'],
+        where: {
+          SalesInvoice: salesInvoiceWhere,
+        },
+        _sum: {
+          deliveredQty: true,
+          orderedQty: true,
+        },
+      }),
+      prisma.partRackShelf.groupBy({
+        by: ['partId'],
+        _sum: { quantity: true },
+      }),
+    ]);
+
+    const soldMap = new Map<string, number>();
+    for (const row of salesAgg) {
+      const delivered = Number(row._sum.deliveredQty) || 0;
+      const ordered = Number(row._sum.orderedQty) || 0;
+      soldMap.set(row.partId, delivered > 0 ? delivered : ordered);
+    }
+
+    const stockMap = new Map<string, number>();
+    for (const row of stockAgg) {
+      stockMap.set(row.partId, Number(row._sum.quantity) || 0);
+    }
+
+    const lastSaleRows = await prisma.$queryRaw<
+      Array<{ partId: string; lastSale: Date }>
+    >`
+      SELECT si."partId" AS "partId", MAX(s."invoiceDate") AS "lastSale"
+      FROM "SalesInvoiceItem" si
+      INNER JOIN "SalesInvoice" s ON s.id = si."invoiceId"
+      WHERE s."invoiceDate" >= ${startDate}
+        AND s."invoiceDate" <= ${endDate}
+        AND s.status IN (${Prisma.join(SALES_REPORT_INVOICE_STATUSES)})
+        AND s."customerType" <> 'transfer'
+        AND s."customerName" NOT ILIKE '%demo%'
+      GROUP BY si."partId"
+    `;
+
+    const lastSaleMap = new Map<string, Date>();
+    for (const row of lastSaleRows) {
+      lastSaleMap.set(row.partId, new Date(row.lastSale));
+    }
+
+    const months = Math.max(periodDays / 30, 1 / 30);
+
+    const result = parts.map((part) => {
+      const soldQty = soldMap.get(part.id) || 0;
+      const stock = stockMap.get(part.id) || 0;
+      const unitCost = Number(part.avgCost) || Number(part.cost) || 0;
+      const avgMonthly = soldQty / months;
 
       let status: 'fast' | 'slow' | 'dead';
-      if (avgMonthly > 10) {
-        status = 'fast';
-      } else if (avgMonthly > 2) {
-        status = 'slow';
-      } else {
+      if (soldQty <= 0) {
         status = 'dead';
+      } else if (avgMonthly >= 5) {
+        status = 'fast';
+      } else {
+        status = 'slow';
       }
 
-      const stockValue = (part.cost || 0) * totalOut;
-      const turnover = avgMonthly > 0 ? (totalOut / avgMonthly) : 0;
+      // Annualized inventory turns: (period sales annualized) / current stock
+      const annualizedSales = soldQty * (365 / periodDays);
+      const turnover =
+        stock > 0
+          ? Math.round((annualizedSales / stock) * 100) / 100
+          : soldQty > 0
+            ? 99
+            : 0;
+
+      const lastSaleDate = lastSaleMap.get(part.id);
+      const lastSale = lastSaleDate
+        ? lastSaleDate.toISOString().slice(0, 10)
+        : 'Never';
+      const daysSinceSale = lastSaleDate
+        ? Math.max(
+            0,
+            Math.floor(
+              (Date.now() - lastSaleDate.getTime()) / (1000 * 60 * 60 * 24),
+            ),
+          )
+        : null;
 
       return {
         id: part.id,
@@ -1095,18 +1564,35 @@ router.get('/inventory/stock-movement', async (req: Request, res: Response) => {
         name: part.description || part.partNo,
         brand: part.Brand?.name || 'N/A',
         category: part.Category?.name || 'N/A',
-        stock: totalOut,
+        stock,
         avgMonthly: Math.round(avgMonthly * 10) / 10,
-        lastSale: part.StockMovement.length > 0
-          ? new Date(part.StockMovement[part.StockMovement.length - 1].createdAt).toLocaleDateString()
-          : 'Never',
-        stockValue,
-        turnover: Math.round(turnover * 10) / 10,
+        lastSale,
+        daysSinceSale,
+        stockValue: Math.round(stock * unitCost * 100) / 100,
+        turnover,
         status,
-        recommendation: status === 'dead' ? 'Consider discounting or discontinuing'
-          : status === 'slow' ? 'Monitor closely'
-            : 'Maintain stock levels',
+        recommendation:
+          status === 'dead'
+            ? stock > 0
+              ? 'Consider discounting or discontinuing'
+              : 'No stock / no sales'
+            : status === 'slow'
+              ? 'Monitor closely'
+              : 'Maintain stock levels',
       };
+    });
+
+    // Fast / high-value first; within dead, stocked items before zero-stock
+    result.sort((a, b) => {
+      const rank = { fast: 0, slow: 1, dead: 2 } as const;
+      const r = rank[a.status] - rank[b.status];
+      if (r !== 0) return r;
+      if (a.status === 'dead') {
+        const aHas = a.stock > 0 ? 0 : 1;
+        const bHas = b.stock > 0 ? 0 : 1;
+        if (aHas !== bHas) return aHas - bHas;
+      }
+      return b.stockValue - a.stockValue;
     });
 
     res.json({ data: result });
@@ -1115,63 +1601,156 @@ router.get('/inventory/stock-movement', async (req: Request, res: Response) => {
   }
 });
 
-// Brand Wise Report
+// Brand Wise Report — sales by brand from SalesInvoiceItem
 router.get('/inventory/brand-wise', async (req: Request, res: Response) => {
   try {
-    const { from_date, to_date, brand } = req.query;
+    const { from_date, to_date, brand, brand_id } = req.query;
 
-    const where: any = {};
-    if (from_date && to_date) {
-      where.date = {
-        gte: new Date(from_date as string),
-        lte: new Date(to_date as string),
-      };
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
     }
 
-    const purchases = await prisma.directPurchaseOrder.findMany({
-      where,
-      include: {
-        DirectPurchaseOrderItem: {
-          include: {
-            Part: {
-              include: {
-                Brand: true,
-              },
-            },
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
+
+    const brandFilter =
+      (brand_id && String(brand_id)) ||
+      (brand && brand !== 'all' ? String(brand) : '');
+
+    let brandIdFilter: string | undefined;
+    if (brandFilter) {
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          brandFilter,
+        );
+      if (isUuid) {
+        brandIdFilter = brandFilter;
+      } else {
+        const brandRecord = await prisma.brand.findFirst({
+          where: { name: { equals: brandFilter, mode: 'insensitive' } },
+        });
+        if (!brandRecord) {
+          return res.json({ data: [] });
+        }
+        brandIdFilter = brandRecord.id;
+      }
+    }
+
+    const items = await prisma.salesInvoiceItem.findMany({
+      where: {
+        ...(brandIdFilter ? { Part: { brandId: brandIdFilter } } : {}),
+        SalesInvoice: {
+          invoiceDate: { gte: fromDate, lte: toDate },
+          status: { in: SALES_REPORT_INVOICE_STATUSES },
+          customerType: { not: 'transfer' },
+          NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+        },
+      },
+      select: {
+        partId: true,
+        orderedQty: true,
+        deliveredQty: true,
+        lineTotal: true,
+        avgCost: true,
+        Part: {
+          select: {
+            brandId: true,
+            Brand: { select: { id: true, name: true } },
           },
         },
       },
     });
 
-    const brandMap: Record<string, any> = {};
+    const brandMap: Record<
+      string,
+      {
+        brand: string;
+        products: Set<string>;
+        totalSales: number;
+        qtySold: number;
+        cost: number;
+      }
+    > = {};
 
-    purchases.forEach((purchase: any) => {
-      purchase.DirectPurchaseOrderItem.forEach((item) => {
-        const brandName = item.Part.Brand?.name || 'Unknown';
-        if (!brandMap[brandName]) {
-          brandMap[brandName] = {
-            brand: brandName,
-            avgSale: 0,
-            products: 0,
-            totalSales: 0,
-            purchases: 0,
-            profit: 0,
-            margin: 0,
-            trend: 'stable' as 'rising' | 'falling' | 'stable',
-          };
+    for (const item of items) {
+      const brandName = item.Part?.Brand?.name || 'Unknown';
+      if (!brandMap[brandName]) {
+        brandMap[brandName] = {
+          brand: brandName,
+          products: new Set(),
+          totalSales: 0,
+          qtySold: 0,
+          cost: 0,
+        };
+      }
+      const qty =
+        Number(item.deliveredQty) > 0
+          ? Number(item.deliveredQty)
+          : Number(item.orderedQty) || 0;
+      const sales = Number(item.lineTotal) || 0;
+      brandMap[brandName].products.add(item.partId);
+      brandMap[brandName].totalSales += sales;
+      brandMap[brandName].qtySold += qty;
+      brandMap[brandName].cost += (Number(item.avgCost) || 0) * qty;
+    }
+
+    // Prior period for trend
+    const spanMs = toDate.getTime() - fromDate.getTime();
+    const priorTo = new Date(fromDate.getTime() - 1);
+    const priorFrom = new Date(priorTo.getTime() - spanMs);
+    const priorItems = await prisma.salesInvoiceItem.findMany({
+      where: {
+        ...(brandIdFilter ? { Part: { brandId: brandIdFilter } } : {}),
+        SalesInvoice: {
+          invoiceDate: { gte: priorFrom, lte: priorTo },
+          status: { in: SALES_REPORT_INVOICE_STATUSES },
+          customerType: { not: 'transfer' },
+          NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+        },
+      },
+      select: {
+        lineTotal: true,
+        Part: { select: { Brand: { select: { name: true } } } },
+      },
+    });
+    const priorSales: Record<string, number> = {};
+    for (const item of priorItems) {
+      const brandName = item.Part?.Brand?.name || 'Unknown';
+      priorSales[brandName] =
+        (priorSales[brandName] || 0) + (Number(item.lineTotal) || 0);
+    }
+
+    const result = Object.values(brandMap)
+      .map((b) => {
+        const profit = b.totalSales - b.cost;
+        const margin =
+          b.totalSales > 0
+            ? Math.round((profit / b.totalSales) * 1000) / 10
+            : 0;
+        const prev = priorSales[b.brand] || 0;
+        let trend: 'rising' | 'falling' | 'stable' = 'stable';
+        if (prev > 0) {
+          const change = (b.totalSales - prev) / prev;
+          if (change > 0.05) trend = 'rising';
+          else if (change < -0.05) trend = 'falling';
+        } else if (b.totalSales > 0) {
+          trend = 'rising';
         }
-        brandMap[brandName].totalSales += item.amount || 0;
-        brandMap[brandName].purchases += item.quantity;
-        brandMap[brandName].products += 1;
-      });
-    });
-
-    const result = Object.values(brandMap).map((b: any) => {
-      b.avgSale = b.purchases > 0 ? b.totalSales / b.purchases : 0;
-      b.profit = b.totalSales * 0.22;
-      b.margin = b.totalSales > 0 ? 22 : 0;
-      return b;
-    });
+        return {
+          brand: b.brand,
+          avgSale:
+            b.qtySold > 0 ? Math.round(b.totalSales / b.qtySold) : 0,
+          products: b.products.size,
+          totalSales: Math.round(b.totalSales),
+          purchases: b.qtySold,
+          profit: Math.round(profit),
+          margin,
+          trend,
+        };
+      })
+      .sort((a, b) => b.totalSales - a.totalSales);
 
     res.json({ data: result });
   } catch (error: any) {
@@ -1179,40 +1758,86 @@ router.get('/inventory/brand-wise', async (req: Request, res: Response) => {
   }
 });
 
-// Purchases Report
+// Purchases Report — DirectPurchaseOrder + import PurchaseOrder
 router.get('/financial/purchases', async (req: Request, res: Response) => {
   try {
     const { from_date, to_date, supplier_id } = req.query;
 
-    const where: any = {};
-    if (from_date && to_date) {
-      where.date = {
-        gte: new Date(from_date as string),
-        lte: new Date(to_date as string),
-      };
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
     }
+
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
+
+    const where: any = {
+      date: { gte: fromDate, lte: toDate },
+    };
     if (supplier_id) {
-      where.supplierId = supplier_id as string;
+      where.supplierId = String(supplier_id);
     }
 
-    const purchases = await prisma.directPurchaseOrder.findMany({
-      where,
-      include: {
-        DirectPurchaseOrderItem: true,
-        Store: true,
-      },
-      orderBy: { date: 'desc' },
-    });
+    const mapStatus = (status: string): 'completed' | 'pending' | 'partial' => {
+      const s = String(status || '').toLowerCase();
+      if (s.includes('partial')) return 'partial';
+      if (
+        s.includes('complete') ||
+        s === 'posted' ||
+        s === 'approved' ||
+        s === 'received' ||
+        s === 'closed'
+      )
+        return 'completed';
+      return 'pending';
+    };
 
-    const result = purchases.map((p: any) => ({
-      id: p.id,
-      date: new Date(p.date).toLocaleDateString(),
-      poNumber: p.dpoNumber,
-      supplier: 'N/A', // Supplier info not linked
-      items: p.DirectPurchaseOrderItem.length,
-      amount: p.totalAmount || 0,
-      status: p.status === 'Completed' ? 'completed' : 'pending' as 'completed' | 'pending' | 'partial',
-    }));
+    const supplierInclude = {
+      Supplier: { select: { id: true, companyName: true, name: true } },
+    } as const;
+
+    const [dpos, pos] = await Promise.all([
+      prisma.directPurchaseOrder.findMany({
+        where,
+        include: {
+          DirectPurchaseOrderItem: { select: { id: true } },
+          ...supplierInclude,
+        },
+        orderBy: { date: 'desc' },
+      }),
+      prisma.purchaseOrder.findMany({
+        where,
+        include: {
+          PurchaseOrderItem: { select: { id: true } },
+          ...supplierInclude,
+        },
+        orderBy: { date: 'desc' },
+      }),
+    ]);
+
+    const result = [
+      ...dpos.map((p) => ({
+        id: p.id,
+        date: p.date.toISOString().slice(0, 10),
+        poNumber: p.dpoNumber,
+        supplier: p.Supplier?.companyName || p.Supplier?.name || 'N/A',
+        items: p.DirectPurchaseOrderItem.length,
+        amount: Math.round(Number(p.totalAmount) || 0),
+        status: mapStatus(p.status),
+        source: 'DPO' as const,
+      })),
+      ...pos.map((p) => ({
+        id: p.id,
+        date: p.date.toISOString().slice(0, 10),
+        poNumber: p.poNumber,
+        supplier: p.Supplier?.companyName || p.Supplier?.name || 'N/A',
+        items: p.PurchaseOrderItem.length,
+        amount: Math.round(Number(p.totalAmount) || 0),
+        status: mapStatus(p.status),
+        source: 'PO' as const,
+      })),
+    ].sort((a, b) => b.date.localeCompare(a.date) || a.poNumber.localeCompare(b.poNumber));
 
     res.json({ data: result });
   } catch (error: any) {
@@ -1220,7 +1845,7 @@ router.get('/financial/purchases', async (req: Request, res: Response) => {
   }
 });
 
-// Purchase Comparison
+// Purchase Comparison — by supplier across two periods (DPO + import PO)
 router.get('/financial/purchase-comparison', async (req: Request, res: Response) => {
   try {
     const { period1_start, period1_end, period2_start, period2_end } = req.query;
@@ -1229,53 +1854,125 @@ router.get('/financial/purchase-comparison', async (req: Request, res: Response)
       return res.status(400).json({ error: 'All period dates are required' });
     }
 
+    const range = (start: string, end: string) => {
+      const from = new Date(start);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(end);
+      to.setHours(23, 59, 59, 999);
+      return { gte: from, lte: to };
+    };
+
+    const supplierInclude = {
+      Supplier: { select: { id: true, companyName: true, name: true } },
+    } as const;
+
+    const loadPeriod = async (start: string, end: string) => {
+      const date = range(start, end);
+      const [dpos, pos] = await Promise.all([
+        prisma.directPurchaseOrder.findMany({
+          where: { date },
+          include: {
+            DirectPurchaseOrderItem: { select: { id: true } },
+            ...supplierInclude,
+          },
+        }),
+        prisma.purchaseOrder.findMany({
+          where: { date },
+          include: {
+            PurchaseOrderItem: { select: { id: true } },
+            ...supplierInclude,
+          },
+        }),
+      ]);
+      return [
+        ...dpos.map((p) => ({
+          supplierId: p.supplierId,
+          supplierName: p.Supplier?.companyName || p.Supplier?.name || 'Unknown Supplier',
+          amount: Number(p.totalAmount) || 0,
+          items: p.DirectPurchaseOrderItem.length,
+        })),
+        ...pos.map((p) => ({
+          supplierId: p.supplierId,
+          supplierName: p.Supplier?.companyName || p.Supplier?.name || 'Unknown Supplier',
+          amount: Number(p.totalAmount) || 0,
+          items: p.PurchaseOrderItem.length,
+        })),
+      ];
+    };
+
     const [period1Purchases, period2Purchases] = await Promise.all([
-      prisma.directPurchaseOrder.findMany({
-        where: {
-          date: {
-            gte: new Date(period1_start as string),
-            lte: new Date(period1_end as string),
-          },
-        },
-        include: {
-          DirectPurchaseOrderItem: true,
-        },
-      }),
-      prisma.directPurchaseOrder.findMany({
-        where: {
-          date: {
-            gte: new Date(period2_start as string),
-            lte: new Date(period2_end as string),
-          },
-        },
-        include: {
-          DirectPurchaseOrderItem: true,
-        },
-      }),
+      loadPeriod(String(period1_start), String(period1_end)),
+      loadPeriod(String(period2_start), String(period2_end)),
     ]);
 
-    const period1Total = period1Purchases.reduce((sum, p: any) => sum + (p.totalAmount || 0), 0);
-    const period2Total = period2Purchases.reduce((sum, p: any) => sum + (p.totalAmount || 0), 0);
-    const change = period2Total > 0 ? ((period1Total - period2Total) / period2Total * 100) : 0;
+    type Bucket = {
+      supplier: string;
+      currentPeriod: number;
+      previousPeriod: number;
+      items: number;
+    };
 
-    const totalItems = period1Purchases.reduce((sum, p: any) => sum + p.DirectPurchaseOrderItem.length, 0);
+    const map: Record<string, Bucket> = {};
+    const ensure = (key: string, name: string) => {
+      if (!map[key]) {
+        map[key] = {
+          supplier: name,
+          currentPeriod: 0,
+          previousPeriod: 0,
+          items: 0,
+        };
+      }
+      return map[key];
+    };
+
+    for (const p of period1Purchases) {
+      const key = p.supplierId || `name:${p.supplierName}`;
+      const b = ensure(key, p.supplierName);
+      b.currentPeriod += p.amount;
+      b.items += p.items;
+    }
+    for (const p of period2Purchases) {
+      const key = p.supplierId || `name:${p.supplierName}`;
+      const b = ensure(key, p.supplierName);
+      b.previousPeriod += p.amount;
+    }
+
+    const comparison = Object.values(map)
+      .map((b) => {
+        const change =
+          b.previousPeriod > 0
+            ? ((b.currentPeriod - b.previousPeriod) / b.previousPeriod) * 100
+            : b.currentPeriod > 0
+              ? 100
+              : 0;
+        return {
+          supplier: b.supplier,
+          currentPeriod: Math.round(b.currentPeriod),
+          previousPeriod: Math.round(b.previousPeriod),
+          change: Math.round(change * 10) / 10,
+          items: b.items,
+          avgDelivery: null as number | null,
+        };
+      })
+      .sort((a, b) => b.currentPeriod - a.currentPeriod);
+
+    const currentPeriod = comparison.reduce((s, r) => s + r.currentPeriod, 0);
+    const previousPeriod = comparison.reduce((s, r) => s + r.previousPeriod, 0);
+    const change =
+      previousPeriod > 0
+        ? ((currentPeriod - previousPeriod) / previousPeriod) * 100
+        : currentPeriod > 0
+          ? 100
+          : 0;
+    const totalItems = comparison.reduce((s, r) => s + r.items, 0);
 
     res.json({
       data: {
-        currentPeriod: period1Total,
-        previousPeriod: period2Total,
-        change: change.toFixed(2),
+        currentPeriod,
+        previousPeriod,
+        change: Math.round(change * 10) / 10,
         totalItems,
-        comparison: [
-          {
-            supplier: 'All Suppliers',
-            currentPeriod: period1Total,
-            previousPeriod: period2Total,
-            change: change.toFixed(2),
-            items: totalItems,
-            avgDelivery: 0,
-          },
-        ],
+        comparison,
       },
     });
   } catch (error: any) {
@@ -1283,75 +1980,119 @@ router.get('/financial/purchase-comparison', async (req: Request, res: Response)
   }
 });
 
-// Import Cost Summary
+// Import Cost Summary — landed cost from import Purchase Orders
 router.get('/financial/import-cost', async (req: Request, res: Response) => {
   try {
     const { from_date, to_date, country } = req.query;
 
-    const where: any = {};
-    if (from_date && to_date) {
-      where.date = {
-        gte: new Date(from_date as string),
-        lte: new Date(to_date as string),
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
+    }
+
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
+
+    const where: any = {
+      date: { gte: fromDate, lte: toDate },
+    };
+
+    if (country && country !== 'all') {
+      where.Supplier = {
+        country: { equals: String(country), mode: 'insensitive' },
       };
     }
 
-    const purchases = await prisma.directPurchaseOrder.findMany({
+    const purchases = await prisma.purchaseOrder.findMany({
       where,
       include: {
-        DirectPurchaseOrderItem: true,
-        DirectPurchaseOrderExpense: true,
+        PurchaseOrderItem: { select: { id: true } },
+        Supplier: {
+          select: {
+            companyName: true,
+            name: true,
+            country: true,
+          },
+        },
       },
+      orderBy: { date: 'desc' },
     });
 
     let totalFOB = 0;
     let totalFreight = 0;
+    let totalInsurance = 0;
     let totalDuties = 0;
-    let totalLanded = 0;
 
-    purchases.forEach((purchase: any) => {
-      totalFOB += purchase.totalAmount || 0;
-      purchase.DirectPurchaseOrderExpense.forEach((expense) => {
-        if (expense.expenseType === 'Freight') {
-          totalFreight += expense.amount;
-        } else if (expense.expenseType === 'Duties') {
-          totalDuties += expense.amount;
-        }
-      });
-    });
+    const result = purchases.map((p) => {
+      const rate = Number(p.conversionRate) || 1;
+      const fcTotal = Number(p.fcTotal) || 0;
+      // Prefer FC×rate as FOB; fall back to totalAmount minus expenses when FC is blank
+      const duties =
+        (Number(p.customsDuty) || 0) +
+        (Number(p.additionalCustomsDuty) || 0) +
+        (Number(p.regulatoryDuty) || 0) +
+        (Number(p.salesTax) || 0) +
+        (Number(p.additionalSalesTax) || 0) +
+        (Number(p.incomeTax) || 0) +
+        (Number(p.ed) || 0);
+      const freight = (Number(p.frtExp) || 0) + (Number(p.locFrt) || 0);
+      const insurance = 0;
+      const otherExp = Math.max(
+        0,
+        (Number(p.totalExp) || 0) - freight - duties,
+      );
+      const fobFromFc = fcTotal > 0 ? fcTotal * rate : 0;
+      const totalAmount = Number(p.totalAmount) || 0;
+      const fobValue =
+        fobFromFc > 0
+          ? fobFromFc
+          : Math.max(0, totalAmount - freight - duties - otherExp);
+      const totalCost =
+        totalAmount > 0 ? totalAmount : fobValue + freight + insurance + duties + otherExp;
 
-    totalLanded = totalFOB + totalFreight + totalDuties;
-    const avgLandingPercent = totalFOB > 0 ? ((totalLanded - totalFOB) / totalFOB * 100) : 0;
-
-    const result = purchases.map((p: any) => {
-      const freight = p.DirectPurchaseOrderExpense.filter(e => e.expenseType === 'Freight').reduce((sum, e) => sum + e.amount, 0);
-      const duties = p.DirectPurchaseOrderExpense.filter(e => e.expenseType === 'Duties').reduce((sum, e) => sum + e.amount, 0);
-      const totalCost = (p.totalAmount || 0) + freight + duties;
+      totalFOB += fobValue;
+      totalFreight += freight;
+      totalInsurance += insurance;
+      totalDuties += duties + otherExp;
 
       return {
         id: p.id,
-        date: new Date(p.date).toLocaleDateString(),
-        lcNumber: p.dpoNumber,
-        supplier: 'N/A',
-        country: country as string || 'N/A',
-        fobValue: p.totalAmount || 0,
-        freight,
-        insurance: 0,
-        duties,
-        totalCost,
-        items: p.DirectPurchaseOrderItem.length,
+        date: p.date.toISOString().slice(0, 10),
+        lcNumber: p.invoiceNo || p.poNumber,
+        supplier: p.Supplier?.companyName || p.Supplier?.name || 'N/A',
+        country: p.Supplier?.country || 'N/A',
+        fobValue: Math.round(fobValue),
+        freight: Math.round(freight),
+        insurance: Math.round(insurance),
+        duties: Math.round(duties + otherExp),
+        totalCost: Math.round(totalCost),
+        items: p.PurchaseOrderItem.length,
       };
     });
+
+    const totalLanded = totalFOB + totalFreight + totalInsurance + totalDuties;
+    const avgLandingPercent =
+      totalFOB > 0 ? ((totalLanded - totalFOB) / totalFOB) * 100 : 0;
+
+    const countries = [
+      ...new Set(
+        result
+          .map((r) => r.country)
+          .filter((c) => c && c !== 'N/A'),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
 
     res.json({
       data: {
         records: result,
+        countries,
         summary: {
-          totalFOB,
-          totalFreight,
-          totalDuties,
-          totalLanded,
-          avgLandingPercent: avgLandingPercent.toFixed(2),
+          totalFOB: Math.round(totalFOB),
+          totalFreight: Math.round(totalFreight),
+          totalDuties: Math.round(totalDuties),
+          totalLanded: Math.round(totalLanded),
+          avgLandingPercent: Math.round(avgLandingPercent * 10) / 10,
         },
       },
     });
@@ -1360,78 +2101,236 @@ router.get('/financial/import-cost', async (req: Request, res: Response) => {
   }
 });
 
-// Expenses Report
+// Expenses Report — posted ExpenseType expenses, else GL expense voucher lines
 router.get('/financial/expenses', async (req: Request, res: Response) => {
   try {
-    const { from_date, to_date, category } = req.query;
+    const { from_date, to_date, category, expense_type_id } = req.query;
 
-    const where: any = {};
-    if (from_date && to_date) {
-      where.date = {
-        gte: new Date(from_date as string),
-        lte: new Date(to_date as string),
-      };
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
     }
 
-    let expenses: any[] = [];
-    try {
-      expenses = await prisma.postedExpense.findMany({
-        where,
-        include: {
-          ExpenseType: true,
-        },
-        orderBy: { date: 'desc' },
-      });
-    } catch (error: any) {
-      // If PostedExpense table doesn't exist, try OperationalExpense
-      try {
-        const operationalExpenses = await prisma.operationalExpense.findMany({
-          where,
-          orderBy: { date: 'desc' },
-        });
-        // Map OperationalExpense to match PostedExpense structure
-        expenses = operationalExpenses.map((e: any) => ({
-          ...e,
-          expenseType: {
-            name: e.expenseType,
-            category: 'Operational',
-          },
-        }));
-      } catch (opError) {
-        // If neither table exists, return empty array
-        return res.json({ data: [] });
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
+
+    const postedWhere: any = {
+      date: { gte: fromDate, lte: toDate },
+    };
+    if (expense_type_id) {
+      postedWhere.expenseTypeId = String(expense_type_id);
+    }
+
+    const posted = await prisma.postedExpense.findMany({
+      where: postedWhere,
+      include: { ExpenseType: true },
+      orderBy: { date: 'desc' },
+    });
+
+    if (posted.length > 0) {
+      let rows = posted.map((e) => ({
+        id: e.id,
+        date: e.date.toISOString().slice(0, 10),
+        reference: e.referenceNumber || e.id.slice(0, 8).toUpperCase(),
+        category: e.ExpenseType?.name || 'N/A',
+        categoryGroup: e.ExpenseType?.category || 'N/A',
+        expenseTypeId: e.expenseTypeId,
+        description: e.description || e.paidTo || '',
+        amount: Math.round(Number(e.amount) || 0),
+        status: 'paid' as const,
+        expenseType: e.ExpenseType
+          ? { name: e.ExpenseType.name, category: e.ExpenseType.category }
+          : null,
+      }));
+
+      if (category && category !== 'all') {
+        const cat = String(category).toLowerCase();
+        rows = rows.filter(
+          (e) =>
+            e.categoryGroup.toLowerCase() === cat ||
+            e.category.toLowerCase() === cat ||
+            e.expenseTypeId === String(category),
+        );
       }
+
+      return res.json({ data: rows });
     }
 
-    const filtered = category && category !== 'all'
-      ? expenses.filter(e => e.expenseType?.category === category)
-      : expenses;
+    // Fallback: expense accounts from posted vouchers (PostedExpense table empty)
+    const entries = await prisma.voucherEntry.findMany({
+      where: {
+        Voucher: {
+          status: 'posted',
+          date: { gte: fromDate, lte: toDate },
+          OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+        },
+        Account: {
+          status: 'Active',
+          Subgroup: {
+            MainGroup: {
+              type: { in: ['Expense', 'expense', 'EXPENSE'] },
+              name: { notIn: ['Cost of Sales', 'Cost'] },
+            },
+          },
+        },
+      },
+      include: {
+        Voucher: {
+          select: {
+            id: true,
+            voucherNumber: true,
+            date: true,
+            narration: true,
+          },
+        },
+        Account: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            Subgroup: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { Voucher: { date: 'desc' } },
+    });
 
-    res.json({ data: filtered });
+    let rows = entries
+      .map((e) => {
+        const amount = (Number(e.debit) || 0) - (Number(e.credit) || 0);
+        if (Math.abs(amount) < 0.005) return null;
+        const categoryName =
+          e.Account?.Subgroup?.name || e.Account?.name || 'Expense';
+        return {
+          id: e.id,
+          date: e.Voucher.date.toISOString().slice(0, 10),
+          reference: e.Voucher.voucherNumber || e.Voucher.id.slice(0, 8),
+          category: categoryName,
+          categoryGroup: categoryName,
+          expenseTypeId: e.Account?.id || null,
+          description:
+            e.description ||
+            e.Voucher.narration ||
+            `${e.Account?.code || ''} ${e.Account?.name || ''}`.trim(),
+          amount: Math.round(amount),
+          status: 'paid' as const,
+          expenseType: {
+            name: e.Account?.name || categoryName,
+            category: categoryName,
+          },
+        };
+      })
+      .filter(Boolean) as any[];
+
+    if (category && category !== 'all') {
+      const cat = String(category).toLowerCase();
+      rows = rows.filter(
+        (e) =>
+          String(e.category).toLowerCase() === cat ||
+          String(e.expenseTypeId) === String(category) ||
+          String(e.expenseType?.name || '')
+            .toLowerCase()
+            .includes(cat),
+      );
+    }
+
+    res.json({ data: rows });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Customer Analysis
+// Customer Analysis — real sales from SalesInvoice
 router.get('/analytics/customers', async (req: Request, res: Response) => {
   try {
     const { from_date, to_date, customer_id } = req.query;
 
-    const customers = await prisma.customer.findMany({
-      where: customer_id ? { id: customer_id as string } : undefined,
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
+    }
+
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
+
+    const invoiceWhere: any = {
+      invoiceDate: { gte: fromDate, lte: toDate },
+      status: { in: SALES_REPORT_INVOICE_STATUSES.filter((s) => !s.includes('return')) },
+      customerType: { not: 'transfer' },
+      NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+    };
+    if (customer_id) {
+      invoiceWhere.customerId = String(customer_id);
+    }
+
+    const invoices = await prisma.salesInvoice.findMany({
+      where: invoiceWhere,
+      select: {
+        id: true,
+        customerId: true,
+        customerName: true,
+        grandTotal: true,
+        paidAmount: true,
+        invoiceDate: true,
+        Customer: {
+          select: {
+            id: true,
+            name: true,
+            contactNo: true,
+            cellNumber: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { invoiceDate: 'desc' },
     });
 
-    // Since invoices don't exist, return customer data with placeholder values
-    const result = customers.map((c) => ({
-      id: c.id,
-      customer: c.name,
-      contact: c.contactNo || c.email || 'N/A',
-      totalOrders: 0,
-      totalSales: 0,
-      balanceDue: c.openingBalance || 0,
-      lastOrder: 'N/A',
-    }));
+    type Agg = {
+      id: string;
+      customer: string;
+      contact: string;
+      totalOrders: number;
+      totalSales: number;
+      balanceDue: number;
+      lastOrder: string;
+    };
+
+    const map: Record<string, Agg> = {};
+    for (const inv of invoices) {
+      const key = inv.customerId || inv.customerName || inv.id;
+      if (!map[key]) {
+        map[key] = {
+          id: inv.customerId || key,
+          customer: inv.Customer?.name || inv.customerName || 'N/A',
+          contact:
+            inv.Customer?.contactNo ||
+            inv.Customer?.cellNumber ||
+            inv.Customer?.email ||
+            'N/A',
+          totalOrders: 0,
+          totalSales: 0,
+          balanceDue: 0,
+          lastOrder: inv.invoiceDate.toISOString().slice(0, 10),
+        };
+      }
+      const amount = Number(inv.grandTotal) || 0;
+      const paid = Number(inv.paidAmount) || 0;
+      map[key].totalOrders += 1;
+      map[key].totalSales += amount;
+      map[key].balanceDue += Math.max(0, amount - paid);
+      const d = inv.invoiceDate.toISOString().slice(0, 10);
+      if (d > map[key].lastOrder) map[key].lastOrder = d;
+    }
+
+    const result = Object.values(map)
+      .map((r) => ({
+        ...r,
+        totalSales: Math.round(r.totalSales),
+        balanceDue: Math.round(r.balanceDue),
+      }))
+      .sort((a, b) => b.totalSales - a.totalSales);
 
     res.json({ data: result });
   } catch (error: any) {
@@ -1439,40 +2338,115 @@ router.get('/analytics/customers', async (req: Request, res: Response) => {
   }
 });
 
-// Customer Aging
+// Customer Aging — unpaid invoice balances bucketed by invoice age
 router.get('/analytics/customer-aging', async (req: Request, res: Response) => {
   try {
     const { customer_type, sort_by } = req.query;
 
-    const customers = await prisma.customer.findMany({
-      where: customer_type && customer_type !== 'all'
-        ? { status: customer_type as string }
-        : {},
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    const invoices = await prisma.salesInvoice.findMany({
+      where: {
+        status: { in: SALES_REPORT_INVOICE_STATUSES },
+        customerType: { not: 'transfer' },
+        paymentStatus: { not: 'paid' },
+        NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+      },
+      select: {
+        id: true,
+        customerId: true,
+        customerName: true,
+        customerType: true,
+        invoiceDate: true,
+        grandTotal: true,
+        paidAmount: true,
+        Customer: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+          },
+        },
+      },
     });
 
-    // Since invoices don't exist, use opening balance as aging data
-    const result = customers.map((c) => {
-      const total = c.openingBalance || 0;
-      return {
-        id: c.id,
-        customer: c.name,
-        type: 'customer' as 'customer' | 'distributor',
-        current: total,
-        days30: 0,
-        days60: 0,
-        days90: 0,
-        over90: 0,
-        total,
-      };
-    });
+    type Bucket = {
+      id: string;
+      customer: string;
+      type: 'customer' | 'distributor';
+      current: number;
+      days30: number;
+      days60: number;
+      days90: number;
+      over90: number;
+      total: number;
+    };
 
-    // Sort
-    if (sort_by === 'total') {
-      result.sort((a, b) => b.total - a.total);
-    } else if (sort_by === 'over90') {
-      result.sort((a, b) => b.over90 - a.over90);
-    } else {
+    const map: Record<string, Bucket> = {};
+
+    const resolveType = (inv: (typeof invoices)[0]): 'customer' | 'distributor' => {
+      const cat = String(inv.Customer?.category || '').toLowerCase();
+      if (cat === 'reseller' || cat.includes('distribut')) return 'distributor';
+      return 'customer';
+    };
+
+    for (const inv of invoices) {
+      const dueAmount = Math.max(
+        0,
+        (Number(inv.grandTotal) || 0) - (Number(inv.paidAmount) || 0),
+      );
+      if (dueAmount <= 0) continue;
+
+      const type = resolveType(inv);
+      if (customer_type === 'customer' && type !== 'customer') continue;
+      if (customer_type === 'distributor' && type !== 'distributor') continue;
+
+      // Classic AR aging by invoice date (matches Current 0–30 / 30–60 / 60–90 / 90+)
+      const ageMs = today.getTime() - new Date(inv.invoiceDate).getTime();
+      const ageDays = Math.max(0, Math.floor(ageMs / (1000 * 60 * 60 * 24)));
+
+      const key = inv.customerId || `name:${inv.customerName}`;
+      if (!map[key]) {
+        map[key] = {
+          id: inv.customerId || key,
+          customer: inv.Customer?.name || inv.customerName || 'N/A',
+          type,
+          current: 0,
+          days30: 0,
+          days60: 0,
+          days90: 0,
+          over90: 0,
+          total: 0,
+        };
+      }
+
+      if (ageDays < 30) map[key].current += dueAmount;
+      else if (ageDays < 60) map[key].days30 += dueAmount;
+      else if (ageDays < 90) map[key].days60 += dueAmount;
+      else map[key].over90 += dueAmount;
+
+      map[key].total += dueAmount;
+    }
+
+    let result = Object.values(map)
+      .map((r) => ({
+        ...r,
+        current: Math.round(r.current),
+        days30: Math.round(r.days30),
+        days60: Math.round(r.days60),
+        days90: Math.round(r.days90),
+        over90: Math.round(r.over90),
+        total: Math.round(r.total),
+      }))
+      .filter((r) => r.total > 0);
+
+    if (sort_by === 'over90') {
+      result.sort((a, b) => b.over90 - a.over90 || b.total - a.total);
+    } else if (sort_by === 'name') {
       result.sort((a, b) => a.customer.localeCompare(b.customer));
+    } else {
+      result.sort((a, b) => b.total - a.total);
     }
 
     res.json({ data: result });
@@ -1698,46 +2672,110 @@ router.get('/sales/profit', async (req: Request, res: Response) => {
   }
 });
 
-// Supplier Performance
+// Supplier Performance — DPO + import Purchase Orders by supplier
 router.get('/analytics/supplier-performance', async (req: Request, res: Response) => {
   try {
     const { from_date, to_date, supplier_id } = req.query;
 
-    const where: any = {};
-    if (supplier_id) {
-      where.supplierId = supplier_id as string;
-    }
-    if (from_date && to_date) {
-      where.date = {
-        gte: new Date(from_date as string),
-        lte: new Date(to_date as string),
-      };
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
     }
 
-    const suppliers = await prisma.supplier.findMany({
-      where: supplier_id ? { id: supplier_id as string } : {},
-    });
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
 
-    const purchases = await prisma.directPurchaseOrder.findMany({
-      where,
-    });
+    const spanMs = Math.max(1, toDate.getTime() - fromDate.getTime());
+    const priorTo = new Date(fromDate.getTime() - 1);
+    const priorFrom = new Date(priorTo.getTime() - spanMs);
 
-    const result = suppliers.map((s) => {
-      const supplierPurchases = purchases.filter(p => p.supplierId === s.id);
-      const totalValue = supplierPurchases.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+    const where: any = {
+      date: { gte: fromDate, lte: toDate },
+      supplierId: { not: null },
+    };
+    if (supplier_id) where.supplierId = String(supplier_id);
 
-      return {
-        id: s.id,
-        supplier: s.companyName,
-        totalOrders: supplierPurchases.length,
-        totalValue,
-        onTimeDelivery: 95, // Mock value
-        qualityRating: 4.5, // Mock value
-        avgDeliveryDays: 7, // Mock value
-        defectRate: 2.5, // Mock value
-        trend: 'stable' as 'up' | 'down' | 'stable',
-      };
-    });
+    const priorWhere: any = {
+      date: { gte: priorFrom, lte: priorTo },
+      supplierId: { not: null },
+    };
+    if (supplier_id) priorWhere.supplierId = String(supplier_id);
+
+    const supplierSelect = {
+      Supplier: { select: { id: true, companyName: true, name: true } },
+    } as const;
+
+    const [dpos, priorDpos, pos, priorPos] = await Promise.all([
+      prisma.directPurchaseOrder.findMany({
+        where,
+        include: supplierSelect,
+      }),
+      prisma.directPurchaseOrder.findMany({
+        where: priorWhere,
+        select: { supplierId: true, totalAmount: true },
+      }),
+      prisma.purchaseOrder.findMany({
+        where,
+        include: supplierSelect,
+      }),
+      prisma.purchaseOrder.findMany({
+        where: priorWhere,
+        select: { supplierId: true, totalAmount: true },
+      }),
+    ]);
+
+    const priorBySupplier: Record<string, number> = {};
+    for (const p of [...priorDpos, ...priorPos]) {
+      if (!p.supplierId) continue;
+      priorBySupplier[p.supplierId] =
+        (priorBySupplier[p.supplierId] || 0) + (Number(p.totalAmount) || 0);
+    }
+
+    const bySupplier: Record<
+      string,
+      { id: string; supplier: string; totalOrders: number; totalValue: number }
+    > = {};
+
+    for (const p of [...dpos, ...pos]) {
+      if (!p.supplierId) continue;
+      if (!bySupplier[p.supplierId]) {
+        bySupplier[p.supplierId] = {
+          id: p.supplierId,
+          supplier: p.Supplier?.companyName || p.Supplier?.name || 'N/A',
+          totalOrders: 0,
+          totalValue: 0,
+        };
+      }
+      bySupplier[p.supplierId].totalOrders += 1;
+      bySupplier[p.supplierId].totalValue += Number(p.totalAmount) || 0;
+    }
+
+    const result = Object.values(bySupplier)
+      .map((s) => {
+        const prev = priorBySupplier[s.id] || 0;
+        let trend: 'up' | 'down' | 'stable' = 'stable';
+        if (prev > 0) {
+          const change = (s.totalValue - prev) / prev;
+          if (change > 0.05) trend = 'up';
+          else if (change < -0.05) trend = 'down';
+        } else if (s.totalValue > 0) {
+          trend = 'up';
+        }
+        return {
+          id: s.id,
+          supplier: s.supplier,
+          totalOrders: s.totalOrders,
+          totalValue: Math.round(s.totalValue),
+          // Delivery/quality KPIs are not tracked in DB yet
+          onTimeDelivery: null as number | null,
+          qualityRating: null as number | null,
+          avgDeliveryDays: null as number | null,
+          defectRate: null as number | null,
+          trend,
+        };
+      })
+      .sort((a, b) => b.totalValue - a.totalValue);
 
     res.json({ data: result });
   } catch (error: any) {

@@ -47,6 +47,7 @@ router.get("/dropdown", async (req: Request, res: Response) => {
                 id: true,
                 partNo: true,
                 description: true,
+                origin: true,
                 Brand: {
                     select: {
                         name: true
@@ -69,7 +70,8 @@ router.get("/dropdown", async (req: Request, res: Response) => {
             partNo: p.partNo,
             masterPartNo: (p as any).MasterPart?.masterPartNo ?? null,
             description: p.description,
-            brand: p.Brand?.name || null
+            brand: p.Brand?.name || null,
+            origin: p.origin || null,
         }));
 
         res.json({

@@ -1,6 +1,6 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { 
   LayoutDashboard, 
   FileText, 
@@ -18,6 +18,7 @@ import {
   Filter,
   Wallet,
   ReceiptText,
+  TrendingUp,
 } from "lucide-react";
 import RealTimeDashboard from "./RealTimeDashboard";
 import SalesReportTab from "./SalesReportTab";
@@ -36,6 +37,7 @@ import SupplierPerformanceTab from "./SupplierPerformanceTab";
 import TopSellingItemsTab from "./TopSellingItemsTab";
 import SupplierPayableTab from "./SupplierPayableTab";
 import CustomerReceivableTab from "./CustomerReceivableTab";
+import { SaleProfitReport } from "@/components/sales/SaleProfitReport";
 
 type CategoryType = "overview" | "sales" | "inventory" | "financial" | "analytics";
 
@@ -56,9 +58,10 @@ const categories: { id: CategoryType; label: string; color: string }[] = [
 const subTabs: Record<CategoryType, SubTab[]> = {
   overview: [
     { id: "dashboard", label: "Real-Time Dashboard", icon: LayoutDashboard },
-    { id: "sales-report", label: "Sales Report", icon: FileText },
   ],
   sales: [
+    { id: "sales-report", label: "Sales Report", icon: FileText },
+    { id: "sale-profit-report", label: "Sale Profit", icon: TrendingUp },
     { id: "top-selling-items", label: "Item Sales Analytics", icon: BarChart3 },
     { id: "periodic-sales", label: "Periodic Sales", icon: Calendar },
     { id: "sales-by-type", label: "Sales by Type", icon: CreditCard },
@@ -83,14 +86,39 @@ const subTabs: Record<CategoryType, SubTab[]> = {
   ],
 };
 
+const CATEGORY_IDS = new Set<string>(categories.map((c) => c.id));
+
+const resolveCategory = (value: string | null): CategoryType => {
+  if (value && CATEGORY_IDS.has(value)) return value as CategoryType;
+  return "overview";
+};
+
+const resolveSubTab = (category: CategoryType, value: string | null): string => {
+  const tabs = subTabs[category];
+  if (value && tabs.some((t) => t.id === value)) return value;
+  return tabs[0].id;
+};
+
 const ReportsAnalytics = () => {
-  const [activeCategory, setActiveCategory] = useState<CategoryType>("overview");
-  const [activeSubTab, setActiveSubTab] = useState<string>("dashboard");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showCategories, setShowCategories] = useState(true);
 
+  const activeCategory = resolveCategory(searchParams.get("category"));
+  const activeSubTab = resolveSubTab(activeCategory, searchParams.get("tab"));
+
+  const updateParams = (category: CategoryType, tab: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("category", category);
+    next.set("tab", tab);
+    setSearchParams(next, { replace: true });
+  };
+
   const handleCategoryChange = (category: CategoryType) => {
-    setActiveCategory(category);
-    setActiveSubTab(subTabs[category][0].id);
+    updateParams(category, subTabs[category][0].id);
+  };
+
+  const handleSubTabChange = (tabId: string) => {
+    updateParams(activeCategory, tabId);
   };
 
   const renderContent = () => {
@@ -99,6 +127,8 @@ const ReportsAnalytics = () => {
         return <RealTimeDashboard />;
       case "sales-report":
         return <SalesReportTab />;
+      case "sale-profit-report":
+        return <SaleProfitReport />;
       case "periodic-sales":
         return <PeriodicSalesTab />;
       case "top-selling-items":
@@ -170,29 +200,31 @@ const ReportsAnalytics = () => {
         </div>
       )}
 
-      {/* Sub Tabs - Horizontal Scrollable */}
-      <div className="overflow-x-auto pb-2">
-        <div className="flex gap-1 min-w-max border-b border-border">
-          {subTabs[activeCategory].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeSubTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveSubTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                  isActive
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            );
-          })}
+      {/* Sub Tabs - Horizontal Scrollable (hide when only one tab) */}
+      {subTabs[activeCategory].length > 1 && (
+        <div className="overflow-x-auto pb-2">
+          <div className="flex gap-1 min-w-max border-b border-border">
+            {subTabs[activeCategory].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeSubTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleSubTabChange(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                    isActive
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Content */}
       <div className="mt-4">

@@ -49,6 +49,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Select,
   SelectContent,
@@ -85,6 +86,7 @@ interface DirectPurchaseOrderItem {
   masterPartNo?: string;
   description: string;
   brand: string;
+  origin?: string;
   uom: string;
   quantity: number;
   returnedQuantity: number;
@@ -372,6 +374,7 @@ export const DirectPurchaseOrder = ({
       masterPartNo: string; // Master Part No (master_part_no)
       description: string;
       brand: string;
+      origin?: string;
       uom: string;
       price: number;
       priceA?: number | null;
@@ -515,6 +518,7 @@ export const DirectPurchaseOrder = ({
           masterPartNo: p.master_part_no || p.masterPartNo || '',
           description: p.description || '',
           brand: p.brand_name || p.brand?.name || null,
+          origin: p.origin || undefined,
           uom: p.uom || 'pcs',
           price: p.price_a || p.priceA || p.cost || 0,
           priceA: p.price_a ?? p.priceA ?? null,
@@ -1089,6 +1093,7 @@ export const DirectPurchaseOrder = ({
       masterPartNo: item.master_part_no || item.masterPartNo || "",
       description: item.part_description || item.part_no,
       brand: item.brand || "",
+      origin: item.origin || item.Part?.origin || "",
       uom: item.uom || "pcs",
       quantity: item.quantity,
       returnedQuantity: item.returned_quantity || 0,
@@ -1334,7 +1339,11 @@ export const DirectPurchaseOrder = ({
         setParts((currentParts) =>
           currentParts.map((p) =>
             p.id === partId && !p.brand
-              ? { ...p, brand: response.brand_name }
+              ? {
+                  ...p,
+                  brand: response.brand_name,
+                  origin: response.origin || p.origin,
+                }
               : p,
           ),
         );
@@ -2848,9 +2857,10 @@ export const DirectPurchaseOrder = ({
                             <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                               <div>
                                 <span className="block mb-0.5">Brand</span>
-                                <span className="text-foreground font-medium">
-                                  {selectedPart?.brand || "-"}
-                                </span>
+                                <BrandOriginCell
+                                  brand={selectedPart?.brand}
+                                  origin={selectedPart?.origin}
+                                />
                               </div>
                               <div>
                                 <span className="block mb-0.5">UoM</span>
@@ -3074,7 +3084,12 @@ export const DirectPurchaseOrder = ({
                                       onAutoOpenHandled={() => setFocusItemSelectId(null)}
                                     />
                                   </TableCell>
-                                  <TableCell>{selectedPart?.brand || "-"}</TableCell>
+                                  <TableCell>
+                                    <BrandOriginCell
+                                      brand={selectedPart?.brand}
+                                      origin={selectedPart?.origin}
+                                    />
+                                  </TableCell>
                                   <TableCell>{selectedPart?.uom || "-"}</TableCell>
                                   <TableCell>
                                     <Input
@@ -3604,12 +3619,6 @@ export const DirectPurchaseOrder = ({
                     <Label className="text-muted-foreground">Remarks</Label>
                     <p className="font-medium">{selectedOrder.description || "-"}</p>
                   </div>
-                  {!isTransferIn && (
-                    <div>
-                      <Label className="text-muted-foreground">Account</Label>
-                      <p className="font-medium">{selectedOrder.account}</p>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -3644,6 +3653,8 @@ export const DirectPurchaseOrder = ({
                         <TableHead className="text-right min-w-[100px]">Cost / Unit</TableHead>
                         <TableHead className="min-w-[100px]">Price A</TableHead>
                         <TableHead className="min-w-[100px]">Price B</TableHead>
+                        <TableHead className="text-right min-w-[80px]">Weight</TableHead>
+                        <TableHead className="text-right min-w-[100px]">Total Weight</TableHead>
                         <TableHead className="text-center min-w-[72px]">Action</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -3659,6 +3670,9 @@ export const DirectPurchaseOrder = ({
                               ? String(item.priceB)
                               : "",
                         };
+                        const unitWeight = Number(item.weight) || 0;
+                        const lineTotalWeight =
+                          (Number(item.quantity) || 0) * unitWeight;
                         return (
                         <TableRow key={item.id} className="hover:bg-muted/30">
                           <ListNumberCell index={index} total={selectedOrder.items.length} />
@@ -3674,9 +3688,13 @@ export const DirectPurchaseOrder = ({
                             )}
                           </TableCell>
                           <TableCell>{item.description}</TableCell>
-                          <TableCell>{item.brand}</TableCell>
-                          <TableCell>{item.uom}</TableCell>
-                          <TableCell>{item.quantity}</TableCell>
+                          <TableCell>
+                            <BrandOriginCell brand={item.brand} origin={item.origin} />
+                          </TableCell>
+                          <TableCell>{item.uom || "-"}</TableCell>
+                          <TableCell className="tabular-nums">
+                            {Number(item.quantity || 0).toLocaleString("en-PK")}
+                          </TableCell>
                           <TableCell>{formatPurchasePrice(item.purchasePrice)}</TableCell>
                           <TableCell className="text-right font-medium">
                             {item.amount.toLocaleString("en-PK")}
@@ -3715,6 +3733,22 @@ export const DirectPurchaseOrder = ({
                               }
                             />
                           </TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">
+                            {unitWeight > 0
+                              ? unitWeight.toLocaleString("en-PK", {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 4,
+                                })
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">
+                            {lineTotalWeight > 0
+                              ? lineTotalWeight.toLocaleString("en-PK", {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 4,
+                                })
+                              : "-"}
+                          </TableCell>
                           <TableCell className="text-center">
                             {item.partId ? (
                               <Button
@@ -3737,6 +3771,51 @@ export const DirectPurchaseOrder = ({
                         );
                       })}
                     </TableBody>
+                    <TableFooter className="bg-muted/30">
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell className="font-semibold text-xs uppercase text-muted-foreground">
+                          Totals
+                        </TableCell>
+                        <TableCell />
+                        <TableCell />
+                        <TableCell />
+                        <TableCell />
+                        <TableCell className="font-semibold tabular-nums">
+                          {selectedOrder.items
+                            .reduce((s, i) => s + (Number(i.quantity) || 0), 0)
+                            .toLocaleString("en-PK")}
+                        </TableCell>
+                        <TableCell />
+                        <TableCell className="text-right font-semibold tabular-nums">
+                          {selectedOrder.items
+                            .reduce((s, i) => s + (Number(i.amount) || 0), 0)
+                            .toLocaleString("en-PK", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                        </TableCell>
+                        <TableCell />
+                        <TableCell />
+                        <TableCell />
+                        <TableCell />
+                        <TableCell />
+                        <TableCell className="text-right font-semibold tabular-nums text-xs">
+                          {selectedOrder.items
+                            .reduce(
+                              (s, i) =>
+                                s +
+                                (Number(i.quantity) || 0) *
+                                  (Number(i.weight) || 0),
+                              0,
+                            )
+                            .toLocaleString("en-PK", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 4,
+                            })}
+                        </TableCell>
+                        <TableCell />
+                      </TableRow>
+                    </TableFooter>
                   </table>
                 </div>
               </div>

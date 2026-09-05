@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Select,
   SelectContent,
@@ -138,6 +139,7 @@ interface KitDetailRow {
   itemPartNo: string;
   itemDescription: string;
   brand: string;
+  origin?: string;
   qtyPerKit: number;
   stock: number;
 }
@@ -617,6 +619,7 @@ export const ItemsListView = ({
               itemPartNo: String(row.item_part_no || "").trim(),
               itemDescription: String(row.item_description || "").trim(),
               brand: String(row.brand_name || "").trim(),
+              origin: String((row as any).origin || "").trim() || undefined,
               qtyPerKit: Math.max(1, Number(row.quantity || 1)),
               stock: Number(row.stock || 0),
             }))
@@ -704,6 +707,7 @@ export const ItemsListView = ({
       "Master Part No",
       "Part No",
       "Brand",
+      "Origin",
       "Description",
       "Category",
       "Sub Category",
@@ -721,6 +725,7 @@ export const ItemsListView = ({
       item.masterPartNo,
       item.partNo,
       item.brand,
+      item.origin || "",
       item.description,
       item.category,
       item.subCategory,
@@ -906,6 +911,7 @@ export const ItemsListView = ({
       "Master Part No",
       "Part No",
       "Brand",
+      "Origin",
       "Description",
       "Category",
       "Sub Category",
@@ -918,6 +924,7 @@ export const ItemsListView = ({
       escapeCSV(item.masterPartNo),
       escapeCSV(item.partNo),
       escapeCSV(item.brand),
+      escapeCSV(item.origin || ""),
       escapeCSV(item.description),
       escapeCSV(item.category),
       escapeCSV(item.subCategory),
@@ -959,6 +966,7 @@ export const ItemsListView = ({
       "Master Part No",
       "Part No",
       "Brand",
+      "Origin",
       "Description",
       "Category",
       "Sub Category",
@@ -969,6 +977,7 @@ export const ItemsListView = ({
       escapeCSV(item.masterPartNo),
       escapeCSV(item.partNo),
       escapeCSV(item.brand),
+      escapeCSV(item.origin || ""),
       escapeCSV(item.description),
       escapeCSV(item.category),
       escapeCSV(item.subCategory),
@@ -1011,6 +1020,7 @@ export const ItemsListView = ({
       "Master Part No",
       "Part No",
       "Brand",
+      "Origin",
       "Description",
       "Category",
       "Sub Category",
@@ -1024,6 +1034,7 @@ export const ItemsListView = ({
       "Master Part No": item.masterPartNo || "",
       "Part No": item.partNo || "",
       Brand: item.brand || "",
+      Origin: item.origin || "",
       Description: item.description || "",
       Category: item.category || "",
       "Sub Category": item.subCategory || "",
@@ -1106,6 +1117,7 @@ export const ItemsListView = ({
       txtLines.push(`  Master Part No: ${item.masterPartNo || "-"}`);
       txtLines.push(`  Part No: ${item.partNo || "-"}`);
       txtLines.push(`  Brand: ${item.brand || "-"}`);
+      txtLines.push(`  Origin: ${item.origin || "-"}`);
       txtLines.push(`  Description: ${item.description || "-"}`);
       txtLines.push(`  Category: ${item.category || "-"}`);
       txtLines.push(`  Sub Category: ${item.subCategory || "-"}`);
@@ -1161,6 +1173,7 @@ export const ItemsListView = ({
                 <th>Master Part No</th>
                 <th>Part No</th>
                 <th>Brand</th>
+                <th>Origin</th>
                 <th>Description</th>
                 <th>Category</th>
                 <th>Sub Category</th>
@@ -1176,6 +1189,7 @@ export const ItemsListView = ({
                   <td>${item.masterPartNo || "-"}</td>
                   <td>${item.partNo || "-"}</td>
                   <td>${item.brand || "-"}</td>
+                  <td>${item.origin || "-"}</td>
                   <td>${item.description || "-"}</td>
                   <td>${item.category || "-"}</td>
                   <td>${item.subCategory || "-"}</td>
@@ -1415,6 +1429,7 @@ export const ItemsListView = ({
                 <th>Master Part No</th>
                 <th>Part No</th>
                 <th>Brand</th>
+                <th>Origin</th>
                 <th>Description</th>
                 <th>Category</th>
                 <th>Sub Category</th>
@@ -1430,6 +1445,7 @@ export const ItemsListView = ({
                   <td>${item.masterPartNo}</td>
                   <td>${item.partNo}</td>
                   <td>${item.brand}</td>
+                  <td>${item.origin || "-"}</td>
                   <td>${item.description}</td>
                   <td>${item.category || "-"}</td>
                   <td>${item.subCategory || "-"}</td>
@@ -2007,6 +2023,9 @@ export const ItemsListView = ({
                           Brand
                         </TableHead>
                         <TableHead className="text-xs font-medium">
+                          Origin
+                        </TableHead>
+                        <TableHead className="text-xs font-medium">
                           Description
                         </TableHead>
                         <TableHead className="text-xs font-medium text-[#F28123]">
@@ -2167,7 +2186,12 @@ export const ItemsListView = ({
                             </span>
                           </TableCell>
                           <TableCell className="text-xs">
-                            {item.brand}
+                            {item.brand || "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {item.origin && item.origin.trim()
+                              ? item.origin.trim()
+                              : "-"}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">
                             {item.description}
@@ -2453,7 +2477,7 @@ export const ItemsListView = ({
                       {filteredItems.length === 0 && (
                         <TableRow>
                           <TableCell
-                            colSpan={showDuplicateView ? 15 : 14}
+                            colSpan={showDuplicateView ? 16 : 15}
                             className="h-24 text-center text-xs text-muted-foreground"
                           >
                             No parts found matching your filters.
@@ -3205,7 +3229,7 @@ export const ItemsListView = ({
                         {row.itemDescription || "-"}
                       </div>
                       <div className="col-span-1 truncate" title={row.brand}>
-                        {row.brand || "-"}
+                        <BrandOriginCell brand={row.brand} origin={row.origin} />
                       </div>
                       <div className="col-span-2 text-right">{row.stock}</div>
                       <div className="col-span-1 text-right">{row.qtyPerKit}</div>
@@ -3329,7 +3353,7 @@ export const ItemsListView = ({
                         {row.itemDescription || "-"}
                       </div>
                       <div className="col-span-1 truncate" title={row.brand}>
-                        {row.brand || "-"}
+                        <BrandOriginCell brand={row.brand} origin={row.origin} />
                       </div>
                       <div className="col-span-2 text-right">{row.stock}</div>
                       <div className="col-span-1 text-right">{row.qtyPerKit}</div>

@@ -15,6 +15,10 @@ import { formatUiDate } from "@/utils/dateUtils";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import {
+  performedByPayload,
+  useStoreOperatorAuth,
+} from "@/hooks/useStoreOperatorAuth";
 
 interface PurchaseOrderItem {
   id: string;
@@ -57,6 +61,7 @@ interface OrderItemForm {
 }
 
 export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditPOProps) => {
+  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
   const [loading, setLoading] = useState(false);
   const [formDate, setFormDate] = useState<Date>(new Date());
   const [formExpectedDate, setFormExpectedDate] = useState<Date | undefined>(undefined);
@@ -192,6 +197,12 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
     try {
       setLoading(true);
 
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       // Prepare items for API
       const itemsForUpdate = formItems
         .filter(item => item.partId && item.quantity && item.unitCost)
@@ -212,9 +223,14 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
         notes: formNotes || undefined,
         status: formStatus,
         items: itemsForUpdate,
+        ...by,
       });
 
-      toast.success("Purchase Order updated successfully");
+      toast.success(
+        operator
+          ? `Purchase Order updated successfully (Saved as ${operator.name})`
+          : "Purchase Order updated successfully",
+      );
       onOpenChange(false);
       if (onSuccess) {
         onSuccess();

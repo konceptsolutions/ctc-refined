@@ -86,6 +86,7 @@ export interface PartItem {
   grade: ItemGrade;
   category: string;
   brands: ItemBrand[];
+  origin?: string;
   lastSaleQty?: number;
   lastSalePrice?: number;
   lastSaleCustomerName?: string;
@@ -124,6 +125,7 @@ export interface InvoiceItem {
   lineTotal: number;
   grade: ItemGrade;
   brand?: string;
+  origin?: string;
   machineModel?: string;
   machineRequiredQty?: number;
   stockLocations?: StockLocation[];
@@ -186,6 +188,7 @@ export interface Invoice {
   validUntil?: string;
   quotationStatus?: string;
   quotationTerms?: string | null;
+  deliveryDays?: number | null;
   /** Present on sales invoices converted from quotations */
   quotationId?: string | null;
   deliveredTo?: string | null;

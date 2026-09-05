@@ -187,6 +187,27 @@ async function setQuotationTermsField(
   `;
 }
 
+function normalizeDeliveryDays(value: unknown): number {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 1) return 2;
+  return Math.min(n, 365);
+}
+
+async function setQuotationDeliveryDaysField(
+  quotationId: string,
+  deliveryDays: number | null | undefined,
+): Promise<void> {
+  if (deliveryDays === undefined) return;
+  const days =
+    deliveryDays == null ? 2 : normalizeDeliveryDays(deliveryDays);
+  // Prefer raw SQL so the value is persisted even if the Prisma client is stale.
+  await prisma.$executeRawUnsafe(
+    `UPDATE "SalesQuotation" SET "deliveryDays" = $1 WHERE "id" = $2`,
+    days,
+    quotationId,
+  );
+}
+
 function quotationItemLineTotal(item: {
   quantity?: number;
   qtyDiv?: number;
@@ -197,26 +218,44 @@ function quotationItemLineTotal(item: {
   return qtyDiv * unitPrice;
 }
 
-/** Until Prisma client is regenerated, attach quotationTerms from DB. */
+/** Until Prisma client is regenerated, attach quotationTerms / deliveryDays from DB. */
 async function attachQuotationTerms<T extends { id: string }>(
   quotations: T[],
-): Promise<Array<T & { quotationTerms: string | null }>> {
+): Promise<
+  Array<T & { quotationTerms: string | null; deliveryDays: number | null }>
+> {
   if (!quotations.length) return [];
   const ids = quotations.map((q) => q.id);
   const rows = await prisma.$queryRaw<
-    Array<{ id: string; quotationTerms: string | null }>
+    Array<{
+      id: string;
+      quotationTerms: string | null;
+      deliveryDays: number | null;
+    }>
   >(
     Prisma.sql`
-      SELECT "id", "quotationTerms"
+      SELECT "id", "quotationTerms", "deliveryDays"
       FROM "SalesQuotation"
       WHERE "id" IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}`))})
     `,
   );
-  const termsById = new Map(rows.map((row) => [row.id, row.quotationTerms]));
-  return quotations.map((q) => ({
-    ...q,
-    quotationTerms: termsById.get(q.id) ?? null,
-  }));
+  const byId = new Map(
+    rows.map((row) => [
+      row.id,
+      {
+        quotationTerms: row.quotationTerms,
+        deliveryDays: row.deliveryDays,
+      },
+    ]),
+  );
+  return quotations.map((q) => {
+    const extra = byId.get(q.id);
+    return {
+      ...q,
+      quotationTerms: extra?.quotationTerms ?? null,
+      deliveryDays: extra?.deliveryDays ?? null,
+    };
+  });
 }
 
 async function getNextNumberForPrefix(args: {
@@ -1122,6 +1161,7 @@ router.post("/quotations", async (req: Request, res: Response) => {
       status,
       notes,
       quotationTerms,
+      deliveryDays,
       items,
       subtotal,
       overallDiscount,
@@ -1216,6 +1256,10 @@ router.post("/quotations", async (req: Request, res: Response) => {
       quotation.id,
       quotationTerms?.trim() || null,
     );
+    await setQuotationDeliveryDaysField(
+      quotation.id,
+      deliveryDays !== undefined ? normalizeDeliveryDays(deliveryDays) : 2,
+    );
 
     const updatedQuotation = await prisma.salesQuotation.findUnique({
       where: { id: quotation.id },
@@ -1266,6 +1310,7 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
       status,
       notes,
       quotationTerms,
+      deliveryDays,
       items,
       subtotal,
       overallDiscount,
@@ -1362,6 +1407,12 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
       id,
       quotationTerms !== undefined
         ? String(quotationTerms || "").trim() || null
+        : undefined,
+    );
+    await setQuotationDeliveryDaysField(
+      id,
+      deliveryDays !== undefined
+        ? normalizeDeliveryDays(deliveryDays)
         : undefined,
     );
 
@@ -1533,6 +1584,7 @@ router.post(
               lineTotal: initiateQty * Number(item.unitPrice || 0),
               grade: "A",
               brand: item.Part.Brand?.name || "",
+              origin: item.Part.origin || "",
             })),
           },
         };
@@ -2198,6 +2250,7 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
               part_no: itemForPart.partNo,
               part_description: itemForPart.description,
               brand: itemForPart.brand || itemForPart.Part?.Brand?.name || "",
+              origin: itemForPart.Part?.origin || "",
               ordered_qty: orderedQty,
               delivered_qty: deliveredQty,
               sold_qty: soldQty,
@@ -3701,7 +3754,9 @@ async function createInvoiceStockReservationsCore(
 router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { challanNo, deliveryDate, deliveredBy, items } = req.body;
+    const { challanNo, deliveryDate, deliveredBy, performedBy, items } = req.body;
+    const operatorName =
+      String(deliveredBy || performedBy || "").trim() || null;
 
     const invoice = await prisma.salesInvoice.findUnique({
       where: { id },
@@ -3757,7 +3812,7 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
           invoiceId: id,
           challanNo,
           deliveryDate: new Date(deliveryDate),
-          deliveredBy,
+          deliveredBy: operatorName,
           DeliveryLogItem: {
             create: items.map((item: any, index: number) => ({
               id: `dli_${Date.now()}_${index}`,

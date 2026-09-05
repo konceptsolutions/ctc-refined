@@ -21,6 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
@@ -33,6 +34,7 @@ interface AdjustmentItem {
   part_no: string;
   part_description: string;
   brand: string;
+  origin?: string;
   category: string; 
   quantity: number;
   cost: number;
@@ -317,7 +319,9 @@ export const StoreAdjustedItem = ({
                           <TableCell className="max-w-[200px] truncate">
                             {item.part_description || "-"}
                           </TableCell>
-                          <TableCell>{item.brand || "-"}</TableCell>
+                          <TableCell>
+                            <BrandOriginCell brand={item.brand || "-"} origin={item.origin} />
+                          </TableCell>
                           <TableCell>{item.quantity}</TableCell>
                           <TableCell>Rs {item.cost?.toFixed(2) || "0.00"}</TableCell>
                           <TableCell className="font-medium">

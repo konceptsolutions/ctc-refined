@@ -173,6 +173,64 @@ router.post('/login', async (req, res) => {
     }
 });
 
+/**
+ * Match a password to any active user without changing the session JWT.
+ * Used by Store module to attribute saves to the operator who entered the password.
+ */
+router.post('/verify-password', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader?.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Authentication token is required' });
+        }
+        const token = authHeader.split(' ')[1];
+        try {
+            jwt.verify(token, JWT_SECRET as jwt.Secret);
+        } catch {
+            return res.status(403).json({ error: 'Token is invalid or expired' });
+        }
+
+        const password = String(req.body?.password || '');
+        if (!password) {
+            return res.status(400).json({ error: 'Password is required' });
+        }
+
+        const users = await prisma.$queryRaw<Array<{
+            id: string;
+            name: string;
+            email: string;
+            password: string | null;
+            status: string;
+            role: string;
+        }>>`
+            SELECT u.id, u.name, u.email, u.password, u.status, r.name AS role
+            FROM "User" u
+            JOIN "Role" r ON r.id = u."roleId"
+            WHERE u.password IS NOT NULL
+              AND LOWER(u.status) = 'active'
+        `;
+
+        for (const user of users) {
+            if (!user.password) continue;
+            const ok = await bcrypt.compare(password, user.password);
+            if (!ok) continue;
+            return res.json({
+                data: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                },
+            });
+        }
+
+        return res.status(401).json({ error: 'Password does not match any active user' });
+    } catch (error: any) {
+        console.error('Verify password error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 router.get('/me', async (req, res) => {
     try {
         const authHeader = req.headers.authorization;

@@ -24,6 +24,7 @@ import {
   ListNumberHeader,
   LIST_NUMBER_HEAD_CLASS,
 } from "@/components/ui/list-table-number";
+import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import {
   Select,
   SelectContent,
@@ -142,6 +143,7 @@ interface ModelAssociationItem {
   partNo: string;
   description: string;
   brand: string;
+  origin?: string;
   application?: string;
   model: string;
   quantity: number;
@@ -686,6 +688,7 @@ export const PurchaseInquiry = ({
         partNo: String(item.part_no || item.partNo || ""),
         description: String(item.description || ""),
         brand: String(item.brand_name || item.brand || ""),
+        origin: String(item.origin || "").trim() || undefined,
         application: String(item.application_name || item.application || ""),
         model: String(item.model_name || item.model || modelName),
         quantity: Number(item.quantity ?? item.qty_used ?? 0),
@@ -1300,7 +1303,9 @@ export const PurchaseInquiry = ({
                           >
                             {fmtPartNos(item)}
                           </TableCell>
-                          <TableCell className="text-xs">{item.brand}</TableCell>
+                          <TableCell className="text-xs">
+                            <BrandOriginCell brand={item.brand} origin={item.origin} />
+                          </TableCell>
                           <TableCell className="text-xs">{item.origin}</TableCell>
                           <TableCell className="text-xs tabular-nums">{fmtQty(item.stock)}</TableCell>
                           <TableCell
@@ -1597,7 +1602,7 @@ export const PurchaseInquiry = ({
                               {item.description || "N/A"}
                             </TableCell>
                             <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap">
-                              {item.brand || "N/A"}
+                              <BrandOriginCell brand={item.brand || "N/A"} origin={item.origin} />
                             </TableCell>
                             <TableCell className="text-xs p-1">
                               {item.id && canEdit ? (
@@ -1848,7 +1853,9 @@ export const PurchaseInquiry = ({
                             >
                               {item.description || "N/A"}
                             </TableCell>
-                            <TableCell className="text-xs px-2 py-1.5">{item.brand || "N/A"}</TableCell>
+                            <TableCell className="text-xs px-2 py-1.5">
+                              <BrandOriginCell brand={item.brand || "N/A"} origin={item.origin} />
+                            </TableCell>
                             <TableCell className="text-xs px-2 py-1.5 truncate max-w-0">{item.model || "N/A"}</TableCell>
                             <TableCell className="text-xs text-right font-semibold px-2 py-1.5 tabular-nums">
                               {item.quantity}

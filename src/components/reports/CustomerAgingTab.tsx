@@ -194,7 +194,20 @@ const CustomerAgingTab = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {agingData.map((row, index) => (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                    Loading aging data...
+                  </TableCell>
+                </TableRow>
+              ) : agingData.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                    No outstanding receivables found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                agingData.map((row, index) => (
                 <TableRow key={row.id}>
                   <ListNumberCell index={index} total={agingData.length} />
                   <TableCell className="font-medium">{row.customer}</TableCell>
@@ -225,7 +238,8 @@ const CustomerAgingTab = () => {
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

@@ -1,17 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatUiDate } from "@/utils/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -21,6 +14,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import { Download, Truck, DollarSign, Percent, Package } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -31,7 +28,7 @@ interface ImportRecord {
   date: string;
   lcNumber: string;
   supplier: string;
-  country: string; 
+  country: string;
   fobValue: number;
   freight: number;
   insurance: number;
@@ -40,19 +37,42 @@ interface ImportRecord {
   items: number;
 }
 
+const unwrapList = (res: any): any[] => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
+};
+
 const ImportCostSummaryTab = () => {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [country, setCountry] = useState("all");
+  const [country, setCountry] = useState("");
+  const [countryOptions, setCountryOptions] = useState<SearchableSelectOption[]>([]);
   const [importData, setImportData] = useState<ImportRecord[]>([]);
-  const [isGenerated, setIsGenerated] = useState(false);
 
-  const mockImportData: ImportRecord[] = [
-    { id: "1", date: "2024-12-20", lcNumber: "LC-2024-0089", supplier: "Toyota Japan", country: "Japan", fobValue: 850000, freight: 45000, insurance: 8500, duties: 125000, totalCost: 1028500, items: 125 },
-    { id: "2", date: "2024-12-15", lcNumber: "LC-2024-0088", supplier: "Denso Thailand", country: "Thailand", fobValue: 520000, freight: 28000, insurance: 5200, duties: 78000, totalCost: 631200, items: 85 },
-    { id: "3", date: "2024-12-10", lcNumber: "LC-2024-0087", supplier: "Bosch Germany", country: "Germany", fobValue: 680000, freight: 52000, insurance: 6800, duties: 102000, totalCost: 840800, items: 95 },
-    { id: "4", date: "2024-12-05", lcNumber: "LC-2024-0086", supplier: "NGK Japan", country: "Japan", fobValue: 320000, freight: 22000, insurance: 3200, duties: 48000, totalCost: 393200, items: 200 },
-  ];
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await apiClient.getSuppliers({ status: "active", limit: 5000 });
+        const countries = [
+          ...new Set(
+            unwrapList(res)
+              .map((s: any) => String(s.country || "").trim())
+              .filter((c: string) => c.length > 0),
+          ),
+        ].sort((a, b) => a.localeCompare(b));
+        setCountryOptions(
+          countries.map((c) => ({
+            value: c,
+            label: c,
+          })),
+        );
+      } catch {
+        toast.error("Failed to load countries");
+      }
+    };
+    load();
+  }, []);
 
   const handleGenerateReport = async () => {
     if (!fromDate || !toDate) {
@@ -64,12 +84,11 @@ const ImportCostSummaryTab = () => {
       const response = await apiClient.getImportCostSummary({
         from_date: fromDate,
         to_date: toDate,
-        country: country !== "all" ? country : undefined,
+        country: country || undefined,
       });
 
       if (response.data && response.data.records) {
         setImportData(response.data.records);
-        setIsGenerated(true);
         toast.success("Import cost report generated");
       }
     } catch (error: any) {
@@ -117,34 +136,30 @@ const ImportCostSummaryTab = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>From Date</Label>
-              <Input 
-                type="date" 
-                value={fromDate} 
+              <Input
+                type="date"
+                value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>To Date</Label>
-              <Input 
-                type="date" 
-                value={toDate} 
+              <Input
+                type="date"
+                value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>Country</Label>
-              <Select value={country} onValueChange={setCountry}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Countries" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Countries</SelectItem>
-                  <SelectItem value="japan">Japan</SelectItem>
-                  <SelectItem value="thailand">Thailand</SelectItem>
-                  <SelectItem value="germany">Germany</SelectItem>
-                  <SelectItem value="china">China</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={countryOptions}
+                value={country}
+                onValueChange={setCountry}
+                placeholder="All Countries"
+                maxDisplayedOptions={80}
+                requireSearchAbove={5000}
+              />
             </div>
             <div className="flex items-end">
               <Button onClick={handleGenerateReport} className="w-full">

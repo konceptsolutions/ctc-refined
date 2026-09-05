@@ -27,6 +27,10 @@ import { Truck } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
+import {
+  performedByPayload,
+  useStoreOperatorAuth,
+} from "@/hooks/useStoreOperatorAuth";
 
 interface InvoiceRackShelfEntry {
   storeId?: string | null;
@@ -142,6 +146,7 @@ export const StoreSalesInvoiceReceipt = ({
   onOpenChange,
   onDeliveryConfirmed,
 }: StoreSalesInvoiceReceiptProps) => {
+  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
   const [isConfirming, setIsConfirming] = useState(false);
   const [deliveryQuantities, setDeliveryQuantities] = useState<{
     [itemId: string]: number;
@@ -473,11 +478,18 @@ export const StoreSalesInvoiceReceipt = ({
         partRackShelfId: selectedPrsByItemId[item.id],
       }));
 
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+
       const response = await apiClient.recordDelivery(invoice.id, {
         challanNo: `CH-${invoice.invoiceNo}-${Date.now()}`,
         deliveryDate: new Date().toISOString().split("T")[0],
-        deliveredBy: "Store Manager",
+        deliveredBy: operator?.name || "Store Operator",
         items: deliveryItems,
+        ...by,
       });
 
       if (response.error) {
@@ -496,11 +508,15 @@ export const StoreSalesInvoiceReceipt = ({
 
       if (totalDelivering < totalPending) {
         toast.success(
-          `Partial stock out confirmed for Order ${invoice.invoiceNo}.`,
+          operator
+            ? `Partial stock out confirmed for Order ${invoice.invoiceNo} (Saved as ${operator.name}).`
+            : `Partial stock out confirmed for Order ${invoice.invoiceNo}.`,
         );
       } else {
         toast.success(
-          `Full stock out confirmed for Order ${invoice.invoiceNo}.`,
+          operator
+            ? `Full stock out confirmed for Order ${invoice.invoiceNo} (Saved as ${operator.name}).`
+            : `Full stock out confirmed for Order ${invoice.invoiceNo}.`,
         );
       }
 

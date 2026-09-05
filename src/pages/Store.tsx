@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { StoreHeader } from "@/components/store/StoreHeader";
 import { StorePanel } from "@/components/store/StorePanel";
 import { RackAndShelf } from "@/components/inventory/RackAndShelf";
+import { StoreOperatorAuthProvider } from "@/hooks/useStoreOperatorAuth";
 import { cn } from "@/lib/utils";
 import { Package, Archive } from "lucide-react";
 import { usePermissions } from "@/permissions/PermissionsProvider";
@@ -100,7 +101,7 @@ const Store = () => {
         <main className="flex-1 p-4 md:p-6 overflow-auto">
           <div className="max-w-7xl mx-auto w-full">
             <div className="animate-fade-in">
-              {renderContent()}
+              <StoreOperatorAuthProvider>{renderContent()}</StoreOperatorAuthProvider>
             </div>
           </div>
         </main>

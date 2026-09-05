@@ -3,7 +3,9 @@ import {
   ActivityActionType,
   getClientIp,
   logActivity,
+  resolveStorePerformer,
   wasActivityLogged,
+  withOperatorAttribution,
 } from "../utils/activityLogger";
 import { AuthRequest } from "./authMiddleware";
 
@@ -717,6 +719,8 @@ async function captureActivity(req: AuthRequest, res: Response, body: any) {
 
     const user = req.user;
     if (!user?.id && !user?.email) return;
+
+    const performer = resolveStorePerformer(req);
 
     // Don't log failed business responses that still return 200 with error field
     if (body && typeof body === "object" && body.error && !body.data) return;
@@ -1479,13 +1483,13 @@ async function captureActivity(req: AuthRequest, res: Response, body: any) {
 
     await logActivity(
       {
-        user: user.name || user.email || "Unknown",
-        userId: user.id || null,
-        userRole: user.role || "User",
+        user: performer.user,
+        userId: performer.userId,
+        userRole: performer.userRole,
         action,
         actionType,
-        module,
-        description,
+        module: performer.attributedViaPassword ? "Store" : module,
+        description: withOperatorAttribution(description, performer),
         entityType,
         entityId: responseRecord?.partId || req.body?.part_id || entityId,
         entityLabel,
@@ -1496,6 +1500,16 @@ async function captureActivity(req: AuthRequest, res: Response, body: any) {
           path: `/${apiPath}`,
           ...(newStatus ? { status: newStatus } : {}),
           ...(previousStatus ? { previousStatus } : {}),
+          ...(performer.attributedViaPassword
+            ? {
+                performedBy: performer.user,
+                performedById: performer.userId,
+                performedByRole: performer.userRole,
+                sessionUser: performer.sessionUser,
+                sessionUserId: performer.sessionUserId,
+                sessionUserRole: performer.sessionUserRole,
+              }
+            : {}),
         },
       },
       req,
