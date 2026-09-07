@@ -67,6 +67,7 @@ import { getUserRole } from "@/utils/auth";
 import { usePageActions } from "@/permissions/pageActions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
+import { printSaleReturnPdf } from "@/utils/printSaleReturnPdf";
 
 interface ReturnItem {
   id: string;
@@ -1198,138 +1199,36 @@ export const SalesReturns = () => {
   const handlePrint = () => {
     if (!selectedReturn) return;
 
-    const itemsRows = selectedReturn.items.map((item, idx) => `
-      <tr>
-        <td>${idx + 1}</td>
-        <td>${item.partNo}</td>
-        <td>${item.itemName}</td>
-        <td>${item.brand}</td>
-        <td>${item.uom}</td>
-        <td>${item.returnQty}</td>
-        <td>${item.price.toLocaleString()}</td>
-        <td>${item.total.toLocaleString()}</td>
-      </tr>
-    `).join('');
+    const opened = printSaleReturnPdf({
+      invoiceNo: selectedReturn.invoiceNo,
+      returnDate: selectedReturn.returnDate,
+      customerName: selectedReturn.customerName,
+      contact: selectedReturn.remarks,
+      subtotal: selectedReturn.subtotal,
+      gst: selectedReturn.gst,
+      totalAmount: selectedReturn.totalAmount,
+      discount: selectedReturn.discount,
+      amountAfterDiscount: selectedReturn.amountAfterDiscount,
+      items: selectedReturn.items.map((item) => ({
+        partNo: item.partNo,
+        itemName: item.itemName,
+        brand: item.brand,
+        uom: item.uom,
+        returnQty: item.returnQty,
+        price: item.price,
+        total: item.total,
+      })),
+    });
 
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Sale Return Invoice</title>
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; color: #333; }
-              .invoice-container { max-width: 800px; margin: 0 auto; }
-              .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-              .shop-info { display: flex; gap: 15px; align-items: flex-start; }
-              .logo-placeholder { width: 80px; height: 80px; border: 1px solid #ccc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #999; }
-              .shop-details p { margin: 3px 0; font-size: 12px; }
-              .shop-details .shop-name { font-weight: bold; font-size: 14px; }
-              .invoice-title { text-align: right; }
-              .invoice-title h1 { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-              .invoice-title p { font-size: 12px; margin: 3px 0; }
-              .customer-section { background-color: #1664da; color: white; padding: 6px 12px; font-weight: bold; font-size: 12px; margin-bottom: 0; }
-              .customer-details { padding: 10px 12px; border: 1px solid #ddd; border-top: none; margin-bottom: 15px; }
-              .customer-details p { margin: 3px 0; font-size: 12px; }
-              table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-              th { background-color: #1664da; color: white; padding: 8px; text-align: left; font-size: 11px; font-weight: 600; }
-              td { border: 1px solid #ddd; padding: 8px; font-size: 11px; }
-              tr:nth-child(even) { background-color: #f9f9f9; }
-              .totals-section { display: flex; justify-content: space-between; margin-top: 20px; }
-              .delivery-note { font-size: 12px; }
-              .delivery-note strong { font-weight: bold; }
-              .note-section { margin-top: 15px; font-size: 10px; color: #666; }
-              .note-section strong { font-weight: bold; color: #333; }
-              .totals-box { text-align: right; }
-              .totals-box p { margin: 5px 0; font-size: 12px; }
-              .totals-box .total-label { display: inline-block; width: 130px; text-align: right; }
-              .totals-box .total-value { display: inline-block; width: 100px; text-align: right; font-weight: bold; }
-              .totals-box .grand-total { font-size: 14px; font-weight: bold; }
-              .signature-section { margin-top: 60px; text-align: right; padding-top: 20px; }
-              .signature-line { border-top: 1px solid #333; width: 200px; display: inline-block; margin-bottom: 5px; }
-              .signature-label { font-size: 12px; font-weight: bold; }
-              @media print {
-                body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-              }
-              @page { size: A4; margin: 10mm; }
-            </style>
-          </head>
-          <body>
-            <div class="invoice-container">
-              <div class="header">
-                <div class="shop-info">
-                  <div class="logo-placeholder">LOGO</div>
-                  <div class="shop-details">
-                    <p class="shop-name">Shop: LUCKY HYDRAULIC PARTS</p>
-                    <p>Address: Shop#8, Adeel Market, Beside Ithihad Plaza, Tarnol, Islamabad</p>
-                    <p>Tel: 03120576487</p>
-                    <p>Email: daniyalarshad881996@gmail.com</p>
-                  </div>
-                </div>
-                <div class="invoice-title">
-                  <h1>SALE RETURN</h1>
-                  <p>Invoice : ${selectedReturn.invoiceNo}</p>
-                  <p>Date: ${selectedReturn.returnDate}</p>
-                </div>
-              </div>
-
-              <div class="customer-section">Customer</div>
-              <div class="customer-details">
-                <p>Name: ${selectedReturn.customerName}</p>
-                <p>Contact: ${selectedReturn.remarks || 'N/A'}</p>
-              </div>
-
-              <table>
-                <thead>
-                  <tr>
-                    <th>S.No.</th>
-                    <th>OEM/ Part No</th>
-                    <th>ITEM</th>
-                    <th>Brand</th>
-                    <th>Uom</th>
-                    <th>QTY</th>
-                    <th>PRICE</th>
-                    <th>SUB TOTAL</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${itemsRows}
-                </tbody>
-              </table>
-
-              <div class="totals-section">
-                <div class="left-section">
-                  <div class="note-section">
-                    <p><strong>NOTE:</strong> All manufacturer's Names, Numbers, Symbols and Descriptions are used for reference.</p>
-                    <p>Document invalid without authorised signature and stamp.</p>
-                    <p>Goods once sold can not be taken back.</p>
-                  </div>
-                </div>
-                <div class="totals-box">
-                  <p><span class="total-label">Subtotal</span> <span class="total-value">PKR ${selectedReturn.subtotal.toLocaleString()}/-</span></p>
-                  <p><span class="total-label">GST</span> <span class="total-value">PKR ${selectedReturn.gst.toLocaleString()}/-</span></p>
-                  <p><span class="total-label">Total Amount</span> <span class="total-value">PKR ${selectedReturn.totalAmount.toLocaleString()}/-</span></p>
-                  <p><span class="total-label">Discount</span> <span class="total-value">PKR ${selectedReturn.discount.toLocaleString()}/-</span></p>
-                  <p class="grand-total"><span class="total-label">Total After Discount</span> <span class="total-value">PKR ${selectedReturn.amountAfterDiscount.toLocaleString()}/-</span></p>
-                </div>
-              </div>
-
-              <div class="signature-section">
-                <div class="signature-line"></div>
-                <p class="signature-label">Authorised Signature</p>
-              </div>
-            </div>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-      }, 250);
+    if (!opened) {
+      toast({
+        title: "Print blocked",
+        description: "Please allow pop-ups to print the sale return.",
+        variant: "destructive",
+      });
+      return;
     }
+
     toast({
       title: "Printing",
       description: "Document sent to printer.",

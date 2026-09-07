@@ -917,6 +917,7 @@ model SalesInvoiceItem {
   lineTotal         Float
   grade             String?
   brand             String?
+  origin            String?
   createdAt         DateTime           @default(now())
   avgCost           Float              @default(0)
   useUnlocatedStock Boolean            @default(false)
