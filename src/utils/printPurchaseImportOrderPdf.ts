@@ -39,8 +39,10 @@ export type PurchaseImportOrderPrintItem = {
   additionalQty?: number | null;
   backQty?: number | null;
   fcRate?: number | null;
+  fcDisc?: number | null;
   fcAmount?: number | null;
   lcRate?: number | null;
+  lcDisc?: number | null;
   lcAmount?: number | null;
   unitExp?: number | null;
   exp?: number | null;
@@ -297,8 +299,10 @@ export const printPurchaseImportOrder = ({
   cursorY += 5;
 
   const fcRateLabel = "FC Rate";
+  const fcDiscLabel = "FC Disc";
   const fcAmtLabel = "FC Amount";
   const lcRateLabel = "LC Rate";
+  const lcDiscLabel = "LC Disc";
   const lcAmtLabel = "LC Amount";
 
   const rightHead = (label: string) => ({
@@ -321,8 +325,10 @@ export const printPurchaseImportOrder = ({
         leftHead("Brand"),
         rightHead("Qty"),
         rightHead(fcRateLabel),
+        rightHead(fcDiscLabel),
         rightHead(fcAmtLabel),
         rightHead(lcRateLabel),
+        rightHead(lcDiscLabel),
         rightHead(lcAmtLabel),
         rightHead("Unit Exp"),
         rightHead("Exp"),
@@ -340,8 +346,10 @@ export const printPurchaseImportOrder = ({
         rightHead("From Back"),
         rightHead("Back"),
         rightHead(fcRateLabel),
+        rightHead(fcDiscLabel),
         rightHead(fcAmtLabel),
         rightHead(lcRateLabel),
+        rightHead(lcDiscLabel),
         rightHead(lcAmtLabel),
         rightHead("Weight"),
         rightHead("Total Wt"),
@@ -367,8 +375,10 @@ export const printPurchaseImportOrder = ({
               text(item.brand || "-"),
               String(qty),
               num(item.fcRate, 4),
+              num(item.fcDisc ?? item.fcRate, 4),
               num(item.fcAmount, 4),
               num(item.lcRate, 0),
+              num(item.lcDisc ?? item.lcRate, 0),
               num(item.lcAmount, 0),
               moneyOrDash(item.unitExp),
               moneyOrDash(item.exp),
@@ -394,8 +404,10 @@ export const printPurchaseImportOrder = ({
               ? String(Number(item.backQty || 0))
               : "-",
             num(item.fcRate, 4),
+            num(item.fcDisc ?? item.fcRate, 4),
             num(item.fcAmount, 4),
             num(item.lcRate, 0),
+            num(item.lcDisc ?? item.lcRate, 0),
             num(item.lcAmount, 0),
             Number(item.weight || 0) > 0 ? num(item.weight, 4) : "-",
             Number(item.totalWeight || 0) > 0
@@ -422,7 +434,9 @@ export const printPurchaseImportOrder = ({
         leftFoot(" "),
         rightFoot(String(totals.receivedQty || totals.orderQty)),
         rightFoot("-"),
+        rightFoot("-"),
         rightFoot(num(totals.fcAmount, 4)),
+        rightFoot("-"),
         rightFoot("-"),
         rightFoot(num(totals.lcAmount, 0)),
         rightFoot("-"),
@@ -445,7 +459,9 @@ export const printPurchaseImportOrder = ({
         rightFoot("-"),
         rightFoot("-"),
         rightFoot("-"),
+        rightFoot("-"),
         rightFoot(num(totals.fcAmount, 4)),
+        rightFoot("-"),
         rightFoot("-"),
         rightFoot(num(totals.lcAmount, 0)),
         rightFoot("-"),
@@ -455,39 +471,43 @@ export const printPurchaseImportOrder = ({
   // Exact widths so head / body / foot stay on the same grid.
   const columnStyles = showInvoiceCosts
     ? {
-        0: { halign: "center" as const, cellWidth: 8 },
-        1: { halign: "left" as const, cellWidth: 52 },
-        2: { halign: "left" as const, cellWidth: 18 },
-        3: { halign: "right" as const, cellWidth: 14 },
-        4: { halign: "right" as const, cellWidth: 20 },
-        5: { halign: "right" as const, cellWidth: 22 },
-        6: { halign: "right" as const, cellWidth: 18 },
-        7: { halign: "right" as const, cellWidth: 20 },
-        8: { halign: "right" as const, cellWidth: 18 },
-        9: { halign: "right" as const, cellWidth: 18 },
-        10: { halign: "right" as const, cellWidth: 20 },
-        11: { halign: "right" as const, cellWidth: 20 },
-        12: { halign: "right" as const, cellWidth: 18 },
-        13: { halign: "right" as const, cellWidth: 19 },
+        0: {halign: "center" as const, cellWidth: 8 },
+        1: {halign: "left" as const, cellWidth: 44 },
+        2: {halign: "left" as const, cellWidth: 16 },
+        3: {halign: "right" as const, cellWidth: 12 },
+        4: {halign: "right" as const, cellWidth: 16 },
+        5: {halign: "right" as const, cellWidth: 16 },
+        6: {halign: "right" as const, cellWidth: 18 },
+        7: {halign: "right" as const, cellWidth: 14 },
+        8: {halign: "right" as const, cellWidth: 14 },
+        9: {halign: "right" as const, cellWidth: 18 },
+        10: {halign: "right" as const, cellWidth: 14 },
+        11: {halign: "right" as const, cellWidth: 14 },
+        12: {halign: "right" as const, cellWidth: 16 },
+        13: {halign: "right" as const, cellWidth: 16 },
+        14: {halign: "right" as const, cellWidth: 14 },
+        15: {halign: "right" as const, cellWidth: 16 },
       }
     : {
-        0: { halign: "center" as const, cellWidth: 8 },
-        1: { halign: "left" as const, cellWidth: 48 },
-        2: { halign: "left" as const, cellWidth: 16 },
-        3: { halign: "right" as const, cellWidth: 14 },
-        4: { halign: "right" as const, cellWidth: 14 },
-        5: { halign: "right" as const, cellWidth: 14 },
-        6: { halign: "right" as const, cellWidth: 12 },
-        7: { halign: "right" as const, cellWidth: 16 },
-        8: { halign: "right" as const, cellWidth: 18 },
-        9: { halign: "right" as const, cellWidth: 16 },
-        10: { halign: "right" as const, cellWidth: 18 },
-        11: { halign: "right" as const, cellWidth: 14 },
-        12: { halign: "right" as const, cellWidth: 16 },
+        0: {halign: "center" as const, cellWidth: 8 },
+        1: {halign: "left" as const, cellWidth: 40 },
+        2: {halign: "left" as const, cellWidth: 14 },
+        3: {halign: "right" as const, cellWidth: 12 },
+        4: {halign: "right" as const, cellWidth: 12 },
+        5: {halign: "right" as const, cellWidth: 12 },
+        6: {halign: "right" as const, cellWidth: 10 },
+        7: {halign: "right" as const, cellWidth: 14 },
+        8: {halign: "right" as const, cellWidth: 14 },
+        9: {halign: "right" as const, cellWidth: 16 },
+        10: {halign: "right" as const, cellWidth: 14 },
+        11: {halign: "right" as const, cellWidth: 14 },
+        12: {halign: "right" as const, cellWidth: 16 },
+        13: {halign: "right" as const, cellWidth: 14 },
+        14: {halign: "right" as const, cellWidth: 16 },
       };
 
-  const fcCols = showInvoiceCosts ? [4, 5] : [7, 8];
-  const lcCols = showInvoiceCosts ? [6, 7] : [9, 10];
+  const fcCols = showInvoiceCosts ? [4, 5, 6] : [7, 8, 9];
+  const lcCols = showInvoiceCosts ? [7, 8, 9] : [10, 11, 12];
 
   autoTable(doc, {
     startY: cursorY,

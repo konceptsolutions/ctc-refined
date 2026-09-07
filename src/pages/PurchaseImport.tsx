@@ -608,6 +608,34 @@ function computeImportPoInvoiceTotal(
   );
 }
 
+/** Discount factor applied to FC/LC rates (1 = no discount). */
+function getImportInvoiceDiscFactor(
+  invDiscPercent: number,
+  discAmt = 0,
+  invoiceLc = 0,
+): number {
+  const pct = normalizeImportPoExpenseNumber(invDiscPercent);
+  if (pct > 0) return Math.max(0, 1 - pct / 100);
+  const inv = normalizeImportPoExpenseNumber(invoiceLc);
+  const disc = normalizeImportPoExpenseNumber(discAmt);
+  if (inv <= 0 || disc <= 0) return 1;
+  return Math.max(0, 1 - Math.min(disc, inv) / inv);
+}
+
+function getImportDiscountedRates(
+  fcRate: number,
+  lcRate: number,
+  invDiscPercent: number,
+  discAmt = 0,
+  invoiceLc = 0,
+) {
+  const factor = getImportInvoiceDiscFactor(invDiscPercent, discAmt, invoiceLc);
+  return {
+    fcDisc: roundFc(Number(fcRate || 0) * factor),
+    lcDisc: roundImportWhole(Number(lcRate || 0) * factor),
+  };
+}
+
 function parseImportPoExpenses(raw: unknown): ImportPurchaseOrderExpenses {
   if (!raw || typeof raw !== "object") {
     return { ...EMPTY_IMPORT_PO_EXPENSES };
@@ -9280,8 +9308,15 @@ const PurchaseOrderTab = ({
         const distributedExpense = Number(distributedExpenses[index] || 0);
         const qtyForCost = Math.max(0, Number(row.receiveQty) || 0);
         const unitExp = qtyForCost > 0 ? distributedExpense / qtyForCost : 0;
-        const unitCost = Number(row.lcRate || 0) + unitExp;
-        const cost = Number(row.lcAmount || 0) + distributedExpense;
+        const { lcDisc, fcDisc } = getImportDiscountedRates(
+          row.fcRate,
+          row.lcRate,
+          expenses.invDiscPercent,
+          expenses.discAmt || commercial.invDiscAmt,
+          invoiceLc,
+        );
+        const unitCost = Number(lcDisc || 0) + unitExp;
+        const cost = Number(lcDisc || 0) * qtyForCost + distributedExpense;
         return {
           masterPartNo: row.masterPartNo,
           partNo: row.partNo,
@@ -9292,8 +9327,10 @@ const PurchaseOrderTab = ({
           additionalQty: row.additionalQty,
           backQty: row.backQty,
           fcRate: row.fcRate,
+          fcDisc,
           fcAmount: row.fcAmount,
           lcRate: row.lcRate,
+          lcDisc,
           lcAmount: row.lcAmount,
           unitExp,
           exp: distributedExpense,
@@ -10839,8 +10876,10 @@ const PurchaseOrderTab = ({
                       <th className="text-right p-2">From Back</th>
                       <th className="text-right p-2">Back</th>
                       <th className={`text-right p-2 ${fcHeaderClass}`}>FC Rate</th>
+                      <th className={`text-right p-2 ${fcHeaderClass}`}>FC Disc</th>
                       <th className={`text-right p-2 ${fcHeaderClass}`}>FC Amount</th>
                       <th className={`text-right p-2 ${lcHeaderClass}`}>LC Rate</th>
+                      <th className={`text-right p-2 ${lcHeaderClass}`}>LC Disc</th>
                       <th className={`text-right p-2 ${lcHeaderClass}`}>LC Amount</th>
                       {isInvoiceMode ? (
                         <>
@@ -10887,8 +10926,17 @@ const PurchaseOrderTab = ({
                       const unitExp = roundImportMoney(
                         qtyForCost > 0 ? distributedExpense / qtyForCost : 0,
                       );
-                      const unitCost = roundImportMoney(lcRate + unitExp);
-                      const lineCost = roundImportMoney(lcAmount + distributedExpense);
+                      const { fcDisc, lcDisc } = getImportDiscountedRates(
+                        fcRate,
+                        lcRate,
+                        viewExpenses.invDiscPercent,
+                        viewExpenses.discAmt,
+                        invoiceLc,
+                      );
+                      const unitCost = roundImportMoney(lcDisc + unitExp);
+                      const lineCost = roundImportMoney(
+                        lcDisc * qtyForCost + distributedExpense,
+                      );
                       const itemKey = String(
                         item.id || item.partId || item.part_id || "",
                       );
@@ -10927,10 +10975,16 @@ const PurchaseOrderTab = ({
                           {formatFc(fcRate)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                          {formatFc(fcDisc)}
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                           {formatFc(fcAmount)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                           {formatImportPoWhole(lcRate)}
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                          {formatImportPoWhole(lcDisc)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                           {formatImportPoWhole(lcAmount)}
@@ -11186,8 +11240,10 @@ const PurchaseOrderTab = ({
                         </>
                       ) : null}
                       <th className={`text-right p-2 ${fcHeaderClass}`}>FC Rate</th>
+                      <th className={`text-right p-2 ${fcHeaderClass}`}>FC Disc</th>
                       <th className={`text-right p-2 ${fcHeaderClass}`}>FC Amount</th>
                       <th className={`text-right p-2 ${lcHeaderClass}`}>LC Rate</th>
+                      <th className={`text-right p-2 ${lcHeaderClass}`}>LC Disc</th>
                       <th className={`text-right p-2 ${lcHeaderClass}`}>LC Amount</th>
                       {isInvoiceMode ? (
                         <>
@@ -11213,8 +11269,16 @@ const PurchaseOrderTab = ({
                       const receiveQty = Math.max(0, Math.floor(Number(line.receiveQty) || 0));
                       const distributedExpense = receiveDistributedExpenses[index] ?? 0;
                       const unitExp = receiveQty > 0 ? distributedExpense / receiveQty : 0;
-                      const unitCost = Number(line.lcRate || 0) + unitExp;
-                      const lineCost = Number(lineAmounts.lcAmount || 0) + distributedExpense;
+                      const { fcDisc, lcDisc } = getImportDiscountedRates(
+                        line.fcRate,
+                        line.lcRate,
+                        importExpenses.invDiscPercent,
+                        importPoCommercialAmounts.invDiscAmt,
+                        receiveTotals.lcAmount,
+                      );
+                      const unitCost = Number(lcDisc || 0) + unitExp;
+                      const lineCost =
+                        Number(lcDisc || 0) * receiveQty + distributedExpense;
                       return (
                       <tr
                         key={line.id}
@@ -11307,10 +11371,16 @@ const PurchaseOrderTab = ({
                           />
                         </td>
                         <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                          {formatFc(fcDisc)}
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                           {formatFc(lineAmounts.fcAmount)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                           {formatImportPoWhole(line.lcRate)}
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                          {formatImportPoWhole(lcDisc)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                           {formatImportPoWhole(lineAmounts.lcAmount)}

@@ -5912,6 +5912,8 @@ async function receiveImportPurchaseOrder(
     });
 
     // ---- Stock-in + moving-average cost (mirrors the DPO pipeline) ----
+    // Avg uses discounted LC unit price (invoice discount allocated by line
+    // value) + distributed import expenses.
     for (let idx = 0; idx < receivedItems.length; idx++) {
       const item = receivedItems[idx];
       const partId = item.partId;
@@ -5955,12 +5957,20 @@ async function receiveImportPurchaseOrder(
       const oldQty = currentTotalStock - qty;
       const currentAvg =
         Number(item.Part?.avgCost) || Number(item.Part?.cost) || 0;
-      const landedValue = baseRate * qty + lineExpense[idx];
+      const lineGoods = baseRate * qty;
+      const lineDisc =
+        goodsLc > 0.001 && discAmt > 0.001
+          ? (lineGoods / goodsLc) * discAmt
+          : 0;
+      const netGoods = Math.max(0, lineGoods - lineDisc);
+      const landedValue = netGoods + lineExpense[idx];
       const denom = oldQty + qty;
       const newAvg =
         oldQty > 0 && currentAvg > 0 && denom > 0
           ? (oldQty * currentAvg + landedValue) / denom
-          : landedValue / qty;
+          : qty > 0
+            ? landedValue / qty
+            : 0;
 
       await tx.part.update({
         where: { id: partId },
@@ -6035,20 +6045,6 @@ async function receiveImportPurchaseOrder(
       );
     }
 
-    const discountAccount =
-      discAmt > 0.001
-        ? await tx.account.findFirst({
-            where: {
-              status: "Active",
-              OR: [
-                { code: "901002" },
-                { name: { contains: "Cost Inventory (Discount" } },
-                { name: { contains: "Inventory Discount" } },
-              ],
-            },
-          })
-        : null;
-
     const acctLabel = (a: { code: string; name: string }) =>
       `${a.code}-${a.name}`;
     const entries: any[] = [];
@@ -6099,8 +6095,8 @@ async function receiveImportPurchaseOrder(
       );
     }
 
-    // 3) Discount: Dr Supplier / Cr Cost Inventory (Discounts)
-    if (discAmt > 0.001 && discountAccount) {
+    // 3) Discount: Dr Supplier / Cr Inventory (not Cost Inventory Discount)
+    if (discAmt > 0.001) {
       pushEntry(
         supplierAccount as any,
         `Import PO ${order.poNumber}: Invoice discount`,
@@ -6108,7 +6104,7 @@ async function receiveImportPurchaseOrder(
         0,
       );
       pushEntry(
-        discountAccount as any,
+        inventoryAccount as any,
         `Import PO ${order.poNumber}: Invoice discount`,
         0,
         discAmt,
@@ -8767,9 +8763,11 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       //    a true running weighted average:
       //
       //      new_avg = (current_avg × current_stock
-      //                 + Σ_lines((purchase_price + EXP/unit) × qty))
+      //                 + Σ_lines((discounted_price + EXP/unit) × qty))
       //                / (current_stock + Σ_lines(qty))
       //
+      //    When a supplier discount is applied, each line's purchase value is
+      //    reduced proportionally by amount before expenses are added.
       //    EXP/unit is computed by distributing the DPO's total expenses
       //    across lines proportionally to (qty × weight), matching the UI
       //    (falls back to qty when weight is 0 / equal split when there is
@@ -8789,6 +8787,11 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       });
 
       const expenseTotalForCost = Number(expensesTotal) || 0;
+      const discountTotalForCost = Number(discountVal) || 0;
+      const itemsValueForDiscount = itemRowsForCost.reduce(
+        (s, r) => s + (r.itemValue > 0 ? r.itemValue : 0),
+        0,
+      );
       const uniquePartIds = Array.from(
         new Set(
           itemRowsForCost
@@ -8863,7 +8866,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       });
 
       // Aggregate per part: new qty added by this DPO and the matching
-      // value-with-expense (= qty × (purchase_price + EXP/unit)).
+      // value-with-expense (= qty × (discounted_price + EXP/unit)).
       const partAggForCost = new Map<
         string,
         { qty: number; totalBaseValue: number; totalValueWithExpense: number }
@@ -8871,7 +8874,12 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       itemRowsForCost.forEach((row, index) => {
         if (!row.partId || row.qty <= 0) return;
         const distExp = lineDistributedExpense[index] || 0;
-        const rowValueWithExpense = row.itemValue + distExp;
+        const lineDiscount =
+          discountTotalForCost > 0 && itemsValueForDiscount > 0
+            ? (row.itemValue / itemsValueForDiscount) * discountTotalForCost
+            : 0;
+        const netItemValue = Math.max(0, row.itemValue - lineDiscount);
+        const rowValueWithExpense = netItemValue + distExp;
         const existing = partAggForCost.get(row.partId) || {
           qty: 0,
           totalBaseValue: 0,
@@ -9063,42 +9071,26 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
             ];
 
             if (discountVal > 0.001) {
-              const inventoryDiscountAccount = await tx.account.findFirst({
-                where: {
-                  status: "Active",
-                  OR: [
-                    { code: "901002" },
-                    { name: { contains: "Cost Inventory Discount" } },
-                    { name: { contains: "Inventory Discount" } },
-                    { name: { contains: "Cost Inventory (Discount" } },
-                    { name: { contains: "Inventory (Discount" } },
-                  ],
-                },
+              voucherEntries.push({
+                id: crypto.randomUUID(),
+                accountId: mainPayableAccount.id,
+                accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
+                description: `DPO: ${dpo_number} Discount Adjustment`,
+                debit: discountVal,
+                credit: 0,
+                sortOrder: voucherEntries.length,
               });
-              if (inventoryDiscountAccount) {
-                voucherEntries.push({
-                  id: crypto.randomUUID(),
-                  accountId: mainPayableAccount.id,
-                  accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
-                  description: `DPO: ${dpo_number} Discount Adjustment`,
-                  debit: discountVal,
-                  credit: 0,
-                  sortOrder: voucherEntries.length,
-                });
-                voucherEntries.push({
-                  id: crypto.randomUUID(),
-                  accountId: inventoryDiscountAccount.id,
-                  accountName: `${inventoryDiscountAccount.code}-${inventoryDiscountAccount.name}`,
-                  description: `DPO: ${dpo_number} Discount Adjustment`,
-                  debit: 0,
-                  credit: discountVal,
-                  sortOrder: voucherEntries.length,
-                });
-              } else {
-                voucherCreationStatus.errors.push(
-                  "Cost Inventory Discount account not found; discount JV adjustment skipped.",
-                );
-              }
+              // Credit inventory (not Cost Inventory Discount) so stock value
+              // matches the discounted avg cost.
+              voucherEntries.push({
+                id: crypto.randomUUID(),
+                accountId: inventoryAccount.id,
+                accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+                description: `DPO: ${dpo_number} Discount Adjustment`,
+                debit: 0,
+                credit: discountVal,
+                sortOrder: voucherEntries.length,
+              });
             }
 
             const sourceExpensesForVoucher =
@@ -9467,9 +9459,11 @@ router.put(
           // weighted average:
           //
           //   new_avg = (current_avg × current_stock
-          //              + Σ_lines((purchase_price + EXP/unit) × qty))
+          //              + Σ_lines((discounted_price + EXP/unit) × qty))
           //             / (current_stock + Σ_lines(qty))
           //
+          // When a supplier discount is applied, each line's purchase value is
+          // reduced proportionally by amount before expenses are added.
           // For an edit, "current_stock" must exclude this DPO's previous
           // contribution so we are not double-counting it (the prior
           // movements are reversed below in the same transaction, but we
@@ -9514,6 +9508,11 @@ router.put(
           });
           const totalExpenseForCost = sourceExpenses.reduce(
             (sum: number, exp: any) => sum + (Number(exp.amount) || 0),
+            0,
+          );
+          const discountTotalForCostPut = Number(discountVal) || 0;
+          const itemsValueForDiscountPut = sourceItemRowsForCost.reduce(
+            (s, r) => s + (r.itemValue > 0 ? r.itemValue : 0),
             0,
           );
 
@@ -9606,7 +9605,7 @@ router.put(
             return (share / totalSharePut) * totalExpenseForCost;
           });
 
-          // Aggregate per part.
+          // Aggregate per part (net of proportional discount + expenses).
           const partAggForCostPut = new Map<
             string,
             {
@@ -9618,7 +9617,13 @@ router.put(
           sourceItemRowsForCost.forEach((row, index) => {
             if (!row.partId || row.qty <= 0) return;
             const distExp = lineDistributedExpensePut[index] || 0;
-            const rowValueWithExpense = row.itemValue + distExp;
+            const lineDiscount =
+              discountTotalForCostPut > 0 && itemsValueForDiscountPut > 0
+                ? (row.itemValue / itemsValueForDiscountPut) *
+                  discountTotalForCostPut
+                : 0;
+            const netItemValue = Math.max(0, row.itemValue - lineDiscount);
+            const rowValueWithExpense = netItemValue + distExp;
             const existing = partAggForCostPut.get(row.partId) || {
               qty: 0,
               totalBaseValue: 0,
@@ -9866,42 +9871,26 @@ router.put(
             ];
 
             if (discountVal > 0.001) {
-              const inventoryDiscountAccount = await tx.account.findFirst({
-                where: {
-                  status: "Active",
-                  OR: [
-                    { code: "901002" },
-                    { name: { contains: "Cost Inventory Discount" } },
-                    { name: { contains: "Inventory Discount" } },
-                    { name: { contains: "Cost Inventory (Discount" } },
-                    { name: { contains: "Inventory (Discount" } },
-                  ],
-                },
+              voucherEntries.push({
+                id: crypto.randomUUID(),
+                accountId: mainPayableAccount.id,
+                accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
+                description: `DPO: ${updated.dpoNumber} Discount Adjustment`,
+                debit: discountVal,
+                credit: 0,
+                sortOrder: voucherEntries.length,
               });
-              if (inventoryDiscountAccount) {
-                voucherEntries.push({
-                  id: crypto.randomUUID(),
-                  accountId: mainPayableAccount.id,
-                  accountName: `${mainPayableAccount.code}-${mainPayableAccount.name}`,
-                  description: `DPO: ${updated.dpoNumber} Discount Adjustment`,
-                  debit: discountVal,
-                  credit: 0,
-                  sortOrder: voucherEntries.length,
-                });
-                voucherEntries.push({
-                  id: crypto.randomUUID(),
-                  accountId: inventoryDiscountAccount.id,
-                  accountName: `${inventoryDiscountAccount.code}-${inventoryDiscountAccount.name}`,
-                  description: `DPO: ${updated.dpoNumber} Discount Adjustment`,
-                  debit: 0,
-                  credit: discountVal,
-                  sortOrder: voucherEntries.length,
-                });
-              } else {
-                console.warn(
-                  "Cost Inventory Discount account not found; discount JV adjustment skipped.",
-                );
-              }
+              // Credit inventory (not Cost Inventory Discount) so stock value
+              // matches the discounted avg cost.
+              voucherEntries.push({
+                id: crypto.randomUUID(),
+                accountId: inventoryAccount.id,
+                accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+                description: `DPO: ${updated.dpoNumber} Discount Adjustment`,
+                debit: 0,
+                credit: discountVal,
+                sortOrder: voucherEntries.length,
+              });
             }
 
             const sourceExpensesForVoucher =

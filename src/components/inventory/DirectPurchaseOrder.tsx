@@ -218,6 +218,35 @@ function getDpoCostPerUnit(
   return purchasePrice + getDpoExpensePerUnit(items, totalExpenses, index);
 }
 
+type DpoDiscountLineInput = {
+  quantity: number;
+  purchasePrice: number;
+};
+
+/** Unit price after allocating invoice discount proportionally by line amount. */
+function getDpoDiscountedUnitPrice(
+  items: DpoDiscountLineInput[],
+  totalDiscount: number,
+  index: number,
+): number {
+  const qty = Number(items[index]?.quantity) || 0;
+  const price = Number(items[index]?.purchasePrice) || 0;
+  if (qty <= 0) return 0;
+
+  const lineValues = items.map(
+    (item) => (Number(item.quantity) || 0) * (Number(item.purchasePrice) || 0),
+  );
+  const itemsTotal = lineValues.reduce((sum, value) => sum + (value > 0 ? value : 0), 0);
+  let discount = Number(totalDiscount) || 0;
+  if (!Number.isFinite(discount) || discount < 0) discount = 0;
+  discount = Math.min(discount, itemsTotal);
+  if (discount <= 0 || itemsTotal <= 0) return price;
+
+  const lineDiscount = (lineValues[index] / itemsTotal) * discount;
+  const netValue = Math.max(0, lineValues[index] - lineDiscount);
+  return netValue / qty;
+}
+
 const DPO_LIST_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000];
 
 type DirectPurchaseOrderVariant = "local-purchase" | "transfer-in";
@@ -1682,12 +1711,34 @@ export const DirectPurchaseOrder = ({
   const viewItemCostPerUnit = useMemo(() => {
     if (!selectedOrder) return [];
     const totalExpenses = selectedOrder.totalExpenses ?? 0;
+    const discount = Number(selectedOrder.discount) || 0;
+    const discountLines = selectedOrder.items.map((item) => ({
+      quantity: item.quantity,
+      purchasePrice: item.purchasePrice,
+    }));
     const lines = selectedOrder.items.map((item) => ({
       quantity: item.quantity,
       weight: item.weight ?? 0,
     }));
-    return selectedOrder.items.map((item, index) =>
-      getDpoCostPerUnit(item.purchasePrice, lines, totalExpenses, index),
+    return selectedOrder.items.map((_, index) =>
+      getDpoCostPerUnit(
+        getDpoDiscountedUnitPrice(discountLines, discount, index),
+        lines,
+        totalExpenses,
+        index,
+      ),
+    );
+  }, [selectedOrder]);
+
+  const viewItemDiscountedUnitPrice = useMemo(() => {
+    if (!selectedOrder) return [];
+    const discount = Number(selectedOrder.discount) || 0;
+    const discountLines = selectedOrder.items.map((item) => ({
+      quantity: item.quantity,
+      purchasePrice: item.purchasePrice,
+    }));
+    return selectedOrder.items.map((_, index) =>
+      getDpoDiscountedUnitPrice(discountLines, discount, index),
     );
   }, [selectedOrder]);
 
@@ -1729,6 +1780,32 @@ export const DirectPurchaseOrder = ({
     discountValue = Math.min(discountValue, itemsSub);
     return Math.round(discountValue * 100) / 100;
   };
+
+  const formDiscountLines = useMemo(
+    () =>
+      formItems.map((row) => ({
+        quantity: typeof row.quantity === "number" ? row.quantity : 0,
+        purchasePrice:
+          typeof row.purchasePrice === "number" ? row.purchasePrice : 0,
+      })),
+    [formItems],
+  );
+
+  const formItemsSubtotal = useMemo(
+    () =>
+      formDiscountLines.reduce(
+        (sum, row) => sum + row.quantity * row.purchasePrice,
+        0,
+      ),
+    [formDiscountLines],
+  );
+
+  const formDiscountAmount = useMemo(
+    () => calculateDiscountAmount(formItemsSubtotal),
+    // formDiscount is read inside calculateDiscountAmount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [formDiscount, formItemsSubtotal],
+  );
 
   const calculateTotal = () => {
     const itemsSub = calculateItemsTotal();
@@ -2909,11 +2986,27 @@ export const DirectPurchaseOrder = ({
                                 />
                               </div>
                               <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground">Disc. Price</Label>
+                                <div className="h-10 flex items-center rounded-md border border-input bg-muted/40 px-3 text-sm tabular-nums font-medium">
+                                  {formatDpoMoney(
+                                    getDpoDiscountedUnitPrice(
+                                      formDiscountLines,
+                                      formDiscountAmount,
+                                      index,
+                                    ),
+                                  )}
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
                                 <Label className="text-xs text-muted-foreground">Cost / Unit</Label>
                                 <div className="h-10 flex items-center rounded-md border border-input bg-muted/40 px-3 text-sm tabular-nums font-medium">
                                   {formatDpoMoney(
                                     getDpoCostPerUnit(
-                                      price,
+                                      getDpoDiscountedUnitPrice(
+                                        formDiscountLines,
+                                        formDiscountAmount,
+                                        index,
+                                      ),
                                       formExpenseLines,
                                       calculateTotalExpenses(),
                                       index,
@@ -3051,6 +3144,7 @@ export const DirectPurchaseOrder = ({
                               <TableHead className="min-w-[60px]">UoM</TableHead>
                               <TableHead className="w-24">Qty</TableHead>
                               <TableHead className="w-28">Purchase Price</TableHead>
+                              <TableHead className="text-right min-w-[100px]">Disc. Price</TableHead>
                               <TableHead className="text-right min-w-[100px]">Cost / Unit</TableHead>
                               <TableHead className="w-24">Price A</TableHead>
                               <TableHead className="w-24">Price B</TableHead>
@@ -3128,10 +3222,21 @@ export const DirectPurchaseOrder = ({
                                   </TableCell>
                                   <TableCell className="text-right font-medium tabular-nums">
                                     {formatDpoMoney(
+                                      getDpoDiscountedUnitPrice(
+                                        formDiscountLines,
+                                        formDiscountAmount,
+                                        index,
+                                      ),
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium tabular-nums">
+                                    {formatDpoMoney(
                                       getDpoCostPerUnit(
-                                        typeof item.purchasePrice === "number"
-                                          ? item.purchasePrice
-                                          : 0,
+                                        getDpoDiscountedUnitPrice(
+                                          formDiscountLines,
+                                          formDiscountAmount,
+                                          index,
+                                        ),
                                         formExpenseLines,
                                         calculateTotalExpenses(),
                                         index,
@@ -3268,6 +3373,8 @@ export const DirectPurchaseOrder = ({
                               <TableCell className="font-semibold tabular-nums">
                                 {itemPartTotals.totalQty.toLocaleString("en-PK")}
                               </TableCell>
+                              <TableCell />
+                              <TableCell />
                               <TableCell />
                               <TableCell />
                               <TableCell />
@@ -3648,6 +3755,7 @@ export const DirectPurchaseOrder = ({
                         <TableHead className="min-w-[60px]">UoM</TableHead>
                         <TableHead className="min-w-[60px]">Qty</TableHead>
                         <TableHead className="min-w-[120px]">Purchase Price</TableHead>
+                        <TableHead className="text-right min-w-[100px]">Disc. Price</TableHead>
                         <TableHead className="text-right min-w-[100px]">Amount</TableHead>
                         <TableHead className="text-right min-w-[100px]">EXP / unit</TableHead>
                         <TableHead className="text-right min-w-[100px]">Cost / Unit</TableHead>
@@ -3696,6 +3804,11 @@ export const DirectPurchaseOrder = ({
                             {Number(item.quantity || 0).toLocaleString("en-PK")}
                           </TableCell>
                           <TableCell>{formatPurchasePrice(item.purchasePrice)}</TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">
+                            {formatDpoMoney(
+                              viewItemDiscountedUnitPrice[index] ?? item.purchasePrice,
+                            )}
+                          </TableCell>
                           <TableCell className="text-right font-medium">
                             {item.amount.toLocaleString("en-PK")}
                           </TableCell>
@@ -3785,6 +3898,7 @@ export const DirectPurchaseOrder = ({
                             .reduce((s, i) => s + (Number(i.quantity) || 0), 0)
                             .toLocaleString("en-PK")}
                         </TableCell>
+                        <TableCell />
                         <TableCell />
                         <TableCell className="text-right font-semibold tabular-nums">
                           {selectedOrder.items
