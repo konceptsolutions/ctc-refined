@@ -1001,6 +1001,265 @@ async function attachLastSupplierFcRates(
   }));
 }
 
+/**
+ * Live on-hand stock by part (excludes stock_reservation), same rule as part-details.
+ * Inquiry snapshots go stale and are wrong after alternate replacements.
+ */
+async function getCurrentStockByPartIds(
+  partIdsRaw: Array<string | null | undefined>,
+): Promise<Map<string, number>> {
+  const partIds = Array.from(
+    new Set(
+      partIdsRaw
+        .map((id) => String(id || "").trim())
+        .filter((id) => id.length > 0),
+    ),
+  );
+  const stockByPartId = new Map<string, number>();
+  if (partIds.length === 0) return stockByPartId;
+
+  const rows = await prisma.$queryRaw<
+    Array<{ partId: string; stock: number | bigint | null }>
+  >`
+    SELECT
+      "partId",
+      COALESCE(
+        SUM(
+          CASE
+            WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation'
+            THEN CASE WHEN type = 'in' THEN quantity ELSE -quantity END
+            ELSE 0
+          END
+        ),
+        0
+      ) AS stock
+    FROM "StockMovement"
+    WHERE "partId" IN (${Prisma.join(partIds)})
+    GROUP BY "partId"
+  `;
+
+  for (const row of rows) {
+    stockByPartId.set(String(row.partId), Number(row.stock ?? 0));
+  }
+  for (const partId of partIds) {
+    if (!stockByPartId.has(partId)) stockByPartId.set(partId, 0);
+  }
+  return stockByPartId;
+}
+
+async function attachLiveCurrentStock(items: any[]): Promise<any[]> {
+  const stockByPartId = await getCurrentStockByPartIds(
+    items.map((item) => item?.partId),
+  );
+  return items.map((item) => ({
+    ...item,
+    currentStock: stockByPartId.get(String(item.partId)) ?? 0,
+  }));
+}
+
+/**
+ * Merge inquiry + saved quotation for the quotation form.
+ * Pair by row position (sortOrder), not partId, so alternate replacements stick:
+ * inquiry row i provides request qty; quotation row i provides the actual part/rates.
+ * Extra quotation-only rows (added on the form) stay after inquiry rows.
+ */
+function mergeInquiryItemsIntoQuotationItems(params: {
+  inquiryItems: any[];
+  quotationItems: any[];
+  mapInquiryItem: (item: any) => any;
+  mapQuotationItem: (item: any, inquiryItem?: any) => any;
+}) {
+  const bySort = (a: any, b: any) =>
+    (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0);
+
+  const inquiry = [...(params.inquiryItems || [])].sort(bySort);
+  const quotation = [...(params.quotationItems || [])].sort(bySort);
+  const merged: any[] = [];
+
+  for (let i = 0; i < inquiry.length; i++) {
+    const inquiryItem = inquiry[i];
+    const quotItem = quotation[i];
+    if (quotItem) {
+      merged.push(params.mapQuotationItem(quotItem, inquiryItem));
+    } else {
+      merged.push(params.mapInquiryItem(inquiryItem));
+    }
+  }
+
+  for (let i = inquiry.length; i < quotation.length; i++) {
+    merged.push(params.mapQuotationItem(quotation[i]));
+  }
+
+  return merged;
+}
+
+/**
+ * Align existing quotations to the inquiry by row position:
+ * - keep quotation partId (preserves alternate replacements)
+ * - sync demand/quotation qty from the inquiry row at the same index
+ * - append missing trailing inquiry rows
+ * - never delete quotation-only / replaced rows
+ */
+async function syncMissingInquiryItemsIntoRequestQuotations(
+  requestId: string,
+): Promise<number> {
+  const purchaseImportRequestModel = (prisma as any).purchaseImportRequest;
+  const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+  const purchaseQuotationItemModel = (prisma as any).purchaseQuotationItem;
+  if (
+    !purchaseImportRequestModel ||
+    !purchaseQuotationModel ||
+    !purchaseQuotationItemModel
+  ) {
+    return 0;
+  }
+
+  const request = await purchaseImportRequestModel.findUnique({
+    where: { id: requestId },
+    include: {
+      PurchaseImportRequestItem: { orderBy: { sortOrder: "asc" } },
+    },
+  });
+  if (!request) return 0;
+
+  const inquiryItems = [...(request.PurchaseImportRequestItem || [])].sort(
+    (a: any, b: any) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0),
+  );
+
+  const quotations = await purchaseQuotationModel.findMany({
+    where: { purchaseImportRequestId: requestId },
+    include: {
+      PurchaseQuotationItem: {
+        select: {
+          id: true,
+          partId: true,
+          sortOrder: true,
+          fcRate: true,
+          revisedFcRate: true,
+          shipDays: true,
+          demandQuantity: true,
+          quotationQuantity: true,
+          weight: true,
+        },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+  });
+  if (quotations.length === 0) return 0;
+
+  let added = 0;
+  for (const quotation of quotations) {
+    const conversionRate = Number(quotation.conversionRate || 1) || 1;
+    const existingItems = [...(quotation.PurchaseQuotationItem || [])].sort(
+      (a: any, b: any) =>
+        (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0),
+    );
+
+    const now = new Date();
+    let nextSort =
+      existingItems.reduce(
+        (max: number, item: any) => Math.max(max, Number(item.sortOrder) || 0),
+        -1,
+      ) + 1;
+
+    const createRows: any[] = [];
+    for (let i = 0; i < inquiryItems.length; i++) {
+      const inq = inquiryItems[i];
+      const demandQuantity = Number(inq.demandQuantity || 0);
+      const weight = Number(inq.weight || 0);
+      const existing = existingItems[i];
+
+      if (existing) {
+        const fcRate = Number(existing.fcRate || 0);
+        const revisedFcRate = Number(existing.revisedFcRate || 0);
+        // Keep existing.partId so alternate replacements are not overwritten.
+        await purchaseQuotationItemModel.update({
+          where: { id: existing.id },
+          data: {
+            demandQuantity,
+            quotationQuantity: demandQuantity,
+            weight,
+            totalWeight: weight * demandQuantity,
+            fcAmount: fcRate * demandQuantity,
+            lcRate: fcRate * conversionRate,
+            lcAmount: fcRate * conversionRate * demandQuantity,
+            revisedFcAmount: revisedFcRate * demandQuantity,
+            revisedLcRate: revisedFcRate * conversionRate,
+            revisedLcAmount: revisedFcRate * conversionRate * demandQuantity,
+            sortOrder: Number.isFinite(Number(inq.sortOrder))
+              ? Number(inq.sortOrder)
+              : i,
+            updatedAt: now,
+          },
+        });
+      } else {
+        createRows.push({
+          id: randomUUID(),
+          purchaseQuotationId: quotation.id,
+          partId: inq.partId,
+          demandQuantity,
+          quotationQuantity: demandQuantity,
+          shipDays: "STK",
+          fcRate: 0,
+          fcAmount: 0,
+          lcRate: 0,
+          lcAmount: 0,
+          revisedFcRate: 0,
+          revisedFcAmount: 0,
+          revisedLcRate: 0,
+          revisedLcAmount: 0,
+          weight,
+          totalWeight: weight * demandQuantity,
+          sortOrder: Number.isFinite(Number(inq.sortOrder))
+            ? Number(inq.sortOrder)
+            : nextSort++,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    if (createRows.length > 0) {
+      await purchaseQuotationItemModel.createMany({ data: createRows });
+      added += createRows.length;
+    }
+
+    const allItems = await purchaseQuotationItemModel.findMany({
+      where: { purchaseQuotationId: quotation.id },
+      select: {
+        fcAmount: true,
+        lcAmount: true,
+        revisedFcAmount: true,
+        revisedLcAmount: true,
+      },
+    });
+    await purchaseQuotationModel.update({
+      where: { id: quotation.id },
+      data: {
+        fcTotal: allItems.reduce(
+          (sum: number, item: any) => sum + Number(item.fcAmount || 0),
+          0,
+        ),
+        lcTotal: allItems.reduce(
+          (sum: number, item: any) => sum + Number(item.lcAmount || 0),
+          0,
+        ),
+        fcRevisedTotal: allItems.reduce(
+          (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
+          0,
+        ),
+        lcRevisedTotal: allItems.reduce(
+          (sum: number, item: any) => sum + Number(item.revisedLcAmount || 0),
+          0,
+        ),
+        updatedAt: now,
+      },
+    });
+  }
+
+  return added;
+}
+
 router.get("/suppliers/:supplierId/last-fc-rates", async (req: Request, res: Response) => {
   try {
     const supplierId = String(req.params.supplierId || "").trim();
@@ -1969,6 +2228,18 @@ router.put("/requests/:requestId/status", async (req: Request, res: Response) =>
       },
     });
 
+    let syncedQuotationItems = 0;
+    if (status === "confirm") {
+      const batchRequestRows = await purchaseImportRequestModel.findMany({
+        where: { batchId: requestRow.batchId },
+        select: { id: true },
+      });
+      for (const row of batchRequestRows) {
+        syncedQuotationItems +=
+          await syncMissingInquiryItemsIntoRequestQuotations(row.id);
+      }
+    }
+
     res.json({
       data: {
         id: requestRow.id,
@@ -1977,6 +2248,7 @@ router.put("/requests/:requestId/status", async (req: Request, res: Response) =>
         status,
         previousStatus,
         updatedCount: updateResult.count || 0,
+        syncedQuotationItems,
       },
     });
   } catch (error: any) {
@@ -2159,22 +2431,55 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       defaultCurrency = String(existingQuotation.currency || "USD");
       conversionRate = Number(existingQuotation.conversionRate || 1);
       terms = existingQuotation.terms || null;
-      items = (existingQuotation.PurchaseQuotationItem || []).map((item: any) => ({
-        partId: item.partId,
-        masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-        partNo: item.Part?.partNo || "",
-        description: item.Part?.description || "",
-        brand: item.Part?.Brand?.name || "",
-        origin: item.Part?.origin || "",
-        currentStock: stockByPartId.get(String(item.partId)) ?? 0,
-        demandQuantity: Number(item.demandQuantity || 0),
-        quotationQuantity: Number(item.quotationQuantity || 0),
-        shipDays: String(item.shipDays ?? ""),
-        fcRate: Number(item.fcRate || 0),
-        revisedFcRate: Number(item.revisedFcRate || 0),
-        weight: Number(item.weight || 0),
-        totalWeight: Number(item.totalWeight || 0),
-      }));
+      // Inquiry is source of truth for which parts appear; overlay saved quotation rates.
+      items = mergeInquiryItemsIntoQuotationItems({
+        inquiryItems: requestRow.PurchaseImportRequestItem || [],
+        quotationItems: existingQuotation.PurchaseQuotationItem || [],
+        mapInquiryItem: (item: any) => ({
+          partId: item.partId,
+          masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
+          partNo: item.Part?.partNo || "",
+          description: item.Part?.description || "",
+          brand: item.Part?.Brand?.name || "",
+          origin: item.Part?.origin || "",
+          currentStock: Number(item.currentStock || 0),
+          demandQuantity: Number(item.demandQuantity || 0),
+          weight: Number(item.weight || 0),
+          totalWeight: Number(item.totalWeight || 0),
+          quotationQuantity: Number(item.demandQuantity || 0),
+          shipDays: "STK",
+          fcRate: 0,
+          revisedFcRate: 0,
+        }),
+        mapQuotationItem: (item: any, inquiryItem?: any) => ({
+          partId: item.partId,
+          masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
+          partNo: item.Part?.partNo || "",
+          description: item.Part?.description || "",
+          brand: item.Part?.Brand?.name || "",
+          origin: item.Part?.origin || "",
+          currentStock:
+            stockByPartId.get(String(item.partId)) ??
+            Number(inquiryItem?.currentStock || 0),
+          demandQuantity: Number(
+            inquiryItem?.demandQuantity ?? item.demandQuantity ?? 0,
+          ),
+          quotationQuantity: Number(
+            inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
+          ),
+          shipDays: String(item.shipDays ?? ""),
+          fcRate: Number(item.fcRate || 0),
+          revisedFcRate: Number(item.revisedFcRate || 0),
+          weight: Number(
+            inquiryItem?.weight != null ? inquiryItem.weight : item.weight || 0,
+          ),
+          totalWeight: Number(
+            inquiryItem?.totalWeight != null
+              ? inquiryItem.totalWeight
+              : item.totalWeight || 0,
+          ),
+        }),
+      });
     } else {
       quotationNo = "";
       quotationDate = new Date();
@@ -2217,6 +2522,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       items,
       existingQuotationId,
     );
+    items = await attachLiveCurrentStock(items);
 
     res.json({
       data: {
@@ -2835,12 +3141,18 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
             consignee: true,
             batchId: true,
             PurchaseImportRequestItem: {
-              select: {
-                partId: true,
-                currentStock: true,
-                khiQuantity: true,
-                isbQuantity: true,
-                otherQuantity: true,
+              orderBy: { sortOrder: "asc" },
+              include: {
+                Part: {
+                  select: {
+                    id: true,
+                    partNo: true,
+                    description: true,
+                    MasterPart: { select: { masterPartNo: true } },
+                    Brand: { select: { name: true } },
+                    origin: true,
+                  },
+                },
               },
             },
           },
@@ -2940,39 +3252,89 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
           currency: row.Supplier?.currencyName || row.currency || "USD",
         },
         purchaseOrders,
-        items: await attachLastSupplierFcRates(
-          row.supplierId,
-          (row.PurchaseQuotationItem || []).map((item: any) => {
-            const split = (row.PurchaseImportRequest?.PurchaseImportRequestItem || []).find(
-              (requestItem: any) => String(requestItem.partId) === String(item.partId),
-            );
-            return {
-            partId: item.partId,
-            masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-            partNo: item.Part?.partNo || "",
-            description: item.Part?.description || "",
-            brand: item.Part?.Brand?.name || "",
-        origin: item.Part?.origin || "",
-            currentStock: Number(split?.currentStock || 0),
-            demandQuantity: Number(item.demandQuantity || 0),
-            quotationQuantity: Number(item.quotationQuantity || 0),
-            khiQuantity: Number(split?.khiQuantity || 0),
-            isbQuantity: Number(split?.isbQuantity || 0),
-            otherQuantity: Number(split?.otherQuantity || 0),
-            shipDays: String(item.shipDays ?? ""),
-            fcRate: Number(item.fcRate || 0),
-            fcAmount: Number(item.fcAmount || 0),
-            lcRate: Number(item.lcRate || 0),
-            lcAmount: Number(item.lcAmount || 0),
-            revisedFcRate: Number(item.revisedFcRate || 0),
-            revisedFcAmount: Number(item.revisedFcAmount || 0),
-            revisedLcRate: Number(item.revisedLcRate || 0),
-            revisedLcAmount: Number(item.revisedLcAmount || 0),
-            weight: Number(item.weight || 0),
-            totalWeight: Number(item.totalWeight || 0),
-          };
-          }),
-          row.id,
+        items: await attachLiveCurrentStock(
+          await attachLastSupplierFcRates(
+            row.supplierId,
+            mergeInquiryItemsIntoQuotationItems({
+              inquiryItems: row.PurchaseImportRequest?.PurchaseImportRequestItem || [],
+              quotationItems: row.PurchaseQuotationItem || [],
+              mapInquiryItem: (item: any) => ({
+                partId: item.partId,
+                masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
+                partNo: item.Part?.partNo || "",
+                description: item.Part?.description || "",
+                brand: item.Part?.Brand?.name || "",
+                origin: item.Part?.origin || "",
+                currentStock: Number(item.currentStock || 0),
+                demandQuantity: Number(item.demandQuantity || 0),
+                quotationQuantity: Number(item.demandQuantity || 0),
+                khiQuantity: Number(item.khiQuantity || 0),
+                isbQuantity: Number(item.isbQuantity || 0),
+                otherQuantity: Number(item.otherQuantity || 0),
+                shipDays: "STK",
+                fcRate: 0,
+                fcAmount: 0,
+                lcRate: 0,
+                lcAmount: 0,
+                revisedFcRate: 0,
+                revisedFcAmount: 0,
+                revisedLcRate: 0,
+                revisedLcAmount: 0,
+                weight: Number(item.weight || 0),
+                totalWeight: Number(item.totalWeight || 0),
+              }),
+              mapQuotationItem: (item: any, inquiryItem?: any) => ({
+                partId: item.partId,
+                masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
+                partNo: item.Part?.partNo || "",
+                description: item.Part?.description || "",
+                brand: item.Part?.Brand?.name || "",
+                origin: item.Part?.origin || "",
+                currentStock: Number(inquiryItem?.currentStock || 0),
+                demandQuantity: Number(
+                  inquiryItem?.demandQuantity ?? item.demandQuantity ?? 0,
+                ),
+                quotationQuantity: Number(
+                  inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
+                ),
+                khiQuantity: Number(inquiryItem?.khiQuantity || 0),
+                isbQuantity: Number(inquiryItem?.isbQuantity || 0),
+                otherQuantity: Number(inquiryItem?.otherQuantity || 0),
+                shipDays: String(item.shipDays ?? ""),
+                fcRate: Number(item.fcRate || 0),
+                fcAmount: Number(item.fcRate || 0) *
+                  Number(
+                    inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
+                  ),
+                lcRate: Number(item.lcRate || 0),
+                lcAmount: Number(item.lcRate || 0) *
+                  Number(
+                    inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
+                  ),
+                revisedFcRate: Number(item.revisedFcRate || 0),
+                revisedFcAmount: Number(item.revisedFcRate || 0) *
+                  Number(
+                    inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
+                  ),
+                revisedLcRate: Number(item.revisedLcRate || 0),
+                revisedLcAmount: Number(item.revisedLcRate || 0) *
+                  Number(
+                    inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
+                  ),
+                weight: Number(
+                  inquiryItem?.weight != null
+                    ? inquiryItem.weight
+                    : item.weight || 0,
+                ),
+                totalWeight: Number(
+                  inquiryItem?.totalWeight != null
+                    ? inquiryItem.totalWeight
+                    : item.totalWeight || 0,
+                ),
+              }),
+            }),
+            row.id,
+          ),
         ),
       },
     });
@@ -5149,7 +5511,12 @@ router.get("/requests", async (req: Request, res: Response) => {
             },
           },
           PurchaseQuotation: {
-            select: { id: true, status: true, quotationNo: true },
+            select: {
+              id: true,
+              status: true,
+              quotationNo: true,
+              _count: { select: { PurchaseQuotationItem: true } },
+            },
             orderBy: { createdAt: "desc" },
           },
         },

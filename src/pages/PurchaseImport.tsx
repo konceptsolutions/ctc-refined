@@ -303,6 +303,8 @@ type PurchaseImportRequestRecord = {
     id: string;
     status: string;
     quotationNo?: string | null;
+    _count?: { PurchaseQuotationItem?: number };
+    PurchaseQuotationItem?: Array<unknown>;
   }>;
 };
 
@@ -1389,6 +1391,12 @@ const UnquotedItemsDialog = ({
 const ITEM_JUMP_HIGHLIGHT_CLASS =
   "bg-primary/10 ring-2 ring-primary/30 ring-inset";
 
+/** Persistent UI mark: user reviewed/confirmed this row before saving. */
+const USER_MARKED_ROW_CLASS =
+  "bg-emerald-500/15 ring-1 ring-inset ring-emerald-600/40";
+
+const ACTIVE_CONFIRM_ROW_CLASS = "outline outline-2 outline-offset-[-2px] outline-sky-500/50";
+
 const buildItemJumpOptions = (
   rows: Array<{
     id: string;
@@ -1432,10 +1440,12 @@ const ItemJumpSelect = ({
   );
 };
 
-const useItemRowJump = () => {
+const useItemRowJump = (options?: { highlightMs?: number }) => {
+  const highlightMs = Math.max(0, Number(options?.highlightMs ?? 2000));
   const [jumpToId, setJumpToId] = useState("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
+  const highlightTimeoutRef = useRef<number | null>(null);
 
   const scrollToRow = useCallback((rowId: string) => {
     if (!rowId) return;
@@ -1445,11 +1455,15 @@ const useItemRowJump = () => {
         behavior: "smooth",
       });
       setHighlightedId(rowId);
-      window.setTimeout(() => {
+      if (highlightTimeoutRef.current != null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+      highlightTimeoutRef.current = window.setTimeout(() => {
         setHighlightedId((current) => (current === rowId ? null : current));
-      }, 2000);
+        highlightTimeoutRef.current = null;
+      }, highlightMs);
     });
-  }, []);
+  }, [highlightMs]);
 
   const handleJump = useCallback(
     (rowId: string) => {
@@ -1461,6 +1475,14 @@ const useItemRowJump = () => {
 
   const setRowRef = useCallback((rowId: string, el: HTMLTableRowElement | null) => {
     rowRefs.current[rowId] = el;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current != null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+    };
   }, []);
 
   return { jumpToId, highlightedId, handleJump, setRowRef };
@@ -4137,9 +4159,23 @@ const PurchaseQuotationForm = ({
     );
   };
 
-  const addQuotationRow = () => {
+  const addQuotationRow = useCallback(() => {
     setRows((prev) => [...prev, createEmptyQuotationRow()]);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (loading || saving || !canSaveQuotation) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        addQuotationRow();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [loading, saving, canSaveQuotation, addQuotationRow]);
 
   const removeQuotationRow = (rowId: string) => {
     setRows((prev) => (prev.length > 1 ? prev.filter((row) => row.rowId !== rowId) : prev));
@@ -4730,10 +4766,10 @@ const PurchaseQuotationForm = ({
                 type="button"
                 size="sm"
                 onClick={addQuotationRow}
-                disabled={loading || saving}
+                disabled={loading || saving || !canSaveQuotation}
               >
                 <Plus className="w-4 h-4 mr-1" />
-                Add Item
+                Add Item (Alt + Z)
               </Button>
             </div>
           </div>
@@ -6494,6 +6530,21 @@ const PurchaseInquiryListPanel = ({
                       .toLowerCase() === "confirm",
                 );
                 const itemRows = row.PurchaseImportRequestItem || [];
+                const quotationItemCount = (row.PurchaseQuotation || []).reduce(
+                  (max, quotation) => {
+                    const counted =
+                      Number(quotation._count?.PurchaseQuotationItem) ||
+                      (Array.isArray(quotation.PurchaseQuotationItem)
+                        ? quotation.PurchaseQuotationItem.length
+                        : 0);
+                    return Math.max(max, counted);
+                  },
+                  0,
+                );
+                const displayedItemCount =
+                  mode === "quotation" && quotationItemCount > 0
+                    ? quotationItemCount
+                    : itemRows.length;
                 const totalQty = itemRows.reduce(
                   (sum, item) => sum + Number(item.demandQuantity || 0),
                   0,
@@ -6533,7 +6584,7 @@ const PurchaseInquiryListPanel = ({
                       {row.partReference || "-"}
                     </td>
                     <td className="p-2 font-medium">{consigneeLabel}</td>
-                    <td className="p-2 text-right">{itemRows.length}</td>
+                    <td className="p-2 text-right">{displayedItemCount}</td>
                     <td className="p-2 text-right">{totalQty}</td>
                     <td className="p-2 text-right">{totalWeight.toFixed(2)}</td>
                     <td className="p-2 font-medium">
@@ -7827,7 +7878,16 @@ const PurchaseQuotationConfirmForm = ({
   >([]);
   const [selectedCombineIds, setSelectedCombineIds] = useState<string[]>([]);
   const [loadingCombineId, setLoadingCombineId] = useState<string | null>(null);
-  const { jumpToId, highlightedId, handleJump, setRowRef } = useItemRowJump();
+  const [activeConfirmRowId, setActiveConfirmRowId] = useState<string | null>(null);
+  const [userMarkedRowIds, setUserMarkedRowIds] = useState<Set<string>>(() => new Set());
+  const [partOptions, setPartOptions] = useState<PartOption[]>([]);
+  const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
+  const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
+  const activeConfirmRowIdRef = useRef<string | null>(null);
+  activeConfirmRowIdRef.current = activeConfirmRowId;
+  const { jumpToId, highlightedId, handleJump, setRowRef } = useItemRowJump({
+    highlightMs: 5000,
+  });
   const isViewMode = Boolean(readOnly);
 
   const isRevised = isQuotationRevised(detail);
@@ -7838,10 +7898,22 @@ const PurchaseQuotationConfirmForm = ({
       .filter(Boolean);
     return Array.from(new Set(numbers));
   }, [detail?.purchaseOrders]);
+
+  const sortedRows = useMemo(
+    () =>
+      sortInquiryItemRows(rows, partOptions, itemSort, itemSortDirection, (row, part) => ({
+        masterPartNo: row.masterPartNo || part?.masterPartNo,
+        partNo: row.partNo || part?.partNo,
+        description: row.description || part?.description,
+        hsCode: part?.hsCode,
+      })),
+    [rows, partOptions, itemSort, itemSortDirection],
+  );
+
   const confirmItemJumpOptions = useMemo(
     () =>
       buildItemJumpOptions(
-        rows.map((row) => ({
+        sortedRows.map((row) => ({
           id: row.rowId,
           partId: row.partId,
           masterPartNo: row.masterPartNo,
@@ -7849,14 +7921,42 @@ const PurchaseQuotationConfirmForm = ({
           description: row.description,
         })),
       ),
-    [rows],
+    [sortedRows],
   );
+
+  useEffect(() => {
+    const loadParts = async () => {
+      try {
+        const partsRes = await apiClient.getPartsDropdown();
+        const partsData = Array.isArray((partsRes as any)?.data)
+          ? (partsRes as any).data
+          : [];
+        setPartOptions(
+          partsData.map((p: any) => ({
+            id: p.id || "",
+            partNo: p.partNo || "",
+            masterPartNo: p.masterPartNo || "",
+            description: p.description || "",
+            hsCode: p.hs_code || p.hsCode || "",
+            brand: p.brand || "",
+            origin: p.origin || "",
+            weight: Number(p.weight || 0),
+          })),
+        );
+      } catch {
+        setPartOptions([]);
+      }
+    };
+    void loadParts();
+  }, []);
 
   useEffect(() => {
     const loadQuotation = async () => {
       setLoading(true);
       setCombinableQuotations([]);
       setSelectedCombineIds([]);
+      setActiveConfirmRowId(null);
+      setUserMarkedRowIds(new Set());
       try {
         const res = await apiClient.getPurchaseQuotationById(quotationId);
         const data = (res as any)?.data as PurchaseQuotationDetailPayload | undefined;
@@ -7945,6 +8045,40 @@ const PurchaseQuotationConfirmForm = ({
 
     void loadQuotation();
   }, [quotationId, toast, isViewMode]);
+
+  const toggleUserMarkedRow = useCallback((rowId: string) => {
+    if (!rowId || isViewMode) return;
+    setActiveConfirmRowId(rowId);
+    setUserMarkedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  }, [isViewMode]);
+
+  const handleConfirmItemJump = useCallback(
+    (rowId: string) => {
+      setActiveConfirmRowId(rowId);
+      handleJump(rowId);
+    },
+    [handleJump],
+  );
+
+  useEffect(() => {
+    if (isViewMode || loading || saving) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.altKey && e.key.toLowerCase() === "s")) return;
+      e.preventDefault();
+      const rowId = activeConfirmRowIdRef.current;
+      if (!rowId) return;
+      toggleUserMarkedRow(rowId);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isViewMode, loading, saving, toggleUserMarkedRow]);
 
   const toggleCombineQuotation = async (targetId: string, checked: boolean) => {
     if (!checked) {
@@ -8315,14 +8449,47 @@ const PurchaseQuotationConfirmForm = ({
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">Items</h3>
-        <div className={cn("flex items-center gap-2", isViewMode && "pointer-events-auto")}>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">Items</h3>
+          {!isViewMode ? (
+            <p className="text-xs text-muted-foreground">
+              Alt+S highlights the active row as reviewed (UI only)
+              {userMarkedRowIds.size > 0 ? ` · ${userMarkedRowIds.size} marked` : ""}
+            </p>
+          ) : null}
+        </div>
+        <div className={cn("flex flex-wrap items-center gap-2", isViewMode && "pointer-events-auto")}>
           <ItemJumpSelect
             options={confirmItemJumpOptions}
             value={jumpToId}
-            onValueChange={handleJump}
+            onValueChange={handleConfirmItemJump}
             disabled={loading || saving}
           />
+          <Select value={itemSort} onValueChange={(value: InquiryItemSort) => setItemSort(value)}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sort: Entry Order</SelectItem>
+              <SelectItem value="alphabetical">Sort: Alphabetical</SelectItem>
+              <SelectItem value="numeric">Sort: Numeric</SelectItem>
+              <SelectItem value="description">Sort: Description</SelectItem>
+              <SelectItem value="hsCode">Sort: HS Code</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={itemSortDirection}
+            onValueChange={(value: SortDirection) => setItemSortDirection(value)}
+            disabled={itemSort === "none"}
+          >
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="asc">Ascending</SelectItem>
+              <SelectItem value="desc">Descending</SelectItem>
+            </SelectContent>
+          </Select>
           {isRevised ? (
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Revised rates
@@ -8369,28 +8536,57 @@ const PurchaseQuotationConfirmForm = ({
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {sortedRows.length === 0 ? (
               <tr>
                 <td colSpan={itemTableColSpan} className="p-4 text-center text-muted-foreground">
                   No quotation items found.
                 </td>
               </tr>
             ) : (
-              rows.map((row, index) => {
+              sortedRows.map((row, index) => {
                 const splitMismatch = getConfirmRowSplitMismatch(row);
                 const splitInputClass = splitMismatch ? "border-destructive focus-visible:ring-destructive" : "";
+                const isUserMarked = userMarkedRowIds.has(row.rowId);
+                const isActive = activeConfirmRowId === row.rowId;
 
                 return (
                 <tr
                   key={row.rowId}
                   ref={(el) => setRowRef(row.rowId, el)}
+                  onClick={() => setActiveConfirmRowId(row.rowId)}
+                  onFocusCapture={() => setActiveConfirmRowId(row.rowId)}
                   className={cn(
                     "border-b hover:bg-muted/20",
+                    isUserMarked && USER_MARKED_ROW_CLASS,
+                    !isUserMarked && isActive && ACTIVE_CONFIRM_ROW_CLASS,
                     highlightedId === row.rowId && ITEM_JUMP_HIGHLIGHT_CLASS,
                   )}
                 >
                   <td className="p-2 text-center text-muted-foreground tabular-nums">
-                    {index + 1}
+                    {isViewMode ? (
+                      index + 1
+                    ) : (
+                      <button
+                        type="button"
+                        className={cn(
+                          "mx-auto flex h-7 w-7 items-center justify-center rounded text-xs font-medium",
+                          isUserMarked
+                            ? "bg-emerald-600 text-white"
+                            : "hover:bg-muted text-muted-foreground",
+                        )}
+                        title={
+                          isUserMarked
+                            ? "Clear highlight (Alt+S)"
+                            : "Highlight as reviewed (Alt+S)"
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleUserMarkedRow(row.rowId);
+                        }}
+                      >
+                        {isUserMarked ? "✓" : index + 1}
+                      </button>
+                    )}
                   </td>
                   {isCombinedView ? (
                     <td className="p-2 font-mono text-xs">
@@ -8520,7 +8716,7 @@ const PurchaseQuotationConfirmForm = ({
               })
             )}
           </tbody>
-          {rows.length > 0 ? (
+          {sortedRows.length > 0 ? (
             <tfoot>
               <tr className="bg-muted/40 font-semibold border-t">
                 <td className="p-2" />
