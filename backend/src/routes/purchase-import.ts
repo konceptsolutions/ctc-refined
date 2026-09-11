@@ -360,6 +360,7 @@ type ConfirmQuotationItemInput = {
   isbQuantity?: number;
   otherQuantity?: number;
   weight?: number;
+  fcRate?: number;
 };
 
 type PoLaneKey = "khi" | "isb" | "other";
@@ -403,6 +404,8 @@ async function confirmPurchaseQuotation(
     confirmationDate?: Date | string | null;
     items?: ConfirmQuotationItemInput[] | null;
     combineQuotationIds?: string[] | null;
+    quotationNo?: string | null;
+    conversionRate?: number | null;
   },
 ) {
   const purchaseQuotationModel = (prisma as any).purchaseQuotation;
@@ -528,6 +531,34 @@ async function confirmPurchaseQuotation(
     }
   }
 
+  const nextQuotationNo =
+    options.quotationNo !== undefined && options.quotationNo !== null
+      ? normalizeQuotationNo(options.quotationNo)
+      : normalizeQuotationNo(primary.quotationNo);
+  if (!nextQuotationNo) {
+    throw new Error("Quotation number is required.");
+  }
+  if (nextQuotationNo !== normalizeQuotationNo(primary.quotationNo)) {
+    const duplicate = await findDuplicateQuotationNo(
+      purchaseQuotationModel,
+      nextQuotationNo,
+      primaryId,
+    );
+    if (duplicate) {
+      throw new Error(`Quotation number "${nextQuotationNo}" is already in use.`);
+    }
+  }
+  primary.quotationNo = nextQuotationNo;
+
+  const nextConversionRate =
+    options.conversionRate !== undefined && options.conversionRate !== null
+      ? Number(options.conversionRate)
+      : Number(primary.conversionRate || 1);
+  if (!Number.isFinite(nextConversionRate) || nextConversionRate <= 0) {
+    throw new Error("Exchange rate must be greater than zero.");
+  }
+  primary.conversionRate = nextConversionRate;
+
   const confirmInputs = Array.isArray(options.items) ? options.items : [];
   // Prefer quotation item id so duplicate part lines can be confirmed independently
   // (e.g. zero one line without applying the sibling line's qty).
@@ -561,6 +592,10 @@ async function confirmPurchaseQuotation(
         item?.weight !== undefined && Number.isFinite(Number(item.weight))
           ? Math.max(0, Number(item.weight))
           : undefined,
+      fcRate:
+        item?.fcRate !== undefined && Number.isFinite(Number(item.fcRate))
+          ? Math.max(0, Number(item.fcRate))
+          : undefined,
     };
     if (quotationItemId) {
       confirmByQuotationItemId.set(quotationItemId, normalized);
@@ -585,18 +620,22 @@ async function confirmPurchaseQuotation(
     other: [],
   };
 
-  const quotationConfirmUpdates = new Map<
-    string,
-    {
-      quotationItemId: string;
-      confirmQuantity: number;
-      confirmKhiQuantity: number;
-      confirmIsbQuantity: number;
-      confirmOtherQuantity: number;
-      weight?: number;
-      totalWeight?: number;
-    }
-  >();
+  type QuotationConfirmUpdate = {
+    quotationItemId: string;
+    confirmQuantity: number;
+    confirmKhiQuantity: number;
+    confirmIsbQuantity: number;
+    confirmOtherQuantity: number;
+    weight?: number;
+    totalWeight?: number;
+    useRevisedRates?: boolean;
+    fcRate?: number;
+    fcAmount?: number;
+    lcRate?: number;
+    lcAmount?: number;
+  };
+
+  const quotationConfirmUpdates = new Map<string, QuotationConfirmUpdate>();
 
   for (const qid of allQuotationIds) {
     const quotation: any = quotationById.get(qid);
@@ -633,20 +672,33 @@ async function confirmPurchaseQuotation(
           : undefined) ||
         confirmByQuotationPart.get(`${qid}::${partId}`);
 
+      const resolveItemRates = () => {
+        const baseFc =
+          useRevisedRates && Number(item.revisedFcRate || 0) > 0
+            ? Number(item.revisedFcRate)
+            : Number(item.fcRate || 0);
+        const fcRate =
+          itemInput?.fcRate !== undefined
+            ? roundFc(Math.max(0, Number(itemInput.fcRate)))
+            : roundFc(baseFc);
+        const lcRate = roundPurchasePrice(fcRate * nextConversionRate);
+        const fcAmount = roundFc(fcRate * Math.max(0, quotationQty));
+        const lcAmount = roundPurchasePrice(lcRate * Math.max(0, quotationQty));
+        return { fcRate, lcRate, fcAmount, lcAmount };
+      };
+
       const persistConfirmSnapshot = (
         confirmQty: number,
         laneQty: Record<PoLaneKey, number>,
+        rates?: {
+          fcRate: number;
+          lcRate: number;
+          fcAmount: number;
+          lcAmount: number;
+        } | null,
       ) => {
         if (!quotationItemId) return;
-        const snapshot: {
-          quotationItemId: string;
-          confirmQuantity: number;
-          confirmKhiQuantity: number;
-          confirmIsbQuantity: number;
-          confirmOtherQuantity: number;
-          weight?: number;
-          totalWeight?: number;
-        } = {
+        const snapshot: QuotationConfirmUpdate = {
           quotationItemId,
           confirmQuantity: confirmQty,
           confirmKhiQuantity: laneQty.khi,
@@ -661,6 +713,13 @@ async function confirmPurchaseQuotation(
           snapshot.weight = itemWeight;
           snapshot.totalWeight = itemWeight * quotationQty;
         }
+        if (rates) {
+          snapshot.useRevisedRates = useRevisedRates;
+          snapshot.fcRate = rates.fcRate;
+          snapshot.fcAmount = rates.fcAmount;
+          snapshot.lcRate = rates.lcRate;
+          snapshot.lcAmount = rates.lcAmount;
+        }
         quotationConfirmUpdates.set(quotationItemId, snapshot);
       };
 
@@ -674,7 +733,12 @@ async function confirmPurchaseQuotation(
         ? Number(itemInput.confirmQuantity || 0)
         : quotationQty;
       if (confirmQty <= 0) {
-        persistConfirmSnapshot(0, { khi: 0, isb: 0, other: 0 });
+        const zeroRates =
+          itemInput?.fcRate !== undefined ||
+          options.conversionRate !== undefined
+            ? resolveItemRates()
+            : null;
+        persistConfirmSnapshot(0, { khi: 0, isb: 0, other: 0 }, zeroRates);
         continue;
       }
 
@@ -711,12 +775,30 @@ async function confirmPurchaseQuotation(
         );
       }
 
-      persistConfirmSnapshot(confirmQty, laneQty);
-
+      const shouldRecalcRates =
+        itemInput?.fcRate !== undefined ||
+        options.conversionRate !== undefined;
+      const rates = shouldRecalcRates ? resolveItemRates() : null;
       const revisedLcRate = Number(item.revisedLcRate || 0);
-      const lcRate = Number(item.lcRate || 0);
-      const unitCost =
-        useRevisedRates && revisedLcRate > 0 ? revisedLcRate : lcRate;
+      const storedLcRate = Number(item.lcRate || 0);
+      const unitCost = rates
+        ? rates.lcRate
+        : useRevisedRates && revisedLcRate > 0
+          ? revisedLcRate
+          : storedLcRate;
+      const effectiveFcRate = rates
+        ? rates.fcRate
+        : useRevisedRates && Number(item.revisedFcRate || 0) > 0
+          ? roundFc(item.revisedFcRate)
+          : roundFc(item.fcRate || 0);
+
+      // Zero-rate lines are not confirmed (excluded from POs and confirm snapshot).
+      if (effectiveFcRate <= 0 || unitCost <= 0) {
+        persistConfirmSnapshot(0, { khi: 0, isb: 0, other: 0 }, rates);
+        continue;
+      }
+
+      persistConfirmSnapshot(confirmQty, laneQty, rates);
 
       const itemSortOrder = Number.isFinite(Number(item?.sortOrder))
         ? Number(item.sortOrder)
@@ -768,7 +850,80 @@ async function confirmPurchaseQuotation(
 
   const createdOrders = await prisma.$transaction(async (tx) => {
     for (const update of quotationConfirmUpdates.values()) {
-      if (update.weight !== undefined) {
+      const hasRates =
+        update.fcRate !== undefined &&
+        update.lcRate !== undefined &&
+        update.fcAmount !== undefined &&
+        update.lcAmount !== undefined;
+      if (update.useRevisedRates && hasRates) {
+        if (update.weight !== undefined) {
+          await tx.$executeRaw`
+            UPDATE "PurchaseQuotationItem"
+            SET
+              "confirmQuantity" = ${update.confirmQuantity},
+              "confirmKhiQuantity" = ${update.confirmKhiQuantity},
+              "confirmIsbQuantity" = ${update.confirmIsbQuantity},
+              "confirmOtherQuantity" = ${update.confirmOtherQuantity},
+              "weight" = ${update.weight},
+              "totalWeight" = ${update.totalWeight},
+              "revisedFcRate" = ${update.fcRate},
+              "revisedFcAmount" = ${update.fcAmount},
+              "revisedLcRate" = ${update.lcRate},
+              "revisedLcAmount" = ${update.lcAmount},
+              "updatedAt" = NOW()
+            WHERE id = ${String(update.quotationItemId)}
+          `;
+        } else {
+          await tx.$executeRaw`
+            UPDATE "PurchaseQuotationItem"
+            SET
+              "confirmQuantity" = ${update.confirmQuantity},
+              "confirmKhiQuantity" = ${update.confirmKhiQuantity},
+              "confirmIsbQuantity" = ${update.confirmIsbQuantity},
+              "confirmOtherQuantity" = ${update.confirmOtherQuantity},
+              "revisedFcRate" = ${update.fcRate},
+              "revisedFcAmount" = ${update.fcAmount},
+              "revisedLcRate" = ${update.lcRate},
+              "revisedLcAmount" = ${update.lcAmount},
+              "updatedAt" = NOW()
+            WHERE id = ${String(update.quotationItemId)}
+          `;
+        }
+      } else if (hasRates) {
+        if (update.weight !== undefined) {
+          await tx.$executeRaw`
+            UPDATE "PurchaseQuotationItem"
+            SET
+              "confirmQuantity" = ${update.confirmQuantity},
+              "confirmKhiQuantity" = ${update.confirmKhiQuantity},
+              "confirmIsbQuantity" = ${update.confirmIsbQuantity},
+              "confirmOtherQuantity" = ${update.confirmOtherQuantity},
+              "weight" = ${update.weight},
+              "totalWeight" = ${update.totalWeight},
+              "fcRate" = ${update.fcRate},
+              "fcAmount" = ${update.fcAmount},
+              "lcRate" = ${update.lcRate},
+              "lcAmount" = ${update.lcAmount},
+              "updatedAt" = NOW()
+            WHERE id = ${String(update.quotationItemId)}
+          `;
+        } else {
+          await tx.$executeRaw`
+            UPDATE "PurchaseQuotationItem"
+            SET
+              "confirmQuantity" = ${update.confirmQuantity},
+              "confirmKhiQuantity" = ${update.confirmKhiQuantity},
+              "confirmIsbQuantity" = ${update.confirmIsbQuantity},
+              "confirmOtherQuantity" = ${update.confirmOtherQuantity},
+              "fcRate" = ${update.fcRate},
+              "fcAmount" = ${update.fcAmount},
+              "lcRate" = ${update.lcRate},
+              "lcAmount" = ${update.lcAmount},
+              "updatedAt" = NOW()
+            WHERE id = ${String(update.quotationItemId)}
+          `;
+        }
+      } else if (update.weight !== undefined) {
         await tx.$executeRaw`
           UPDATE "PurchaseQuotationItem"
           SET
@@ -779,7 +934,7 @@ async function confirmPurchaseQuotation(
             "weight" = ${update.weight},
             "totalWeight" = ${update.totalWeight},
             "updatedAt" = NOW()
-          WHERE id = ${update.quotationItemId}::uuid
+          WHERE id = ${String(update.quotationItemId)}
         `;
       } else {
         await tx.$executeRaw`
@@ -790,19 +945,33 @@ async function confirmPurchaseQuotation(
             "confirmIsbQuantity" = ${update.confirmIsbQuantity},
             "confirmOtherQuantity" = ${update.confirmOtherQuantity},
             "updatedAt" = NOW()
-          WHERE id = ${update.quotationItemId}::uuid
+          WHERE id = ${String(update.quotationItemId)}
         `;
       }
     }
 
-    await (tx as any).purchaseQuotation.updateMany({
-      where: { id: { in: allQuotationIds } },
+    await (tx as any).purchaseQuotation.update({
+      where: { id: primaryId },
       data: {
+        quotationNo: nextQuotationNo,
+        conversionRate: nextConversionRate,
         status: "confirm",
         confirmationDate,
         updatedAt: new Date(),
       },
     });
+
+    const otherQuotationIds = allQuotationIds.filter((id) => id !== primaryId);
+    if (otherQuotationIds.length > 0) {
+      await (tx as any).purchaseQuotation.updateMany({
+        where: { id: { in: otherQuotationIds } },
+        data: {
+          status: "confirm",
+          confirmationDate,
+          updatedAt: new Date(),
+        },
+      });
+    }
 
     const orders: Array<{
       id: string;
@@ -834,7 +1003,7 @@ async function confirmPurchaseQuotation(
           purchaseQuotationId: primaryId,
           consignee,
           currency: primary.currency,
-          conversionRate: Number(primary.conversionRate || 1),
+          conversionRate: nextConversionRate,
           status: "Pending",
           notes,
           totalAmount,
@@ -3117,9 +3286,18 @@ router.get("/quotations", async (req: Request, res: Response) => {
             orderBy: { sortOrder: "asc" },
             select: {
               id: true,
+              partId: true,
               demandQuantity: true,
               quotationQuantity: true,
               totalWeight: true,
+              confirmQuantity: true,
+              confirmKhiQuantity: true,
+              confirmIsbQuantity: true,
+              confirmOtherQuantity: true,
+              fcRate: true,
+              lcRate: true,
+              revisedFcRate: true,
+              revisedLcRate: true,
             },
           },
           PurchaseOrder: {
@@ -3128,9 +3306,18 @@ router.get("/quotations", async (req: Request, res: Response) => {
               poNumber: true,
               status: true,
               consignee: true,
+              totalAmount: true,
               PurchaseOrderItem: {
                 orderBy: { sortOrder: "asc" },
-                select: { fcRate: true, receivedQty: true },
+                select: {
+                  partId: true,
+                  quantity: true,
+                  unitCost: true,
+                  totalCost: true,
+                  fcRate: true,
+                  fcAmount: true,
+                  receivedQty: true,
+                },
               },
             },
             orderBy: { createdAt: "asc" },
@@ -3942,6 +4129,10 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
           item?.weight !== undefined && Number.isFinite(Number(item.weight))
             ? Math.max(0, Number(item.weight))
             : undefined,
+        fcRate:
+          item?.fcRate !== undefined && Number.isFinite(Number(item.fcRate))
+            ? Math.max(0, Number(item.fcRate))
+            : undefined,
       }))
       .filter((item: { partId: string }) => item.partId);
 
@@ -3951,10 +4142,23 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
           .filter(Boolean)
       : [];
 
+    const quotationNo =
+      req.body?.quotationNo !== undefined && req.body?.quotationNo !== null
+        ? String(req.body.quotationNo)
+        : undefined;
+    const conversionRate =
+      req.body?.conversionRate !== undefined &&
+      req.body?.conversionRate !== null &&
+      String(req.body.conversionRate).trim() !== ""
+        ? Number(req.body.conversionRate)
+        : undefined;
+
     const result = await confirmPurchaseQuotation(quotationId, {
       confirmationDate: req.body?.confirmationDate,
       items,
       combineQuotationIds,
+      quotationNo,
+      conversionRate,
     });
 
     res.json(result);
@@ -4177,7 +4381,7 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
                 "confirmIsbQuantity" = 0,
                 "confirmOtherQuantity" = 0,
                 "updatedAt" = NOW()
-              WHERE id = ${String(qi.id)}::uuid
+              WHERE id = ${String(qi.id)}
             `;
             continue;
           }
@@ -4197,7 +4401,7 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
                 "weight" = ${snap.weight},
                 "totalWeight" = ${snap.weight * quotationQty},
                 "updatedAt" = NOW()
-              WHERE id = ${String(qi.id)}::uuid
+              WHERE id = ${String(qi.id)}
             `;
           } else {
             await tx.$executeRaw`
@@ -4208,7 +4412,7 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
                 "confirmIsbQuantity" = ${snap.confirmIsbQuantity},
                 "confirmOtherQuantity" = ${snap.confirmOtherQuantity},
                 "updatedAt" = NOW()
-              WHERE id = ${String(qi.id)}::uuid
+              WHERE id = ${String(qi.id)}
             `;
           }
         }

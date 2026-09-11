@@ -2918,6 +2918,8 @@ class ApiClient {
     data: {
       confirmationDate: string;
       combineQuotationIds?: string[];
+      quotationNo?: string;
+      conversionRate?: number;
       items: Array<{
         quotationId?: string;
         quotationItemId?: string;
@@ -2927,6 +2929,7 @@ class ApiClient {
         isbQuantity?: number;
         otherQuantity?: number;
         weight?: number;
+        fcRate?: number;
       }>;
     },
   ) {

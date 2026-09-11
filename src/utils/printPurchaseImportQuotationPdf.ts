@@ -26,6 +26,7 @@ export type PurchaseImportQuotationPrintItem = {
   currentStock?: number | null;
   requestQty?: number | null;
   quotationQty?: number | null;
+  confirmQty?: number | null;
   shipDays?: string | null;
   lastFcRate?: number | null;
   fcRate?: number | null;
@@ -37,6 +38,7 @@ export type PurchaseImportQuotationPrintItem = {
   revisedLcRate?: number | null;
   revisedLcAmount?: number | null;
   totalWeight?: number | null;
+  weight?: number | null;
 };
 
 export type PurchaseImportQuotationPrintTotals = {
@@ -139,7 +141,8 @@ export const printPurchaseImportQuotation = ({
   const statusLower = String(detail.status || "")
     .trim()
     .toLowerCase();
-  const isRevised =
+  const isConfirmed = statusLower === "confirm";
+  const hasRevisedRates =
     showRevisedFields ||
     statusLower === "revise" ||
     itemRows.some(
@@ -147,18 +150,21 @@ export const printPurchaseImportQuotation = ({
         Number(item.revisedFcRate || 0) > 0 ||
         Number(item.revisedFcAmount || 0) > 0,
     );
-  const isConfirmed = statusLower === "confirm";
+  // Confirmed / order confirmation print never shows revised layout or labels.
+  const isRevised = !isConfirmed && hasRevisedRates;
 
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const doc = new jsPDF({
+    orientation: isConfirmed ? "portrait" : "landscape",
+    unit: "mm",
+    format: "a4",
+  });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 8;
   const contentWidth = pageWidth - marginX * 2;
   const printedOn = formatPrintDateTime(new Date());
 
   const title = isConfirmed
-    ? isRevised
-      ? "Confirmed Quotation (Revised)"
-      : "Confirmed Quotation"
+    ? "Order Confirmation"
     : isRevised
       ? "Purchase Quotation (Revised)"
       : "Purchase Quotation";
@@ -180,11 +186,14 @@ export const printPurchaseImportQuotation = ({
       value: toInputDate(detail.requestDate) || "-",
     },
     { label: "Quotation No", value: text(detail.quotationNo || "-") },
-    {
+  ];
+
+  if (!isConfirmed) {
+    cards.push({
       label: "Quotation Date",
       value: toInputDate(detail.quotationDate) || "-",
-    },
-  ];
+    });
+  }
 
   if (isRevised) {
     cards.push({
@@ -198,27 +207,27 @@ export const printPurchaseImportQuotation = ({
       label: "Confirmation Date",
       value: toInputDate(detail.confirmationDate) || "-",
     });
-    if (detail.poNumber) {
-      cards.push({ label: "PO No", value: text(detail.poNumber) });
-    }
-    if (detail.consignee) {
-      cards.push({ label: "Consignee", value: text(detail.consignee) });
-    }
   }
 
   cards.push(
     { label: "Supplier", value: text(detail.supplierName || "-") },
     { label: "Currency", value: text(detail.currency || "-") },
-    {
-      label: "Exchange Rate",
-      value: String(Number(detail.conversionRate || 0) || "-"),
-    },
-    { label: "Status", value: text(detail.status || "-") },
-    { label: "Upto Date", value: formatPrintDate(new Date()) },
   );
 
+  if (!isConfirmed) {
+    cards.push(
+      {
+        label: "Exchange Rate",
+        value: String(Number(detail.conversionRate || 0) || "-"),
+      },
+      { label: "Status", value: text(detail.status || "-") },
+    );
+  }
+
+  cards.push({ label: "Upto Date", value: formatPrintDate(new Date()) });
+
   const gap = 2.5;
-  const cols = 4;
+  const cols = isConfirmed ? 2 : 4;
   const cardW = (contentWidth - gap * (cols - 1)) / cols;
   const cardH = 12;
   const cardY = 18;
@@ -300,18 +309,81 @@ export const printPurchaseImportQuotation = ({
     "Total Wt",
   ];
 
+  const confirmedHead = [
+    "#",
+    "Item",
+    "Brand",
+    "Qty",
+    "Rate",
+    "Amount",
+    "Total Wt",
+  ];
+
+  const tableHead = isConfirmed
+    ? confirmedHead
+    : isRevised
+      ? revisedHead
+      : standardHead;
+
+  const resolveConfirmedLine = (item: PurchaseImportQuotationPrintItem) => {
+    const quotationQty = Number(item.quotationQty || 0);
+    const confirmQty =
+      item.confirmQty != null && Number.isFinite(Number(item.confirmQty))
+        ? Math.max(0, Number(item.confirmQty))
+        : quotationQty;
+    const qty = confirmQty > 0 ? confirmQty : quotationQty;
+    const revisedFcRate = Number(item.revisedFcRate || 0);
+    const baseFcRate = Number(item.fcRate || 0);
+    const fcRate = revisedFcRate > 0 ? revisedFcRate : baseFcRate;
+    const weight =
+      Number(item.weight || 0) > 0
+        ? Number(item.weight || 0)
+        : qty > 0
+          ? Number(item.totalWeight || 0) / qty
+          : 0;
+    const fcAmount = Math.round(fcRate * qty * 10000) / 10000;
+    const totalWeight = Math.round(weight * qty * 100) / 100;
+    return { qty, fcRate, fcAmount, totalWeight };
+  };
+
+  const confirmedLines = isConfirmed
+    ? itemRows.map((item) => resolveConfirmedLine(item))
+    : [];
+  const confirmedQtyTotal = confirmedLines.reduce((sum, row) => sum + row.qty, 0);
+  const confirmedFcTotal = confirmedLines.reduce(
+    (sum, row) => sum + row.fcAmount,
+    0,
+  );
+  const confirmedWeightTotal = confirmedLines.reduce(
+    (sum, row) => sum + row.totalWeight,
+    0,
+  );
+
   autoTable(doc, {
     startY: cursorY,
     margin: { left: marginX, right: marginX },
-    head: [isRevised ? revisedHead : standardHead],
+    head: [tableHead],
     body:
       itemRows.length === 0
         ? [
-            isRevised
-              ? Array(revisedHead.length).fill("").map((_, i) => (i === 1 ? "No items" : ""))
-              : Array(standardHead.length).fill("").map((_, i) => (i === 1 ? "No items" : "")),
+            Array(tableHead.length)
+              .fill("")
+              .map((_, i) => (i === 1 ? "No items" : "")),
           ]
         : itemRows.map((item, index) => {
+            if (isConfirmed) {
+              const line = confirmedLines[index] || resolveConfirmedLine(item);
+              return [
+                String(index + 1),
+                `${text(item.masterPartNo || "-")} | ${text(item.partNo || "-")}\n${text(item.description || "-")}`,
+                text(item.brand || "-"),
+                String(line.qty),
+                num(line.fcRate, 4),
+                num(line.fcAmount, 4),
+                num(line.totalWeight),
+              ];
+            }
+
             const base = [
               String(index + 1),
               `${text(item.masterPartNo || "-")} | ${text(item.partNo || "-")}\n${text(item.description || "-")}`,
@@ -348,40 +420,50 @@ export const printPurchaseImportQuotation = ({
             ];
           }),
     foot: [
-      isRevised
+      isConfirmed
         ? [
             "",
             "",
             "",
-            "",
-            String(totals.requestQty),
-            String(totals.quotationQty),
-            "",
-            "",
-            num(totals.fcAmount, 2),
-            "",
-            num(totals.lcAmount, 0),
-            "",
-            num(totals.revisedFcAmount || 0, 2),
-            "",
-            num(totals.revisedLcAmount || 0),
-            num(totals.totalWeight),
-          ]
-        : [
-            "",
-            "",
-            "",
-            "",
-            String(totals.requestQty),
-            String(totals.quotationQty),
-            "",
-            "",
+            String(confirmedQtyTotal),
             "Totals",
-            num(totals.fcAmount, 2),
-            "",
-            num(totals.lcAmount, 0),
-            num(totals.totalWeight),
-          ],
+            num(confirmedFcTotal, 2),
+            num(confirmedWeightTotal),
+          ]
+        : isRevised
+          ? [
+              "",
+              "",
+              "",
+              "",
+              String(totals.requestQty),
+              String(totals.quotationQty),
+              "",
+              "",
+              num(totals.fcAmount, 2),
+              "",
+              num(totals.lcAmount, 0),
+              "",
+              num(totals.revisedFcAmount || 0, 2),
+              "",
+              num(totals.revisedLcAmount || 0),
+              num(totals.totalWeight),
+            ]
+          : [
+              "",
+              "",
+              "",
+              "",
+              String(totals.requestQty),
+              String(totals.quotationQty),
+              "",
+              "",
+              "Totals",
+              num(totals.fcAmount, 2),
+              "",
+              num(totals.lcAmount, 0),
+              num(totals.totalWeight),
+            ],
     ],
     showFoot: "lastPage",
     styles: {
@@ -407,40 +489,50 @@ export const printPurchaseImportQuotation = ({
       fontSize: isRevised ? 5.5 : 6.5,
     },
     alternateRowStyles: { fillColor: [249, 249, 249] },
-    columnStyles: isRevised
+    columnStyles: isConfirmed
       ? {
+          0: { cellWidth: 9 },
+          1: { cellWidth: "auto" },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 18, halign: "right" },
+          4: { cellWidth: 22, halign: "right" },
+          5: { cellWidth: 26, halign: "right" },
+          6: { cellWidth: 20, halign: "right" },
+        }
+      : isRevised
+        ? {
           0: { cellWidth: 7 },
           1: { cellWidth: "auto" },
           2: { cellWidth: 14 },
-          3: { halign: "right", cellWidth: 10 },
-          4: { halign: "right", cellWidth: 11 },
-          5: { halign: "right", cellWidth: 11 },
-          6: { halign: "right", cellWidth: 11 },
-          7: { halign: "right", cellWidth: 13 },
-          8: { halign: "right", cellWidth: 14 },
-          9: { halign: "right", cellWidth: 13 },
-          10: { halign: "right", cellWidth: 14 },
-          11: { halign: "right", cellWidth: 13 },
-          12: { halign: "right", cellWidth: 15 },
-          13: { halign: "right", cellWidth: 13 },
-          14: { halign: "right", cellWidth: 15 },
-          15: { halign: "right", cellWidth: 13 },
-        }
-      : {
+          3: { cellWidth: 10, halign: "right" },
+          4: { cellWidth: 11, halign: "right" },
+          5: { cellWidth: 11, halign: "right" },
+          6: { cellWidth: 11, halign: "right" },
+          7: { cellWidth: 13, halign: "right" },
+          8: { cellWidth: 14, halign: "right" },
+          9: { cellWidth: 13, halign: "right" },
+          10: { cellWidth: 14, halign: "right" },
+          11: { cellWidth: 13, halign: "right" },
+          12: { cellWidth: 15, halign: "right" },
+          13: { cellWidth: 13, halign: "right" },
+          14: { cellWidth: 15, halign: "right" },
+          15: { cellWidth: 13, halign: "right" },
+          }
+        : {
           0: { cellWidth: 8 },
           1: { cellWidth: "auto" },
           2: { cellWidth: 18 },
-          3: { halign: "right", cellWidth: 12 },
-          4: { halign: "right", cellWidth: 14 },
-          5: { halign: "right", cellWidth: 14 },
-          6: { halign: "right", cellWidth: 14 },
-          7: { halign: "right", cellWidth: 16 },
-          8: { halign: "right", cellWidth: 16 },
-          9: { halign: "right", cellWidth: 18 },
-          10: { halign: "right", cellWidth: 16 },
-          11: { halign: "right", cellWidth: 18 },
-          12: { halign: "right", cellWidth: 16 },
-        },
+          3: { cellWidth: 12, halign: "right" },
+          4: { cellWidth: 14, halign: "right" },
+          5: { cellWidth: 14, halign: "right" },
+          6: { cellWidth: 14, halign: "right" },
+          7: { cellWidth: 16, halign: "right" },
+          8: { cellWidth: 16, halign: "right" },
+          9: { cellWidth: 18, halign: "right" },
+          10: { cellWidth: 16, halign: "right" },
+          11: { cellWidth: 18, halign: "right" },
+          12: { cellWidth: 16, halign: "right" },
+          },
     didParseCell: (data) => {
       if (itemRows.length === 0 && data.section === "body" && data.column.index === 1) {
         data.cell.styles.halign = "center";
@@ -449,13 +541,19 @@ export const printPurchaseImportQuotation = ({
       if (data.section === "head" && data.column.index >= 3) {
         data.cell.styles.halign = "right";
       }
-      if (data.section === "foot" && data.column.index >= 4) {
+      if (data.section === "foot" && data.column.index >= (isConfirmed ? 3 : 4)) {
         data.cell.styles.halign = "right";
       }
-      if (data.section === "body" && data.column.index === 5 && itemRows.length > 0) {
+      if (
+        data.section === "body" &&
+        itemRows.length > 0 &&
+        data.column.index === (isConfirmed ? 3 : 5)
+      ) {
         data.cell.styles.fontStyle = "bold";
       }
-      if (isRevised) {
+      if (isConfirmed) {
+        applyPdfFcLcColors(data, [4, 5], []);
+      } else if (isRevised) {
         applyPdfFcLcColors(data, [7, 8, 11, 12], [9, 10, 13, 14]);
       } else {
         applyPdfFcLcColors(data, [7, 8, 9], [10, 11]);

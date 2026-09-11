@@ -340,17 +340,32 @@ type PurchaseQuotationRecord = {
   };
   PurchaseQuotationItem?: Array<{
     id: string;
+    partId?: string;
     demandQuantity: number;
     quotationQuantity: number;
     totalWeight: number;
+    confirmQuantity?: number | null;
+    confirmKhiQuantity?: number | null;
+    confirmIsbQuantity?: number | null;
+    confirmOtherQuantity?: number | null;
+    fcRate?: number | null;
+    lcRate?: number | null;
+    revisedFcRate?: number | null;
+    revisedLcRate?: number | null;
   }>;
   PurchaseOrder?: Array<{
     id: string;
     poNumber: string;
     status: string;
     consignee?: string | null;
+    totalAmount?: number | null;
     PurchaseOrderItem?: Array<{
+      partId?: string | null;
+      quantity?: number | null;
+      unitCost?: number | null;
+      totalCost?: number | null;
       fcRate?: number | null;
+      fcAmount?: number | null;
       receivedQty?: number | null;
     }>;
   }>;
@@ -1616,6 +1631,96 @@ const getQuotationListConsigneeLabel = (
       ?.purchaseImportRequestItem;
 
   return formatConsigneesFromSplitQuantities(requestItems, request?.consignee);
+};
+
+/** Confirmed-list FC/LC: use confirm qtys (and PO lane when split by consignee), not full quotation totals. */
+const getConfirmedListAmountTotals = (
+  quotation: PurchaseQuotationRecord,
+  purchaseOrder?: PurchaseQuotationRecord["PurchaseOrder"] extends (infer U)[] | undefined
+    ? U | null
+    : null,
+): { fcTotal: number; lcTotal: number } => {
+  const items = quotation.PurchaseQuotationItem || [];
+  const hasStoredConfirm = items.some((item) => item.confirmQuantity != null);
+  const revised = items.some(
+    (item) =>
+      Number(item.revisedFcRate || 0) > 0 || Number(item.revisedLcRate || 0) > 0,
+  );
+  const consignee = String(purchaseOrder?.consignee || "")
+    .trim()
+    .toUpperCase();
+
+  const laneQtyForItem = (item: NonNullable<PurchaseQuotationRecord["PurchaseQuotationItem"]>[number]) => {
+    if (consignee === "ISB") return Math.max(0, Number(item.confirmIsbQuantity || 0));
+    if (consignee === "KHI") return Math.max(0, Number(item.confirmKhiQuantity || 0));
+    if (consignee === "OTHER") {
+      return Math.max(0, Number(item.confirmOtherQuantity || 0));
+    }
+    return Math.max(0, Number(item.confirmQuantity || 0));
+  };
+
+  if (hasStoredConfirm) {
+    let fcTotal = 0;
+    let lcTotal = 0;
+    for (const item of items) {
+      const qty = laneQtyForItem(item);
+      if (qty <= 0) continue;
+      const fcRate =
+        revised && Number(item.revisedFcRate || 0) > 0
+          ? Number(item.revisedFcRate || 0)
+          : Number(item.fcRate || 0);
+      if (fcRate <= 0) continue;
+      const lcRate =
+        revised && Number(item.revisedLcRate || 0) > 0
+          ? Number(item.revisedLcRate || 0)
+          : Number(item.lcRate || 0);
+      fcTotal += fcRate * qty;
+      lcTotal += lcRate * qty;
+    }
+    return { fcTotal, lcTotal };
+  }
+
+  // Legacy confirmed quotations (no confirmQuantity snapshot): use PO lines.
+  const poItems = purchaseOrder?.PurchaseOrderItem || [];
+  if (poItems.length > 0) {
+    const rateByPartId = new Map(
+      items.map((item) => {
+        const fcRate =
+          revised && Number(item.revisedFcRate || 0) > 0
+            ? Number(item.revisedFcRate || 0)
+            : Number(item.fcRate || 0);
+        return [String(item.partId || ""), fcRate] as const;
+      }),
+    );
+    let fcTotal = 0;
+    let lcTotal = 0;
+    for (const poItem of poItems) {
+      const qty = Math.max(0, Number(poItem.quantity || 0));
+      if (qty <= 0) continue;
+      const partId = String(poItem.partId || "");
+      const poFcAmount = Number(poItem.fcAmount || 0);
+      const poFcRate = Number(poItem.fcRate || 0);
+      fcTotal +=
+        poFcAmount > 0
+          ? poFcAmount
+          : poFcRate > 0
+            ? poFcRate * qty
+            : (rateByPartId.get(partId) || 0) * qty;
+      lcTotal +=
+        Number(poItem.totalCost || 0) > 0
+          ? Number(poItem.totalCost || 0)
+          : Number(poItem.unitCost || 0) * qty;
+    }
+    if (lcTotal <= 0 && Number(purchaseOrder?.totalAmount || 0) > 0) {
+      lcTotal = Number(purchaseOrder?.totalAmount || 0);
+    }
+    return { fcTotal, lcTotal };
+  }
+
+  return {
+    fcTotal: Number(quotation.fcTotal || 0),
+    lcTotal: Number(quotation.lcTotal || 0),
+  };
 };
 
 const getQuotationRowDemandQuantity = (
@@ -7105,23 +7210,122 @@ const PurchaseQuotationListPanel = ({
       const statusLower = String(data.status || "")
         .trim()
         .toLowerCase();
-      const items = Array.isArray(data.items) ? data.items : [];
+      const allItems = Array.isArray(data.items) ? data.items : [];
+      const confirmedPartIds = new Set<string>();
+      const poScopedPartIds = new Set<string>();
+      const printPoNumber = String(extras?.poNumber || "").trim();
+      const printConsignee = String(extras?.consignee || "")
+        .trim()
+        .toUpperCase();
+      let scopedConsignee = printConsignee;
+
+      if (statusLower === "confirm") {
+        for (const po of data.purchaseOrders || []) {
+          const poNumber = String(po.poNumber || "").trim();
+          const poConsignee = String(po.consignee || "")
+            .trim()
+            .toUpperCase();
+          const matchesScopedPo =
+            (printPoNumber && poNumber === printPoNumber) ||
+            (!printPoNumber &&
+              printConsignee &&
+              poConsignee === printConsignee);
+          for (const poItem of po.items || []) {
+            if (Number(poItem.quantity || 0) <= 0) continue;
+            const partId = String(poItem.partId || "").trim();
+            if (!partId) continue;
+            confirmedPartIds.add(partId);
+            if (matchesScopedPo) {
+              poScopedPartIds.add(partId);
+              if (!scopedConsignee && poConsignee) {
+                scopedConsignee = poConsignee;
+              }
+            }
+          }
+        }
+      }
+
+      const scopeToPo = poScopedPartIds.size > 0;
+
+      const resolveConfirmedPrintQty = (item: PurchaseQuotationDetailItem) => {
+        if (item.confirmQuantity == null) return null;
+        const confirmQty = Math.max(0, Number(item.confirmQuantity || 0));
+        if (confirmQty <= 0) return 0;
+        if (!scopeToPo || !scopedConsignee) return confirmQty;
+
+        const isb = Math.max(0, Number(item.confirmIsbQuantity || 0));
+        const khi = Math.max(0, Number(item.confirmKhiQuantity || 0));
+        const other = Math.max(0, Number(item.confirmOtherQuantity || 0));
+        const hasLaneSplit = isb + khi + other > 0;
+        if (!hasLaneSplit) return confirmQty;
+        if (scopedConsignee === "ISB") return isb;
+        if (scopedConsignee === "KHI") return khi;
+        if (scopedConsignee === "OTHER") return other;
+        return confirmQty;
+      };
+
+      const items =
+        statusLower === "confirm"
+          ? allItems.filter((item) => {
+              const partId = String(item.partId || "").trim();
+              const effectiveFc =
+                Number(item.revisedFcRate || 0) > 0
+                  ? Number(item.revisedFcRate || 0)
+                  : Number(item.fcRate || 0);
+              if (effectiveFc <= 0) return false;
+
+              // Only confirmed lines — never include zero-confirm siblings that
+              // share a partId with a PO line (that was inflating 117 → 120).
+              const printQty = resolveConfirmedPrintQty(item);
+              if (printQty != null) {
+                if (printQty <= 0) return false;
+                if (scopeToPo && !poScopedPartIds.has(partId)) return false;
+                return true;
+              }
+
+              // Legacy confirmed quotations without confirmQuantity snapshot.
+              if (scopeToPo) return poScopedPartIds.has(partId);
+              return confirmedPartIds.has(partId);
+            })
+          : allItems;
       const conversionRate = Number(data.conversionRate || 1);
       const itemRows = items.map((item) => {
         const quotationQty = Number(item.quotationQuantity || 0);
+        const resolvedConfirmQty = resolveConfirmedPrintQty(item);
+        const printQty =
+          statusLower === "confirm"
+            ? resolvedConfirmQty != null && resolvedConfirmQty > 0
+              ? resolvedConfirmQty
+              : quotationQty
+            : quotationQty;
         const fcRate = roundFc(item.fcRate || 0);
-        const lcRate = roundImportWhole(item.lcRate || fcRate * conversionRate);
-        const fcAmount = Number(item.fcAmount || quotationQty * fcRate);
-        const lcAmount = roundImportWhole(item.lcAmount || quotationQty * lcRate);
         const revisedFcRate = Number(item.revisedFcRate || 0);
+        const effectiveFcRate = revisedFcRate > 0 ? roundFc(revisedFcRate) : fcRate;
+        const lcRate = roundImportWhole(item.lcRate || fcRate * conversionRate);
         const revisedLcRate = roundImportWhole(
           item.revisedLcRate || revisedFcRate * conversionRate,
         );
-        const revisedFcAmount = Number(
-          item.revisedFcAmount || quotationQty * revisedFcRate,
+        const effectiveLcRate = revisedLcRate > 0 ? revisedLcRate : lcRate;
+        const weight = Number(item.weight || 0);
+        const fcAmount = roundFc(
+          statusLower === "confirm"
+            ? effectiveFcRate * printQty
+            : Number(item.fcAmount || quotationQty * fcRate),
+        );
+        const lcAmount = roundImportWhole(
+          statusLower === "confirm"
+            ? effectiveLcRate * printQty
+            : Number(item.lcAmount || quotationQty * lcRate),
+        );
+        const revisedFcAmount = roundFc(
+          statusLower === "confirm"
+            ? (revisedFcRate > 0 ? revisedFcRate : 0) * printQty
+            : Number(item.revisedFcAmount || quotationQty * revisedFcRate),
         );
         const revisedLcAmount = roundImportWhole(
-          item.revisedLcAmount || quotationQty * revisedLcRate,
+          statusLower === "confirm"
+            ? (revisedLcRate > 0 ? revisedLcRate : 0) * printQty
+            : Number(item.revisedLcAmount || quotationQty * revisedLcRate),
         );
         return {
           masterPartNo: item.masterPartNo,
@@ -7131,20 +7335,20 @@ const PurchaseQuotationListPanel = ({
           origin: item.origin,
           currentStock: item.currentStock,
           requestQty: Number(item.demandQuantity || 0),
-          quotationQty,
+          quotationQty: printQty,
+          confirmQty: printQty,
           shipDays: String(item.shipDays ?? ""),
           lastFcRate: Number(item.lastFcRate || 0),
-          fcRate,
+          fcRate: effectiveFcRate,
           fcAmount,
-          lcRate,
+          lcRate: effectiveLcRate,
           lcAmount,
           revisedFcRate,
           revisedFcAmount,
           revisedLcRate,
           revisedLcAmount,
-          totalWeight: Number(
-            item.totalWeight || quotationQty * Number(item.weight || 0),
-          ),
+          weight,
+          totalWeight: weight * printQty,
         };
       });
 
@@ -7154,8 +7358,10 @@ const PurchaseQuotationListPanel = ({
           quotationQty: acc.quotationQty + Number(row.quotationQty || 0),
           fcAmount: acc.fcAmount + Number(row.fcAmount || 0),
           lcAmount: acc.lcAmount + Number(row.lcAmount || 0),
-          revisedFcAmount: acc.revisedFcAmount + Number(row.revisedFcAmount || 0),
-          revisedLcAmount: acc.revisedLcAmount + Number(row.revisedLcAmount || 0),
+          revisedFcAmount:
+            acc.revisedFcAmount + Number(row.revisedFcAmount || 0),
+          revisedLcAmount:
+            acc.revisedLcAmount + Number(row.revisedLcAmount || 0),
           totalWeight: acc.totalWeight + Number(row.totalWeight || 0),
         }),
         {
@@ -7414,6 +7620,30 @@ const PurchaseQuotationListPanel = ({
                 const consigneeLabel = getQuotationListConsigneeLabel(row, {
                   purchaseOrderConsignee: entry.purchaseOrder?.consignee,
                 });
+                const confirmedItemCount = itemRows.filter((item) => {
+                  if (Number(item.confirmQuantity || 0) <= 0) return false;
+                  const effectiveFc =
+                    Number(item.revisedFcRate || 0) > 0
+                      ? Number(item.revisedFcRate || 0)
+                      : Number(item.fcRate || 0);
+                  return effectiveFc > 0;
+                }).length;
+                const poConfirmedItemCount = (
+                  entry.purchaseOrder?.PurchaseOrderItem || []
+                ).filter((item) => Number(item.quantity || 0) > 0).length;
+                const itemsCount = isConfirmedView
+                  ? entry.purchaseOrder
+                    ? poConfirmedItemCount
+                    : confirmedItemCount > 0
+                      ? confirmedItemCount
+                      : itemRows.length
+                  : itemRows.length;
+                const amountTotals = isConfirmedView
+                  ? getConfirmedListAmountTotals(row, entry.purchaseOrder)
+                  : {
+                      fcTotal: Number(row.fcTotal || 0),
+                      lcTotal: Number(row.lcTotal || 0),
+                    };
                 const canUnconfirmQuotation =
                   isConfirmed &&
                   !isQuotationPurchaseImportSaved(purchaseOrders);
@@ -7460,11 +7690,13 @@ const PurchaseQuotationListPanel = ({
                       {row.PurchaseImportRequest?.partReference || "-"}
                     </td>
                     <td className="p-2 font-medium">{consigneeLabel}</td>
-                    <td className="p-2 text-right">{itemRows.length}</td>
+                    <td className="p-2 text-right">{itemsCount}</td>
                     <td className={`p-2 text-right ${fcValueClass()}`}>
-                      {formatFcTotal(row.fcTotal || 0)} {row.currency || ""}
+                      {formatFcTotal(amountTotals.fcTotal)} {row.currency || ""}
                     </td>
-                    <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(Number(row.lcTotal || 0))}</td>
+                    <td className={`p-2 text-right ${lcValueClass()}`}>
+                      {formatImportPoWhole(Number(amountTotals.lcTotal || 0))}
+                    </td>
                     {!isConfirmedView && (
                       <>
                         <td className="p-2 capitalize">{row.quotationType || "original"}</td>
@@ -7728,6 +7960,7 @@ type PurchaseQuotationConfirmRow = {
   shipDays: string;
   lastFcRate: number;
   fcRate: number;
+  fcRateText: string;
   fcAmount: number;
   lcRate: number;
   lcAmount: number;
@@ -7740,14 +7973,24 @@ type PurchaseQuotationConfirmRow = {
 };
 
 const recalcConfirmRowAmounts = (
-  row: Pick<PurchaseQuotationConfirmRow, "fcRate" | "lcRate" | "weight" | "confirmQuantity">,
+  row: Pick<PurchaseQuotationConfirmRow, "fcRate" | "weight" | "confirmQuantity"> & {
+    lcRate?: number;
+  },
+  conversionRate?: number,
 ) => {
   const confirmQuantity = Math.max(0, Number(row.confirmQuantity) || 0);
   const fcRate = roundFc(row.fcRate);
-  const lcRate = Number(row.lcRate) || 0;
+  const rate =
+    conversionRate !== undefined ? Math.max(0, Number(conversionRate) || 0) : null;
+  const lcRate =
+    rate != null
+      ? roundImportWhole(fcRate * rate)
+      : Number(row.lcRate) || 0;
   const weight = Number(row.weight) || 0;
   return {
     confirmQuantity,
+    fcRate,
+    lcRate,
     fcAmount: roundFc(fcRate * confirmQuantity),
     lcAmount: roundImportWhole(lcRate * confirmQuantity),
     totalWeight: weight * confirmQuantity,
@@ -7793,18 +8036,21 @@ const buildConfirmRowsFromQuotationDetail = (
     }
   }
 
-  return (Array.isArray(data.items) ? data.items : []).map((item) => {
+  const built = (Array.isArray(data.items) ? data.items : []).map((item) => {
     const effective = getEffectiveQuotationItemValues(item, revised);
     const confirmed = confirmedByPart.get(String(item.partId || "").trim());
     const hasStoredConfirm = item.confirmQuantity != null;
     const storedConfirmQuantity = hasStoredConfirm
       ? Math.max(0, Math.floor(Number(item.confirmQuantity || 0)))
       : null;
-    const confirmQuantity = confirmed
-      ? confirmed.khiQuantity + confirmed.isbQuantity + confirmed.otherQuantity
-      : storedConfirmQuantity != null
+    const confirmQuantity =
+      storedConfirmQuantity != null
         ? storedConfirmQuantity
-        : Number(item.quotationQuantity || 0);
+        : confirmed
+          ? confirmed.khiQuantity + confirmed.isbQuantity + confirmed.otherQuantity
+          : useConfirmed
+            ? 0
+            : Number(item.quotationQuantity || 0);
     const quotationQuantity = Number(item.quotationQuantity || 0);
     const storedWeight = Number(item.weight || 0);
     const weight =
@@ -7864,13 +8110,26 @@ const buildConfirmRowsFromQuotationDetail = (
       quotationQuantity,
       shipDays: String(item.shipDays ?? ""),
       lastFcRate: Number(item.lastFcRate || 0),
-      fcRate: effective.fcRate,
-      lcRate: effective.lcRate,
+      fcRate: amounts.fcRate,
+      fcRateText: formatFcRateInput(amounts.fcRate),
+      lcRate: amounts.lcRate,
       weight,
       ...split,
-      ...amounts,
+      fcAmount: amounts.fcAmount,
+      lcAmount: amounts.lcAmount,
+      totalWeight: amounts.totalWeight,
+      confirmQuantity: amounts.confirmQuantity,
     };
   });
+
+  // Confirmed view / PDF should only show lines that were actually ordered with a rate.
+  if (useConfirmed) {
+    return built.filter(
+      (row) =>
+        Number(row.confirmQuantity || 0) > 0 && Number(row.fcRate || 0) > 0,
+    );
+  }
+  return built;
 };
 
 const PurchaseQuotationConfirmForm = ({
@@ -7892,6 +8151,8 @@ const PurchaseQuotationConfirmForm = ({
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<PurchaseQuotationDetailPayload | null>(null);
   const [confirmationDate, setConfirmationDate] = useState(toInputDate(new Date()));
+  const [quotationNo, setQuotationNo] = useState("");
+  const [conversionRate, setConversionRate] = useState("1");
   const [rows, setRows] = useState<PurchaseQuotationConfirmRow[]>([]);
   const [combinableQuotations, setCombinableQuotations] = useState<
     Array<{
@@ -7997,6 +8258,8 @@ const PurchaseQuotationConfirmForm = ({
         setConfirmationDate(
           toInputDate(data.confirmationDate || new Date()),
         );
+        setQuotationNo(String(data.quotationNo || ""));
+        setConversionRate(formatExchangeRateInput(data.conversionRate || 1));
         setRows(
           buildConfirmRowsFromQuotationDetail(data, {
             useConfirmedPurchaseOrders: isViewMode || isConfirmed,
@@ -8141,6 +8404,11 @@ const PurchaseQuotationConfirmForm = ({
     }
   };
 
+  const parsedConversionRate = useMemo(
+    () => parseExchangeRateInput(conversionRate),
+    [conversionRate],
+  );
+
   const handleConfirmQtyChange = (rowId: string, rawValue: string) => {
     setRows((prev) =>
       prev.map((row) => {
@@ -8158,12 +8426,14 @@ const PurchaseQuotationConfirmForm = ({
         return {
           ...row,
           ...split,
-          ...recalcConfirmRowAmounts({
-            fcRate: row.fcRate,
-            lcRate: row.lcRate,
-            weight: row.weight,
-            confirmQuantity,
-          }),
+          ...recalcConfirmRowAmounts(
+            {
+              fcRate: row.fcRate,
+              weight: row.weight,
+              confirmQuantity,
+            },
+            parsedConversionRate,
+          ),
         };
       }),
     );
@@ -8177,14 +8447,70 @@ const PurchaseQuotationConfirmForm = ({
         return {
           ...row,
           weight,
-          ...recalcConfirmRowAmounts({
-            fcRate: row.fcRate,
-            lcRate: row.lcRate,
-            weight,
-            confirmQuantity: row.confirmQuantity,
-          }),
+          ...recalcConfirmRowAmounts(
+            {
+              fcRate: row.fcRate,
+              weight,
+              confirmQuantity: row.confirmQuantity,
+            },
+            parsedConversionRate,
+          ),
         };
       }),
+    );
+  };
+
+  const handleConfirmFcRateChange = (rowId: string, rawValue: string) => {
+    if (rawValue !== "" && !FC_RATE_INPUT_PATTERN.test(rawValue)) return;
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+        const fcRate = parseFcRateInput(rawValue);
+        return {
+          ...row,
+          fcRateText: rawValue,
+          ...recalcConfirmRowAmounts(
+            {
+              fcRate,
+              weight: row.weight,
+              confirmQuantity: row.confirmQuantity,
+            },
+            parsedConversionRate,
+          ),
+        };
+      }),
+    );
+  };
+
+  const handleConfirmFcRateBlur = (rowId: string) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+        return {
+          ...row,
+          fcRateText: formatFcRateInput(row.fcRate),
+        };
+      }),
+    );
+  };
+
+  const handleConfirmExchangeRateChange = (rawValue: string) => {
+    const raw = String(rawValue).replace(/,/g, ".");
+    if (raw !== "" && !EXCHANGE_RATE_INPUT_PATTERN.test(raw)) return;
+    setConversionRate(raw);
+    const nextRate = parseExchangeRateInput(raw);
+    setRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        ...recalcConfirmRowAmounts(
+          {
+            fcRate: row.fcRate,
+            weight: row.weight,
+            confirmQuantity: row.confirmQuantity,
+          },
+          nextRate,
+        ),
+      })),
     );
   };
 
@@ -8206,12 +8532,14 @@ const PurchaseQuotationConfirmForm = ({
         const confirmQuantity = getConfirmRowSplitSum(next);
         return {
           ...next,
-          ...recalcConfirmRowAmounts({
-            fcRate: next.fcRate,
-            lcRate: next.lcRate,
-            weight: next.weight,
-            confirmQuantity,
-          }),
+          ...recalcConfirmRowAmounts(
+            {
+              fcRate: next.fcRate,
+              weight: next.weight,
+              confirmQuantity,
+            },
+            parsedConversionRate,
+          ),
         };
       }),
     );
@@ -8242,11 +8570,42 @@ const PurchaseQuotationConfirmForm = ({
   );
 
   const handleConfirm = async () => {
-    const itemsToConfirm = rows.filter((row) => Number(row.confirmQuantity || 0) > 0);
+    const itemsWithConfirmQty = rows.filter(
+      (row) => Number(row.confirmQuantity || 0) > 0,
+    );
+    const itemsToConfirm = itemsWithConfirmQty.filter(
+      (row) => Number(row.fcRate || 0) > 0,
+    );
+    const skippedZeroRateCount =
+      itemsWithConfirmQty.length - itemsToConfirm.length;
+
     if (itemsToConfirm.length === 0) {
       toast({
         title: "No items to confirm",
-        description: "Enter confirm quantity greater than zero for at least one item.",
+        description:
+          skippedZeroRateCount > 0
+            ? "Items with zero FC rate are excluded. Enter an FC rate for at least one item with confirm quantity."
+            : "Enter confirm quantity greater than zero for at least one item.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const trimmedQuotationNo = quotationNo.trim();
+    if (!trimmedQuotationNo) {
+      toast({
+        title: "Quotation number required",
+        description: "Enter a quotation number before confirming.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const parsedRate = parseExchangeRateInput(conversionRate);
+    if (!(parsedRate > 0)) {
+      toast({
+        title: "Exchange rate required",
+        description: "Enter a valid exchange rate greater than zero.",
         variant: "destructive",
       });
       return;
@@ -8271,6 +8630,8 @@ const PurchaseQuotationConfirmForm = ({
     try {
       const response = await apiClient.confirmPurchaseQuotation(quotationId, {
         confirmationDate,
+        quotationNo: trimmedQuotationNo,
+        conversionRate: parsedRate,
         combineQuotationIds: selectedCombineIds,
         items: itemsToConfirm.map((row) => ({
           quotationId: row.quotationId || quotationId,
@@ -8281,6 +8642,7 @@ const PurchaseQuotationConfirmForm = ({
           isbQuantity: Number(row.isbQuantity || 0),
           otherQuantity: SHOW_OTHER_QTY ? Number(row.otherQuantity || 0) : 0,
           weight: Number(row.weight || 0),
+          fcRate: Number(row.fcRate || 0),
         })),
       });
       const purchaseOrders = (response as { purchaseOrders?: Array<{ poNumber?: string }> })
@@ -8290,15 +8652,21 @@ const PurchaseQuotationConfirmForm = ({
         .filter(Boolean)
         .join(", ");
       const combinedCount = selectedCombineIds.length + 1;
+      const skippedNote =
+        skippedZeroRateCount > 0
+          ? ` ${skippedZeroRateCount} zero-rate item${
+              skippedZeroRateCount === 1 ? "" : "s"
+            } excluded.`
+          : "";
       toast({
         title: combinedCount > 1 ? "Quotations confirmed" : "Quotation confirmed",
         description: poLabels
           ? `Purchase order${purchaseOrders && purchaseOrders.length > 1 ? "s" : ""} ${poLabels} created${
               combinedCount > 1 ? ` from ${combinedCount} quotations` : ""
-            }.`
+            }.${skippedNote}`
           : combinedCount > 1
-            ? `${combinedCount} quotations have been confirmed.`
-            : "Quotation has been confirmed.",
+            ? `${combinedCount} quotations have been confirmed.${skippedNote}`
+            : `Quotation has been confirmed.${skippedNote}`,
       });
       onSaved?.();
     } catch (error: any) {
@@ -8441,7 +8809,14 @@ const PurchaseQuotationConfirmForm = ({
           </div>
           <div className="space-y-1 min-w-0">
             <Label>Quotation No</Label>
-            <Input value={detail?.quotationNo || "—"} readOnly />
+            <Input
+              value={quotationNo}
+              onChange={(e) => setQuotationNo(e.target.value)}
+              disabled={isViewMode}
+              readOnly={isViewMode}
+              className={isViewMode ? "bg-muted/40" : undefined}
+              placeholder="Enter quotation number"
+            />
           </div>
           <div className="space-y-1 min-w-0">
             <Label>Quotation Date</Label>
@@ -8476,7 +8851,15 @@ const PurchaseQuotationConfirmForm = ({
           </div>
           <div className="space-y-1 min-w-0">
             <Label>Exchange Rate</Label>
-            <Input value={Number(detail?.conversionRate || 1)} readOnly />
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={conversionRate}
+              onChange={(e) => handleConfirmExchangeRateChange(e.target.value)}
+              disabled={isViewMode}
+              readOnly={isViewMode}
+              className={isViewMode ? "bg-muted/40" : undefined}
+            />
           </div>
         </div>
       </div>
@@ -8725,7 +9108,20 @@ const PurchaseQuotationConfirmForm = ({
                   <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                     {formatLastFcRateDisplay(row.lastFcRate)}
                   </td>
-                  <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>{formatFc(row.fcRate)}</td>
+                  <td className="p-2 text-right">
+                    {isViewMode ? (
+                      <span className={`tabular-nums ${fcValueClass()}`}>{formatFc(row.fcRate)}</span>
+                    ) : (
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        className={QUOTATION_FC_RATE_INPUT_CLASS}
+                        value={row.fcRateText}
+                        onChange={(e) => handleConfirmFcRateChange(row.rowId, e.target.value)}
+                        onBlur={() => handleConfirmFcRateBlur(row.rowId)}
+                      />
+                    )}
+                  </td>
                   <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>{formatFc(row.fcAmount)}</td>
                   <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>{formatImportPoWhole(row.lcRate)}</td>
                   <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>{formatImportPoWhole(row.lcAmount)}</td>
