@@ -2920,11 +2920,13 @@ class ApiClient {
       combineQuotationIds?: string[];
       items: Array<{
         quotationId?: string;
+        quotationItemId?: string;
         partId: string;
         confirmQuantity: number;
         khiQuantity?: number;
         isbQuantity?: number;
         otherQuantity?: number;
+        weight?: number;
       }>;
     },
   ) {

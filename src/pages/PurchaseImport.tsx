@@ -760,6 +760,7 @@ function applyReceiveConversionRateToLines(
 }
 
 type PurchaseQuotationDetailItem = {
+  id?: string | null;
   partId: string;
   masterPartNo: string;
   partNo: string;
@@ -769,6 +770,10 @@ type PurchaseQuotationDetailItem = {
   currentStock?: number;
   demandQuantity: number;
   quotationQuantity: number;
+  confirmQuantity?: number | null;
+  confirmKhiQuantity?: number | null;
+  confirmIsbQuantity?: number | null;
+  confirmOtherQuantity?: number | null;
   khiQuantity?: number;
   isbQuantity?: number;
   otherQuantity?: number;
@@ -7708,6 +7713,7 @@ const PurchaseImportRequestTab = () => {
 type PurchaseQuotationConfirmRow = {
   rowId: string;
   quotationId: string;
+  quotationItemId?: string | null;
   quotationNo: string;
   inquiryNo?: string | null;
   partId: string;
@@ -7790,9 +7796,15 @@ const buildConfirmRowsFromQuotationDetail = (
   return (Array.isArray(data.items) ? data.items : []).map((item) => {
     const effective = getEffectiveQuotationItemValues(item, revised);
     const confirmed = confirmedByPart.get(String(item.partId || "").trim());
+    const hasStoredConfirm = item.confirmQuantity != null;
+    const storedConfirmQuantity = hasStoredConfirm
+      ? Math.max(0, Math.floor(Number(item.confirmQuantity || 0)))
+      : null;
     const confirmQuantity = confirmed
       ? confirmed.khiQuantity + confirmed.isbQuantity + confirmed.otherQuantity
-      : Number(item.quotationQuantity || 0);
+      : storedConfirmQuantity != null
+        ? storedConfirmQuantity
+        : Number(item.quotationQuantity || 0);
     const quotationQuantity = Number(item.quotationQuantity || 0);
     const storedWeight = Number(item.weight || 0);
     const weight =
@@ -7809,12 +7821,26 @@ const buildConfirmRowsFromQuotationDetail = (
           isbQuantity: confirmed.isbQuantity,
           otherQuantity: confirmed.otherQuantity,
         }
-      : distributeConfirmSplitQuantities(
-          confirmQuantity,
-          Number(item.khiQuantity || 0),
-          Number(item.isbQuantity || 0),
-          Number(item.otherQuantity || 0),
-        );
+      : hasStoredConfirm
+        ? {
+            khiQuantity: Math.max(
+              0,
+              Math.floor(Number(item.confirmKhiQuantity || 0)),
+            ),
+            isbQuantity: Math.max(
+              0,
+              Math.floor(Number(item.confirmIsbQuantity || 0)),
+            ),
+            otherQuantity: SHOW_OTHER_QTY
+              ? Math.max(0, Math.floor(Number(item.confirmOtherQuantity || 0)))
+              : 0,
+          }
+        : distributeConfirmSplitQuantities(
+            confirmQuantity,
+            Number(item.khiQuantity || 0),
+            Number(item.isbQuantity || 0),
+            Number(item.otherQuantity || 0),
+          );
     const amounts = recalcConfirmRowAmounts({
       fcRate: effective.fcRate,
       lcRate: effective.lcRate,
@@ -7824,6 +7850,7 @@ const buildConfirmRowsFromQuotationDetail = (
     return {
       rowId: createRowId(),
       quotationId: data.id,
+      quotationItemId: item.id || null,
       quotationNo: data.quotationNo || "",
       inquiryNo: data.request?.requestNo || null,
       partId: item.partId,
@@ -7968,9 +7995,7 @@ const PurchaseQuotationConfirmForm = ({
           String(data.status || "").trim().toLowerCase() === "confirm" ||
           (Array.isArray(data.purchaseOrders) && data.purchaseOrders.length > 0);
         setConfirmationDate(
-          isViewMode || isConfirmed
-            ? toInputDate(data.confirmationDate || new Date())
-            : toInputDate(new Date()),
+          toInputDate(data.confirmationDate || new Date()),
         );
         setRows(
           buildConfirmRowsFromQuotationDetail(data, {
@@ -8124,8 +8149,15 @@ const PurchaseQuotationConfirmForm = ({
           rawValue.trim() === ""
             ? 0
             : Math.max(0, Math.floor(Number(rawValue)));
+        const split = distributeConfirmSplitQuantities(
+          confirmQuantity,
+          row.khiQuantity,
+          row.isbQuantity,
+          row.otherQuantity,
+        );
         return {
           ...row,
+          ...split,
           ...recalcConfirmRowAmounts({
             fcRate: row.fcRate,
             lcRate: row.lcRate,
@@ -8242,6 +8274,7 @@ const PurchaseQuotationConfirmForm = ({
         combineQuotationIds: selectedCombineIds,
         items: itemsToConfirm.map((row) => ({
           quotationId: row.quotationId || quotationId,
+          quotationItemId: row.quotationItemId || undefined,
           partId: row.partId,
           confirmQuantity: Number(row.confirmQuantity),
           khiQuantity: Number(row.khiQuantity || 0),

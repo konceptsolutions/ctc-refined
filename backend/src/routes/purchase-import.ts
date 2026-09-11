@@ -353,6 +353,7 @@ async function createPurchaseOrderFromQuotation(quotationId: string) {
 
 type ConfirmQuotationItemInput = {
   quotationId?: string;
+  quotationItemId?: string;
   partId: string;
   confirmQuantity: number;
   khiQuantity?: number;
@@ -528,6 +529,9 @@ async function confirmPurchaseQuotation(
   }
 
   const confirmInputs = Array.isArray(options.items) ? options.items : [];
+  // Prefer quotation item id so duplicate part lines can be confirmed independently
+  // (e.g. zero one line without applying the sibling line's qty).
+  const confirmByQuotationItemId = new Map<string, ConfirmQuotationItemInput>();
   const confirmByQuotationPart = new Map<string, ConfirmQuotationItemInput>();
   for (const item of confirmInputs) {
     const partId = String(item?.partId || "").trim();
@@ -535,8 +539,10 @@ async function confirmPurchaseQuotation(
     const itemQuotationId =
       String(item?.quotationId || primaryId).trim() || primaryId;
     if (!allQuotationIds.includes(itemQuotationId)) continue;
-    confirmByQuotationPart.set(`${itemQuotationId}::${partId}`, {
+    const quotationItemId = String(item?.quotationItemId || "").trim();
+    const normalized: ConfirmQuotationItemInput = {
       quotationId: itemQuotationId,
+      quotationItemId: quotationItemId || undefined,
       partId,
       confirmQuantity: Math.max(0, Math.floor(Number(item.confirmQuantity || 0))),
       khiQuantity:
@@ -555,7 +561,12 @@ async function confirmPurchaseQuotation(
         item?.weight !== undefined && Number.isFinite(Number(item.weight))
           ? Math.max(0, Number(item.weight))
           : undefined,
-    });
+    };
+    if (quotationItemId) {
+      confirmByQuotationItemId.set(quotationItemId, normalized);
+    } else {
+      confirmByQuotationPart.set(`${itemQuotationId}::${partId}`, normalized);
+    }
   }
 
   const laneItems: Record<
@@ -573,6 +584,19 @@ async function confirmPurchaseQuotation(
     isb: [],
     other: [],
   };
+
+  const quotationConfirmUpdates = new Map<
+    string,
+    {
+      quotationItemId: string;
+      confirmQuantity: number;
+      confirmKhiQuantity: number;
+      confirmIsbQuantity: number;
+      confirmOtherQuantity: number;
+      weight?: number;
+      totalWeight?: number;
+    }
+  >();
 
   for (const qid of allQuotationIds) {
     const quotation: any = quotationById.get(qid);
@@ -602,14 +626,57 @@ async function confirmPurchaseQuotation(
       if (!partId) continue;
 
       const quotationQty = Number(item.quotationQuantity || 0);
-      const itemInput = confirmByQuotationPart.get(`${qid}::${partId}`);
+      const quotationItemId = String(item.id || "").trim();
+      const itemInput =
+        (quotationItemId
+          ? confirmByQuotationItemId.get(quotationItemId)
+          : undefined) ||
+        confirmByQuotationPart.get(`${qid}::${partId}`);
 
-      if (confirmInputs.length > 0 && !itemInput) continue;
+      const persistConfirmSnapshot = (
+        confirmQty: number,
+        laneQty: Record<PoLaneKey, number>,
+      ) => {
+        if (!quotationItemId) return;
+        const snapshot: {
+          quotationItemId: string;
+          confirmQuantity: number;
+          confirmKhiQuantity: number;
+          confirmIsbQuantity: number;
+          confirmOtherQuantity: number;
+          weight?: number;
+          totalWeight?: number;
+        } = {
+          quotationItemId,
+          confirmQuantity: confirmQty,
+          confirmKhiQuantity: laneQty.khi,
+          confirmIsbQuantity: laneQty.isb,
+          confirmOtherQuantity: laneQty.other,
+        };
+        if (
+          itemInput?.weight !== undefined &&
+          Number.isFinite(Number(itemInput.weight))
+        ) {
+          const itemWeight = Math.max(0, Number(itemInput.weight));
+          snapshot.weight = itemWeight;
+          snapshot.totalWeight = itemWeight * quotationQty;
+        }
+        quotationConfirmUpdates.set(quotationItemId, snapshot);
+      };
+
+      // Explicit confirm payload: omitted lines are intentionally qty 0.
+      if (confirmInputs.length > 0 && !itemInput) {
+        persistConfirmSnapshot(0, { khi: 0, isb: 0, other: 0 });
+        continue;
+      }
 
       const confirmQty = itemInput
         ? Number(itemInput.confirmQuantity || 0)
         : quotationQty;
-      if (confirmQty <= 0) continue;
+      if (confirmQty <= 0) {
+        persistConfirmSnapshot(0, { khi: 0, isb: 0, other: 0 });
+        continue;
+      }
 
       const hasExplicitSplit =
         !!itemInput &&
@@ -644,6 +711,8 @@ async function confirmPurchaseQuotation(
         );
       }
 
+      persistConfirmSnapshot(confirmQty, laneQty);
+
       const revisedLcRate = Number(item.revisedLcRate || 0);
       const lcRate = Number(item.lcRate || 0);
       const unitCost =
@@ -676,33 +745,6 @@ async function confirmPurchaseQuotation(
     }
   }
 
-  const quotationWeightUpdates = new Map<
-    string,
-    { quotationItemId: string; weight: number; totalWeight: number }
-  >();
-  for (const qid of allQuotationIds) {
-    const quotation: any = quotationById.get(qid);
-    if (!quotation) continue;
-    for (const item of quotation.PurchaseQuotationItem || []) {
-      const partId = String(item.partId || "").trim();
-      if (!partId) continue;
-      const itemInput = confirmByQuotationPart.get(`${qid}::${partId}`);
-      if (
-        itemInput?.weight === undefined ||
-        !Number.isFinite(Number(itemInput.weight))
-      ) {
-        continue;
-      }
-      const quotationQty = Number(item.quotationQuantity || 0);
-      const itemWeight = Math.max(0, Number(itemInput.weight));
-      quotationWeightUpdates.set(String(item.id), {
-        quotationItemId: String(item.id),
-        weight: itemWeight,
-        totalWeight: itemWeight * quotationQty,
-      });
-    }
-  }
-
   const lanesWithItems = (Object.keys(laneItems) as PoLaneKey[]).filter(
     (lane) => laneItems[lane].length > 0,
   );
@@ -725,15 +767,32 @@ async function confirmPurchaseQuotation(
   ).join(", ");
 
   const createdOrders = await prisma.$transaction(async (tx) => {
-    for (const update of quotationWeightUpdates.values()) {
-      await (tx as any).purchaseQuotationItem.update({
-        where: { id: update.quotationItemId },
-        data: {
-          weight: update.weight,
-          totalWeight: update.totalWeight,
-          updatedAt: new Date(),
-        },
-      });
+    for (const update of quotationConfirmUpdates.values()) {
+      if (update.weight !== undefined) {
+        await tx.$executeRaw`
+          UPDATE "PurchaseQuotationItem"
+          SET
+            "confirmQuantity" = ${update.confirmQuantity},
+            "confirmKhiQuantity" = ${update.confirmKhiQuantity},
+            "confirmIsbQuantity" = ${update.confirmIsbQuantity},
+            "confirmOtherQuantity" = ${update.confirmOtherQuantity},
+            "weight" = ${update.weight},
+            "totalWeight" = ${update.totalWeight},
+            "updatedAt" = NOW()
+          WHERE id = ${update.quotationItemId}::uuid
+        `;
+      } else {
+        await tx.$executeRaw`
+          UPDATE "PurchaseQuotationItem"
+          SET
+            "confirmQuantity" = ${update.confirmQuantity},
+            "confirmKhiQuantity" = ${update.confirmKhiQuantity},
+            "confirmIsbQuantity" = ${update.confirmIsbQuantity},
+            "confirmOtherQuantity" = ${update.confirmOtherQuantity},
+            "updatedAt" = NOW()
+          WHERE id = ${update.quotationItemId}::uuid
+        `;
+      }
     }
 
     await (tx as any).purchaseQuotation.updateMany({
@@ -3259,6 +3318,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
               inquiryItems: row.PurchaseImportRequest?.PurchaseImportRequestItem || [],
               quotationItems: row.PurchaseQuotationItem || [],
               mapInquiryItem: (item: any) => ({
+                id: item.id || null,
                 partId: item.partId,
                 masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
                 partNo: item.Part?.partNo || "",
@@ -3284,6 +3344,7 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
                 totalWeight: Number(item.totalWeight || 0),
               }),
               mapQuotationItem: (item: any, inquiryItem?: any) => ({
+                id: item.id || null,
                 partId: item.partId,
                 masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
                 partNo: item.Part?.partNo || "",
@@ -3297,6 +3358,22 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
                 quotationQuantity: Number(
                   inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
                 ),
+                confirmQuantity:
+                  item.confirmQuantity == null
+                    ? null
+                    : Number(item.confirmQuantity),
+                confirmKhiQuantity:
+                  item.confirmKhiQuantity == null
+                    ? null
+                    : Number(item.confirmKhiQuantity),
+                confirmIsbQuantity:
+                  item.confirmIsbQuantity == null
+                    ? null
+                    : Number(item.confirmIsbQuantity),
+                confirmOtherQuantity:
+                  item.confirmOtherQuantity == null
+                    ? null
+                    : Number(item.confirmOtherQuantity),
                 khiQuantity: Number(inquiryItem?.khiQuantity || 0),
                 isbQuantity: Number(inquiryItem?.isbQuantity || 0),
                 otherQuantity: Number(inquiryItem?.otherQuantity || 0),
@@ -3322,14 +3399,18 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
                     inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
                   ),
                 weight: Number(
-                  inquiryItem?.weight != null
-                    ? inquiryItem.weight
-                    : item.weight || 0,
+                  Number(item.weight || 0) > 0
+                    ? item.weight
+                    : inquiryItem?.weight != null
+                      ? inquiryItem.weight
+                      : item.weight || 0,
                 ),
                 totalWeight: Number(
-                  inquiryItem?.totalWeight != null
-                    ? inquiryItem.totalWeight
-                    : item.totalWeight || 0,
+                  Number(item.totalWeight || 0) > 0
+                    ? item.totalWeight
+                    : inquiryItem?.totalWeight != null
+                      ? inquiryItem.totalWeight
+                      : item.totalWeight || 0,
                 ),
               }),
             }),
@@ -3842,6 +3923,7 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
     const items = itemsRaw
       .map((item: any) => ({
         quotationId: String(item?.quotationId || "").trim() || undefined,
+        quotationItemId: String(item?.quotationItemId || "").trim() || undefined,
         partId: String(item?.partId || "").trim(),
         confirmQuantity: Math.max(0, Math.floor(Number(item?.confirmQuantity || 0))),
         khiQuantity:
@@ -3855,6 +3937,10 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
         otherQuantity:
           item?.otherQuantity !== undefined
             ? Math.max(0, Math.floor(Number(item.otherQuantity)))
+            : undefined,
+        weight:
+          item?.weight !== undefined && Number.isFinite(Number(item.weight))
+            ? Math.max(0, Number(item.weight))
             : undefined,
       }))
       .filter((item: { partId: string }) => item.partId);
@@ -3954,9 +4040,16 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
         poNumber: true,
         status: true,
         notes: true,
+        consignee: true,
         purchaseQuotationId: true,
         PurchaseOrderItem: {
-          select: { fcRate: true, receivedQty: true },
+          select: {
+            partId: true,
+            quantity: true,
+            weight: true,
+            fcRate: true,
+            receivedQty: true,
+          },
         },
       },
     });
@@ -3975,9 +4068,16 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
           poNumber: true,
           status: true,
           notes: true,
+          consignee: true,
           purchaseQuotationId: true,
           PurchaseOrderItem: {
-            select: { fcRate: true, receivedQty: true },
+            select: {
+              partId: true,
+              quantity: true,
+              weight: true,
+              fcRate: true,
+              receivedQty: true,
+            },
           },
         },
       });
@@ -4006,7 +4106,114 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
       new Set(orders.flatMap((order) => parseQuotationNosFromPoNotes(order.notes))),
     );
 
+    // Aggregate confirmed lane qtys by partId so we can keep them after PO delete
+    // (covers quotations confirmed before confirmQuantity columns existed).
+    const confirmedByPartId = new Map<
+      string,
+      {
+        confirmKhiQuantity: number;
+        confirmIsbQuantity: number;
+        confirmOtherQuantity: number;
+        weight: number;
+      }
+    >();
+    for (const order of orders) {
+      const consignee = String((order as any).consignee || "")
+        .trim()
+        .toLowerCase();
+      const lane: "confirmKhiQuantity" | "confirmIsbQuantity" | "confirmOtherQuantity" =
+        consignee === "khi"
+          ? "confirmKhiQuantity"
+          : consignee === "isb"
+            ? "confirmIsbQuantity"
+            : "confirmOtherQuantity";
+      for (const item of order.PurchaseOrderItem || []) {
+        const partId = String(item.partId || "").trim();
+        if (!partId) continue;
+        const prev = confirmedByPartId.get(partId) || {
+          confirmKhiQuantity: 0,
+          confirmIsbQuantity: 0,
+          confirmOtherQuantity: 0,
+          weight: 0,
+        };
+        prev[lane] += Math.max(0, Math.floor(Number(item.quantity || 0)));
+        const itemWeight = Number(item.weight || 0);
+        if (itemWeight > 0 && prev.weight <= 0) prev.weight = itemWeight;
+        confirmedByPartId.set(partId, prev);
+      }
+    }
+
     await prisma.$transaction(async (tx) => {
+      if (confirmedByPartId.size > 0) {
+        const quotationIds = Array.from(quotationIdsToRevert);
+        if (combinedNos.length > 0) {
+          const byNo = await (tx as any).purchaseQuotation.findMany({
+            where: { quotationNo: { in: combinedNos } },
+            select: { id: true },
+          });
+          for (const row of byNo) quotationIds.push(String(row.id));
+        }
+        const uniqueQuotationIds = Array.from(new Set(quotationIds));
+        const quotationItems = await (tx as any).purchaseQuotationItem.findMany({
+          where: { purchaseQuotationId: { in: uniqueQuotationIds } },
+          select: {
+            id: true,
+            partId: true,
+            confirmQuantity: true,
+            quotationQuantity: true,
+          },
+        });
+        for (const qi of quotationItems) {
+          // Prefer values already saved by the new confirm flow.
+          if (qi.confirmQuantity != null) continue;
+          const partId = String(qi.partId || "").trim();
+          const snap = confirmedByPartId.get(partId);
+          if (!snap) {
+            await tx.$executeRaw`
+              UPDATE "PurchaseQuotationItem"
+              SET
+                "confirmQuantity" = 0,
+                "confirmKhiQuantity" = 0,
+                "confirmIsbQuantity" = 0,
+                "confirmOtherQuantity" = 0,
+                "updatedAt" = NOW()
+              WHERE id = ${String(qi.id)}::uuid
+            `;
+            continue;
+          }
+          const confirmQuantity =
+            snap.confirmKhiQuantity +
+            snap.confirmIsbQuantity +
+            snap.confirmOtherQuantity;
+          if (snap.weight > 0) {
+            const quotationQty = Number(qi.quotationQuantity || 0);
+            await tx.$executeRaw`
+              UPDATE "PurchaseQuotationItem"
+              SET
+                "confirmQuantity" = ${confirmQuantity},
+                "confirmKhiQuantity" = ${snap.confirmKhiQuantity},
+                "confirmIsbQuantity" = ${snap.confirmIsbQuantity},
+                "confirmOtherQuantity" = ${snap.confirmOtherQuantity},
+                "weight" = ${snap.weight},
+                "totalWeight" = ${snap.weight * quotationQty},
+                "updatedAt" = NOW()
+              WHERE id = ${String(qi.id)}::uuid
+            `;
+          } else {
+            await tx.$executeRaw`
+              UPDATE "PurchaseQuotationItem"
+              SET
+                "confirmQuantity" = ${confirmQuantity},
+                "confirmKhiQuantity" = ${snap.confirmKhiQuantity},
+                "confirmIsbQuantity" = ${snap.confirmIsbQuantity},
+                "confirmOtherQuantity" = ${snap.confirmOtherQuantity},
+                "updatedAt" = NOW()
+              WHERE id = ${String(qi.id)}::uuid
+            `;
+          }
+        }
+      }
+
       if (orderIds.length > 0) {
         await tx.purchaseOrder.deleteMany({
           where: { id: { in: orderIds } },
@@ -4027,7 +4234,8 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
         where: { ...revertWhere, quotationType: "revised" },
         data: {
           status: "revise",
-          confirmationDate: null,
+          // Keep confirmationDate + item confirm qty/splits so re-confirm
+          // does not force the user to re-enter values.
           updatedAt: new Date(),
         },
       });
@@ -4035,7 +4243,6 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
         where: { ...revertWhere, quotationType: { not: "revised" } },
         data: {
           status: "pending",
-          confirmationDate: null,
           updatedAt: new Date(),
         },
       });
@@ -5072,11 +5279,11 @@ router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
 
       await (tx as any).purchaseQuotation.updateMany({
         where: { ...revertWhere, quotationType: "revised" },
-        data: { status: "revise", confirmationDate: null, updatedAt: new Date() },
+        data: { status: "revise", updatedAt: new Date() },
       });
       await (tx as any).purchaseQuotation.updateMany({
         where: { ...revertWhere, quotationType: { not: "revised" } },
-        data: { status: "pending", confirmationDate: null, updatedAt: new Date() },
+        data: { status: "pending", updatedAt: new Date() },
       });
     });
 
