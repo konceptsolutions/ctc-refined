@@ -296,6 +296,7 @@ export const PERMISSION_CATALOG: PermissionNode[] = [
       ]),
       page("settings.activity", "User Activity", "/settings/activity", "activity"),
       page("settings.roles", "Roles & Permissions", "/settings/roles", "roles"),
+      page("settings.password", "Password", "/settings/password", "password"),
     ],
   },
 ];
@@ -559,6 +560,7 @@ export const SIDEBAR_MODULE_KEYS: Record<string, string> = {
   "/employees": "module.employees",
   "/manage": "module.manage",
   "/settings/users": "module.settings",
+  "/settings/password": "module.settings",
 };
 
 /**

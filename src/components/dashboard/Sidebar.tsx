@@ -30,6 +30,7 @@ import { SIDEBAR_MODULE_KEYS } from "@/permissions/catalog";
 import { usePermissions } from "@/permissions/PermissionsProvider";
 import { getModuleLandingPath } from "@/permissions/can";
 import { AppFooter } from "@/components/dashboard/AppFooter";
+import { isAdminRole } from "@/utils/auth";
 
 const SIDEBAR_EXPANDED_KEY = "sidebar-expanded";
 const SIDEBAR_WIDTH_COLLAPSED = "4rem";
@@ -137,11 +138,19 @@ export const Sidebar = () => {
     { Icon: Tag, path: "/vouchers", label: "Vouchers" },
     { Icon: UserCircle, path: "/employees", label: "Employees" },
     { Icon: Settings2, path: "/manage", label: "Manage" },
-    { Icon: Settings, path: "/settings/users", label: "Settings" },
+    {
+      Icon: Settings,
+      path: isAdminRole() ? "/settings/users" : "/settings/password",
+      label: "Settings",
+    },
   ];
 
   const visibleMenuItems = menuItems.filter((item) => {
-    const moduleKey = SIDEBAR_MODULE_KEYS[item.path];
+    if (item.path === "/settings/password") return true;
+    const moduleKey = SIDEBAR_MODULE_KEYS[item.path] || SIDEBAR_MODULE_KEYS["/settings/users"];
+    if (item.path.startsWith("/settings")) {
+      return isAdminRole() ? can("module.settings") : true;
+    }
     return moduleKey ? can(moduleKey) : true;
   });
   // Re-evaluate when permission version changes
@@ -170,7 +179,7 @@ export const Sidebar = () => {
                 Icon={item.Icon}
                 label={item.label}
                 expanded={expanded}
-                active={isActivePath(item.path, item.alsoMatch)}
+                active={isActivePath(item.path, item.path.startsWith("/settings") ? "/settings" : item.alsoMatch)}
                 onClick={() => navigate(getModuleLandingPath(item.path))}
               />
             </div>

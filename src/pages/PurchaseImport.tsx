@@ -66,6 +66,7 @@ import { printPurchaseImportQuotation, printPurchaseImportUnquotedItems } from "
 import { printPurchaseImportQuotationComparison } from "@/utils/printPurchaseImportQuotationComparisonPdf";
 import { printPurchaseImportOrder } from "@/utils/printPurchaseImportOrderPdf";
 import { apiClient } from "@/lib/api";
+import { TemporaryItemsSaveDialog } from "@/components/shared/TemporaryItemsSaveDialog";
 import { fetchBranchAccountOptions } from "@/lib/branch-accounts";
 import {
   getListRowNumber,
@@ -257,6 +258,11 @@ type SupplierRow = {
 type ItemRow = {
   id: string;
   partId: string;
+  isTemporary?: boolean;
+  tempPartNo?: string;
+  tempMasterPartNo?: string;
+  tempBrand?: string;
+  tempDescription?: string;
   currentStock: number;
   salesQty: number;
   khiQuantity: number;
@@ -777,6 +783,11 @@ function applyReceiveConversionRateToLines(
 type PurchaseQuotationDetailItem = {
   id?: string | null;
   partId: string;
+  isTemporary?: boolean;
+  tempPartNo?: string;
+  tempMasterPartNo?: string;
+  tempBrand?: string;
+  tempDescription?: string;
   masterPartNo: string;
   partNo: string;
   description: string;
@@ -921,6 +932,11 @@ type PurchaseImportRequestEditPayload = {
   items: Array<{
     id?: string;
     partId: string;
+    isTemporary?: boolean;
+    tempPartNo?: string | null;
+    tempMasterPartNo?: string | null;
+    tempBrand?: string | null;
+    tempDescription?: string | null;
     demandQuantity: number;
     khiQuantity?: number;
     isbQuantity?: number;
@@ -928,11 +944,17 @@ type PurchaseImportRequestEditPayload = {
     weight: number;
     currentStock?: number;
     totalWeight?: number;
+    sortOrder?: number;
   }>;
 };
 
 type PurchaseQuotationContextItem = {
   partId: string;
+  isTemporary?: boolean;
+  tempPartNo?: string;
+  tempMasterPartNo?: string;
+  tempBrand?: string;
+  tempDescription?: string;
   masterPartNo: string;
   partNo: string;
   description: string;
@@ -1271,6 +1293,11 @@ const createEmptyQuotationRow = (): PurchaseQuotationFormItem => ({
   rowId: createRowId(),
   isNewRow: true,
   partId: "",
+  isTemporary: false,
+  tempPartNo: "",
+  tempMasterPartNo: "",
+  tempBrand: "",
+  tempDescription: "",
   masterPartNo: "",
   partNo: "",
   description: "",
@@ -1297,8 +1324,11 @@ const createRowId = () =>
 
 const isUnquotedQuotationItem = (row: {
   partId?: string | null;
+  isTemporary?: boolean;
   fcRate?: number | null;
-}) => Boolean(String(row.partId || "").trim()) && Number(row.fcRate || 0) <= 0;
+}) =>
+  (Boolean(String(row.partId || "").trim()) || Boolean(row.isTemporary)) &&
+  Number(row.fcRate || 0) <= 0;
 
 type UnquotedItemView = {
   key: string;
@@ -1516,6 +1546,11 @@ const createEmptySupplierRow = (): SupplierRow => ({
 const createEmptyItem = (): ItemRow => ({
   id: createRowId(),
   partId: "",
+  isTemporary: false,
+  tempPartNo: "",
+  tempMasterPartNo: "",
+  tempBrand: "",
+  tempDescription: "",
   currentStock: 0,
   salesQty: 0,
   khiQuantity: 0,
@@ -1525,6 +1560,11 @@ const createEmptyItem = (): ItemRow => ({
   totalWeight: 0,
   lastPurchases: [],
   loadingDetails: false,
+});
+
+const createEmptyTemporaryItem = (): ItemRow => ({
+  ...createEmptyItem(),
+  isTemporary: true,
 });
 
 const createEmptyReceiveLine = (): ImportPurchaseOrderReceiveLine => ({
@@ -2111,7 +2151,13 @@ const PurchaseImportRequestForm = ({
       (sum, row) => sum + getInquiryRowDemandQuantity(row),
       0,
     );
-    const itemCount = items.filter((row) => row.partId).length;
+    const itemCount = items.filter(
+      (row) =>
+        row.partId ||
+        (row.isTemporary &&
+          (String(row.tempPartNo || "").trim() ||
+            String(row.tempDescription || "").trim())),
+    ).length;
     return { totalWeight, totalQty, itemCount };
   }, [items]);
 
@@ -2245,8 +2291,13 @@ const PurchaseImportRequestForm = ({
                   const otherQuantity = SHOW_OTHER_QTY ? otherBase : 0;
 
                   return {
-                    id: `row-${item.partId}-${index}-${Math.random().toString(16).slice(2)}`,
+                    id: `row-${item.partId || item.id || "temp"}-${index}-${Math.random().toString(16).slice(2)}`,
                     partId: item.partId || "",
+                    isTemporary: Boolean(item.isTemporary) || !item.partId,
+                    tempPartNo: item.tempPartNo || "",
+                    tempMasterPartNo: item.tempMasterPartNo || "",
+                    tempBrand: item.tempBrand || "",
+                    tempDescription: item.tempDescription || "",
                     currentStock: Number(item.currentStock || 0),
                     salesQty: 0,
                     khiQuantity,
@@ -2335,8 +2386,23 @@ const PurchaseImportRequestForm = ({
   const inquirySelectedItemOptions = useMemo(() => {
     const partById = new Map(partOptions.map((part) => [part.id, part]));
     return items
-      .filter((row) => row.partId)
+      .filter(
+        (row) =>
+          row.partId ||
+          (row.isTemporary &&
+            (String(row.tempPartNo || "").trim() ||
+              String(row.tempDescription || "").trim())),
+      )
       .map((row) => {
+        if (row.isTemporary) {
+          return {
+            value: row.id,
+            label: `${row.tempMasterPartNo || "-"} | ${row.tempPartNo || "Custom"}`,
+            description: [row.tempBrand, row.tempDescription]
+              .filter(Boolean)
+              .join(" · ") || "-",
+          };
+        }
         const part = partById.get(row.partId);
         return {
           value: row.id,
@@ -2345,6 +2411,20 @@ const PurchaseImportRequestForm = ({
         };
       });
   }, [items, partOptions]);
+
+  const addCustomItemRow = useCallback(() => {
+    const newItem = createEmptyTemporaryItem();
+    setItems((prev) => [...prev, newItem]);
+    window.requestAnimationFrame(() => {
+      const lastIndex = Math.max(
+        0,
+        inquiryRowVirtualizerRef.current.options.count - 1,
+      );
+      inquiryRowVirtualizerRef.current.scrollToIndex(lastIndex, {
+        align: "end",
+      });
+    });
+  }, []);
 
   const scrollToInquiryItemRow = useCallback((rowId: string) => {
     if (!rowId) return;
@@ -2660,24 +2740,40 @@ const PurchaseImportRequestForm = ({
 
   const handleSave = async () => {
     const currentItems = itemsRef.current;
-    const incompleteRows = currentItems.filter(
-      (row) =>
-        (row.partId && getInquiryRowDemandQuantity(row) <= 0) ||
-        (!row.partId && getInquiryRowDemandQuantity(row) > 0),
-    );
+    const incompleteRows = currentItems.filter((row) => {
+      const demand = getInquiryRowDemandQuantity(row);
+      if (row.isTemporary) {
+        const hasIdentity = Boolean(
+          String(row.tempPartNo || "").trim() ||
+            String(row.tempDescription || "").trim(),
+        );
+        return (hasIdentity && demand <= 0) || (!hasIdentity && demand > 0);
+      }
+      return (
+        (row.partId && demand <= 0) || (!row.partId && demand > 0)
+      );
+    });
     if (incompleteRows.length > 0) {
       toast({
         title: "Incomplete item rows",
         description:
-          "Each item row needs a part selected from the dropdown and demand quantity greater than zero. Click the part option in the list to select it (typing alone is not enough).",
+          "Each catalog item needs a part selected and demand quantity. Custom items need a part no or description and demand quantity.",
         variant: "destructive",
       });
       return;
     }
 
-    const validItems = currentItems.filter(
-      (row) => row.partId && getInquiryRowDemandQuantity(row) > 0,
-    );
+    const validItems = currentItems.filter((row) => {
+      const demand = getInquiryRowDemandQuantity(row);
+      if (demand <= 0) return false;
+      if (row.isTemporary) {
+        return Boolean(
+          String(row.tempPartNo || "").trim() ||
+            String(row.tempDescription || "").trim(),
+        );
+      }
+      return Boolean(row.partId);
+    });
     if (validItems.length === 0) {
       toast({
         title: "Items required",
@@ -2695,7 +2791,20 @@ const PurchaseImportRequestForm = ({
         notes,
         requestDate: inquiryDate,
         items: validItems.map((row, index) => ({
-          partId: row.partId,
+          partId: row.isTemporary ? null : row.partId,
+          isTemporary: Boolean(row.isTemporary),
+          tempPartNo: row.isTemporary
+            ? String(row.tempPartNo || "").trim() || null
+            : null,
+          tempMasterPartNo: row.isTemporary
+            ? String(row.tempMasterPartNo || "").trim() || null
+            : null,
+          tempBrand: row.isTemporary
+            ? String(row.tempBrand || "").trim() || null
+            : null,
+          tempDescription: row.isTemporary
+            ? String(row.tempDescription || "").trim() || null
+            : null,
           demandQuantity: getInquiryRowDemandQuantity(row),
           khiQuantity: Number(row.khiQuantity || 0),
           isbQuantity: Number(row.isbQuantity || 0),
@@ -2849,6 +2958,16 @@ const PurchaseImportRequestForm = ({
               <Plus className="w-4 h-4 mr-1" />
               Add Item (Alt + Z)
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={addCustomItemRow}
+              disabled={loadingForm || isViewMode}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Custom Item
+            </Button>
           </div>
         </div>
 
@@ -2931,20 +3050,98 @@ const PurchaseImportRequestForm = ({
                     <td className="p-2 border-b min-w-[320px]">
                       <div className="flex items-start gap-1.5">
                         <div className="min-w-0 flex-1">
-                          <SearchableSelect
-                            options={partSelectOptions}
-                            value={row.partId}
-                            onValueChange={(partId) =>
-                              fetchPartDetails(row.id, partId)
-                            }
-                            placeholder="Part No | Master Part"
-                            disabled={loadingForm || isViewMode}
-                            autoOpen={openItemSelectRowId === row.id}
-                          />
-                          {row.loadingDetails && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Loading details...
-                            </p>
+                          {row.isTemporary ? (
+                            <div className="space-y-1.5">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                <Input
+                                  value={row.tempPartNo || ""}
+                                  onChange={(e) =>
+                                    setItems((prev) =>
+                                      prev.map((item) =>
+                                        item.id === row.id
+                                          ? { ...item, tempPartNo: e.target.value }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="Part No"
+                                  disabled={loadingForm || isViewMode}
+                                  className="h-9"
+                                />
+                                <Input
+                                  value={row.tempMasterPartNo || ""}
+                                  onChange={(e) =>
+                                    setItems((prev) =>
+                                      prev.map((item) =>
+                                        item.id === row.id
+                                          ? {
+                                              ...item,
+                                              tempMasterPartNo: e.target.value,
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="Master Part"
+                                  disabled={loadingForm || isViewMode}
+                                  className="h-9"
+                                />
+                                <Input
+                                  value={row.tempBrand || ""}
+                                  onChange={(e) =>
+                                    setItems((prev) =>
+                                      prev.map((item) =>
+                                        item.id === row.id
+                                          ? { ...item, tempBrand: e.target.value }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="Brand"
+                                  disabled={loadingForm || isViewMode}
+                                  className="h-9"
+                                />
+                                <Input
+                                  value={row.tempDescription || ""}
+                                  onChange={(e) =>
+                                    setItems((prev) =>
+                                      prev.map((item) =>
+                                        item.id === row.id
+                                          ? {
+                                              ...item,
+                                              tempDescription: e.target.value,
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="Description"
+                                  disabled={loadingForm || isViewMode}
+                                  className="h-9"
+                                />
+                              </div>
+                              <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                                Not in item master — save as a part before confirming PO.
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <SearchableSelect
+                                options={partSelectOptions}
+                                value={row.partId}
+                                onValueChange={(partId) =>
+                                  fetchPartDetails(row.id, partId)
+                                }
+                                placeholder="Part No | Master Part"
+                                disabled={loadingForm || isViewMode}
+                                autoOpen={openItemSelectRowId === row.id}
+                              />
+                              {row.loadingDetails && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Loading details...
+                                </p>
+                              )}
+                            </>
                           )}
                         </div>
                         <Button
@@ -4635,26 +4832,41 @@ const PurchaseQuotationForm = ({
       return;
     }
 
-    const incompleteRows = rows.filter(
-      (row) =>
-        (row.partId && Number(row.quotationQuantity || 0) <= 0) ||
+    const incompleteRows = rows.filter((row) => {
+      const qty = Number(row.quotationQuantity || 0);
+      if (row.isTemporary) {
+        const hasIdentity = Boolean(
+          String(row.tempPartNo || row.partNo || "").trim() ||
+            String(row.tempDescription || row.description || "").trim(),
+        );
+        return (hasIdentity && qty <= 0) || (!hasIdentity && qty > 0);
+      }
+      return (
+        (row.partId && qty <= 0) ||
         (!row.partId &&
-          (Number(row.quotationQuantity || 0) > 0 ||
-            Number(row.demandQuantity || 0) > 0)),
-    );
+          (qty > 0 || Number(row.demandQuantity || 0) > 0))
+      );
+    });
     if (incompleteRows.length > 0) {
       toast({
         title: "Incomplete item rows",
         description:
-          "Each row needs a part selected and quotation quantity greater than zero.",
+          "Each row needs a part (or custom part no/description) and quotation quantity greater than zero.",
         variant: "destructive",
       });
       return;
     }
 
-    const validItems = rows.filter(
-      (row) => row.partId && Number(row.quotationQuantity || 0) > 0,
-    );
+    const validItems = rows.filter((row) => {
+      if (Number(row.quotationQuantity || 0) <= 0) return false;
+      if (row.isTemporary) {
+        return Boolean(
+          String(row.tempPartNo || row.partNo || "").trim() ||
+            String(row.tempDescription || row.description || "").trim(),
+        );
+      }
+      return Boolean(row.partId);
+    });
     if (validItems.length === 0) {
       toast({
         title: "Items required",
@@ -4684,7 +4896,22 @@ const PurchaseQuotationForm = ({
         quotationType: "original" as const,
         status: "pending",
         items: validItems.map((row, index) => ({
-          partId: row.partId,
+          partId: row.isTemporary ? null : row.partId,
+          isTemporary: Boolean(row.isTemporary),
+          tempPartNo: row.isTemporary
+            ? String(row.tempPartNo || row.partNo || "").trim() || null
+            : null,
+          tempMasterPartNo: row.isTemporary
+            ? String(row.tempMasterPartNo || row.masterPartNo || "").trim() ||
+              null
+            : null,
+          tempBrand: row.isTemporary
+            ? String(row.tempBrand || row.brand || "").trim() || null
+            : null,
+          tempDescription: row.isTemporary
+            ? String(row.tempDescription || row.description || "").trim() ||
+              null
+            : null,
           demandQuantity: Number(row.demandQuantity || 0),
           khiQuantity: Number(row.khiQuantity || 0),
           isbQuantity: Number(row.isbQuantity || 0),
@@ -5329,11 +5556,19 @@ const PurchaseQuotationRevisionForm = ({
                 return {
                 rowId: createRowId(),
                 isNewRow: false,
-                partId: item.partId,
-                masterPartNo: item.masterPartNo || "",
-                partNo: item.partNo || "",
-                description: item.description || "",
-                brand: item.brand || "",
+                partId: item.partId || "",
+                isTemporary: Boolean(item.isTemporary) || !item.partId,
+                tempPartNo: item.tempPartNo || "",
+                tempMasterPartNo: (item as any).tempMasterPartNo || "",
+                tempBrand: (item as any).tempBrand || item.brand || "",
+                tempDescription: item.tempDescription || "",
+                masterPartNo:
+                  item.masterPartNo ||
+                  (item as any).tempMasterPartNo ||
+                  "",
+                partNo: item.partNo || item.tempPartNo || "",
+                description: item.description || item.tempDescription || "",
+                brand: item.brand || (item as any).tempBrand || "",
                 origin: item.origin || (item as any).origin || "",
                 currentStock: Number((item as any).currentStock || 0),
                 demandQuantity: Number(item.demandQuantity || 0),
@@ -5556,7 +5791,22 @@ const PurchaseQuotationRevisionForm = ({
         currency,
         conversionRate: parsedConversionRate,
         items: rows.map((row, index) => ({
-          partId: row.partId,
+          partId: row.isTemporary ? null : row.partId,
+          isTemporary: Boolean(row.isTemporary),
+          tempPartNo: row.isTemporary
+            ? String(row.tempPartNo || row.partNo || "").trim() || null
+            : null,
+          tempMasterPartNo: row.isTemporary
+            ? String(row.tempMasterPartNo || row.masterPartNo || "").trim() ||
+              null
+            : null,
+          tempBrand: row.isTemporary
+            ? String(row.tempBrand || row.brand || "").trim() || null
+            : null,
+          tempDescription: row.isTemporary
+            ? String(row.tempDescription || row.description || "").trim() ||
+              null
+            : null,
           demandQuantity: Number(row.demandQuantity || 0),
           quotationQuantity: Number(row.quotationQuantity || 0),
           shipDays: String(row.shipDays ?? ""),
@@ -7949,6 +8199,7 @@ type PurchaseQuotationConfirmRow = {
   quotationNo: string;
   inquiryNo?: string | null;
   partId: string;
+  isTemporary?: boolean;
   masterPartNo: string;
   partNo: string;
   description: string;
@@ -8099,11 +8350,12 @@ const buildConfirmRowsFromQuotationDetail = (
       quotationItemId: item.id || null,
       quotationNo: data.quotationNo || "",
       inquiryNo: data.request?.requestNo || null,
-      partId: item.partId,
-      masterPartNo: item.masterPartNo || "",
-      partNo: item.partNo || "",
-      description: item.description || "",
-      brand: item.brand || "",
+      partId: item.partId || "",
+      isTemporary: Boolean(item.isTemporary) || !item.partId,
+      masterPartNo: item.masterPartNo || item.tempMasterPartNo || "",
+      partNo: item.partNo || item.tempPartNo || "",
+      description: item.description || item.tempDescription || "",
+      brand: item.brand || item.tempBrand || "",
       origin: item.origin || "",
       currentStock: Number(item.currentStock || 0),
       demandQuantity: Number(item.demandQuantity || 0),
@@ -8171,6 +8423,8 @@ const PurchaseQuotationConfirmForm = ({
   const [partOptions, setPartOptions] = useState<PartOption[]>([]);
   const [itemSort, setItemSort] = useState<InquiryItemSort>("none");
   const [itemSortDirection, setItemSortDirection] = useState<SortDirection>("asc");
+  const [showTempSaveDialog, setShowTempSaveDialog] = useState(false);
+  const [promotingTemps, setPromotingTemps] = useState(false);
   const activeConfirmRowIdRef = useRef<string | null>(null);
   activeConfirmRowIdRef.current = activeConfirmRowId;
   const { jumpToId, highlightedId, handleJump, setRowRef } = useItemRowJump({
@@ -8569,8 +8823,12 @@ const PurchaseQuotationConfirmForm = ({
     [rows],
   );
 
-  const handleConfirm = async () => {
-    const itemsWithConfirmQty = rows.filter(
+  const executeConfirm = async (
+    workingRows: PurchaseQuotationConfirmRow[],
+  ) => {
+    const catalogRows = workingRows.filter((row) => !row.isTemporary);
+    const temporaryRows = workingRows.filter((row) => row.isTemporary);
+    const itemsWithConfirmQty = catalogRows.filter(
       (row) => Number(row.confirmQuantity || 0) > 0,
     );
     const itemsToConfirm = itemsWithConfirmQty.filter(
@@ -8583,9 +8841,11 @@ const PurchaseQuotationConfirmForm = ({
       toast({
         title: "No items to confirm",
         description:
-          skippedZeroRateCount > 0
-            ? "Items with zero FC rate are excluded. Enter an FC rate for at least one item with confirm quantity."
-            : "Enter confirm quantity greater than zero for at least one item.",
+          temporaryRows.length > 0 && catalogRows.length === 0
+            ? "Only temporary items are on this quotation. Save them as parts before confirming."
+            : skippedZeroRateCount > 0
+              ? "Items with zero FC rate are excluded. Enter an FC rate for at least one item with confirm quantity."
+              : "Enter confirm quantity greater than zero for at least one catalog item.",
         variant: "destructive",
       });
       return;
@@ -8647,6 +8907,12 @@ const PurchaseQuotationConfirmForm = ({
       });
       const purchaseOrders = (response as { purchaseOrders?: Array<{ poNumber?: string }> })
         .purchaseOrders;
+      const warning = (response as { warning?: string | null }).warning;
+      const excludedTemporaryItems = (
+        response as {
+          excludedTemporaryItems?: Array<{ partNo?: string; description?: string }>;
+        }
+      ).excludedTemporaryItems;
       const poLabels = (purchaseOrders || [])
         .map((po) => po.poNumber)
         .filter(Boolean)
@@ -8658,15 +8924,20 @@ const PurchaseQuotationConfirmForm = ({
               skippedZeroRateCount === 1 ? "" : "s"
             } excluded.`
           : "";
+      const tempNote =
+        warning ||
+        (excludedTemporaryItems && excludedTemporaryItems.length > 0
+          ? ` ${excludedTemporaryItems.length} temporary item(s) excluded from PO.`
+          : "");
       toast({
         title: combinedCount > 1 ? "Quotations confirmed" : "Quotation confirmed",
         description: poLabels
           ? `Purchase order${purchaseOrders && purchaseOrders.length > 1 ? "s" : ""} ${poLabels} created${
               combinedCount > 1 ? ` from ${combinedCount} quotations` : ""
-            }.${skippedNote}`
+            }.${skippedNote}${tempNote}`
           : combinedCount > 1
-            ? `${combinedCount} quotations have been confirmed.${skippedNote}`
-            : `Quotation has been confirmed.${skippedNote}`,
+            ? `${combinedCount} quotations have been confirmed.${skippedNote}${tempNote}`
+            : `Quotation has been confirmed.${skippedNote}${tempNote}`,
       });
       onSaved?.();
     } catch (error: any) {
@@ -8679,6 +8950,43 @@ const PurchaseQuotationConfirmForm = ({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleConfirm = async () => {
+    const temporaryRows = rows.filter((row) => row.isTemporary);
+    if (temporaryRows.length > 0) {
+      setShowTempSaveDialog(true);
+      return;
+    }
+    await executeConfirm(rows);
+  };
+
+  const applyPromotedRows = (
+    workingRows: PurchaseQuotationConfirmRow[],
+    promoted: Array<{
+      quotationItemId: string;
+      partId: string;
+      partNo: string;
+      description?: string | null;
+      brand?: string | null;
+    }>,
+  ) => {
+    const byId = new Map(
+      promoted.map((row) => [String(row.quotationItemId), row]),
+    );
+    return workingRows.map((row) => {
+      const key = String(row.quotationItemId || "");
+      const match = key ? byId.get(key) : undefined;
+      if (!match) return row;
+      return {
+        ...row,
+        partId: match.partId,
+        isTemporary: false,
+        partNo: match.partNo || row.partNo,
+        description: match.description || row.description,
+        brand: match.brand || row.brand,
+      };
+    });
   };
 
   const itemTableColSpan = (SHOW_OTHER_QTY ? 18 : 17) + (isCombinedView ? 1 : 0);
@@ -9198,7 +9506,7 @@ const PurchaseQuotationConfirmForm = ({
           <Button
             type="button"
             onClick={handleConfirm}
-            disabled={saving || !detail || hasSplitMismatch}
+            disabled={saving || promotingTemps || !detail || hasSplitMismatch}
           >
             {saving
               ? "Confirming..."
@@ -9208,6 +9516,95 @@ const PurchaseQuotationConfirmForm = ({
           </Button>
         )}
       </div>
+
+      <TemporaryItemsSaveDialog
+        open={showTempSaveDialog}
+        title="Save temporary items before confirming?"
+        description="Choose which custom items to save into the item master. Saved items can be included on the purchase order; others will be excluded."
+        items={rows
+          .filter((row) => row.isTemporary)
+          .map((row) => ({
+            id: String(row.quotationItemId || row.rowId),
+            partNo: row.partNo,
+            description: row.description,
+            brand: row.brand,
+            masterPartNo: row.masterPartNo,
+            weight: row.weight,
+            origin: row.origin,
+          }))}
+        busy={promotingTemps || saving}
+        onOpenChange={setShowTempSaveDialog}
+        onContinueWithoutSaving={() => {
+          setShowTempSaveDialog(false);
+          void executeConfirm(rows);
+        }}
+        onSaveSelectedAndContinue={async (selected) => {
+          setPromotingTemps(true);
+          try {
+            const payload = selected
+              .map((draft) => {
+                const source = rows.find(
+                  (row) =>
+                    String(row.quotationItemId || row.rowId) === draft.id,
+                );
+                const quotationItemId = String(
+                  source?.quotationItemId || "",
+                ).trim();
+                if (!quotationItemId) return null;
+                return {
+                  quotationItemId,
+                  partNo: draft.partNo,
+                  description: draft.description,
+                  brand: draft.brand,
+                  masterPartNo: draft.masterPartNo,
+                  weight: draft.weight,
+                  origin: draft.origin,
+                };
+              })
+              .filter(Boolean) as Array<{
+              quotationItemId: string;
+              partNo: string;
+              description?: string;
+              brand?: string;
+              masterPartNo?: string;
+              weight?: number;
+              origin?: string;
+            }>;
+
+            const res = await apiClient.promotePurchaseQuotationTemporaryItems(
+              quotationId,
+              payload,
+            );
+            const promoted =
+              ((res as any)?.data?.promoted as Array<{
+                quotationItemId: string;
+                partId: string;
+                partNo: string;
+                description?: string | null;
+                brand?: string | null;
+              }>) || [];
+            const nextRows = applyPromotedRows(rows, promoted);
+            setRows(nextRows);
+            setShowTempSaveDialog(false);
+            toast({
+              title: "Items saved",
+              description: `${promoted.length} temporary item(s) saved to item master.`,
+            });
+            await executeConfirm(nextRows);
+          } catch (error: any) {
+            toast({
+              title: "Could not save items",
+              description:
+                error?.response?.data?.error ||
+                error?.message ||
+                "Failed to save temporary items.",
+              variant: "destructive",
+            });
+          } finally {
+            setPromotingTemps(false);
+          }
+        }}
+      />
     </div>
   );
 };

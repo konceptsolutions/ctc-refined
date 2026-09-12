@@ -10,12 +10,59 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Plus, Image as ImageIcon, Trash, Save } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Item } from "./ItemsListView";
 import { apiClient } from "@/lib/api";
 import { compressImage } from "@/utils/imageCompression";
 import { fetchFamilyPartImages } from "@/lib/part-images";
+
+const collectMissingPartEntryFields = (input: {
+  partNo: string;
+  masterPartNo: string;
+  brand: string;
+  description: string;
+  category: string;
+  subCategory: string;
+  application: string;
+  weight: string;
+  modelQuantities: Array<{ model?: string; qty?: number | string }>;
+}): string[] => {
+  const missing: string[] = [];
+  if (!String(input.partNo || "").trim()) missing.push("Part No");
+  if (!String(input.masterPartNo || "").trim()) missing.push("Master Part");
+  if (!String(input.brand || "").trim()) missing.push("Brand");
+  if (!String(input.description || "").trim()) missing.push("Description");
+  if (!String(input.category || "").trim()) missing.push("Category");
+  if (!String(input.subCategory || "").trim()) missing.push("Subcategory");
+  if (!String(input.application || "").trim()) missing.push("Application");
+  const weightNum = Number(input.weight);
+  if (
+    !String(input.weight || "").trim() ||
+    !Number.isFinite(weightNum) ||
+    weightNum <= 0
+  ) {
+    missing.push("Weight");
+  }
+  const hasModelQty = (input.modelQuantities || []).some(
+    (mq) =>
+      Boolean(String(mq.model || "").trim()) &&
+      Number.isFinite(Number(mq.qty)) &&
+      Number(mq.qty) > 0,
+  );
+  if (!hasModelQty) missing.push("Model and its quantity");
+  return missing;
+};
 
 interface PartFormData {
   masterPartNo: string;
@@ -169,6 +216,8 @@ export const CompactPartForm = ({
 
   // Track if we're in "new mode" (creating new item, not editing)
   const [isNewMode, setIsNewMode] = useState(!editItem);
+  const [incompleteSaveOpen, setIncompleteSaveOpen] = useState(false);
+  const [missingSaveFields, setMissingSaveFields] = useState<string[]>([]);
 
   // Dropdown data
   const [categories, setCategories] = useState<{ id: string; name: string }[]>(
@@ -1274,6 +1323,37 @@ export const CompactPartForm = ({
   };
 
   const handleSave = () => {
+    const finalMasterPartNo =
+      masterPartSearch && masterPartSearch.trim()
+        ? masterPartSearch.trim()
+        : formData.masterPartNo && formData.masterPartNo.trim()
+          ? formData.masterPartNo.trim()
+          : "";
+
+    const missing = collectMissingPartEntryFields({
+      // CompactPartForm UI: Part No = masterPartSearch / masterPartNo
+      partNo: finalMasterPartNo,
+      // CompactPartForm UI: Master Part No = formData.partNo
+      masterPartNo: formData.partNo,
+      brand: String(brandSearch || formData.brand || ""),
+      description: formData.description,
+      category: String(formData.category || formData.categoryId || ""),
+      subCategory: String(formData.subCategory || formData.subCategoryId || ""),
+      application: String(formData.application || formData.applicationId || ""),
+      weight: formData.weight,
+      modelQuantities,
+    });
+
+    if (missing.length > 0) {
+      setMissingSaveFields(missing);
+      setIncompleteSaveOpen(true);
+      return;
+    }
+
+    performSave();
+  };
+
+  const performSave = () => {
     if (!formData.partNo.trim()) {
       toast({
         title: "Validation Error",
@@ -2799,6 +2879,43 @@ export const CompactPartForm = ({
           )}
         </div>
       </div>
+
+      <AlertDialog
+        open={incompleteSaveOpen}
+        onOpenChange={(open) => {
+          setIncompleteSaveOpen(open);
+          if (!open) setMissingSaveFields([]);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Incomplete item details</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>The following are not selected against the item:</p>
+                <ul className="list-disc pl-5 space-y-1 text-foreground">
+                  {missingSaveFields.map((field) => (
+                    <li key={field}>{field}</li>
+                  ))}
+                </ul>
+                <p>Do you really want to save the item like this?</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setIncompleteSaveOpen(false);
+                setMissingSaveFields([]);
+                performSave();
+              }}
+            >
+              Save anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

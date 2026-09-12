@@ -39,8 +39,8 @@ function mapPartEntryRow(p: any): Part {
         : p.priceB !== undefined && p.priceB !== null && p.priceB !== ""
           ? parseFloat(p.priceB)
           : null,
-    stock: p.stock || 0,
-    reservedStock: p.reserved_stock || 0,
+    stock: Number(p.stock ?? p.qty ?? 0) || 0,
+    reservedStock: Number(p.reserved_stock ?? 0) || 0,
     masterPartNo: (p.part_no || "").trim(),
     modelTotalQty:
       p.model_total_qty != null ? p.model_total_qty : undefined,
@@ -100,7 +100,6 @@ export const PartEntryPage = ({
       setListLoading(true);
       try {
         const response: any = await apiClient.getPartEntryList({
-          lite: true,
           page: asFamily ? 1 : page,
           limit: asFamily ? 500 : LIST_PAGE_SIZE,
           search: asFamily ? undefined : search || undefined,
@@ -333,7 +332,6 @@ export const PartEntryPage = ({
       setLoading(true);
       try {
         const response: any = await apiClient.getPartEntryList({
-          lite: true,
           type: "kit",
           limit: 500,
           page: 1,

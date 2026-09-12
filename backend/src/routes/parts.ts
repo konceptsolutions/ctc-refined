@@ -607,14 +607,10 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    const stockSelect = isLite
-      ? `0 as stock, 0 as reserved_stock`
-      : `COALESCE(st.stock, 0) as stock,
+    const stockSelect = `COALESCE(st.stock, 0) as stock,
         COALESCE(sr.reserved, 0) as reserved_stock`;
 
-    const stockJoins = isLite
-      ? ""
-      : `
+    const stockJoins = `
       LEFT JOIN (
           SELECT "partId", 
             SUM(CASE WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as stock

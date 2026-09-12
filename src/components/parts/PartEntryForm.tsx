@@ -10,6 +10,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Plus, Image as ImageIcon, Trash, Search, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Part } from "./PartsList";
@@ -18,6 +28,43 @@ import { apiClient } from "@/lib/api";
 import { fetchFamilyPartImages } from "@/lib/part-images";
 import { cn } from "@/lib/utils";
 import { usePageActions } from "@/permissions/pageActions";
+
+const collectMissingPartEntryFields = (input: {
+  partNo: string;
+  masterPartNo: string;
+  brand: string;
+  description: string;
+  category: string;
+  subCategory: string;
+  application: string;
+  weight: string;
+  modelQuantities: Array<{ model?: string; qty?: number | string }>;
+}): string[] => {
+  const missing: string[] = [];
+  if (!String(input.partNo || "").trim()) missing.push("Part No");
+  if (!String(input.masterPartNo || "").trim()) missing.push("Master Part");
+  if (!String(input.brand || "").trim()) missing.push("Brand");
+  if (!String(input.description || "").trim()) missing.push("Description");
+  if (!String(input.category || "").trim()) missing.push("Category");
+  if (!String(input.subCategory || "").trim()) missing.push("Subcategory");
+  if (!String(input.application || "").trim()) missing.push("Application");
+  const weightNum = Number(input.weight);
+  if (
+    !String(input.weight || "").trim() ||
+    !Number.isFinite(weightNum) ||
+    weightNum <= 0
+  ) {
+    missing.push("Weight");
+  }
+  const hasModelQty = (input.modelQuantities || []).some(
+    (mq) =>
+      Boolean(String(mq.model || "").trim()) &&
+      Number.isFinite(Number(mq.qty)) &&
+      Number(mq.qty) > 0,
+  );
+  if (!hasModelQty) missing.push("Model and its quantity");
+  return missing;
+};
 
 interface ModelQuantity {
   id: string;
@@ -162,6 +209,11 @@ export const PartEntryForm = ({
   const [isEditing, setIsEditing] = useState(false);
   const [isAddingNew, setIsAddingNew] = useState(false); // Track if user clicked "New" button
   const [editingPartId, setEditingPartId] = useState<string | null>(null);
+  const [incompleteSaveOpen, setIncompleteSaveOpen] = useState(false);
+  const [pendingSaveMode, setPendingSaveMode] = useState<"create" | "update" | null>(
+    null,
+  );
+  const [missingSaveFields, setMissingSaveFields] = useState<string[]>([]);
   const [masterPartAutoFilled, setMasterPartAutoFilled] = useState(false); // Track if master part was auto-filled from part number
   const prevSelectedPartId = useRef<string | null>(null);
   const fileInputP1Ref = useRef<HTMLInputElement>(null);
@@ -1557,15 +1609,6 @@ export const PartEntryForm = ({
   };
 
   const handleSaveWithMode = async (saveMode: "create" | "update") => {
-    if (!formData.partNo.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Part No is required",
-        variant: "destructive",
-      });
-      return;
-    }
-
     if (
       saveMode === "update" &&
       !(editingPartId || selectedPart?.id)
@@ -1618,6 +1661,40 @@ export const PartEntryForm = ({
       toast({
         title: "Validation Error",
         description: errors.join(", "),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const missing = collectMissingPartEntryFields({
+      partNo: formData.partNo,
+      masterPartNo: String(masterPartSearch || formData.masterPartNo || ""),
+      brand: String(brandSearch || formData.brand || ""),
+      description: formData.description,
+      category: String(formData.category || categorySearch || categoryId || ""),
+      subCategory: String(
+        formData.subCategory || subcategorySearch || subCategoryId || "",
+      ),
+      application: String(formData.application || ""),
+      weight: formData.weight,
+      modelQuantities,
+    });
+
+    if (missing.length > 0) {
+      setMissingSaveFields(missing);
+      setPendingSaveMode(saveMode);
+      setIncompleteSaveOpen(true);
+      return;
+    }
+
+    await performSaveWithMode(saveMode);
+  };
+
+  const performSaveWithMode = async (saveMode: "create" | "update") => {
+    if (!formData.partNo.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Part No is required",
         variant: "destructive",
       });
       return;
@@ -1700,6 +1777,8 @@ export const PartEntryForm = ({
     const saved = await Promise.resolve(
       onSave({
         ...formData,
+        masterPartNo: String(masterPartSearch || formData.masterPartNo || ""),
+        brand: String(brandSearch || formData.brand || ""),
         modelQuantities,
         kitItems: preparedKitItems,
         imageP1,
@@ -4849,6 +4928,52 @@ export const PartEntryForm = ({
           ))}
         </div>
       </div>
+
+      <AlertDialog
+        open={incompleteSaveOpen}
+        onOpenChange={(open) => {
+          setIncompleteSaveOpen(open);
+          if (!open) {
+            setPendingSaveMode(null);
+            setMissingSaveFields([]);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Incomplete item details</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  The following are not selected against the item:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-foreground">
+                  {missingSaveFields.map((field) => (
+                    <li key={field}>{field}</li>
+                  ))}
+                </ul>
+                <p>Do you really want to save the item like this?</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const mode = pendingSaveMode;
+                setIncompleteSaveOpen(false);
+                setPendingSaveMode(null);
+                setMissingSaveFields([]);
+                if (mode) {
+                  void performSaveWithMode(mode);
+                }
+              }}
+            >
+              Save anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -10,6 +10,11 @@ import {
   normalizeLoginTime,
   setLoginHours,
 } from '../utils/loginHours';
+import {
+  PASSWORD_REUSED_ERROR,
+  archiveUserPassword,
+  isPasswordPreviouslyUsed,
+} from '../utils/passwordHistory';
 
 const router = express.Router();
 
@@ -305,6 +310,7 @@ router.put('/:id', async (req, res) => {
         name: true,
         email: true,
         roleId: true,
+        password: true,
       },
     });
     if (!existing) {
@@ -338,7 +344,11 @@ router.put('/:id', async (req, res) => {
           error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`,
         });
       }
+      if (await isPasswordPreviouslyUsed(existing.id, String(password), existing.password)) {
+        return res.status(400).json({ error: PASSWORD_REUSED_ERROR });
+      }
       updateData.password = await bcrypt.hash(String(password), 10);
+      await archiveUserPassword(existing.id, existing.password);
     }
 
     let nextHours: {

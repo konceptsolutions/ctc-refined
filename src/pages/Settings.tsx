@@ -4,35 +4,48 @@ import { Header } from "@/components/dashboard/Header";
 import { UsersManagementTab } from "@/components/settings/UsersManagementTab";
 import { ActivityLogsTab } from "@/components/settings/ActivityLogsTab";
 import { RolesPermissionsTab } from "@/components/settings/RolesPermissionsTab";
-import { Activity, Settings as SettingsIcon, Shield, Users } from "lucide-react";
+import { ChangePasswordTab } from "@/components/settings/ChangePasswordTab";
+import { Activity, KeyRound, Settings as SettingsIcon, Shield, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useParams } from "react-router-dom";
 import { usePermissions } from "@/permissions/PermissionsProvider";
+import { isAdminRole } from "@/utils/auth";
 
-type SettingsTab = "users" | "activity" | "roles";
-
-const SETTINGS_TABS: SettingsTab[] = ["users", "activity", "roles"];
+type SettingsTab = "users" | "activity" | "roles" | "password";
 
 const Settings = () => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
   const { can, version } = usePermissions();
   void version;
+  const isAdmin = isAdminRole();
 
-  const activeTab: SettingsTab = SETTINGS_TABS.includes(tab as SettingsTab)
+  const allowedTabs: SettingsTab[] = [
+    ...(can("page.settings.users") || can("module.settings") ? (["users"] as const) : []),
+    ...(can("page.settings.roles") || can("module.settings") ? (["roles"] as const) : []),
+    ...(can("page.settings.activity") || can("module.settings") ? (["activity"] as const) : []),
+    ...(!isAdmin ? (["password"] as const) : []),
+  ];
+
+  const activeTab: SettingsTab = allowedTabs.includes(tab as SettingsTab)
     ? (tab as SettingsTab)
-    : "users";
+    : allowedTabs[0] || "password";
 
   useEffect(() => {
-    if (!tab) {
-      navigate("/settings/users", { replace: true });
+    if (!allowedTabs.length) {
+      navigate("/", { replace: true });
       return;
     }
-    if (!SETTINGS_TABS.includes(tab as SettingsTab)) {
-      navigate("/settings/users", { replace: true });
+    if (!tab || !allowedTabs.includes(tab as SettingsTab)) {
+      navigate(`/settings/${allowedTabs[0]}`, { replace: true });
       return;
     }
-    // Page-level permission within settings
+    if (tab === "password") {
+      if (isAdmin) {
+        navigate(`/settings/${allowedTabs[0] || "users"}`, { replace: true });
+      }
+      return;
+    }
     const pageKey =
       tab === "activity"
         ? "page.settings.activity"
@@ -40,9 +53,10 @@ const Settings = () => {
           ? "page.settings.roles"
           : "page.settings.users";
     if (!can(pageKey) && !can("module.settings")) {
-      navigate("/", { replace: true });
+      navigate(`/settings/${allowedTabs[0]}`, { replace: true });
     }
-  }, [tab, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- allowedTabs derived from can/isAdmin
+  }, [tab, navigate, isAdmin, version]);
 
   const handleTabChange = (nextTab: SettingsTab) => {
     if (nextTab === activeTab && tab === nextTab) return;
@@ -64,7 +78,9 @@ const Settings = () => {
             <div>
               <h1 className="text-2xl font-bold text-foreground">Settings</h1>
               <p className="text-sm text-muted-foreground">
-                Manage users, roles, and review system activity
+                {isAdmin
+                  ? "Manage users, roles, and review system activity"
+                  : "Manage your account password"}
               </p>
             </div>
           </div>
@@ -72,7 +88,7 @@ const Settings = () => {
 
         <div className="bg-card border-b border-border px-4 py-2">
           <div className="flex items-center gap-2 flex-wrap">
-            {can("page.settings.users") && (
+            {allowedTabs.includes("users") && (
               <button
                 type="button"
                 onClick={() => handleTabChange("users")}
@@ -87,7 +103,7 @@ const Settings = () => {
                 Users Management
               </button>
             )}
-            {can("page.settings.roles") && (
+            {allowedTabs.includes("roles") && (
               <button
                 type="button"
                 onClick={() => handleTabChange("roles")}
@@ -102,7 +118,7 @@ const Settings = () => {
                 Roles & Permissions
               </button>
             )}
-            {can("page.settings.activity") && (
+            {allowedTabs.includes("activity") && (
               <button
                 type="button"
                 onClick={() => handleTabChange("activity")}
@@ -117,6 +133,21 @@ const Settings = () => {
                 User Activity
               </button>
             )}
+            {allowedTabs.includes("password") && (
+              <button
+                type="button"
+                onClick={() => handleTabChange("password")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded",
+                  activeTab === "password"
+                    ? "border border-primary text-primary bg-background"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                Password
+              </button>
+            )}
           </div>
         </div>
 
@@ -124,6 +155,7 @@ const Settings = () => {
           {activeTab === "users" && <UsersManagementTab />}
           {activeTab === "roles" && <RolesPermissionsTab />}
           {activeTab === "activity" && <ActivityLogsTab />}
+          {activeTab === "password" && <ChangePasswordTab />}
         </main>
       </div>
     </div>

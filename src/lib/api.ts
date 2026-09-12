@@ -300,6 +300,13 @@ class ApiClient {
     return this.request("/auth/me");
   }
 
+  async changePassword(data: { currentPassword: string; newPassword: string }) {
+    return this.request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   async forgotPassword(data: {
     identifier: string;
     newPassword: string;
@@ -2939,6 +2946,27 @@ class ApiClient {
     });
   }
 
+  async promotePurchaseQuotationTemporaryItems(
+    quotationId: string,
+    items: Array<{
+      quotationItemId: string;
+      partNo: string;
+      description?: string;
+      brand?: string;
+      masterPartNo?: string;
+      weight?: number;
+      origin?: string;
+    }>,
+  ) {
+    return this.request(
+      `/purchase-import/quotations/${quotationId}/promote-temporary-items`,
+      {
+        method: "POST",
+        body: JSON.stringify({ items }),
+      },
+    );
+  }
+
   async unconfirmPurchaseQuotation(quotationId: string) {
     return this.request(`/purchase-import/quotations/${quotationId}/unconfirm`, {
       method: "POST",
@@ -4330,6 +4358,23 @@ class ApiClient {
     return this.request(`/sales/quotations/${id}/convert-to-invoice`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async promoteSalesQuotationTemporaryItems(
+    id: string,
+    items: Array<{
+      quotationItemId: string;
+      partNo: string;
+      description?: string;
+      brand?: string;
+      masterPartNo?: string;
+      origin?: string;
+    }>,
+  ) {
+    return this.request(`/sales/quotations/${id}/promote-temporary-items`, {
+      method: "POST",
+      body: JSON.stringify({ items }),
     });
   }
 

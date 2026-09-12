@@ -150,6 +150,13 @@ export function canAccessPath(
   permissions: string[] = getStoredPermissions(),
 ): boolean {
   if (permissions.includes("*") || hasPermissionKey(permissions, "*")) return true;
+  // Non-admin users can always open the self-service password page
+  if (
+    pathname === "/settings/password" ||
+    pathname.startsWith("/settings/password/")
+  ) {
+    return true;
+  }
   const mod = findModuleByPath(pathname);
   if (!mod) return true;
   if (!hasPermissionKey(permissions, mod.key)) return false;
@@ -177,6 +184,33 @@ export function getModuleLandingPath(
   permissions: string[] = getStoredPermissions(),
 ): string {
   if (!modulePath) return "/";
+  // Settings entry for non-admins lands on password change
+  if (
+    (modulePath === "/settings" ||
+      modulePath === "/settings/users" ||
+      modulePath.startsWith("/settings/")) &&
+    !permissions.includes("*")
+  ) {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (token) {
+        const parts = token.split(".");
+        if (parts.length >= 2) {
+          const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+          const payload = JSON.parse(atob(padded));
+          const role = String(payload?.role || "")
+            .trim()
+            .toLowerCase();
+          if (role && role !== "admin") {
+            return "/settings/password";
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   const mod = findModuleByPath(modulePath);
   if (!mod) return modulePath;
   const pages = (mod.children || []).filter((c) => c.kind === "page" && c.path);

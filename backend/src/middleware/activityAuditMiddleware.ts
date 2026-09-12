@@ -15,6 +15,7 @@ const SKIP_PATH_FRAGMENTS = [
   "/activity-logs",
   "/auth/login",
   "/auth/forgot-password",
+  "/auth/change-password",
 ];
 
 /**

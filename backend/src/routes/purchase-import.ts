@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "../config/database";
 import { roundPurchasePrice } from "../utils/purchasePriceRound";
 import { roundFc, roundFcTotal } from "../utils/fcRound";
+import { createPartFromTemporaryInput } from "../utils/createPartFromTemporary";
 
 const router = express.Router();
 
@@ -73,8 +74,26 @@ const normalizeItems = (itemsRaw: any) =>
       const fallbackDemand = Number(item?.demandQuantity || 0);
       const demandQuantity = splitQuantity > 0 ? splitQuantity : fallbackDemand;
       const sortOrderRaw = Number(item?.sortOrder);
+      const partId = String(item?.partId || "").trim();
+      const isTemporary =
+        Boolean(item?.isTemporary) ||
+        (!partId &&
+          (Boolean(String(item?.tempPartNo || "").trim()) ||
+            Boolean(String(item?.tempDescription || "").trim()) ||
+            Boolean(String(item?.tempMasterPartNo || "").trim())));
+      const tempPartNo = String(item?.tempPartNo || "").trim() || null;
+      const tempMasterPartNo =
+        String(item?.tempMasterPartNo || "").trim() || null;
+      const tempBrand =
+        String(item?.tempBrand || item?.brand || "").trim() || null;
+      const tempDescription = String(item?.tempDescription || "").trim() || null;
       return {
-        partId: String(item?.partId || "").trim(),
+        partId: isTemporary ? "" : partId,
+        isTemporary,
+        tempPartNo: isTemporary ? tempPartNo : null,
+        tempMasterPartNo: isTemporary ? tempMasterPartNo : null,
+        tempBrand: isTemporary ? tempBrand : null,
+        tempDescription: isTemporary ? tempDescription : null,
         demandQuantity,
         khiQuantity: Number.isFinite(khiQuantity) ? khiQuantity : 0,
         isbQuantity: Number.isFinite(isbQuantity) ? isbQuantity : 0,
@@ -83,17 +102,63 @@ const normalizeItems = (itemsRaw: any) =>
         sortOrder: Number.isFinite(sortOrderRaw) ? sortOrderRaw : index,
       };
     })
-    .filter(
-      (item: any) =>
-        item.partId &&
-        Number.isFinite(item.demandQuantity) &&
-        item.demandQuantity > 0,
-    )
+    .filter((item: any) => {
+      if (!Number.isFinite(item.demandQuantity) || item.demandQuantity <= 0) {
+        return false;
+      }
+      if (item.isTemporary) {
+        return Boolean(
+          item.tempPartNo || item.tempMasterPartNo || item.tempDescription,
+        );
+      }
+      return Boolean(item.partId);
+    })
     .map((item: any, index: number) => ({
       ...item,
       // Re-index after filtering invalid rows so sequence stays contiguous.
       sortOrder: index,
     }));
+
+const resolveTemporaryFlags = (item: any) => {
+  const partId = String(item?.partId || "").trim();
+  const isTemporary =
+    Boolean(item?.isTemporary) ||
+    (!partId &&
+      (Boolean(String(item?.tempPartNo || "").trim()) ||
+        Boolean(String(item?.tempDescription || "").trim()) ||
+        Boolean(String(item?.tempMasterPartNo || "").trim())));
+  return {
+    partId: isTemporary ? null : partId || null,
+    isTemporary,
+    tempPartNo: isTemporary
+      ? String(item?.tempPartNo || "").trim() || null
+      : null,
+    tempMasterPartNo: isTemporary
+      ? String(item?.tempMasterPartNo || "").trim() || null
+      : null,
+    tempBrand: isTemporary
+      ? String(item?.tempBrand || item?.brand || "").trim() || null
+      : null,
+    tempDescription: isTemporary
+      ? String(item?.tempDescription || "").trim() || null
+      : null,
+  };
+};
+
+const isValidQuotationLineIdentity = (item: {
+  partId?: string | null;
+  isTemporary?: boolean;
+  tempPartNo?: string | null;
+  tempMasterPartNo?: string | null;
+  tempDescription?: string | null;
+}) => {
+  if (item.isTemporary) {
+    return Boolean(
+      item.tempPartNo || item.tempMasterPartNo || item.tempDescription,
+    );
+  }
+  return Boolean(item.partId);
+};
 
 const getBaseRequestNo = (requestNo: string | null | undefined) => {
   if (!requestNo) return "";
@@ -636,6 +701,11 @@ async function confirmPurchaseQuotation(
   };
 
   const quotationConfirmUpdates = new Map<string, QuotationConfirmUpdate>();
+  const excludedTemporaryItems: Array<{
+    quotationNo: string;
+    partNo: string;
+    description: string;
+  }> = [];
 
   for (const qid of allQuotationIds) {
     const quotation: any = quotationById.get(qid);
@@ -662,6 +732,25 @@ async function confirmPurchaseQuotation(
 
     for (const item of quotation.PurchaseQuotationItem || []) {
       const partId = String(item.partId || "").trim();
+      const isTemporary = Boolean(item.isTemporary) || !partId;
+      if (isTemporary) {
+        excludedTemporaryItems.push({
+          quotationNo: String(quotation.quotationNo || ""),
+          partNo: String(item.tempPartNo || "").trim() || "(custom)",
+          description: String(item.tempDescription || "").trim() || "",
+        });
+        const quotationItemId = String(item.id || "").trim();
+        if (quotationItemId) {
+          quotationConfirmUpdates.set(quotationItemId, {
+            quotationItemId,
+            confirmQuantity: 0,
+            confirmKhiQuantity: 0,
+            confirmIsbQuantity: 0,
+            confirmOtherQuantity: 0,
+          });
+        }
+        continue;
+      }
       if (!partId) continue;
 
       const quotationQty = Number(item.quotationQuantity || 0);
@@ -832,6 +921,11 @@ async function confirmPurchaseQuotation(
   );
 
   if (lanesWithItems.length === 0) {
+    if (excludedTemporaryItems.length > 0) {
+      throw new Error(
+        "No catalog items with confirm quantity to order. Temporary items were excluded — save them as parts first, or confirm other quoted items.",
+      );
+    }
     throw new Error("No items with confirm quantity to order.");
   }
 
@@ -1058,6 +1152,11 @@ async function confirmPurchaseQuotation(
       };
     }),
     purchaseOrders: createdOrders,
+    excludedTemporaryItems,
+    warning:
+      excludedTemporaryItems.length > 0
+        ? `${excludedTemporaryItems.length} temporary item(s) were not saved as parts and were excluded from the purchase order(s).`
+        : null,
   };
 }
 
@@ -1424,7 +1523,12 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
         createRows.push({
           id: randomUUID(),
           purchaseQuotationId: quotation.id,
-          partId: inq.partId,
+          partId: Boolean(inq.isTemporary) ? null : inq.partId,
+          isTemporary: Boolean(inq.isTemporary) || !inq.partId,
+          tempPartNo: inq.tempPartNo || null,
+          tempMasterPartNo: inq.tempMasterPartNo || null,
+          tempBrand: inq.tempBrand || null,
+          tempDescription: inq.tempDescription || null,
           demandQuantity,
           quotationQuantity: demandQuantity,
           shipDays: "STK",
@@ -1880,17 +1984,25 @@ router.post("/requests", async (req: Request, res: Response) => {
     }
 
     const partIds: string[] = Array.from(
-      new Set(items.map((item: any) => String(item.partId))),
+      new Set(
+        items
+          .map((item: any) => String(item.partId || "").trim())
+          .filter(Boolean),
+      ),
     );
     const [suppliersCount, partsCount, movements] = await Promise.all([
       supplierIds.length > 0
         ? prisma.supplier.count({ where: { id: { in: supplierIds } } })
         : Promise.resolve(0),
-      prisma.part.count({ where: { id: { in: partIds } } }),
-      prisma.stockMovement.findMany({
-        where: { partId: { in: partIds } },
-        select: { partId: true, type: true, quantity: true },
-      }),
+      partIds.length > 0
+        ? prisma.part.count({ where: { id: { in: partIds } } })
+        : Promise.resolve(0),
+      partIds.length > 0
+        ? prisma.stockMovement.findMany({
+            where: { partId: { in: partIds } },
+            select: { partId: true, type: true, quantity: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     if (supplierIds.length > 0 && suppliersCount !== supplierIds.length) {
@@ -1949,11 +2061,18 @@ router.post("/requests", async (req: Request, res: Response) => {
         const itemRecords = items.map((item: any, index: number) => {
           const weight = Number.isFinite(item.weight) ? item.weight : 0;
           const totalWeight = item.demandQuantity * weight;
+          const isTemporary = Boolean(item.isTemporary);
+          const partId = isTemporary ? null : String(item.partId || "").trim() || null;
           return {
             id: randomUUID(),
             purchaseImportRequestId: requestId,
-            partId: item.partId,
-            currentStock: stockByPartId[item.partId] || 0,
+            partId,
+            isTemporary,
+            tempPartNo: isTemporary ? item.tempPartNo || null : null,
+            tempMasterPartNo: isTemporary ? item.tempMasterPartNo || null : null,
+            tempBrand: isTemporary ? item.tempBrand || null : null,
+            tempDescription: isTemporary ? item.tempDescription || null : null,
+            currentStock: partId ? stockByPartId[partId] || 0 : 0,
             demandQuantity: item.demandQuantity,
             khiQuantity: item.khiQuantity,
             isbQuantity: item.isbQuantity,
@@ -2054,6 +2173,11 @@ router.get("/requests/:requestId", async (req: Request, res: Response) => {
       (item: any) => ({
         id: item.id,
         partId: item.partId,
+        isTemporary: Boolean(item.isTemporary),
+        tempPartNo: item.tempPartNo || null,
+        tempMasterPartNo: item.tempMasterPartNo || null,
+        tempBrand: item.tempBrand || null,
+        tempDescription: item.tempDescription || null,
         demandQuantity:
           Number(item.khiQuantity || 0) +
             Number(item.isbQuantity || 0) +
@@ -2199,17 +2323,25 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
     }
 
     const partIds: string[] = Array.from(
-      new Set(items.map((item: any) => String(item.partId))),
+      new Set(
+        items
+          .map((item: any) => String(item.partId || "").trim())
+          .filter(Boolean),
+      ),
     );
     const [suppliersCount, partsCount, movements] = await Promise.all([
       supplierIds.length > 0
         ? prisma.supplier.count({ where: { id: { in: supplierIds } } })
         : Promise.resolve(0),
-      prisma.part.count({ where: { id: { in: partIds } } }),
-      prisma.stockMovement.findMany({
-        where: { partId: { in: partIds } },
-        select: { partId: true, type: true, quantity: true },
-      }),
+      partIds.length > 0
+        ? prisma.part.count({ where: { id: { in: partIds } } })
+        : Promise.resolve(0),
+      partIds.length > 0
+        ? prisma.stockMovement.findMany({
+            where: { partId: { in: partIds } },
+            select: { partId: true, type: true, quantity: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     if (supplierIds.length > 0 && suppliersCount !== supplierIds.length) {
@@ -2338,11 +2470,18 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
         const itemRecords = items.map((item: any, index: number) => {
           const weight = Number.isFinite(item.weight) ? item.weight : 0;
           const totalWeight = item.demandQuantity * weight;
+          const isTemporary = Boolean(item.isTemporary);
+          const partId = isTemporary ? null : String(item.partId || "").trim() || null;
           return {
             id: randomUUID(),
             purchaseImportRequestId: activeRequestId,
-            partId: item.partId,
-            currentStock: stockByPartId[item.partId] || 0,
+            partId,
+            isTemporary,
+            tempPartNo: isTemporary ? item.tempPartNo || null : null,
+            tempMasterPartNo: isTemporary ? item.tempMasterPartNo || null : null,
+            tempBrand: isTemporary ? item.tempBrand || null : null,
+            tempDescription: isTemporary ? item.tempDescription || null : null,
+            currentStock: partId ? stockByPartId[partId] || 0 : 0,
             demandQuantity: item.demandQuantity,
             khiQuantity: item.khiQuantity,
             isbQuantity: item.isbQuantity,
@@ -2664,11 +2803,24 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         inquiryItems: requestRow.PurchaseImportRequestItem || [],
         quotationItems: existingQuotation.PurchaseQuotationItem || [],
         mapInquiryItem: (item: any) => ({
-          partId: item.partId,
-          masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-          partNo: item.Part?.partNo || "",
-          description: item.Part?.description || "",
-          brand: item.Part?.Brand?.name || "",
+          partId: item.partId || "",
+          isTemporary: Boolean(item.isTemporary) || !item.partId,
+          tempPartNo: item.tempPartNo || "",
+          tempMasterPartNo: item.tempMasterPartNo || "",
+          tempBrand: item.tempBrand || "",
+          tempDescription: item.tempDescription || "",
+          masterPartNo: item.isTemporary
+            ? item.tempMasterPartNo || ""
+            : item.Part?.MasterPart?.masterPartNo || "",
+          partNo: item.isTemporary
+            ? item.tempPartNo || ""
+            : item.Part?.partNo || "",
+          description: item.isTemporary
+            ? item.tempDescription || ""
+            : item.Part?.description || "",
+          brand: item.isTemporary
+            ? item.tempBrand || ""
+            : item.Part?.Brand?.name || "",
           origin: item.Part?.origin || "",
           currentStock: Number(item.currentStock || 0),
           demandQuantity: Number(item.demandQuantity || 0),
@@ -2680,14 +2832,31 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
           revisedFcRate: 0,
         }),
         mapQuotationItem: (item: any, inquiryItem?: any) => ({
-          partId: item.partId,
-          masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-          partNo: item.Part?.partNo || "",
-          description: item.Part?.description || "",
-          brand: item.Part?.Brand?.name || "",
+          partId: item.partId || "",
+          isTemporary: Boolean(item.isTemporary) || !item.partId,
+          tempPartNo: item.tempPartNo || inquiryItem?.tempPartNo || "",
+          tempMasterPartNo:
+            item.tempMasterPartNo || inquiryItem?.tempMasterPartNo || "",
+          tempBrand: item.tempBrand || inquiryItem?.tempBrand || "",
+          tempDescription:
+            item.tempDescription || inquiryItem?.tempDescription || "",
+          masterPartNo: item.isTemporary || !item.partId
+            ? item.tempMasterPartNo || inquiryItem?.tempMasterPartNo || ""
+            : item.Part?.MasterPart?.masterPartNo || "",
+          partNo: item.isTemporary || !item.partId
+            ? item.tempPartNo || inquiryItem?.tempPartNo || ""
+            : item.Part?.partNo || "",
+          description: item.isTemporary || !item.partId
+            ? item.tempDescription || inquiryItem?.tempDescription || ""
+            : item.Part?.description || "",
+          brand: item.isTemporary || !item.partId
+            ? item.tempBrand || inquiryItem?.tempBrand || ""
+            : item.Part?.Brand?.name || "",
           origin: item.Part?.origin || "",
           currentStock:
-            stockByPartId.get(String(item.partId)) ??
+            (item.partId
+              ? stockByPartId.get(String(item.partId))
+              : undefined) ??
             Number(inquiryItem?.currentStock || 0),
           demandQuantity: Number(
             inquiryItem?.demandQuantity ?? item.demandQuantity ?? 0,
@@ -2712,11 +2881,24 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       quotationNo = "";
       quotationDate = new Date();
       items = requestRow.PurchaseImportRequestItem.map((item: any) => ({
-        partId: item.partId,
-        masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-        partNo: item.Part?.partNo || "",
-        description: item.Part?.description || "",
-        brand: item.Part?.Brand?.name || "",
+        partId: item.partId || "",
+        isTemporary: Boolean(item.isTemporary) || !item.partId,
+        tempPartNo: item.tempPartNo || "",
+        tempMasterPartNo: item.tempMasterPartNo || "",
+        tempBrand: item.tempBrand || "",
+        tempDescription: item.tempDescription || "",
+        masterPartNo: item.isTemporary
+          ? item.tempMasterPartNo || ""
+          : item.Part?.MasterPart?.masterPartNo || "",
+        partNo: item.isTemporary
+          ? item.tempPartNo || ""
+          : item.Part?.partNo || "",
+        description: item.isTemporary
+          ? item.tempDescription || ""
+          : item.Part?.description || "",
+        brand: item.isTemporary
+          ? item.tempBrand || ""
+          : item.Part?.Brand?.name || "",
         origin: item.Part?.origin || "",
         currentStock: Number(item.currentStock || 0),
         demandQuantity: Number(item.demandQuantity || 0),
@@ -3090,8 +3272,20 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = String(item?.shipDays ?? "").trim();
         const weight = Number(item?.weight || 0);
+        const partId = String(item?.partId || "").trim();
+        const isTemporary =
+          Boolean(item?.isTemporary) ||
+          (!partId &&
+            (Boolean(String(item?.tempPartNo || "").trim()) ||
+              Boolean(String(item?.tempDescription || "").trim())));
+        const tempPartNo = String(item?.tempPartNo || "").trim() || null;
+        const tempDescription =
+          String(item?.tempDescription || "").trim() || null;
         return {
-          partId: String(item?.partId || "").trim(),
+          partId: isTemporary ? null : partId,
+          isTemporary,
+          tempPartNo: isTemporary ? tempPartNo : null,
+          tempDescription: isTemporary ? tempDescription : null,
           demandQuantity,
           quotationQuantity,
           shipDays,
@@ -3107,16 +3301,28 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
           totalWeight: weight * quotationQuantity,
         };
       })
-      .filter((item: any) => item.partId);
+      .filter((item: any) => {
+        if (item.isTemporary) {
+          return Boolean(item.tempPartNo || item.tempDescription);
+        }
+        return Boolean(item.partId);
+      });
 
     if (items.length === 0) {
       return res.status(400).json({ error: "Please add at least one quotation item." });
     }
 
     const partIds: string[] = Array.from(
-      new Set(items.map((item: any) => String(item.partId))),
+      new Set(
+        items
+          .map((item: any) => String(item.partId || "").trim())
+          .filter(Boolean),
+      ),
     );
-    const validPartsCount = await prisma.part.count({ where: { id: { in: partIds } } });
+    const validPartsCount =
+      partIds.length > 0
+        ? await prisma.part.count({ where: { id: { in: partIds } } })
+        : 0;
     if (validPartsCount !== partIds.length) {
       return res.status(400).json({ error: "One or more items are invalid." });
     }
@@ -3165,6 +3371,11 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
           id: randomUUID(),
           purchaseQuotationId: quotationId,
           partId: item.partId,
+          isTemporary: Boolean(item.isTemporary),
+          tempPartNo: item.tempPartNo || null,
+          tempMasterPartNo: item.tempMasterPartNo || null,
+          tempBrand: item.tempBrand || null,
+          tempDescription: item.tempDescription || null,
           demandQuantity: item.demandQuantity,
           quotationQuantity: item.quotationQuantity,
           shipDays: item.shipDays,
@@ -3506,11 +3717,24 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
               quotationItems: row.PurchaseQuotationItem || [],
               mapInquiryItem: (item: any) => ({
                 id: item.id || null,
-                partId: item.partId,
-                masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-                partNo: item.Part?.partNo || "",
-                description: item.Part?.description || "",
-                brand: item.Part?.Brand?.name || "",
+                partId: item.partId || "",
+                isTemporary: Boolean(item.isTemporary) || !item.partId,
+                tempPartNo: item.tempPartNo || "",
+                tempMasterPartNo: item.tempMasterPartNo || "",
+                tempBrand: item.tempBrand || "",
+                tempDescription: item.tempDescription || "",
+                masterPartNo: item.isTemporary || !item.partId
+                  ? item.tempMasterPartNo || ""
+                  : item.Part?.MasterPart?.masterPartNo || "",
+                partNo: item.isTemporary || !item.partId
+                  ? item.tempPartNo || ""
+                  : item.Part?.partNo || "",
+                description: item.isTemporary || !item.partId
+                  ? item.tempDescription || ""
+                  : item.Part?.description || "",
+                brand: item.isTemporary || !item.partId
+                  ? item.tempBrand || ""
+                  : item.Part?.Brand?.name || "",
                 origin: item.Part?.origin || "",
                 currentStock: Number(item.currentStock || 0),
                 demandQuantity: Number(item.demandQuantity || 0),
@@ -3532,10 +3756,23 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
               }),
               mapQuotationItem: (item: any, inquiryItem?: any) => ({
                 id: item.id || null,
-                partId: item.partId,
+                partId: item.partId || "",
+                isTemporary: Boolean(item.isTemporary) || !item.partId,
+                tempPartNo:
+                  item.tempPartNo || inquiryItem?.tempPartNo || "",
+                tempDescription:
+                  item.tempDescription ||
+                  inquiryItem?.tempDescription ||
+                  "",
                 masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
-                partNo: item.Part?.partNo || "",
-                description: item.Part?.description || "",
+                partNo: item.isTemporary || !item.partId
+                  ? item.tempPartNo || inquiryItem?.tempPartNo || ""
+                  : item.Part?.partNo || "",
+                description: item.isTemporary || !item.partId
+                  ? item.tempDescription ||
+                    inquiryItem?.tempDescription ||
+                    ""
+                  : item.Part?.description || "",
                 brand: item.Part?.Brand?.name || "",
                 origin: item.Part?.origin || "",
                 currentStock: Number(inquiryItem?.currentStock || 0),
@@ -3671,8 +3908,9 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = String(item?.shipDays ?? "").trim();
         const weight = Number(item?.weight || 0);
+        const identity = resolveTemporaryFlags(item);
         return {
-          partId: String(item?.partId || "").trim(),
+          ...identity,
           demandQuantity,
           quotationQuantity,
           shipDays,
@@ -3696,16 +3934,23 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
           totalWeight: weight * quotationQuantity,
         };
       })
-      .filter((item: any) => item.partId);
+      .filter((item: any) => isValidQuotationLineIdentity(item));
 
     if (items.length === 0) {
       return res.status(400).json({ error: "Please add at least one quotation item." });
     }
 
     const partIds: string[] = Array.from(
-      new Set(items.map((item: any) => String(item.partId))),
+      new Set(
+        items
+          .map((item: any) => String(item.partId || "").trim())
+          .filter(Boolean),
+      ),
     );
-    const validPartsCount = await prisma.part.count({ where: { id: { in: partIds } } });
+    const validPartsCount =
+      partIds.length > 0
+        ? await prisma.part.count({ where: { id: { in: partIds } } })
+        : 0;
     if (validPartsCount !== partIds.length) {
       return res.status(400).json({ error: "One or more items are invalid." });
     }
@@ -3751,6 +3996,11 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
           id: randomUUID(),
           purchaseQuotationId: quotationId,
           partId: item.partId,
+          isTemporary: Boolean(item.isTemporary),
+          tempPartNo: item.tempPartNo || null,
+          tempMasterPartNo: item.tempMasterPartNo || null,
+          tempBrand: item.tempBrand || null,
+          tempDescription: item.tempDescription || null,
           demandQuantity: item.demandQuantity,
           quotationQuantity: item.quotationQuantity,
           shipDays: item.shipDays,
@@ -3837,9 +4087,10 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
         const revisedLcRate = roundPurchasePrice(
           revisedFcRate * normalizedConversionRate,
         );
+        const identity = resolveTemporaryFlags(item);
 
         return {
-          partId: String(item?.partId || "").trim(),
+          ...identity,
           demandQuantity,
           quotationQuantity,
           shipDays,
@@ -3855,16 +4106,23 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
           totalWeight: weight * quotationQuantity,
         };
       })
-      .filter((item: any) => item.partId);
+      .filter((item: any) => isValidQuotationLineIdentity(item));
 
     if (items.length === 0) {
       return res.status(400).json({ error: "Please add at least one quotation item." });
     }
 
     const partIds: string[] = Array.from(
-      new Set(items.map((item: any) => String(item.partId))),
+      new Set(
+        items
+          .map((item: any) => String(item.partId || "").trim())
+          .filter(Boolean),
+      ),
     );
-    const validPartsCount = await prisma.part.count({ where: { id: { in: partIds } } });
+    const validPartsCount =
+      partIds.length > 0
+        ? await prisma.part.count({ where: { id: { in: partIds } } })
+        : 0;
     if (validPartsCount !== partIds.length) {
       return res.status(400).json({ error: "One or more items are invalid." });
     }
@@ -3912,6 +4170,11 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
           id: randomUUID(),
           purchaseQuotationId: quotationId,
           partId: item.partId,
+          isTemporary: Boolean(item.isTemporary),
+          tempPartNo: item.tempPartNo || null,
+          tempMasterPartNo: item.tempMasterPartNo || null,
+          tempBrand: item.tempBrand || null,
+          tempDescription: item.tempDescription || null,
           demandQuantity: item.demandQuantity,
           quotationQuantity: item.quotationQuantity,
           shipDays: item.shipDays,
@@ -4093,6 +4356,148 @@ router.delete("/quotations/:quotationId", async (req: Request, res: Response) =>
     res.json({
       success: true,
       message: `Quotation ${existing.quotationNo || ""} deleted successfully.`,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/quotations/:quotationId/promote-temporary-items", async (req: Request, res: Response) => {
+  try {
+    const purchaseQuotationModel = (prisma as any).purchaseQuotation;
+    const purchaseQuotationItemModel = (prisma as any).purchaseQuotationItem;
+    const purchaseImportRequestItemModel = (prisma as any).purchaseImportRequestItem;
+    if (!purchaseQuotationModel || !purchaseQuotationItemModel) {
+      return res.status(500).json({
+        error:
+          "Purchase quotation models are unavailable in Prisma client. Restart backend and regenerate Prisma client.",
+      });
+    }
+
+    const quotationId = String(req.params.quotationId || "").trim();
+    if (!quotationId) {
+      return res.status(400).json({ error: "Quotation id is required." });
+    }
+
+    const quotation = await purchaseQuotationModel.findUnique({
+      where: { id: quotationId },
+      include: {
+        PurchaseQuotationItem: { orderBy: { sortOrder: "asc" } },
+        PurchaseImportRequest: {
+          include: {
+            PurchaseImportRequestItem: { orderBy: { sortOrder: "asc" } },
+          },
+        },
+      },
+    });
+    if (!quotation) {
+      return res.status(404).json({ error: "Purchase quotation not found." });
+    }
+
+    const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (itemsRaw.length === 0) {
+      return res.status(400).json({ error: "No temporary items to save." });
+    }
+
+    const quotationItems: any[] = quotation.PurchaseQuotationItem || [];
+    const inquiryItems: any[] =
+      quotation.PurchaseImportRequest?.PurchaseImportRequestItem || [];
+    const promoted: Array<{
+      quotationItemId: string;
+      partId: string;
+      partNo: string;
+      description: string | null;
+      brand: string | null;
+    }> = [];
+
+    for (const raw of itemsRaw) {
+      const quotationItemId = String(raw?.quotationItemId || "").trim();
+      if (!quotationItemId) continue;
+      const qi = quotationItems.find((row: any) => String(row.id) === quotationItemId);
+      if (!qi) {
+        return res.status(400).json({
+          error: `Quotation item ${quotationItemId} was not found on this quotation.`,
+        });
+      }
+      if (!Boolean(qi.isTemporary) && qi.partId) {
+        continue;
+      }
+
+      const partNo =
+        String(raw?.partNo || qi.tempPartNo || "").trim() ||
+        String(qi.tempDescription || "").trim().slice(0, 40);
+      if (!partNo) {
+        return res.status(400).json({
+          error: "Each item to save needs a part number.",
+        });
+      }
+
+      const part = await createPartFromTemporaryInput({
+        partNo,
+        description:
+          String(raw?.description || qi.tempDescription || "").trim() || null,
+        brand:
+          String(raw?.brand || qi.tempBrand || "").trim() || null,
+        masterPartNo:
+          String(raw?.masterPartNo || qi.tempMasterPartNo || "").trim() || null,
+        weight:
+          raw?.weight !== undefined
+            ? Number(raw.weight)
+            : Number(qi.weight || 0),
+        origin: String(raw?.origin || "").trim() || null,
+      });
+
+      await purchaseQuotationItemModel.update({
+        where: { id: quotationItemId },
+        data: {
+          partId: part.id,
+          isTemporary: false,
+          tempPartNo: null,
+          tempMasterPartNo: null,
+          tempBrand: null,
+          tempDescription: null,
+          updatedAt: new Date(),
+        },
+      });
+
+      const itemIndex = quotationItems.findIndex(
+        (row: any) => String(row.id) === quotationItemId,
+      );
+      const inquiryItem =
+        itemIndex >= 0 && inquiryItems[itemIndex] ? inquiryItems[itemIndex] : null;
+      if (
+        purchaseImportRequestItemModel &&
+        inquiryItem &&
+        (Boolean(inquiryItem.isTemporary) || !inquiryItem.partId)
+      ) {
+        await purchaseImportRequestItemModel.update({
+          where: { id: inquiryItem.id },
+          data: {
+            partId: part.id,
+            isTemporary: false,
+            tempPartNo: null,
+            tempMasterPartNo: null,
+            tempBrand: null,
+            tempDescription: null,
+            updatedAt: new Date(),
+          },
+        });
+      }
+
+      promoted.push({
+        quotationItemId,
+        partId: part.id,
+        partNo: part.partNo,
+        description: part.description,
+        brand: part.brand,
+      });
+    }
+
+    res.json({
+      data: {
+        promoted,
+        promotedCount: promoted.length,
+      },
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

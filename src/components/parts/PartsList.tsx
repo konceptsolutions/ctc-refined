@@ -142,6 +142,9 @@ export const PartsList = ({
                   Part No
                 </TableHead>
                 <TableHead className="font-bold text-foreground text-xs py-2">
+                  Master Part
+                </TableHead>
+                <TableHead className="font-bold text-foreground text-xs py-2">
                   Brand
                 </TableHead>
                 <TableHead className="font-bold text-foreground text-xs py-2">
@@ -192,6 +195,9 @@ export const PartsList = ({
                     >
                       {part.partNo}
                     </TableCell>
+                    <TableCell className="text-muted-foreground text-xs py-1.5 part-code-font font-mono">
+                      {part.masterPartNo || "-"}
+                    </TableCell>
                     <TableCell className="text-muted-foreground text-xs py-1.5">
                       <BrandOriginCell brand={part.brand} origin={part.origin} />
                     </TableCell>
@@ -219,7 +225,7 @@ export const PartsList = ({
               {!loading && paginatedParts.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={9}
+                    colSpan={10}
                     className="text-center text-xs text-muted-foreground py-8"
                   >
                     No parts found

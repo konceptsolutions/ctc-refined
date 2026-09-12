@@ -112,6 +112,9 @@ export interface StockLocation {
 export interface InvoiceItem {
   id: string;
   partId: string;
+  isTemporary?: boolean;
+  tempMasterPartNo?: string;
+  tempBrand?: string;
   partNo: string;
   description: string;
   orderedQty: number;

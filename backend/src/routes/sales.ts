@@ -12,6 +12,7 @@ import {
   resolveInvoiceItemPartFields,
 } from "../utils/salesInvoiceItemPart";
 import { getPartFamilyIds } from "../utils/partFamilySearch";
+import { createPartFromTemporaryInput } from "../utils/createPartFromTemporary";
 
 const router = express.Router();
 
@@ -1213,21 +1214,34 @@ router.post("/quotations", async (req: Request, res: Response) => {
         status: status || "pending",
         notes,
         updatedAt: new Date(),
-        SalesQuotationItem: {
-          create: items.map((item: any) => ({
-            id: crypto.randomUUID(),
-            partId: item.partId,
-            partNo: item.partNo,
-            description: item.description || "",
-            divOn: String(item.divOn ?? "").trim() || null,
-            qtyDiv: Math.max(
-              0,
-              Math.floor(Number(item.qtyDiv ?? 0) || 0),
-            ),
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            total: quotationItemLineTotal(item),
-          })),
+          SalesQuotationItem: {
+            create: items.map((item: any) => {
+            const isTemporary =
+              Boolean(item?.isTemporary) ||
+              !String(item?.partId || "").trim();
+            return {
+              id: crypto.randomUUID(),
+              partId: isTemporary ? null : item.partId,
+              isTemporary,
+              partNo: item.partNo,
+              description: item.description || "",
+              tempMasterPartNo: isTemporary
+                ? String(item.tempMasterPartNo || item.masterPartNo || "").trim() ||
+                  null
+                : null,
+              tempBrand: isTemporary
+                ? String(item.tempBrand || item.brand || "").trim() || null
+                : null,
+              divOn: String(item.divOn ?? "").trim() || null,
+              qtyDiv: Math.max(
+                0,
+                Math.floor(Number(item.qtyDiv ?? 0) || 0),
+              ),
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              total: quotationItemLineTotal(item),
+            };
+          }),
         },
       },
       include: {
@@ -1345,20 +1359,33 @@ router.put("/quotations/:id", async (req: Request, res: Response) => {
 
       // Create new items
       await prisma.salesQuotationItem.createMany({
-        data: items.map((item: any) => ({
-          quotationId: id,
-          partId: item.partId,
-          partNo: item.partNo,
-          description: item.description || "",
-          divOn: String(item.divOn ?? "").trim() || null,
-          qtyDiv: Math.max(
-            0,
-            Math.floor(Number(item.qtyDiv ?? 0) || 0),
-          ),
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          total: quotationItemLineTotal(item),
-        })),
+        data: items.map((item: any) => {
+          const isTemporary =
+            Boolean(item?.isTemporary) ||
+            !String(item?.partId || "").trim();
+          return {
+            quotationId: id,
+            partId: isTemporary ? null : item.partId,
+            isTemporary,
+            partNo: item.partNo,
+            description: item.description || "",
+            tempMasterPartNo: isTemporary
+              ? String(item.tempMasterPartNo || item.masterPartNo || "").trim() ||
+                null
+              : null,
+            tempBrand: isTemporary
+              ? String(item.tempBrand || item.brand || "").trim() || null
+              : null,
+            divOn: String(item.divOn ?? "").trim() || null,
+            qtyDiv: Math.max(
+              0,
+              Math.floor(Number(item.qtyDiv ?? 0) || 0),
+            ),
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            total: quotationItemLineTotal(item),
+          };
+        }),
       });
     }
 
@@ -1456,6 +1483,103 @@ router.delete("/quotations/:id", async (req: Request, res: Response) => {
   }
 });
 
+// Promote temporary quotation lines into Part master before initiate
+router.post(
+  "/quotations/:id/promote-temporary-items",
+  async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const quotation = await prisma.salesQuotation.findUnique({
+        where: { id },
+        include: { SalesQuotationItem: true },
+      });
+      if (!quotation) {
+        return res.status(404).json({ error: "Quotation not found" });
+      }
+
+      const itemsRaw = Array.isArray(req.body?.items) ? req.body.items : [];
+      if (itemsRaw.length === 0) {
+        return res.status(400).json({ error: "No temporary items to save." });
+      }
+
+      const quotationItems = quotation.SalesQuotationItem || [];
+      const promoted: Array<{
+        quotationItemId: string;
+        partId: string;
+        partNo: string;
+        description: string | null;
+        brand: string | null;
+      }> = [];
+
+      for (const raw of itemsRaw) {
+        const quotationItemId = String(raw?.quotationItemId || "").trim();
+        if (!quotationItemId) continue;
+        const qi: any = quotationItems.find(
+          (row: any) => String(row.id) === quotationItemId,
+        );
+        if (!qi) {
+          return res.status(400).json({
+            error: `Quotation item ${quotationItemId} was not found on this quotation.`,
+          });
+        }
+        if (!Boolean(qi.isTemporary) && qi.partId) {
+          continue;
+        }
+
+        const partNo =
+          String(raw?.partNo || qi.partNo || "").trim() ||
+          String(qi.description || "").trim().slice(0, 40);
+        if (!partNo) {
+          return res.status(400).json({
+            error: "Each item to save needs a part number.",
+          });
+        }
+
+        const part = await createPartFromTemporaryInput({
+          partNo,
+          description:
+            String(raw?.description || qi.description || "").trim() || null,
+          brand:
+            String(raw?.brand || qi.tempBrand || "").trim() || null,
+          masterPartNo:
+            String(raw?.masterPartNo || qi.tempMasterPartNo || "").trim() ||
+            null,
+          origin: String(raw?.origin || "").trim() || null,
+        });
+
+        await prisma.salesQuotationItem.update({
+          where: { id: quotationItemId },
+          data: {
+            partId: part.id,
+            isTemporary: false,
+            partNo: part.partNo,
+            description: part.description || qi.description || "",
+            tempMasterPartNo: null,
+            tempBrand: null,
+          } as any,
+        });
+
+        promoted.push({
+          quotationItemId,
+          partId: part.id,
+          partNo: part.partNo,
+          description: part.description,
+          brand: part.brand,
+        });
+      }
+
+      res.json({
+        data: {
+          promoted,
+          promotedCount: promoted.length,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
 // Convert quotation to invoice
 router.post(
   "/quotations/:id/convert-to-invoice",
@@ -1495,18 +1619,35 @@ router.post(
         return res.status(404).json({ error: "Quotation not found" });
       }
 
+      const temporaryExcluded = quotation.SalesQuotationItem.filter(
+        (item: any) =>
+          (Boolean(item.isTemporary) || !item.partId) &&
+          Math.max(0, Math.floor(Number(item.qtyDiv ?? 0) || 0)) > 0,
+      );
+
       const itemsForInvoice = quotation.SalesQuotationItem.map((item: any) => {
         const initiateQty = Math.max(
           0,
           Math.floor(Number(item.qtyDiv ?? 0) || 0),
         );
         return { item, initiateQty };
-      }).filter(({ initiateQty }) => initiateQty > 0);
+      }).filter(
+        ({ item, initiateQty }) =>
+          initiateQty > 0 &&
+          item.partId &&
+          !Boolean(item.isTemporary),
+      );
 
       if (itemsForInvoice.length === 0) {
         return res.status(400).json({
           error:
-            "No quotation items with Delivery Qty greater than zero to initiate into a sales invoice.",
+            temporaryExcluded.length > 0
+              ? "Only temporary (unsaved) items have Delivery Qty. Save them as parts before initiating, or set Delivery Qty on catalog items."
+              : "No quotation items with Delivery Qty greater than zero to initiate into a sales invoice.",
+          excludedTemporaryItems: temporaryExcluded.map((item: any) => ({
+            partNo: item.partNo,
+            description: item.description || "",
+          })),
         });
       }
 
@@ -1723,7 +1864,17 @@ router.post(
         },
       });
 
-      res.json(updatedInvoice);
+      res.json({
+        ...updatedInvoice,
+        excludedTemporaryItems: temporaryExcluded.map((item: any) => ({
+          partNo: item.partNo,
+          description: item.description || "",
+        })),
+        warning:
+          temporaryExcluded.length > 0
+            ? `${temporaryExcluded.length} temporary item(s) were not saved as parts and were excluded from the sales invoice.`
+            : null,
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

@@ -58,6 +58,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { TemporaryItemsSaveDialog } from "@/components/shared/TemporaryItemsSaveDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -251,9 +252,13 @@ function mapApiSalesQuotationItemsToInvoiceItems(
     const qtyReq = Number(item.quantity || 0);
     const unitPrice = Number(item.unitPrice || 0);
     const qtyDiv = Math.max(0, Number(item.qtyDiv ?? 0) || 0);
+    const isTemporary = Boolean(item.isTemporary) || !item.partId;
     return {
       id: item.id,
-      partId: item.partId,
+      partId: item.partId || "",
+      isTemporary,
+      tempMasterPartNo: item.tempMasterPartNo || "",
+      tempBrand: item.tempBrand || item.Part?.Brand?.name || "",
       partNo: item.partNo || item.Part?.partNo || "",
       description: item.description || item.Part?.description || "",
       orderedQty: qtyReq,
@@ -267,7 +272,7 @@ function mapApiSalesQuotationItemsToInvoiceItems(
       discountType: "percent" as const,
       lineTotal: Number(item.total ?? qtyDiv * unitPrice),
       grade: (item.Part?.grade || "A") as ItemGrade,
-      brand: item.Part?.Brand?.name || "",
+      brand: item.tempBrand || item.Part?.Brand?.name || "",
     };
   });
 }
@@ -508,6 +513,7 @@ interface LinePartAssociationState {
 interface InlineItemRow {
   id: string;
   selectedPartId: string;
+  isTemporary?: boolean;
   divOn?: string;
   qtyDiv?: number;
   qty: number;
@@ -523,6 +529,8 @@ interface InlineItemRow {
   selectedLocationIds?: string[]; // Multiple PartRackShelf IDs
   useUnlocatedStock?: boolean;
   partNoFallback?: string;
+  masterPartNoFallback?: string;
+  brandFallback?: string;
   descriptionFallback?: string;
 }
 
@@ -1061,6 +1069,9 @@ export const SalesInvoice = ({
     useState<Invoice | null>(null);
   const [showQuotationInitiateConfirm, setShowQuotationInitiateConfirm] =
     useState(false);
+  const [showQuotationTempSaveDialog, setShowQuotationTempSaveDialog] =
+    useState(false);
+  const [promotingQuotationTemps, setPromotingQuotationTemps] = useState(false);
   const [quotationToInitiate, setQuotationToInitiate] = useState<Invoice | null>(
     null,
   );
@@ -1603,6 +1614,7 @@ export const SalesInvoice = ({
     const newItem: InlineItemRow = {
       id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       selectedPartId: "",
+      isTemporary: false,
       divOn: DEFAULT_QUOTATION_DELIVERY,
       qtyDiv: 0,
       qty: 0,
@@ -1622,6 +1634,24 @@ export const SalesInvoice = ({
       }, 50);
     }
   }, [inlineItems]);
+
+  const handleAddCustomItem = useCallback(() => {
+    if (!isQuotation) return;
+    const newItem: InlineItemRow = {
+      id: `row-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      selectedPartId: "",
+      isTemporary: true,
+      divOn: DEFAULT_QUOTATION_DELIVERY,
+      qtyDiv: 0,
+      qty: 1,
+      unitPrice: 0,
+      partNoFallback: "",
+      masterPartNoFallback: "",
+      brandFallback: "",
+      descriptionFallback: "",
+    };
+    setInlineItems([newItem, ...inlineItems]);
+  }, [inlineItems, isQuotation]);
 
   useEffect(() => {
     const focusAndOpenAccountSelect = (
@@ -3210,7 +3240,10 @@ export const SalesInvoice = ({
     items:
       q.SalesQuotationItem?.map((item: any) => ({
         id: item.id,
-        partId: item.partId,
+        partId: item.partId || "",
+        isTemporary: Boolean(item.isTemporary) || !item.partId,
+        tempMasterPartNo: item.tempMasterPartNo || "",
+        tempBrand: item.tempBrand || item.Part?.Brand?.name || "",
         partNo: item.partNo,
         description: item.description || "",
         orderedQty: item.quantity,
@@ -3222,7 +3255,7 @@ export const SalesInvoice = ({
         discountType: "percent" as const,
         lineTotal: item.total,
         grade: "A" as ItemGrade,
-        brand: item.Part?.Brand?.name || "",
+        brand: item.tempBrand || item.Part?.Brand?.name || "",
         divOn: normalizeQuotationDelivery(item.divOn),
         qtyDiv: Math.max(0, Number(item.qtyDiv ?? 0) || 0),
       })) || [],
@@ -4021,12 +4054,22 @@ export const SalesInvoice = ({
     // Convert inline items to invoice items
     const invoiceItems = inlineItems
       .filter((i) => {
+        if (isQuotation && i.isTemporary) {
+          return (
+            Boolean(
+              String(i.partNoFallback || "").trim() ||
+                String(i.descriptionFallback || "").trim(),
+            ) && Number(i.qty || 0) >= 0
+          );
+        }
         if (!i.selectedPartId) return false;
         if (isQuotation) return Number(i.qty || 0) >= 0;
         return i.qty > 0;
       })
       .map((item) => {
-        const part = getPartForItem(item.selectedPartId);
+        const part = item.isTemporary
+          ? null
+          : getPartForItem(item.selectedPartId);
         // Prefer explicit unitPrice (custom or A/B/M), otherwise derive from price type
         const unitPrice =
           item.unitPrice != null
@@ -4034,9 +4077,22 @@ export const SalesInvoice = ({
             : getDerivedUnitPrice(item, part);
 
         return {
-          partId: item.selectedPartId,
+          partId: item.isTemporary ? null : item.selectedPartId,
+          isTemporary: Boolean(item.isTemporary),
           partNo: part?.partNo || item.partNoFallback || "",
           description: part?.description || item.descriptionFallback || "",
+          tempMasterPartNo: item.isTemporary
+            ? String(item.masterPartNoFallback || "").trim() || null
+            : null,
+          tempBrand: item.isTemporary
+            ? String(item.brandFallback || "").trim() || null
+            : null,
+          brand: item.isTemporary
+            ? item.brandFallback || ""
+            : part?.brands[0]?.name || "",
+          masterPartNo: item.isTemporary
+            ? item.masterPartNoFallback || ""
+            : part?.masterPartNo || "",
           orderedQty: item.qty,
           divOn: isQuotation
             ? normalizeQuotationDelivery(item.divOn)
@@ -4048,7 +4104,6 @@ export const SalesInvoice = ({
           discount: 0,
           lineTotal: calculateLineTotal(item),
           grade: part?.grade || "A",
-          brand: part?.brands[0]?.name || "",
           origin: part?.origin || "",
           useUnlocatedStock: false,
         };
@@ -4571,7 +4626,8 @@ export const SalesInvoice = ({
 
           return {
             id: item.id,
-            selectedPartId: item.partId,
+            selectedPartId: item.partId || "",
+            isTemporary: Boolean(item.isTemporary) || !item.partId,
             qty: isQuotation ? item.quantity : item.orderedQty,
             divOn: isQuotation
               ? normalizeQuotationDelivery(item.divOn)
@@ -4598,6 +4654,11 @@ export const SalesInvoice = ({
             selectedLocationIds: [],
             selectedRackId: "",
             partNoFallback: item.Part?.partNo || item.partNo || "",
+            masterPartNoFallback:
+              item.tempMasterPartNo ||
+              item.Part?.MasterPart?.masterPartNo ||
+              "",
+            brandFallback: item.tempBrand || item.Part?.Brand?.name || "",
             descriptionFallback:
               item.Part?.description || item.description || "",
           };
@@ -6128,12 +6189,18 @@ export const SalesInvoice = ({
     }
   };
 
-  const handleConfirmQuotationInitiate = async () => {
-    if (!quotationToInitiate) return;
+  const getQuotationTemporaryItems = (quotation: Invoice | null) =>
+    (quotation?.items || []).filter(
+      (item) =>
+        Boolean(item.isTemporary || !item.partId) &&
+        Math.max(0, Number(item.qtyDiv ?? 0) || 0) > 0,
+    );
+
+  const executeQuotationInitiate = async (quotation: Invoice) => {
     try {
-      setConvertingQuotationId(quotationToInitiate.id);
+      setConvertingQuotationId(quotation.id);
       const conversionResponse = await apiClient.convertQuotationToInvoice(
-        quotationToInitiate.id,
+        quotation.id,
         {
           invoiceDate: new Date().toISOString().split("T")[0],
         },
@@ -6151,6 +6218,7 @@ export const SalesInvoice = ({
 
       const convertedInvoice: any =
         (conversionResponse as any)?.data || conversionResponse;
+      const warning = (conversionResponse as any)?.warning;
       if (convertedInvoice?.id) {
         const approveResponse = await apiClient.updateInvoiceStatus(
           convertedInvoice.id,
@@ -6167,13 +6235,15 @@ export const SalesInvoice = ({
         } else {
           toast({
             title: "Quotation Initiated",
-            description:
-              "Quotation converted to sales invoice and approved successfully.",
+            description: warning
+              ? `Quotation converted and approved. ${warning}`
+              : "Quotation converted to sales invoice and approved successfully.",
           });
         }
       }
 
       setShowQuotationInitiateConfirm(false);
+      setShowQuotationTempSaveDialog(false);
       setQuotationToInitiate(null);
       setInvoiceListRefreshTick((t) => t + 1);
     } catch (error: any) {
@@ -6185,6 +6255,20 @@ export const SalesInvoice = ({
     } finally {
       setConvertingQuotationId(null);
     }
+  };
+
+  const handleConfirmQuotationInitiate = async () => {
+    if (!quotationToInitiate) return;
+    await executeQuotationInitiate(quotationToInitiate);
+  };
+
+  const openQuotationInitiate = (inv: Invoice) => {
+    setQuotationToInitiate(inv);
+    if (getQuotationTemporaryItems(inv).length > 0) {
+      setShowQuotationTempSaveDialog(true);
+      return;
+    }
+    setShowQuotationInitiateConfirm(true);
   };
 
   // Update invoice status
@@ -7402,6 +7486,17 @@ export const SalesInvoice = ({
                   <Plus className="w-4 h-4" />
                   Add New Item
                 </Button>
+                {isQuotation ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddCustomItem}
+                    className="gap-2 h-8 shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Custom Item
+                  </Button>
+                ) : null}
                 <span className="text-xs text-muted-foreground shrink-0">
                   Shortcut: <span className="font-semibold">Alt + Z</span>
                 </span>
@@ -7595,6 +7690,89 @@ export const SalesInvoice = ({
                                 </span>
                               </span>
                               <div className="space-y-2">
+                                {item.isTemporary ? (
+                                  <div className="space-y-1.5">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                      <Input
+                                        placeholder="Part No"
+                                        value={item.partNoFallback || ""}
+                                        onChange={(e) =>
+                                          setInlineItems((prev) =>
+                                            prev.map((row) =>
+                                              row.id === item.id
+                                                ? {
+                                                    ...row,
+                                                    partNoFallback:
+                                                      e.target.value,
+                                                  }
+                                                : row,
+                                            ),
+                                          )
+                                        }
+                                        className="h-9"
+                                      />
+                                      <Input
+                                        placeholder="Master Part"
+                                        value={item.masterPartNoFallback || ""}
+                                        onChange={(e) =>
+                                          setInlineItems((prev) =>
+                                            prev.map((row) =>
+                                              row.id === item.id
+                                                ? {
+                                                    ...row,
+                                                    masterPartNoFallback:
+                                                      e.target.value,
+                                                  }
+                                                : row,
+                                            ),
+                                          )
+                                        }
+                                        className="h-9"
+                                      />
+                                      <Input
+                                        placeholder="Brand"
+                                        value={item.brandFallback || ""}
+                                        onChange={(e) =>
+                                          setInlineItems((prev) =>
+                                            prev.map((row) =>
+                                              row.id === item.id
+                                                ? {
+                                                    ...row,
+                                                    brandFallback:
+                                                      e.target.value,
+                                                  }
+                                                : row,
+                                            ),
+                                          )
+                                        }
+                                        className="h-9"
+                                      />
+                                      <Input
+                                        placeholder="Description"
+                                        value={item.descriptionFallback || ""}
+                                        onChange={(e) =>
+                                          setInlineItems((prev) =>
+                                            prev.map((row) =>
+                                              row.id === item.id
+                                                ? {
+                                                    ...row,
+                                                    descriptionFallback:
+                                                      e.target.value,
+                                                  }
+                                                : row,
+                                            ),
+                                          )
+                                        }
+                                        className="h-9"
+                                      />
+                                    </div>
+                                    <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                                      Not in item master — save as a part before
+                                      initiating invoice, or it will be excluded.
+                                    </p>
+                                  </div>
+                                ) : (
+                                <>
                                 <div className="relative">
                                   <Input
                                     ref={(el) => {
@@ -8055,6 +8233,8 @@ export const SalesInvoice = ({
                                   <p className="text-destructive text-xs">
                                     Required
                                   </p>
+                                )}
+                                </>
                                 )}
                               </div>
                             </TableCell>
@@ -10310,10 +10490,7 @@ export const SalesInvoice = ({
                                       variant="default"
                                       size="sm"
                                       className="h-8 text-xs bg-primary hover:bg-primary/90"
-                                      onClick={() => {
-                                        setQuotationToInitiate(inv);
-                                        setShowQuotationInitiateConfirm(true);
-                                      }}
+                                      onClick={() => openQuotationInitiate(inv)}
                                       disabled={convertingQuotationId === inv.id}
                                     >
                                       {convertingQuotationId === inv.id
@@ -11743,6 +11920,93 @@ export const SalesInvoice = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <TemporaryItemsSaveDialog
+        open={showQuotationTempSaveDialog}
+        title="Save temporary items before initiating?"
+        description="Choose which custom items to save into the item master. Saved items can be included on the sales invoice; others will be excluded."
+        items={getQuotationTemporaryItems(quotationToInitiate).map((item) => ({
+          id: item.id,
+          partNo: item.partNo,
+          masterPartNo: item.tempMasterPartNo || "",
+          description: item.description,
+          brand: item.brand || item.tempBrand || "",
+        }))}
+        busy={promotingQuotationTemps || Boolean(convertingQuotationId)}
+        onOpenChange={(open) => {
+          setShowQuotationTempSaveDialog(open);
+          if (!open && !showQuotationInitiateConfirm) {
+            setQuotationToInitiate(null);
+          }
+        }}
+        onContinueWithoutSaving={() => {
+          setShowQuotationTempSaveDialog(false);
+          if (quotationToInitiate) {
+            void executeQuotationInitiate(quotationToInitiate);
+          }
+        }}
+        onSaveSelectedAndContinue={async (selected) => {
+          if (!quotationToInitiate) return;
+          setPromotingQuotationTemps(true);
+          try {
+            const res = await apiClient.promoteSalesQuotationTemporaryItems(
+              quotationToInitiate.id,
+              selected.map((draft) => ({
+                quotationItemId: draft.id,
+                partNo: draft.partNo,
+                description: draft.description,
+                brand: draft.brand,
+                masterPartNo: draft.masterPartNo,
+                origin: draft.origin,
+              })),
+            );
+            const promoted =
+              ((res as any)?.data?.promoted as Array<{
+                quotationItemId: string;
+                partId: string;
+                partNo: string;
+                description?: string | null;
+                brand?: string | null;
+              }>) || [];
+            const byId = new Map(
+              promoted.map((row) => [String(row.quotationItemId), row]),
+            );
+            const nextQuotation: Invoice = {
+              ...quotationToInitiate,
+              items: (quotationToInitiate.items || []).map((item) => {
+                const match = byId.get(String(item.id));
+                if (!match) return item;
+                return {
+                  ...item,
+                  partId: match.partId,
+                  isTemporary: false,
+                  partNo: match.partNo || item.partNo,
+                  description: match.description || item.description,
+                  brand: match.brand || item.brand,
+                };
+              }),
+            };
+            setQuotationToInitiate(nextQuotation);
+            setShowQuotationTempSaveDialog(false);
+            toast({
+              title: "Items saved",
+              description: `${promoted.length} temporary item(s) saved to item master.`,
+            });
+            await executeQuotationInitiate(nextQuotation);
+          } catch (error: any) {
+            toast({
+              title: "Could not save items",
+              description:
+                error?.response?.data?.error ||
+                error?.message ||
+                "Failed to save temporary items.",
+              variant: "destructive",
+            });
+          } finally {
+            setPromotingQuotationTemps(false);
+          }
+        }}
+      />
 
       {/* Delete (permanent) Confirmation – for cancelled invoices */}
       <AlertDialog

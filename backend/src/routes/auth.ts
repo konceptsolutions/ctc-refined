@@ -4,6 +4,11 @@ import bcrypt from 'bcryptjs';
 import prisma from '../config/database';
 import { logActivity, getClientIp } from '../utils/activityLogger';
 import { formatLoginWindowLabel, isWithinLoginSchedule, normalizeLoginDays } from '../utils/loginHours';
+import {
+    PASSWORD_REUSED_ERROR,
+    archiveUserPassword,
+    isPasswordPreviouslyUsed,
+} from '../utils/passwordHistory';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
@@ -292,6 +297,101 @@ router.get('/me', async (req, res) => {
     } catch (error: any) {
         console.error('Auth me error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.post('/change-password', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({ error: 'Authentication token is required' });
+        }
+        const token = authHeader.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Authentication token is missing' });
+        }
+
+        let decoded: any;
+        try {
+            decoded = jwt.verify(token, JWT_SECRET as jwt.Secret);
+        } catch {
+            return res.status(403).json({ error: 'Token is invalid or expired' });
+        }
+
+        const currentPassword = String(req.body?.currentPassword || '');
+        const newPassword = String(req.body?.newPassword || '');
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Current password and new password are required' });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+        }
+        if (currentPassword === newPassword) {
+            return res.status(400).json({ error: 'New password must be different from the current password' });
+        }
+
+        const users = await prisma.$queryRaw<Array<{
+            id: string;
+            name: string;
+            email: string;
+            password: string | null;
+            status: string;
+            role: string;
+        }>>`
+            SELECT u.id, u.name, u.email, u.password, u.status, r.name AS role
+            FROM "User" u
+            JOIN "Role" r ON r.id = u."roleId"
+            WHERE u.id = ${decoded.id}
+            LIMIT 1
+        `;
+        const user = users[0];
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        if (String(user.status || '').toLowerCase() !== 'active') {
+            return res.status(403).json({ error: 'User account is deactivated' });
+        }
+        if (!user.password) {
+            return res.status(400).json({ error: 'Password is not set for this account' });
+        }
+
+        const isCurrentValid = await bcrypt.compare(currentPassword, user.password);
+        if (!isCurrentValid) {
+            return res.status(401).json({ error: 'Current password is incorrect' });
+        }
+
+        if (await isPasswordPreviouslyUsed(user.id, newPassword, user.password)) {
+            return res.status(400).json({ error: PASSWORD_REUSED_ERROR });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await archiveUserPassword(user.id, user.password);
+        await prisma.$executeRaw`
+            UPDATE "User"
+            SET "password" = ${hashedPassword}, "updatedAt" = NOW()
+            WHERE id = ${user.id}
+        `;
+
+        await logActivity({
+            user: user.name,
+            userId: user.id,
+            userRole: user.role,
+            action: 'Password Changed',
+            actionType: 'update',
+            module: 'Auth',
+            description: `Password changed from Settings for ${user.email}`,
+            entityType: 'user',
+            entityId: user.id,
+            entityLabel: user.email,
+            ipAddress: getClientIp(req),
+            status: 'success',
+            details: { email: user.email },
+        }, req);
+
+        return res.json({ success: true, message: 'Password updated successfully' });
+    } catch (error: any) {
+        console.error('Change password error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
     }
 });
 

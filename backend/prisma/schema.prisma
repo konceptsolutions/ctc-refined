@@ -574,7 +574,12 @@ model PurchaseImportRequest {
 model PurchaseImportRequestItem {
   id                      String                @id @default(uuid())
   purchaseImportRequestId String
-  partId                  String
+  partId                  String?
+  isTemporary             Boolean               @default(false)
+  tempPartNo              String?
+  tempMasterPartNo        String?
+  tempBrand               String?
+  tempDescription         String?
   currentStock            Int                   @default(0)
   demandQuantity          Int
   khiQuantity             Int                   @default(0)
@@ -585,7 +590,7 @@ model PurchaseImportRequestItem {
   sortOrder               Int                   @default(0)
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
-  Part                    Part                  @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Part                    Part?                 @relation(fields: [partId], references: [id], onDelete: Cascade)
   PurchaseImportRequest   PurchaseImportRequest @relation(fields: [purchaseImportRequestId], references: [id], onDelete: Cascade)
 
   @@index([purchaseImportRequestId])
@@ -627,7 +632,12 @@ model PurchaseQuotation {
 model PurchaseQuotationItem {
   id                  String            @id @default(uuid())
   purchaseQuotationId String
-  partId              String
+  partId              String?
+  isTemporary         Boolean           @default(false)
+  tempPartNo          String?
+  tempMasterPartNo    String?
+  tempBrand           String?
+  tempDescription     String?
   demandQuantity      Int
   quotationQuantity   Int
   /// Last confirmed order qty (kept after unconfirm so user can re-confirm without re-entry)
@@ -650,7 +660,7 @@ model PurchaseQuotationItem {
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   PurchaseQuotation   PurchaseQuotation @relation(fields: [purchaseQuotationId], references: [id], onDelete: Cascade)
-  Part                Part              @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Part                Part?             @relation(fields: [partId], references: [id], onDelete: Cascade)
 
   @@index([purchaseQuotationId])
   @@index([purchaseQuotationId, sortOrder])
@@ -978,16 +988,19 @@ model SalesQuotation {
 model SalesQuotationItem {
   id             String         @id @default(uuid())
   quotationId    String
-  partId         String
+  partId         String?
+  isTemporary    Boolean        @default(false)
   partNo         String
   description    String?
+  tempMasterPartNo String?
+  tempBrand      String?
   divOn          String?
   qtyDiv         Int            @default(0)
   quantity       Int
   unitPrice      Float
   total          Float
   createdAt      DateTime       @default(now())
-  Part           Part           @relation(fields: [partId], references: [id], onDelete: Cascade)
+  Part           Part?          @relation(fields: [partId], references: [id], onDelete: Cascade)
   SalesQuotation SalesQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 }
 
@@ -1285,6 +1298,19 @@ model User {
   loginAllowedDays String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  UserPasswordHistory UserPasswordHistory[]
+}
+
+/// Stores previous password hashes so users cannot reuse an old password.
+model UserPasswordHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  User         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, createdAt])
 }
 
 model Voucher {
