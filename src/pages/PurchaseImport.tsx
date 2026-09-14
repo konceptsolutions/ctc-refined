@@ -4945,9 +4945,28 @@ const PurchaseQuotationForm = ({
       });
       onSaved?.();
     } catch (error: any) {
+      const raw = String(
+        error?.response?.data?.error ||
+          error?.message ||
+          "Could not create quotation.",
+      );
+      const short =
+        raw
+          .split("\n")
+          .map((line) => line.trim())
+          .find(
+            (line) =>
+              Boolean(line) &&
+              !line.startsWith("{") &&
+              !line.startsWith("[") &&
+              !line.startsWith("data:") &&
+              !line.includes("createMany(") &&
+              !line.includes("createdAt:"),
+          ) || "Could not create quotation.";
       toast({
         title: "Failed to save quotation",
-        description: error?.response?.data?.error || error?.message || "Could not create quotation.",
+        description:
+          short.length > 220 ? `${short.slice(0, 220)}…` : short,
         variant: "destructive",
       });
     } finally {

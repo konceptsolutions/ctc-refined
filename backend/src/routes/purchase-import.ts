@@ -3423,20 +3423,9 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = String(item?.shipDays ?? "").trim();
         const weight = Number(item?.weight || 0);
-        const partId = String(item?.partId || "").trim();
-        const isTemporary =
-          Boolean(item?.isTemporary) ||
-          (!partId &&
-            (Boolean(String(item?.tempPartNo || "").trim()) ||
-              Boolean(String(item?.tempDescription || "").trim())));
-        const tempPartNo = String(item?.tempPartNo || "").trim() || null;
-        const tempDescription =
-          String(item?.tempDescription || "").trim() || null;
+        const identity = resolveTemporaryFlags(item);
         return {
-          partId: isTemporary ? null : partId,
-          isTemporary,
-          tempPartNo: isTemporary ? tempPartNo : null,
-          tempDescription: isTemporary ? tempDescription : null,
+          ...identity,
           demandQuantity,
           quotationQuantity,
           shipDays,
@@ -3452,12 +3441,7 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
           totalWeight: weight * quotationQuantity,
         };
       })
-      .filter((item: any) => {
-        if (item.isTemporary) {
-          return Boolean(item.tempPartNo || item.tempDescription);
-        }
-        return Boolean(item.partId);
-      });
+      .filter((item: any) => isValidQuotationLineIdentity(item));
 
     if (items.length === 0) {
       return res.status(400).json({ error: "Please add at least one quotation item." });
