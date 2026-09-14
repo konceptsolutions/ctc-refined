@@ -1385,10 +1385,31 @@ async function attachLiveCurrentStock(items: any[]): Promise<any[]> {
 }
 
 /**
+ * Stable identity for pairing inquiry ↔ quotation lines.
+ * Prefer catalog partId; fall back to temporary part fields.
+ */
+function purchaseImportLineKey(item: {
+  partId?: string | null;
+  isTemporary?: boolean | null;
+  tempPartNo?: string | null;
+  tempMasterPartNo?: string | null;
+  tempDescription?: string | null;
+}) {
+  const partId = String(item.partId || "").trim();
+  if (partId) return `part:${partId}`;
+  const tempNo = String(item.tempPartNo || "").trim().toLowerCase();
+  const tempMaster = String(item.tempMasterPartNo || "").trim().toLowerCase();
+  const tempDesc = String(item.tempDescription || "").trim().toLowerCase();
+  if (tempNo || tempMaster || tempDesc) {
+    return `temp:${tempNo}|${tempMaster}|${tempDesc}`;
+  }
+  return "";
+}
+
+/**
  * Merge inquiry + saved quotation for the quotation form.
- * Pair by row position (sortOrder), not partId, so alternate replacements stick:
- * inquiry row i provides request qty; quotation row i provides the actual part/rates.
- * Extra quotation-only rows (added on the form) stay after inquiry rows.
+ * Pair by partId/temp identity first (same as confirm sync), then by row index
+ * only for remaining alternate replacements. Keep quotation-only extras at end.
  */
 function mergeInquiryItemsIntoQuotationItems(params: {
   inquiryItems: any[];
@@ -1401,11 +1422,56 @@ function mergeInquiryItemsIntoQuotationItems(params: {
 
   const inquiry = [...(params.inquiryItems || [])].sort(bySort);
   const quotation = [...(params.quotationItems || [])].sort(bySort);
-  const merged: any[] = [];
+  const unmatchedQuotation = new Set(
+    quotation.map((item, index) => String(item.id || `idx:${index}`)),
+  );
+  const quotationByToken = new Map(
+    quotation.map((item, index) => [
+      String(item.id || `idx:${index}`),
+      item,
+    ]),
+  );
+  const quotationTokensByKey = new Map<string, string[]>();
+  quotation.forEach((item, index) => {
+    const token = String(item.id || `idx:${index}`);
+    const key = purchaseImportLineKey(item);
+    if (!key) return;
+    const list = quotationTokensByKey.get(key) || [];
+    list.push(token);
+    quotationTokensByKey.set(key, list);
+  });
+
+  const pairedQuotation: Array<any | null> = inquiry.map(() => null);
 
   for (let i = 0; i < inquiry.length; i++) {
+    const key = purchaseImportLineKey(inquiry[i]);
+    if (!key) continue;
+    const candidates = quotationTokensByKey.get(key) || [];
+    while (candidates.length > 0) {
+      const token = candidates.shift()!;
+      if (!unmatchedQuotation.has(token)) continue;
+      unmatchedQuotation.delete(token);
+      pairedQuotation[i] = quotationByToken.get(token) || null;
+      break;
+    }
+    quotationTokensByKey.set(key, candidates);
+  }
+
+  // Alternates: unmatched inquiry row ↔ unmatched quotation row at same index.
+  for (let i = 0; i < inquiry.length; i++) {
+    if (pairedQuotation[i]) continue;
+    const candidate = quotation[i];
+    if (!candidate) continue;
+    const token = String(candidate.id || `idx:${i}`);
+    if (!unmatchedQuotation.has(token)) continue;
+    unmatchedQuotation.delete(token);
+    pairedQuotation[i] = candidate;
+  }
+
+  const merged: any[] = [];
+  for (let i = 0; i < inquiry.length; i++) {
     const inquiryItem = inquiry[i];
-    const quotItem = quotation[i];
+    const quotItem = pairedQuotation[i];
     if (quotItem) {
       merged.push(params.mapQuotationItem(quotItem, inquiryItem));
     } else {
@@ -1413,7 +1479,11 @@ function mergeInquiryItemsIntoQuotationItems(params: {
     }
   }
 
-  for (let i = inquiry.length; i < quotation.length; i++) {
+  // Quotation-only extras (manual adds / leftover rows), preserve sort order.
+  for (let i = 0; i < quotation.length; i++) {
+    const token = String(quotation[i].id || `idx:${i}`);
+    if (!unmatchedQuotation.has(token)) continue;
+    unmatchedQuotation.delete(token);
     merged.push(params.mapQuotationItem(quotation[i]));
   }
 
@@ -1421,11 +1491,12 @@ function mergeInquiryItemsIntoQuotationItems(params: {
 }
 
 /**
- * Align existing quotations to the inquiry by row position:
- * - keep quotation partId (preserves alternate replacements)
- * - sync demand/quotation qty from the inquiry row at the same index
- * - append missing trailing inquiry rows
- * - never delete quotation-only / replaced rows
+ * Align existing quotations to the inquiry when the inquiry is (re)confirmed:
+ * - match lines by partId (or temp identity), not row position
+ * - update demand/quotation qty + weight on matched lines (keep quotation partId for alternates)
+ * - for unmatched inquiry rows, reuse an unmatched quotation row at the same index as an alternate
+ * - append truly new inquiry rows
+ * - remove quotation-only rows that no longer exist on the inquiry (pending quotations only)
  */
 async function syncMissingInquiryItemsIntoRequestQuotations(
   requestId: string,
@@ -1460,6 +1531,11 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
         select: {
           id: true,
           partId: true,
+          isTemporary: true,
+          tempPartNo: true,
+          tempMasterPartNo: true,
+          tempBrand: true,
+          tempDescription: true,
           sortOrder: true,
           fcRate: true,
           revisedFcRate: true,
@@ -1476,6 +1552,12 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
 
   let added = 0;
   for (const quotation of quotations) {
+    const quotationStatus = String(quotation.status || "")
+      .trim()
+      .toLowerCase();
+    // Never rewrite confirmed quotations from inquiry edits.
+    if (quotationStatus === "confirm") continue;
+
     const conversionRate = Number(quotation.conversionRate || 1) || 1;
     const existingItems = [...(quotation.PurchaseQuotationItem || [])].sort(
       (a: any, b: any) =>
@@ -1483,23 +1565,65 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
     );
 
     const now = new Date();
-    let nextSort =
-      existingItems.reduce(
-        (max: number, item: any) => Math.max(max, Number(item.sortOrder) || 0),
-        -1,
-      ) + 1;
+    const unmatchedQuotation = new Set(existingItems.map((item: any) => item.id));
+    const quotationById = new Map(
+      existingItems.map((item: any) => [String(item.id), item]),
+    );
+    const quotationIdsByKey = new Map<string, string[]>();
+    for (const item of existingItems) {
+      const key = purchaseImportLineKey(item);
+      if (!key) continue;
+      const list = quotationIdsByKey.get(key) || [];
+      list.push(String(item.id));
+      quotationIdsByKey.set(key, list);
+    }
+
+    type Pairing = { inquiry: any; quotationItem: any | null };
+    const pairings: Pairing[] = inquiryItems.map((inquiry) => ({
+      inquiry,
+      quotationItem: null as any,
+    }));
+
+    // Pass 1: match by partId / temporary identity.
+    for (let i = 0; i < inquiryItems.length; i++) {
+      const key = purchaseImportLineKey(inquiryItems[i]);
+      if (!key) continue;
+      const candidates = quotationIdsByKey.get(key) || [];
+      while (candidates.length > 0) {
+        const candidateId = candidates.shift()!;
+        if (!unmatchedQuotation.has(candidateId)) continue;
+        unmatchedQuotation.delete(candidateId);
+        pairings[i].quotationItem = quotationById.get(candidateId) || null;
+        break;
+      }
+      quotationIdsByKey.set(key, candidates);
+    }
+
+    // Pass 2: unmatched inquiry row ↔ unmatched quotation row at same index
+    // (alternate replacement: keep quotation partId, take inquiry qty).
+    for (let i = 0; i < pairings.length; i++) {
+      if (pairings[i].quotationItem) continue;
+      const candidate = existingItems[i];
+      if (!candidate) continue;
+      const candidateId = String(candidate.id);
+      if (!unmatchedQuotation.has(candidateId)) continue;
+      unmatchedQuotation.delete(candidateId);
+      pairings[i].quotationItem = candidate;
+    }
 
     const createRows: any[] = [];
-    for (let i = 0; i < inquiryItems.length; i++) {
-      const inq = inquiryItems[i];
+    for (let i = 0; i < pairings.length; i++) {
+      const inq = pairings[i].inquiry;
+      const existing = pairings[i].quotationItem;
       const demandQuantity = Number(inq.demandQuantity || 0);
       const weight = Number(inq.weight || 0);
-      const existing = existingItems[i];
+      const sortOrder = Number.isFinite(Number(inq.sortOrder))
+        ? Number(inq.sortOrder)
+        : i;
 
       if (existing) {
         const fcRate = Number(existing.fcRate || 0);
         const revisedFcRate = Number(existing.revisedFcRate || 0);
-        // Keep existing.partId so alternate replacements are not overwritten.
         await purchaseQuotationItemModel.update({
           where: { id: existing.id },
           data: {
@@ -1507,15 +1631,17 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
             quotationQuantity: demandQuantity,
             weight,
             totalWeight: weight * demandQuantity,
-            fcAmount: fcRate * demandQuantity,
-            lcRate: fcRate * conversionRate,
-            lcAmount: fcRate * conversionRate * demandQuantity,
-            revisedFcAmount: revisedFcRate * demandQuantity,
-            revisedLcRate: revisedFcRate * conversionRate,
-            revisedLcAmount: revisedFcRate * conversionRate * demandQuantity,
-            sortOrder: Number.isFinite(Number(inq.sortOrder))
-              ? Number(inq.sortOrder)
-              : i,
+            fcAmount: roundFc(fcRate * demandQuantity),
+            lcRate: roundPurchasePrice(fcRate * conversionRate),
+            lcAmount: roundPurchasePrice(
+              fcRate * conversionRate * demandQuantity,
+            ),
+            revisedFcAmount: roundFc(revisedFcRate * demandQuantity),
+            revisedLcRate: roundPurchasePrice(revisedFcRate * conversionRate),
+            revisedLcAmount: roundPurchasePrice(
+              revisedFcRate * conversionRate * demandQuantity,
+            ),
+            sortOrder,
             updatedAt: now,
           },
         });
@@ -1523,7 +1649,7 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
         createRows.push({
           id: randomUUID(),
           purchaseQuotationId: quotation.id,
-          partId: Boolean(inq.isTemporary) ? null : inq.partId,
+          partId: Boolean(inq.isTemporary) ? null : inq.partId || null,
           isTemporary: Boolean(inq.isTemporary) || !inq.partId,
           tempPartNo: inq.tempPartNo || null,
           tempMasterPartNo: inq.tempMasterPartNo || null,
@@ -1542,9 +1668,7 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
           revisedLcAmount: 0,
           weight,
           totalWeight: weight * demandQuantity,
-          sortOrder: Number.isFinite(Number(inq.sortOrder))
-            ? Number(inq.sortOrder)
-            : nextSort++,
+          sortOrder,
           createdAt: now,
           updatedAt: now,
         });
@@ -1554,6 +1678,17 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
     if (createRows.length > 0) {
       await purchaseQuotationItemModel.createMany({ data: createRows });
       added += createRows.length;
+    }
+
+    // Drop quotation-only lines that were removed from the inquiry.
+    const orphanIds = Array.from(unmatchedQuotation);
+    if (orphanIds.length > 0) {
+      await purchaseQuotationItemModel.deleteMany({
+        where: {
+          id: { in: orphanIds },
+          purchaseQuotationId: quotation.id,
+        },
+      });
     }
 
     const allItems = await purchaseQuotationItemModel.findMany({
@@ -1568,17 +1703,21 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
     await purchaseQuotationModel.update({
       where: { id: quotation.id },
       data: {
-        fcTotal: allItems.reduce(
-          (sum: number, item: any) => sum + Number(item.fcAmount || 0),
-          0,
+        fcTotal: roundFcTotal(
+          allItems.reduce(
+            (sum: number, item: any) => sum + Number(item.fcAmount || 0),
+            0,
+          ),
         ),
         lcTotal: allItems.reduce(
           (sum: number, item: any) => sum + Number(item.lcAmount || 0),
           0,
         ),
-        fcRevisedTotal: allItems.reduce(
-          (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
-          0,
+        fcRevisedTotal: roundFcTotal(
+          allItems.reduce(
+            (sum: number, item: any) => sum + Number(item.revisedFcAmount || 0),
+            0,
+          ),
         ),
         lcRevisedTotal: allItems.reduce(
           (sum: number, item: any) => sum + Number(item.revisedLcAmount || 0),
@@ -2861,19 +3000,31 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
           demandQuantity: Number(
             inquiryItem?.demandQuantity ?? item.demandQuantity ?? 0,
           ),
+          // Keep saved quotation qty/weight — do not overwrite with inquiry demand.
           quotationQuantity: Number(
-            inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
+            item.quotationQuantity ?? inquiryItem?.demandQuantity ?? 0,
           ),
           shipDays: String(item.shipDays ?? ""),
           fcRate: Number(item.fcRate || 0),
           revisedFcRate: Number(item.revisedFcRate || 0),
           weight: Number(
-            inquiryItem?.weight != null ? inquiryItem.weight : item.weight || 0,
+            item.weight != null && Number(item.weight) > 0
+              ? item.weight
+              : inquiryItem?.weight ?? item.weight ?? 0,
           ),
           totalWeight: Number(
-            inquiryItem?.totalWeight != null
-              ? inquiryItem.totalWeight
-              : item.totalWeight || 0,
+            item.totalWeight != null && Number(item.totalWeight) > 0
+              ? item.totalWeight
+              : Number(
+                  (item.weight != null && Number(item.weight) > 0
+                    ? item.weight
+                    : inquiryItem?.weight ?? 0) *
+                    Number(
+                      item.quotationQuantity ??
+                        inquiryItem?.demandQuantity ??
+                        0,
+                    ),
+                ),
           ),
         }),
       });
@@ -3779,8 +3930,9 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
                 demandQuantity: Number(
                   inquiryItem?.demandQuantity ?? item.demandQuantity ?? 0,
                 ),
+                // Keep saved quotation qty — inquiry only supplies request qty above.
                 quotationQuantity: Number(
-                  inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
+                  item.quotationQuantity ?? inquiryItem?.demandQuantity ?? 0,
                 ),
                 confirmQuantity:
                   item.confirmQuantity == null
@@ -3803,25 +3955,51 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
                 otherQuantity: Number(inquiryItem?.otherQuantity || 0),
                 shipDays: String(item.shipDays ?? ""),
                 fcRate: Number(item.fcRate || 0),
-                fcAmount: Number(item.fcRate || 0) *
-                  Number(
-                    inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
-                  ),
+                fcAmount: Number(
+                  item.fcAmount != null && Number(item.fcAmount) > 0
+                    ? item.fcAmount
+                    : Number(item.fcRate || 0) *
+                        Number(
+                          item.quotationQuantity ??
+                            inquiryItem?.demandQuantity ??
+                            0,
+                        ),
+                ),
                 lcRate: Number(item.lcRate || 0),
-                lcAmount: Number(item.lcRate || 0) *
-                  Number(
-                    inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
-                  ),
+                lcAmount: Number(
+                  item.lcAmount != null && Number(item.lcAmount) > 0
+                    ? item.lcAmount
+                    : Number(item.lcRate || 0) *
+                        Number(
+                          item.quotationQuantity ??
+                            inquiryItem?.demandQuantity ??
+                            0,
+                        ),
+                ),
                 revisedFcRate: Number(item.revisedFcRate || 0),
-                revisedFcAmount: Number(item.revisedFcRate || 0) *
-                  Number(
-                    inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
-                  ),
+                revisedFcAmount: Number(
+                  item.revisedFcAmount != null &&
+                    Number(item.revisedFcAmount) > 0
+                    ? item.revisedFcAmount
+                    : Number(item.revisedFcRate || 0) *
+                        Number(
+                          item.quotationQuantity ??
+                            inquiryItem?.demandQuantity ??
+                            0,
+                        ),
+                ),
                 revisedLcRate: Number(item.revisedLcRate || 0),
-                revisedLcAmount: Number(item.revisedLcRate || 0) *
-                  Number(
-                    inquiryItem?.demandQuantity ?? item.quotationQuantity ?? 0,
-                  ),
+                revisedLcAmount: Number(
+                  item.revisedLcAmount != null &&
+                    Number(item.revisedLcAmount) > 0
+                    ? item.revisedLcAmount
+                    : Number(item.revisedLcRate || 0) *
+                        Number(
+                          item.quotationQuantity ??
+                            inquiryItem?.demandQuantity ??
+                            0,
+                        ),
+                ),
                 weight: Number(
                   Number(item.weight || 0) > 0
                     ? item.weight
