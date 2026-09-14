@@ -998,6 +998,16 @@ type PurchaseQuotationContextPayload = {
       lastFcRate?: number;
     }
   >;
+  /** Inquiry lines with no matching quotation line (intentionally removed / never quoted). */
+  unquotedInquiryItems?: Array<
+    PurchaseQuotationContextItem & {
+      quotationQuantity?: number;
+      shipDays?: string;
+      fcRate?: number;
+      revisedFcRate?: number;
+      lastFcRate?: number;
+    }
+  >;
 };
 
 type PurchaseQuotationComparisonPayload = {
@@ -4334,10 +4344,25 @@ const PurchaseQuotationForm = ({
     [rows, partOptions, itemSort, itemSortDirection],
   );
 
-  const unquotedItems = useMemo(
-    () => sortedRows.filter(isUnquotedQuotationItem),
-    [sortedRows],
-  );
+  const unquotedItems = useMemo(() => {
+    const fromForm = sortedRows.filter(isUnquotedQuotationItem);
+    const fromInquiry = Array.isArray(context?.unquotedInquiryItems)
+      ? context.unquotedInquiryItems
+      : [];
+    return [
+      ...fromForm,
+      ...fromInquiry.map((item, index) => ({
+        ...item,
+        rowId: `unquoted-inquiry-${index}`,
+        isNewRow: false as const,
+        fcRate: 0,
+        lastFcRate: Number(item.lastFcRate || 0),
+        quotationQuantity: Number(
+          item.quotationQuantity ?? item.demandQuantity ?? 0,
+        ),
+      })),
+    ];
+  }, [sortedRows, context?.unquotedInquiryItems]);
 
   const quotationItemJumpOptions = useMemo(
     () =>
@@ -4943,6 +4968,57 @@ const PurchaseQuotationForm = ({
           ? `Quotation ${quotationNoSaved} has been ${existingQuotationId ? "updated" : "created"} successfully.`
           : `Quotation has been ${existingQuotationId ? "updated" : "created"} successfully.`,
       });
+
+      // Reload from server so the form shows persisted values (do not close).
+      try {
+        const refreshRes = await apiClient.getPurchaseQuotationContext(requestId);
+        const raw = (refreshRes as any)?.data as
+          | PurchaseQuotationContextPayload
+          | undefined;
+        if (raw) {
+          const data: PurchaseQuotationContextPayload = {
+            ...raw,
+            consignee: raw.consignee || initialConsignee || null,
+          };
+          setContext(data);
+          setExistingQuotationId(data.existingQuotationId || savedId || null);
+          setQuotationNo(data.quotationNo || quotationNoSaved || "");
+          setQuotationDate(toInputDate(data.quotationDate || new Date()));
+          setCurrency(data.currency || data.defaultCurrency || "USD");
+          setConversionRate(formatExchangeRateInput(data.conversionRate || 1));
+          setRows(
+            Array.isArray(data.items)
+              ? data.items.map((item) => {
+                  const rawOther = Number(item.otherQuantity || 0);
+                  const rawIsb = Number(item.isbQuantity || 0);
+                  const rawKhi = Number(item.khiQuantity || 0);
+                  return {
+                    ...item,
+                    rowId: createRowId(),
+                    isNewRow: false,
+                    khiQuantity: rawKhi,
+                    isbQuantity: SHOW_OTHER_QTY ? rawIsb : rawIsb + rawOther,
+                    otherQuantity: SHOW_OTHER_QTY ? rawOther : 0,
+                    quotationQuantity: Number(
+                      item.quotationQuantity ?? item.demandQuantity ?? 0,
+                    ),
+                    shipDays: String(item.shipDays ?? ""),
+                    fcRate: Number(item.fcRate || 0),
+                    fcRateText: formatFcRateInput(Number(item.fcRate || 0)),
+                    revisedFcRate: Number(item.revisedFcRate || 0),
+                    revisedFcRateText: formatFcRateInput(
+                      Number(item.revisedFcRate || 0),
+                    ),
+                    lastFcRate: Number(item.lastFcRate || 0),
+                    loadingPartDetails: false,
+                  };
+                })
+              : [],
+          );
+        }
+      } catch {
+        // Keep in-memory rows if refresh fails; save already succeeded.
+      }
       onSaved?.();
     } catch (error: any) {
       const raw = String(
@@ -6727,9 +6803,13 @@ const PurchaseInquiryListPanel = ({
         return;
       }
 
-      const items = (Array.isArray(data.items) ? data.items : [])
-        .filter(isUnquotedQuotationItem)
-        .map((item, index) => ({
+      const zeroRateOnQuotation = (Array.isArray(data.items) ? data.items : [])
+        .filter(isUnquotedQuotationItem);
+      const removedFromQuotation = Array.isArray(data.unquotedInquiryItems)
+        ? data.unquotedInquiryItems
+        : [];
+      const items = [...zeroRateOnQuotation, ...removedFromQuotation].map(
+        (item, index) => ({
           key: `${item.partId || "item"}-${index}`,
           masterPartNo: item.masterPartNo,
           partNo: item.partNo,
@@ -6737,9 +6817,12 @@ const PurchaseInquiryListPanel = ({
           brand: item.brand,
           origin: item.origin,
           demandQuantity: Number(item.demandQuantity || 0),
-          quotationQuantity: Number(item.quotationQuantity ?? item.demandQuantity ?? 0),
+          quotationQuantity: Number(
+            item.quotationQuantity ?? item.demandQuantity ?? 0,
+          ),
           lastFcRate: Number(item.lastFcRate || 0),
-        }));
+        }),
+      );
 
       setUnquotedItems(items);
       setUnquotedPrintDetail({
@@ -9645,9 +9728,6 @@ const PurchaseQuotationTab = () => {
           setQuotationConsignee(null);
         }}
         onSaved={() => {
-          setShowQuotationForm(false);
-          setQuotationRequestId(null);
-          setQuotationConsignee(null);
           setListRefreshKey((value) => value + 1);
         }}
       />

@@ -1408,8 +1408,14 @@ function purchaseImportLineKey(item: {
 
 /**
  * Merge inquiry + saved quotation for the quotation form.
- * Pair by partId/temp identity first (same as confirm sync), then by row index
- * only for remaining alternate replacements. Keep quotation-only extras at end.
+ *
+ * When a quotation already has lines, those lines are the source of truth
+ * (part, rates, quotation qty) so replace/save/remove edits survive reload.
+ * Inquiry only supplies request qty / consignee split onto matched lines.
+ * Inquiry lines not on the quotation are NOT re-injected here (they belong in
+ * Unquoted Items); otherwise removed duplicates come back after every save.
+ *
+ * Pairing: partId/temp identity first (1:1), then same-index alternate.
  */
 function mergeInquiryItemsIntoQuotationItems(params: {
   inquiryItems: any[];
@@ -1422,72 +1428,104 @@ function mergeInquiryItemsIntoQuotationItems(params: {
 
   const inquiry = [...(params.inquiryItems || [])].sort(bySort);
   const quotation = [...(params.quotationItems || [])].sort(bySort);
-  const unmatchedQuotation = new Set(
-    quotation.map((item, index) => String(item.id || `idx:${index}`)),
-  );
-  const quotationByToken = new Map(
-    quotation.map((item, index) => [
-      String(item.id || `idx:${index}`),
-      item,
-    ]),
-  );
-  const quotationTokensByKey = new Map<string, string[]>();
-  quotation.forEach((item, index) => {
-    const token = String(item.id || `idx:${index}`);
-    const key = purchaseImportLineKey(item);
-    if (!key) return;
-    const list = quotationTokensByKey.get(key) || [];
-    list.push(token);
-    quotationTokensByKey.set(key, list);
-  });
 
-  const pairedQuotation: Array<any | null> = inquiry.map(() => null);
-
-  for (let i = 0; i < inquiry.length; i++) {
-    const key = purchaseImportLineKey(inquiry[i]);
-    if (!key) continue;
-    const candidates = quotationTokensByKey.get(key) || [];
-    while (candidates.length > 0) {
-      const token = candidates.shift()!;
-      if (!unmatchedQuotation.has(token)) continue;
-      unmatchedQuotation.delete(token);
-      pairedQuotation[i] = quotationByToken.get(token) || null;
-      break;
-    }
-    quotationTokensByKey.set(key, candidates);
+  // No saved quotation yet — form is driven by inquiry.
+  if (quotation.length === 0) {
+    return inquiry.map((item) => params.mapInquiryItem(item));
   }
 
-  // Alternates: unmatched inquiry row ↔ unmatched quotation row at same index.
-  for (let i = 0; i < inquiry.length; i++) {
-    if (pairedQuotation[i]) continue;
-    const candidate = quotation[i];
-    if (!candidate) continue;
-    const token = String(candidate.id || `idx:${i}`);
-    if (!unmatchedQuotation.has(token)) continue;
-    unmatchedQuotation.delete(token);
-    pairedQuotation[i] = candidate;
+  const unmatchedInquiry = new Set(inquiry.map((_, index) => index));
+  const inquiryByIndex = inquiry;
+  const inquiryIndexesByKey = new Map<string, number[]>();
+  inquiry.forEach((item, index) => {
+    const key = purchaseImportLineKey(item);
+    if (!key) return;
+    const list = inquiryIndexesByKey.get(key) || [];
+    list.push(index);
+    inquiryIndexesByKey.set(key, list);
+  });
+
+  const pairedInquiryIndex: Array<number | null> = quotation.map(() => null);
+
+  // Pass 1: match quotation → inquiry by partId / temp identity.
+  for (let q = 0; q < quotation.length; q++) {
+    const key = purchaseImportLineKey(quotation[q]);
+    if (!key) continue;
+    const candidates = inquiryIndexesByKey.get(key) || [];
+    while (candidates.length > 0) {
+      const inquiryIndex = candidates.shift()!;
+      if (!unmatchedInquiry.has(inquiryIndex)) continue;
+      unmatchedInquiry.delete(inquiryIndex);
+      pairedInquiryIndex[q] = inquiryIndex;
+      break;
+    }
+    inquiryIndexesByKey.set(key, candidates);
+  }
+
+  // Pass 2: same-index alternate (quotation replacement for inquiry part).
+  for (let q = 0; q < quotation.length; q++) {
+    if (pairedInquiryIndex[q] != null) continue;
+    if (!unmatchedInquiry.has(q)) continue;
+    if (q >= inquiry.length) continue;
+    unmatchedInquiry.delete(q);
+    pairedInquiryIndex[q] = q;
   }
 
   const merged: any[] = [];
-  for (let i = 0; i < inquiry.length; i++) {
-    const inquiryItem = inquiry[i];
-    const quotItem = pairedQuotation[i];
-    if (quotItem) {
-      merged.push(params.mapQuotationItem(quotItem, inquiryItem));
-    } else {
-      merged.push(params.mapInquiryItem(inquiryItem));
-    }
-  }
-
-  // Quotation-only extras (manual adds / leftover rows), preserve sort order.
-  for (let i = 0; i < quotation.length; i++) {
-    const token = String(quotation[i].id || `idx:${i}`);
-    if (!unmatchedQuotation.has(token)) continue;
-    unmatchedQuotation.delete(token);
-    merged.push(params.mapQuotationItem(quotation[i]));
+  for (let q = 0; q < quotation.length; q++) {
+    const inquiryIndex = pairedInquiryIndex[q];
+    const inquiryItem =
+      inquiryIndex != null ? inquiryByIndex[inquiryIndex] : undefined;
+    merged.push(params.mapQuotationItem(quotation[q], inquiryItem));
   }
 
   return merged;
+}
+
+/** Inquiry lines that have no matching quotation line (for Unquoted Items). */
+function findUnmatchedInquiryItems(params: {
+  inquiryItems: any[];
+  quotationItems: any[];
+}) {
+  const bySort = (a: any, b: any) =>
+    (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0);
+
+  const inquiry = [...(params.inquiryItems || [])].sort(bySort);
+  const quotation = [...(params.quotationItems || [])].sort(bySort);
+  if (quotation.length === 0) return inquiry;
+
+  const unmatchedInquiry = new Set(inquiry.map((_, index) => index));
+  const inquiryIndexesByKey = new Map<string, number[]>();
+  inquiry.forEach((item, index) => {
+    const key = purchaseImportLineKey(item);
+    if (!key) return;
+    const list = inquiryIndexesByKey.get(key) || [];
+    list.push(index);
+    inquiryIndexesByKey.set(key, list);
+  });
+
+  for (let q = 0; q < quotation.length; q++) {
+    const key = purchaseImportLineKey(quotation[q]);
+    if (!key) continue;
+    const candidates = inquiryIndexesByKey.get(key) || [];
+    while (candidates.length > 0) {
+      const inquiryIndex = candidates.shift()!;
+      if (!unmatchedInquiry.has(inquiryIndex)) continue;
+      unmatchedInquiry.delete(inquiryIndex);
+      break;
+    }
+    inquiryIndexesByKey.set(key, candidates);
+  }
+
+  for (let q = 0; q < quotation.length; q++) {
+    if (!unmatchedInquiry.has(q)) continue;
+    if (q >= inquiry.length) continue;
+    unmatchedInquiry.delete(q);
+  }
+
+  return Array.from(unmatchedInquiry)
+    .sort((a, b) => a - b)
+    .map((index) => inquiry[index]);
 }
 
 /**
@@ -2929,6 +2967,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
     let terms: string | null = null;
     let existingQuotationId: string | null = null;
     let items: any[];
+    let unquotedInquiryItems: any[] = [];
 
     if (existingQuotation) {
       existingQuotationId = existingQuotation.id;
@@ -2937,7 +2976,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       defaultCurrency = String(existingQuotation.currency || "USD");
       conversionRate = Number(existingQuotation.conversionRate || 1);
       terms = existingQuotation.terms || null;
-      // Inquiry is source of truth for which parts appear; overlay saved quotation rates.
+      // Saved quotation lines are source of truth; inquiry only overlays request qty.
       items = mergeInquiryItemsIntoQuotationItems({
         inquiryItems: requestRow.PurchaseImportRequestItem || [],
         quotationItems: existingQuotation.PurchaseQuotationItem || [],
@@ -3028,6 +3067,40 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
           ),
         }),
       });
+
+      unquotedInquiryItems = findUnmatchedInquiryItems({
+        inquiryItems: requestRow.PurchaseImportRequestItem || [],
+        quotationItems: existingQuotation.PurchaseQuotationItem || [],
+      }).map((item: any) => ({
+        partId: item.partId || "",
+        isTemporary: Boolean(item.isTemporary) || !item.partId,
+        tempPartNo: item.tempPartNo || "",
+        tempMasterPartNo: item.tempMasterPartNo || "",
+        tempBrand: item.tempBrand || "",
+        tempDescription: item.tempDescription || "",
+        masterPartNo: item.isTemporary
+          ? item.tempMasterPartNo || ""
+          : item.Part?.MasterPart?.masterPartNo || "",
+        partNo: item.isTemporary
+          ? item.tempPartNo || ""
+          : item.Part?.partNo || "",
+        description: item.isTemporary
+          ? item.tempDescription || ""
+          : item.Part?.description || "",
+        brand: item.isTemporary
+          ? item.tempBrand || ""
+          : item.Part?.Brand?.name || "",
+        origin: item.Part?.origin || "",
+        currentStock: Number(item.currentStock || 0),
+        demandQuantity: Number(item.demandQuantity || 0),
+        quotationQuantity: Number(item.demandQuantity || 0),
+        weight: Number(item.weight || 0),
+        totalWeight: Number(item.totalWeight || 0),
+        shipDays: "STK",
+        fcRate: 0,
+        revisedFcRate: 0,
+        lastFcRate: 0,
+      }));
     } else {
       quotationNo = "";
       quotationDate = new Date();
@@ -3084,6 +3157,14 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
       existingQuotationId,
     );
     items = await attachLiveCurrentStock(items);
+    if (unquotedInquiryItems.length > 0) {
+      unquotedInquiryItems = await attachLastSupplierFcRates(
+        requestRow.supplierId || requestRow.Supplier?.id,
+        unquotedInquiryItems,
+        existingQuotationId,
+      );
+      unquotedInquiryItems = await attachLiveCurrentStock(unquotedInquiryItems);
+    }
 
     res.json({
       data: {
@@ -3109,6 +3190,7 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         currencyOptions,
         defaultCurrency,
         items,
+        unquotedInquiryItems,
       },
     });
   } catch (error: any) {
