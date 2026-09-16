@@ -514,7 +514,7 @@ export const SalesReturns = () => {
       try {
         const [custRes, accRes] = await Promise.all([
           apiClient.getCustomers({ limit: 2000, page: 1 }),
-          apiClient.getAccounts({ status: "Active" }),
+          apiClient.getPaymentAccounts(),
         ]);
         const custRaw = Array.isArray(custRes)
           ? custRes

@@ -292,10 +292,11 @@ const NUMERIC_SALES_INVOICE_NO = /^(\d+)$/;
 
 async function getNextSalesInvoiceNo(
   invoiceDate?: string | Date,
+  db: any = prisma,
 ): Promise<string> {
   const { from, to } = getPakistanFinancialYearBounds(invoiceDate ?? new Date());
 
-  const rows = await prisma.$queryRaw<Array<{ invoiceNo: string }>>`
+  const rows = await db.$queryRaw<Array<{ invoiceNo: string }>>`
     SELECT "invoiceNo" FROM "SalesInvoice"
     WHERE "customerType" != 'transfer'
     AND "invoiceDate" >= ${from}
@@ -327,12 +328,15 @@ async function getNextSalesInvoiceNo(
 }
 
 /** Transfer Out documents use TOUT-YYYY-NNN (separate from sales invoice numbers). */
-async function getNextTransferOutInvoiceNo(invoiceDate?: string | Date): Promise<string> {
+async function getNextTransferOutInvoiceNo(
+  invoiceDate?: string | Date,
+  db: any = prisma,
+): Promise<string> {
   const year = invoiceDate
     ? new Date(invoiceDate).getFullYear()
     : new Date().getFullYear();
   const prefix = `TOUT-${year}-`;
-  const rows = await prisma.salesInvoice.findMany({
+  const rows = await db.salesInvoice.findMany({
     where: {
       customerType: "transfer",
       invoiceNo: { startsWith: prefix },
@@ -352,6 +356,27 @@ async function getNextTransferOutInvoiceNo(invoiceDate?: string | Date): Promise
   }
 
   return `${prefix}${String(maxNum + 1).padStart(3, "0")}`;
+}
+
+/** Serialize invoice-number allocation across concurrent creates (PG transaction-scoped). */
+const SALES_INVOICE_NO_LOCK = 88221001;
+const TRANSFER_OUT_NO_LOCK = 88221002;
+
+/** In-process idempotency for repeated POST /invoices with the same client key. */
+const invoiceCreateIdempotency = new Map<
+  string,
+  { invoiceId: string; at: number }
+>();
+const INVOICE_CREATE_IDEMPOTENCY_TTL_MS = 15 * 60 * 1000;
+
+function rememberInvoiceCreateIdempotency(key: string, invoiceId: string) {
+  const now = Date.now();
+  for (const [k, v] of invoiceCreateIdempotency) {
+    if (now - v.at > INVOICE_CREATE_IDEMPOTENCY_TTL_MS) {
+      invoiceCreateIdempotency.delete(k);
+    }
+  }
+  invoiceCreateIdempotency.set(key, { invoiceId, at: now });
 }
 
 // Helper function to calculate stock balance
@@ -1619,6 +1644,30 @@ router.post(
         return res.status(404).json({ error: "Quotation not found" });
       }
 
+      if (
+        String(quotation.status || "").toLowerCase() === "converted" ||
+        quotation.invoiceId
+      ) {
+        if (quotation.invoiceId) {
+          const existingInvoice = await prisma.salesInvoice.findUnique({
+            where: { id: quotation.invoiceId },
+            include: {
+              SalesInvoiceItem: { include: { Part: true } },
+            },
+          });
+          if (existingInvoice) {
+            return res.status(200).json({
+              data: existingInvoice,
+              warning: "Quotation was already converted to an invoice.",
+              alreadyConverted: true,
+            });
+          }
+        }
+        return res.status(409).json({
+          error: "Quotation has already been converted to an invoice.",
+        });
+      }
+
       const temporaryExcluded = quotation.SalesQuotationItem.filter(
         (item: any) =>
           (Boolean(item.isTemporary) || !item.partId) &&
@@ -1651,40 +1700,58 @@ router.post(
         });
       }
 
-      // Generate robust invoice number (numeric string; legacy INV-* rows still drive sequence)
-      const invoiceNo = await getNextSalesInvoiceNo(invoiceDate);
+      // Create invoice under advisory lock (number + insert + mark quotation converted).
+      const invoice = await prisma.$transaction(async (tx) => {
+        const freshQuotation = await tx.salesQuotation.findUnique({
+          where: { id },
+          select: { id: true, status: true, invoiceId: true },
+        });
+        if (
+          !freshQuotation ||
+          String(freshQuotation.status || "").toLowerCase() === "converted" ||
+          freshQuotation.invoiceId
+        ) {
+          const err: any = new Error(
+            "Quotation has already been converted to an invoice.",
+          );
+          err.code = "ALREADY_CONVERTED";
+          err.invoiceId = freshQuotation?.invoiceId || null;
+          throw err;
+        }
 
-      const q = quotation as {
-        subtotal?: number;
-        overallDiscount?: number;
-        freightCharges?: number;
-        tax?: number;
-        taxPercentage?: number | null;
-        totalAmount?: number;
-        customerType?: string;
-        customerId?: string | null;
-      };
-      const initiatedSubtotal = itemsForInvoice.reduce(
-        (sum, { item, initiateQty }) =>
-          sum + initiateQty * Number(item.unitPrice || 0),
-        0,
-      );
-      const subtotal = initiatedSubtotal;
-      const overallDiscount =
-        discount != null ? Number(discount) : Number(q.overallDiscount || 0);
-      const freight = Number(q.freightCharges || 0);
-      const taxAmount = tax != null ? Number(tax) : Number(q.tax || 0);
-      const grandTotal = subtotal - overallDiscount + taxAmount + freight;
-      const normalizedCustomerType =
-        customerType || q.customerType || "registered";
-      const resolvedCustomerId = customerId || q.customerId || null;
-      const resolvedTerm =
-        normalizedCustomerType === "registered"
-          ? String(term ?? "").trim() || null
-          : null;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SALES_INVOICE_NO_LOCK})`;
+        const invoiceNo = await getNextSalesInvoiceNo(invoiceDate, tx);
 
-      // Create invoice
-      const invoiceCreateData: any = {
+        const q = quotation as {
+          subtotal?: number;
+          overallDiscount?: number;
+          freightCharges?: number;
+          tax?: number;
+          taxPercentage?: number | null;
+          totalAmount?: number;
+          customerType?: string;
+          customerId?: string | null;
+        };
+        const initiatedSubtotal = itemsForInvoice.reduce(
+          (sum, { item, initiateQty }) =>
+            sum + initiateQty * Number(item.unitPrice || 0),
+          0,
+        );
+        const subtotal = initiatedSubtotal;
+        const overallDiscount =
+          discount != null ? Number(discount) : Number(q.overallDiscount || 0);
+        const freight = Number(q.freightCharges || 0);
+        const taxAmount = tax != null ? Number(tax) : Number(q.tax || 0);
+        const grandTotal = subtotal - overallDiscount + taxAmount + freight;
+        const normalizedCustomerType =
+          customerType || q.customerType || "registered";
+        const resolvedCustomerId = customerId || q.customerId || null;
+        const resolvedTerm =
+          normalizedCustomerType === "registered"
+            ? String(term ?? "").trim() || null
+            : null;
+
+        const invoiceCreateData: any = {
           id: crypto.randomUUID(),
           invoiceNo,
           invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
@@ -1729,25 +1796,36 @@ router.post(
             })),
           },
         };
-      if (resolvedCustomerId) {
-        invoiceCreateData.Customer = { connect: { id: resolvedCustomerId } };
-      }
-      if (accountId) {
-        invoiceCreateData.Account = { connect: { id: accountId } };
-      }
+        if (resolvedCustomerId) {
+          invoiceCreateData.Customer = { connect: { id: resolvedCustomerId } };
+        }
+        if (accountId) {
+          invoiceCreateData.Account = { connect: { id: accountId } };
+        }
 
-      const invoice = await prisma.salesInvoice.create({
-        data: invoiceCreateData,
-        include: {
-          SalesInvoiceItem: {
-            include: {
-              Part: true,
+        const created = await tx.salesInvoice.create({
+          data: invoiceCreateData,
+          include: {
+            SalesInvoiceItem: {
+              include: {
+                Part: true,
+              },
             },
           },
-        },
+        });
+
+        await tx.salesQuotation.update({
+          where: { id },
+          data: { status: "converted", invoiceId: created.id },
+        });
+
+        return { created, freight, grandTotal, normalizedCustomerType };
       });
 
-      await setInvoiceFreightCharges(invoice.id, freight);
+      const { created: createdInvoice, freight, grandTotal } = invoice as any;
+      const invoiceResult = createdInvoice;
+
+      await setInvoiceFreightCharges(invoiceResult.id, freight);
 
       // Stock is reserved when the invoice is approved (not while pending)
 
@@ -1756,14 +1834,8 @@ router.post(
 
       // Update invoice status
       await prisma.salesInvoice.update({
-        where: { id: invoice.id },
+        where: { id: invoiceResult.id },
         data: { status: initialStatus },
-      });
-
-      // Update quotation status
-      await prisma.salesQuotation.update({
-        where: { id },
-        data: { status: "converted", invoiceId: invoice.id },
       });
 
       // PART SELL (walking) - Credit Sale Logic
@@ -1775,7 +1847,7 @@ router.post(
         await prisma.receivable.create({
           data: {
             id: crypto.randomUUID(),
-            invoiceId: invoice.id,
+            invoiceId: invoiceResult.id,
             customerId: customerId as string,
             amount: grandTotal,
             paidAmount: paidAmount || 0,
@@ -1853,7 +1925,7 @@ router.post(
       }
 
       const updatedInvoice = await prisma.salesInvoice.findUnique({
-        where: { id: invoice.id },
+        where: { id: invoiceResult.id },
         include: {
           SalesInvoiceItem: {
             include: {
@@ -1876,6 +1948,25 @@ router.post(
             : null,
       });
     } catch (error: any) {
+      if (error?.code === "ALREADY_CONVERTED") {
+        if (error.invoiceId) {
+          const existingInvoice = await prisma.salesInvoice.findUnique({
+            where: { id: error.invoiceId },
+            include: {
+              SalesInvoiceItem: { include: { Part: true } },
+              Receivable: true,
+            },
+          });
+          if (existingInvoice) {
+            return res.status(200).json({
+              ...existingInvoice,
+              alreadyConverted: true,
+              warning: "Quotation was already converted to an invoice.",
+            });
+          }
+        }
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   },
@@ -2484,6 +2575,31 @@ router.post("/invoices", async (req: Request, res: Response) => {
         ? String(term ?? "").trim() || null
         : payment.walkInTerm;
 
+    const idempotencyKey = String(
+      req.headers["idempotency-key"] ||
+        req.body?.idempotencyKey ||
+        "",
+    ).trim();
+    if (idempotencyKey) {
+      const cached = invoiceCreateIdempotency.get(idempotencyKey);
+      if (cached) {
+        const existing = await prisma.salesInvoice.findUnique({
+          where: { id: cached.invoiceId },
+          include: {
+            SalesInvoiceItem: { include: { Part: true } },
+            Receivable: true,
+          },
+        });
+        if (existing) {
+          return res.json({
+            ...existing,
+            freightCharges: Number((existing as any).freightCharges || 0),
+            idempotentReplay: true,
+          });
+        }
+      }
+    }
+
     // Check stock availability — allow short/zero available unless reserved stock exists
     for (const item of items) {
       const stock = await getStockBalance(item.partId);
@@ -2501,142 +2617,142 @@ router.post("/invoices", async (req: Request, res: Response) => {
       }
     }
 
-    const invoiceNo =
-      normalizedCustomerType === "transfer"
-        ? await getNextTransferOutInvoiceNo(invoiceDate)
-        : await getNextSalesInvoiceNo(invoiceDate);
-
     const finalAccountId = payment.legacyAccountId;
 
     const freightAmount = Number(freightCharges || 0);
 
+    // Build line payloads before the locked create (reads only).
+    const itemCreateData = await Promise.all(
+      (items || []).map(async (item: any) => {
+        let resolvedAvgCost = 0;
+        const resolvedPart = await resolveInvoiceItemPartFields(prisma, item);
+        const itemData: any = {
+          partId: item.partId,
+          partNo: resolvedPart.partNo,
+          description: resolvedPart.description,
+          orderedQty: item.orderedQty,
+          deliveredQty: 0,
+          pendingQty: item.orderedQty,
+          unitPrice: item.unitPrice,
+          avgCost: resolvedAvgCost,
+          discount: item.discount || 0,
+          lineTotal: item.lineTotal,
+          grade: item.grade || "A",
+          brand: resolvedPart.brand,
+          useUnlocatedStock: !!item.useUnlocatedStock,
+        };
+
+        const locationIds =
+          item.selectedLocationIds ||
+          (item.selectedLocationId ? [item.selectedLocationId] : []);
+
+        if (locationIds.length > 0 && !item.useUnlocatedStock) {
+          const prsList = await prisma.partRackShelf.findMany({
+            where: { id: { in: locationIds } },
+          });
+
+          if (prsList.length > 0) {
+            let remainingQty = item.orderedQty;
+            const invoiceRackShelves = [];
+
+            for (let i = 0; i < prsList.length; i++) {
+              const prs = prsList[i];
+              if (remainingQty <= 0 && i > 0) break;
+
+              let qtyToTake = Math.min(remainingQty, prs.quantity);
+              if (i === prsList.length - 1) {
+                qtyToTake = remainingQty;
+              }
+
+              if (qtyToTake > 0 || prsList.length === 1) {
+                invoiceRackShelves.push({
+                  storeId: prs.storeId,
+                  rackId: prs.rackId,
+                  shelfId: prs.shelfId,
+                  quantity: qtyToTake,
+                });
+                remainingQty -= qtyToTake;
+              }
+            }
+
+            itemData.InvoiceRackShelf = {
+              create: invoiceRackShelves,
+            };
+          }
+        }
+
+        return itemData;
+      }),
+    );
+
+    const lockKey =
+      normalizedCustomerType === "transfer"
+        ? TRANSFER_OUT_NO_LOCK
+        : SALES_INVOICE_NO_LOCK;
+
     // Nested item create requires relation connect (not scalar customerId/accountId).
-    const invoice = await prisma.salesInvoice.create({
-      data: {
-        id: randomUUID(),
-        invoiceNo,
-        invoiceDate: new Date(invoiceDate),
-        customerName,
-        customerType: normalizedCustomerType,
-        term: resolvedTerm,
-        salesPerson: salesPerson || "Admin",
-        subtotal: subtotal || 0,
-        overallDiscount: overallDiscount || 0,
-        tax: tax || 0,
-        taxPercentage: taxPercentage != null ? Number(taxPercentage) : null,
-        grandTotal: grandTotal || 0,
-        paidAmount: resolvedPaidAmount,
-        bankAmount: parsedBankAmount,
-        cashAmount: parsedCashAmount,
-        status: "pending",
-        paymentStatus:
-          resolvedPaidAmount >= grandTotal
-            ? "paid"
-            : resolvedPaidAmount > 0
-              ? "partial"
-              : "unpaid",
-        deliveredTo,
-        remarks,
-        updatedAt: new Date(),
-        ...(customerId ? { Customer: { connect: { id: customerId } } } : {}),
-        ...(finalAccountId
-          ? { Account: { connect: { id: finalAccountId } } }
-          : {}),
-        ...(bankAccountId
-          ? { BankAccount: { connect: { id: bankAccountId } } }
-          : {}),
-        ...(cashAccountId
-          ? { CashAccount: { connect: { id: cashAccountId } } }
-          : {}),
-        SalesInvoiceItem: {
-          create: await Promise.all(
-            items.map(async (item: any) => {
-              // Only fetch and save avgCost when invoice is not pending
-              const isPending = true; // new invoices always start as pending
-              let resolvedAvgCost = 0;
-              if (!isPending) {
-                const part = await prisma.part.findUnique({
-                  where: { id: item.partId },
-                  select: { avgCost: true, cost: true },
-                });
-                resolvedAvgCost = part?.avgCost || part?.cost || 0;
-              }
+    // Allocate invoiceNo + insert under advisory lock so concurrent saves cannot mint duplicates.
+    const invoice = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+      const invoiceNo =
+        normalizedCustomerType === "transfer"
+          ? await getNextTransferOutInvoiceNo(invoiceDate, tx)
+          : await getNextSalesInvoiceNo(invoiceDate, tx);
 
-              // Resolve location details if selectedLocationId is provided
-              let storeId = null;
-              let rackId = null;
-              let shelfId = null;
-
-              const resolvedPart = await resolveInvoiceItemPartFields(prisma, item);
-              const itemData: any = {
-                partId: item.partId,
-                partNo: resolvedPart.partNo,
-                description: resolvedPart.description,
-                orderedQty: item.orderedQty,
-                deliveredQty: 0,
-                pendingQty: item.orderedQty,
-                unitPrice: item.unitPrice,
-                avgCost: resolvedAvgCost,
-                discount: item.discount || 0,
-                lineTotal: item.lineTotal,
-                grade: item.grade || "A",
-                brand: resolvedPart.brand,
-                useUnlocatedStock: !!item.useUnlocatedStock,
-              };
-
-              const locationIds =
-                item.selectedLocationIds ||
-                (item.selectedLocationId ? [item.selectedLocationId] : []);
-
-              if (locationIds.length > 0 && !item.useUnlocatedStock) {
-                const prsList = await prisma.partRackShelf.findMany({
-                  where: { id: { in: locationIds } },
-                });
-
-                if (prsList.length > 0) {
-                  let remainingQty = item.orderedQty;
-                  const invoiceRackShelves = [];
-
-                  for (let i = 0; i < prsList.length; i++) {
-                    const prs = prsList[i];
-                    if (remainingQty <= 0 && i > 0) break;
-
-                    let qtyToTake = Math.min(remainingQty, prs.quantity);
-                    // For the last one, or if only one, take whatever is left even if negative stock results
-                    if (i === prsList.length - 1) {
-                      qtyToTake = remainingQty;
-                    }
-
-                    if (qtyToTake > 0 || prsList.length === 1) {
-                      invoiceRackShelves.push({
-                        storeId: prs.storeId,
-                        rackId: prs.rackId,
-                        shelfId: prs.shelfId,
-                        quantity: qtyToTake,
-                      });
-                      remainingQty -= qtyToTake;
-                    }
-                  }
-
-                  itemData.InvoiceRackShelf = {
-                    create: invoiceRackShelves,
-                  };
-                }
-              }
-
-              return itemData;
-            }),
-          ),
-        },
-      } as any,
-      include: {
-        SalesInvoiceItem: {
-          include: {
-            InvoiceRackShelf: true,
+      return tx.salesInvoice.create({
+        data: {
+          id: randomUUID(),
+          invoiceNo,
+          invoiceDate: new Date(invoiceDate),
+          customerName,
+          customerType: normalizedCustomerType,
+          term: resolvedTerm,
+          salesPerson: salesPerson || "Admin",
+          subtotal: subtotal || 0,
+          overallDiscount: overallDiscount || 0,
+          tax: tax || 0,
+          taxPercentage: taxPercentage != null ? Number(taxPercentage) : null,
+          grandTotal: grandTotal || 0,
+          paidAmount: resolvedPaidAmount,
+          bankAmount: parsedBankAmount,
+          cashAmount: parsedCashAmount,
+          status: "pending",
+          paymentStatus:
+            resolvedPaidAmount >= grandTotal
+              ? "paid"
+              : resolvedPaidAmount > 0
+                ? "partial"
+                : "unpaid",
+          deliveredTo,
+          remarks,
+          updatedAt: new Date(),
+          ...(customerId ? { Customer: { connect: { id: customerId } } } : {}),
+          ...(finalAccountId
+            ? { Account: { connect: { id: finalAccountId } } }
+            : {}),
+          ...(bankAccountId
+            ? { BankAccount: { connect: { id: bankAccountId } } }
+            : {}),
+          ...(cashAccountId
+            ? { CashAccount: { connect: { id: cashAccountId } } }
+            : {}),
+          SalesInvoiceItem: {
+            create: itemCreateData,
+          },
+        } as any,
+        include: {
+          SalesInvoiceItem: {
+            include: {
+              InvoiceRackShelf: true,
+            },
           },
         },
-      },
+      });
     });
+
+    if (idempotencyKey) {
+      rememberInvoiceCreateIdempotency(idempotencyKey, invoice.id);
+    }
 
     await setInvoiceFreightCharges(invoice.id, freightAmount);
 
@@ -2954,7 +3070,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
           jvVoucherEntries.push({
             accountId: receivableAccount.id,
             accountName: `${receivableAccount.code}-${receivableAccount.name}`,
-            description: `INV: ${invoiceNo} Receivable Created - ${customerName}`,
+            description: `INV: ${invoice.invoiceNo} Receivable Created - ${customerName}`,
             debit: grandTotal,
             credit: 0,
             sortOrder: 0,
@@ -2965,7 +3081,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
         jvVoucherEntries.push({
           accountId: salesRevenueAccount.id,
           accountName: `${salesRevenueAccount.code}-${salesRevenueAccount.name}`,
-          description: `INV: ${invoiceNo} Sales Revenue - ${customerName}`,
+          description: `INV: ${invoice.invoiceNo} Sales Revenue - ${customerName}`,
           debit: 0,
           credit: grandTotal,
           sortOrder: 1,
@@ -3347,32 +3463,41 @@ router.post("/invoices", async (req: Request, res: Response) => {
     // PART SELL (walking) - Credit Sale Logic (for receivable creation)
     // NO immediate stock reduction - stock will be reduced when delivery is confirmed
     if (customerType === "walking" && customerId) {
-      const totalPaid =
-        (bankAmount || 0) + (cashAmount || 0) || paidAmount || 0;
-      const dueAmount = grandTotal - totalPaid;
+      try {
+        const totalPaid =
+          (bankAmount || 0) + (cashAmount || 0) || paidAmount || 0;
+        const dueAmount = grandTotal - totalPaid;
 
-      // Create receivable for part sell (credit sale)
-      await prisma.receivable.create({
-        data: {
-          invoiceId: invoice.id,
-          customerId,
-          amount: grandTotal,
-          paidAmount: totalPaid,
-          dueAmount,
-          status:
-            dueAmount === 0 ? "paid" : totalPaid > 0 ? "partial" : "pending",
-        } as any,
-      });
+        // Create receivable for part sell (credit sale)
+        await prisma.receivable.create({
+          data: {
+            invoiceId: invoice.id,
+            customerId,
+            amount: grandTotal,
+            paidAmount: totalPaid,
+            dueAmount,
+            status:
+              dueAmount === 0 ? "paid" : totalPaid > 0 ? "partial" : "pending",
+          } as any,
+        });
 
-      // Update customer balance
-      await prisma.customer.update({
-        where: { id: customerId },
-        data: {
-          openingBalance: {
-            increment: dueAmount,
+        // Update customer balance
+        await prisma.customer.update({
+          where: { id: customerId },
+          data: {
+            openingBalance: {
+              increment: dueAmount,
+            },
           },
-        },
-      });
+        });
+      } catch (receivableError: any) {
+        // Invoice already saved — do not fail the create response (avoids client retry dupes)
+        console.error(
+          "Walking receivable create failed for invoice",
+          invoice.id,
+          receivableError?.message || receivableError,
+        );
+      }
     }
 
     const updatedInvoice = await prisma.salesInvoice.findUnique({

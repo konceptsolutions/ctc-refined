@@ -1096,6 +1096,8 @@ export const SalesInvoice = ({
   const [showBackToInquiry, setShowBackToInquiry] = useState(false);
   const [savingInvoice, setSavingInvoice] = useState(false);
   const savingInvoiceRef = useRef(false);
+  const saveIdempotencyKeyRef = useRef<string | null>(null);
+  const convertingQuotationRef = useRef(false);
   const openedInquiryQuotationRef = useRef(false);
 
   useEffect(() => {
@@ -3637,11 +3639,9 @@ export const SalesInvoice = ({
       try {
         setLoadingAccounts(true);
 
-        // Fetch accounts from Accounting API using apiClient
-        // Note: Backend expects "Active" with capital A
-        const response = (await apiClient.getAccounts({
-          status: "Active",
-        })) as any;
+        // Payment cash/bank list — use dropdowns (any auth user), not /accounting/accounts
+        // which requires module.accounting and fails for Sales role.
+        const response = (await apiClient.getPaymentAccounts()) as any;
 
         // apiClient returns { data: [...] } or the data directly
         const accountsData = Array.isArray(response)
@@ -3879,6 +3879,11 @@ export const SalesInvoice = ({
 
   // Create or update invoice
   const handleSaveInvoice = async () => {
+    if (savingInvoiceRef.current) return;
+    savingInvoiceRef.current = true;
+    setSavingInvoice(true);
+
+    try {
     if (
       inlineItems.length === 0 ||
       inlineItems.every((i) => !i.selectedPartId)
@@ -4109,11 +4114,6 @@ export const SalesInvoice = ({
         };
       });
 
-    if (savingInvoiceRef.current) return;
-    savingInvoiceRef.current = true;
-    setSavingInvoice(true);
-
-    try {
       // Determine customer name based on selection
       // registered = Party Sale (picks from customer dropdown)
       // walking    = Cash Sale  (free-text name entry)
@@ -4252,7 +4252,13 @@ export const SalesInvoice = ({
           ...paymentPayload,
         });
       } else {
-        // CREATE New Invoice
+        // CREATE New Invoice — reuse the same idempotency key if a prior attempt may have succeeded
+        if (!saveIdempotencyKeyRef.current) {
+          saveIdempotencyKeyRef.current =
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `inv-save-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        }
         response = await apiClient.createSalesInvoice({
           invoiceDate: invoiceDate,
           term: resolvedTerm,
@@ -4273,6 +4279,7 @@ export const SalesInvoice = ({
           taxPercentage: resolvedTaxPercentage,
           grandTotal,
           ...paymentPayload,
+          idempotencyKey: saveIdempotencyKeyRef.current,
         });
       }
 
@@ -4286,6 +4293,15 @@ export const SalesInvoice = ({
         });
         return;
       }
+
+      // After create, latch the new id so a retry cannot POST another invoice.
+      const createdId = String(
+        (response as any)?.id || (response as any)?.data?.id || "",
+      ).trim();
+      if (!editingInvoiceId && createdId) {
+        setEditingInvoiceId(createdId);
+      }
+      saveIdempotencyKeyRef.current = null;
 
       const invoiceType = isTransferOut
         ? "Transfer Out"
@@ -4392,6 +4408,7 @@ export const SalesInvoice = ({
   // Reset form
   const resetForm = () => {
     setEditingInvoiceId(null);
+    saveIdempotencyKeyRef.current = null;
     setDocumentView("form");
     setNewInvoice({
       customerType: isTransferOut ? "transfer" : "registered",
@@ -6197,6 +6214,8 @@ export const SalesInvoice = ({
     );
 
   const executeQuotationInitiate = async (quotation: Invoice) => {
+    if (convertingQuotationRef.current) return;
+    convertingQuotationRef.current = true;
     try {
       setConvertingQuotationId(quotation.id);
       const conversionResponse = await apiClient.convertQuotationToInvoice(
@@ -6253,6 +6272,7 @@ export const SalesInvoice = ({
         variant: "destructive",
       });
     } finally {
+      convertingQuotationRef.current = false;
       setConvertingQuotationId(null);
     }
   };
@@ -7121,6 +7141,8 @@ export const SalesInvoice = ({
                 setDocumentView("list");
                 return;
               }
+              // Already on the form (e.g. editing) — do not wipe the draft mid-edit
+              if (documentView === "form") return;
               resetForm();
             }}
           >

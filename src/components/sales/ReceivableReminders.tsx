@@ -302,9 +302,7 @@ export const ReceivableReminders = () => {
     const fetchAccounts = async () => {
       try {
         setLoadingAccounts(true);
-        const response = (await apiClient.getAccounts({
-          status: "Active",
-        })) as any;
+        const response = (await apiClient.getPaymentAccounts()) as any;
         const accountsData = Array.isArray(response)
           ? response
           : response.data || [];

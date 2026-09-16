@@ -1099,20 +1099,57 @@ router.get("/account-groups", async (req: Request, res: Response) => {
 });
 
 // International supplier linked accounts (for International Supplier Ledger dropdown)
+// Also includes Supplier Security (402), Shipping Agents (405), Clearing Agents (406),
+// and Karachi branch Transfer In/Out subgroups (305 liability / 1106 asset).
+const INTERNATIONAL_SUPPLIER_EXTRA_SUBGROUPS = [
+  "402",
+  "405",
+  "406",
+  "305",
+  "1106",
+] as const;
+
+function internationalSupplierAccountWhere() {
+  return {
+    OR: [
+      {
+        supplierId: { not: null },
+        Supplier: { type: "international" },
+      },
+      {
+        Subgroup: { code: { in: [...INTERNATIONAL_SUPPLIER_EXTRA_SUBGROUPS] } },
+      },
+    ],
+  };
+}
+
+function internationalSupplierAccountCategory(subgroupCode: string | null | undefined) {
+  const code = String(subgroupCode || "").trim();
+  if (code === "402") return "supplier_security";
+  if (code === "405") return "shipping_agent";
+  if (code === "406") return "clearing_agent";
+  if (code === "305") return "transfer_in_branch";
+  if (code === "1106") return "transfer_out_branch";
+  return "supplier_payable";
+}
+
+function internationalSupplierDisplayName(acc: any) {
+  if (acc.Supplier?.companyName || acc.Supplier?.name) {
+    return acc.Supplier?.companyName || acc.Supplier?.name;
+  }
+  const code = String(acc.Subgroup?.code || "").trim();
+  if (code === "402") return "Supplier Security";
+  if (code === "405") return acc.name || "Shipping Agent";
+  if (code === "406") return acc.name || "Clearing Agent";
+  if (code === "305") return acc.name || "Transfer In (Branch)";
+  if (code === "1106") return acc.name || "Transfer Out (Branch)";
+  return acc.name;
+}
+
 router.get("/international-supplier-accounts", async (_req: Request, res: Response) => {
   try {
     const accounts = await prisma.account.findMany({
-      where: {
-        OR: [
-          {
-            supplierId: { not: null },
-            Supplier: { type: "international" },
-          },
-          {
-            Subgroup: { code: "402" },
-          },
-        ],
-      },
+      where: internationalSupplierAccountWhere(),
       include: {
         Subgroup: {
           select: { code: true, name: true },
@@ -1137,15 +1174,9 @@ router.get("/international-supplier-accounts", async (_req: Request, res: Respon
         name: `${acc.code}-${acc.name}`,
         code: acc.code,
         supplierId: acc.supplierId,
-        supplierName:
-          acc.Supplier?.companyName ||
-          acc.Supplier?.name ||
-          (acc.Subgroup?.code === "402" ? "Supplier Security" : acc.name),
+        supplierName: internationalSupplierDisplayName(acc),
         currencyName: acc.Supplier?.currencyName || "USD",
-        accountCategory:
-          acc.Subgroup?.code === "402"
-            ? "supplier_security"
-            : "supplier_payable",
+        accountCategory: internationalSupplierAccountCategory(acc.Subgroup?.code),
       })),
     });
   } catch (error: any) {
@@ -1184,15 +1215,7 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
     const acc = await prisma.account.findFirst({
       where: {
         id: String(account),
-        OR: [
-          {
-            supplierId: { not: null },
-            Supplier: { type: "international" },
-          },
-          {
-            Subgroup: { code: "402" },
-          },
-        ],
+        ...internationalSupplierAccountWhere(),
       },
       include: {
         Subgroup: { include: { MainGroup: true } },
@@ -1208,7 +1231,8 @@ router.get("/international-supplier-ledgers", async (req: Request, res: Response
 
     if (!acc) {
       return res.status(404).json({
-        error: "International supplier or supplier security account not found",
+        error:
+          "International supplier, branch transfer, shipping/clearing agent, or supplier security account not found",
       });
     }
 

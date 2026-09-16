@@ -2170,6 +2170,11 @@ class ApiClient {
     );
   }
 
+  /** Cash/bank accounts for payment pickers (works for sales users without accounting module). */
+  async getPaymentAccounts() {
+    return this.request("/dropdowns/payment-accounts");
+  }
+
   async getAccountBalances() {
     return this.request("/accounting/account-balances");
   }
@@ -4491,10 +4496,17 @@ class ApiClient {
     taxPercentage?: number;
     grandTotal: number;
     paidAmount?: number;
+    idempotencyKey?: string;
   }) {
+    const { idempotencyKey, ...body } = data;
+    const headers: Record<string, string> = {};
+    if (idempotencyKey) {
+      headers["Idempotency-Key"] = idempotencyKey;
+    }
     return this.request("/sales/invoices", {
       method: "POST",
-      body: JSON.stringify(data),
+      headers,
+      body: JSON.stringify({ ...body, idempotencyKey }),
     });
   }
 

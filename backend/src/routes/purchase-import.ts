@@ -1504,6 +1504,8 @@ function findUnmatchedInquiryItems(params: {
     inquiryIndexesByKey.set(key, list);
   });
 
+  const quotationPaired = new Array(quotation.length).fill(false);
+
   for (let q = 0; q < quotation.length; q++) {
     const key = purchaseImportLineKey(quotation[q]);
     if (!key) continue;
@@ -1512,20 +1514,67 @@ function findUnmatchedInquiryItems(params: {
       const inquiryIndex = candidates.shift()!;
       if (!unmatchedInquiry.has(inquiryIndex)) continue;
       unmatchedInquiry.delete(inquiryIndex);
+      quotationPaired[q] = true;
       break;
     }
     inquiryIndexesByKey.set(key, candidates);
   }
 
+  // Same-index alternate only when the quotation line itself is still unpaired.
   for (let q = 0; q < quotation.length; q++) {
+    if (quotationPaired[q]) continue;
     if (!unmatchedInquiry.has(q)) continue;
     if (q >= inquiry.length) continue;
     unmatchedInquiry.delete(q);
+    quotationPaired[q] = true;
   }
 
   return Array.from(unmatchedInquiry)
     .sort((a, b) => a - b)
     .map((index) => inquiry[index]);
+}
+
+/**
+ * After a pending quotation save: drop inquiry lines on this request that no
+ * longer pair to any saved quotation line (same supplier request only).
+ */
+async function removeUnmatchedInquiryItemsForQuotation(
+  requestId: string,
+  quotationItems: any[],
+  db: any = prisma,
+): Promise<number> {
+  const purchaseImportRequestItemModel = db.purchaseImportRequestItem;
+  if (!purchaseImportRequestItemModel || !requestId) return 0;
+
+  const inquiryItems = await purchaseImportRequestItemModel.findMany({
+    where: { purchaseImportRequestId: requestId },
+    select: {
+      id: true,
+      partId: true,
+      isTemporary: true,
+      tempPartNo: true,
+      tempMasterPartNo: true,
+      tempDescription: true,
+      sortOrder: true,
+    },
+  });
+
+  const unmatched = findUnmatchedInquiryItems({
+    inquiryItems,
+    quotationItems,
+  });
+  const ids = unmatched
+    .map((item: any) => String(item?.id || "").trim())
+    .filter(Boolean);
+  if (ids.length === 0) return 0;
+
+  await purchaseImportRequestItemModel.deleteMany({
+    where: {
+      purchaseImportRequestId: requestId,
+      id: { in: ids },
+    },
+  });
+  return ids.length;
 }
 
 /**
@@ -3615,6 +3664,14 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
         })),
       });
 
+      if (String(status || "").toLowerCase() === "pending") {
+        await removeUnmatchedInquiryItemsForQuotation(
+          requestRow.id,
+          items,
+          tx,
+        );
+      }
+
       return { quotationId, quotationNo };
     });
 
@@ -4110,7 +4167,12 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
 
     const existing = await purchaseQuotationModel.findUnique({
       where: { id: quotationId },
-      select: { id: true, quotationNo: true },
+      select: {
+        id: true,
+        quotationNo: true,
+        status: true,
+        purchaseImportRequestId: true,
+      },
     });
     if (!existing) {
       return res.status(404).json({ error: "Purchase quotation not found." });
@@ -4263,6 +4325,17 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
           updatedAt: new Date(),
         })),
       });
+
+      if (
+        String(existing.status || "").toLowerCase() === "pending" &&
+        existing.purchaseImportRequestId
+      ) {
+        await removeUnmatchedInquiryItemsForQuotation(
+          existing.purchaseImportRequestId,
+          items,
+          tx,
+        );
+      }
     });
 
     res.json({

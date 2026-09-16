@@ -1097,4 +1097,43 @@ router.post("/areas", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Active cash / bank chart accounts for payment pickers (sales invoice, returns, etc.).
+ * Available to any authenticated user — does not require module.accounting.
+ */
+router.get("/payment-accounts", async (_req: Request, res: Response) => {
+  try {
+    const accounts = await prisma.account.findMany({
+      where: {
+        status: "Active",
+        OR: [
+          { Subgroup: { code: { in: ["102", "103", "108"] } } },
+          {
+            Subgroup: {
+              name: { contains: "cash", mode: "insensitive" },
+            },
+          },
+          {
+            Subgroup: {
+              name: { contains: "bank", mode: "insensitive" },
+            },
+          },
+        ],
+      },
+      include: {
+        Subgroup: {
+          include: {
+            MainGroup: true,
+          },
+        },
+      },
+      orderBy: { code: "asc" },
+    });
+
+    res.json({ data: accounts });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
