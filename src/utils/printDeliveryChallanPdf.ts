@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { openPdfPrintDialog, formatPdfDate } from "@/utils/pdfPrint";
+import { formatWeightDisplay, roundWeight } from "@/utils/weightRound";
 
 export type DeliveryChallanPdfItem = {
   partNo: string;
@@ -43,9 +44,8 @@ export const printDeliveryChallanPdf = (input: DeliveryChallanPdfInput) => {
     (sum, item) => sum + (Number(item.deliveredQty) || 0),
     0,
   );
-  const totalWeight = items.reduce(
-    (sum, item) => sum + (Number(item.weight) || 0),
-    0,
+  const totalWeight = roundWeight(
+    items.reduce((sum, item) => sum + (Number(item.weight) || 0), 0),
   );
   const isFullyDelivered =
     String(input.status || "").toLowerCase() === "fully_delivered" ||
@@ -78,7 +78,7 @@ export const printDeliveryChallanPdf = (input: DeliveryChallanPdfInput) => {
           ? [String(Number(item.deliveredQty) || 0)]
           : []),
         item.location || "-",
-        Number(item.weight || 0).toFixed(3),
+        formatWeightDisplay(item.weight, { fixed: true }),
       ])
     : [
         [
@@ -99,7 +99,7 @@ export const printDeliveryChallanPdf = (input: DeliveryChallanPdfInput) => {
       String(totalQty),
       ...(isFullyDelivered ? [String(totalDelivered)] : []),
       "-",
-      totalWeight.toFixed(3),
+      formatWeightDisplay(totalWeight, { fixed: true }),
     ],
   ];
 

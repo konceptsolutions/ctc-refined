@@ -240,8 +240,8 @@ export const buildPurchaseImportInquiryPdfDoc = ({
             String(index + 1),
             `${text(item.masterPartNo)} | ${text(item.partNo)}\n${text(item.description)}`,
             String(item.totalDemand),
-            item.weight.toFixed(2),
-            item.totalWeight.toFixed(2),
+            item.weight.toFixed(4),
+            item.totalWeight.toFixed(4),
           ]),
     foot: [
       [
@@ -249,7 +249,7 @@ export const buildPurchaseImportInquiryPdfDoc = ({
         "Totals",
         String(totals.qty),
         "",
-        totals.weight.toFixed(2),
+        totals.weight.toFixed(4),
       ],
     ],
     showFoot: "lastPage",

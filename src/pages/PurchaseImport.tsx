@@ -63,6 +63,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { printPurchaseImportQuotation, printPurchaseImportUnquotedItems } from "@/utils/printPurchaseImportQuotationPdf";
+import { WEIGHT_INPUT_STEP, formatWeightDisplay, roundWeight } from "@/utils/weightRound";
 import { printPurchaseImportQuotationComparison } from "@/utils/printPurchaseImportQuotationComparisonPdf";
 import { printPurchaseImportOrder } from "@/utils/printPurchaseImportOrderPdf";
 import { apiClient } from "@/lib/api";
@@ -716,7 +717,7 @@ function computeImportReceiveLineAmounts(
   return {
     fcAmount: roundFc(line.fcRate * qty),
     lcAmount: roundImportWhole(line.lcRate * qty),
-    totalWeight: line.weight * qty,
+    totalWeight: roundWeight(line.weight * qty),
   };
 }
 
@@ -3246,18 +3247,18 @@ const PurchaseImportRequestForm = ({
                       <Input
                         type="number"
                         min={0}
-                        step="0.01"
+                        step={WEIGHT_INPUT_STEP}
                         className="h-8 text-right"
                         value={row.weight}
                         onChange={(e) =>
                           updateItem(row.id, {
-                            weight: Number(e.target.value || 0),
+                            weight: roundWeight(e.target.value || 0),
                           })
                         }
                       />
                     </td>
                     <td className="p-2 border-b text-right font-medium">
-                      {row.totalWeight.toFixed(2)}
+                      {formatWeightDisplay(row.totalWeight, { fixed: true })}
                     </td>
                     <td className="p-2 border-b text-center">
                       <Button
@@ -3419,7 +3420,7 @@ const PurchaseImportRequestForm = ({
                 </td>
                 <td className="p-2" />
                 <td className="p-2 text-right tabular-nums">
-                  {itemTotals.totalWeight.toFixed(2)}
+                  {formatWeightDisplay(itemTotals.totalWeight, { fixed: true })}
                 </td>
                 <td className="p-2" />
               </tr>
@@ -4264,8 +4265,8 @@ const PurchaseImportRequestView = ({
                     </td>
                     {/* <td className="p-2 text-right">{item.otherQuantity}</td> */}
                     <td className="p-2 text-right font-medium">{item.totalDemand}</td>
-                    <td className="p-2 text-right">{item.weight.toFixed(2)}</td>
-                    <td className="p-2 text-right">{item.totalWeight.toFixed(2)}</td>
+                    <td className="p-2 text-right">{formatWeightDisplay(item.weight, { fixed: true })}</td>
+                    <td className="p-2 text-right">{formatWeightDisplay(item.totalWeight, { fixed: true })}</td>
                   </tr>
                 ))
               )}
@@ -4277,7 +4278,7 @@ const PurchaseImportRequestView = ({
                 </td>
                 <td className="p-2 text-right">{totals.qty}</td>
                 <td className="p-2" />
-                <td className="p-2 text-right">{totals.weight.toFixed(2)}</td>
+                <td className="p-2 text-right">{formatWeightDisplay(totals.weight, { fixed: true })}</td>
               </tr>
             </tfoot>
           </table>
@@ -5404,17 +5405,17 @@ const PurchaseQuotationForm = ({
                         <Input
                           type="number"
                           min={0}
-                          step="0.01"
+                          step={WEIGHT_INPUT_STEP}
                           className="h-8 text-right"
                           value={row.weight}
                           onChange={(e) =>
                             updateRow(row.rowId, {
-                              weight: Number(e.target.value || 0),
+                              weight: roundWeight(e.target.value || 0),
                             })
                           }
                         />
                       </td>
-                      <td className="p-2 text-right">{Number(calc?.totalWeight || 0).toFixed(2)}</td>
+                      <td className="p-2 text-right">{formatWeightDisplay(calc?.totalWeight || 0, { fixed: true })}</td>
                       <td className="p-2 text-center">
                         <div className="flex items-center justify-center gap-1">
                           {row.partId && !row.isNewRow ? (
@@ -5506,7 +5507,7 @@ const PurchaseQuotationForm = ({
                   <td className="p-2" />
                   <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.lcAmount)}</td>
                   <td className="p-2" />
-                  <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
+                  <td className="p-2 text-right">{formatWeightDisplay(quotationTotals.totalWeight, { fixed: true })}</td>
                   <td className="p-2" />
                 </tr>
               </tfoot>
@@ -6244,17 +6245,17 @@ const PurchaseQuotationRevisionForm = ({
                         <Input
                           type="number"
                           min={0}
-                          step="0.01"
+                          step={WEIGHT_INPUT_STEP}
                           className="h-8 text-right"
                           value={row.weight}
                           onChange={(e) =>
                             updateRow(row.rowId, {
-                              weight: Number(e.target.value || 0),
+                              weight: roundWeight(e.target.value || 0),
                             })
                           }
                         />
                       </td>
-                      <td className="p-2 text-right">{Number(calc?.totalWeight || 0).toFixed(2)}</td>
+                      <td className="p-2 text-right">{formatWeightDisplay(calc?.totalWeight || 0, { fixed: true })}</td>
                       <td className="p-2 text-center">
                         <Button
                           type="button"
@@ -6336,7 +6337,7 @@ const PurchaseQuotationRevisionForm = ({
                   <td className="p-2" />
                   <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.revisedLcAmount)}</td>
                   <td className="p-2" />
-                  <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
+                  <td className="p-2 text-right">{formatWeightDisplay(quotationTotals.totalWeight, { fixed: true })}</td>
                   <td className="p-2" />
                 </tr>
               </tfoot>
@@ -7048,7 +7049,7 @@ const PurchaseInquiryListPanel = ({
                     <td className="p-2 font-medium">{consigneeLabel}</td>
                     <td className="p-2 text-right">{displayedItemCount}</td>
                     <td className="p-2 text-right">{totalQty}</td>
-                    <td className="p-2 text-right">{totalWeight.toFixed(2)}</td>
+                    <td className="p-2 text-right">{formatWeightDisplay(totalWeight, { fixed: true })}</td>
                     <td className="p-2 font-medium">
                       {formatInquiryListStatus(row.status)}
                     </td>
@@ -8799,7 +8800,7 @@ const PurchaseQuotationConfirmForm = ({
     setRows((prev) =>
       prev.map((row) => {
         if (row.rowId !== rowId) return row;
-        const weight = Math.max(0, Number(rawValue) || 0);
+        const weight = roundWeight(Math.max(0, Number(rawValue) || 0));
         return {
           ...row,
           weight,
@@ -9537,19 +9538,19 @@ const PurchaseQuotationConfirmForm = ({
                   <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>{formatImportPoWhole(row.lcAmount)}</td>
                   <td className="p-2 text-right">
                     {isViewMode ? (
-                      <span className="tabular-nums">{Number(row.weight || 0).toFixed(2)}</span>
+                      <span className="tabular-nums">{formatWeightDisplay(row.weight || 0, { fixed: true })}</span>
                     ) : (
                       <Input
                         type="number"
                         min={0}
-                        step="0.01"
+                        step={WEIGHT_INPUT_STEP}
                         className="h-8 text-right"
                         value={row.weight}
                         onChange={(e) => handleConfirmWeightChange(row.rowId, e.target.value)}
                       />
                     )}
                   </td>
-                  <td className="p-2 text-right tabular-nums">{row.totalWeight.toFixed(2)}</td>
+                  <td className="p-2 text-right tabular-nums">{formatWeightDisplay(row.totalWeight, { fixed: true })}</td>
                 </tr>
                 );
               })
@@ -9578,7 +9579,7 @@ const PurchaseQuotationConfirmForm = ({
                 <td className="p-2" />
                 <td className={`p-2 text-right ${lcValueClass()}`}>{formatImportPoWhole(quotationTotals.lcAmount)}</td>
                 <td className="p-2" />
-                <td className="p-2 text-right">{quotationTotals.totalWeight.toFixed(2)}</td>
+                <td className="p-2 text-right">{formatWeightDisplay(quotationTotals.totalWeight, { fixed: true })}</td>
               </tr>
             </tfoot>
           ) : null}
@@ -11012,7 +11013,7 @@ const PurchaseOrderTab = ({
     setReceiveLines((prev) =>
       prev.map((line) => {
         if (line.id !== lineId) return line;
-        const weight = Math.max(0, Number(value) || 0);
+        const weight = roundWeight(Math.max(0, Number(value) || 0));
         const amounts = computeImportReceiveLineAmounts(
           { ...line, weight },
           line.receiveQty,
@@ -12564,7 +12565,7 @@ const PurchaseOrderTab = ({
                           <Input
                             type="number"
                             min={0}
-                            step="0.0001"
+                            step={WEIGHT_INPUT_STEP}
                             className="h-8 w-24 ml-auto text-right"
                             value={line.weight}
                             onChange={(event) =>
@@ -12574,7 +12575,9 @@ const PurchaseOrderTab = ({
                         </td>
                         <td className="p-2 text-right tabular-nums">
                           {lineAmounts.totalWeight > 0
-                            ? lineAmounts.totalWeight.toFixed(4)
+                            ? formatWeightDisplay(lineAmounts.totalWeight, {
+                                fixed: true,
+                              })
                             : "-"}
                         </td>
                         <td className="p-2 text-center">
@@ -12656,7 +12659,9 @@ const PurchaseOrderTab = ({
                             </td>
                             <td className="p-2" />
                             <td className="p-2 text-right tabular-nums">
-                              {receiveTotals.totalWeight.toFixed(4)}
+                              {formatWeightDisplay(receiveTotals.totalWeight, {
+                                fixed: true,
+                              })}
                             </td>
                             <td className="p-2" />
                           </>
@@ -12680,7 +12685,9 @@ const PurchaseOrderTab = ({
                             </td>
                             <td className="p-2" />
                             <td className="p-2 text-right tabular-nums">
-                              {receiveTotals.totalWeight.toFixed(4)}
+                              {formatWeightDisplay(receiveTotals.totalWeight, {
+                                fixed: true,
+                              })}
                             </td>
                             <td className="p-2" />
                           </>

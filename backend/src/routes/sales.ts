@@ -2601,6 +2601,18 @@ router.post("/invoices", async (req: Request, res: Response) => {
     }
 
     // Check stock availability — allow short/zero available unless reserved stock exists
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "At least one invoice item is required" });
+    }
+    const missingPart = items.find(
+      (item: any) => !String(item?.partId || "").trim(),
+    );
+    if (missingPart) {
+      return res.status(400).json({
+        error:
+          "One or more items are missing a part. Select a part for every line before saving.",
+      });
+    }
     for (const item of items) {
       const stock = await getStockBalance(item.partId);
       const reserved = await getReservedQuantity(item.partId);
@@ -2621,22 +2633,43 @@ router.post("/invoices", async (req: Request, res: Response) => {
 
     const freightAmount = Number(freightCharges || 0);
 
+    // Prefer server-computed line totals so header totals cannot drift from saved lines.
+    const computedSubtotal = (items || []).reduce((sum: number, item: any) => {
+      const qty = Number(item.orderedQty || 0);
+      const price = Number(item.unitPrice || 0);
+      const line =
+        item.lineTotal != null && Number.isFinite(Number(item.lineTotal))
+          ? Number(item.lineTotal)
+          : qty * price;
+      return sum + line;
+    }, 0);
+    const computedTax = Number(tax || 0);
+    const computedDiscount = Number(overallDiscount || 0);
+    const computedGrandTotal =
+      computedSubtotal - computedDiscount + computedTax + freightAmount;
+
     // Build line payloads before the locked create (reads only).
     const itemCreateData = await Promise.all(
       (items || []).map(async (item: any) => {
         let resolvedAvgCost = 0;
         const resolvedPart = await resolveInvoiceItemPartFields(prisma, item);
+        const qty = Number(item.orderedQty || 0);
+        const price = Number(item.unitPrice || 0);
+        const lineTotal =
+          item.lineTotal != null && Number.isFinite(Number(item.lineTotal))
+            ? Number(item.lineTotal)
+            : qty * price;
         const itemData: any = {
           partId: item.partId,
           partNo: resolvedPart.partNo,
           description: resolvedPart.description,
-          orderedQty: item.orderedQty,
+          orderedQty: qty,
           deliveredQty: 0,
-          pendingQty: item.orderedQty,
-          unitPrice: item.unitPrice,
+          pendingQty: qty,
+          unitPrice: price,
           avgCost: resolvedAvgCost,
           discount: item.discount || 0,
-          lineTotal: item.lineTotal,
+          lineTotal,
           grade: item.grade || "A",
           brand: resolvedPart.brand,
           useUnlocatedStock: !!item.useUnlocatedStock,
@@ -2708,17 +2741,17 @@ router.post("/invoices", async (req: Request, res: Response) => {
           customerType: normalizedCustomerType,
           term: resolvedTerm,
           salesPerson: salesPerson || "Admin",
-          subtotal: subtotal || 0,
-          overallDiscount: overallDiscount || 0,
-          tax: tax || 0,
+          subtotal: computedSubtotal,
+          overallDiscount: computedDiscount,
+          tax: computedTax,
           taxPercentage: taxPercentage != null ? Number(taxPercentage) : null,
-          grandTotal: grandTotal || 0,
+          grandTotal: computedGrandTotal,
           paidAmount: resolvedPaidAmount,
           bankAmount: parsedBankAmount,
           cashAmount: parsedCashAmount,
           status: "pending",
           paymentStatus:
-            resolvedPaidAmount >= grandTotal
+            resolvedPaidAmount >= computedGrandTotal
               ? "paid"
               : resolvedPaidAmount > 0
                 ? "partial"
@@ -3466,14 +3499,14 @@ router.post("/invoices", async (req: Request, res: Response) => {
       try {
         const totalPaid =
           (bankAmount || 0) + (cashAmount || 0) || paidAmount || 0;
-        const dueAmount = grandTotal - totalPaid;
+        const dueAmount = computedGrandTotal - totalPaid;
 
         // Create receivable for part sell (credit sale)
         await prisma.receivable.create({
           data: {
             invoiceId: invoice.id,
             customerId,
-            amount: grandTotal,
+            amount: computedGrandTotal,
             paidAmount: totalPaid,
             dueAmount,
             status:
@@ -3702,6 +3735,16 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
 
     // If items are being updated, handle them
     if (items && Array.isArray(items) && items.length > 0) {
+      const missingPart = items.find(
+        (item: any) => !String(item?.partId || "").trim(),
+      );
+      if (missingPart) {
+        return res.status(400).json({
+          error:
+            "One or more items are missing a part. Select a part for every line before saving.",
+        });
+      }
+
       // First, release existing stock reservations
       for (const reservation of existingInvoice.StockReservation) {
         if (reservation.status === "reserved") {

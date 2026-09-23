@@ -100,7 +100,16 @@ export default defineConfig(({ mode }) => ({
 
   build: {
 
+    sourcemap: false,
+
+    // Avoid gzip size reporting during build — peaks RAM and OOMs this 4GB host.
+    reportCompressedSize: false,
+
+    chunkSizeWarningLimit: 5000,
+
     rollupOptions: {
+
+      maxParallelFileOps: 1,
 
       input: {
 

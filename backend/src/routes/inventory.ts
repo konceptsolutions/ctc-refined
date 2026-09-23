@@ -34,6 +34,111 @@ const isTransferInDpo = (orderType?: string | null, dpoNumber?: string | null) =
   String(orderType || "").trim() === "transfer_in" ||
   /^TIN-/i.test(String(dpoNumber || "").trim());
 
+/** Remove corrupt non-positive PartRackShelf rows (e.g. -16 "No Store"). */
+async function cleanupNonPositivePartLocations(
+  db: PrismaTx | typeof prisma,
+  partId: string,
+) {
+  await db.partRackShelf.deleteMany({
+    where: { partId, quantity: { lte: 0 } },
+  });
+}
+
+/**
+ * Stock already on a rack and/or shelf (must be transferred from that row).
+ */
+async function getHardLocatedQty(
+  db: PrismaTx | typeof prisma,
+  partId: string,
+): Promise<number> {
+  const agg = await db.partRackShelf.aggregate({
+    where: {
+      partId,
+      OR: [{ rackId: { not: null } }, { shelfId: { not: null } }],
+    },
+    _sum: { quantity: true },
+  });
+  return Math.max(0, agg._sum.quantity || 0);
+}
+
+/**
+ * Assignable from Unallocated = actual stock minus qty already on rack/shelf.
+ * Includes store-only rows (store set, no rack/shelf).
+ */
+async function getUnallocatedAvailable(
+  db: PrismaTx | typeof prisma,
+  partId: string,
+): Promise<{
+  totalActualStock: number;
+  hardLocatedQty: number;
+  available: number;
+}> {
+  const [hardLocatedQty, smIn, smOut] = await Promise.all([
+    getHardLocatedQty(db, partId),
+    db.stockMovement.aggregate({
+      where: { partId, type: "in" },
+      _sum: { quantity: true },
+    }),
+    db.stockMovement.aggregate({
+      where: { partId, type: "out" },
+      _sum: { quantity: true },
+    }),
+  ]);
+
+  const totalActualStock =
+    (smIn._sum.quantity || 0) - (smOut._sum.quantity || 0);
+  const available = Math.max(0, totalActualStock - hardLocatedQty);
+
+  return { totalActualStock, hardLocatedQty, available };
+}
+
+/** Consume store-only / orphan rows when assigning from Unallocated onto a rack/shelf. */
+async function consumeSoftLocatedStock(
+  tx: PrismaTx,
+  partId: string,
+  qtyNeeded: number,
+  preferStoreId: string | null,
+): Promise<number> {
+  if (qtyNeeded <= 0) return 0;
+
+  const softRows = await tx.partRackShelf.findMany({
+    where: {
+      partId,
+      rackId: null,
+      shelfId: null,
+      quantity: { gt: 0 },
+    },
+  });
+
+  softRows.sort((a, b) => {
+    const aPref = preferStoreId && a.storeId === preferStoreId ? 0 : 1;
+    const bPref = preferStoreId && b.storeId === preferStoreId ? 0 : 1;
+    if (aPref !== bPref) return aPref - bPref;
+    const aOrphan = a.storeId ? 0 : 1;
+    const bOrphan = b.storeId ? 0 : 1;
+    if (aOrphan !== bOrphan) return aOrphan - bOrphan;
+    return b.quantity - a.quantity;
+  });
+
+  let remaining = qtyNeeded;
+  for (const row of softRows) {
+    if (remaining <= 0) break;
+    const take = Math.min(row.quantity, remaining);
+    const nextQty = row.quantity - take;
+    if (nextQty <= 0) {
+      await tx.partRackShelf.delete({ where: { id: row.id } });
+    } else {
+      await tx.partRackShelf.update({
+        where: { id: row.id },
+        data: { quantity: nextQty },
+      });
+    }
+    remaining -= take;
+  }
+
+  return qtyNeeded - remaining;
+}
+
 function supplierDisplayName(
   supplier?: { name?: string | null; companyName?: string | null } | null,
 ): string | null {
@@ -431,6 +536,9 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
   try {
     const { partId } = req.params;
 
+    // Drop corrupt zero/negative location rows so they cannot inflate Unallocated.
+    await cleanupNonPositivePartLocations(prisma, partId);
+
     // Query PartRackShelf ONLY for this exact partId using Raw SQL for maximum consistency with the main table.
     const records = await query(
       `SELECT 
@@ -464,11 +572,21 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
       `[API] part-locations partId=${partId} brand=${partInfo?.brand_name} partNo=${partInfo?.partNo} => found ${records.rows.length} PartRackShelf rows using RAW SQL`,
     );
 
-    // Aggregate by Store/Rack/Shelf combination
+    // Aggregate by Store/Rack/Shelf — only fully located rows (rack and/or shelf).
+    // Store-only / orphan rows are folded into the Unallocated bucket below.
     const locationMap = new Map();
-    let totalAssigned = 0;
+    let softLocatedQty = 0;
 
     for (const r of records.rows) {
+      const qty = Number(r.quantity) || 0;
+      if (qty <= 0) continue;
+
+      const hasRackOrShelf = !!(r.rackId || r.shelfId);
+      if (!hasRackOrShelf) {
+        softLocatedQty += qty;
+        continue;
+      }
+
       const storeKey = r.storeId || "null";
       const rackKey = r.rackId || "null";
       const shelfKey = r.shelfId || "null";
@@ -483,36 +601,23 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
           rack: r.rack_code || "No Rack",
           shelfId: r.shelfId,
           shelf: r.shelf_no || "No Shelf",
-          isUnlocated: !r.rackId && !r.shelfId,
+          isUnlocated: false,
           quantity: 0,
         });
       }
 
-      const existing = locationMap.get(key);
-      existing.quantity += r.quantity;
-      totalAssigned += r.quantity;
+      locationMap.get(key).quantity += qty;
     }
 
-    // Calculate this specific part's actual stock from its own movements only
-    const sm_in = await prisma.stockMovement.aggregate({
-      where: { partId, type: "in" },
-      _sum: { quantity: true },
-    });
-    const sm_out = await prisma.stockMovement.aggregate({
-      where: { partId, type: "out" },
-      _sum: { quantity: true },
-    });
-    const totalActualStock =
-      (sm_in._sum.quantity || 0) - (sm_out._sum.quantity || 0);
+    const { totalActualStock, hardLocatedQty, available: unallocatedAvailable } =
+      await getUnallocatedAvailable(prisma, partId);
 
-    // Filter out zero-quantity entries
     const locations = Array.from(locationMap.values()).filter(
-      (l: any) => l.quantity !== 0,
+      (l: any) => l.quantity > 0,
     );
 
-    // Add Virtual Unallocated row if there is stock not assigned to any location
-    const unallocatedDiff = totalActualStock - totalAssigned;
-    if (unallocatedDiff !== 0) {
+    // Single Unallocated row = everything not yet on a rack/shelf
+    if (unallocatedAvailable > 0) {
       locations.push({
         id: `unallocated-${partId}`,
         storeId: null,
@@ -522,15 +627,21 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
         shelfId: null,
         shelf: "No Shelf",
         isUnlocated: true,
-        quantity: unallocatedDiff,
+        isVirtualUnallocated: true,
+        quantity: unallocatedAvailable,
       });
     }
 
-    // Sort: allocated first, then unallocated, then largest quantity first
     locations.sort((a: any, b: any) => {
-      if (a.isUnlocated !== b.isUnlocated) return a.isUnlocated ? 1 : -1;
+      const aUnalloc = a.store === "Unallocated" || a.isVirtualUnallocated;
+      const bUnalloc = b.store === "Unallocated" || b.isVirtualUnallocated;
+      if (aUnalloc !== bUnalloc) return aUnalloc ? 1 : -1;
       return b.quantity - a.quantity;
     });
+
+    console.log(
+      `[API] part-locations ${partId}: actual=${totalActualStock} hardLocated=${hardLocatedQty} soft=${softLocatedQty} unallocated=${unallocatedAvailable}`,
+    );
 
     res.json({ data: locations });
   } catch (error: any) {
@@ -900,52 +1011,88 @@ router.post("/update-location", async (req: Request, res: Response) => {
     const rackKey = rack_id ?? null;
     const shelfKey = shelf_id ?? null;
 
-    const existingSum = await prisma.partRackShelf.aggregate({
-      where: {
-        partId: part_id,
-        storeId: storeKey,
-        rackId: rackKey,
-        shelfId: shelfKey,
-      },
-      _sum: { quantity: true },
-    });
+    const record = await prisma.$transaction(async (tx) => {
+      await cleanupNonPositivePartLocations(tx, part_id);
 
-    const totalCurrent = existingSum._sum.quantity || 0;
-    if (totalCurrent + qtyChange < 0) {
-      return res.status(400).json({
-        error: `Insufficient stock in this location. Current Total: ${totalCurrent}`,
-      });
-    }
-
-    // PartRackShelf is unique on (partId, storeId, rackId, shelfId): upsert one row per cell.
-    const existingEntry = await prisma.partRackShelf.findFirst({
-      where: {
-        partId: part_id,
-        storeId: storeKey,
-        rackId: rackKey,
-        shelfId: shelfKey,
-      },
-    });
-
-    let record;
-    if (existingEntry) {
-      const updated = await prisma.partRackShelf.update({
-        where: { id: existingEntry.id },
-        data: { quantity: { increment: qtyChange } },
-      });
-      if (updated.quantity <= 0) {
-        await prisma.partRackShelf.delete({ where: { id: existingEntry.id } });
-        record = { ...updated, quantity: 0 };
-      } else {
-        record = updated;
+      // Assigning onto a location must not exceed Unallocated (incl. store-only soft stock).
+      if (qtyChange > 0 && (rackKey || shelfKey || storeKey)) {
+        const unalloc = await getUnallocatedAvailable(tx, part_id);
+        if (rackKey || shelfKey) {
+          if (qtyVal > unalloc.available) {
+            throw new Error(
+              `Insufficient unallocated stock. Available: ${unalloc.available}, Requested: ${qtyVal}`,
+            );
+          }
+          await consumeSoftLocatedStock(tx, part_id, qtyVal, storeKey);
+        } else {
+          // Store-only target: only pure virtual gap may be added (soft already counts).
+          const softAgg = await tx.partRackShelf.aggregate({
+            where: {
+              partId: part_id,
+              rackId: null,
+              shelfId: null,
+              quantity: { gt: 0 },
+            },
+            _sum: { quantity: true },
+          });
+          const softQty = Math.max(0, softAgg._sum.quantity || 0);
+          const virtualOnly = Math.max(
+            0,
+            unalloc.totalActualStock - unalloc.hardLocatedQty - softQty,
+          );
+          if (qtyVal > virtualOnly) {
+            throw new Error(
+              `Insufficient unallocated stock. Available: ${virtualOnly}, Requested: ${qtyVal}`,
+            );
+          }
+        }
       }
-    } else {
-      if (qtyChange < 0) {
-        return res.status(400).json({
-          error: `Insufficient stock in this location. Current Total: ${totalCurrent}`,
+
+      const existingSum = await tx.partRackShelf.aggregate({
+        where: {
+          partId: part_id,
+          storeId: storeKey,
+          rackId: rackKey,
+          shelfId: shelfKey,
+        },
+        _sum: { quantity: true },
+      });
+
+      const totalCurrent = existingSum._sum.quantity || 0;
+      if (totalCurrent + qtyChange < 0) {
+        throw new Error(
+          `Insufficient stock in this location. Current Total: ${totalCurrent}`,
+        );
+      }
+
+      const existingEntry = await tx.partRackShelf.findFirst({
+        where: {
+          partId: part_id,
+          storeId: storeKey,
+          rackId: rackKey,
+          shelfId: shelfKey,
+        },
+      });
+
+      if (existingEntry) {
+        const updated = await tx.partRackShelf.update({
+          where: { id: existingEntry.id },
+          data: { quantity: { increment: qtyChange } },
         });
+        if (updated.quantity <= 0) {
+          await tx.partRackShelf.delete({ where: { id: existingEntry.id } });
+          return { ...updated, quantity: 0 };
+        }
+        return updated;
       }
-      record = await prisma.partRackShelf.create({
+
+      if (qtyChange < 0) {
+        throw new Error(
+          `Insufficient stock in this location. Current Total: ${totalCurrent}`,
+        );
+      }
+
+      return tx.partRackShelf.create({
         data: {
           id: randomUUID(),
           partId: part_id,
@@ -955,7 +1102,7 @@ router.post("/update-location", async (req: Request, res: Response) => {
           quantity: qtyChange,
         } as any,
       });
-    }
+    });
 
     // Enrich response for activity logging (human-readable part/location labels)
     const [part, store, rack, shelf] = await Promise.all([
@@ -1034,57 +1181,40 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
 
     // Transaction for Atomicity
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Check Source Availability (if source is specified)
-      // Source can be null/unallocated (store_id might be null)
-      // But usually transfer is from a known location.
-      // Assuming source object structure: { store_id: ..., rack_id: ..., shelf_id: ... }
+      await cleanupNonPositivePartLocations(tx, part_id);
 
       const sourceStoreId = source?.store_id || null;
       const sourceRackId = source?.rack_id || null;
       const sourceShelfId = source?.shelf_id || null;
-      const sourceIsUnallocated =
-        sourceStoreId === null &&
-        sourceRackId === null &&
-        sourceShelfId === null;
 
-      // Calculate physical stock available in the exact source row, if any.
-      const sourceStock = await tx.partRackShelf.aggregate({
-        where: {
-          partId: part_id,
-          storeId: sourceStoreId,
-          rackId: sourceRackId,
-          shelfId: sourceShelfId,
-        },
-        _sum: { quantity: true },
-      });
+      // Unallocated bucket: explicit flag OR all-null source (UI "Unallocated" row)
+      const treatAsVirtualUnallocated =
+        source?.is_virtual_unallocated === true ||
+        source?.unallocated === true ||
+        (sourceStoreId === null &&
+          sourceRackId === null &&
+          sourceShelfId === null);
 
-      const physicalSourceQty = sourceStock._sum.quantity || 0;
-      let available = physicalSourceQty;
+      const targetStoreId = target.store_id || null;
+      const targetRackId = target.rack_id || null;
+      const targetShelfId = target.shelf_id || null;
 
-      // "Unallocated" in the UI can be a virtual row derived from movements,
-      // so it may not exist in PartRackShelf at all.
-      if (sourceIsUnallocated) {
-        const [assignedStock, smIn, smOut] = await Promise.all([
-          tx.partRackShelf.aggregate({
-            where: { partId: part_id },
-            _sum: { quantity: true },
-          }),
-          tx.stockMovement.aggregate({
-            where: { partId: part_id, type: "in" },
-            _sum: { quantity: true },
-          }),
-          tx.stockMovement.aggregate({
-            where: { partId: part_id, type: "out" },
-            _sum: { quantity: true },
-          }),
-        ]);
+      let available = 0;
 
-        const totalAssigned = assignedStock._sum.quantity || 0;
-        const totalActualStock =
-          (smIn._sum.quantity || 0) - (smOut._sum.quantity || 0);
-        const derivedUnallocated = totalActualStock - totalAssigned;
-
-        available = physicalSourceQty + Math.max(derivedUnallocated, 0);
+      if (treatAsVirtualUnallocated) {
+        const unalloc = await getUnallocatedAvailable(tx, part_id);
+        available = unalloc.available;
+      } else {
+        const sourceStock = await tx.partRackShelf.aggregate({
+          where: {
+            partId: part_id,
+            storeId: sourceStoreId,
+            rackId: sourceRackId,
+            shelfId: sourceShelfId,
+          },
+          _sum: { quantity: true },
+        });
+        available = Math.max(0, sourceStock._sum.quantity || 0);
       }
 
       if (available < qtyVal) {
@@ -1093,33 +1223,29 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
         );
       }
 
-      // 2. Decrement Source Stock (Update existing PartRackShelf or Find First)
-      // Since unique constraint exists on (partId, storeId, rackId, shelfId), find the UNIQUE record.
-      const sourceEntry = await tx.partRackShelf.findFirst({
-        where: {
-          partId: part_id,
-          storeId: sourceStoreId,
-          rackId: sourceRackId,
-          shelfId: sourceShelfId,
-        },
-      });
+      // Decrement source: for Unallocated, consume store-only/orphan soft rows first.
+      if (treatAsVirtualUnallocated) {
+        await consumeSoftLocatedStock(tx, part_id, qtyVal, targetStoreId);
+      } else {
+        const sourceEntry = await tx.partRackShelf.findFirst({
+          where: {
+            partId: part_id,
+            storeId: sourceStoreId,
+            rackId: sourceRackId,
+            shelfId: sourceShelfId,
+          },
+        });
 
-      if (!sourceEntry && !sourceIsUnallocated) {
-        // Should have been caught by aggregate check, but just in case
-        throw new Error(`Source location entry not found.`);
-      }
+        if (!sourceEntry) {
+          throw new Error(`Source location entry not found.`);
+        }
 
-      // Only decrement a physical PartRackShelf source row when it exists.
-      // For virtual unallocated stock there is no source row to decrement;
-      // adding to the target location reduces the derived unallocated balance.
-      if (sourceEntry) {
         const decrementQty = Math.min(sourceEntry.quantity, qtyVal);
         const updatedSource = await tx.partRackShelf.update({
           where: { id: sourceEntry.id },
           data: { quantity: { decrement: decrementQty } },
         });
 
-        // If quantity becomes 0 or less, delete the entry to keep the location list clean
         if (updatedSource.quantity <= 0) {
           await tx.partRackShelf.delete({
             where: { id: sourceEntry.id },
@@ -1127,11 +1253,7 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
         }
       }
 
-      // 3. Increment Target Stock (Upsert PartRackShelf)
-      const targetStoreId = target.store_id || null;
-      const targetRackId = target.rack_id || null;
-      const targetShelfId = target.shelf_id || null;
-
+      // Increment Target Stock (Upsert PartRackShelf)
       const targetEntry = await tx.partRackShelf.findFirst({
         where: {
           partId: part_id,
@@ -1159,8 +1281,7 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
         });
       }
 
-      // 4. Create Audit Trail (Stock Movements)
-      // OUT from Source
+      // Audit trail: paired out/in keeps net stock unchanged
       await tx.stockMovement.create({
         data: {
           id: randomUUID(),
@@ -1175,7 +1296,6 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
         },
       });
 
-      // IN to Target
       await tx.stockMovement.create({
         data: {
           id: randomUUID(),
@@ -1185,7 +1305,7 @@ router.post("/transfer-location", async (req: Request, res: Response) => {
           storeId: targetStoreId,
           rackId: targetRackId,
           shelfId: targetShelfId,
-          notes: `Transfer from ${sourceStoreId ? "Store..." : "Location"} (Ref: Transfer)`,
+          notes: `Transfer from ${sourceStoreId ? "Store..." : "Unallocated"} (Ref: Transfer)`,
           createdAt: new Date(),
         },
       });

@@ -1356,7 +1356,7 @@ export const PartEntryForm = ({
     }
   };
 
-  // Format weight to max 3 decimal places
+  // Format weight to max 4 decimal places
   const formatWeightValue = (value: string): string => {
     if (!value || value.trim() === "") {
       return "";
@@ -1371,9 +1371,9 @@ export const PartEntryForm = ({
       cleaned = parts[0] + "." + parts.slice(1).join("");
     }
 
-    // Limit to 3 decimal places
-    if (parts.length === 2 && parts[1].length > 3) {
-      cleaned = parts[0] + "." + parts[1].substring(0, 3);
+    // Limit to 4 decimal places
+    if (parts.length === 2 && parts[1].length > 4) {
+      cleaned = parts[0] + "." + parts[1].substring(0, 4);
     }
 
     return cleaned;
@@ -4316,7 +4316,7 @@ export const PartEntryForm = ({
                 </label>
                 <Input
                   type="number"
-                  step="0.001"
+                  step="0.0001"
                   placeholder=""
                   value={formData.weight}
                   onChange={(e) => {
@@ -4328,7 +4328,7 @@ export const PartEntryForm = ({
                     const value = e.target.value.trim();
                     if (value && !isNaN(parseFloat(value))) {
                       const num = parseFloat(value);
-                      const formatted = num.toFixed(3).replace(/\.?0+$/, "");
+                      const formatted = num.toFixed(4).replace(/\.?0+$/, "");
                       handleInputChange("weight", formatted);
                     }
                   }}

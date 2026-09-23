@@ -622,26 +622,23 @@ export const DirectPurchaseOrder = ({
 
   const fetchAccounts = async () => {
     try {
-      const response = await apiClient.getAccounts() as any;
-      const accountsData = Array.isArray(response) ? response : (response.data || []);
+      // Cash/bank list via dropdowns — any auth user (purchase role has no module.accounting).
+      const response = (await apiClient.getPaymentAccounts()) as any;
+      const accountsData = Array.isArray(response)
+        ? response
+        : response.data || [];
 
       const formattedAccounts = accountsData
         .filter((acc: any) => {
           if (!acc || !acc.id || !acc.name) return false;
-
-          // Case-insensitive status check
-          const status = (acc.status || '').toLowerCase();
-          if (status !== 'active') return false;
-
+          const status = (acc.status || "").toLowerCase();
+          if (status !== "active") return false;
           const subgroupName = (
             acc.subgroup?.name ??
             acc.subGroup?.name ??
             acc.Subgroup?.name ??
             ""
           ).toLowerCase();
-
-          // Strict requirement: only show Cash/Bank *subgroup* accounts.
-          // (Do not include by code prefix.)
           return subgroupName.includes("cash") || subgroupName.includes("bank");
         })
         .map((acc: any) => ({
@@ -652,31 +649,29 @@ export const DirectPurchaseOrder = ({
 
       setAccounts(formattedAccounts);
     } catch (error: any) {
+      console.error("Failed to load payment accounts for DPO:", error);
       setAccounts([]);
     }
   };
 
   const fetchBankCashAccounts = async () => {
     try {
-      const response = await apiClient.getAccounts() as any;
-      const accountsData = Array.isArray(response) ? response : (response.data || []);
+      const response = (await apiClient.getPaymentAccounts()) as any;
+      const accountsData = Array.isArray(response)
+        ? response
+        : response.data || [];
 
       const formattedAccounts = accountsData
         .filter((acc: any) => {
           if (!acc || !acc.id || !acc.name) return false;
-
-          // Case-insensitive status check
-          const status = (acc.status || '').toLowerCase();
-          if (status !== 'active') return false;
-
+          const status = (acc.status || "").toLowerCase();
+          if (status !== "active") return false;
           const subgroupName = (
             acc.subgroup?.name ??
             acc.subGroup?.name ??
             acc.Subgroup?.name ??
             ""
           ).toLowerCase();
-
-          // Strict requirement: only show Cash/Bank *subgroup* accounts.
           return subgroupName.includes("cash") || subgroupName.includes("bank");
         })
         .map((acc: any) => ({
@@ -687,47 +682,15 @@ export const DirectPurchaseOrder = ({
 
       setBankCashAccounts(formattedAccounts);
     } catch (error: any) {
+      console.error("Failed to load bank/cash accounts for DPO:", error);
       setBankCashAccounts([]);
     }
   };
 
   const fetchPayableAccounts = async () => {
-    try {
-      const response = await apiClient.getAccounts() as any;
-      const accountsData = Array.isArray(response) ? response : (response.data || []);
-
-      const formattedPayableAccounts = accountsData
-        .filter((acc: any) => {
-          if (!acc || !acc.id || !acc.name) return false;
-
-          // Case-insensitive status check
-          const status = (acc.status || '').toLowerCase();
-          if (status !== 'active') return false;
-
-          // Must be in subgroup 302 (Purchase Expenses Payables)
-          const subgroupCode = acc.subgroup?.code || '';
-          const subgroupName = (acc.subgroup?.name || '').toLowerCase();
-
-          // Check by subgroup code first (most reliable)
-          if (subgroupCode === '302') return true;
-
-          // Fallback: check by subgroup name
-          return subgroupName.includes('purchase expenses payables') ||
-            subgroupName.includes('purchase expenses') ||
-            (subgroupName.includes('purchase') && subgroupName.includes('expenses'));
-        })
-        .map((acc: any) => ({
-          id: acc.id,
-          value: acc.id,
-          label: `${acc.code} - ${acc.name}`,
-        }));
-
-      // Debug: Log fetched payable accounts
-
-      setPayableAccounts(formattedPayableAccounts);
-    } catch (error: any) {
-      setPayableAccounts([]);
-    }
+    // Expense payable account is fixed to "Local Purchase Freight" in the UI;
+    // keep empty list so purchase users are not blocked by /accounting/accounts 403.
+    setPayableAccounts([]);
   };
 
   // Fetch expense types from API

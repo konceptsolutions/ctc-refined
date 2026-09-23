@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import prisma from "../config/database";
+import { roundWeight } from "./weightRound";
 
 /**
  * Minimal Part create for promoting temporary quotation/inquiry lines.
@@ -21,7 +22,7 @@ export async function createPartFromTemporaryInput(input: {
   const brandName = String(input.brand || "").trim() || null;
   const masterPartNo = String(input.masterPartNo || "").trim() || null;
   const origin = String(input.origin || "").trim() || null;
-  const weightRaw = Number(input.weight);
+  const weightRaw = roundWeight(input.weight);
   const weight = Number.isFinite(weightRaw) && weightRaw > 0 ? weightRaw : null;
 
   let masterPartId: string | null = null;

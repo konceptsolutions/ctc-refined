@@ -26,6 +26,10 @@ import { Item } from "./ItemsListView";
 import { apiClient } from "@/lib/api";
 import { compressImage } from "@/utils/imageCompression";
 import { fetchFamilyPartImages } from "@/lib/part-images";
+import {
+  WEIGHT_INPUT_STEP,
+  formatWeightInput,
+} from "@/utils/weightRound";
 
 const collectMissingPartEntryFields = (input: {
   partNo: string;
@@ -2276,10 +2280,12 @@ export const CompactPartForm = ({
             </label>
             <Input
               type="number"
-              step="0.01"
-              placeholder="0.00"
+              step={WEIGHT_INPUT_STEP}
+              placeholder="0.0000"
               value={formData.weight}
-              onChange={(e) => handleInputChange("weight", e.target.value)}
+              onChange={(e) =>
+                handleInputChange("weight", formatWeightInput(e.target.value))
+              }
               className="h-7 text-xs"
             />
           </div>

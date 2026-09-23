@@ -399,27 +399,22 @@ const CurrentStockInner = () => {
   };
 
   const processLocationData = (rawData: any[]) => {
-    // 1. Separate Allocated vs Unallocated
     const locationData = Array.isArray(rawData) ? rawData : [];
 
-    // 2. Filter out zero quantities ONLY if they have no rack/shelf assignments
-    const unassignedData = locationData.filter((l: any) => {
-      const hasNoLocation =
-        !l.rack && !l.shelf && (!l.store || l.store === "Unallocated");
-      const hasZeroQuantity = l.quantity === 0;
-      return hasNoLocation && hasZeroQuantity;
-    });
+    const isVirtualUnallocated = (l: any) =>
+      l?.store === "Unallocated" ||
+      (typeof l?.id === "string" && l.id.startsWith("unallocated-"));
 
-    const allocatedData = locationData.filter(
-      (l: any) => !unassignedData.includes(l),
-    );
+    const unallocatedRows = locationData.filter(isVirtualUnallocated);
+    const physicalData = locationData.filter((l: any) => !isVirtualUnallocated(l));
 
-    // 3. Aggregate Allocated Rows
+    // Aggregate physical rows by store/rack/shelf
     const allocatedMap = new Map();
-    allocatedData.forEach((l: any) => {
+    physicalData.forEach((l: any) => {
+      if (!l.quantity || Number(l.quantity) <= 0) return;
       const key = `${l.store}-${l.rack}-${l.shelf}`;
       if (!allocatedMap.has(key)) {
-        allocatedMap.set(key, { ...l });
+        allocatedMap.set(key, { ...l, isVirtualUnallocated: false });
       } else {
         const existing = allocatedMap.get(key);
         if (existing) existing.quantity += l.quantity;
@@ -427,36 +422,31 @@ const CurrentStockInner = () => {
     });
     const aggregatedAllocated = Array.from(allocatedMap.values());
 
-    // 4. Calculate Net Unallocated (Sum of all unallocated, including negatives)
-    const netUnallocated = unassignedData.reduce(
-      (sum: number, l: any) => sum + l.quantity,
+    const netUnallocated = unallocatedRows.reduce(
+      (sum: number, l: any) => sum + Math.max(0, Number(l.quantity) || 0),
       0,
     );
 
-    // 5. Find "Primary" Store for unallocated (largest positive holder)
-    const primaryUnallocatedEntry = unassignedData
-      .filter((l: any) => l.quantity > 0 && l.store !== "No Store")
-      .sort((a: any, b: any) => b.quantity - a.quantity)[0];
-
     const displayRows = [...aggregatedAllocated];
-
-    // ONLY add the unallocated row IF there is actually unallocated stock
     if (netUnallocated !== 0) {
+      const primary = unallocatedRows[0] || {};
       displayRows.push({
-        store: primaryUnallocatedEntry
-          ? primaryUnallocatedEntry.store
-          : "Unallocated",
+        ...primary,
+        store: "Unallocated",
+        storeId: null,
         rack: "No Rack",
+        rackId: null,
         shelf: "No Shelf",
+        shelfId: null,
         quantity: netUnallocated,
         isUnlocated: true,
+        isVirtualUnallocated: true,
       });
     }
 
-    // Sort: Allocated first, then Unallocated
     displayRows.sort((a: any, b: any) => {
-      if (!!a.isUnlocated === !!b.isUnlocated) return 0;
-      return a.isUnlocated ? 1 : -1;
+      if (!!a.isVirtualUnallocated === !!b.isVirtualUnallocated) return 0;
+      return a.isVirtualUnallocated ? 1 : -1;
     });
 
     return { displayRows, netUnallocated };
@@ -646,30 +636,33 @@ const CurrentStockInner = () => {
 
         // Construct Source Object from location data
         // Prioritize explicit IDs if available (even if null)
+        const isVirtualUnallocated =
+          !!editSourceLocation.isVirtualUnallocated ||
+          editSourceLocation.store === "Unallocated" ||
+          (typeof editSourceLocation.id === "string" &&
+            editSourceLocation.id.startsWith("unallocated-"));
+
         const sourceData = {
-          store_id:
-            editSourceLocation.storeId !== undefined
+          store_id: isVirtualUnallocated
+            ? null
+            : editSourceLocation.storeId !== undefined
               ? editSourceLocation.storeId
               : stores.find((s) => s.name === editSourceLocation.store)?.id ||
                 null,
-          rack_id:
-            editSourceLocation.rackId !== undefined
+          rack_id: isVirtualUnallocated
+            ? null
+            : editSourceLocation.rackId !== undefined
               ? editSourceLocation.rackId
               : racks.find((r) => r.codeNo === editSourceLocation.rack)?.id ||
                 null,
-          shelf_id:
-            editSourceLocation.shelfId !== undefined
+          shelf_id: isVirtualUnallocated
+            ? null
+            : editSourceLocation.shelfId !== undefined
               ? editSourceLocation.shelfId
               : shelves.find((s) => s.shelfNo === editSourceLocation.shelf)
                   ?.id || null,
+          is_virtual_unallocated: isVirtualUnallocated,
         };
-
-        // Handle "Unallocated" source row special case
-        if (editSourceLocation.isUnlocated) {
-          // If implicit unallocated, explicitly set ids to null if they are missing
-          if (editSourceLocation.store === "Unallocated")
-            sourceData.store_id = null;
-        }
 
         await apiClient.transferStockLocation({
           part_id: editingItem.part_id,

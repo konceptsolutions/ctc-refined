@@ -342,7 +342,7 @@ export const printPurchaseImportQuotation = ({
           ? Number(item.totalWeight || 0) / qty
           : 0;
     const fcAmount = Math.round(fcRate * qty * 10000) / 10000;
-    const totalWeight = Math.round(weight * qty * 100) / 100;
+    const totalWeight = Math.round(weight * qty * 10000) / 10000;
     return { qty, fcRate, fcAmount, totalWeight };
   };
 
@@ -380,7 +380,7 @@ export const printPurchaseImportQuotation = ({
                 String(line.qty),
                 num(line.fcRate, 4),
                 num(line.fcAmount, 4),
-                num(line.totalWeight),
+                num(line.totalWeight, 4),
               ];
             }
 
@@ -405,7 +405,7 @@ export const printPurchaseImportQuotation = ({
                 num(item.revisedFcAmount, 4),
                 num(item.revisedLcRate, 0),
                 num(item.revisedLcAmount, 0),
-                num(item.totalWeight),
+                num(item.totalWeight, 4),
               ];
             }
 
@@ -416,7 +416,7 @@ export const printPurchaseImportQuotation = ({
               num(item.fcAmount, 4),
               num(item.lcRate, 0),
               num(item.lcAmount, 0),
-              num(item.totalWeight),
+              num(item.totalWeight, 4),
             ];
           }),
     foot: [
@@ -428,7 +428,7 @@ export const printPurchaseImportQuotation = ({
             String(confirmedQtyTotal),
             "Totals",
             num(confirmedFcTotal, 2),
-            num(confirmedWeightTotal),
+            num(confirmedWeightTotal, 4),
           ]
         : isRevised
           ? [
@@ -447,7 +447,7 @@ export const printPurchaseImportQuotation = ({
               num(totals.revisedFcAmount || 0, 2),
               "",
               num(totals.revisedLcAmount || 0),
-              num(totals.totalWeight),
+              num(totals.totalWeight, 4),
             ]
           : [
               "",
@@ -462,7 +462,7 @@ export const printPurchaseImportQuotation = ({
               num(totals.fcAmount, 2),
               "",
               num(totals.lcAmount, 0),
-              num(totals.totalWeight),
+              num(totals.totalWeight, 4),
             ],
     ],
     showFoot: "lastPage",

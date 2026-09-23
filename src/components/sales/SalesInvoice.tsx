@@ -2022,6 +2022,17 @@ export const SalesInvoice = ({
             }
           }
 
+          // Explicit clear: drop leftover price so line total cannot stay as a ghost
+          if (field === "selectedPartId" && !value) {
+            updated.unitPrice = undefined;
+            updated.selectedPriceType = undefined;
+            updated.partNoFallback = "";
+            updated.descriptionFallback = "";
+            updated.priceA = 0;
+            updated.priceB = 0;
+            updated.priceM = 0;
+          }
+
           // If price type was changed explicitly, update unit price to match that selection
           if (field === "selectedPriceType") {
             const part = getPartForItem(updated.selectedPartId);
@@ -3758,6 +3769,8 @@ export const SalesInvoice = ({
 
   // Calculate line total for inline item
   const calculateLineTotal = (item: InlineItemRow) => {
+    // Without a selected part, never show a priced total (avoids ghost-line totals)
+    if (!item.isTemporary && !item.selectedPartId) return 0;
     const part = getPartForItem(item.selectedPartId);
     const qty = isQuotation
       ? Math.max(0, Number(item.qtyDiv ?? 0) || 0)
@@ -3771,9 +3784,28 @@ export const SalesInvoice = ({
     return qty * unitPrice;
   };
 
-  // Calculate total amount
+  /** Rows that will actually be saved on the invoice (must match handleSaveInvoice filter). */
+  const getSavableInlineItems = () =>
+    inlineItems.filter((i) => {
+      if (isQuotation && i.isTemporary) {
+        return (
+          Boolean(
+            String(i.partNoFallback || "").trim() ||
+              String(i.descriptionFallback || "").trim(),
+          ) && Number(i.qty || 0) >= 0
+        );
+      }
+      if (!i.selectedPartId) return false;
+      if (isQuotation) return Number(i.qty || 0) >= 0;
+      return Number(i.qty || 0) > 0;
+    });
+
+  // Calculate total amount — only rows that will be saved (avoids ghost-line total drift)
   const calculateTotalAmount = () => {
-    return inlineItems.reduce((sum, item) => sum + calculateLineTotal(item), 0);
+    return getSavableInlineItems().reduce(
+      (sum, item) => sum + calculateLineTotal(item),
+      0,
+    );
   };
 
   // Get current GST rate based on form state
@@ -3896,13 +3928,42 @@ export const SalesInvoice = ({
       return;
     }
 
+    // Rows with qty/price but no selected part would inflate totals if counted and
+    // be silently dropped on save — block instead of skipping.
+    const orphanPricedRows = inlineItems.filter((i) => {
+      if (i.isTemporary || i.selectedPartId) return false;
+      const qty = Number(i.qty || 0);
+      const hasPrice =
+        i.unitPrice != null && Number.isFinite(Number(i.unitPrice));
+      const hasFallback = Boolean(String(i.partNoFallback || "").trim());
+      return qty > 0 && (hasPrice || hasFallback);
+    });
+    if (orphanPricedRows.length > 0) {
+      toast({
+        title: "Incomplete item rows",
+        description: `${orphanPricedRows.length} row(s) have quantity/price but no part selected. Select a part or remove those rows before saving.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const savableBeforeSave = getSavableInlineItems();
+    if (savableBeforeSave.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please add at least one item with a part and quantity",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Check if all items have either a selected price type OR a manual unit price.
     // This allows editing older/custom-priced invoices where unit price may not
     // exactly match Price A/B/M.
-    const itemsWithoutPrice = inlineItems.filter(
+    const itemsWithoutPrice = savableBeforeSave.filter(
       (i) =>
-        i.selectedPartId &&
-        i.qty > 0 &&
+        !i.isTemporary &&
+        Number(i.qty || 0) > 0 &&
         !i.selectedPriceType &&
         (i.unitPrice == null || Number.isNaN(Number(i.unitPrice))),
     );
@@ -4056,21 +4117,8 @@ export const SalesInvoice = ({
       }
     }
 
-    // Convert inline items to invoice items
-    const invoiceItems = inlineItems
-      .filter((i) => {
-        if (isQuotation && i.isTemporary) {
-          return (
-            Boolean(
-              String(i.partNoFallback || "").trim() ||
-                String(i.descriptionFallback || "").trim(),
-            ) && Number(i.qty || 0) >= 0
-          );
-        }
-        if (!i.selectedPartId) return false;
-        if (isQuotation) return Number(i.qty || 0) >= 0;
-        return i.qty > 0;
-      })
+    // Convert inline items to invoice items (same filter as getSavableInlineItems / totals)
+    const invoiceItems = getSavableInlineItems()
       .map((item) => {
         const part = item.isTemporary
           ? null
@@ -7009,7 +7057,10 @@ export const SalesInvoice = ({
         );
       } else {
       setPrintInvoiceWithBalance(true);
-      setPrintInvoiceOnLetterhead(false);
+      const hasGst =
+        Number(invoice.tax) > 0 || Number(invoice.taxPercentage ?? 0) > 0;
+      // GST invoices print on Crystal A5 letterhead by default.
+      setPrintInvoiceOnLetterhead(hasGst);
       setPrintInvoiceOrientation("landscape");
       }
       setShowInvoicePrintColumnsDialog(true);
@@ -7908,17 +7959,9 @@ export const SalesInvoice = ({
                                         [item.id]: searchValue,
                                       }));
 
-                                      // Clear selected part when user starts typing
-                                      if (
-                                        searchValue.length > 0 &&
-                                        item.selectedPartId
-                                      ) {
-                                        handleUpdateInlineItem(
-                                          item.id,
-                                          "selectedPartId",
-                                          "",
-                                        );
-                                      }
+                                      // Keep selectedPartId while searching so blur-without-pick
+                                      // restores the previous part. Clearing on type left qty/rate
+                                      // intact and caused ghost lines (total counted, item not saved).
 
                                       // Calculate position
                                       const input = inputRefs.current[item.id];
@@ -9273,7 +9316,7 @@ export const SalesInvoice = ({
                         <TableCell />
                         {/* Qty */}
                         <TableCell className="text-center font-semibold tabular-nums">
-                          {inlineItems.reduce(
+                          {getSavableInlineItems().reduce(
                             (sum, it) => sum + (Number(it.qty) || 0),
                             0,
                           )}
@@ -11161,15 +11204,27 @@ export const SalesInvoice = ({
                   />
                   Landscape (recommended for invoices)
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                <label
+                  className={`flex items-center gap-2 text-sm ${
+                    printInvoiceOnLetterhead
+                      ? "cursor-not-allowed opacity-50"
+                      : "cursor-pointer"
+                  }`}
+                >
                   <input
                     type="radio"
                     name="invoice-print-orientation"
                     checked={printInvoiceOrientation === "portrait"}
                     onChange={() => setPrintInvoiceOrientation("portrait")}
+                    disabled={printInvoiceOnLetterhead}
                     className="h-4 w-4"
                   />
                   Portrait
+                  {printInvoiceOnLetterhead ? (
+                    <span className="text-xs text-muted-foreground">
+                      (letterhead is landscape)
+                    </span>
+                  ) : null}
                 </label>
               </div>
             </div>
@@ -11179,16 +11234,19 @@ export const SalesInvoice = ({
                 <label className="flex items-start gap-2 cursor-pointer text-sm">
                   <Checkbox
                     checked={printInvoiceOnLetterhead}
-                    onCheckedChange={(checked) =>
-                      setPrintInvoiceOnLetterhead(checked === true)
-                    }
+                    onCheckedChange={(checked) => {
+                      const on = checked === true;
+                      setPrintInvoiceOnLetterhead(on);
+                      // Pre-printed GST letterhead is A5 landscape (Crystal form).
+                      if (on) setPrintInvoiceOrientation("landscape");
+                    }}
                     className="mt-0.5"
                   />
                   <span>
-                    Pre-printed GST letterhead
+                    Pre-printed GST letterhead (A5 landscape)
                     <span className="block text-xs text-muted-foreground">
-                      Reserves space for company header/footer on your printed
-                      forms. Leave off for plain paper or PDF.
+                      Aligns to Crystal Trading letterhead: left brand strip,
+                      top company header, bottom Urdu footer. Uses landscape A5.
                     </span>
                   </span>
                 </label>

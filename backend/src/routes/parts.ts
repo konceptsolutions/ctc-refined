@@ -14,6 +14,7 @@ import {
   syncImagesToAlternateParts,
 } from "../utils/partAlternateImages";
 import { buildPartFamilySearchSql, buildPartFamilySearchLiteSql, buildPartIdentityFilterSql } from "../utils/partFamilySearch";
+import { roundWeight } from "../utils/weightRound";
 
 const router = express.Router();
 
@@ -2300,7 +2301,7 @@ router.post("/", async (req: Request, res: Response) => {
       subcategoryId: validatedSubcategoryId || null,
       applicationId: validatedApplicationId || null,
       hsCode: hs_code ? String(hs_code).trim() : null,
-      weight: weight ? parseFloat(String(weight)) : null,
+      weight: weight ? roundWeight(weight) : null,
       reorderLevel: reorder_level ? parseInt(String(reorder_level)) : 0,
       uom: uom ? String(uom).trim() : "pcs",
       cost:
@@ -3435,7 +3436,7 @@ router.put("/:id", async (req: Request, res: Response) => {
     if ("hs_code" in req.body)
       updateData.hsCode = hs_code ? String(hs_code).trim() : null;
     if ("weight" in req.body)
-      updateData.weight = weight ? parseFloat(weight) : null;
+      updateData.weight = weight ? roundWeight(weight) : null;
     if ("reorder_level" in req.body)
       updateData.reorderLevel = reorder_level ? parseInt(reorder_level) : 0;
     if ("uom" in req.body) updateData.uom = uom || "pcs";

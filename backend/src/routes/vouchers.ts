@@ -653,6 +653,24 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'At least one entry is required' });
     }
 
+    const missingAccount = entries.find(
+      (e: any) =>
+        (voucherEntryDebit(e) > 0 || voucherEntryCredit(e) > 0) &&
+        !String(e.accountId || "").trim(),
+    );
+    if (missingAccount) {
+      return res.status(400).json({
+        error:
+          "Every voucher line with an amount must have a linked chart account. Re-select the account and try again.",
+        details: {
+          accountName:
+            missingAccount.account ||
+            missingAccount.accountName ||
+            null,
+        },
+      });
+    }
+
     // Validate debit equals credit (coerce so "" / null / commas don't break totals)
     const calculatedDebit = entries.reduce(
       (sum: number, e: any) => sum + voucherEntryDebit(e),
@@ -961,6 +979,24 @@ router.put('/:id', async (req: Request, res: Response) => {
         return res.status(400).json({
           error: "Total debit must equal total credit",
           details: { debit: calculatedDebit, credit: calculatedCredit },
+        });
+      }
+
+      const missingAccount = entries.find(
+        (e: any) =>
+          (voucherEntryDebit(e) > 0 || voucherEntryCredit(e) > 0) &&
+          !String(e.accountId || "").trim(),
+      );
+      if (missingAccount) {
+        return res.status(400).json({
+          error:
+            "Every voucher line with an amount must have a linked chart account. Re-select the account and try again.",
+          details: {
+            accountName:
+              missingAccount.account ||
+              missingAccount.accountName ||
+              null,
+          },
         });
       }
 

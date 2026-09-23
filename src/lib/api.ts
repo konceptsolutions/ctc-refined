@@ -963,6 +963,8 @@ class ApiClient {
       store_id: string | null;
       rack_id: string | null;
       shelf_id: string | null;
+      is_virtual_unallocated?: boolean;
+      unallocated?: boolean;
     };
     target: {
       store_id: string;

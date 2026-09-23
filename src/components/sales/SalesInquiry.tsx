@@ -9,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
+import { formatWeightDisplay } from "@/utils/weightRound";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -226,7 +227,7 @@ const transformPart = (
     ).trim() || "N/A",
   uom: String(p.uom || "NOS").trim(),
   hsCode: String(p.hs_code || p.hsCode || "").trim() || "N/A",
-  weight: formatPartNumber(p.weight),
+  weight: formatWeightDisplay(p.weight, { fixed: true }),
   cost: formatPartNumber(p.cost),
   priceA: formatPartNumber(p.price_a || p.priceA),
   priceB: formatPartNumber(p.price_b || p.priceB),
@@ -1835,7 +1836,7 @@ export const SalesInquiry = ({
             ).trim() || "N/A",
           uom: String((p as any).uom || 'NOS').trim(),
           hsCode: String((p as any).hs_code || (p as any).hsCode || '').trim() || 'N/A',
-          weight: formatNumber((p as any).weight),
+          weight: formatWeightDisplay((p as any).weight, { fixed: true }),
           cost: formatNumber((p as any).cost),
           priceA: formatNumber((p as any).price_a || (p as any).priceA),
           priceB: formatNumber((p as any).price_b || (p as any).priceB),
@@ -2718,7 +2719,7 @@ export const SalesInquiry = ({
         ).trim() || "N/A",
         uom: String(p.uom || "NOS").trim(),
         hsCode: String(p.hs_code || p.hsCode || "").trim() || "N/A",
-        weight: formatNumber(p.weight),
+        weight: formatWeightDisplay(p.weight, { fixed: true }),
         cost: formatNumber(p.cost),
         priceA: formatNumber(p.price_a || p.priceA),
         priceB: formatNumber(p.price_b || p.priceB),
@@ -2837,7 +2838,7 @@ export const SalesInquiry = ({
               'N/A',
             uom: String(p.uom || 'NOS').trim(),
             hsCode: String(p.hs_code || p.hsCode || '').trim() || 'N/A',
-            weight: formatNumber(p.weight),
+            weight: formatWeightDisplay(p.weight, { fixed: true }),
             cost: formatNumber(p.cost),
             priceA: formatNumber(p.price_a || p.priceA),
             priceB: formatNumber(p.price_b || p.priceB),

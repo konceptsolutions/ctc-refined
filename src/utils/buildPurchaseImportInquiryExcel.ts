@@ -126,8 +126,8 @@ export const buildPurchaseImportInquiryExcelBlob = async ({
         field: String(index + 1),
         value: `${text(item.masterPartNo)} | ${text(item.partNo)} — ${text(item.description)}`,
         qty: item.totalDemand,
-        weight: Number(item.weight.toFixed(2)),
-        totalWeight: Number(item.totalWeight.toFixed(2)),
+        weight: Number(item.weight.toFixed(4)),
+        totalWeight: Number(item.totalWeight.toFixed(4)),
       });
     });
   }
@@ -138,7 +138,7 @@ export const buildPurchaseImportInquiryExcelBlob = async ({
     value: "Totals",
     qty: totals.qty,
     weight: "",
-    totalWeight: Number(totals.weight.toFixed(2)),
+    totalWeight: Number(totals.weight.toFixed(4)),
   });
   totalsRow.font = { bold: true };
 

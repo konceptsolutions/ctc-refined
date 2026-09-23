@@ -105,21 +105,35 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
   const visibleCols = COLUMN_META.filter((col) => enabled.has(col.id));
   if (visibleCols.length === 0) visibleCols.push(COLUMN_META[0]);
 
-  const orientation = input.orientation === "portrait" ? "portrait" : "landscape";
+  const gstLetterhead = input.taxAmount > 0 || input.taxPercentage > 0;
+  const useLetterhead = input.useLetterhead && gstLetterhead;
+  // Pre-printed GST form (scan_A5) is A5 landscape — force that when letterhead is on.
+  const orientation = useLetterhead
+    ? "landscape"
+    : input.orientation === "portrait"
+      ? "portrait"
+      : "landscape";
   const doc = new jsPDF({ orientation, unit: "mm", format: "a5" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const gstLetterhead = input.taxAmount > 0 || input.taxPercentage > 0;
-  const useLetterhead = input.useLetterhead && gstLetterhead;
-  const marginL = useLetterhead ? 22 : 8;
-  const marginR = useLetterhead ? 10 : 8;
-  const marginT = useLetterhead ? 26 : 8;
-  const marginB = useLetterhead ? 36 : 12;
+
+  // Margins measured from Crystal Trading A5 landscape letterhead scan:
+  // left brand-logo strip, top company/award header, thin Urdu footer.
+  const marginL = useLetterhead ? 36 : 8;
+  const marginR = useLetterhead ? 14 : 8;
+  const marginT = useLetterhead ? 30 : 8;
+  const marginB = useLetterhead ? 16 : 12;
   const contentW = pageW - marginL - marginR;
-  const headerHeight = 28;
+  const headerHeight = useLetterhead ? 22 : 28;
+  const tableFontSize = useLetterhead ? 7.5 : 8;
+  const tableCellPad = useLetterhead ? 1.0 : 1.4;
 
   const [stampUrl, signatureUrl] = await Promise.all([
-    loadImageDataUrl(`${window.location.origin}/invoice-sales-tax-stamp.png`),
+    // "Sales tax as per rule..." stamp is only for non-GST invoices.
+    // GST / letterhead prints use authorised signature instead.
+    !gstLetterhead
+      ? loadImageDataUrl(`${window.location.origin}/invoice-sales-tax-stamp.png`)
+      : Promise.resolve(null),
     gstLetterhead
       ? loadImageDataUrl(
           `${window.location.origin}/invoice-authorised-signature.png`,
@@ -144,29 +158,46 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
     const y = marginT;
     doc.setTextColor(0, 0, 0);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text(String(input.invoice.customerName || "Walk-in Customer"), marginL, y);
+    doc.setFontSize(useLetterhead ? 9 : 10);
+    doc.text(
+      String(input.invoice.customerName || "Walk-in Customer"),
+      marginL,
+      y,
+    );
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    let leftY = y + 4.2;
+    doc.setFontSize(useLetterhead ? 7 : 8);
+    let leftY = y + (useLetterhead ? 3.6 : 4.2);
+    const lineGap = useLetterhead ? 3.1 : 3.5;
     if (input.invoice.customerType === "registered") {
       for (const line of input.customerAddressLines.slice(0, 3)) {
         doc.text(line, marginL, leftY);
-        leftY += 3.5;
+        leftY += lineGap;
       }
       if (input.area) {
         doc.text(input.area, marginL, leftY);
-        leftY += 3.5;
+        leftY += lineGap;
       }
       if (input.contactNo) {
         doc.text(`Contact No: ${input.contactNo}`, marginL, leftY);
       }
     }
 
+    // Sales-tax stamp sits in the white content band (not over pre-printed header).
     if (stampUrl) {
       try {
-        doc.addImage(stampUrl, imageFormat(stampUrl), pageW / 2 - 16, y - 4, 32, 16);
+        const stampW = useLetterhead ? 28 : 32;
+        const stampH = useLetterhead ? 14 : 16;
+        const stampX = marginL + contentW / 2 - stampW / 2;
+        const stampY = useLetterhead ? y - 1 : y - 4;
+        doc.addImage(
+          stampUrl,
+          imageFormat(stampUrl),
+          stampX,
+          stampY,
+          stampW,
+          stampH,
+        );
       } catch {
         /* optional */
       }
@@ -186,7 +217,7 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
       `User: ${input.printedBy}`,
     ].filter(Boolean);
     rightLines.forEach((line, idx) => {
-      doc.text(line, rightX, y + idx * 3.5, { align: "right" });
+      doc.text(line, rightX, y + idx * lineGap, { align: "right" });
     });
   };
 
@@ -237,12 +268,25 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
   drawHeader();
   autoTable(doc, {
     ...PLAIN_TABLE,
+    styles: {
+      ...PLAIN_TABLE.styles,
+      fontSize: tableFontSize,
+      cellPadding: tableCellPad,
+    },
+    headStyles: {
+      ...PLAIN_TABLE.headStyles,
+      fontSize: tableFontSize,
+    },
+    footStyles: {
+      ...PLAIN_TABLE.footStyles,
+      fontSize: tableFontSize,
+    },
     startY: marginT + headerHeight,
     margin: {
       left: marginL,
       right: marginR,
       top: marginT + headerHeight,
-      bottom: Math.max(marginB, 15),
+      bottom: Math.max(marginB, useLetterhead ? 14 : 15),
     },
     head: [visibleCols.map((col) => col.header)],
     body: body.length
@@ -268,7 +312,7 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
 
   let y =
     ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable
-      ?.finalY || marginT + headerHeight) + 6;
+      ?.finalY || marginT + headerHeight) + (useLetterhead ? 4 : 6);
 
   const totals: Array<[string, string]> = [];
   if (input.discountAmount > 0) {
@@ -289,16 +333,16 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
     totals.push(["Total Receivable", formatPdfMoney(input.totalReceivable)]);
   }
 
-  const totalsW = Math.min(62, contentW * 0.38);
-  const totalsH = totals.length * 5 + 2;
-  if (y + Math.max(totalsH, 12) > pageH - marginB - 28) {
+  const totalsW = Math.min(useLetterhead ? 52 : 62, contentW * 0.38);
+  const totalsH = totals.length * (useLetterhead ? 4.4 : 5) + 2;
+  if (y + Math.max(totalsH, 12) > pageH - marginB - (useLetterhead ? 22 : 28)) {
     doc.addPage();
     drawHeader();
     y = marginT + headerHeight;
   }
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
+  doc.setFontSize(useLetterhead ? 7.5 : 8.5);
   const words = doc.splitTextToSize(
     `Rupees:- (${input.currentAmountWords} Only.)`,
     contentW - totalsW - 6,
@@ -307,20 +351,26 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
 
   let ty = y;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
+  doc.setFontSize(useLetterhead ? 7 : 8);
+  const totRowH = useLetterhead ? 4.4 : 5;
   totals.forEach(([label, value], idx) => {
     const isLast = idx === totals.length - 1;
     if (isLast) doc.setFont("helvetica", "bold");
-    doc.text(label, pageW - marginR - totalsW, ty + 3.5);
-    doc.text(value, pageW - marginR, ty + 3.5, { align: "right" });
+    doc.text(label, pageW - marginR - totalsW, ty + 3.2);
+    doc.text(value, pageW - marginR, ty + 3.2, { align: "right" });
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(isLast ? 0.4 : 0.15);
-    doc.line(pageW - marginR - totalsW, ty + 4.4, pageW - marginR, ty + 4.4);
-    ty += 5;
+    doc.line(
+      pageW - marginR - totalsW,
+      ty + 4.0,
+      pageW - marginR,
+      ty + 4.0,
+    );
+    ty += totRowH;
     doc.setFont("helvetica", "normal");
   });
 
-  y = Math.max(y + words.length * 4, ty) + 5;
+  y = Math.max(y + words.length * (useLetterhead ? 3.4 : 4), ty) + 4;
   const notes = [
     `Delivered to: ${input.deliveredTo || "-"}`,
     `Remarks: ${input.remarks || "-"}`,
@@ -328,40 +378,44 @@ export const printSalesInvoicePdf = async (input: SalesInvoicePdfInput) => {
     "Parts sold may be Exchanged/returned same day only.",
   ];
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  const notesW = gstLetterhead ? contentW - 48 : contentW;
+  doc.setFontSize(useLetterhead ? 6.5 : 7.5);
+  const notesW = gstLetterhead ? contentW - (useLetterhead ? 44 : 48) : contentW;
+  const noteLineH = useLetterhead ? 3.0 : 3.4;
   for (const note of notes) {
     const lines = doc.splitTextToSize(note, notesW);
-    if (y + lines.length * 3.4 > pageH - marginB) {
+    if (y + lines.length * noteLineH > pageH - marginB) {
       doc.addPage();
       drawHeader();
       y = marginT + headerHeight;
     }
     doc.text(lines, marginL, y);
-    y += lines.length * 3.4 + 1.2;
+    y += lines.length * noteLineH + (useLetterhead ? 0.8 : 1.2);
   }
 
   if (gstLetterhead) {
-    const sigX = pageW - marginR - 42;
-    const sigY = Math.min(y, pageH - marginB - 18);
+    const sigW = useLetterhead ? 38 : 42;
+    const sigX = pageW - marginR - sigW;
+    const sigY = Math.min(y, pageH - marginB - (useLetterhead ? 14 : 18));
     if (signatureUrl) {
       try {
         doc.addImage(
           signatureUrl,
           imageFormat(signatureUrl),
           sigX + 4,
-          sigY - 14,
-          34,
-          12,
+          sigY - (useLetterhead ? 12 : 14),
+          useLetterhead ? 30 : 34,
+          useLetterhead ? 10 : 12,
         );
       } catch {
         /* optional */
       }
     }
     doc.setLineWidth(0.2);
-    doc.line(sigX, sigY + 1, sigX + 42, sigY + 1);
-    doc.setFontSize(7);
-    doc.text("(Authorised Signature)", sigX + 21, sigY + 5, { align: "center" });
+    doc.line(sigX, sigY + 1, sigX + sigW, sigY + 1);
+    doc.setFontSize(useLetterhead ? 6.5 : 7);
+    doc.text("(Authorised Signature)", sigX + sigW / 2, sigY + 4.5, {
+      align: "center",
+    });
   }
 
   if (!openPdfPrintDialog(doc)) {

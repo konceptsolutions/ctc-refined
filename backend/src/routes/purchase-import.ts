@@ -5,6 +5,7 @@ import prisma from "../config/database";
 import { roundPurchasePrice } from "../utils/purchasePriceRound";
 import { roundFc, roundFcTotal } from "../utils/fcRound";
 import { createPartFromTemporaryInput } from "../utils/createPartFromTemporary";
+import { roundWeight } from "../utils/weightRound";
 
 const router = express.Router();
 
@@ -98,7 +99,7 @@ const normalizeItems = (itemsRaw: any) =>
         khiQuantity: Number.isFinite(khiQuantity) ? khiQuantity : 0,
         isbQuantity: Number.isFinite(isbQuantity) ? isbQuantity : 0,
         otherQuantity: Number.isFinite(otherQuantity) ? otherQuantity : 0,
-        weight: Number(item?.weight || 0),
+        weight: roundWeight(item?.weight || 0),
         sortOrder: Number.isFinite(sortOrderRaw) ? sortOrderRaw : index,
       };
     })
@@ -655,7 +656,7 @@ async function confirmPurchaseQuotation(
           : undefined,
       weight:
         item?.weight !== undefined && Number.isFinite(Number(item.weight))
-          ? Math.max(0, Number(item.weight))
+          ? roundWeight(Math.max(0, Number(item.weight)))
           : undefined,
       fcRate:
         item?.fcRate !== undefined && Number.isFinite(Number(item.fcRate))
@@ -798,9 +799,9 @@ async function confirmPurchaseQuotation(
           itemInput?.weight !== undefined &&
           Number.isFinite(Number(itemInput.weight))
         ) {
-          const itemWeight = Math.max(0, Number(itemInput.weight));
+          const itemWeight = roundWeight(Math.max(0, Number(itemInput.weight)));
           snapshot.weight = itemWeight;
-          snapshot.totalWeight = itemWeight * quotationQty;
+          snapshot.totalWeight = roundWeight(itemWeight * quotationQty);
         }
         if (rates) {
           snapshot.useRevisedRates = useRevisedRates;
@@ -893,12 +894,12 @@ async function confirmPurchaseQuotation(
         ? Number(item.sortOrder)
         : 0;
 
-      let itemWeight = Number(item.weight || 0);
+      let itemWeight = roundWeight(item.weight || 0);
       if (
         itemInput?.weight !== undefined &&
         Number.isFinite(Number(itemInput.weight))
       ) {
-        itemWeight = Math.max(0, Number(itemInput.weight));
+        itemWeight = roundWeight(Math.max(0, Number(itemInput.weight)));
       }
 
       (Object.keys(laneQty) as PoLaneKey[]).forEach((lane) => {
@@ -1113,8 +1114,8 @@ async function confirmPurchaseQuotation(
           quantity: row.quantity,
           unitCost: row.unitCost,
           totalCost: row.totalCost,
-          weight: Number(row.weight || 0),
-          totalWeight: Number(row.weight || 0) * row.quantity,
+          weight: roundWeight(row.weight || 0),
+          totalWeight: roundWeight(Number(row.weight || 0) * row.quantity),
           receivedQty: 0,
           sortOrder:
             Number.isFinite(Number(row.sortOrder))
@@ -1703,7 +1704,7 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
       const inq = pairings[i].inquiry;
       const existing = pairings[i].quotationItem;
       const demandQuantity = Number(inq.demandQuantity || 0);
-      const weight = Number(inq.weight || 0);
+      const weight = roundWeight(inq.weight || 0);
       const sortOrder = Number.isFinite(Number(inq.sortOrder))
         ? Number(inq.sortOrder)
         : i;
@@ -1717,7 +1718,7 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
             demandQuantity,
             quotationQuantity: demandQuantity,
             weight,
-            totalWeight: weight * demandQuantity,
+            totalWeight: roundWeight(weight * demandQuantity),
             fcAmount: roundFc(fcRate * demandQuantity),
             lcRate: roundPurchasePrice(fcRate * conversionRate),
             lcAmount: roundPurchasePrice(
@@ -1754,7 +1755,7 @@ async function syncMissingInquiryItemsIntoRequestQuotations(
           revisedLcRate: 0,
           revisedLcAmount: 0,
           weight,
-          totalWeight: weight * demandQuantity,
+          totalWeight: roundWeight(weight * demandQuantity),
           sortOrder,
           createdAt: now,
           updatedAt: now,
@@ -1943,7 +1944,7 @@ router.get("/alternate-parts/:partId", async (req: Request, res: Response) => {
         description: row.description || "",
         brand: row.brand_name || "",
         origin: row.origin || "",
-        weight: Number(row.weight || 0),
+        weight: roundWeight(row.weight || 0),
       })),
     });
   } catch (error: any) {
@@ -2086,7 +2087,7 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
           masterPartNo: part.MasterPart?.masterPartNo || "",
           brand: part.Brand?.name || "",
           origin: part.origin || "",
-          weight: part.weight || 0,
+          weight: roundWeight(part.weight || 0),
           priceA: part.priceA ?? 0,
           priceB: part.priceB ?? 0,
         },
@@ -2285,7 +2286,7 @@ router.post("/requests", async (req: Request, res: Response) => {
         requestCount += 1;
 
         const itemRecords = items.map((item: any, index: number) => {
-          const weight = Number.isFinite(item.weight) ? item.weight : 0;
+          const weight = roundWeight(Number.isFinite(item.weight) ? item.weight : 0);
           const totalWeight = item.demandQuantity * weight;
           const isTemporary = Boolean(item.isTemporary);
           const partId = isTemporary ? null : String(item.partId || "").trim() || null;
@@ -2694,7 +2695,7 @@ router.put("/requests/:requestId", async (req: Request, res: Response) => {
 
       for (const activeRequestId of itemTargetRequestIds) {
         const itemRecords = items.map((item: any, index: number) => {
-          const weight = Number.isFinite(item.weight) ? item.weight : 0;
+          const weight = roundWeight(Number.isFinite(item.weight) ? item.weight : 0);
           const totalWeight = item.demandQuantity * weight;
           const isTemporary = Boolean(item.isTemporary);
           const partId = isTemporary ? null : String(item.partId || "").trim() || null;
@@ -3051,8 +3052,8 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
           origin: item.Part?.origin || "",
           currentStock: Number(item.currentStock || 0),
           demandQuantity: Number(item.demandQuantity || 0),
-          weight: Number(item.weight || 0),
-          totalWeight: Number(item.totalWeight || 0),
+          weight: roundWeight(item.weight || 0),
+          totalWeight: roundWeight(item.totalWeight || 0),
           quotationQuantity: Number(item.demandQuantity || 0),
           shipDays: "STK",
           fcRate: 0,
@@ -3095,12 +3096,12 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
           shipDays: String(item.shipDays ?? ""),
           fcRate: Number(item.fcRate || 0),
           revisedFcRate: Number(item.revisedFcRate || 0),
-          weight: Number(
+          weight: roundWeight(
             item.weight != null && Number(item.weight) > 0
               ? item.weight
-              : inquiryItem?.weight ?? item.weight ?? 0,
-          ),
-          totalWeight: Number(
+              : inquiryItem?.weight ?? item.weight ?? 0
+            ),
+          totalWeight: roundWeight(
             item.totalWeight != null && Number(item.totalWeight) > 0
               ? item.totalWeight
               : Number(
@@ -3143,8 +3144,8 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         currentStock: Number(item.currentStock || 0),
         demandQuantity: Number(item.demandQuantity || 0),
         quotationQuantity: Number(item.demandQuantity || 0),
-        weight: Number(item.weight || 0),
-        totalWeight: Number(item.totalWeight || 0),
+        weight: roundWeight(item.weight || 0),
+        totalWeight: roundWeight(item.totalWeight || 0),
         shipDays: "STK",
         fcRate: 0,
         revisedFcRate: 0,
@@ -3175,8 +3176,8 @@ router.get("/requests/:requestId/quotation-context", async (req: Request, res: R
         origin: item.Part?.origin || "",
         currentStock: Number(item.currentStock || 0),
         demandQuantity: Number(item.demandQuantity || 0),
-        weight: Number(item.weight || 0),
-        totalWeight: Number(item.totalWeight || 0),
+        weight: roundWeight(item.weight || 0),
+        totalWeight: roundWeight(item.totalWeight || 0),
         quotationQuantity: Number(item.demandQuantity || 0),
         shipDays: "STK",
         fcRate: 0,
@@ -3553,7 +3554,7 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
         const lcRate = roundPurchasePrice(fcRate * conversionRate);
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = String(item?.shipDays ?? "").trim();
-        const weight = Number(item?.weight || 0);
+        const weight = roundWeight(item?.weight || 0);
         const identity = resolveTemporaryFlags(item);
         return {
           ...identity,
@@ -3569,7 +3570,7 @@ router.post("/requests/:requestId/quotations", async (req: Request, res: Respons
           revisedLcRate: roundPurchasePrice(item?.revisedLcRate || 0),
           revisedLcAmount: roundPurchasePrice(item?.revisedLcAmount || 0),
           weight,
-          totalWeight: weight * quotationQuantity,
+          totalWeight: roundWeight(weight * quotationQuantity),
         };
       })
       .filter((item: any) => isValidQuotationLineIdentity(item));
@@ -3953,8 +3954,8 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
         totalCost: Number(item.totalCost || 0),
         fcRate: Number(item.fcRate || 0),
         fcAmount: Number(item.fcAmount || 0),
-        weight: Number(item.weight || 0),
-        totalWeight: Number(item.totalWeight || 0),
+        weight: roundWeight(item.weight || 0),
+        totalWeight: roundWeight(item.totalWeight || 0),
       })),
     }));
 
@@ -4025,8 +4026,8 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
                 revisedFcAmount: 0,
                 revisedLcRate: 0,
                 revisedLcAmount: 0,
-                weight: Number(item.weight || 0),
-                totalWeight: Number(item.totalWeight || 0),
+                weight: roundWeight(item.weight || 0),
+                totalWeight: roundWeight(item.totalWeight || 0),
               }),
               mapQuotationItem: (item: any, inquiryItem?: any) => ({
                 id: item.id || null,
@@ -4123,14 +4124,14 @@ router.get("/quotations/:quotationId", async (req: Request, res: Response) => {
                             0,
                         ),
                 ),
-                weight: Number(
+                weight: roundWeight(
                   Number(item.weight || 0) > 0
                     ? item.weight
                     : inquiryItem?.weight != null
                       ? inquiryItem.weight
-                      : item.weight || 0,
-                ),
-                totalWeight: Number(
+                      : item.weight || 0
+                  ),
+                totalWeight: roundWeight(
                   Number(item.totalWeight || 0) > 0
                     ? item.totalWeight
                     : inquiryItem?.totalWeight != null
@@ -4213,7 +4214,7 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
         const lcRate = roundPurchasePrice(fcRate * normalizedConversionRate);
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = String(item?.shipDays ?? "").trim();
-        const weight = Number(item?.weight || 0);
+        const weight = roundWeight(item?.weight || 0);
         const identity = resolveTemporaryFlags(item);
         return {
           ...identity,
@@ -4237,7 +4238,7 @@ router.put("/quotations/:quotationId", async (req: Request, res: Response) => {
               quotationQuantity,
           ),
           weight,
-          totalWeight: weight * quotationQuantity,
+          totalWeight: roundWeight(weight * quotationQuantity),
         };
       })
       .filter((item: any) => isValidQuotationLineIdentity(item));
@@ -4399,7 +4400,7 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
         const revisedFcRate = roundFc(item?.revisedFcRate || 0);
         const demandQuantity = Number(item?.demandQuantity || 0);
         const shipDays = String(item?.shipDays ?? "").trim();
-        const weight = Number(item?.weight || 0);
+        const weight = roundWeight(item?.weight || 0);
         const lcRate = roundPurchasePrice(fcRate * normalizedConversionRate);
         const revisedLcRate = roundPurchasePrice(
           revisedFcRate * normalizedConversionRate,
@@ -4420,7 +4421,7 @@ router.put("/quotations/:quotationId/revise", async (req: Request, res: Response
           revisedLcRate,
           revisedLcAmount: roundPurchasePrice(revisedLcRate * quotationQuantity),
           weight,
-          totalWeight: weight * quotationQuantity,
+          totalWeight: roundWeight(weight * quotationQuantity),
         };
       })
       .filter((item: any) => isValidQuotationLineIdentity(item));
@@ -4759,8 +4760,8 @@ router.post("/quotations/:quotationId/promote-temporary-items", async (req: Requ
           String(raw?.masterPartNo || qi.tempMasterPartNo || "").trim() || null,
         weight:
           raw?.weight !== undefined
-            ? Number(raw.weight)
-            : Number(qi.weight || 0),
+            ? roundWeight(raw.weight)
+            : roundWeight(qi.weight || 0),
         origin: String(raw?.origin || "").trim() || null,
       });
 
@@ -4849,7 +4850,7 @@ router.post("/quotations/:quotationId/confirm", async (req: Request, res: Respon
             : undefined,
         weight:
           item?.weight !== undefined && Number.isFinite(Number(item.weight))
-            ? Math.max(0, Number(item.weight))
+            ? roundWeight(Math.max(0, Number(item.weight)))
             : undefined,
         fcRate:
           item?.fcRate !== undefined && Number.isFinite(Number(item.fcRate))
@@ -5063,7 +5064,7 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
           weight: 0,
         };
         prev[lane] += Math.max(0, Math.floor(Number(item.quantity || 0)));
-        const itemWeight = Number(item.weight || 0);
+        const itemWeight = roundWeight(item.weight || 0);
         if (itemWeight > 0 && prev.weight <= 0) prev.weight = itemWeight;
         confirmedByPartId.set(partId, prev);
       }
@@ -5121,7 +5122,7 @@ router.post("/quotations/:quotationId/unconfirm", async (req: Request, res: Resp
                 "confirmIsbQuantity" = ${snap.confirmIsbQuantity},
                 "confirmOtherQuantity" = ${snap.confirmOtherQuantity},
                 "weight" = ${snap.weight},
-                "totalWeight" = ${snap.weight * quotationQty},
+                "totalWeight" = ${roundWeight(snap.weight * quotationQty)},
                 "updatedAt" = NOW()
               WHERE id = ${String(qi.id)}
             `;
@@ -5575,8 +5576,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           fcAmount: Number((poItem as any).fcAmount || 0),
           lcRate: Number(poItem.unitCost) || 0,
           lcAmount: Number(poItem.totalCost) || 0,
-          weight: Number((poItem as any).weight || 0),
-          totalWeight: Number((poItem as any).totalWeight || 0),
+          weight: roundWeight((poItem as any).weight || 0),
+          totalWeight: roundWeight((poItem as any).totalWeight || 0),
           priceA: partPriceA,
           priceB: partPriceB,
           orderQty,
@@ -5615,7 +5616,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         fcRate = lcRate / orderConversionRate;
       }
 
-      const weight = Number(quotationItem?.weight || 0);
+      const weight = roundWeight(quotationItem?.weight || 0);
       return {
         id: poItem.id,
         partId,
@@ -5633,7 +5634,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         lcRate,
         lcAmount: roundPurchasePrice(lcRate * orderQty),
         weight,
-        totalWeight: weight * orderQty,
+        totalWeight: roundWeight(weight * orderQty),
         priceA: partPriceA,
         priceB: partPriceB,
         orderQty,
@@ -5885,7 +5886,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
           : undefined;
       const weight =
         row.weight !== undefined && Number.isFinite(Number(row.weight))
-          ? Math.max(0, Number(row.weight) || 0)
+          ? roundWeight(Math.max(0, Number(row.weight) || 0))
           : undefined;
 
       if (itemId && existingItemIds.has(itemId)) {
@@ -5984,7 +5985,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
 
         const receiveQty = Math.max(0, Math.floor(Number(newItem.receiveQty) || 0));
         const fcRate = roundFc(newItem.fcRate);
-        const weight = Number(newItem.weight ?? part.weight ?? 0);
+        const weight = roundWeight(newItem.weight ?? part.weight ?? 0);
         const lineUnitCost = roundPurchasePrice(fcRate * conversionRate);
         const fcAmount = roundFc(fcRate * receiveQty);
         const lineTotalCost = roundPurchasePrice(lineUnitCost * receiveQty);
