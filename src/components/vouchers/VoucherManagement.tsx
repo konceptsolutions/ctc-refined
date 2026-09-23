@@ -626,7 +626,7 @@ export const VoucherManagement = () => {
         createdAt: new Date().toISOString(),
       };
     } else if (data.type === "receipt") {
-      const cashReceived =
+      const grossReceived =
         Number(data.totalReceived ?? data.totalAmount ?? 0) || 0;
 
       // Cash discount is per-line on the receipt form (cash receipt vouchers only).
@@ -634,6 +634,7 @@ export const VoucherManagement = () => {
         .map((entry: any) => ({
           accountCr: entry.accountCr ?? entry.account,
           discount: Number(entry.cashDiscount ?? 0) || 0,
+          crAmount: Number(entry.crAmount ?? entry.credit ?? 0) || 0,
         }))
         .filter((l: any) => l.discount > 0 && !!l.accountCr);
 
@@ -641,9 +642,11 @@ export const VoucherManagement = () => {
         (sum: number, l: any) => sum + (Number(l.discount) || 0),
         0,
       );
-      const voucherTotal = cashReceived + cashDiscount;
+      // Cr amount is the settlement (party credit). Cash in hand is net of discount.
+      const cashReceived = Math.max(0, grossReceived - cashDiscount);
+      const voucherTotal = grossReceived;
 
-      // Convert Receipt Voucher data — Cr lines are cash received per account
+      // Convert Receipt Voucher data — Cr lines are settlement per account
       const entries: VoucherEntry[] = paymentReceiptEntries.map(
         (entry: any) => ({
           id: entry.id,
@@ -654,7 +657,7 @@ export const VoucherManagement = () => {
         }),
       );
 
-      // Dr cash/bank for amount actually received
+      // Dr cash/bank for amount actually received (gross − discount)
       entries.unshift({
         id: `dr-${Date.now()}`,
         account: data.drAccount,
@@ -663,10 +666,8 @@ export const VoucherManagement = () => {
         credit: 0,
       });
 
-      // Cash discount: Dr Cash (Discount), Cr selected Account Cr line
+      // Cash discount: Dr Cash (Discount) only — party already credited at full Cr
       if (cashDiscount > 0 && data.cashDiscountAccount) {
-        // Create a cash discount journal pair per account line
-        // so the Cr side matches the same account that received the amount.
         for (const line of discountLines) {
           entries.push({
             id: `dr-disc-${Date.now()}-${String(line.accountCr)}`,
@@ -674,14 +675,6 @@ export const VoucherManagement = () => {
             description: "Cash discount",
             debit: line.discount,
             credit: 0,
-          });
-
-          entries.push({
-            id: `cr-disc-${Date.now()}-${String(line.accountCr)}`,
-            account: line.accountCr,
-            description: "Cash discount",
-            debit: 0,
-            credit: line.discount,
           });
         }
       }

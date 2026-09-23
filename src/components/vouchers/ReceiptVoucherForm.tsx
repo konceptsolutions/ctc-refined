@@ -177,7 +177,9 @@ export const ReceiptVoucherForm = ({
   const discountAmount = receiptKind === "cash"
     ? entries.reduce((sum, e) => sum + (Number(e.cashDiscount) || 0), 0)
     : 0;
-  const totalAmount = totalReceived + discountAmount;
+  // Cr is settlement; cash in hand is net of discount. Total voucher = settlement.
+  const cashInHand = Math.max(0, totalReceived - discountAmount);
+  const totalAmount = totalReceived;
 
   const [saving, setSaving] = useState(false);
 
@@ -234,6 +236,20 @@ export const ReceiptVoucherForm = ({
         toast({
           title: "Error",
           description: "Select Account Cr before applying cash discount",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const overDiscountLine = entries.find(
+        (e) =>
+          Number(e.cashDiscount || 0) > 0 &&
+          Number(e.cashDiscount || 0) > Number(e.crAmount || 0),
+      );
+      if (overDiscountLine) {
+        toast({
+          title: "Error",
+          description: "Cash discount cannot be greater than Cr amount",
           variant: "destructive",
         });
         return;
@@ -504,17 +520,31 @@ export const ReceiptVoucherForm = ({
         </Button>
       </div>
 
-      <div className="flex items-center justify-end gap-4">
-        <Label className={`text-base font-medium ${amountHeaderClass}`}>Total Amount</Label>
-        <div className="relative w-48">
-          <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">
+      <div className="flex flex-col items-end gap-2">
+        {receiptKind === "cash" && discountAmount > 0 && (
+          <div className="flex items-center gap-4">
+            <Label className="text-sm text-muted-foreground">
+              Cash received (net)
+            </Label>
+            <div className="w-48 text-right text-sm font-medium tabular-nums">
+              {formatAmount(cashInHand)}
+            </div>
+          </div>
+        )}
+        <div className="flex items-center gap-4">
+          <Label className={`text-base font-medium ${amountHeaderClass}`}>
             Total Amount
           </Label>
-          <Input
-            value={formatAmount(totalAmount)}
-            readOnly
-            className="h-11 bg-muted/30 font-medium"
-          />
+          <div className="relative w-48">
+            <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">
+              Total Amount
+            </Label>
+            <Input
+              value={formatAmount(totalAmount)}
+              readOnly
+              className="h-11 bg-muted/30 font-medium"
+            />
+          </div>
         </div>
       </div>
 
