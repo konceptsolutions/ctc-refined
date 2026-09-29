@@ -173,6 +173,8 @@ export function containsItemMetricPhrase(query: string): boolean {
     q.includes("demand") ||
     q.includes("demanding") ||
     q.includes("sold") ||
+    q.includes("quantity sold") ||
+    q.includes("qty sold") ||
     q.includes("sale item") ||
     q.includes("sales item") ||
     q.includes("revenue") ||

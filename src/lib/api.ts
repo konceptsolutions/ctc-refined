@@ -3955,6 +3955,72 @@ class ApiClient {
     });
   }
 
+  async downloadAiExport(downloadPath: string, fileName?: string) {
+    const pathForApi = downloadPath.startsWith("/")
+      ? downloadPath
+      : `/${downloadPath}`;
+    const token = localStorage.getItem("authToken");
+
+    const response = await fetch(`${this.baseUrl}${pathForApi}`, {
+      method: "GET",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ error: response.statusText }));
+      throw new Error(
+        (error as any).error || `Download failed (${response.status})`,
+      );
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const contentDisposition = response.headers.get("Content-Disposition");
+    const headerName = contentDisposition
+      ? contentDisposition.split("filename=")[1]?.replace(/"/g, "")
+      : null;
+    a.download = fileName || headerName || "koncepts-export";
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
+  async getAiMemory() {
+    return this.request("/ai-assistant/memory");
+  }
+
+  async teachAiMemory(data: { fact?: string; command?: string; text?: string }) {
+    return this.request("/ai-assistant/memory", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async forgetAiMemory(id: string) {
+    return this.request(`/ai-assistant/memory/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async sendAiFeedback(data: {
+    rating: "up" | "down";
+    userMessage?: string;
+    assistantMessage: string;
+    comment?: string;
+  }) {
+    return this.request("/ai-assistant/feedback", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Kits API
   async getKits(params?: {
     search?: string;

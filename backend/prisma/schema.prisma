@@ -427,6 +427,39 @@ model LongCatSettings {
   updatedAt DateTime @updatedAt
 }
 
+/// Facts taught to the AI assistant (self-learning memory).
+model AiLearnedFact {
+  id        String   @id @default(uuid())
+  /// null = organization-wide fact shared by all users
+  userId    String?
+  topic     String?
+  fact      String
+  /// remember | learn | correction | feedback
+  source    String   @default("remember")
+  /// active | archived
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([userId, status])
+}
+
+/// Thumbs up/down on assistant replies (used to refine learning).
+model AiMessageFeedback {
+  id                String   @id @default(uuid())
+  userId            String?
+  /// up | down
+  rating            String
+  userMessage       String
+  assistantMessage  String
+  comment           String?
+  createdAt         DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([rating, createdAt])
+}
+
 model MainGroup {
   id           String     @id @default(uuid())
   code         String     @unique

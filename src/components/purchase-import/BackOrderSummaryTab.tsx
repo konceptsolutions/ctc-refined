@@ -438,9 +438,12 @@ export const BackOrderSummaryTab = () => {
           </div>
           {canPrint && (
             <PrintPdfButton
+              size="icon"
+              variant="outline"
+              className="h-8 w-8"
               onPrint={handlePrintPdf}
               disabled={!report || loading}
-              label="PDF"
+              label="Print PDF"
             />
           )}
         </div>

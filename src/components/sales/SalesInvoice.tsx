@@ -1036,6 +1036,28 @@ export const SalesInvoice = ({
   const [salesInquiryPopupPartId, setSalesInquiryPopupPartId] = useState<
     string | null
   >(null);
+  const [salesInquiryPopupLineId, setSalesInquiryPopupLineId] = useState<
+    string | null
+  >(null);
+  const salesInquiryPopupLineIdRef = useRef<string | null>(null);
+  salesInquiryPopupLineIdRef.current = salesInquiryPopupLineId;
+  const salesInquiryActivePartRef = useRef<{
+    id?: string;
+    partNo?: string;
+    masterPart?: string;
+    description?: string;
+    brand?: string;
+    origin?: string;
+    category?: string;
+    priceA?: string;
+    priceB?: string;
+    priceM?: string;
+    quantity?: number;
+    images?: string[];
+    grade?: string;
+  } | null>(null);
+  const inlineItemsRef = useRef(inlineItems);
+  inlineItemsRef.current = inlineItems;
 
   // Hold Dialog
   const [showHoldDialog, setShowHoldDialog] = useState(false);
@@ -2236,6 +2258,249 @@ export const SalesInvoice = ({
     [parts, selectedPartsMap, setParts, setSelectedPartsMap],
   );
 
+  /** When Sales Inquiry alternate swap happens in the eye popup, mirror it on this invoice line. */
+  const applySalesInquiryPartToLine = useCallback(
+    (
+      lineId: string,
+      part: {
+        id?: string;
+        partNo?: string;
+        masterPart?: string;
+        description?: string;
+        brand?: string;
+        origin?: string;
+        category?: string;
+        priceA?: string;
+        priceB?: string;
+        priceM?: string;
+        quantity?: number;
+        images?: string[];
+        grade?: string;
+      },
+      options?: { silent?: boolean },
+    ) => {
+      const newPartId = String(part?.id || "").trim();
+      if (!lineId || !newPartId) return false;
+
+      const existingLine = inlineItemsRef.current.find((i) => i.id === lineId);
+      if (!existingLine) return false;
+      if (existingLine.selectedPartId === newPartId) return false;
+
+      const priceA = parseFloat(String(part.priceA ?? "")) || 0;
+      const priceB = parseFloat(String(part.priceB ?? "")) || 0;
+      const priceM = parseFloat(String(part.priceM ?? "")) || 0;
+      const stockQty = Number(part.quantity ?? 0) || 0;
+      const brandName = String(part.brand || "").trim();
+      const partNo = String(part.partNo || "").trim();
+      const masterPartNo = String(part.masterPart || "").trim();
+      const description = String(part.description || "").trim();
+
+      const mappedPart: PartItem = {
+        id: newPartId,
+        partNo: partNo || masterPartNo || newPartId,
+        masterPartNo: masterPartNo || undefined,
+        description: description || "",
+        price: priceA || 0,
+        priceA: priceA || undefined,
+        priceB: priceB || undefined,
+        priceM: priceM || undefined,
+        stockQty,
+        reservedQty: 0,
+        availableQty: stockQty,
+        grade: (part.grade as PartItem["grade"]) || "A",
+        category: String(part.category || "").trim(),
+        brands: brandName ? [{ id: "", name: brandName }] : [],
+        origin: String(part.origin || "").trim() || undefined,
+        images: part.images,
+      };
+
+      setSelectedPartsMap((prev) => ({ ...prev, [newPartId]: mappedPart }));
+      setParts((prev) =>
+        prev.some((p) => p.id === newPartId) ? prev : [mappedPart, ...prev],
+      );
+      // Clear search term so the input shows the selected part label.
+      setPartsSearchTerm((prev) => {
+        const next = { ...prev };
+        delete next[lineId];
+        return next;
+      });
+
+      if (activeAssociationLineId === lineId) {
+        setActiveAssociationLineId(null);
+      }
+      setLinePartAssociations((prev) => {
+        const next = { ...prev };
+        delete next[lineId];
+        return next;
+      });
+
+      setInlineItems((prev) =>
+        prev.map((item) => {
+          if (item.id !== lineId) return item;
+
+          const updated: InlineItemRow = {
+            ...item,
+            selectedPartId: newPartId,
+            partNoFallback: mappedPart.partNo,
+            descriptionFallback: mappedPart.description,
+            selectedLocationIds: [],
+            selectedLocationId: "",
+            selectedRackId: "",
+            useUnlocatedStock: false,
+          };
+
+          if (isTransferOut) {
+            updated.priceA = 0;
+            updated.priceB = 0;
+            updated.priceM = 0;
+            updated.poUnitCost = undefined;
+            updated.selectedPriceType = "A";
+            updated.unitPrice = 0;
+          } else {
+            updated.priceA = mappedPart.priceA || 0;
+            updated.priceB = mappedPart.priceB || 0;
+            updated.priceM = mappedPart.priceM || 0;
+
+            if (customerPriceType === "A" && mappedPart.priceA) {
+              updated.selectedPriceType = "A";
+            } else if (customerPriceType === "B" && mappedPart.priceB) {
+              updated.selectedPriceType = "B";
+            } else if (customerPriceType === "M" && mappedPart.priceM) {
+              updated.selectedPriceType = "M";
+            } else if (customerPriceType) {
+              updated.selectedPriceType = customerPriceType;
+            } else if (mappedPart.priceA) {
+              updated.selectedPriceType = "A";
+            } else if (mappedPart.priceB) {
+              updated.selectedPriceType = "B";
+            } else if (mappedPart.priceM) {
+              updated.selectedPriceType = "M";
+            }
+
+            if (updated.selectedPriceType === "A") {
+              updated.unitPrice = mappedPart.priceA || 0;
+            } else if (updated.selectedPriceType === "B") {
+              updated.unitPrice = mappedPart.priceB || 0;
+            } else if (updated.selectedPriceType === "M") {
+              updated.unitPrice = mappedPart.priceM || 0;
+            } else {
+              updated.unitPrice = 0;
+            }
+          }
+
+          return updated;
+        }),
+      );
+
+      // Keep the ref in sync immediately so a close-handler right after swap sees the new id.
+      inlineItemsRef.current = inlineItemsRef.current.map((item) =>
+        item.id === lineId
+          ? {
+              ...item,
+              selectedPartId: newPartId,
+              partNoFallback: mappedPart.partNo,
+              descriptionFallback: mappedPart.description,
+            }
+          : item,
+      );
+
+      fetchPartStockBalance(newPartId);
+      fetchPartLocations(newPartId);
+      fetchPartModels(newPartId);
+      fetchPartImages(newPartId);
+      if (!isTransferOut) {
+        void fetchPartPriceLastUpdated(newPartId);
+      }
+
+      if (!options?.silent) {
+        toast({
+          title: "Invoice item updated",
+          description: `Line switched to ${mappedPart.partNo}.`,
+        });
+      }
+      return true;
+    },
+    [
+      activeAssociationLineId,
+      customerPriceType,
+      fetchPartImages,
+      fetchPartLocations,
+      fetchPartModels,
+      fetchPartPriceLastUpdated,
+      fetchPartStockBalance,
+      isTransferOut,
+    ],
+  );
+
+  const handleSalesInquiryPartReplaced = useCallback(
+    (payload: {
+      previousPartId: string;
+      part: {
+        id?: string;
+        partNo?: string;
+        masterPart?: string;
+        description?: string;
+        brand?: string;
+        origin?: string;
+        category?: string;
+        priceA?: string;
+        priceB?: string;
+        priceM?: string;
+        quantity?: number;
+        images?: string[];
+        grade?: string;
+      };
+      lineId?: string | null;
+    }) => {
+      const lineId = String(
+        payload.lineId || salesInquiryPopupLineIdRef.current || "",
+      ).trim();
+      if (!lineId || !payload?.part?.id) return;
+      salesInquiryActivePartRef.current = payload.part;
+      applySalesInquiryPartToLine(lineId, payload.part);
+    },
+    [applySalesInquiryPartToLine],
+  );
+
+  const handleSalesInquiryActivePartChange = useCallback(
+    (
+      part: {
+        id?: string;
+        partNo?: string;
+        masterPart?: string;
+        description?: string;
+        brand?: string;
+        origin?: string;
+        category?: string;
+        priceA?: string;
+        priceB?: string;
+        priceM?: string;
+        quantity?: number;
+        images?: string[];
+        grade?: string;
+      } | null,
+    ) => {
+      salesInquiryActivePartRef.current = part;
+    },
+    [],
+  );
+
+  const closeSalesInquiryPopup = useCallback(
+    (applyActivePart = true) => {
+      const lineId = String(salesInquiryPopupLineIdRef.current || "").trim();
+      const activePart = salesInquiryActivePartRef.current;
+      if (applyActivePart && lineId && activePart?.id) {
+        // If swap callback already updated the line, this is a no-op.
+        // If it didn't, closing still applies the inquiry's current part.
+        applySalesInquiryPartToLine(lineId, activePart);
+      }
+      salesInquiryActivePartRef.current = null;
+      setSalesInquiryPopupPartId(null);
+      setSalesInquiryPopupLineId(null);
+    },
+    [applySalesInquiryPartToLine],
+  );
+
   // Remove inline item
   const handleRemoveInlineItem = (id: string) => {
     setInlineItems((prev) => prev.filter((item) => item.id !== id));
@@ -2524,6 +2789,9 @@ export const SalesInvoice = ({
       const selectedApplication = partsApplicationFilter
         .trim()
         .toLowerCase();
+      const selectedPartId =
+        inlineItemsRef.current.find((row) => row.id === rowId)?.selectedPartId ||
+        "";
 
       const filtered = (() => {
         const pool = parts.filter((part) => {
@@ -2559,12 +2827,25 @@ export const SalesInvoice = ({
         return filterPartsWithFamilyExpansion(pool, searchValue);
       })();
 
-      return [...filtered].sort((a, b) => {
+      const sorted = [...filtered].sort((a, b) => {
         const aHasStock = Number(a.availableQty || 0) > 0;
         const bHasStock = Number(b.availableQty || 0) > 0;
         if (aHasStock !== bHasStock) return aHasStock ? -1 : 1;
         return String(a.partNo || "").localeCompare(String(b.partNo || ""));
       });
+
+      // Keep the line's current part visible even if it fell out of the loaded/search pool.
+      if (
+        selectedPartId &&
+        !sorted.some((p) => p.id === selectedPartId)
+      ) {
+        const selected =
+          selectedPartsMap[selectedPartId] ||
+          parts.find((p) => p.id === selectedPartId);
+        if (selected) sorted.unshift(selected);
+      }
+
+      return sorted;
     },
     [
       parts,
@@ -2572,6 +2853,7 @@ export const SalesInvoice = ({
       partsModelFilter,
       partsDescriptionFilter,
       partsApplicationFilter,
+      selectedPartsMap,
     ],
   );
 
@@ -2579,6 +2861,23 @@ export const SalesInvoice = ({
     getFilteredPartsForInlineRow,
   );
   getFilteredPartsForInlineRowLiveRef.current = getFilteredPartsForInlineRow;
+
+  /** Highlight (and scroll to) the row's selected part when reopening the dropdown. */
+  const setPartsDropdownHighlightForRow = useCallback(
+    (rowId: string, selectedPartId?: string | null) => {
+      let index = 0;
+      if (selectedPartId) {
+        const list = getFilteredPartsForInlineRowLiveRef.current(rowId);
+        const found = list.findIndex((p) => p.id === selectedPartId);
+        if (found >= 0) index = found;
+      }
+      partsDropdownHighlightIndexRef.current[rowId] = index;
+      setPartsDropdownHighlightIndex((prev) =>
+        prev[rowId] === index ? prev : { ...prev, [rowId]: index },
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!showDocumentForm) return;
@@ -3150,16 +3449,18 @@ export const SalesInvoice = ({
     }
   }, [showPartsDropdown]);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside (input + portaled list both count as inside)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+
       Object.keys(showPartsDropdown).forEach((itemId) => {
-        if (showPartsDropdown[itemId] && inputRefs.current[itemId]) {
-          const input = inputRefs.current[itemId];
-          if (!input.contains(event.target as Node)) {
-            setShowPartsDropdown((prev) => ({ ...prev, [itemId]: false }));
-          }
-        }
+        if (!showPartsDropdown[itemId]) return;
+        const input = inputRefs.current[itemId];
+        const dropdown = dropdownRefs.current[itemId];
+        if (input?.contains(target) || dropdown?.contains(target)) return;
+        setShowPartsDropdown((prev) => ({ ...prev, [itemId]: false }));
       });
     };
 
@@ -7753,9 +8054,14 @@ export const SalesInvoice = ({
                                       variant="outline"
                                       className="h-7 w-7 shrink-0"
                                       title="View Sales Inquiry for this item"
-                                      onClick={() =>
-                                        setSalesInquiryPopupPartId(pid)
-                                      }
+                                      onClick={() => {
+                                        salesInquiryPopupLineIdRef.current =
+                                          item.id;
+                                        salesInquiryActivePartRef.current =
+                                          null;
+                                        setSalesInquiryPopupLineId(item.id);
+                                        setSalesInquiryPopupPartId(pid);
+                                      }}
                                     >
                                       <Eye className="h-3.5 w-3.5" />
                                     </Button>
@@ -7929,13 +8235,10 @@ export const SalesInvoice = ({
                                           }));
                                         }
                                       }
-                                      setPartsDropdownHighlightIndex((prev) => ({
-                                        ...prev,
-                                        [item.id]: 0,
-                                      }));
-                                      partsDropdownHighlightIndexRef.current[
-                                        item.id
-                                      ] = 0;
+                                      setPartsDropdownHighlightForRow(
+                                        item.id,
+                                        item.selectedPartId,
+                                      );
                                       setShowPartsDropdown((prev) => ({
                                         ...prev,
                                         [item.id]: true,
@@ -8010,13 +8313,10 @@ export const SalesInvoice = ({
                                       // but the server-side call above will refresh 'parts' list with fresh data from DB
                                     }}
                                     onFocus={() => {
-                                      setPartsDropdownHighlightIndex((prev) => ({
-                                        ...prev,
-                                        [item.id]: 0,
-                                      }));
-                                      partsDropdownHighlightIndexRef.current[
-                                        item.id
-                                      ] = 0;
+                                      setPartsDropdownHighlightForRow(
+                                        item.id,
+                                        item.selectedPartId,
+                                      );
                                       const input = inputRefs.current[item.id];
                                       if (input) {
                                         const rect =
@@ -8313,9 +8613,13 @@ export const SalesInvoice = ({
                                     variant="outline"
                                     className="h-8 w-8"
                                     title="View Sales Inquiry for this item"
-                                    onClick={() =>
-                                      setSalesInquiryPopupPartId(pid)
-                                    }
+                                    onClick={() => {
+                                      salesInquiryPopupLineIdRef.current =
+                                        item.id;
+                                      salesInquiryActivePartRef.current = null;
+                                      setSalesInquiryPopupLineId(item.id);
+                                      setSalesInquiryPopupPartId(pid);
+                                    }}
                                   >
                                     <Eye className="h-4 w-4" />
                                   </Button>
@@ -12808,7 +13112,9 @@ export const SalesInvoice = ({
         <Dialog
           open={Boolean(salesInquiryPopupPartId)}
           onOpenChange={(open) => {
-            if (!open) setSalesInquiryPopupPartId(null);
+            if (!open) {
+              closeSalesInquiryPopup(true);
+            }
           }}
         >
           <DialogContent className="left-0 top-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:rounded-none [&>button]:hidden">
@@ -12819,7 +13125,7 @@ export const SalesInvoice = ({
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9 shrink-0"
-                onClick={() => setSalesInquiryPopupPartId(null)}
+                onClick={() => closeSalesInquiryPopup(true)}
                 aria-label="Close Sales Inquiry"
               >
                 <X className="h-5 w-5" />
@@ -12828,10 +13134,13 @@ export const SalesInvoice = ({
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
               {salesInquiryPopupPartId ? (
                 <SalesInquiry
-                  key={salesInquiryPopupPartId}
+                  key={salesInquiryPopupLineId || salesInquiryPopupPartId}
                   initialPartId={salesInquiryPopupPartId}
+                  linkedLineId={salesInquiryPopupLineId}
                   hideShortcuts
                   embeddedPopup
+                  onPartReplaced={handleSalesInquiryPartReplaced}
+                  onActivePartChange={handleSalesInquiryActivePartChange}
                 />
               ) : null}
             </div>

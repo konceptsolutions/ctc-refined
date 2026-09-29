@@ -268,6 +268,19 @@ interface SalesInquiryProps {
   initialPartId?: string;
   /** Embedded in a parent dialog — part lookup only, no route navigation. */
   embeddedPopup?: boolean;
+  /** Invoice line id when opened from Sales Invoice View — echoed in replace callbacks. */
+  linkedLineId?: string | null;
+  /**
+   * Fired when the user swaps the active lookup part with an alternate
+   * (so a parent Sales Invoice line can update to match).
+   */
+  onPartReplaced?: (payload: {
+    previousPartId: string;
+    part: PartDetail;
+    lineId?: string | null;
+  }) => void;
+  /** Fires whenever the active inquiry part changes (swap, search select, prefill). */
+  onActivePartChange?: (part: PartDetail | null) => void;
 }
 
 export const SalesInquiry = ({
@@ -275,6 +288,9 @@ export const SalesInquiry = ({
   hideShortcuts = false,
   initialPartId,
   embeddedPopup = false,
+  linkedLineId = null,
+  onPartReplaced,
+  onActivePartChange,
 }: SalesInquiryProps = {}) => {
   const navigate = useNavigate();
   const { canCreate, canEdit } = usePageActions("sales.inquiry");
@@ -310,6 +326,16 @@ export const SalesInquiry = ({
   // Part lookup state with dropdowns
   const [itemSearch, setItemSearch] = useState("");
   const [selectedPart, setSelectedPart] = useState<PartDetail | null>(null);
+  const onPartReplacedRef = useRef(onPartReplaced);
+  onPartReplacedRef.current = onPartReplaced;
+  const onActivePartChangeRef = useRef(onActivePartChange);
+  onActivePartChangeRef.current = onActivePartChange;
+  const linkedLineIdRef = useRef(linkedLineId);
+  linkedLineIdRef.current = linkedLineId;
+
+  useEffect(() => {
+    onActivePartChangeRef.current?.(selectedPart);
+  }, [selectedPart]);
   const [showItemDropdown, setShowItemDropdown] = useState(false);
 
   // Multi-row lookup table state (each row mirrors the Sales Invoice item row)
@@ -2660,6 +2686,12 @@ export const SalesInquiry = ({
     if (!alternate?.id) return;
     ensurePartInLookupPool(alternate);
     let targetRowId = activeLookupRowId;
+    const previousPartId = String(
+      lookupRows.find((r) => r.id === targetRowId)?.partId ||
+        selectedPart?.id ||
+        initialPartId ||
+        "",
+    ).trim();
     if (!targetRowId) {
       const empty = lookupRows.find((r) => !r.partId);
       if (empty) {
@@ -2673,6 +2705,12 @@ export const SalesInquiry = ({
       }
     }
     await handleSelectPartForLookupRow(targetRowId, alternate);
+    // Always notify parent when callback is provided (invoice View popup sync).
+    onPartReplacedRef.current?.({
+      previousPartId,
+      part: alternate,
+      lineId: linkedLineIdRef.current,
+    });
     toast({
       title: "Item swapped",
       description: `Switched to ${alternate.partNo || alternate.masterPart}.`,

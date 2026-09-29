@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, Send, Minimize2, Maximize2, FileText, Package, BarChart3, Receipt, Users, Settings, DollarSign, BookOpen, Mic, MicOff, ShoppingCart, Truck, CreditCard, Calculator, FileSpreadsheet, Building, Warehouse, Tag, TrendingUp, ClipboardList, UserPlus, RefreshCw, Sparkles, Navigation, Zap, Brain, ArrowRight, Trash, History } from 'lucide-react';
+import { Bot, Send, Minimize2, Maximize2, FileText, Package, BarChart3, Receipt, Users, Settings, DollarSign, BookOpen, Mic, MicOff, ShoppingCart, Truck, CreditCard, Calculator, FileSpreadsheet, Building, Warehouse, Tag, TrendingUp, ClipboardList, UserPlus, RefreshCw, Sparkles, Navigation, Zap, Brain, ArrowRight, Trash, History, ThumbsUp, ThumbsDown, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -25,6 +25,9 @@ import {
 } from './InteractiveComponents';
 import { HistoryPopup } from './HistoryPopup';
 import { getLocalHelpForQuery } from '@/lib/ai/localErpHelp';
+import { isSystemTourQuery, getSystemTourResponse } from '@/lib/ai/systemTour';
+import { isTeachCommand } from '@/lib/ai/teachCommands';
+import { isAccountingScenarioQuery } from '@/lib/ai/accountingScenarioHelp';
 import {
   extractCustomerNameFromInvoiceQuery,
   formatInvoiceDate,
@@ -33,6 +36,7 @@ import {
 import {
   extractPartSearchFromStockQuery,
   isItemStockLookupQuery,
+  isSalesAnalyticsStyleQuery,
 } from '@/lib/ai/itemStockQueryUtils';
 import {
   isItemAnalyticsReportQuery,
@@ -59,8 +63,32 @@ import { getCurrentPakistanFinancialYearRange } from '@/utils/dateUtils';
 const CHAT_STORAGE_KEY = 'ai-assistant-chat-history';
 const MAX_STORED_MESSAGES = 50;
 
-const resolveNavigationPath = (nav: { path: string; tab?: string }) =>
-  nav.tab ? `${nav.path.replace(/\/$/, '')}/${nav.tab}` : nav.path;
+/** Vouchers (and similar) use ?tab= — never /vouchers/payment (404). */
+const resolveNavigationPath = (nav: { path: string; tab?: string }) => {
+  const base = nav.path.replace(/\/$/, "") || "/";
+  if (!nav.tab) return base;
+  const params = new URLSearchParams();
+  params.set("tab", nav.tab);
+  if (base === "/vouchers") params.set("mode", "new");
+  return `${base}?${params.toString()}`;
+};
+
+/** Questions / follow-ups must go to scenario help or the LLM — not create/nav hijacks. */
+const isConversationalQuery = (message: string): boolean => {
+  const q = message.toLowerCase();
+  if (/\?/.test(q)) return true;
+  if (
+    /\b(how|why|what|when|where|which|explain|tell me|help me|guide|difference|versus|instead|also|because|suppose|what if|in (the )?old|in this system|can you|could you|would you|please)\b/.test(
+      q,
+    )
+  ) {
+    return true;
+  }
+  // Informal: "how i make", "but there are also…"
+  if (/^(but|so|and|also|then)\b/.test(q.trim())) return true;
+  if (/\bhow\s+i\s+(make|do|enter|post|create|record)\b/.test(q)) return true;
+  return false;
+};
 
 // Legacy inline prompt — server-side knowledge base is authoritative via /api/ai-assistant/chat
 const SYSTEM_PROMPT = `You are Koncepts AI Assistant for the Inventory ERP system.`;
@@ -81,6 +109,18 @@ interface Message {
   isThinking?: boolean;
   interactiveComponent?: string; // Type of interactive component to render
   flowData?: any; // Additional data for interactive components
+  /** Thumbs feedback on assistant replies */
+  feedbackRating?: 'up' | 'down';
+  allowFeedback?: boolean;
+  attachments?: Array<{
+    id: string;
+    fileName: string;
+    format: string;
+    mimeType: string;
+    downloadPath: string;
+    rowCount: number;
+    title: string;
+  }>;
 }
 
 interface ActionButton {
@@ -277,6 +317,9 @@ const AIChatBot: React.FC = () => {
     
     // Transfer & Store
     'transfer': { path: '/transfer', description: 'Stock transfer' },
+    'transfer in': { path: '/transfer/transfer-in', description: 'Transfer In' },
+    'transfer out': { path: '/transfer/transfer-out', description: 'Transfer Out' },
+    'branch transfer': { path: '/transfer/transfer-out', description: 'Branch transfer (Transfer Out / In)' },
     'store panel': { path: '/store', description: 'Store panel' },
     
     // Vouchers
@@ -381,13 +424,81 @@ const AIChatBot: React.FC = () => {
       }
     }
     
-    // Navigation intent detection
-    const navigationKeywords = ['go to', 'open', 'show me', 'take me to', 'navigate to', 'switch to', 'view', 'access'];
-    const createKeywords = ['create', 'add', 'new', 'make', 'generate'];
-    const helpKeywords = ['help', 'how to', 'how do', 'how does', 'what is', 'explain', 'guide', 'tell me', 'works', 'work'];
-    const actionKeywords = ['do', 'perform', 'execute', 'run', 'process'];
-    
-    // Help / how-it-works — before navigation so "how does adjust item work" gets an answer
+    // Self-learning teach commands
+    if (isTeachCommand(message)) {
+      return { type: 'teach', data: { query: message }, confidence: 0.99 };
+    }
+
+    const helpKeywords = ['help', 'how to', 'how do', 'how does', 'how i', 'what is', 'explain', 'guide', 'tell me', 'works', 'work', 'tour', 'getting started'];
+    const navigationPhrases = ['go to', 'open', 'take me to', 'navigate to', 'switch to', 'show me'];
+
+    // Explicit navigation / create (checked early so they still work when AI is on)
+    const wantsExplicitNav = navigationPhrases.some((p) => lowerMessage.includes(p));
+    const explicitCreate =
+      /\b(create|add|new)\s+(a\s+|an\s+)?(new\s+)?(payment|receipt|journal|contra|invoice|quotation|quote|part|customer|supplier|expense|purchase\s+order|po)\b/.test(
+        lowerMessage,
+      ) ||
+      /\b(create|add|new)\s+(payment|receipt|journal|contra)\s+voucher\b/.test(lowerMessage) ||
+      /\bmake\s+(a\s+|an\s+)?(new\s+)?(payment|receipt)\s+voucher\b/.test(lowerMessage);
+
+    // With live AI: open-ended questions/scenarios go to the LLM — never canned templates.
+    // Templates below are offline-only fallbacks when no API key is configured.
+    if (
+      longCatConfigured &&
+      !wantsExplicitNav &&
+      !explicitCreate &&
+      (isConversationalQuery(message) ||
+        isAccountingScenarioQuery(message) ||
+        isSystemTourQuery(message) ||
+        helpKeywords.some((k) => lowerMessage.includes(k)))
+    ) {
+      return { type: 'general', data: { message }, confidence: 0.9 };
+    }
+
+    // --- Offline helpers only (tours / module FAQs). Never canned voucher scenarios. ---
+
+    // System / module tour
+    if (isSystemTourQuery(message)) {
+      const tour = getSystemTourResponse(message);
+      if (tour) {
+        return { type: 'topic_help', data: { query: message, content: tour }, confidence: 0.98 };
+      }
+    }
+
+    // Accounting / open scenarios without live AI → prompt to configure (do not invent fixed entries)
+    if (isAccountingScenarioQuery(message) && !longCatConfigured) {
+      return {
+        type: 'topic_help',
+        data: {
+          query: message,
+          content:
+            'That needs the **live AI assistant** so it can reason your exact case (not a fixed template).\n\n' +
+            'Configure an API key in **Settings → LongCat AI**, then ask again.\n\n' +
+            'Meanwhile: money with cash/bank → **Payment / Receipt**; no cash/bank movement → **Journal (JV)**; branch stock → **Transfer In/Out**.',
+        },
+        confidence: 0.9,
+      };
+    }
+
+    // Conversational questions → local help (offline)
+    if (isConversationalQuery(message)) {
+      for (const keyword of helpKeywords) {
+        if (lowerMessage.includes(keyword)) {
+          const localHelp = getLocalHelpForQuery(message);
+          if (localHelp) {
+            return { type: 'topic_help', data: { query: message, content: localHelp }, confidence: 0.95 };
+          }
+          return { type: 'help', data: { query: message }, confidence: 0.8 };
+        }
+      }
+      const conversationalHelp = getLocalHelpForQuery(message);
+      if (conversationalHelp) {
+        return { type: 'topic_help', data: { query: message, content: conversationalHelp }, confidence: 0.9 };
+      }
+      return { type: 'general', data: { message }, confidence: 0.85 };
+    }
+
+    // Help / how-it-works — before navigation
     for (const keyword of helpKeywords) {
       if (lowerMessage.includes(keyword)) {
         const localHelp = getLocalHelpForQuery(message);
@@ -403,37 +514,35 @@ const AIChatBot: React.FC = () => {
       return { type: 'topic_help', data: { query: message, content: directHelp }, confidence: 0.85 };
     }
 
-    // Check for navigation intent
-    for (const keyword of navigationKeywords) {
-      if (lowerMessage.includes(keyword)) {
-        for (const [key, value] of Object.entries(navigationMap)) {
-          if (lowerMessage.includes(key)) {
-            return { type: 'navigate', data: { ...value, key }, confidence: 0.9 };
-          }
+    // Explicit navigation only: "go to payment", "open vouchers", …
+    if (wantsExplicitNav) {
+      const sortedKeys = Object.keys(navigationMap).sort((a, b) => b.length - a.length);
+      for (const key of sortedKeys) {
+        if (lowerMessage.includes(key)) {
+          return { type: 'navigate', data: { ...navigationMap[key], key }, confidence: 0.9 };
         }
-      }
-    }
-    
-    // Check for create/add intent
-    for (const keyword of createKeywords) {
-      if (lowerMessage.includes(keyword)) {
-        for (const [key, value] of Object.entries(navigationMap)) {
-          if (lowerMessage.includes(key.replace('add ', '').replace('create ', '').replace('new ', ''))) {
-            return { type: 'create', data: { ...value, key }, confidence: 0.85 };
-          }
-        }
-      }
-    }
-    
-    // Direct module matching (navigation by name only)
-    for (const [key, value] of Object.entries(navigationMap)) {
-      if (lowerMessage === key || lowerMessage.includes(key)) {
-        return { type: 'navigate', data: { ...value, key }, confidence: 0.75 };
       }
     }
 
+    // Explicit create only
+    if (explicitCreate) {
+      const sortedKeys = Object.keys(navigationMap).sort((a, b) => b.length - a.length);
+      for (const key of sortedKeys) {
+        const bare = key.replace(/^add\s+/, '').replace(/^create\s+/, '').replace(/^new\s+/, '');
+        if (lowerMessage.includes(bare) || lowerMessage.includes(key)) {
+          return { type: 'create', data: { ...navigationMap[key], key }, confidence: 0.92 };
+        }
+      }
+    }
+
+    // Exact module name only (whole message) — e.g. user typed "vouchers"
+    const trimmed = lowerMessage.replace(/[?.!]+$/, '').trim();
+    if (navigationMap[trimmed]) {
+      return { type: 'navigate', data: { ...navigationMap[trimmed], key: trimmed }, confidence: 0.88 };
+    }
+
     return { type: 'general', data: { message }, confidence: 0.5 };
-  }, [conversationFlow]);
+  }, [conversationFlow, longCatConfigured]);
 
   // Smart response generator
   const generateSmartResponse = useCallback((intent: { type: string; data: any; confidence: number }): { content: string; actions?: ActionButton[] } => {
@@ -493,10 +602,10 @@ const AIChatBot: React.FC = () => {
   const getContextualHelp = (path: string): string => {
     const helpGuides: Record<string, string> = {
       '/': `🏠 **Dashboard Guide**\n\nYou're on the main dashboard. Here you can:\n• View key statistics and metrics\n• Access quick actions\n• See recent activity\n• Monitor inventory levels\n\n💡 **Pro tip**: Click any quick action button below to get started!`,
-      '/partentry': `📦 **Part Entry Guide**\n\n• **Add Part**: Create new inventory items\n• **Parts List**: View and search all parts\n• **Kits**: Create product bundles\n\n💡 Use the search to quickly find parts by code or name.`,
-      '/sales': `💰 **Sales Module Guide**\n\n• **Invoice**: Create sales invoices\n• **Quotation**: Generate quotes\n• **Delivery**: Manage deliveries\n• **Returns**: Process returns\n\n💡 Always select customer first before adding items.`,
+      '/partentry': `📦 **Part Entry Guide**\n\n• **Add/Update Part**: Create or edit catalog items (warns if key fields missing)\n• **Parts List / Kits List**: Part No, Master Part, live Stock\n• **Items List**: Full search & filters\n• **Kits**: Product bundles\n\n💡 Follow on-screen Part No / Master Part labels.`,
+      '/sales': `💰 **Sales Module Guide**\n\n• **Invoice**: Create sales invoices\n• **Quotation**: Generate quotes (supports temporary/custom items — save as Parts on Initiate or they are excluded)\n• **Delivery**: Manage deliveries\n• **Returns**: Process returns\n\n💡 Always select customer first before adding items.`,
       '/inventory': `📊 **Inventory Guide**\n\n• **Stock Balance**: View current stock levels\n• **Transfer**: Move stock between locations\n• **Adjust**: Correct stock quantities\n• **Purchase Order**: Order from suppliers\n\n💡 Regularly verify stock to maintain accuracy.`,
-      '/vouchers': `📝 **Vouchers Guide**\n\n• **Payment**: Record outgoing payments\n• **Receipt**: Record incoming payments\n• **Journal**: General journal entries\n• **Contra**: Cash/bank transfers\n\n💡 Ensure proper narration for audit trail.`,
+      '/vouchers': `📝 **Vouchers Guide**\n\n• **Payment**: Record outgoing payments\n• **Receipt**: Incoming payments — cash discount posts Dr Cash = Cr − discount\n• **Journal**: General journal entries\n• **Contra**: Cash/bank transfers\n\n💡 Ensure proper narration for audit trail.`,
       '/settings': `⚙️ **Settings Guide**\n\n• **Users**: Manage user accounts\n• **Roles**: Configure permissions\n• **Company**: Update company profile\n• **WhatsApp**: Configure messaging\n\n💡 Backup regularly to prevent data loss.`,
     };
     
@@ -516,12 +625,12 @@ const AIChatBot: React.FC = () => {
     
     // Greeting responses
     if (['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening'].some(g => lowerMessage.includes(g))) {
-      return `👋 Hello! I'm your AI assistant with **enhanced system control**.\n\nI can:\n🧭 Navigate you anywhere instantly\n✨ Help create records\n📊 Provide insights\n🔧 Guide you through tasks\n\nWhat would you like to do?`;
+      return `Hey — good to see you 👋\n\nI can walk you through the system, open any screen, or help you get unstuck.\n\nTry **system tour**, **go to vouchers**, or just ask in plain English — whatever's on your mind.`;
     }
     
     // Thank you responses
     if (['thank', 'thanks', 'appreciate'].some(t => lowerMessage.includes(t))) {
-      return `You're welcome! 😊\n\nI'm always here to help. Just ask me to:\n• Go to any module\n• Create new records\n• Explain any feature\n\nAnything else?`;
+      return `Anytime — glad it helped.\n\nNeed anything else, or shall we tackle the next thing?`;
     }
     
     // Status/overview requests
@@ -530,7 +639,7 @@ const AIChatBot: React.FC = () => {
     }
     
     // Default intelligent response
-    return `🧠 I understand you're asking about "${message}"\n\nI can help you with this! Would you like me to:\n\n1️⃣ Navigate to a specific module\n2️⃣ Guide you through a process\n3️⃣ Explain how something works\n\nJust tell me more specifically what you need!`;
+    return `I caught "${message}" — want me to open a module, walk you through a step, or explain how something works?\n\nA bit more detail and I'll jump right in.`;
   };
 
   // Execute navigation with smooth transition
@@ -545,6 +654,7 @@ const AIChatBot: React.FC = () => {
   const getQuickActions = (): QuickAction[] => {
     const pageActions: Record<string, QuickAction[]> = {
       '/': [
+        { label: 'System Tour', icon: <Navigation className="h-3 w-3" />, action: 'system_tour' },
         { label: 'Invoice', icon: <FileText className="h-3 w-3" />, action: 'create_invoice', path: '/sales' },
         { label: 'Add Part', icon: <Package className="h-3 w-3" />, action: 'add_part', path: '/partentry' },
         { label: 'Reports', icon: <BarChart3 className="h-3 w-3" />, action: 'view_reports', path: '/reports' },
@@ -662,7 +772,7 @@ const AIChatBot: React.FC = () => {
         const greeting: Message = {
           id: '1',
           role: 'assistant',
-          content: `🤖 **Koncepts AI Assistant**\n\n${aiStatus}\n\nI know this entire ERP system. I can:\n\n🧭 **Navigate** — "Go to sales invoice" or "Open purchase import"\n📖 **Guide** — "How do I create a quotation?" or "Explain vouchers"\n🔧 **Troubleshoot** — Filters, statuses, stock, approvals\n💬 **Answer** — Any module: sales, inventory, accounting, import purchase\n\n*Try: "How does sales inquiry conversion work?" or "Go to vouchers"*`,
+          content: `Hey — I'm **Koncepts**, your ERP sidekick.\n\n${aiStatus}\n\nI can show you around, open screens, explain workflows, walk through **voucher/account scenarios**, and learn your house rules.\n\n🗺️ **system tour**\n📒 *“Received 1500 against 1700 with 200 discount”* — I'll map the exact entry\n🧠 **remember …** — teach me something lasting\n🧭 **go to …** — jump anywhere\n\nWhat's on your plate?`,
           timestamp: new Date(),
         };
         setMessages([greeting]);
@@ -671,7 +781,7 @@ const AIChatBot: React.FC = () => {
         const welcomeBack: Message = {
           id: Date.now().toString(),
           role: 'assistant',
-          content: `👋 **Welcome back!**\n\nI've restored your previous conversation (${messages.length} messages). How can I help you today?`,
+          content: `Welcome back — still here if you need me.\n\nI kept your last chat (${messages.length} messages). Want a **system tour**, or shall we pick up where you left off?`,
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, welcomeBack]);
@@ -694,7 +804,7 @@ const AIChatBot: React.FC = () => {
     const greeting: Message = {
       id: Date.now().toString(),
       role: 'assistant',
-      content: `🤖 **Koncepts AI Assistant**\n\n${aiStatus}\n\nHow can I help you today?`,
+      content: `Hey — fresh start.\n\n${aiStatus}\n\nWhat would you like to do? (*Tip: say **system tour** if you're new here.*)`,
       timestamp: new Date(),
     };
     setMessages([greeting]);
@@ -1401,13 +1511,14 @@ const AIChatBot: React.FC = () => {
         return;
       }
 
-      const { from, to, label, title, sortBy, order, previewMetric } = parsed;
+      const { from, to, label, title, sortBy, order, previewMetric, minQuantity } =
+        parsed as typeof parsed & { minQuantity?: number };
 
       try {
         const response = await apiClient.getTopSellingItemsReport({
           from_date: from,
           to_date: to,
-          limit: 50,
+          limit: 200,
           sort_by: sortBy,
           order,
         });
@@ -1416,13 +1527,18 @@ const AIChatBot: React.FC = () => {
           throw new Error(response.error);
         }
 
-        const items = (response.data || []) as SalesItemAnalyticsRow[];
+        let items = (response.data || []) as SalesItemAnalyticsRow[];
+        if (minQuantity != null && minQuantity > 0) {
+          items = items
+            .filter((item) => Number(item.quantity || 0) >= minQuantity)
+            .map((item, idx) => ({ ...item, rank: idx + 1 }));
+        }
 
         if (items.length === 0) {
           const assistantMessage: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `📊 **${title} — ${label}**\n\nNo approved sales invoice items were found for this period (${from} to ${to}).`,
+            content: `📊 **${title} — ${label}**\n\nNo items found${minQuantity != null ? ` with quantity sold ≥ **${minQuantity}**` : ''} for this period (${from} to ${to}).`,
             timestamp: new Date(),
           };
           setMessages((prev) => [...prev, assistantMessage]);
@@ -1431,15 +1547,20 @@ const AIChatBot: React.FC = () => {
           return;
         }
 
+        const filterNote =
+          minQuantity != null
+            ? `\n_Filter: quantity sold ≥ **${minQuantity}**_ (${items.length} items)\n`
+            : '';
+
         const preview = items
-          .slice(0, 10)
+          .slice(0, 15)
           .map((item) => `${item.rank}. **${item.partNo}** — ${previewMetric(item)}`)
           .join('\n');
 
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `📊 **${title} — ${label}**\n\nTop ${Math.min(items.length, 10)} of **${items.length}** parts sold in period:\n\n${preview}${items.length > 10 ? `\n\n…and ${items.length - 10} more.` : ''}\n\n*Profit = Revenue − Cost (from invoice avg cost). Only items with sales in this period are included.*\n\nUse **Print PDF** for the full report.`,
+          content: `📊 **${title} — ${label}**${filterNote}\nShowing ${Math.min(items.length, 15)} of **${items.length}** parts sold in period:\n\n${preview}${items.length > 15 ? `\n\n…and ${items.length - 15} more.` : ''}\n\n*Profit = Revenue − Cost (from invoice avg cost). Only items with sales in this period are included.*\n\nUse **Print PDF** for the full report.`,
           timestamp: new Date(),
           actions: [
             {
@@ -2364,8 +2485,17 @@ const AIChatBot: React.FC = () => {
       }
 
       if (conversationFlow.type === 'item_stock_lookup') {
-        await handleItemStockFlowResponse(currentInput);
-        return;
+        // User pivoted to a sales/analytics question — leave stock picker flow
+        if (
+          isSalesAnalyticsStyleQuery(currentInput) ||
+          isItemAnalyticsReportQuery(currentInput) ||
+          isCustomerWiseReportQuery(currentInput)
+        ) {
+          setConversationFlow({ type: null, step: 0, data: {} });
+        } else {
+          await handleItemStockFlowResponse(currentInput);
+          return;
+        }
       }
 
       if (conversationFlow.type === 'customer_wise_sales_report') {
@@ -2378,7 +2508,8 @@ const AIChatBot: React.FC = () => {
         return;
       }
 
-      if (isItemAnalyticsReportQuery(currentInput)) {
+      // Item sales analytics BEFORE stock lookup (sold qty / month / list of items)
+      if (isItemAnalyticsReportQuery(currentInput) || isSalesAnalyticsStyleQuery(currentInput)) {
         await handleItemAnalyticsReportRequest(currentInput);
         return;
       }
@@ -2430,13 +2561,62 @@ const AIChatBot: React.FC = () => {
         startCustomerWiseSalesFlow(currentInput);
         return;
       }
+
+      // Self-learning: remember / learn / forget / list learned facts
+      if (intent.type === 'teach') {
+        try {
+          const res: any = await apiClient.teachAiMemory({ command: currentInput });
+          const content =
+            res?.data?.content ||
+            res?.data?.data?.content ||
+            res?.error ||
+            'I could not save that to memory.';
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: String(content),
+            timestamp: new Date(),
+            allowFeedback: false,
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+        } catch (err: any) {
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content:
+              err?.message ||
+              'Self-learning memory is unavailable. Ensure the backend migration ran and the server restarted.',
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+        }
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+        return;
+      }
       
-      // Topic help and other high-confidence non-navigation intents (basic mode + AI fallback)
-      if (
-        intent.type === 'topic_help' ||
-        intent.type === 'help' ||
-        (intent.type === 'create' && intent.confidence >= 0.85)
-      ) {
+      // When live AI is configured: only short-circuit structured actions.
+      // Open questions / scenarios / tours go to the LLM (not canned templates).
+      if (!longCatConfigured) {
+        if (
+          intent.type === 'topic_help' ||
+          intent.type === 'help' ||
+          (intent.type === 'create' && intent.confidence >= 0.9)
+        ) {
+          const response = generateSmartResponse(intent);
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: response.content,
+            timestamp: new Date(),
+            actions: response.actions,
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          setIsTyping(false);
+          setTimeout(() => scrollToBottom(true), 200);
+          return;
+        }
+      } else if (intent.type === 'create' && intent.confidence >= 0.9) {
         const response = generateSmartResponse(intent);
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -2515,8 +2695,8 @@ const AIChatBot: React.FC = () => {
         ],
         currentPath: pathname,
         conversationSummary: conversationContext.slice(-3).join('\n'),
-        max_tokens: 1200,
-        temperature: 0.6,
+        max_tokens: 1600,
+        temperature: 0.7,
       });
 
       if (response.error) {
@@ -2524,16 +2704,39 @@ const AIChatBot: React.FC = () => {
       }
 
       const aiResponse =
-        (response.data as { content?: string } | null)?.content ||
+        (response.data as { content?: string; attachments?: any[] } | null)?.content ||
         'I apologize, but I could not generate a response.';
 
-      // Check if AI response suggests navigation
-      const navIntent = processUserIntent(aiResponse);
+      const attachments =
+        (response.data as { attachments?: Message['attachments'] } | null)
+          ?.attachments || undefined;
+
+      // Only offer nav buttons if the model explicitly suggests "go to …"
       let actions: ActionButton[] | undefined;
-      
-      if (navIntent.type === 'navigate' && navIntent.confidence >= 0.7) {
-        const navResponse = generateSmartResponse(navIntent);
-        actions = navResponse.actions;
+      if (/\b(go to|open|take me to)\b/i.test(aiResponse)) {
+        const navIntent = processUserIntent(
+          aiResponse.match(/\b(?:go to|open|take me to)\s+[^\n.?!]+/i)?.[0] || '',
+        );
+        if (navIntent.type === 'navigate' && navIntent.confidence >= 0.9) {
+          actions = generateSmartResponse(navIntent).actions;
+        }
+      }
+
+      if (attachments?.length) {
+        const downloadActions: ActionButton[] = attachments.map((att) => ({
+          label: `Download ${att.format === 'pdf' ? 'PDF' : 'Excel'}: ${att.title}`,
+          variant: 'default' as const,
+          icon: <Download className="h-3 w-3" />,
+          action: async () => {
+            try {
+              await apiClient.downloadAiExport(att.downloadPath, att.fileName);
+              toast.success(`Downloaded ${att.fileName}`);
+            } catch (err: any) {
+              toast.error(err?.message || 'Download failed');
+            }
+          },
+        }));
+        actions = [...(actions || []), ...downloadActions];
       }
 
       const assistantMessage: Message = {
@@ -2542,6 +2745,8 @@ const AIChatBot: React.FC = () => {
         content: aiResponse,
         timestamp: new Date(),
         actions,
+        attachments,
+        allowFeedback: true,
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -2551,26 +2756,22 @@ const AIChatBot: React.FC = () => {
       setTimeout(() => scrollToBottom(true), 250);
 
     } catch (error: any) {
-      
-      // Fallback to rule-based response
-      const intent = processUserIntent(currentInput);
-      const response = generateSmartResponse(intent);
-      
+      // Never dump canned scenario text on AI failure — ask user to fix the key / retry
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response.content + '\n\n⚠️ *Note: AI service unavailable. Using fallback response. Please check LongCat API settings in Settings → LongCat AI.*',
+        content:
+          "I couldn't reach the AI service just now, so I won't guess a fixed voucher template.\n\n" +
+          'Check **Settings → LongCat AI** (API key / connection), then ask your scenario again — ' +
+          'for example payment via Karachi branch to a supplier with **no cash/bank** is usually a **Journal (JV)**.\n\n' +
+          `_(${error?.message || 'AI unavailable'})_`,
         timestamp: new Date(),
-        actions: response.actions,
       };
-      
+
       setMessages(prev => [...prev, assistantMessage]);
       setIsTyping(false);
-      
-      // Smooth scroll to show fallback response
       setTimeout(() => scrollToBottom(true), 200);
-      
-      toast.error('AI service unavailable. Using fallback mode.');
+      toast.error('AI service unavailable. Check LongCat API settings.');
     }
   }, [input, messages, processUserIntent, generateSmartResponse, getSystemPrompt, navigate, longCatConfigured, scrollToBottom, conversationFlow, handlePurchaseOrderCreationFlow, handlePurchaseOrderReceivingFlow, handleItemAnalyticsReportRequest, handleCustomerWiseFlowResponse, startCustomerWiseSalesFlow, handleCustomerLastInvoiceQuery, handleCustomerLastInvoiceFlowResponse, handleCustomerSelectedForLastInvoice, handleItemStockQuery, handleItemStockFlowResponse, handleItemSelectedForStock]);
 
@@ -2581,8 +2782,72 @@ const AIChatBot: React.FC = () => {
     }
   };
 
+  const handleMessageFeedback = useCallback(
+    async (message: Message, rating: 'up' | 'down') => {
+      if (message.feedbackRating) return;
+      const idx = messages.findIndex((m) => m.id === message.id);
+      const priorUser =
+        [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')
+          ?.content || '';
+
+      let comment: string | undefined;
+      if (rating === 'down') {
+        const typed = window.prompt(
+          'What should I learn from this? (optional correction)',
+          '',
+        );
+        if (typed && typed.trim()) comment = typed.trim();
+      }
+
+      try {
+        const res: any = await apiClient.sendAiFeedback({
+          rating,
+          userMessage: priorUser,
+          assistantMessage: message.content,
+          comment,
+        });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id ? { ...m, feedbackRating: rating } : m,
+          ),
+        );
+        const learned = res?.data?.learnedFact || res?.data?.data?.learnedFact;
+        toast.success(
+          learned
+            ? 'Thanks — I learned your correction.'
+            : rating === 'up'
+              ? 'Thanks for the feedback!'
+              : 'Thanks — noted.',
+        );
+      } catch (err: any) {
+        toast.error(err?.message || 'Could not save feedback');
+      }
+    },
+    [messages],
+  );
+
   // Handle quick action click
   const handleQuickAction = useCallback((action: QuickAction) => {
+    if (action.action === 'system_tour') {
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: 'System tour',
+        timestamp: new Date(),
+      };
+      const tour =
+        getSystemTourResponse('system tour') ||
+        'Ask me for a system tour anytime.';
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: tour,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      return;
+    }
+
     if (action.path && action.path !== pathname) {
       navigate(action.path);
       toast.success(`Navigated to ${action.label}`);
@@ -2614,12 +2879,15 @@ const AIChatBot: React.FC = () => {
   // Quick action responses
   const getQuickActionResponse = (action: string): string => {
     const responses: Record<string, string> = {
+      system_tour:
+        getSystemTourResponse('system tour') ||
+        'Say "system tour" for a guided walkthrough.',
       create_invoice: "📄 **Create Invoice**\n\n1. Select customer\n2. Add line items\n3. Apply discounts\n4. Review & save\n\n💡 Pro tip: Use item search to quickly find products!",
       add_part: "📦 **Add New Part**\n\n1. Enter part code & name\n2. Set category & brand\n3. Configure pricing\n4. Set stock levels\n5. Save\n\n💡 Use unique part codes for easy tracking.",
       view_reports: "📊 **Reports Center**\n\nAvailable reports:\n• Sales analysis\n• Stock movement\n• Customer aging\n• Expense breakdown\n• Financial summaries",
       expenses: "💰 **Expense Management**\n\n• Add operational expenses\n• Categorize by type\n• Import bulk data\n• Post to accounts",
       stock: "📦 **Stock Management**\n\n• View balances\n• Transfer between locations\n• Adjust quantities\n• Track serial numbers",
-      voucher: "📝 **Voucher Types**\n\n• **Payment**: Money going out\n• **Receipt**: Money coming in\n• **Journal**: General entries\n• **Contra**: Bank-to-bank",
+      voucher: "📝 **Voucher Types**\n\n• **Payment**: Money going out\n• **Receipt**: Money coming in (cash discount → cash Dr = Cr − discount)\n• **Journal**: General entries\n• **Contra**: Bank-to-bank",
     };
     
     return responses[action] || `I'll help you with ${action}. What would you like to know?`;
@@ -2737,6 +3005,41 @@ const AIChatBot: React.FC = () => {
                     >
                       <div className="whitespace-pre-wrap break-words">{message.content.replace(/\*\*(.*?)\*\*/g, '$1')}</div>
                     </div>
+
+                    {message.role === 'assistant' &&
+                      message.allowFeedback &&
+                      !message.isThinking && (
+                        <div className="flex items-center gap-1 pl-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              'h-7 w-7',
+                              message.feedbackRating === 'up' && 'text-primary',
+                            )}
+                            disabled={Boolean(message.feedbackRating)}
+                            title="Helpful"
+                            onClick={() => void handleMessageFeedback(message, 'up')}
+                          >
+                            <ThumbsUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              'h-7 w-7',
+                              message.feedbackRating === 'down' && 'text-destructive',
+                            )}
+                            disabled={Boolean(message.feedbackRating)}
+                            title="Not helpful — teach a correction"
+                            onClick={() => void handleMessageFeedback(message, 'down')}
+                          >
+                            <ThumbsDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
 
                     {/* Interactive Components */}
                     {message.interactiveComponent && message.role === 'assistant' && (

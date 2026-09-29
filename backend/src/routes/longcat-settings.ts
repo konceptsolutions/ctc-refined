@@ -1,28 +1,31 @@
 import express from 'express';
 import prisma from '../config/database';
 import fetch from 'node-fetch';
+import { resolveChatCompletionsUrl } from '../ai/aiProvider';
 
 const router = express.Router();
 
-// GET /api/longcat-settings - Get LongCat settings
+// GET /api/longcat-settings - Get LongCat / OpenAI settings
 router.get('/', async (req, res) => {
   try {
     let settings = await prisma.longCatSettings.findFirst();
+    const envKey = process.env.OPENAI_API_KEY || process.env.LONGCAT_API_KEY || '';
 
     // If no settings in database, return environment variable or default
     if (!settings) {
+      const looksOpenAi = (envKey || '').startsWith('sk-');
       return res.json({
         data: {
-          apiKey: process.env.LONGCAT_API_KEY || '',
-          model: 'LongCat-Flash-Chat',
-          baseUrl: 'https://api.longcat.chat',
+          apiKey: envKey,
+          model: looksOpenAi ? 'gpt-4o-mini' : 'LongCat-Flash-Chat',
+          baseUrl: looksOpenAi ? 'https://api.openai.com' : 'https://api.longcat.chat',
         },
       });
     }
 
     res.json({
       data: {
-        apiKey: settings.apiKey || process.env.LONGCAT_API_KEY || '',
+        apiKey: settings.apiKey || envKey,
         model: settings.model || 'LongCat-Flash-Chat',
         baseUrl: settings.baseUrl || 'https://api.longcat.chat',
       },
@@ -113,8 +116,8 @@ router.post('/chat', async (req, res) => {
     if (enable_thinking !== undefined) requestBody.enable_thinking = enable_thinking;
     if (thinking_budget !== undefined) requestBody.thinking_budget = thinking_budget;
 
-    // Send request to LongCat API (OpenAI-compatible endpoint)
-    const response = await fetch(`${baseUrl}/openai/v1/chat/completions`, {
+    // Send request to AI provider (OpenAI or LongCat OpenAI-compatible)
+    const response = await fetch(resolveChatCompletionsUrl(baseUrl), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,

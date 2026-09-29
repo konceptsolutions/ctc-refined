@@ -365,7 +365,7 @@ export const DailyClosingTab = ({
           </div>
 
           {data ? (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Card className="border-green-500/20 bg-green-500/5">
                 <CardContent className="p-3">
                   <p className="text-xs text-muted-foreground">Receipts</p>
@@ -379,14 +379,6 @@ export const DailyClosingTab = ({
                   <p className="text-xs text-muted-foreground">Payments</p>
                   <p className="text-base font-bold tabular-nums text-red-700">
                     Rs {formatMoney(data.totals.payments)}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="border-blue-500/20 bg-blue-500/5">
-                <CardContent className="p-3">
-                  <p className="text-xs text-muted-foreground">Closing</p>
-                  <p className="text-base font-bold tabular-nums text-blue-700">
-                    Rs {formatMoney(data.totals.closingBalance)}
                   </p>
                 </CardContent>
               </Card>

@@ -162,10 +162,10 @@ export const LongCatSettingsTab = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5" />
-            LongCat API Configuration
+            AI Assistant (OpenAI / LongCat)
           </CardTitle>
           <CardDescription>
-            Configure your LongCat API settings. The API key will be securely stored.
+            Paste an OpenAI ChatGPT key (sk-…) or a LongCat key. Used for live ERP reasoning in the chatbot.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -178,7 +178,7 @@ export const LongCatSettingsTab = () => {
                   type={showApiKey ? "text" : "password"}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter your LongCat API key"
+                  placeholder="sk-proj-… or LongCat key"
                   className="pr-10"
                 />
                 <Button
@@ -197,7 +197,7 @@ export const LongCatSettingsTab = () => {
               </div>
             </div>
             <p className="text-sm text-gray-500">
-              Your API key: <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">ak_2No6Dx1vk4Di5so3aB53O3gd0B61t</code>
+              OpenAI keys start with <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">sk-</code>. Stored in the database — not in source code.
             </p>
           </div>
 
@@ -208,12 +208,15 @@ export const LongCatSettingsTab = () => {
                 <SelectValue placeholder="Select a model" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="gpt-4o-mini">gpt-4o-mini (OpenAI)</SelectItem>
+                <SelectItem value="gpt-4o">gpt-4o (OpenAI)</SelectItem>
+                <SelectItem value="gpt-4.1-mini">gpt-4.1-mini (OpenAI)</SelectItem>
                 <SelectItem value="LongCat-Flash-Chat">LongCat-Flash-Chat</SelectItem>
                 <SelectItem value="LongCat-Flash-Thinking">LongCat-Flash-Thinking</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-sm text-gray-500">
-              Select the LongCat model to use for chat completions.
+              For ChatGPT keys use an OpenAI model (e.g. gpt-4o-mini).
             </p>
           </div>
 
@@ -224,10 +227,10 @@ export const LongCatSettingsTab = () => {
               type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.longcat.chat"
+              placeholder="https://api.openai.com"
             />
             <p className="text-sm text-gray-500">
-              The base URL for the LongCat API endpoint.
+              OpenAI: <code className="text-xs">https://api.openai.com</code> · LongCat: <code className="text-xs">https://api.longcat.chat</code>
             </p>
           </div>
 

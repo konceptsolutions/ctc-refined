@@ -1110,6 +1110,94 @@ const printPurchaseQuotationComparisonPdf = async (
   });
 };
 
+const printPurchaseImportInquiryById = async (
+  requestId: string,
+): Promise<boolean> => {
+  const [requestRes, partsRes] = await Promise.all([
+    apiClient.getPurchaseImportRequestById(requestId),
+    apiClient.getPartsDropdown(),
+  ]);
+  const detail = (requestRes as any)?.data as
+    | PurchaseImportRequestEditPayload
+    | undefined;
+  if (!detail) {
+    throw new Error("Inquiry detail is unavailable.");
+  }
+
+  const partById = new Map(
+    ((((partsRes as any)?.data || []) as any[]) || []).map((p) => [
+      String(p.id || ""),
+      {
+        partNo: String(p.partNo || ""),
+        masterPartNo: String(p.masterPartNo || ""),
+        description: String(p.description || ""),
+        brand: String(p.brand || ""),
+        origin: String(p.origin || ""),
+        weight: Number(p.weight || 0),
+      },
+    ]),
+  );
+
+  const itemRows = (detail.items || []).map((item) => {
+    const part = partById.get(String(item.partId || ""));
+    const khiQuantity = Number(item.khiQuantity || 0);
+    const isbQuantity = Number(item.isbQuantity || 0);
+    const otherQuantity = SHOW_OTHER_QTY ? Number(item.otherQuantity || 0) : 0;
+    const totalDemand =
+      khiQuantity + isbQuantity + otherQuantity ||
+      Number(item.demandQuantity || 0);
+    const weight = Number(item.weight || part?.weight || 0);
+    return {
+      ...item,
+      id: item.id || `${item.partId}-${khiQuantity}-${isbQuantity}`,
+      masterPartNo: part?.masterPartNo || item.tempMasterPartNo || "-",
+      partNo: part?.partNo || item.tempPartNo || "-",
+      description: part?.description || item.tempDescription || "-",
+      brand: part?.brand || item.tempBrand || "-",
+      origin: part?.origin,
+      khiQuantity,
+      isbQuantity,
+      otherQuantity,
+      totalDemand,
+      weight,
+      totalWeight: Number(item.totalWeight || totalDemand * weight || 0),
+    };
+  });
+
+  const supplier = detail.supplier;
+  const supplierRows = supplier?.id
+    ? [
+        {
+          supplierId: supplier.id,
+          name: supplier.name || supplier.id,
+          country: supplier.country || "-",
+          area: supplier.area || "-",
+          type: supplier.type || "-",
+          currencyName: supplier.currencyName || "-",
+        },
+      ]
+    : (detail.supplierIds || []).filter(Boolean).map((id) => ({
+        supplierId: id,
+        name: id,
+        country: "-",
+        area: "-",
+        type: "-",
+        currencyName: "-",
+      }));
+
+  const totals = {
+    qty: itemRows.reduce((sum, row) => sum + Number(row.totalDemand || 0), 0),
+    weight: itemRows.reduce((sum, row) => sum + Number(row.totalWeight || 0), 0),
+  };
+
+  return printPurchaseImportInquiry({
+    detail,
+    supplierRows,
+    itemRows,
+    totals,
+  });
+};
+
 type PurchaseQuotationFormItem = PurchaseQuotationContextItem & {
   rowId: string;
   isNewRow?: boolean;
@@ -1439,9 +1527,12 @@ const UnquotedItemsDialog = ({
         </Button>
         {canPrint ? (
           <PrintPdfButton
+            size="icon"
+            variant="outline"
+            className="h-8 w-8"
             onPrint={() => onPrint?.()}
             disabled={loading || items.length === 0}
-            label="Print"
+            label="Print PDF"
           />
         ) : null}
       </DialogFooter>
@@ -3970,7 +4061,14 @@ const PurchaseImportRequestView = ({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          {canPrint && <PrintPdfButton onPrint={handlePrintPdf} />}
+          {canPrint && (
+            <PrintPdfButton
+              size="icon"
+              variant="outline"
+              className="h-8 w-8"
+              onPrint={handlePrintPdf}
+            />
+          )}
           {(canExport || canPrint) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -5077,6 +5175,9 @@ const PurchaseQuotationForm = ({
           ) : null}
           {canPrint && showQuotationComparison ? (
             <PrintPdfButton
+              size="icon"
+              variant="outline"
+              className="h-8 w-8"
               onPrint={() => {
                 void handlePrintComparisonPdf();
               }}
@@ -5086,8 +5187,12 @@ const PurchaseQuotationForm = ({
           ) : null}
           {canPrint && (
             <PrintPdfButton
+              size="icon"
+              variant="outline"
+              className="h-8 w-8"
               onPrint={handlePrintPdf}
               disabled={loading || !context || sortedRows.length === 0}
+              label="Print PDF"
             />
           )}
         </div>
@@ -6002,8 +6107,12 @@ const PurchaseQuotationRevisionForm = ({
         </div>
         {canPrint && (
           <PrintPdfButton
+            size="icon"
+            variant="outline"
+            className="h-8 w-8"
             onPrint={handlePrintPdf}
             disabled={loading || !detail || sortedRows.length === 0}
+            label="Print PDF"
           />
         )}
       </div>
@@ -6760,6 +6869,36 @@ const PurchaseInquiryListPanel = ({
     }
   };
 
+  const handlePrintInquiryPdf = async (requestId: string) => {
+    setPrintingRequestId(requestId);
+    try {
+      const started = await printPurchaseImportInquiryById(requestId);
+      if (!started) {
+        toast({
+          title: "Print blocked",
+          description: "Allow pop-ups for this site and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Print Started",
+        description: "PDF is being generated...",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to print inquiry",
+        description:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Could not load inquiry data for printing.",
+        variant: "destructive",
+      });
+    } finally {
+      setPrintingRequestId(null);
+    }
+  };
+
   const handlePrintComparisonPdf = async (requestId: string) => {
     setComparingRequestId(requestId);
     try {
@@ -7102,6 +7241,23 @@ const PurchaseInquiryListPanel = ({
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
+                            {canPrint && (
+                              <PrintPdfButton
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                disabled={printingRequestId === row.id}
+                                label={
+                                  printingRequestId === row.id
+                                    ? "Printing..."
+                                    : "Print PDF"
+                                }
+                                onPrint={() => {
+                                  if (printingRequestId) return;
+                                  void handlePrintInquiryPdf(row.id);
+                                }}
+                              />
+                            )}
                             {canEdit && (
                             <Button
                               type="button"
@@ -7186,7 +7342,9 @@ const PurchaseInquiryListPanel = ({
                             </Button>
                             {canPrint && (
                             <PrintPdfButton
-                              size="sm"
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
                               disabled={
                                 !isConfirmed || printingRequestId === row.id
                               }
@@ -7203,7 +7361,9 @@ const PurchaseInquiryListPanel = ({
                             )}
                             {canPrint && showComparisonPdf ? (
                               <PrintPdfButton
-                                size="sm"
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
                                 disabled={comparingRequestId === row.id}
                                 label={
                                   comparingRequestId === row.id
@@ -8137,7 +8297,9 @@ const PurchaseQuotationListPanel = ({
                         ) : null}
                         {canPrint && (
                         <PrintPdfButton
-                          size="sm"
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
                           disabled={printingQuotationId === row.id}
                           label={
                             printingQuotationId === row.id
@@ -8499,7 +8661,9 @@ const PurchaseQuotationConfirmForm = ({
   onCancel?: () => void;
 }) => {
   const { toast } = useToast();
-  const { canApprove } = usePageActions("purchase-import.confirm-quotation");
+  const { canApprove, canPrint } = usePageActions(
+    "purchase-import.confirm-quotation",
+  );
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
   const [loading, setLoading] = useState(false);
@@ -8926,6 +9090,65 @@ const PurchaseQuotationConfirmForm = ({
     [rows],
   );
 
+  const handlePrintPdf = () => {
+    if (!detail) return;
+    const revised = isRevised;
+    const started = printPurchaseImportQuotation({
+      detail: {
+        requestNo: detail.request?.requestNo,
+        requestDate: detail.request?.requestDate,
+        quotationNo: quotationNo || detail.quotationNo,
+        quotationDate: detail.quotationDate,
+        revisedQuotationDate: detail.revisedQuotationDate,
+        confirmationDate: detail.confirmationDate || confirmationDate,
+        supplierName: detail.supplier?.name || detail.supplier?.code || null,
+        currency: detail.currency,
+        conversionRate: Number(conversionRate) || 0,
+        status: detail.status,
+        terms: detail.terms,
+        poNumber:
+          confirmedPoNumbers.length > 0 ? confirmedPoNumbers.join(", ") : null,
+      },
+      showRevisedFields: revised,
+      itemRows: sortedRows.map((row) => ({
+        masterPartNo: row.masterPartNo,
+        partNo: row.partNo,
+        description: row.description,
+        brand: row.brand,
+        currentStock: row.currentStock,
+        requestQty: row.demandQuantity,
+        quotationQty: row.quotationQuantity,
+        confirmQty: row.confirmQuantity,
+        shipDays: row.shipDays,
+        lastFcRate: row.lastFcRate,
+        fcRate: Number(row.fcRate || 0),
+        fcAmount: Number(row.fcAmount || 0),
+        lcRate: Number(row.lcRate || 0),
+        lcAmount: Number(row.lcAmount || 0),
+        totalWeight: Number(row.totalWeight || 0),
+      })),
+      totals: {
+        requestQty: quotationTotals.requestQty,
+        quotationQty: quotationTotals.quotationQty,
+        fcAmount: quotationTotals.fcAmount,
+        lcAmount: quotationTotals.lcAmount,
+        totalWeight: quotationTotals.totalWeight,
+      },
+    });
+    if (!started) {
+      toast({
+        title: "Print blocked",
+        description: "Allow pop-ups for this site and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: "Print Started",
+      description: "PDF is being generated...",
+    });
+  };
+
   const executeConfirm = async (
     workingRows: PurchaseQuotationConfirmRow[],
   ) => {
@@ -9140,19 +9363,31 @@ const PurchaseQuotationConfirmForm = ({
               : ""}
           </p>
         </div>
-        {isViewMode ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={onCancel}
-            title="Close"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2 shrink-0">
+          {canPrint ? (
+            <PrintPdfButton
+              size="icon"
+              variant="outline"
+              className="h-8 w-8"
+              onPrint={handlePrintPdf}
+              disabled={loading || !detail || sortedRows.length === 0}
+              label="Print PDF"
+            />
+          ) : null}
+          {isViewMode ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={onCancel}
+              title="Close"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {!isViewMode && combinableQuotations.length > 0 ? (
@@ -11566,7 +11801,9 @@ const PurchaseOrderTab = ({
                       </Button>
                       {canPrint && (
                       <PrintPdfButton
-                        size="sm"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
                         disabled={printingOrderId === row.id}
                         label={
                           printingOrderId === row.id ? "Printing..." : "Print PDF"

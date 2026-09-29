@@ -214,7 +214,7 @@ export function buildItemReportSpec(
 
 export function parseItemAnalyticsReportQuery(
   query: string,
-): (ReportDateRange & ItemAnalyticsReportSpec) | null {
+): (ReportDateRange & ItemAnalyticsReportSpec & { minQuantity?: number }) | null {
   const q = query.toLowerCase();
   let range = parseReportDateRange(query);
   if (!range && isItemAnalyticsReportQuery(query)) {
@@ -225,7 +225,28 @@ export function parseItemAnalyticsReportQuery(
   const sortBy = detectSortBy(q);
   const order = detectOrder(q, sortBy);
   const spec = buildItemReportSpec(sortBy, order);
-  return { ...range, ...spec };
+  const minQuantity = parseMinSoldQuantity(query);
+  return { ...range, ...spec, ...(minQuantity != null ? { minQuantity } : {}) };
+}
+
+/** e.g. "quantity sold more than 50", "sold > 50", "at least 50 qty" */
+export function parseMinSoldQuantity(query: string): number | null {
+  const q = query.toLowerCase().replace(/,/g, "");
+  const patterns = [
+    /(?:quantity|qty)\s+sold\s+(?:more than|greater than|over|above|at least)\s*(\d+)/i,
+    /sold\s+(?:more than|greater than|over|above|at least)\s*(\d+)/i,
+    /(?:more than|greater than|over|above|at least)\s*(\d+)\s*(?:quantity|qty|units?)?/i,
+    /(?:quantity|qty)\s*[>≥]\s*(\d+)/i,
+    /[>≥]\s*(\d+)/i,
+  ];
+  for (const re of patterns) {
+    const m = q.match(re);
+    if (m?.[1]) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return null;
 }
 
 export function isItemAnalyticsReportQuery(query: string): boolean {

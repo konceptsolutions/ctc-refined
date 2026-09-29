@@ -6,8 +6,15 @@ type PrintPdfButtonProps = {
   onPrint: () => void;
   disabled?: boolean;
   size?: "default" | "sm" | "lg" | "icon";
-  variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
+  variant?:
+    | "default"
+    | "destructive"
+    | "outline"
+    | "secondary"
+    | "ghost"
+    | "link";
   className?: string;
+  /** Visible label when not icon-only; also used as title/aria-label for icon buttons. */
   label?: string;
 };
 
@@ -19,16 +26,21 @@ export function PrintPdfButton({
   className,
   label = "Print PDF",
 }: PrintPdfButtonProps) {
+  const iconOnly = size === "icon";
+
   return (
     <Button
+      type="button"
       variant={variant}
       size={size}
-      className={cn("gap-1", className)}
+      className={cn(iconOnly ? undefined : "gap-1", className)}
       disabled={disabled}
       onClick={onPrint}
+      title={label}
+      aria-label={label}
     >
       <FileText className="h-4 w-4" />
-      {label}
+      {iconOnly ? null : label}
     </Button>
   );
 }

@@ -6,6 +6,7 @@
 import { isCustomerInvoiceLookupQuery, extractCustomerNameFromInvoiceQuery } from "@/lib/ai/customerInvoiceQueryUtils";
 import { isItemStockLookupQuery } from "@/lib/ai/itemStockQueryUtils";
 import { isCustomerWiseReportQuery } from "@/lib/ai/reportQueryUtils";
+import { getSystemTourResponse, isSystemTourQuery } from "@/lib/ai/systemTour";
 
 type HelpTopic = {
   keywords: string[];
@@ -15,6 +16,28 @@ type HelpTopic = {
 };
 
 const HELP_TOPICS: HelpTopic[] = [
+  {
+    keywords: [
+      "part entry",
+      "add part",
+      "save part",
+      "incomplete",
+      "master part",
+      "parts list",
+      "kits list",
+    ],
+    title: "Part Entry",
+    path: "/partentry",
+    content: `**Part Entry** manages catalog items (single parts and kits).
+
+**Where:** Part Entry (\`/partentry\`) — form on the left; **Parts List** / **Kits List** on the right. Full list: Items List (\`/partentry/itemslist\`).
+
+**UI labels:** Part No and Master Part (note: these map swapped vs older DB column names — follow on-screen labels).
+
+**Incomplete save warning:** On Save/Update, if Part No, Master Part, Brand, Description, Category, Subcategory, Application, Weight, or Model+Qty is missing, a popup lists them and asks whether to save anyway. Part identity is still required.
+
+**Lists:** After Part No, **Master Part** is shown; **Stock** and Reserve Stock are live values.`,
+  },
   {
     keywords: ["adjust item", "adjust stock", "stock adjust", "adjustment"],
     title: "Adjust Item",
@@ -63,14 +86,16 @@ Record movements with part, quantity, store, and narration. Use for non-purchase
 5. Use **Back to Inquiry** when returning from a conversion form — selections are preserved.`,
   },
   {
-    keywords: ["sales quotation", "quotation status", "initiate quotation"],
+    keywords: ["sales quotation", "quotation status", "initiate quotation", "temporary item", "custom item"],
     title: "Sales Quotation",
     path: "/sales/quotation",
     content: `**Sales Quotation** workflow:
 - New quotations start as **pending** (editable).
 - **Approve** when ready — or revert approved → pending.
 - From **approved**, use **Initiate** to convert to a sales invoice (auto-approved).
-- Converted invoices show as **Quotation Invoice** in the invoice list.`,
+- Converted invoices show as **Quotation Invoice** in the invoice list.
+
+**Temporary / custom items:** You can add items not in Part master (Part No, Master Part, Brand, Description). On Initiate, the system warns and can save them as Parts. If you skip, those lines are excluded from the invoice.`,
   },
   {
     keywords: ["direct purchase", "local purchase", "dpo"],
@@ -83,13 +108,72 @@ Record movements with part, quantity, store, and narration. Use for non-purchase
 Create DPO with supplier, store, items, and expenses. Can be opened pre-filled from Sales Inquiry conversion.`,
   },
   {
-    keywords: ["purchase import", "import inquiry"],
+    keywords: [
+      "purchase import",
+      "import inquiry",
+      "import quotation",
+      "temporary item",
+      "custom item",
+      "confirm quotation",
+    ],
     title: "Purchase Import",
     path: "/purchase-import/inquiry",
-    content: `**Purchase Import** handles international supplier inquiries and import workflow.
+    content: `**Purchase Import** handles international supplier workflow.
 
-Tabs: Inquiry → Quotation → Costing → History.
-Inquiry: select suppliers, parts, KHI/ISB/Other quantities, editable inquiry date. Status pending → confirm locks editing.`,
+**Tabs:** Inquiry → Quotation → Revise Quotation → Confirmation → Shipments → Invoices → Back Order Summary.
+
+**Inquiry:** suppliers, parts, KHI/ISB/Other qty, editable date. Status pending → confirm locks editing.
+
+**Temporary / custom items:** Add non-catalog lines (Part No, Master Part, Brand, Description). On **Confirm** quotation, save them as Parts or they are excluded from Import PO / purchase import docs.`,
+  },
+  {
+    keywords: [
+      "cash discount",
+      "receipt voucher",
+      "receipt discount",
+      "cash received",
+      "accounting scenario",
+      "which voucher",
+      "debit credit",
+      "payment voucher",
+      "contra voucher",
+      "journal voucher",
+    ],
+    title: "Voucher & Accounting Scenarios",
+    path: "/vouchers",
+    content: `Describe your case in plain words and I'll map it to **this ERP's** vouchers.
+
+**Examples you can ask**
+- "Received 1500 cash against 1700 with 200 discount"
+- "Paid supplier 5000 from bank"
+- "Deposit 10000 cash to bank"
+- "Old system had one branch transfer account — now transfer in and out?"
+
+**Picker**
+| Case | Voucher / Screen |
+|------|---------|
+| Money in + optional discount | Receipt Cash (RVC) |
+| Money in via bank | Receipt Bank |
+| Money out | Payment (PV) |
+| Cash ↔ Bank | Contra (CV) |
+| Branch stock send | **Transfer Out** + account **1106** |
+| Branch stock receive | **Transfer In** + account **305** |
+
+**Discount rule:** Cr = settlement; cash Dr = settlement − discount; also Dr **701003**.`,
+  },
+  {
+    keywords: ["payment voucher", "receipt voucher", "view voucher", "pv ", "rv "],
+    title: "Vouchers",
+    path: "/vouchers",
+    content: `**Vouchers** record accounting transactions:
+- **PV** — Payment (money out)
+- **RV** — Receipt (money in) — Cash / Bank / Cheque
+- **JV** — Journal
+- **CV** — Contra (cash/bank transfer)
+
+**Chart:** Cash = subgroup **102**, Bank = **103/108**, Cash discount = **701003**.
+
+Describe a scenario with amounts and I'll give the exact Dr/Cr lines.`,
   },
   {
     keywords: [
@@ -237,6 +321,33 @@ Returns current stock, available (after reservations), reserved qty, reorder lev
 **View Vouchers:** filter by type, date, main group → sub group → account (cascading). For Payment/Receipt only, filter **Mode**: Cash or Online based on cash/bank account selected.`,
   },
   {
+    keywords: [
+      "self learn",
+      "self-learning",
+      "remember",
+      "learn that",
+      "ai memory",
+      "learned facts",
+      "teach the ai",
+    ],
+    title: "AI Self-Learning",
+    path: "/",
+    content: `The Koncepts AI can **learn lasting company facts**.
+
+**Teach**
+- \`remember cash receipts for walk-in customers use account 102001\`
+- \`learn that import quotations need supplier confirmation before PO\`
+
+**Review / remove**
+- \`list learned facts\`
+- \`forget walk-in customers\`
+
+**Feedback**
+- Use 👍 / 👎 on AI answers. On 👎 you can type a correction — it is saved as a learned fact.
+
+Learned facts are injected into future AI answers as company-specific overrides.`,
+  },
+  {
     keywords: ["subgroup", "accounting", "chart of account"],
     title: "Accounting",
     path: "/accounting",
@@ -258,6 +369,12 @@ export function getLocalHelpForQuery(query: string): string | null {
   const q = normalizeQuery(query);
   if (!q) return null;
 
+  // Guided tours — answer immediately (do not require "how/what" phrasing)
+  const tour = getSystemTourResponse(query);
+  if (tour) return tour;
+
+  // Accounting scenarios: never return canned text — live AI must reason each case.
+
   // Data lookups / report requests are handled in chat — not static help
   if (
     isCustomerInvoiceLookupQuery(query) ||
@@ -278,7 +395,8 @@ export function getLocalHelpForQuery(query: string): string | null {
     q.includes("would like to know") ||
     (q.includes("know about") && !extractCustomerNameFromInvoiceQuery(query)) ||
     q.includes("work") ||
-    q.includes("works");
+    q.includes("works") ||
+    isSystemTourQuery(query);
 
   if (!isHelpQuestion) return null;
 

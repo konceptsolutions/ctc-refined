@@ -27,6 +27,9 @@ export function InvoicePartDropdownList({
   markDropdownMouseDown,
 }: InvoicePartDropdownListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  /** Hover updates highlight for styling only — do not auto-scroll on pointer move. */
+  const skipScrollOnHighlightRef = useRef(false);
+  const didInitialScrollRef = useRef(false);
 
   const rowVirtualizer = useVirtualizer({
     count: filteredParts.length,
@@ -43,6 +46,22 @@ export function InvoicePartDropdownList({
       Math.max(highlightIndex, 0),
       filteredParts.length - 1,
     );
+
+    // Always jump once on open so a reopened selected item is in view.
+    if (!didInitialScrollRef.current) {
+      rowVirtualizer.scrollToIndex(hi, { align: "center" });
+      didInitialScrollRef.current = true;
+      skipScrollOnHighlightRef.current = false;
+      return;
+    }
+
+    // Pointer hover only updates highlight styling — never move the list.
+    if (skipScrollOnHighlightRef.current) {
+      skipScrollOnHighlightRef.current = false;
+      return;
+    }
+
+    // Keyboard / programmatic highlight: scroll only if needed.
     rowVirtualizer.scrollToIndex(hi, { align: "auto" });
   }, [highlightIndex, filteredParts.length, rowVirtualizer]);
 
@@ -61,6 +80,10 @@ export function InvoicePartDropdownList({
     <div
       ref={parentRef}
       className="h-80 w-full overflow-auto overscroll-contain"
+      onMouseDown={() => {
+        // Mark interaction so input onBlur does not close while using the scroller.
+        markDropdownMouseDown();
+      }}
     >
       <div
         style={{
@@ -93,7 +116,10 @@ export function InvoicePartDropdownList({
                   ? "bg-primary text-primary-foreground"
                   : "hover:bg-accent hover:text-accent-foreground",
               )}
-              onMouseEnter={() => onHighlightIndex(idx)}
+              onMouseEnter={() => {
+                skipScrollOnHighlightRef.current = true;
+                onHighlightIndex(idx);
+              }}
               onMouseDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
