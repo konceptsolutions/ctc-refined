@@ -655,6 +655,8 @@ function getImportDiscountedRates(
 ) {
   const factor = getImportInvoiceDiscFactor(invDiscPercent, discAmt, invoiceLc);
   return {
+    factor,
+    hasDiscount: factor < 1 - 1e-12,
     fcDisc: roundFc(Number(fcRate || 0) * factor),
     lcDisc: roundImportWhole(Number(lcRate || 0) * factor),
   };
@@ -10665,7 +10667,7 @@ const PurchaseOrderTab = ({
         const distributedExpense = Number(distributedExpenses[index] || 0);
         const qtyForCost = Math.max(0, Number(row.receiveQty) || 0);
         const unitExp = qtyForCost > 0 ? distributedExpense / qtyForCost : 0;
-        const { lcDisc, fcDisc } = getImportDiscountedRates(
+        const { lcDisc, fcDisc, hasDiscount } = getImportDiscountedRates(
           row.fcRate,
           row.lcRate,
           expenses.invDiscPercent,
@@ -10685,9 +10687,11 @@ const PurchaseOrderTab = ({
           backQty: row.backQty,
           fcRate: row.fcRate,
           fcDisc,
+          hasFcDisc: hasDiscount,
           fcAmount: row.fcAmount,
           lcRate: row.lcRate,
           lcDisc,
+          hasLcDisc: hasDiscount,
           lcAmount: row.lcAmount,
           unitExp,
           exp: distributedExpense,
@@ -12285,7 +12289,7 @@ const PurchaseOrderTab = ({
                       const unitExp = roundImportMoney(
                         qtyForCost > 0 ? distributedExpense / qtyForCost : 0,
                       );
-                      const { fcDisc, lcDisc } = getImportDiscountedRates(
+                      const { fcDisc, lcDisc, hasDiscount } = getImportDiscountedRates(
                         fcRate,
                         lcRate,
                         viewExpenses.invDiscPercent,
@@ -12334,7 +12338,7 @@ const PurchaseOrderTab = ({
                           {formatFc(fcRate)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
-                          {formatFc(fcDisc)}
+                          {hasDiscount ? formatFc(fcDisc) : "-"}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                           {formatFc(fcAmount)}
@@ -12343,7 +12347,7 @@ const PurchaseOrderTab = ({
                           {formatImportPoWhole(lcRate)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
-                          {formatImportPoWhole(lcDisc)}
+                          {hasDiscount ? formatImportPoWhole(lcDisc) : "-"}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                           {formatImportPoWhole(lcAmount)}
@@ -12628,7 +12632,7 @@ const PurchaseOrderTab = ({
                       const receiveQty = Math.max(0, Math.floor(Number(line.receiveQty) || 0));
                       const distributedExpense = receiveDistributedExpenses[index] ?? 0;
                       const unitExp = receiveQty > 0 ? distributedExpense / receiveQty : 0;
-                      const { fcDisc, lcDisc } = getImportDiscountedRates(
+                      const { fcDisc, lcDisc, hasDiscount } = getImportDiscountedRates(
                         line.fcRate,
                         line.lcRate,
                         importExpenses.invDiscPercent,
@@ -12730,7 +12734,7 @@ const PurchaseOrderTab = ({
                           />
                         </td>
                         <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
-                          {formatFc(fcDisc)}
+                          {hasDiscount ? formatFc(fcDisc) : "-"}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                           {formatFc(lineAmounts.fcAmount)}
@@ -12739,7 +12743,7 @@ const PurchaseOrderTab = ({
                           {formatImportPoWhole(line.lcRate)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
-                          {formatImportPoWhole(lcDisc)}
+                          {hasDiscount ? formatImportPoWhole(lcDisc) : "-"}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                           {formatImportPoWhole(lineAmounts.lcAmount)}

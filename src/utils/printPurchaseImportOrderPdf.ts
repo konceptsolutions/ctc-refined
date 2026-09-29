@@ -40,9 +40,12 @@ export type PurchaseImportOrderPrintItem = {
   backQty?: number | null;
   fcRate?: number | null;
   fcDisc?: number | null;
+  /** False when invoice discount factor is 1 (no discount applied). */
+  hasFcDisc?: boolean | null;
   fcAmount?: number | null;
   lcRate?: number | null;
   lcDisc?: number | null;
+  hasLcDisc?: boolean | null;
   lcAmount?: number | null;
   unitExp?: number | null;
   exp?: number | null;
@@ -375,10 +378,14 @@ export const printPurchaseImportOrder = ({
               text(item.brand || "-"),
               String(qty),
               num(item.fcRate, 4),
-              num(item.fcDisc ?? item.fcRate, 4),
+              item.hasFcDisc === false
+                ? "-"
+                : num(item.fcDisc ?? item.fcRate, 4),
               num(item.fcAmount, 4),
               num(item.lcRate, 0),
-              num(item.lcDisc ?? item.lcRate, 0),
+              item.hasLcDisc === false
+                ? "-"
+                : num(item.lcDisc ?? item.lcRate, 0),
               num(item.lcAmount, 0),
               moneyOrDash(item.unitExp),
               moneyOrDash(item.exp),
@@ -404,10 +411,14 @@ export const printPurchaseImportOrder = ({
               ? String(Number(item.backQty || 0))
               : "-",
             num(item.fcRate, 4),
-            num(item.fcDisc ?? item.fcRate, 4),
+            item.hasFcDisc === false
+              ? "-"
+              : num(item.fcDisc ?? item.fcRate, 4),
             num(item.fcAmount, 4),
             num(item.lcRate, 0),
-            num(item.lcDisc ?? item.lcRate, 0),
+            item.hasLcDisc === false
+              ? "-"
+              : num(item.lcDisc ?? item.lcRate, 0),
             num(item.lcAmount, 0),
             Number(item.weight || 0) > 0 ? num(item.weight, 4) : "-",
             Number(item.totalWeight || 0) > 0

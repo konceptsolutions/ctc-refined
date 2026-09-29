@@ -677,6 +677,8 @@ async function confirmPurchaseQuotation(
       quantity: number;
       unitCost: number;
       totalCost: number;
+      fcRate: number;
+      fcAmount: number;
       sortOrder: number;
       weight: number;
     }>
@@ -910,6 +912,8 @@ async function confirmPurchaseQuotation(
           quantity,
           unitCost,
           totalCost: unitCost * quantity,
+          fcRate: effectiveFcRate,
+          fcAmount: roundFc(effectiveFcRate * quantity),
           sortOrder: itemSortOrder,
           weight: itemWeight,
         });
@@ -1081,6 +1085,9 @@ async function confirmPurchaseQuotation(
     for (const [laneIndex, lane] of lanesWithItems.entries()) {
       const poItems = laneItems[lane];
       const totalAmount = poItems.reduce((sum, row) => sum + row.totalCost, 0);
+      const totalFc = roundFcTotal(
+        poItems.reduce((sum, row) => sum + Number(row.fcAmount || 0), 0),
+      );
       const poNumber = poNumbers[laneIndex];
       const consignee = PO_LANE_CONSIGNEE[lane];
       const notes = `Created from purchase quotation${
@@ -1099,6 +1106,7 @@ async function confirmPurchaseQuotation(
           consignee,
           currency: primary.currency,
           conversionRate: nextConversionRate,
+          fcTotal: totalFc,
           status: "Pending",
           notes,
           totalAmount,
@@ -1114,6 +1122,8 @@ async function confirmPurchaseQuotation(
           quantity: row.quantity,
           unitCost: row.unitCost,
           totalCost: row.totalCost,
+          fcRate: row.fcRate,
+          fcAmount: row.fcAmount,
           weight: roundWeight(row.weight || 0),
           totalWeight: roundWeight(Number(row.weight || 0) * row.quantity),
           receivedQty: 0,
@@ -1251,6 +1261,66 @@ const getEffectiveQuotationItemValues = (
     lcRate: roundPurchasePrice(item.lcRate || 0),
     lcAmount: roundPurchasePrice(item.lcAmount || 0),
   };
+};
+
+type QuotationItemMatchCandidate = {
+  id?: string | null;
+  partId?: string | null;
+  sortOrder?: number | null;
+  weight?: number | null;
+  fcRate?: number | null;
+  fcAmount?: number | null;
+  lcRate?: number | null;
+  lcAmount?: number | null;
+  revisedFcRate?: number | null;
+  revisedFcAmount?: number | null;
+  revisedLcRate?: number | null;
+  revisedLcAmount?: number | null;
+};
+
+/**
+ * Resolve the quotation line for a PO line when the same partId can appear
+ * more than once at different rates. Prefer closest effective LC to the PO
+ * unitCost (stored correctly per line at confirm), then lower sortOrder.
+ * Optionally consume matched quotation item ids so duplicates are not reused.
+ */
+const matchQuotationItemForPoLine = <T extends QuotationItemMatchCandidate>(
+  candidates: T[],
+  partId: string,
+  unitCost: number,
+  isRevised: boolean,
+  usedIds?: Set<string>,
+): T | undefined => {
+  const pid = String(partId || "").trim();
+  if (!pid) return undefined;
+
+  const pool = candidates.filter((item) => {
+    if (String(item.partId || "").trim() !== pid) return false;
+    const id = String(item.id || "").trim();
+    if (usedIds && id && usedIds.has(id)) return false;
+    return true;
+  });
+  if (pool.length === 0) return undefined;
+  if (pool.length === 1) return pool[0];
+
+  const targetLc = Number(unitCost || 0);
+  let best = pool[0];
+  let bestDiff = Number.POSITIVE_INFINITY;
+  let bestSort = Number.POSITIVE_INFINITY;
+  for (const item of pool) {
+    const effective = getEffectiveQuotationItemValues(item, isRevised);
+    const diff = Math.abs(Number(effective.lcRate || 0) - targetLc);
+    const sortOrder = Number(item.sortOrder || 0);
+    if (
+      diff < bestDiff ||
+      (diff === bestDiff && sortOrder < bestSort)
+    ) {
+      best = item;
+      bestDiff = diff;
+      bestSort = sortOrder;
+    }
+  }
+  return best;
 };
 
 async function getLastSupplierFcRatesByPartIds(
@@ -5522,12 +5592,8 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
 
     const quotation = order.PurchaseQuotation;
     const isRevised = isQuotationRevisedRecord(quotation);
-    const quotationItemByPartId = new Map(
-      (quotation.PurchaseQuotationItem || []).map((item) => [
-        String(item.partId),
-        item,
-      ]),
-    );
+    const quotationItems = quotation.PurchaseQuotationItem || [];
+    const usedQuotationItemIds = new Set<string>();
     const requestItemByPartId = new Map(
       (quotation.PurchaseImportRequest?.PurchaseImportRequestItem || []).map(
         (item) => [String(item.partId), item],
@@ -5550,7 +5616,17 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
 
     const baseItems = order.PurchaseOrderItem.map((poItem) => {
       const partId = String(poItem.partId);
-      const quotationItem = quotationItemByPartId.get(partId);
+      const quotationItem = matchQuotationItemForPoLine(
+        quotationItems,
+        partId,
+        Number(poItem.unitCost) || 0,
+        isRevised,
+        usedQuotationItemIds,
+      );
+      const matchedQuotationItemId = String(quotationItem?.id || "").trim();
+      if (matchedQuotationItemId) {
+        usedQuotationItemIds.add(matchedQuotationItemId);
+      }
       const requestItem = requestItemByPartId.get(partId);
       const orderQty = Number(poItem.quantity) || 0;
       const savedFcRate = Number((poItem as any).fcRate || 0);
@@ -5630,7 +5706,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         quotationQuantity: Number(quotationItem?.quotationQuantity || 0),
         shipDays: String(quotationItem?.shipDays ?? ""),
         fcRate,
-        fcAmount: fcRate * orderQty,
+        fcAmount: roundFc(fcRate * orderQty),
         lcRate,
         lcAmount: roundPurchasePrice(lcRate * orderQty),
         weight,
@@ -5812,12 +5888,8 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
 
     const quotation = order.PurchaseQuotation;
     const isRevised = isQuotationRevisedRecord(quotation);
-    const quotationItemByPartId = new Map(
-      (quotation.PurchaseQuotationItem || []).map((item) => [
-        String(item.partId),
-        item,
-      ]),
-    );
+    const quotationItems = quotation.PurchaseQuotationItem || [];
+    const usedQuotationItemIds = new Set<string>();
 
     const existingItemIds = new Set(
       order.PurchaseOrderItem.map((item) => String(item.id)),
@@ -5934,7 +6006,17 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
           poItem.quantity,
           receiveRow?.receiveQty ?? 0,
         );
-        const quotationItem = quotationItemByPartId.get(String(poItem.partId));
+        const quotationItem = matchQuotationItemForPoLine(
+          quotationItems,
+          String(poItem.partId),
+          Number(poItem.unitCost) || 0,
+          isRevised,
+          usedQuotationItemIds,
+        );
+        const matchedQuotationItemId = String(quotationItem?.id || "").trim();
+        if (matchedQuotationItemId) {
+          usedQuotationItemIds.add(matchedQuotationItemId);
+        }
         const effective = quotationItem
           ? getEffectiveQuotationItemValues(quotationItem, isRevised)
           : { fcRate: 0 };
